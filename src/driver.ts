@@ -181,6 +181,8 @@ export interface SpawnContext {
   readFiles?: string[];
   /** Review procedure directories and their shared references. */
   readSkillDirs?: string[];
+  /** Selected native content layout; undefined keeps root, null disables it. */
+  skillsRoot?: string | null;
   /** Directory with workspace skills for one session. */
   pluginDir?: string | null;
   /** Where the driver puts its MCP config and its settings file. */

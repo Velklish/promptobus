@@ -208,6 +208,8 @@ export function registerRuntime(bb: BbPluginApi) {
         signal.throwIfAborted();
         await recovery.replay(b, signal);
         signal.throwIfAborted();
+        if (b.launchContext) await admit(b, signal);
+        signal.throwIfAborted();
       })(), new Promise<never>((_, reject) => { timer = setTimeout(() => {
         const error = new Error('Promptobus dispatch validation exceeded 5000 ms');
         controller.abort(error); reject(error);

@@ -2040,3 +2040,69 @@ for (const condition of ['STOP', 'ended']) test(`review2 boundary: bound reviewe
   await assert.rejects(s.call('thr-2', 'pb_review_read_file', { path: file }), /STOP|active/);
   assert.equal(reads, 1, 'The admission refusal must precede the actual bounded filesystem handler');
 });
+
+for (const condition of ['STOP', 'ended']) test(`dispatch rechecks file control ${condition} before an owned model turn`, async t => {
+  const s = await stand(t); await s.create();
+  const launch = launchFixture(s.task, 'controlled-worker', 'worker', s.root);
+  const file = path.join(s.root, 'dispatch-control.json'), snapshot = structuredClone(launch.control.snapshot);
+  writeFileSync(file, JSON.stringify(snapshot)); launch.control = { mode: 'file', path: file };
+  assert.equal((await s.add('controlled-worker', 'worker', ['--launch-context', JSON.stringify(launch)])).exitCode, 0);
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  const context = makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), origin: 'plugin', originPluginId: 'promptobus',
+    input: { blocks: [{ type: 'text', text: s.initialArgs.prompt }], text: s.initialArgs.prompt } });
+  assert.equal((await hook(context)).action, 'proceed');
+  if (condition === 'STOP') snapshot.STOP = true; else snapshot.endedTokens.push(launch.grant.token);
+  writeFileSync(file, JSON.stringify(snapshot));
+  assert.notEqual((await hook(context)).action, 'proceed', 'Revoked file control must prevent the next model turn');
+});
+
+for (const condition of ['STOP', 'ended']) test(`anonymous initial dispatch rechecks ${condition} for queued and copied input`, async t => {
+  let entry;
+  const s = await stand(t, { assignmentSend: async ({ threadId, input }) => {
+    entry = { id: 'controlled-initial', threadId, originPluginId: null, content: input };
+    s.queues.set(threadId, [entry]); return { ok: true, delivery: 'queued', queuedMessage: entry };
+  } });
+  await s.create(); s.workerEnvironment.managed = false;
+  mkdirSync(s.workerEnvironment.path);
+  const launch = launchFixture(s.task, 'anonymous-worker', 'worker', s.workerEnvironment.path, 'actual-bb-branch', 'b'.repeat(40));
+  launch.readRoots.push(s.root);
+  const file = path.join(s.root, 'anonymous-control.json'), snapshot = structuredClone(launch.control.snapshot);
+  writeFileSync(file, JSON.stringify(snapshot)); launch.control = { mode: 'file', path: file };
+  const added = await s.add('anonymous-worker', 'worker', ['--environment-path', s.workerEnvironment.path, '--launch-context', JSON.stringify(launch)]);
+  assert.equal(added.exitCode, 0, added.stderr);
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  const input = { blocks: entry.content, text: entry.content[0].text };
+  const context = queued => makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), originPluginId: null, input, queuedMessages: [queued] });
+  assert.equal((await hook(context(entry))).action, 'proceed');
+  assert.equal((await hook(context({ ...entry, id: 'unrelated-copy' }))).action, 'proceed');
+  if (condition === 'STOP') snapshot.STOP = true; else snapshot.endedTokens.push(launch.grant.token);
+  writeFileSync(file, JSON.stringify(snapshot));
+  assert.notEqual((await hook(context(entry))).action, 'proceed', 'The authoritative initial queue must recheck current control');
+  assert.notEqual((await hook(context({ ...entry, id: 'unrelated-copy' }))).action, 'proceed', 'User input cannot reactivate a revoked participant grant');
+});
+
+for (const condition of ['STOP', 'ended']) for (const delivery of ['queued', 'sent']) test(`anonymous sending dispatch holds ${condition} before its ${delivery} receipt lands`, async t => {
+  const entered = deferred(), release = deferred(); let entry;
+  const s = await stand(t, { assignmentSend: async ({ threadId, input }) => {
+    entry = { id: 'early-control', threadId, originPluginId: null, content: input };
+    s.queues.set(threadId, [entry]); entered.resolve(); await release.promise;
+    return { ok: true, delivery: 'queued', queuedMessage: entry };
+  } });
+  await s.create(); s.workerEnvironment.managed = false; mkdirSync(s.workerEnvironment.path);
+  const launch = launchFixture(s.task, 'early-worker', 'worker', s.workerEnvironment.path, 'actual-bb-branch', 'b'.repeat(40));
+  launch.readRoots.push(s.root);
+  const file = path.join(s.root, 'early-control.json'), snapshot = structuredClone(launch.control.snapshot);
+  writeFileSync(file, JSON.stringify(snapshot)); launch.control = { mode: 'file', path: file };
+  const pending = s.add('early-worker', 'worker', ['--environment-path', s.workerEnvironment.path, '--launch-context', JSON.stringify(launch)]);
+  await entered.promise;
+  try {
+    const binding = bindingStore(s.host.bb).thread('thr-2');
+    assert.equal(binding.phaseAssignmentDelivery.state, 'sending'); assert.equal(binding.phaseAssignmentDelivery.queuedId, null);
+    if (condition === 'STOP') snapshot.STOP = true; else snapshot.endedTokens.push(launch.grant.token);
+    writeFileSync(file, JSON.stringify(snapshot));
+    const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+    const result = await hook(makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), originPluginId: null,
+      input: { blocks: entry.content, text: entry.content[0].text }, queuedMessages: delivery === 'queued' ? [entry] : [] }));
+    assert.equal(result.action, 'wait', 'A revoked participant grant must prevent an early anonymous model turn');
+  } finally { release.resolve(); await pending; }
+});

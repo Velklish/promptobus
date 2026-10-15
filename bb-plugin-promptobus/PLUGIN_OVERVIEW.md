@@ -6,8 +6,8 @@ tools and refuses shell execution, source edits and unclassified external tools.
 
 ## Requirements
 
-BB 0.45.0 or 0.46.0, Plugin SDK 0.6.15, Codex CLI 0.162.0-alpha.2 and a signed-in Codex account
-are required. Execution and file reads use one local host. Each reviewer receives a
+BB 0.45.0 or 0.46.0, Plugin SDK 0.6.15 and a signed-in Codex account are required.
+The reviewer admits Codex by its effective restrictions and supported protocol capabilities, without a numeric version bound. Execution and file reads use one local host. Each reviewer receives a
 private Codex home and an empty project sandbox. Existing native providers keep
 their own behavior.
 

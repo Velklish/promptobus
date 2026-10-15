@@ -111,6 +111,11 @@ session before assignment. Configuration remains ready-only and each tool call
 rechecks authenticated identity. These ordering fixtures do not prove live bridge recovery;
 a provisioned session that still lacks the bridge needs separate runtime evidence.
 
+Every bound participant dispatch rechecks current launch control before a model
+turn, including user input and anonymous assignment delivery. Pausing automatic
+delivery does not revoke a valid grant. User input cannot reactivate an ended or
+stopped grant; use the operator resume and fresh-phase protocol.
+
 ## MCP schema and permission boundary
 
 Every selected tool exports an MCP input schema with root `type: "object"`.
@@ -147,10 +152,11 @@ bb promptobus bindings
 
 Use real existing project/environment ids on the primary local host and a Git
 coordinator environment with an actual HEAD. The coordinator must be unmanaged:
+its canonical journal must outlive BB worker environment retirement.
+
 Prepare each role's complete bounded JSON input described under
 [required inputs](#required-launch-and-review-inputs); the example variables are
-placeholders for those exact authorized contexts.
-its canonical journal must outlive BB worker environment retirement. The first
+placeholders for those exact authorized contexts. The first
 command creates the canonical task and a new owner thread; the second adds a
 new participant to that plugin-owned active task. Both hold the first prompt
 until the returned BB thread identity is finalized. A launch failure remains
@@ -598,7 +604,7 @@ alone are not this support claim.
 | Mixed native reviewer and BB workers | Partial | Does not establish the full BB profile |
 | Cursor and OpenCode ACP workers; Cursor ACP approver | SDK fixtures | Selection, provisioning, authenticated tools, recovery and current predecessors; separate from a live model workflow |
 | Other providers, versions, hosts, models/efforts or custom pipeline shapes | Unverified or unsupported | No full support claim; Unadmitted providers and remote environments refuse |
-| Package delivery | Source-only, unreleased | Build this checkout and a matching packed library; older releases lack this adapter |
+| Package delivery | Source-only, unreleased | Build this checkout and a matching packed library; the root package tarball excludes the optional plugin |
 
 The representative fixture retained current worker and reviewer results for the
 same actual managed environment. Approver admission refused before those results.

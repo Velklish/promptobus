@@ -26,9 +26,10 @@ The table below is pinned to the current `PromptobusHost` declaration in `src/ho
 | `binPath` | `binPath(): string` | Never absent; it is the host's CLI entry used by participant launches. |
 | `layoutBinPath` | `layoutBinPath(): string` | Never absent; it is the entry path written into project hooks. |
 | `toolsManifestRel` | `toolsManifestRel(): string` | Never absent; it is the workspace-relative harness declaration path. |
-| `skillsDir` | `skillsDir(): string \| null` | `null` means the workspace has no configured process-skills directory. |
-| `pluginDir` | `pluginDir(): string \| null` | `null` means no plugin directory is available for the workspace. |
-| `pluginManifestRel` | `pluginManifestRel(): string` | Never absent; it is the workspace-relative plugin manifest path. |
+| `skillsDir` | `skillsDir(repoDir?: string): string \| null` | Selected process-skills directory; `null` means none. |
+| `pluginDir` | `pluginDir(repoDir?: string): string \| null` | Selected Claude plugin directory; `null` means none. |
+| `participantLayoutRoot` | `participantLayoutRoot?(repoDir: string): string \| null` | Native content layout for this repository. Omitted uses `workspaceRoot()`; `null` disables native skill files and visibility settings. Claude plugin delivery is selected separately by `pluginDir`. |
+| `pluginManifestRel` | `pluginManifestRel(repoDir?: string): string` | Never absent; it is the workspace-relative plugin manifest path. |
 | `busHookRel` | `busHookRel(): string` | Never absent. Nothing is written there any more; it is the path by which `install` recognises and removes a feed hook an earlier version left. |
 | `installManifestRel` | `installManifestRel(): string` | Never absent; it is the workspace-relative install manifest path. |
 | `pluginSkillsRel` | `pluginSkillsRel(): string` | Never absent; it is the workspace-relative plugin-skills path. |
@@ -36,10 +37,10 @@ The table below is pinned to the current `PromptobusHost` declaration in `src/ho
 | `collectRules` | `collectRules(repoDir: string): string[]` | Never `null`; an empty array means no rule files were found for the repository. |
 | `moduleNote` | `moduleNote(repoDir: string): HostModuleNote` | Never absent; the note is `info` or `warn` even when the repository has no module-specific guidance. |
 | `resolveRepoModule` | `resolveRepoModule(repoDir: string): HostRepoModule \| null` | `null` means no repository module metadata applies. |
-| `reviewSkillDir` | `reviewSkillDir(name: string): string` | Never absent; the path may not exist, which the reviewer reports separately. |
-| `participantServers` | `participantServers(): HostServers` | Never absent; empty `servers` and `external` mean no extra participant MCP servers. |
-| `participantDenyToolsByKind` | `participantDenyToolsByKind?(kind: StepKind): HostMcpToolClassification` | Optional kind-aware member; a complete answer classifies the canonical external MCP servers for that step kind, including an empty tool list. It takes precedence when both classifiers exist. |
-| `participantDenyTools` | `participantDenyTools?(role: HostDenyRole): HostMcpToolClassification` | Optional member; `HostDenyRole` is `'reviewer' \| 'approver'`, declared in `src/registry.ts`. `{ tools, complete: true }` is a complete role-specific classification (including an empty `tools` array), while `complete: false` is incomplete. |
+| `reviewSkillDir` | `reviewSkillDir(name: string, repoDir?: string): string` | Selected review skill; a missing path is reported separately. |
+| `participantServers` | `participantServers(repoDir?: string): HostServers` | Selected MCP composition; empty `servers` and `external` mean none. |
+| `participantDenyToolsByKind` | `participantDenyToolsByKind?(kind: StepKind, repoDir?: string): HostMcpToolClassification` | Kind-aware classification for the selected composition. Takes precedence over the role callback. |
+| `participantDenyTools` | `participantDenyTools?(role: HostDenyRole, repoDir?: string): HostMcpToolClassification` | Role classification for the selected composition. `{ tools, complete: true }` includes the valid empty classification. |
 | `pipeline` | `pipeline?(): readonly HostPipelineStep[]` | Optional member: the owner step, then the gates in order, `{ name, kind, instructions?, qualityFloor? }` each. `instructions` is an absolute path resolved against the install root; it and `qualityFloor` are present only when declared. The standalone host answers it when `promptobus.json` declares `pipeline` and omits it when the key is absent; a declaration that does not hold makes it throw `PromptobusError` `pipeline-invalid` ([§ The pipeline declaration](#the-pipeline-declaration)). Absent, `registryOf(host)` is the shipped role registry ([04-protocol § The role registry](04-protocol.md#the-role-registry)) and the pipeline is the default `worker`, `reviewer`, `approver`. |
 | `memorySection` | `memorySection(toolName: (server: string, name: string) => string): string \| null` | `null` means this host has no memory integration section. |
 | `resolveRepo` | `resolveRepo(query: string): Promise<HostRepo>` | It rejects with `HostResolveError` when unresolved; it does not return `null`. |
@@ -710,11 +711,11 @@ plugin resolves the standalone Host and refuses declared servers without those
 adapters. Native Host delivery defaults are unchanged.
 
 Collection preserves `collectRules(root)` order, highest precedence first,
-and embeds each complete rule file and `skillsDir()` skill body in the initial
+and embeds each complete rule file and `skillsDir(root)` skill body in the initial
 assignment. A reviewer also receives its module's declared review skill.
 Each file must be text at most 256 KiB; the collected context is at most 1 MiB.
 Symlink entries in `skillsDir()` refuse collection explicitly; they are not
-silently omitted from successful context.
+silently omitted from successful context. The `_shared` directory contains resources rather than a skill; its files remain available through bounded Host resource reads.
 Collection uses the actual ready BB environment after preparation and before
 canonical finalization, including existing-path registrations and newly managed worktrees. It never reuses an
 owner's context for a child environment.
@@ -850,3 +851,11 @@ separate from the actual native operations. Missing or widened runtime restricti
 refuse startup even on a previously measured version. A failed or incomplete native
 proof does not establish enforcement on the measured build. Review and installed-plugin
 promotion are separate steps.
+
+## Repository-selected participant content
+
+A Host can select content for each target repository. Native worker, reviewer and approver assembly passes that repository to plugin, MCP, review-skill and write-classification callbacks. The optional `participantLayoutRoot` selects native skill files and Claude skill visibility settings. It does not change the task store, routing paths or participant worktree. BB collection passes its actual prepared environment to the same content callbacks.
+
+When `participantLayoutRoot` is absent, native skills use `workspaceRoot()`. A `null` layout disables native skill files; the independently declared Claude plugin remains controlled by `pluginDir`. Existing Hosts can ignore the additional arguments. Root roles without a target repository retain workspace defaults. The consumer resolves module requirements and ensures that its selected paths describe one composition.
+
+Every bound participant dispatch rechecks launch control before admitting a model turn, including anonymous assignment delivery and user input. A later `STOP` or ended grant holds the turn even if the participant was valid when launched. SDK pause and message ownership remain separate: user input can bypass automatic-delivery pause while its launch grant is valid. User text does not reactivate a revoked grant.

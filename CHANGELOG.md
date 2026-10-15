@@ -5,7 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [Unreleased]
+
+- Recheck current file-based launch control before any bound BB participant starts a model turn.
+- Captured the installed Codex 0.162.1 protocol and validated holder/mock contracts against its complete schema inventory. Native model turns and hook behavior remain unmeasured on this binary.
+
+- Admit BB 0.46.0 in the optional source plugin's host range
+  (`>=0.45.0 <0.47.0`). The measured full workflow remains the BB 0.45.0 profile.
+
+- Participant content can follow its target repository: Host callbacks receive the repository for skills, Claude plugins, MCP servers and write-tool classification. Native drivers keep the content layout separate from the bus root. BB participants use the same selection. Existing Hosts retain workspace defaults.
 
 - Single-participant `sweep` awaits asynchronous harness cleanup under the journal lock before reporting completion. Rejected hooks produce the cleanup warning, and a concurrent re-lift cannot borrow the lock.
 
@@ -79,9 +87,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   role/provider pairs, permission modes and models refuse before launch.
 
 ## [0.26.0] — 2026-10-12
-
-- Admit BB 0.46.0 in the optional source plugin's host range
-  (`>=0.45.0 <0.47.0`). The measured full workflow remains the BB 0.45.0 profile.
 
 - Pin the optional BB source plugin's Hono dependency to `4.13.13` to address
   the reported advisories in its SDK optional-peer dependency graph.

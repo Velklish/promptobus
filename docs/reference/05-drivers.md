@@ -1,5 +1,7 @@
 # Drivers
 
+`SpawnContext.skillsRoot` selects the native skills layout independently of `root`, which still identifies the bus workspace. Omit it to keep the workspace layout; pass `null` to deliver no layout. Cursor, Codex and OpenCode use this selection for skill files. Claude receives the selected plugin directory. Worker, reviewer and approver assembly passes the target repository to the Host content callbacks. Root roles retain workspace defaults.
+
 One page per harness contract. A driver owns the vocabulary of its binary — options, command
 words, how a lift plan becomes a launch — and nothing above it: which servers a participant
 gets is the workspace's call, and how a task is journalled is the engine's.
@@ -761,10 +763,10 @@ must not fall over its own log.
 
 ### Codex protocol versions
 
-The fixture baseline is codex-cli 0.162.0-alpha.2, captured from the installed Desktop binary
-on 2026-10-08. The complete capture contains 317 generated schemas: compared with
-0.160.0, added 3, removed 0, changed 25, unchanged 289. ClientRequest contains 105
-variants and ServerRequest retains 10. [Capture provenance](../../test/fixtures/codex-app-server/0.162.0/README.md)
+The fixture baseline is codex-cli 0.162.1, captured from the installed binary
+on 2026-10-15. The complete capture contains 317 generated schemas: compared with
+0.160.0, added 3, removed 0, changed 34, unchanged 280. ClientRequest contains 105
+variants and ServerRequest retains 10. [Capture provenance](../../test/fixtures/codex-app-server/0.162.1/README.md)
 names the measured binary hash and full file inventory. Holder request shapes and
 approval replies validate against the complete captures; generic caller-supplied
 holder RPC forwarding is untyped, and `currentTime/read` is an extension absent from
@@ -773,8 +775,7 @@ the generated ServerRequest schema.
 The participant minimum remains 0.158.0. The local schema gate accepts the minimum
 and current proven capture. An unknown installed version needs a fresh capture and
 contract validation. Native model turns and hook behavior were not remeasured on
-0.162.0. The three-component fixture directory names the measured alpha build;
-it does not measure a later stable binary. Earlier full captures remain unchanged.
+0.162.1. Earlier alpha and stable captures retain their original provenance. Earlier full captures remain unchanged.
 [Native 0.159.2 evidence](../../test/fixtures/codex-app-server/0.159.2/README.md)
 retains its own measured version, including the trusted-root hook control, canonical
 worker/reviewer skills, and reporter MCP reads. The unrouted default `gpt-6-astra`
@@ -787,7 +788,7 @@ The mock app-server emits complete native response shapes for initialize, model/
 skills/list, thread/start, thread/resume, thread/read, turn/start, turn/steer and
 review/start. Its internal thread store remains a test fixture; emitted threads have
 tagged status, native required metadata, and turns with item IDs. The response test
-validates 38 actual positive outputs against the complete 0.159.2, 0.160.0 and 0.162.0
+validates 38 actual positive outputs against the complete 0.159.2, 0.160.0 and 0.162.1
 captures, including default, credits, flat and spend-control quota responses. Omitted
 or null thread/start cwd defaults once to the mock process working directory and
 persists through thread/read, thread/resume and thread/list responses. Reset-credit

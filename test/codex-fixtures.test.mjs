@@ -71,7 +71,7 @@ for (const version of new Set([MIN_CODEX_VERSION, '0.159.2', '0.160.0', PROVEN_C
 
 const provenance = JSON.parse(readFileSync(path.join(dir, 'capture-provenance.json'), 'utf8'));
 check('installed Codex schema baseline is bound to its measured capture',
-  PROVEN_CODEX_VERSION === provenance.version && provenance.build === '0.162.0-alpha.2'
+  PROVEN_CODEX_VERSION === provenance.version && provenance.build === '0.162.1'
   && provenance.versionCommand.stdout === `codex-cli ${provenance.build}\n`
   && provenance.generation.exitCode === 0 && /^[a-f0-9]{64}$/.test(provenance.binary.sha256));
 const generated = Object.keys(provenance.inventory);
@@ -93,7 +93,7 @@ const removed = oldNames.filter(name => !generated.includes(name));
 const changed = generated.filter(name => oldNames.includes(name)
   && !readFileSync(path.join(captureDir, name)).equals(readFileSync(path.join(previousDir, name))));
 check('current capture retains the measured delta from the full historical capture',
-  added.length === 3 && removed.length === 0 && changed.length === 25
+  added.length === 3 && removed.length === 0 && changed.length === 34
   && provenance.comparison.previousVersion === '0.160.0'
   && JSON.stringify([added, removed, changed]) === JSON.stringify([
     provenance.comparison.added, provenance.comparison.removed, provenance.comparison.changed]));

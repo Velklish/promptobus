@@ -130,7 +130,7 @@ Without `--task`, `spawn` joins the bound task, else the only active one, else c
 
 `status` prints the warden line, `warden: alive` or `NO WARDEN`, and only reads; the next `spawn`, `review`, `send`, bus tool call or turn end starts a missing warden (`lib/status.js`, `lib/warden.js`).
 
-`stop <address>` closes one participant's session and retires the harness's record of it; the task, the participant and its mailbox stay. `sweep <address>` removes one accepted piece's worktree, branch and sent artifacts once its session is dead and its merge is proven. `dismiss <address>` only stops watching. The task mailbox owner or an approver of this task in its own recorded session may call these; `done` is the owner's alone ([03-cli § Status, done, sweep](https://github.com/Velklish/promptobus/blob/v0.26.0/docs/reference/03-cli.md#status-done-sweep-dismiss-history-prune)).
+`stop <address>` closes one participant's session and retires the harness's record of it; the task, the participant and its mailbox stay. `sweep <address>` removes one accepted piece's worktree, branch and sent artifacts once its session is dead and its merge is proven. `dismiss <address>` only stops watching. The task mailbox owner or an approver of this task in its own recorded session may call these; `done` is the owner's alone ([03-cli § Status, done, sweep](https://github.com/Velklish/promptobus/blob/v0.27.0/docs/reference/03-cli.md#status-done-sweep-dismiss-history-prune)).
 
 `done` closes the task, stops the sessions the bus started unless `--keep-sessions`, removes the worktree and `worktree-` branch of each closed task whose session is dead and whose work is proven merged, and last removes journals of tasks closed over 14 days ago; `prune` without `--yes` only previews (`lib/done.js`, `lib/prune.js`).
 
@@ -138,7 +138,7 @@ Without `--task`, `spawn` joins the bound task, else the only active one, else c
 
 A `review` that opened a task and failed to start its reviewer leaves an active orphan that no call without `--task` picks up, and prints `promptobus done --task <id>`. A failed `spawn` keeps its task and record for a repeat of the same command (`lib/review.js`, `lib/spawn.js`).
 
-A Codex holder declines an MCP server's own elicitation with `{ action: "decline" }` and accepts Codex's per-call tool approval for a server in the participant's home ([03-cli § The Codex holder](https://github.com/Velklish/promptobus/blob/v0.26.0/docs/reference/03-cli.md#the-codex-holder)).
+A Codex holder declines an MCP server's own elicitation with `{ action: "decline" }` and accepts Codex's per-call tool approval for a server in the participant's home ([03-cli § The Codex holder](https://github.com/Velklish/promptobus/blob/v0.27.0/docs/reference/03-cli.md#the-codex-holder)).
 
 ## Model routing
 
@@ -240,7 +240,7 @@ Re-spawn that track. Name the step-up and its reason in the run's result: a run 
 
 A consumer layers its own policy on top of this rubric — which models it forbids, where its reviewer runs. That belongs in the consumer's own skills, not here.
 
-Flags, reason codes and error codes: [reference/03-cli.md](https://github.com/Velklish/promptobus/blob/v0.26.0/docs/reference/03-cli.md) § Model routing. The catalog and overlays: [guides/model-routing.md](https://github.com/Velklish/promptobus/blob/v0.26.0/docs/guides/model-routing.md).
+Flags, reason codes and error codes: [reference/03-cli.md](https://github.com/Velklish/promptobus/blob/v0.27.0/docs/reference/03-cli.md) § Model routing. The catalog and overlays: [guides/model-routing.md](https://github.com/Velklish/promptobus/blob/v0.27.0/docs/guides/model-routing.md).
 
 ## Mail
 
@@ -250,7 +250,7 @@ A lost knock loses nothing. The mail stays in the mailbox.
 
 `PROMPTOBUS_WARDEN=off` disables the warden. Then participants must poll `promptobus_mailbox`.
 
-Each driver declares one activation, `push` (the warden knocks) or `pull` (the participant polls); all three shipped drivers push (`src/driver.ts`). A knock during a turn is queued for the next turn, not steered into the running one (`activate` in `lib/driver-*.js`). A repeat knock previews only messages that arrived after the previous knock; the first knock, and the first after the session behind the contact point changed, carry the whole list. A contact point held by a session other than the address's own gets no knock, and `status` shows self-wake (`src/supervisor.ts`).
+Each driver declares one activation, `push` (the warden knocks) or `pull` (the participant polls); all four shipped drivers push (`src/driver.ts`). A knock during a turn is queued for the next turn, not steered into the running one (`activate` in `lib/driver-*.js`). A repeat knock previews only messages that arrived after the previous knock; the first knock, and the first after the session behind the contact point changed, carry the whole list. A contact point held by a session other than the address's own gets no knock, and `status` shows self-wake (`src/supervisor.ts`).
 
 `self-wake — starting up; clears on the first knock` in `status`, the orchestrator's line included, means no contact point was handed over yet, not a broken channel (`lib/status.js`).
 
@@ -266,7 +266,7 @@ The spawn preamble reports repository dependency state. On a fresh worktree, dep
 
 A worker that cannot continue sends `question` and ends the turn. You answer with `answer`. Do not guess for the user.
 
-Before `result` the worker sends the gate record `gates-<slug>.json` and the handover record `handover-<slug>.json` as `artifact` messages; `send` refuses one that fails its schema and names the faults ([04-protocol § The gate record](https://github.com/Velklish/promptobus/blob/v0.26.0/docs/reference/04-protocol.md#the-gate-record)).
+Before `result` the worker sends the gate record `gates-<slug>.json` and the handover record `handover-<slug>.json` as `artifact` messages; `send` refuses one that fails its schema and names the faults ([04-protocol § The gate record](https://github.com/Velklish/promptobus/blob/v0.27.0/docs/reference/04-protocol.md#the-gate-record)).
 
 When the worker is done it takes mailbox, then sends `result` (what changed, gates as numbers, what is still open). Check its gate and handover records, then run `promptobus review` on its worktree. The reviewer's findings come to you: validate each — keep it for the worker this round, file it in the tracker, or take a fork to the user — and send the kept ones to the worker as `review`. You do not reject a finding yourself: a dispute over one goes to the user. The worker fixes and sends `result` again; check the records of the fix, tell the reviewer in a `status` message which findings you filed (with their ids) and which ones the user ruled out, and run the same `review` again. The loop ends when the reviewer returns a pass with no new finding and no kept one still open, never on your own reading of the diff, however small ([solo-review](../solo-review/SKILL.md) § Collect the report); only then lift the approver. Keep the reviewer alive until the piece is accepted: the same session reads every new version with its earlier findings in mind.
 

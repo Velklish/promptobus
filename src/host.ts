@@ -146,9 +146,11 @@ export interface PromptobusHost {
   layoutBinPath(): string;
 
   toolsManifestRel(): string;
-  skillsDir(): string | null;
-  pluginDir(): string | null;
-  pluginManifestRel(): string;
+  skillsDir(repoDir?: string): string | null;
+  pluginDir(repoDir?: string): string | null;
+  /** Native content layout, independent of the bus and worktree root. */
+  participantLayoutRoot?(repoDir: string): string | null;
+  pluginManifestRel(repoDir?: string): string;
   /** No longer written: the path `install` recognises an older feed hook by. */
   busHookRel(): string;
   installManifestRel(): string;
@@ -158,13 +160,13 @@ export interface PromptobusHost {
   collectRules(repoDir: string): string[];
   moduleNote(repoDir: string): HostModuleNote;
   resolveRepoModule(repoDir: string): HostRepoModule | null;
-  reviewSkillDir(name: string): string;
+  reviewSkillDir(name: string, repoDir?: string): string;
 
-  participantServers(): HostServers;
+  participantServers(repoDir?: string): HostServers;
   /** Classify external write tools by step kind; never include the bus. */
-  participantDenyToolsByKind?(kind: StepKind): HostMcpToolClassification;
+  participantDenyToolsByKind?(kind: StepKind, repoDir?: string): HostMcpToolClassification;
   /** Optional external write-tool classification for a constrained participant; never include the Promptobus bus. */
-  participantDenyTools?(role: HostDenyRole): HostMcpToolClassification;
+  participantDenyTools?(role: HostDenyRole, repoDir?: string): HostMcpToolClassification;
   /** Optional declared pipeline: owner then gates, with an absolute instructions path and a qualityFloor only where declared.
    * Absent, the pipeline is the default; an invalid declaration throws `pipeline-invalid`. */
   pipeline?(): readonly HostPipelineStep[];
