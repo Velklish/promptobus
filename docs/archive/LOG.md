@@ -541,3 +541,4 @@ The release reconciliation gives the [Codex-only journal lookup](#pb-372) the na
 - <a id="pb-375"></a>`PB-375-bb-launch-context-preflight` · 2026-10-13 · completed · `fb2ae7bc57` · Validate executable role and control context before admitting a BB participant
 - <a id="pb-376"></a>`PB-376-bb-review-evidence-bundle` · 2026-10-13 · completed · `fb2ae7bc57` · Deliver a complete evidence manifest before starting a BB review
 - <a id="pb-378"></a>`PB-378-participant-project-composition` · 2026-10-15 · completed · — · Select participant content from its target repository
+- <a id="pb-352"></a>`PB-352-opencode-test-listen-refusal` · 2026-10-16 · completed · — · OpenCode holder tests abort on denied localhost binding instead of reporting named skips
