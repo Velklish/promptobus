@@ -118,6 +118,22 @@ check('exec ceiling probe shortens both production defaults',
   && probeExec.includes('export const PROC_TIMEOUT_MS = 1_000;')
   && probeExec.includes('export const PROC_MAX_OUTPUT = 64;'));
 writeFileSync(path.join(PROBE, 'exec.js'), probeExec);
+const asyncExec = await import(pathToFileURL(path.join(PROBE, 'exec.js')).href);
+let ticks = 0;
+const tick = setInterval(() => { ticks += 1; }, 10);
+const asyncStarted = Date.now();
+const asyncTimed = await asyncExec.runAsync('node', ['-e', 'setTimeout(() => {}, 30000)'], { timeoutMs: 200, encoding: 'utf8' });
+clearInterval(tick);
+check('exec.runAsync cuts off a hung command without blocking the caller loop',
+  asyncTimed.error?.code === 'ETIMEDOUT' && asyncTimed.signal === 'SIGKILL'
+  && ticks > 0 && Date.now() - asyncStarted < 5000, JSON.stringify({ asyncTimed, ticks }));
+const asyncBuffered = await asyncExec.runAsync('node', ['-e', "process.stdout.write('x'.repeat(10000))"], { encoding: 'utf8' });
+check('exec.runAsync refuses output beyond the byte ceiling',
+  asyncBuffered.error?.code === 'ENOBUFS' && Buffer.byteLength(asyncBuffered.stdout) === 64, JSON.stringify(asyncBuffered));
+const asyncOk = await exec.runAsync('node', ['-e', "process.stdout.write('ok'); process.stderr.write('detail')"], { encoding: 'utf8' });
+check('exec.runAsync preserves successful stdout, stderr and exit status',
+  asyncOk.status === 0 && asyncOk.stdout === 'ok' && asyncOk.stderr === 'detail' && asyncOk.error === null, JSON.stringify(asyncOk));
+
 
 const liftoffSource = readFileSync(new URL('../lib/liftoff.js', import.meta.url), 'utf8');
 const probeLiftoff = liftoffSource

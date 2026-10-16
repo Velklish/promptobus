@@ -16,7 +16,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import Ajv from 'ajv';
 import { diagnoseTrace as formatTraceDiagnosis } from './harness-shared.mjs';
-import { PROVEN_CODEX_VERSION } from '../lib/driver-codex.js';
+import { DEFAULT_MODEL, PROVEN_CODEX_VERSION } from '../lib/driver-codex.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // The directory is named off the constant, not spelled again: a bumped `PROVEN_CODEX_VERSION`
@@ -114,6 +114,8 @@ export const HARNESS_VERSION = `codex-cli ${PROVEN_CODEX_VERSION}`;
 //   credits         — the account holds spendable credits (the flag and a balance)
 //   spend-control   — the account's own spend control is at its ceiling
 //   no-models       — `model/list` refuses; the limit is still known
+//   no-catalog      — `debug models` exits 1: the catalog cannot be read, and
+//                     a paid raise is refused on an unverified model
 //   stderr          — the `base_instructions` cache ERROR a healthy app-server
 //                     writes on every start
 //   stderr-loop     — the same line every 200 ms. For the window between a
@@ -121,6 +123,8 @@ export const HARNESS_VERSION = `codex-cli ${PROVEN_CODEX_VERSION}`;
 //                     logs every stderr chunk, and what is checked is that logging
 //                     does not recreate the tree that was just removed
 export const PROBE_VAR = 'CODEX_STUB_PROBE';
+
+const probesOf = (env = process.env) => new Set(String(env[PROBE_VAR] ?? '').split(',').map((s) => s.trim()).filter(Boolean));
 
 // Verbatim from codex-cli 0.146.0 on a run that then answered everything correctly.
 export const STDERR_NOISE = 'ERROR codex_models_manager::cache: failed to load models cache: '
@@ -325,6 +329,15 @@ function armCleanup(home) {
 // binary does. A stand tolerant of either order cannot see the PB-170 defect at all.
 const GLOBAL_OPTIONS = new Set(['--dangerously-bypass-hook-trust']);
 
+// The catalog `debug models` prints — the same slugs `model/list` answers, with the visibility
+// the real command carries; the driver's default is among them, and a hidden entry stays nameable.
+const DEBUG_CATALOG_MODELS = [
+  { slug: 'gpt-5.6-sol', visibility: 'list' },
+  { slug: DEFAULT_MODEL, visibility: 'list' },
+  { slug: 'gpt-5.4-mini', visibility: 'list' },
+  { slug: 'gpt-5.6-internal', visibility: 'hide' },
+];
+
 export async function codexMain(args) {
   let argv = args;
   while (argv.length && GLOBAL_OPTIONS.has(argv[0])) argv = argv.slice(1);
@@ -340,6 +353,15 @@ export async function codexMain(args) {
   }
   if (argv[0] === 'resume') {
     process.stdout.write(`resuming ${argv[1] ?? '?'}\n`);
+    return;
+  }
+  if (argv[0] === 'debug' && argv[1] === 'models') {
+    if (probesOf().has('no-catalog')) {
+      process.stderr.write('codex-stub: debug models: the catalog is unavailable\n');
+      process.exitCode = 1;
+      return;
+    }
+    process.stdout.write(`${JSON.stringify({ models: DEBUG_CATALOG_MODELS })}\n`);
     return;
   }
   if (argv[0] === 'features' && argv[1] === 'list') {
@@ -369,7 +391,7 @@ async function appServer() {
     process.stderr.write('codex-stub: PROMPTOBUS_E2E_CODEX is missing\n');
     process.exit(2);
   }
-  const probe = new Set(String(process.env[PROBE_VAR] ?? '').split(',').map((s) => s.trim()).filter(Boolean));
+  const probe = probesOf();
   if (probe.has('stderr')) process.stderr.write(`${STDERR_NOISE}\n`);
   // `unref` so the noise is never the reason this process is alive: stdin is.
   if (probe.has('stderr-loop')) setInterval(() => process.stderr.write(`${STDERR_NOISE}\n`), 200).unref();

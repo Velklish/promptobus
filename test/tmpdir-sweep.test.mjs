@@ -326,8 +326,10 @@ check(': live-mixed ignores run directories older than this run',
   /const tmpLeft[\s\S]*?bornAfter\(path\.join\(tmpdir\(\), n\)\)/.test(mixedSrc),
   'the run-directory verdict has no birth-time cutoff');
 
+// An options object may follow RUN_PREFIX (the awaited abort cleanup opts its sandbox out of
+// the sandbox helper's signal cleanup); anything else is not a sandbox this list can sweep.
 const ownSweep = (src, prefix) => new RegExp(`const RUN_PREFIX = ['"]${prefix}['"]`).test(src)
-  && /const SB = makeSandbox\(RUN_PREFIX\);\s*markRunOwner\(SB\);/.test(src)
+  && /const SB = makeSandbox\(RUN_PREFIX(?:, \{[^}]*\})?\);\s*markRunOwner\(SB\);/.test(src)
   && /sweepLiveRuns\((?:os\.)?tmpdir\(\), \{ prefix: RUN_PREFIX, current: SB \}\)/.test(src);
 check(': live-codex sweeps old sandbox directories with its own prefix',
   ownSweep(codexSrc, 'promptobus-live-codex-'),
@@ -463,7 +465,7 @@ for (const dir of SCAN) {
     for (const m of src.matchAll(/makeSandbox\(\s*(['"`])([^'"`]+)\1/g)) declared.push([file, m[2]]);
     if (dir === scriptsDir && /makeSandbox\(\s*[A-Za-z_$]/.test(src)) {
       const run = src.match(/const RUN_PREFIX = (['"`])([^'"`$]+)\1;/);
-      if (run && /makeSandbox\(\s*RUN_PREFIX\s*\)/.test(src)) runPrefixes.push([file, run[2]]);
+      if (run && /makeSandbox\(\s*RUN_PREFIX(?:\s*,\s*\{[^}]*\})?\s*\)/.test(src)) runPrefixes.push([file, run[2]]);
       else undeclaredRun.push(file);
     }
     for (const m of src.matchAll(/mkdtempSync\(\s*(?:path\.)?join\(\s*(?:os\.)?tmpdir\(\)\s*,\s*(['"`])([^'"`]+)\1/g)) {

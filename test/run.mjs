@@ -301,7 +301,7 @@ const loadLine = () => os.loadavg().map((n) => n.toFixed(2)).join(' ');
 // the seal itself is watched by the gate at the tail of this file —
 // whose boundary is `run` in [exec.js](../lib/exec.js), not a test
 // file's own `spawnSync`.
-const SERIAL = ['promptobus-e2e.test.mjs', 'promptobus-mixed.test.mjs', 'promptobus-cursor-wake.test.mjs', 'promptobus-warden.test.mjs', 'model-routing-preflight.test.mjs', 'runner.test.mjs'];
+const SERIAL = ['promptobus-e2e.test.mjs', 'promptobus-mixed.test.mjs', 'promptobus-cursor-wake.test.mjs', 'promptobus-warden.test.mjs', 'model-routing-preflight.test.mjs', 'runner.test.mjs', 'live-mixed-stand.test.mjs'];
 
 // File timeout. A hung file used to hang `npm test` forever: the runner
 // waited on the child with no deadline, and anything can hang a file —

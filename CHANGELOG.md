@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+- Codex live runs transfer cleanup ownership synchronously on cancellation, keeping the sandbox until abort stop completes even when an earlier normal stop returns first; normal continuations and hygiene stay cancelled.
+- Abort cleanup diagnoses falsy thrown values from cleanup and thenable getters, preserving the first signal code and one exit.
+
+- Mixed live runs latch cancellation before awaiting cleanup, stop pending scenario waits and prevent later lifts or bus actions; abort cleanup keeps ownership of the sandbox until its stops return.
+- Abort cleanup adopts non-native thenables, diagnoses throwing `then` getters and invocations, and preserves the original signal code through adopted promises, repeated settlements and timeout.
+- `runAsync` refuses Windows `.cmd`/`.bat` wrappers with `ERR_ASYNC_BATCH` before launch; use a native `.exe` for asynchronous execution. Synchronous batch commands keep their existing route, and persist-stop retains its owned-pane fallback after refusal.
+
+- A live run's abort budget now bounds the actual stop: the Cursor persist stop runs as a cancellable awaited command under one deadline shared with the polling after it, so a hung harness command is cut off at the budget instead of waited out; `live-mixed.mjs` stops both raised participants in flight together with the remaining deadline, and signals the warden before awaiting them, so one hung stop cannot eat the other participant's or the warden's.
+- A cut-off live run prints its own pre-exit liveness sample of the PIDs it stopped, taken while the sandbox still exists, and the stands read that sample and each stop's own note instead of sampling PIDs after the exit — there the teardown and the holder's record watch end the processes either way.
+- The live Codex and mixed scripts verify the model against the binary's own catalog (`codex debug models`), read from the owner home the lift authenticates from, before the first raise: an unknown model or an unreadable catalog exits 1 with nothing raised, and a hidden catalog entry stays a named model.
+- A live run cut off by a signal stops its raised participants by their own drivers and waits for the stops: `codexDriver.stop` takes `{ timeoutMs }` bounding the shutdown ask and the death wait, the abort cleanup is awaited up to a bound, and the run's sandbox opts out of the sandbox helper's signal cleanup so the stops are dispatched and confirmed before the exit hook takes it.
+- `live-codex.mjs` declares `turn/steer` on the surface its report relies on.
+- The stub `codex` stand answers `debug models` with the same slugs `model/list` answers, and the suite covers the model refusals, the owner-home catalog resolution on distinct owner and ambient homes, and the cut-off stops of both scripts.
+
 ## [0.27.0] — 2026-10-15
 
 - Recheck current file-based launch control before any bound BB participant starts a model turn.

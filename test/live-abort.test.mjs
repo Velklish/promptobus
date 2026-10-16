@@ -43,6 +43,52 @@ check('abort: handlers on SIGINT, SIGTERM and SIGHUP; the first signal cleans on
 check('abort: a cleanup that throws still exits, and names its fault',
   exits.length === 1 && said.some((line) => line.includes('SIGHUP') && line.includes('cleanup fault')), said.join(''));
 
+// --- an awaited cleanup on the same seams ---------------------------------------------------------
+
+const awaited = [];
+const awaitedExits = [];
+let releaseAwaited;
+const gate = new Promise((resolve) => { releaseAwaited = resolve; });
+onAbort(async (signal) => {
+  awaited.push(signal);
+  await gate;
+  awaited.push('ended');
+}, {
+  on: (sig, fn) => handlers.set(sig, fn), exit: (code) => awaitedExits.push(code), say: (line) => said.push(line),
+});
+handlers.get('SIGINT')?.();
+check('abort: an async cleanup that has not ended yet does not exit',
+  awaited.join(',') === 'SIGINT' && awaitedExits.length === 0, `${awaited} · ${awaitedExits}`);
+releaseAwaited();
+await new Promise((resolve) => { setTimeout(resolve, 10); });
+check('abort: an ended async cleanup exits with the signal\'s code',
+  awaited.join(',') === 'SIGINT,ended' && awaitedExits.join(',') === String(exitCodeOf('SIGINT')),
+  `${awaited} · ${awaitedExits}`);
+
+const hungExits = [];
+let hungSaid = 0;
+const hungBefore = Date.now();
+onAbort(() => new Promise(() => {}), {
+  on: (sig, fn) => handlers.set(sig, fn), exit: (code) => hungExits.push(code),
+  say: (line) => { hungSaid += 1; said.push(line); }, waitMs: 60,
+});
+handlers.get('SIGHUP')?.();
+await new Promise((resolve) => { setTimeout(resolve, 100); });
+check('abort: a cleanup that never ends is left at its budget, and the exit keeps its code',
+  hungExits.length === 1 && hungExits[0] === exitCodeOf('SIGHUP') && hungSaid === 1
+  && Date.now() - hungBefore >= 60,
+  `${hungExits} · ${said.slice(-1)} · ${Date.now() - hungBefore} ms`);
+
+const rejectedExits = [];
+onAbort(async () => { throw new Error('async fault'); }, {
+  on: (sig, fn) => handlers.set(sig, fn), exit: (code) => rejectedExits.push(code), say: (line) => said.push(line),
+});
+handlers.get('SIGTERM')?.();
+await new Promise((resolve) => { setTimeout(resolve, 10); });
+check('abort: an async cleanup that rejects still exits, and names its fault',
+  rejectedExits.join(',') === String(exitCodeOf('SIGTERM'))
+  && said.some((line) => line.includes('async fault')), `${rejectedExits} · ${said.slice(-2)}`);
+
 // --- a real signal to a real process --------------------------------------------------------------
 
 // The fixture raises a sandbox BEFORE its cleanup, as every live script does: the sandbox helper's
@@ -66,12 +112,36 @@ setInterval(() => {}, 1000);
   return file;
 }
 
-async function abortRun(name, register = null, signal = 'SIGTERM') {
+// The awaited fixture: the cleanup ends after a wait, and the sandbox is outside the helper's
+// signal cleanup — an awaited cleanup needs what lives under it until its stops return.
+function writeAsyncFixture(dir, { signalCleanup = true } = {}) {
+  mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'fixture.mjs');
+  writeFileSync(file, `import { existsSync, rmSync, writeFileSync, writeSync } from 'node:fs';
+import path from 'node:path';
+import { makeSandbox } from ${JSON.stringify(path.join(here, 'sandbox.mjs'))};
+import { onAbort } from ${JSON.stringify(path.join(scriptsDir, 'live-abort.mjs'))};
+const dir = ${JSON.stringify(dir)};
+const sb = makeSandbox('promptobus-promptobus-live-abort-run-', { signalCleanup: ${signalCleanup ? 'true' : 'false'} });
+writeFileSync(path.join(sb, 'record.json'), '{}');
+onAbort(async (signal) => {
+  writeFileSync(path.join(dir, 'trace.json'), JSON.stringify({ signal, sandboxThere: existsSync(path.join(sb, 'record.json')) }));
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  writeFileSync(path.join(dir, 'trace2.json'), JSON.stringify({ signal }));
+  rmSync(path.join(dir, 'owned'), { force: true });
+});
+writeSync(1, 'READY ' + sb + '\\n');
+setInterval(() => {}, 1000);
+`);
+  return file;
+}
+
+async function abortRun(name, register = null, signal = 'SIGTERM', fixture = null) {
   const dir = path.join(SB, name);
   mkdirSync(dir, { recursive: true });
   writeFileSync(path.join(dir, 'owned'), 'resource the run owns\n');
   writeFileSync(path.join(dir, 'neighbour'), 'resource another run owns\n');
-  const child = spawn(process.execPath, [writeFixture(dir, register)], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [fixture ?? writeFixture(dir, register)], { stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
   let err = '';
   child.stderr.on('data', (c) => { err += c; });
@@ -116,6 +186,20 @@ const appended = await abortRun('appended', '(sig, fn) => process.on(sig, fn)');
 check('abort: control — an appended cleanup never runs, the sandbox handler exits 130 first',
   appended.code === 130 && appended.trace === null && appended.owned === true, JSON.stringify(appended));
 
+const asyncHeld = await abortRun('awaited', null, 'SIGTERM', writeAsyncFixture(path.join(SB, 'awaited'), { signalCleanup: false }));
+check('abort: an awaited cleanup ends before the exit — its async half ran, the owned went, exit 143',
+  asyncHeld.code === 143 && asyncHeld.trace?.signal === 'SIGTERM' && asyncHeld.trace?.sandboxThere === true
+  && existsSync(path.join(SB, 'awaited', 'trace2.json')) && asyncHeld.owned === false,
+  JSON.stringify(asyncHeld));
+check('abort: the awaited run\'s sandbox went on the exit hook, and the neighbour is intact',
+  asyncHeld.sandboxLeft === false && asyncHeld.neighbour === true, JSON.stringify(asyncHeld));
+
+const asyncSandboxed = await abortRun('awaited-in-sandbox', null, 'SIGTERM', writeAsyncFixture(path.join(SB, 'awaited-in-sandbox')));
+check('abort: control — an awaited cleanup inside the sandbox helper\'s signal handler never ends: exit 130, the async half never ran',
+  asyncSandboxed.code === 130 && asyncSandboxed.trace?.sandboxThere === true
+  && !existsSync(path.join(SB, 'awaited-in-sandbox', 'trace2.json')) && asyncSandboxed.owned === true,
+  JSON.stringify(asyncSandboxed));
+
 // --- argv of every live script, before anything is raised ---------------------------------------
 
 check('args: values by flag, --help, and refusals for an unknown flag and a flag without a value',
@@ -155,10 +239,15 @@ const sourceOf = (script) => readFileSync(path.join(scriptsDir, script), 'utf8')
 for (const script of Object.keys(LIVE).filter((script) => script !== 'live-e2e.mjs')) {
   const src = sourceOf(script);
   check(`wiring: ${script} registers an abort cleanup, marks its sandbox and sweeps only its own prefix`,
-    /\bonAbort\(\(signal\) =>/.test(src) && /markRunOwner\(SB\)/.test(src)
+    /\bonAbort\((?:async )?\(signal\) =>/.test(src) && /markRunOwner\(SB\)/.test(src)
     && /sweepLiveRuns\((?:os\.)?tmpdir\(\), \{ prefix: RUN_PREFIX, current: SB \}\)/.test(src)
-    && /const SB = makeSandbox\(RUN_PREFIX\)/.test(src),
+    && /const SB = makeSandbox\(RUN_PREFIX/.test(src),
     script);
+}
+for (const script of ['live-codex.mjs', 'live-mixed.mjs']) {
+  const src = sourceOf(script);
+  check(`wiring: ${script} keeps its sandbox out of the sandbox helper's signal cleanup for its awaited stops`,
+    /makeSandbox\(RUN_PREFIX, \{ signalCleanup: false \}\)/.test(src), script);
 }
 
 const e2eSource = sourceOf('live-e2e.mjs');
@@ -188,9 +277,16 @@ const PORTED = {
     'an unread tmux list refused by name before the run': /try \{\s*panesBefore = new Set\(requiredTmuxSessions\(cursorPersist\.readTmuxSessions\)[^\n]*\n\} catch \(error\) \{\s*console\.error\([^\n]*\$\{error\.message\}[^\n]*\n\s*process\.exit\(1\);/,
     'a ps listing that must show this process': /maxBuffer: 32 \* 1024 \* 1024[\s\S]*ps\.status === 0 && seesSelf/,
     'the config hash without refresh timestamps': /codexConfigSha\(CODEX_CONFIG\)/,
+    'the reviewer model verified against the binary catalog before the first raise': /pickCodexModel\(codexCatalogEntries\(tools\.codex\.path\), LIVE_ARGS\.codexModel, CODEX_DEFAULT\)/,
+    'a cut-off run starts both stops before awaiting either, sharing the remaining deadline': /const stopping = Promise\.all\([\s\S]*workerRef \? cursorDriver\.stop\(workerRef, \{ timeoutMs: Math\.max\(0, deadline - Date\.now\(\)\) \}\)[\s\S]*reviewerRef \? codexDriver\.stop\(reviewerRef,[\s\S]*await stopping/,
+    'the pre-exit sample includes the sandbox and each participant identity and stop result': /sandboxPresent: existsSync\(SB\)[\s\S]*worker: \{ ref: workerRef,[\s\S]*stop: workerStopped[\s\S]*reviewer: \{ ref: reviewerRef,[\s\S]*stop: reviewerStopped/,
   },
   'live-codex.mjs': {
     'the config hash without refresh timestamps': /codexConfigSha\(CONFIG\)/,
+    'the model verified against the binary catalog before the raise': /pickCodexModel\(codexCatalogEntries\(tool\.path\), LIVE_ARGS\.model, DEFAULT_MODEL\)/,
+    'a cut-off run stops its stream by the driver, awaited with a bounded timeout': /stopped = await codexDriver\.stop\(ref, \{ timeoutMs: ABORT_STOP_MS \}\);/,
+    'the pre-exit sample includes the sandbox and stream identity': /sandboxPresent: existsSync\(SB\)[\s\S]*stream: \{ ref, pids, alive: pids\.map/,
+    'turn/steer on the declared relied surface': /'turn\/start',\s*'turn\/steer',\s*'review\/start',/,
   },
   'live-e2e.mjs': {
     'a fresh registry read before the cleanup stops': /readSessions: \(\) => \{\s*const \{ r, missing \} = runClaude\(\['agents', '--json'\]\);[\s\S]*return parseLiveSessions\(r\);/,
@@ -209,6 +305,10 @@ check('guide: no real-binary run is in npm test or the gates, while the --help a
 check('guide: the live-cursor review verdict is the report naming the round diff file, not a marker echo',
   guide.includes("the reviewer's report has to name that diff file")
   && !guide.includes("and the reviewer's report has to name it."));
+check('guide: the abort stop budget is one shared deadline over command and polling, and the stop verdict is the run\'s own pre-exit sample',
+  guide.includes('under the SAME deadline as the polling after it')
+  && guide.includes('pre-exit liveness sample')
+  && !guide.includes('both are gone at the run\'s exit'));
 
 // Hold an actual scenario postcard until awaited native-stop cleanup has begun.
 async function scenarioPostcardCase(abort) {

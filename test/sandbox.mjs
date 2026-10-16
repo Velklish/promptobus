@@ -148,28 +148,37 @@ export function snapshotOfList(participants, list) {
 // helper is for running one file by hand — i.e. debugging, where
 // failures and interrupts actually happen.
 const sandboxes = [];
-let hooked = false;
+const signalSandboxes = [];
+let exitHooked = false;
+let signalHooked = false;
 // The real exit is captured at module load: suite files swap
 // `process.exit` with a thrower to catch `fail()` refusals
 // (install.test.mjs), and a signal hook would call the swapped one —
 // instead of code 130 there would be an unhandled exception.
 const exit0 = process.exit;
 
-function keepUntilExit(dir) {
+// A sandbox that opts out of signal cleanup keeps its directory until the process ends its
+// own way: an awaited abort cleanup needs what lives under it until its stops have returned.
+function keepUntilExit(dir, { signalCleanup = true } = {}) {
   sandboxes.push(dir);
-  if (!hooked) {
-    hooked = true;
+  if (signalCleanup) signalSandboxes.push(dir);
+  if (!exitHooked) {
+    exitHooked = true;
     const clean = () => { for (const d of sandboxes.splice(0)) rmSync(d, { recursive: true, force: true }); };
     process.on('exit', clean);
+  }
+  if (signalCleanup && !signalHooked) {
+    signalHooked = true;
+    const cleanSignals = () => { for (const d of signalSandboxes.splice(0)) rmSync(d, { recursive: true, force: true }); };
     for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
-      process.on(sig, () => { clean(); exit0.call(process, 130); });
+      process.on(sig, () => { cleanSignals(); exit0.call(process, 130); });
     }
   }
   return dir;
 }
 
-export function makeSandbox(prefix) {
-  return keepUntilExit(mkdtempSync(path.join(os.tmpdir(), prefix)));
+export function makeSandbox(prefix, { signalCleanup = true } = {}) {
+  return keepUntilExit(mkdtempSync(path.join(os.tmpdir(), prefix)), { signalCleanup });
 }
 
 /** Standalone host config for a sandbox workspace: tools live in promptobus.json. */

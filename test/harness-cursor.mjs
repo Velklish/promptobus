@@ -53,6 +53,9 @@ export const CURSOR_HOME_VAR = 'PROMPTOBUS_E2E_CURSOR';
 /** Hang a turn — the same flag the watchdog-on-silence probe uses to turn it on. */
 export const HANG_VAR = 'PROMPTOBUS_E2E_CURSOR_HANG';
 
+/** `agent persist stop` sleeps this many ms before stopping: a harness stop command that outlasts every stop budget. */
+export const STOP_HANG_VAR = 'PROMPTOBUS_E2E_CURSOR_STOP_HANG';
+
 /**
  * The same hang, but the pane holds a live child. Transcript silence is then not a stop:
  * a long gate writes to the TUI only at the end of the call, and the processes stay
@@ -753,6 +756,16 @@ function persistStop(home, name) {
     process.exitCode = 1;
     return;
   }
+  const hangMs = Number(process.env[STOP_HANG_VAR] ?? 0);
+  if (hangMs > 0) {
+    // The stop still happens — a minute later, past every stop budget the mechanism has.
+    setTimeout(() => stopPane(home, name, sess), hangMs);
+    return;
+  }
+  stopPane(home, name, sess);
+}
+
+function stopPane(home, name, sess) {
   // We hit ONE pane process, not the group: the group would cover tool children too,
   // that is the stand would clean up after the mechanism what the mechanism is obliged
   // to clean up itself.

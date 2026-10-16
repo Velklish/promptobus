@@ -808,6 +808,11 @@ Queued turn requests refuse once stopping begins, and a late response cannot add
 reservation. A temporary per-request set records completions that arrive before a
 turn response, even when another completion later replaces lastTurn.
 
+The live Codex check latches cancellation before awaiting its abort stop. An already
+pending normal stop retains its owned reference but cannot remove the sandbox or
+resume normal reporting when it returns. Abort cleanup samples the owned stream
+before the exit hook removes its sandbox; see [live harness scenarios](../guides/contributing.md#live-harness-scenarios).
+
 ### Writable Git metadata
 
 For a writable pipeline step of kind `edits-tree` or `writes-main-tree`, the driver resolves `git rev-parse --absolute-git-dir`

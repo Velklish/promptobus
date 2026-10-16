@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 // The canonical live Codex scenario, driven whole on the stub `codex app-server`: a neutral caller
 // of the real script for its task identity and for an abort after the participant is up. Run: npm test
 import { spawn } from 'node:child_process';
@@ -7,8 +8,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox } from './sandbox.mjs';
-import { HANG_AFTER_START_VAR, installHarness, parseHomeToml, pidAlive, planParticipant } from './harness-codex.mjs';
+import { HANG_AFTER_START_VAR, installHarness, parseHomeToml, pidAlive, planParticipant, PROBE_VAR } from './harness-codex.mjs';
 import { waitFor } from './harness.mjs';
+import { store } from './scenario.mjs';
 import { MIN_AGE_MS, RUN_OWNER_FILE } from '../scripts/canary-runs.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -16,16 +18,22 @@ const SCRIPT = path.join(here, '..', 'scripts', 'live-codex.mjs');
 const SB = makeSandbox('promptobus-promptobus-live-codex-stand-');
 const { home: HARNESS, restore } = await installHarness({ binDir: path.join(SB, 'bin') });
 const WORKER = 'worker:live';
-planParticipant(HARNESS, WORKER, {
-  turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'LIVE-CODEX-HELLO from the stand' } }] }],
-});
+const HELLO_TURN = { do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'LIVE-CODEX-HELLO from the stand' } }] };
+// Each raised session consumes one turn of the plan, and several runs share one stand.
+planParticipant(HARNESS, WORKER, { turns: [HELLO_TURN, HELLO_TURN, HELLO_TURN, HELLO_TURN] });
 
-function start(env = {}) {
-  const child = spawn(process.execPath, [SCRIPT], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env } });
+function start(args = [], env = {}) {
+  const binDir = path.join(SB, 'bin');
+  assert.equal(process.env.PATH.split(path.delimiter)[0], binDir);
+  assert.ok(readFileSync(path.join(binDir, 'codex.stub.mjs'), 'utf8').includes('harness-codex.mjs'));
+  assert.ok(existsSync(path.join(binDir, 'codex' + (process.platform === 'win32' ? '.cmd' : ''))));
+  assert.equal(process.env.PROMPTOBUS_E2E_CODEX, HARNESS);
+  assert.equal(process.env.PROMPTOBUS_CODEX_HOME, path.join(HARNESS, 'state'));
+  const child = spawn(process.execPath, [SCRIPT, ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env } });
   const run = { child, out: '', exit: null };
   child.stdout.on('data', (c) => { run.out += c; });
   child.stderr.on('data', (c) => { run.out += c; });
-  run.done = new Promise((resolve) => child.on('exit', (code, signal) => { run.exit = { code, signal }; resolve(run.exit); }));
+  run.done = new Promise((resolve) => child.on('close', (code, signal) => { run.exit = { code, signal }; resolve(run.exit); }));
   return run;
 }
 const line = (out, re) => re.exec(out)?.[1] ?? null;
@@ -38,9 +46,35 @@ const taskOfThread = () => readdirSync(path.join(HARNESS, 'threads')).map((n) =>
   } catch { return null; }
 }).filter(Boolean);
 
+// --- a refused model: the binary catalog is asked before anything is raised ------------------------
+
+const refused = start(['--model', 'no-such-stand-model']);
+const refusedExit = await Promise.race([refused.done, new Promise((r) => { setTimeout(() => r(null), 30000); })]);
+check('preflight: a model the binary catalog does not know refuses the run before anything is raised',
+  refusedExit?.code === 1 && refused.out.includes('✖ live run not started:')
+  && refused.out.includes('no-such-stand-model') && refused.out.includes('codex debug models'),
+  `${JSON.stringify(refusedExit)} · ${refused.out.slice(-500)}`);
+check('preflight: the refusal raised no app-server and created no sandbox',
+  !/^▸ sandbox: /m.test(refused.out) && readdirSync(path.join(HARNESS, 'threads')).length === 0,
+  `sandbox line ${/^▸ sandbox: /m.test(refused.out)} · threads ${readdirSync(path.join(HARNESS, 'threads')).join(', ')}`);
+if (!refusedExit) {
+  refused.child.kill('SIGTERM');
+  await refused.done;
+}
+
+const noCatalog = start(['--model', 'gpt-5.4-mini'], { [PROBE_VAR]: 'no-catalog' });
+const noCatalogExit = await Promise.race([noCatalog.done, new Promise((r) => { setTimeout(() => r(null), 30000); })]);
+check('preflight: a catalog that cannot be read refuses the run the same way',
+  noCatalogExit?.code === 1 && noCatalog.out.includes('✖ live run not started:')
+  && noCatalog.out.includes('no model catalog'), `${JSON.stringify(noCatalogExit)} · ${noCatalog.out.slice(-500)}`);
+if (!noCatalogExit) {
+  noCatalog.child.kill('SIGTERM');
+  await noCatalog.done;
+}
+
 // --- a whole run: the id the script prints is the id its participant was handed -------------------
 
-const whole = start();
+const whole = start(['--model', 'gpt-5.4-mini']);
 await Promise.race([whole.done, new Promise((r) => { setTimeout(r, 120000); })]);
 if (!whole.exit) whole.child.kill('SIGKILL');
 const task = line(whole.out, /^▸ task: (\S+)$/m);
@@ -53,6 +87,8 @@ const steps = [
 ];
 check('stand: the live Codex scenario closes its loop on the stub — spawn, status, stop, personal config',
   steps.every((name) => passed(whole.out, name)), whole.out.slice(-1500));
+check('stand: the whole run names the model it verified from the binary catalog',
+  /^▸ model: gpt-5\.4-mini ·/m.test(whole.out), whole.out.slice(-500));
 check('stand: the run names its own task id, and its participant\'s bus server carries that same id',
   /^livecodex-[a-f0-9]{8}-t\d{8}-\d{6}$/.test(task ?? '') && taskOfThread().includes(task), `${task} · threads ${JSON.stringify(taskOfThread())}`);
 const sandbox = line(whole.out, /^▸ sandbox: (\S+) ·/m);
@@ -70,9 +106,14 @@ const plant = (name, pid, ageMs) => {
 const deadNeighbour = plant(`dead-${process.pid}`, 2 ** 22 + 1, 0);
 const liveNeighbour = plant(`live-${process.pid}`, process.pid, 2 * MIN_AGE_MS);
 
-const cut = start({ [HANG_AFTER_START_VAR]: '1' });
+const cut = start([], { [HANG_AFTER_START_VAR]: '1' });
 const up = await waitFor(() => (/participant start/.test(cut.out) ? true : null), { timeoutMs: 60000 });
 const cutBox = line(cut.out, /^▸ sandbox: (\S+) ·/m);
+// The session ref the cleanup stops is the participant record's own, read BEFORE the signal:
+// the exit hook takes the store with the sandbox, and after it there is nothing to ask.
+const cutHome = line(cut.out, /^▸ sandbox: \S+ · store: (\S+)$/m);
+const cutTask = line(cut.out, /^▸ task: (\S+)$/m);
+const cutRef = cutHome && cutTask ? store.participantOf(store.readTask(cutHome, cutTask), WORKER)?.sessionRef ?? '' : '';
 let record = null;
 try {
   const sessions = path.join(cutBox, 'codex-state', 'sessions');
@@ -87,11 +128,27 @@ check('abort: the start sweep took the dead owner\'s sandbox and held the live o
   cut.out.split('\n').filter((l) => l.startsWith('▸')).join(' | '));
 cut.child.kill('SIGTERM');
 const exit = await Promise.race([cut.done, new Promise((r) => { setTimeout(() => r(null), 30000); })]);
-const gone = await waitFor(() => (pids.every((p) => !pidAlive(p)) ? true : null), { timeoutMs: 20000 });
+// Stop results and liveness come from the child before teardown; parent PID reads are delayed.
+const streamNote = (cut.out.split('\n').find((l) => l.startsWith(`  · stop returned for the stream ${cutRef}: `)) ?? '')
+  .slice(`  · stop returned for the stream ${cutRef}: `.length);
 check('abort: SIGTERM ends the run through its cleanup — exit 143 and the cut-off line',
   exit?.code === 143 && /run cut off by SIGTERM/.test(cut.out), `${JSON.stringify(exit)} · ${cut.out.slice(-600)}`);
-check('abort: the sandbox is gone, and with its thread record the holder and the app-server',
-  !!cutBox && !existsSync(cutBox) && !!gone, `sandbox ${cutBox} · alive ${pids.filter(pidAlive).join(', ') || 'none'}`);
+check('abort: the stop note is the stream\'s own — its line carries its own success',
+  !!cutRef && /thread \S+ stopped, the record dropped|session \S+ closed — the holder was already gone, the record dropped/.test(streamNote),
+  `note «${streamNote}» · ref ${cutRef}`);
+const preExit = JSON.parse(line(cut.out, /^ {2}· pre-exit: (.+)$/m) ?? 'null');
+check('abort: the child sampled its own stream before teardown — matching sandbox and PIDs already gone',
+  preExit?.sandbox === cutBox && preExit?.sandboxPresent === true && preExit.stream.ref === cutRef
+  && pids.length === 2 && JSON.stringify(preExit.stream.pids) === JSON.stringify(pids)
+  && preExit.stream.alive.every((alive) => alive === false)
+  && preExit.stream.stop?.ok === true && preExit.stream.stop?.stopped === true,
+  JSON.stringify({ preExit, sandbox: cutBox, pids }));
+// Deliberately late: past the record watch, where a stop that never dispatched ends the
+// processes the same way — the child's pre-exit sample above is what tells them apart.
+await new Promise((r) => { setTimeout(r, 6000); });
+const gone = pids.length === 2 && pids.every((p) => !pidAlive(p));
+check('abort: after the holder\'s record watch the parent sees the same — insurance, the verdict was the child\'s pre-exit sample',
+  !!cutBox && !existsSync(cutBox) && gone, `sandbox ${cutBox} · alive ${pids.filter(pidAlive).join(', ') || 'none'}`);
 check('abort: the live owner\'s sandbox beside it is untouched', existsSync(liveNeighbour), liveNeighbour);
 if (!exit) cut.child.kill('SIGKILL');
 for (const pid of pids.filter(pidAlive)) {

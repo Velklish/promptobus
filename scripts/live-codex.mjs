@@ -12,7 +12,7 @@
 // **This run does not take filesystem write rights.** Spawn goes
 // `--permission-mode read-only`. Whether `app-server` with `workspace-write`
 // writes a `[projects."…"]` section is not checked here.
-import { writeFileSync, rmSync, writeSync } from 'node:fs';
+import { existsSync, writeFileSync, rmSync, writeSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
@@ -25,6 +25,7 @@ import { waitFor } from '../test/harness.mjs';
 import { markRunOwner, sweepLiveRuns } from './canary-runs.mjs';
 import { onAbort } from './live-abort.mjs';
 import { codexConfigSha } from './codex-config.mjs';
+import { codexCatalogEntries, pickCodexModel } from './codex-models.mjs';
 
 const LIVE_FLAGS = {
   '--model': { key: 'model', display: '--model <id>', description: 'model of the live Codex session' },
@@ -37,7 +38,7 @@ const LIVE_ARGS = finishLiveArgs(parseLiveArgs(process.argv.slice(2), LIVE_FLAGS
 });
 
 const { codexDriver, DEFAULT_MODEL } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-codex.js'));
-const { readSession } = await import(path.join(MECHANISM_ROOT, 'lib', 'codex-session.js'));
+const { pidAlive, readSession } = await import(path.join(MECHANISM_ROOT, 'lib', 'codex-session.js'));
 
 const RELIED = [
   'initialize',
@@ -46,17 +47,25 @@ const RELIED = [
   'thread/start',
   'thread/name/set',
   'turn/start',
+  'turn/steer',
   'review/start',
   'turn/interrupt',
 ];
-
-const MODEL = LIVE_ARGS.model ?? DEFAULT_MODEL;
 
 const tool = resolveToolBin('codex');
 if (!tool.ok) {
   console.error(`✖ nothing to drive the live run with: ${tool.reason}`);
   process.exit(1);
 }
+
+// The model is verified against the binary's own catalog BEFORE the paid raise: a session
+// spent on a model the account cannot run turns on is a paid refusal (codex debug models).
+const picked = pickCodexModel(codexCatalogEntries(tool.path), LIVE_ARGS.model, DEFAULT_MODEL);
+if (picked.reason) {
+  console.error(`✖ live run not started: ${picked.reason}`);
+  process.exit(1);
+}
+const MODEL = picked.model;
 
 const leaked = SESSION_LEAK_VARS.filter((name) => name in process.env);
 dropSessionLeaks(process.env);
@@ -86,7 +95,9 @@ const pgrepBefore = {
 };
 
 const RUN_PREFIX = 'promptobus-live-codex-';
-const SB = makeSandbox(RUN_PREFIX);
+// The run's own sandbox stays out of the sandbox helper's SIGNAL cleanup: the abort cleanup
+// below is awaited, and that handler would remove it and exit 130 before the stop returns.
+const SB = makeSandbox(RUN_PREFIX, { signalCleanup: false });
 markRunOwner(SB);
 // A surviving sandbox holds a thread record, and its holder keeps a live app-server while it does.
 for (const line of sweepLiveRuns(tmpdir(), { prefix: RUN_PREFIX, current: SB })) process.stdout.write(`▸ ${line}\n`);
@@ -132,10 +143,48 @@ if (leaked.length) process.stdout.write(`▸ stripped from the run environment: 
 let ref = '';
 let methodsCalled = [];
 
-// The driver's stop is asynchronous and would not outlive the exit; the exit hook removes the
-// sandbox, and the holder kills its app-server once the thread record under it is gone.
-onAbort((signal) => {
-  writeSync(1, `\n▸ run cut off by ${signal}: the sandbox goes on exit, and the holder of ${ref || 'no thread yet'} with it\n`);
+/** The holder and app-server pids of the stream, read while its record still exists. */
+function holderPidsOf(it) {
+  try {
+    const record = readSession(it, env);
+    return [record?.holderPid, record?.appPid].filter(Number.isInteger);
+  } catch {
+    // No record — no pids to name; the pre-exit verdict below says unknown, never invents them.
+    return [];
+  }
+}
+
+// A run cut off by a signal cleans up what `finally` would, and the cleanup is awaited: the
+// stream is stopped by its own driver within the budget, then the exit hook takes the sandbox.
+const ABORT_STOP_MS = 5_000;
+let aborted = false;
+const assertRunning = () => {
+  if (aborted) throw new Error('live scenario cancelled');
+};
+async function waitForRunning(probe, options) {
+  const result = await waitFor(() => aborted ? true : probe(), options);
+  assertRunning();
+  return result;
+}
+onAbort(async (signal) => {
+  aborted = true;
+  const say = (line) => writeSync(1, line);
+  say(`\n▸ run cut off by ${signal}: stopping the Codex stream by its driver\n`);
+  const pids = ref ? holderPidsOf(ref) : [];
+  let stopped = null;
+  if (ref) {
+    stopped = await codexDriver.stop(ref, { timeoutMs: ABORT_STOP_MS });
+    say(`  · stop returned for the stream ${ref}: ${stopped?.note ?? 'no stop result'}\n`);
+  } else {
+    say('  · no thread in the registry yet — nothing to stop\n');
+  }
+  // Sample before sandbox teardown: afterwards its record watch can end an unstopped holder.
+  if (ref) {
+    say(`  · pre-exit: ${JSON.stringify({ sandbox: SB, sandboxPresent: existsSync(SB),
+      stream: { ref, pids, alive: pids.map((pid) => pidAlive(pid)), stop: stopped },
+    })}\n`);
+  }
+  say(`  · the sandbox goes on exit, with the thread record under it: ${SB}\n`);
 });
 const t0 = Date.now();
 try {
@@ -162,13 +211,13 @@ try {
     statusOut.status === 0 && statusOut.out.includes(WORKER), statusOut.out.slice(-400));
 
   const t3 = Date.now();
-  const hello = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
+  const hello = await waitForRunning(() => store.glanceInbox(home, TASK, 'orchestrator')
     .find((m) => String(m.body ?? '').includes(MARK)) ?? null, { timeoutMs: 300000 });
   check('step 2: status reached the orchestrator — the bus loop from Codex closed',
     !!hello, JSON.stringify(hello));
   at_('participant first turn', Date.now() - t3);
 
-  const idle = await waitFor(() => {
+  const idle = await waitForRunning(() => {
     const view = codexDriver.inspect(ref);
     return view && view.state === 'alive' && view.busy === false ? view : null;
   }, { timeoutMs: 30000 });
@@ -180,41 +229,44 @@ try {
 
   const t6 = Date.now();
   const stopped = await codexDriver.stop(ref);
+  assertRunning();
   check('step 3: stop kills the holder and drops the record',
     stopped.ok && stopped.stopped && !readSession(ref, env), JSON.stringify(stopped));
   check('step 3: inspect after stop is gone',
     codexDriver.inspect(ref).state === 'gone', JSON.stringify(codexDriver.inspect(ref)));
   at_('stop', Date.now() - t6);
 } catch (e) {
-  check('the run reached the end without a break', false, e.stack ?? e.message);
+  if (!aborted) check('the run reached the end without a break', false, e.stack ?? e.message);
 } finally {
-  if (ref) await Promise.resolve(codexDriver.stop(ref)).catch(() => {});
-  rmSync(SB, { recursive: true, force: true });
+  if (!aborted && ref) await Promise.resolve(codexDriver.stop(ref)).catch(() => {});
+  if (!aborted) rmSync(SB, { recursive: true, force: true });
 }
 
-const shaAfter = codexConfigSha(CONFIG);
-check('personal ~/.codex/config.toml did not change over the run (sha)',
-  shaBefore === shaAfter, `${shaBefore} → ${shaAfter}`);
+if (!aborted) {
+  const shaAfter = codexConfigSha(CONFIG);
+  check('personal ~/.codex/config.toml did not change over the run (sha)',
+    shaBefore === shaAfter, `${shaBefore} → ${shaAfter}`);
 
-const pgrepAfter = {
-  cask: pgrep('Caskroom/codex'),
-  app: pgrep('app-server --stdio'),
-};
-const extraCask = pgrepAfter.cask.filter((p) => !pgrepBefore.cask.includes(p));
-const extraApp = pgrepAfter.app.filter((p) => !pgrepBefore.app.includes(p));
-check('no new Caskroom/codex processes after the loop', extraCask.length === 0, extraCask.join(' | '));
-check('no new app-server --stdio processes after the loop', extraApp.length === 0, extraApp.join(' | '));
+  const pgrepAfter = {
+    cask: pgrep('Caskroom/codex'),
+    app: pgrep('app-server --stdio'),
+  };
+  const extraCask = pgrepAfter.cask.filter((p) => !pgrepBefore.cask.includes(p));
+  const extraApp = pgrepAfter.app.filter((p) => !pgrepBefore.app.includes(p));
+  check('no new Caskroom/codex processes after the loop', extraCask.length === 0, extraCask.join(' | '));
+  check('no new app-server --stdio processes after the loop', extraApp.length === 0, extraApp.join(' | '));
 
-const unobserved = RELIED.filter((m) => !methodsCalled.includes(m));
+  const unobserved = RELIED.filter((m) => !methodsCalled.includes(m));
 
-const passed = verdicts.filter((v) => v.ok).length;
-process.stdout.write(`\n${passed}/${verdicts.length} verdicts passed\n`);
-process.stdout.write(`durations: ${times.join(' · ') || '—'} · total ${((Date.now() - t0) / 1000).toFixed(1)} s\n`);
-process.stdout.write(`binary: ${tool.path}${tool.version ? ` (${tool.version})` : ''} · model: ${MODEL}\n`);
-process.stdout.write(`methods the holder saw: ${methodsCalled.join(', ') || '(empty)'}\n`);
-process.stdout.write(`declared surface not observed: ${unobserved.join(', ') || 'none'}\n`);
-process.stdout.write(`  (unobserved is not missing; the stand covers them)\n`);
-process.stdout.write(`sha config.toml: ${shaBefore ?? '(none)'} → ${shaAfter ?? '(none)'}\n`);
-process.stdout.write(`pgrep Caskroom/codex: was ${pgrepBefore.cask.length}, became ${pgrepAfter.cask.length}\n`);
-process.stdout.write(`pgrep 'app-server --stdio': was ${pgrepBefore.app.length}, became ${pgrepAfter.app.length}\n`);
-process.exitCode = passed === verdicts.length ? 0 : 1;
+  const passed = verdicts.filter((v) => v.ok).length;
+  process.stdout.write(`\n${passed}/${verdicts.length} verdicts passed\n`);
+  process.stdout.write(`durations: ${times.join(' · ') || '—'} · total ${((Date.now() - t0) / 1000).toFixed(1)} s\n`);
+  process.stdout.write(`binary: ${tool.path}${tool.version ? ` (${tool.version})` : ''} · model: ${MODEL}\n`);
+  process.stdout.write(`methods the holder saw: ${methodsCalled.join(', ') || '(empty)'}\n`);
+  process.stdout.write(`declared surface not observed: ${unobserved.join(', ') || 'none'}\n`);
+  process.stdout.write(`  (unobserved is not missing; the stand covers them)\n`);
+  process.stdout.write(`sha config.toml: ${shaBefore ?? '(none)'} → ${shaAfter ?? '(none)'}\n`);
+  process.stdout.write(`pgrep Caskroom/codex: was ${pgrepBefore.cask.length}, became ${pgrepAfter.cask.length}\n`);
+  process.stdout.write(`pgrep 'app-server --stdio': was ${pgrepBefore.app.length}, became ${pgrepAfter.app.length}\n`);
+  process.exitCode = passed === verdicts.length ? 0 : 1;
+}
