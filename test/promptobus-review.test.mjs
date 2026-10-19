@@ -1013,10 +1013,19 @@ store.upsertParticipant(home, rebindTask.id, store.participantRecord('reviewer:o
   repo: 'demo_team/orders-api',
   repoAbs: REPO,
   name: 'a2a-rebind-reviewer-pb235',
+  sessionId: 'fixture-review-codex-session',
   model: 'gpt-5.4',
   started: rebindFrom,
   reviewAssignedAt: rebindFrom,
 }));
+const rebindTokenLog = path.join(SB, 'rebind-token-rollout.jsonl');
+writeFileSync(rebindTokenLog, [
+  { timestamp: rebindFrom, type: 'session_meta', payload: { id: 'fixture-review-codex-session' } },
+  { timestamp: '2026-09-17T08:01:00.000Z', type: 'event_msg', payload: { type: 'token_count', info: {
+    total_token_usage: { input_tokens: 100, cached_input_tokens: 60, cache_write_input_tokens: 0, output_tokens: 4 },
+  } } },
+].map((row) => JSON.stringify(row)).join('\n') + '\n');
+store.markTranscript(home, rebindTask.id, 'reviewer:orders-api', rebindTokenLog, 'fixture-review-codex-session');
 store.sendMessage(home, rebindTask.id, {
   from: 'reviewer:orders-api', to: store.ORCHESTRATOR, type: 'result', body: 'round before rebind',
 });
@@ -1031,6 +1040,11 @@ try {
 }
 const rebound = store.participantOf(store.readTask(home, rebindTask.id), 'reviewer:orders-api');
 const reboundHistory = rebound?.metadata?.harnessHistory ?? [];
+check('re-bind: closed generation retains only its own recorded session log identity',
+  reboundHistory[0]?.sessionId === 'fixture-review-codex-session'
+  && reboundHistory[0]?.tokenLog?.sessionId === 'fixture-review-codex-session'
+  && reboundHistory[0]?.tokenLog?.path === rebindTokenLog,
+  JSON.stringify(reboundHistory));
 check('re-bind: a gone reviewer session lifts on the harness named by --harness',
   !reboundErr
   && rebound?.harness === 'claude'
@@ -1062,6 +1076,10 @@ const rebindRows = telemetryRecords(hostOf(WS), home, store.readTask(home, rebin
   .filter((row) => row.role === 'reviewer');
 const codexRow = rebindRows.find((row) => row.harness === 'codex');
 const claudeRow = rebindRows.find((row) => row.harness === 'claude');
+check('re-bind: done telemetry reads the closed Codex log without borrowing the current Claude identity',
+  codexRow?.tokens?.input === 40 && codexRow?.tokens?.cacheRead === 60 && codexRow?.tokens?.output === 4
+  && claudeRow?.tokens?.input === null && claudeRow?.tokens?.reason === 'session_log_unavailable',
+  JSON.stringify(rebindRows));
 check('re-bind: telemetry attributes each generation to its own harness',
   rebindRows.length === 2
   && codexRow?.resultCount === 1
@@ -1090,11 +1108,13 @@ check('re-bind: a later lift of the same harness keeps the earlier harness in th
 
 const tileTask = store.createTask(home, { id: 't20260925-155100', title: 'reviewer generation windows' });
 const tileStart = '2026-09-17T08:00:00.000Z';
+writeFileSync(store.taskFile(home, tileTask.id), JSON.stringify({ ...store.readTask(home, tileTask.id), created: tileStart }));
 store.upsertParticipant(home, tileTask.id, store.participantRecord('reviewer:orders-api', {
   harness: 'claude',
   repo: 'demo_team/orders-api',
   repoAbs: REPO,
   name: 'a2a-tile-reviewer-pb235',
+  sessionId: 'fixture-tile-first',
   model: 'sonnet',
   started: tileStart,
   reviewAssignedAt: tileStart,
@@ -1155,6 +1175,104 @@ check('re-bind: a same-harness re-lift then a rebind counts every earlier round'
   tileRebindErr?.message ?? JSON.stringify(tileRows.map((row) => ({
     harness: row.harness, model: row.model, resultCount: row.resultCount, tuple: row.tuple,
   }))));
+
+const producerTask = store.createTask(home, { id: 't20261019-100000', title: 'producer token generations' });
+store.upsertParticipant(home, producerTask.id, store.participantRecord('reviewer:orders-api', {
+  harness: 'claude', repo: 'demo_team/orders-api', repoAbs: REPO, model: 'sonnet', pending: true,
+}));
+const { REGISTRY: producerRegistry } = await import('../lib/drivers.js');
+const realDate = Date;
+let producerClock = Date.now();
+const producerStart = producerClock;
+let producerLive = false;
+let producerLifts = 0;
+const producerIds = ['fixture-producer-first', 'fixture-producer-second', 'fixture-producer-codex', 'fixture-producer-first'];
+const producerFiles = new Map();
+const originalDrivers = ['claude', 'codex'].map((harness) => {
+  const driver = producerRegistry.drivers[harness];
+  return { driver, spawn: driver.spawn, inspect: driver.inspect, saidLiftoff: driver.saidLiftoff };
+});
+try {
+  globalThis.Date = class extends realDate {
+    constructor(...args) { super(...(args.length ? args : [producerClock])); }
+    static now() { return producerClock; }
+  };
+  for (const { driver } of originalDrivers) {
+    driver.inspect = () => ({ state: producerLive ? 'alive' : 'gone', busy: false, id: 'fixture-producer' });
+    driver.saidLiftoff = () => {};
+    driver.spawn = async (_launch, ctx) => {
+      const index = producerLifts++;
+      const sessionId = producerIds[index];
+      ctx.persist('fixture-short', 'alive', sessionId);
+      const file = path.join(SB, `${sessionId}.jsonl`);
+      const rows = producerFiles.get(sessionId) ?? [];
+      const timestamp = new Date().toISOString();
+      rows.push(...(driver.id === 'codex' ? [
+        { timestamp, type: 'session_meta', payload: { id: sessionId } },
+        { timestamp, type: 'event_msg', payload: { type: 'token_count', info: {
+          total_token_usage: { input_tokens: 90, cached_input_tokens: 50, cache_write_input_tokens: 4, output_tokens: 6 },
+        } } },
+      ] : [{ type: 'assistant', sessionId, timestamp, message: { id: `fixture-message-${index}`, role: 'assistant',
+        usage: { input_tokens: index + 1, cache_read_input_tokens: index + 2,
+          cache_creation_input_tokens: index + 3, output_tokens: index + 4 } } }]));
+      producerFiles.set(sessionId, rows);
+      writeFileSync(file, rows.map((row) => JSON.stringify(row)).join('\n') + '\n');
+      store.markTranscript(home, producerTask.id, ctx.address, file, sessionId);
+      return { session: sessionId, output: '', seen: [] };
+    };
+  }
+  const liftProducer = async (harness) => capture(() => review(WS, {
+    tool: { ...TOOL, version: '0.162.1' }, target: REPO, task: producerTask.id, harness,
+    model: harness === 'codex' ? 'gpt-5.6-sol' : 'sonnet',
+  }));
+  await liftProducer('claude');
+  producerClock += 1000;
+  await liftProducer('claude');
+  const producerSame = store.participantOf(store.readTask(home, producerTask.id), 'reviewer:orders-api');
+  const projectProducer = () => telemetryRecords(hostOf(WS), home, store.readTask(home, producerTask.id))
+    .filter((row) => row.role === 'reviewer');
+  const tokenShape = (input, cacheRead, cacheWrite, output, reason = null) => ({ input, cacheRead, cacheWrite, output, reason });
+  check('re-bind: same-harness replacement preserves the earlier session only in telemetry history',
+    producerSame.metadata.tokenLogHistory?.length === 1
+    && producerSame.metadata.tokenLogHistory[0].sessionId === producerIds[0], JSON.stringify(producerSame));
+  check('re-bind: two distinct Claude sessions in one harness generation both contribute once',
+    JSON.stringify(projectProducer()[0]?.tokens) === JSON.stringify(tokenShape(3, 5, 7, 9)), JSON.stringify(projectProducer()));
+  producerClock += 1000;
+  await liftProducer('codex');
+  const closedClaude = JSON.stringify(store.participantOf(store.readTask(home, producerTask.id), 'reviewer:orders-api')
+    .metadata.harnessHistory[0]);
+  producerClock += 1000;
+  await liftProducer('claude');
+  const producerFinal = store.participantOf(store.readTask(home, producerTask.id), 'reviewer:orders-api');
+  const expectedProducer = [tokenShape(3, 5, 7, 9), tokenShape(36, 50, 4, 6), tokenShape(4, 5, 6, 7)];
+  const producerRows = projectProducer();
+  check('re-bind: telemetry session history is frozen on the closed generation and reset on the active one',
+    JSON.stringify(producerFinal.metadata.harnessHistory[0]) === closedClaude
+    && producerFinal.metadata.harnessHistory[0].tokenLogHistory?.length === 2
+    && producerFinal.metadata.harnessHistory[1].tokenLogHistory?.[0]?.sessionId === producerIds[2]
+    && producerFinal.metadata.tokenLogHistory?.length === 0, JSON.stringify(producerFinal));
+  check('re-bind: producer Claude relift then Codex then reused Claude accounts all counters within exact generation boundaries',
+    JSON.stringify(producerRows.map((row) => [row.generation, row.harness, row.tokens]))
+      === JSON.stringify(expectedProducer.map((value, index) => [index, index === 1 ? 'codex' : 'claude', value]))
+    && producerFinal.metadata.harnessHistory[0].until === new Date(producerStart + 2000).toISOString()
+    && producerFinal.metadata.harnessHistory[1].until === new Date(producerStart + 3000).toISOString(),
+    JSON.stringify(producerRows));
+  producerLive = true;
+  producerClock += 1000;
+  await liftProducer('claude');
+  check('re-bind: a live reuse starts no session and leaves closed and active token histories unchanged',
+    producerLifts === 4 && JSON.stringify(projectProducer().map((row) => row.tokens)) === JSON.stringify(expectedProducer),
+    JSON.stringify({ producerLifts, rows: projectProducer() }));
+  rmSync(path.join(SB, `${producerIds[1]}.jsonl`));
+  check('re-bind: unavailable earlier producer evidence stays unknown only in its own closed generation',
+    JSON.stringify(projectProducer().map((row) => row.tokens)) === JSON.stringify([
+      tokenShape(null, null, null, null, 'session_log_unavailable'), ...expectedProducer.slice(1),
+    ]), JSON.stringify(projectProducer()));
+} finally {
+  globalThis.Date = realDate;
+  for (const saved of originalDrivers) Object.assign(saved.driver,
+    { spawn: saved.spawn, inspect: saved.inspect, saidLiftoff: saved.saidLiftoff });
+}
 
 const unlabeledTask = store.createTask(home, { id: 't20260925-155200', title: 'closed generation without a model' });
 store.upsertParticipant(home, unlabeledTask.id, store.participantRecord('reviewer:orders-api', {

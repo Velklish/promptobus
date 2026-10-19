@@ -2,6 +2,7 @@
 // [reference/03-cli.md#participant-telemetry](../docs/reference/03-cli.md#participant-telemetry)
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { PromptobusHost } from './host.js';
 
@@ -19,8 +20,18 @@ export interface TelemetryWindow {
 
 export interface TelemetryRecord {
   task: string;
+  participant?: string;
+  generation?: number;
   role: string;
   harness?: string;
+  model?: string | null;
+  tokens?: {
+    input: number | null;
+    cacheRead: number | null;
+    cacheWrite: number | null;
+    output: number | null;
+    reason: string | null;
+  };
   durationSec?: number | null;
   windows?: readonly TelemetryWindow[];
   idleSec?: number | null;
@@ -74,6 +85,7 @@ export interface TelemetryFileStats {
   bytes: number;
   unreadable: false;
   summary: readonly TelemetryRunSummary[];
+  participants?: readonly TelemetryRecord[];
 }
 
 export interface TelemetryUnreadableStats {
@@ -380,19 +392,22 @@ function rowsOf(text: string): TelemetryRecord[] {
 
 export function telemetryStats(
   host: Pick<PromptobusHost, 'routingPaths'>,
+  { task }: { task?: string } = {},
 ): TelemetryStats | null {
   const file = telemetryFileOf(host);
   if (!existsSync(file)) return null;
   try {
     const text = readFileSync(file, 'utf8');
-    const records = text.split('\n').filter((line) => line.trim()).length;
-    const rows = rowsOf(text);
+    const key = task === undefined ? null : createHash('sha256').update(task).digest('hex').slice(0, 16);
+    const rows = rowsOf(text).filter((row) => key === null || row.task === key);
+    const records = key === null ? text.split('\n').filter((line) => line.trim()).length : rows.length;
     return {
       file,
       records,
       bytes: statSync(file).size,
       unreadable: false,
       summary: telemetrySummary(rows),
+      participants: rows,
     };
   } catch (error) {
     const note = error instanceof Error ? error.message : String(error);

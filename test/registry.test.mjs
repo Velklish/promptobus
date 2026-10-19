@@ -105,9 +105,10 @@ test('catalog role enums agree with the shipped registry and record addresses ha
     'overlay qualityFloor properties': Object.keys(overlay.properties.qualityFloor.properties),
     'overlay byRole properties': Object.keys(overlay.$defs.selectors.properties.byRole.properties),
     'decision role enum': readJson('model-routing/decision.schema.json').properties.role.enum,
-    'telemetry role enum': readJson('model-routing/telemetry.schema.json').properties.role.enum,
   };
   for (const [name, value] of Object.entries(surfaces)) assert.deepEqual([...value], roles, name);
+  assert.deepEqual(readJson('model-routing/telemetry.schema.json').properties.role.enum,
+    [...roles, 'teamlead', 'orchestrator'], 'telemetry roles include the two measured orchestration roles');
   const floors = Object.fromEntries(roles.map((role) => [role, bus.defaultFloor(SHIPPED, role)]));
   assert.deepEqual(overlay.examples.find((e) => e.qualityFloor)?.qualityFloor, floors, 'overlay example qualityFloor');
   const pattern = '^(orchestrator|[a-z][a-z0-9-]*:[a-z0-9][a-z0-9-]*)$';

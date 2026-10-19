@@ -625,7 +625,11 @@ await capture(async () => done(SB, { task: TASK, snapshot: noSessions }));
 const rows = readFileSync(TELEMETRY, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
 const swept = rows.find((r) => r.model === 'claude-opus-accepted');
 check(': after the sweep the closed task still writes one telemetry row per lifted participant',
-  rows.length === 6, `${rows.length}: ${rows.map((r) => r.model).join(', ')}`);
+  rows.filter((r) => r.role === 'worker').length === 6 && rows.length === 7,
+  `${rows.length}: ${rows.map((r) => r.model).join(', ')}`);
+check(': after the sweep the attached root keeps an unavailable token record',
+  rows.some((r) => r.role === 'orchestrator' && r.model === null && r.tokens?.input === null
+    && r.tokens?.reason === 'session_log_unavailable'), JSON.stringify(rows.find((r) => r.role === 'orchestrator')));
 check(': the swept piece still has a row — the sweep did not erase it from the run',
   !!swept && swept.role === 'worker' && swept.tuple === 'claude.opus.high',
   JSON.stringify(swept ?? null).slice(0, 200));

@@ -167,6 +167,7 @@ An approver does its squash, gates, archive and acceptance commit in a separate 
 | `promptobus report --task <root>` | Lift one read-only Claude Code or Codex reporter at the install root. Routing flags and `--dry-run` are supported; a child task or second live reporter is refused |
 | `promptobus models` | What the resolver would pick now and what each account has left. Subcommands `validate`, `strategy [--set <s> \| --clear]`, `calibrate [--write]`; `--clear-exhausted <harness>` |
 | `promptobus status` | The machine lease, then active roots with their child tasks: participants by piece and declared step order, unread mail, session state, missing-session diagnostics, routing and review-round counts |
+| `promptobus stats [--task <id>]` | Read persisted participant generations, including teamleads and the root: wall time, uncached input, cache-read, cache-write, output, bus counts and reasons for missing measurements. No harness calls; opaque participant keys remain after journal pruning |
 | `promptobus digest [--task <id>] [--json]` | A read-only page of active task trees or the selected task's root tree: latest status lines, questions with open or unresolved provenance state, stalls, `SILENT` and `UNANSWERED`, and pieces by current pipeline step |
 | `promptobus send <address>` | Write one message as the address this session holds in the task; `--body` or `--file`, `--type`, `--task`, `--artifact`. There is no `--from` |
 | `promptobus link <task-a> <task-b>` | Register two active root tasks as peers, from the owner session of either task |
@@ -248,7 +249,7 @@ import { runPromptobus } from 'promptobus/cli';
 | `promptobus/bb-host` | Full Host context delivery and role-classified canonical calls with typed consumer integration |
 | `promptobus/instructions` | Pure role instruction renderers, typed runtime bindings and BB skill delivery |
 | `promptobus/driver` | Driver contract, `createRegistry`, session helpers, model-routing types |
-| `promptobus/telemetry` | Participant telemetry summary: `telemetrySummary`, `telemetryStats` and their record types |
+| `promptobus/telemetry` | Participant generation rows and role summaries: `telemetryStats(host, { task })`, `telemetrySummary` and their record types |
 | `promptobus/integration` | What a host embedding the bus reads instead of package files: the installed version, the values the CLI prints, the shipped drivers' declarations, the install plan and the routing readiness report |
 | `promptobus/cli` | `runPromptobus(argv, { host, cwd, env, input, output })` and `COMMANDS`, the command vocabulary |
 | `promptobus/schemas/*` | JSON schemas for task, participant, message, artifact, the gate record, the handover record and the model-routing documents |

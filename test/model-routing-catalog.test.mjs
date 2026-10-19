@@ -835,7 +835,7 @@ test('routing vocabularies and their schema enums stay one closed list', () => {
   assert.deepEqual(Object.keys(overlaySchema.properties.qualityFloor.properties).sort(), roles, "overlay.schema.json qualityFloor properties");
   assert.deepEqual(Object.keys(overlaySchema.$defs.selectors.properties.byRole.properties).sort(), roles, "overlay.schema.json selectors.byRole properties");
   assert.deepEqual([...decisionSchema.properties.role.enum].sort(), roles, "decision.schema.json role enum");
-  assert.deepEqual([...telemetrySchema.properties.role.enum].sort(), roles, "telemetry.schema.json role enum");
+  assert.deepEqual([...telemetrySchema.properties.role.enum].sort(), [...roles, 'teamlead', 'orchestrator'].sort(), "telemetry.schema.json role enum");
 
   const selectorKinds = [...catalogRouting.SELECTOR_KINDS].sort();
   assert.deepEqual(

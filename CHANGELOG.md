@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Native harness version labels no longer refuse admission. Codex checks the consumed protocol and complete capture provenance through bounded no-model generation; the full 0.163.0 capture preserves historical bytes. Cursor retains its tmux prerequisite, Claude reports a static model dictionary and requested effort with actual CLI refusals/warnings, and OpenCode retains binary/command/auth/holder failure boundaries.
 
 - The machine lease grants the oldest live waiter by its original registration time, regardless of retry timing; keyed publication leases use the same order per clone. Lease reads validate root and waiter directories before removing dead registrations, including empty or truncated files, and preserve live incomplete writers and unrelated files. Reading missing lease state creates no directories.
+- `done` records Claude assistant usage and Codex cumulative token totals per recorded session generation, including teamleads and the root orchestrator. `stats [--task <id>]` prints wall time, token kinds, bus counts and reasons for missing measurements; telemetry keeps opaque participant keys after journal pruning.
+- Codex teamlead token accounting resolves the owned child registry through reciprocal journal links. Teamlead relifts preserve earlier session evidence for both linked participants; unavailable earlier evidence keeps totals unknown.
+
 - Codex live runs transfer cleanup ownership synchronously on cancellation, keeping the sandbox until abort stop completes even when an earlier normal stop returns first; normal continuations and hygiene stay cancelled.
 - Abort cleanup diagnoses falsy thrown values from cleanup and thenable getters, preserving the first signal code and one exit.
 

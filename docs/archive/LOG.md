@@ -548,3 +548,4 @@ The release reconciliation gives the [Codex-only journal lookup](#pb-372) the na
 - <a id="pb-380"></a>`PB-380-harness-protocol-compatibility` · 2026-10-19 · completed · — · Harness admission must check protocol capabilities instead of versions
 - <a id="pb-312.1"></a>`PB-312.1-replacement-reviewer-gets-prior-findings` · 2026-10-19 · completed · — · A reviewer raised in place of a dead one gets the dead reviewer's last findings
 - <a id="pb-373.4"></a>`PB-373.4-bb-reviewer-result-body-limit` · 2026-10-19 · completed · — · BB reviewer instructions exceed the enforced send body limit
+- <a id="pb-332"></a>`PB-332-participant-token-telemetry` · 2026-10-20 · completed · — · Participant telemetry counts tokens from the harness session logs, covers teamleads and the orchestrator, and a command reports a run

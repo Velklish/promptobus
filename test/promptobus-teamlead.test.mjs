@@ -17,6 +17,7 @@ import { SESSION_RECORD_VAR } from '../lib/driver-opencode.js';
 import { send } from '../lib/send.js';
 import { wardenRound } from '../lib/warden.js';
 import { blockedParticipants } from '../dist/index.js';
+import { taskHash, telemetryRecords } from '../lib/model-routing/telemetry.js';
 
 const scratch = mkdtempSync(path.join(os.tmpdir(), 'promptobus-test-teamlead-'));
 const root = path.join(scratch, 'install');
@@ -277,11 +278,35 @@ const reliftBrief = path.join(scratch, 'relift.md');
 writeFileSync(reliftBrief, '# Renewed Group One\n');
 const reliftOpts = { ...opts, brief: reliftBrief };
 const reliftPlan = await planTeamlead(host, { ...reliftOpts, sessions: [] });
+const leadFirstLog = path.join(scratch, 'lead-first.jsonl');
+const leadUsage = (sessionId, id, input) => ({ type: 'assistant', sessionId,
+  timestamp: new Date().toISOString(), message: { id, role: 'assistant', usage: {
+    input_tokens: input, cache_read_input_tokens: 4, cache_creation_input_tokens: 3, output_tokens: 2,
+  } } });
+writeFileSync(leadFirstLog, `${JSON.stringify(leadUsage(sid1, 'first', 7))}\n`);
+for (const [taskId, address] of [[task, 'teamlead:group-one'], [child.id, 'orchestrator']]) {
+  store.markTranscript(home, taskId, address, leadFirstLog, sid1);
+}
 installStub([{ id: 'ccddeeaa', sessionId: sid3, name: reliftPlan.name, state: 'working', pid: 4244 }]);
 const relift = await quiet(() => spawnTeamlead(host, { ...reliftOpts, sessions: [], tool: tool() }));
 const reliftLead = store.participantOf(store.readTask(home, task), 'teamlead:group-one');
 const reliftOwner = store.participantOf(store.readTask(home, child.id), 'orchestrator');
 const reliftSessions = snapshotOf([reliftLead, reliftOwner]);
+const leadSecondLog = path.join(scratch, 'lead-second.jsonl');
+writeFileSync(leadSecondLog, `${JSON.stringify(leadUsage(sid3, 'second', 5))}\n`);
+for (const [taskId, address] of [[task, 'teamlead:group-one'], [child.id, 'orchestrator']]) {
+  store.markTranscript(home, taskId, address, leadSecondLog, sid3);
+}
+const leadExpected = { input: 12, cacheRead: 8, cacheWrite: 6, output: 4, reason: null };
+for (const [taskId, address, participant] of [[task, 'teamlead:group-one', reliftLead],
+  [child.id, 'orchestrator', reliftOwner]]) {
+  const row = telemetryRecords(host, home, store.readTask(home, taskId))
+    .find((item) => item.step === participant.role && item.generation === 0);
+  check(`teamlead relift preserves both distinct sessions once for ${address}`,
+    participant.metadata.tokenLogHistory?.length === 1
+    && participant.metadata.tokenLogHistory[0].sessionId === sid1
+    && JSON.stringify(row?.tokens) === JSON.stringify(leadExpected), JSON.stringify({ participant, row }));
+}
 check('dead teamlead relifts into the same child task with both addresses on the new live session',
   relift.childTask === child.id && reliftPlan.name !== planned.name
   && reliftLead.metadata.sessionId === sid3 && reliftOwner.metadata.owner === sid3
@@ -446,6 +471,24 @@ check('first-link retry refuses duplicate launch and preserves upward ownership'
   && freshUp === 0 && store.glanceInbox(home, task, 'orchestrator')
     .some((m) => m.sender === freshLead.id && m.body === 'first-link'),
   JSON.stringify({ retry: firstRetry.stderr, freshUp }));
+const missingPlan = await planTeamlead(host, { ...siblingOpts, sessions: [] });
+const missingSid = '88888888-8888-8888-8888-888888888888';
+installStub([{ id: 'ffaabbcc', sessionId: missingSid, name: missingPlan.name, state: 'working', pid: 4248 }]);
+await quiet(() => spawnTeamlead(host, { ...siblingOpts, sessions: [], tool: tool() }));
+const missingLog = path.join(scratch, 'lead-after-missing.jsonl');
+writeFileSync(missingLog, `${JSON.stringify(leadUsage(missingSid, 'after-missing', 9))}\n`);
+for (const [taskId, address] of [[task, 'teamlead:group-two'], [siblingChild.id, 'orchestrator']]) {
+  store.markTranscript(home, taskId, address, missingLog, missingSid);
+  const participant = store.participantOf(store.readTask(home, taskId), address);
+  const row = telemetryRecords(host, home, store.readTask(home, taskId))
+    .find((item) => item.participant === taskHash(participant.id));
+  check(`teamlead relift keeps unavailable earlier identity unknown for ${address}`,
+    participant.metadata.tokenLogHistory?.[0]?.sessionId === sid2
+    && participant.metadata.tokenLogHistory[0].path === null
+    && row?.tokens?.reason === 'session_log_unavailable'
+    && ['input', 'cacheRead', 'cacheWrite', 'output'].every((key) => row?.tokens?.[key] === null),
+    JSON.stringify({ participant, row }));
+}
 if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
 else process.env.CLAUDE_CODE_SESSION_ID = prior;
 process.env.PATH = originalPath;
