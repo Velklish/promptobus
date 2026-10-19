@@ -7,7 +7,7 @@
 
 ## Context
 
-Canonical orchestration guidance requires a host-wide lease for ordinary measuring/gate work. In the observed ATI Agent Workspace run, this grew into one queue for isolated setup, focused tests and no-model schema capture. A job awaiting user permission retained the generic queue while other authorized cards were idle. On 2026-10-19 the owner explicitly chose resource-scoped parallelism instead.
+Canonical orchestration guidance requires a host-wide lease for ordinary measuring/gate work. In the observed consumer workspace run, this grew into one queue for isolated setup, focused tests and no-model schema capture. A job awaiting user permission retained the generic queue while other authorized cards were idle. On 2026-10-19 the owner explicitly chose resource-scoped parallelism instead.
 
 Separate worktrees do not make every operation independent: output directories, temporary state and writable caches must also be isolated. A controlled diagnostic that deliberately uses a default shared cache is an explicit exception, not a reason to make every other task wait for generic compute capacity. A late permission answer cannot authorize a write after its resource authority has changed.
 
@@ -20,11 +20,15 @@ Related [PB-381](PB-381-orchestration-obtainable-admission-evidence.md) addresse
 - Remove mandatory global machine lease acquisition for independent source work, setup/build, no-model capture, focused checks and ordinary full suites. Permit concurrency within the approved card/actor limit after confirming distinct worktree, build output, temporary root and writable cache ownership.
 - Reserve exclusivity only for a named concrete conflict: publication or mutation of the same repository main/ref, an actually shared mutable path/service, or an explicit performance/controlled-load measurement whose result depends on competing work. Block only relevant competitors; independent suites may overlap.
 - Preserve the public generic lease API and FIFO/keyed correctness as optional/existing-user features. Do not delete that feature or invalidate its tests merely because ordinary orchestration no longer requires acquisition.
-- Update canonical `skills/orchestrate/SKILL.md`, BB-specific launch/run guidance and operational guards, and actual duplicated ATI consumer orchestration policy together. Identify the real duplicated paths before editing; do not update the frozen runtime of an ongoing run.
+- Update canonical `skills/orchestrate/SKILL.md`, BB-specific launch/run guidance and operational guards, and actual duplicated consumer orchestration policy together. Identify the real duplicated paths before editing; do not update the frozen runtime of an ongoing run.
 - Make routine writable caches and outputs task-owned. Record any diagnostic default-cache exception and its exact resource claim; prevent conflicting writes to the same path rather than reserving the entire host.
+- Distinguish currently executing work, dependency/permission waits and revoked failed read-only assignments in concurrency accounting. Preserve full history and UNKNOWN lifecycle; administrative parking is not observed Stop/drain. Idle alone never frees capacity for an unknown writer/background job. Keep deferred lifecycle implementation separate.
+- Before a delayed human command or resumed actor executes, revalidate actual current stage/token/resource authority so the active limit remains true. Waiting status cannot authorize later execution after capacity has been reassigned.
 - A pending user permission request must not reserve generic compute capacity. When a delayed command becomes executable, revalidate current token/scope and the actual resource authorization immediately before execution; stale or revoked authority refuses that command without blocking unrelated work.
 - Preserve task-owned call/phase completion, confirmed owned-job blockers, exact command receipts, independent review, exact-SHA acceptance, product/security/release gates and quota limits. Retain UNKNOWN and red-test evidence; concurrency is not an environmental exemption for failures.
 - Document the isolation contract and optional controlled-measurement mode without adding a universal scheduler/capability framework or an OS-PID attribution admission gate.
+
+Current-review evidence selection is separately owned by [PB-383](PB-383-compact-current-review-evidence.md).
 
 ## Out of scope
 
