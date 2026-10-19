@@ -478,6 +478,7 @@ Source: `lib/model-routing/telemetry.js`.
 `promptobus done` writes one local telemetry record per recorded harness generation of a participant with a model, plus teamleads and the root orchestrator with a recorded session identity or model.
 <!-- /quote -->
 
+The file stores one JSON Lines record per harness generation under those conditions.
 A re-bound participant contributes its closed generations and its current
 generation; an explicit unrouted `--model` lift also contributes a record.
 

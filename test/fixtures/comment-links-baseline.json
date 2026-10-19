@@ -46,7 +46,7 @@
     "lib/done.js": [
       "../docs/reference/03-cli.md#status-done-sweep-dismiss-history-prune",
       "../docs/reference/03-cli.md#stopmanaged--stop-managed-sessions-of-a-closed-task",
-      "../docs/reference/03-cli.md#recordtelemetry--one-telemetry-record-per-participant-that-lifted-a-session",
+      "../docs/reference/03-cli.md#recordtelemetry--records-for-eligible-participant-generations",
       "../docs/reference/03-cli.md#status-done-sweep-dismiss-history-prune"
     ],
     "lib/driver-claude.js": [

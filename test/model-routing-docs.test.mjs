@@ -32,7 +32,7 @@ check('routing docs: Claude inventory includes IDs, aliases and default at the b
   /full (?:model )?IDs/i.test(inventory)
   && /aliases/.test(inventory)
   && /default\s+model/.test(inventory)
-  && /version floor/.test(inventory)
+  && /The static inventory is independent of the binary's version label;\s+actual CLI\/API unavailable-model errors remain authoritative\./.test(inventory)
   && !/inventory reported here is the driver's own\s+alias set/.test(inventory));
 
 check('routing docs: telemetry includes generations and explicit unrouted models',

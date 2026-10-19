@@ -484,5 +484,5 @@ test('--help names models, --strategy and --allow-payg', async () => {
   assert.doesNotMatch(text, /--strategy defaults to balanced,\s+--role to worker/);
   assert.doesNotMatch(text, /effectiveStrategy/, 'help must explain the helper behavior without exposing its code identifier');
   assert.match(text, /recorded\s+workspace default\s+\(promptobus models strategy\) routes\s+the call/);
-  assert.match(text, /--strategy uses the recorded\s+workspace default, balanced when\s+no layer records one/);
+  assert.match(text, /Without --strategy, models uses the recorded default, balanced when\s+no layer records one/);
 });
