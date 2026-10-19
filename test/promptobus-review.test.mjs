@@ -678,8 +678,8 @@ check('--effort: unknown value → a clear refusal, not a silent default',
   badEffort.threw && /--effort: unknown value/.test(badEffort.msg) && badEffort.msg.includes('super-high')
   && EFFORT_LEVELS.every((l) => badEffort.msg.includes(l)), badEffort.msg);
 
-check('dry-run: the given effort is printed as being applied',
-  /effort: high/.test(dryEffort) && !/effort: high \(not applied/.test(dryEffort), dryEffort);
+check('dry-run: the given effort is printed as requested',
+  /requested effort: high/.test(dryEffort) && !/effort: high \(not applied/.test(dryEffort), dryEffort);
 check(`dry-run without a live reviewer: the model is also printed as being applied`,
   /model: opus/.test(dryEffort) && !/model: opus \(/.test(dryEffort), dryEffort);
 
@@ -2683,8 +2683,9 @@ const ultraReview = spawnSync(process.execPath, ['--input-type=module', '-e',
   env: { ...process.env, PATH: `${ULTRA_REVIEW_BIN}${path.delimiter}${PATH0}` },
 });
 const ultraReviewText = `${ultraReview.stdout}${ultraReview.stderr}`;
-check(': a review with no tool seam still reads the binary and refuses ultracode',
-  ultraReview.status === 1 && ultraReviewText.includes('2.0.0') && /DEFAULT effort/.test(ultraReviewText),
+check(': a review without a tool seam reads version telemetry and preserves actual launch refusal',
+  ultraReview.status === 1 && ultraReviewText.includes('2.0.0')
+    && ultraReviewText.includes('no live session') && !/DEFAULT effort/.test(ultraReviewText),
   `status=${ultraReview.status} ${ultraReviewText}`);
 
 // --- : on a re-review the MCP set isn't announced -----------------------------

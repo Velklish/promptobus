@@ -243,12 +243,10 @@ gives. Giving the lifted session a `PATH` instead is not in the lift's power for
 reason above. No host bound means the bare name and `PATH`, as before; the standalone host hands the
 bare name back by design, so under it nothing changes.
 
-**The version gate stays the lift's.** A host may refuse a binary it found for being too old
-(`ok: false` beside a `bin`); the state query and the stop take that `bin` anyway, because reading
-and stopping a session the lift already made needs the binary, not a fresh verdict on it. The
-workspace host's `resolveToolBin` runs `--version`; measured 2026-09-24 on `claude` 2.1.280, that
-answers in 0.01–0.02 s against 0.37–0.43 s for one `claude agents --json`, and the host remembers it
-for the process.
+**A found binary keeps its identity for existing sessions.** A host can return a concrete refusal
+(`ok: false` beside a `bin`); state queries and stop still use that `bin`. Native harness labels
+are telemetry, not numeric admission. The driver retains executable identity pinning and actual
+command, permission, authentication and holder failures.
 
 **Two failures, told apart.** Neither is a fact about the session:
 
@@ -371,8 +369,8 @@ In Cursor the effort level is a flat suffix on the model id, not a separate flag
 binary knows whether a given model-and-level pair exists: not every model has every level, and
 one level appears on a single family. Asking it costs almost nothing and refusing on a guess
 would cost a lift — a bad id comes back in about two seconds with empty stdout and a list of
-the ids that do exist, without opening a chat. So `optionRefusal` refuses on the binary version
-and on `tmux`, and leaves the model-and-level pair to the binary.
+the ids that do exist, without opening a chat. So `optionRefusal` checks `tmux`, and leaves the model-and-level pair to the binary.
+Old, new and unparseable Cursor labels do not refuse; the tmux minimum remains 3.0.
 
 ### Cursor: project skills location
 
@@ -763,19 +761,26 @@ must not fall over its own log.
 
 ### Codex protocol versions
 
-The fixture baseline is codex-cli 0.162.1, captured from the installed binary
-on 2026-10-15. The complete capture contains 317 generated schemas: compared with
-0.160.0, added 3, removed 0, changed 34, unchanged 280. ClientRequest contains 105
-variants and ServerRequest retains 10. [Capture provenance](../../test/fixtures/codex-app-server/0.162.1/README.md)
-names the measured binary hash and full file inventory. Holder request shapes and
-approval replies validate against the complete captures; generic caller-supplied
-holder RPC forwarding is untyped, and `currentTime/read` is an extension absent from
-the generated ServerRequest schema.
+The fixture baseline is codex-cli 0.163.0, captured from the installed binary
+on 2026-10-18. The complete capture contains 318 generated schemas: compared with
+0.162.1, added 1, removed 0, changed 10, unchanged 307. ClientRequest contains 105
+variants and ServerRequest retains 10. [Capture provenance](../../test/fixtures/codex-app-server/0.163.0/README.md)
+names the binary hash before and after generation, every file hash, command exits,
+raw streams, timestamps, source state and platform. Historical capture bytes are preserved.
 
-The participant minimum remains 0.158.0. The local schema gate accepts the minimum
-and current proven capture. An unknown installed version needs a fresh capture and
-contract validation. Native model turns and hook behavior were not remeasured on
-0.162.1. Earlier alpha and stable captures retain their original provenance. Earlier full captures remain unchanged.
+Native harness version labels are telemetry. The local schema gate validates committed
+provenance/integrity before any installed-binary skip, then performs bounded no-model schema
+generation and checks the finite consumed contract. It validates 16 request methods and their
+params, 16 response shapes and consumed fields, four notification shapes, actual holder approval
+replies, malformed-witness refusals and the explicit server-request security inventory.
+Unrelated additive client methods and schemas pass; missing or incompatible consumed fields and new
+server approval methods require an actionable contract or security review. The generator has a
+20-second timeout and a 2 MiB output budget. Missing Codex reports installed comparison `notRun`;
+command failure, timeout and malformed output fail. A new label alone does not demand a recapture.
+
+`PROVEN_CODEX_VERSION` selects capture provenance, not a native admission floor. Generic
+caller-supplied holder RPC remains untyped; `currentTime/read` is a documented extension absent
+from ServerRequest. Native model turns and hook behavior were not remeasured on 0.163.0.
 [Native 0.159.2 evidence](../../test/fixtures/codex-app-server/0.159.2/README.md)
 retains its own measured version, including the trusted-root hook control, canonical
 worker/reviewer skills, and reporter MCP reads. The unrouted default `gpt-6-astra`
@@ -788,7 +793,7 @@ The mock app-server emits complete native response shapes for initialize, model/
 skills/list, thread/start, thread/resume, thread/read, turn/start, turn/steer and
 review/start. Its internal thread store remains a test fixture; emitted threads have
 tagged status, native required metadata, and turns with item IDs. The response test
-validates 38 actual positive outputs against the complete 0.159.2, 0.160.0 and 0.162.1
+validates 38 actual positive outputs against the complete 0.159.2, 0.160.0, 0.162.1 and 0.163.0
 captures, including default, credits, flat and spend-control quota responses. Omitted
 or null thread/start cwd defaults once to the mock process working directory and
 persists through thread/read, thread/resume and thread/list responses. Reset-credit
@@ -907,7 +912,10 @@ Every driver's parent environment filter drops `PROMPTOBUS_OPENCODE_SESSION`,
 The OpenCode launch plan then sets its own contact record, holder password and config paths;
 it does not inherit the parent's session id. Explicit child values merge after the filter.
 Permission modes hold one value, `auto`; effort has no mapping and refuses. Measured on opencode
-2.0.20, which is also the proven version; the floor is 2.0.0.
+2.0.20, which remains the historical proven version. Version labels are telemetry; actual command, auth and holder failures still refuse.
+The availability adapter accepts successful old, future or unparseable version output, retaining a
+parsed version when available. Missing binaries, timeouts and failed commands retain distinct
+verdicts. The binary response does not establish authenticated model availability.
 
 ## Codex participant authentication
 

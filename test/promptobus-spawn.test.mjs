@@ -60,18 +60,8 @@ const spawnWorker = (root, opts = {}) => spawnRaw(root, {
 });
 const { installWorktreeDeps, npmCiCommand } = await import(path.join(here, '..', 'lib', 'worktree.js'));
 const { IDENTITY_VARS } = await import(path.join(here, 'hygiene.mjs'));
-const { ULTRACODE_MIN_VERSION, claudeDriver } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
+const { claudeDriver } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
 const CLAUDE_MIN = '2.0.0';
-function versionLess(a, b) {
-  const pa = String(a).split('.').map(Number);
-  const pb = String(b).split('.').map(Number);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
-    const x = pa[i] || 0;
-    const y = pb[i] || 0;
-    if (x !== y) return x < y;
-  }
-  return false;
-}
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
 const { hostOf } = await import(path.join(here, '..', 'lib', 'host.js'));
 const { planApprover } = await import(path.join(here, '..', 'lib', 'approver.js'));
@@ -191,10 +181,11 @@ const PATH0 = process.env.PATH;
 // `#!/bin/sh`: a file with no extension is not found on Windows at all
 // (`resolveCommand` walks PATH × PATHEXT), and the test would go red there on
 // working code.
-const claudeSays = (sessions, bgStatus = 0, version = '2.1.237 (Claude Code)') => {
+const claudeSays = (sessions, bgStatus = 0, version = '2.1.237 (Claude Code)', warning = '') => {
   stubCommand(BIN, 'claude', `const args = process.argv.slice(2);
 if (args[0] === '--version') { process.stdout.write(${JSON.stringify(`${version}\n`)}); process.exit(0); }
 if (args[0] === 'agents') { process.stdout.write(${JSON.stringify(JSON.stringify(sessions))}); process.exit(0); }
+process.stderr.write(${JSON.stringify(warning)});
 process.stdout.write('backgrounded · sess-0001\\n');
 process.exit(${bgStatus});`);
   process.env.PATH = `${BIN}${path.delimiter}${PATH0}`;
@@ -809,40 +800,29 @@ check(': nothing is opened on disk — neither a participant nor a worktree',
   && worktreesWithStamp('t20260827-140000').length === 0,
   `${JSON.stringify(store.readTask(HOME, OLD_TASK).participants)} · ${worktreesWithStamp('t20260827-140000')}`);
 
-// --- : `--effort ultracode` on a binary older than the bound ---------------------
-//
-// The refusal is pointed: the same binary without `ultracode` spawn passes, so we
-// check both sides — otherwise the gate could turn out to be a lift of the shared
-// minVersion under another name. The refusal takes the process through fail(), so
-// spawn is executed in a separate process.
+// Effort remains requested configuration; labels cannot establish its effective value.
 const ULTRA_TASK = 'ultracode-t20260828-170000';
 store.createTask(HOME, {
-  id: ULTRA_TASK, title: 'ultracode on an old binary', slug: 'ultracode', stamp: 't20260828-170000',
+  id: ULTRA_TASK, title: 'requested effort reporting', slug: 'ultracode', stamp: 't20260828-170000',
 });
 const spawnRun = (opts) => spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(spawnUrl)});\n`
   + `await m.spawn(${JSON.stringify(WS)}, ${JSON.stringify(opts)});`,
 ], { encoding: 'utf8', env: { ...process.env, PATH: `${BIN}${path.delimiter}${PATH0}` } });
-// Fixture premise: the version must pass the shared minimum and NOT pass the
-// ultracode threshold. If both numbers matched, both checks below would go green
-// on nothing, and there would be no way to see that from their verdicts (review
-// note).
-check(': the declared claude minimum is strictly older than the ultracode minimum — there is something to tell apart',
-  versionLess(CLAUDE_MIN, ULTRACODE_MIN_VERSION), `${CLAUDE_MIN} vs ${ULTRACODE_MIN_VERSION}`);
-claudeSays([], 0, `${CLAUDE_MIN} (Claude Code)`);
-const oldEnough = { ok: true, bin: stubClaude(), version: CLAUDE_MIN };
-const ultraRun = spawnRun({
-  repo: 'orders-api', brief: BRIEF, task: ULTRA_TASK, worker: 'ultra', effort: 'ultracode',
-  tool: oldEnough,
-});
-const ultraText = `${ultraRun.stdout}${ultraRun.stderr}`;
-check(`: ultracode on ${CLAUDE_MIN} — a refusal, not a silent lift on default effort`,
-  ultraRun.status === 1 && ultraText.includes(CLAUDE_MIN) && ultraText.includes(ULTRACODE_MIN_VERSION)
-  && /DEFAULT effort/.test(ultraText), `status=${ultraRun.status} ${ultraText}`);
-check(': the refusal leaves nothing on disk — neither a participant nor a worktree',
-  !store.readTask(HOME, ULTRA_TASK).participants.some((p) => store.addressOf(p) === 'worker:ultra')
-  && worktreesWithStamp('t20260828-170000').length === 0,
-  `${JSON.stringify(store.readTask(HOME, ULTRA_TASK).participants)} · ${worktreesWithStamp('t20260828-170000')}`);
+check('Claude retains an empty legacy effortMinVersion compatibility map',
+  JSON.stringify(claudeDriver.options.effortMinVersion) === '{}');
+for (const version of ['2.0.0', 'v2.1.100', '99.0.0', 'Claude unknown', null]) {
+  check(`Claude effort ultracode is not refused by version label ${JSON.stringify(version)}`,
+    claudeDriver.optionRefusal({ effort: 'ultracode' }, { version }) === null);
+}
+const savedEffortMinVersion = claudeDriver.options.effortMinVersion;
+claudeDriver.options.effortMinVersion = { max: '9.9.9' };
+try {
+  check('legacy effortMinVersion entries cannot re-enable numeric admission',
+    claudeDriver.optionRefusal({ effort: 'max' }, { version: '2.0.0' }) === null);
+} finally {
+  claudeDriver.options.effortMinVersion = savedEffortMinVersion;
+}
 {
   let calls = 0;
   const host = { readToolVersion() { calls += 1; return '2.1.100 (Claude Code)'; } };
@@ -854,46 +834,32 @@ check(': the refusal leaves nothing on disk — neither a participant nor a work
     && quiet.version === undefined && calls === 1,
     `calls=${calls} filled=${filled.version} quiet=${quiet.version}`);
 }
-const fromHost = spawnRun({
-  repo: 'orders-api', brief: BRIEF, task: ULTRA_TASK, worker: 'from-host', effort: 'ultracode',
-});
-const fromHostText = `${fromHost.stdout}${fromHost.stderr}`;
-check(': a lift with no tool seam still reads the binary and refuses ultracode',
-  fromHost.status === 1 && fromHostText.includes(CLAUDE_MIN) && /DEFAULT effort/.test(fromHostText),
-  `status=${fromHost.status} ${fromHostText}`);
-// The same binary and the same spawn without `ultracode` — the gate is not a
-// shared lift of the minimum version.
-const xhighPlan = await planSpawn(WS, {
-  repo: 'orders-api', brief: BRIEF, task: ULTRA_TASK, worker: 'ultra', effort: 'xhigh',
-});
-claudeSays([{ id: 'sess-xhigh', name: xhighPlan.name, state: 'working', pid: 4246 }], 0, `${CLAUDE_MIN} (Claude Code)`);
-const xhighRun = spawnRun({
-  repo: 'orders-api', brief: BRIEF, task: ULTRA_TASK, worker: 'ultra', effort: 'xhigh',
-  tool: oldEnough,
-});
-check(': on the same binary other efforts pass — the refusal is pointed',
-  xhighRun.status === 0
-  && store.readTask(HOME, ULTRA_TASK).participants.some((p) => store.addressOf(p) === 'worker:ultra'),
-  `status=${xhighRun.status} ${xhighRun.stdout}${xhighRun.stderr}`);
-
-// --- : optionRefusal reads effortMinVersion generically, not a hardcoded ultracode
-// check (PB-120) — a second entry must refuse on its own, and an effort absent from
-// the map must still pass unconditionally.
-const savedEffortMinVersion = claudeDriver.options.effortMinVersion;
-claudeDriver.options.effortMinVersion = { ...savedEffortMinVersion, max: '9.9.9' };
-try {
-  const secondEntryRefusal = claudeDriver.optionRefusal(
-    { effort: 'max', statusCommand: 'status' }, { version: CLAUDE_MIN },
-  );
-  check(': a second effortMinVersion entry refuses on its own',
-    secondEntryRefusal !== null && secondEntryRefusal.includes(CLAUDE_MIN) && secondEntryRefusal.includes('9.9.9'),
-    String(secondEntryRefusal));
-  check(': an effort absent from effortMinVersion still passes unconditionally',
-    claudeDriver.optionRefusal({ effort: 'high', statusCommand: 'status' }, { version: CLAUDE_MIN }) === null,
-    String(claudeDriver.optionRefusal({ effort: 'high', statusCommand: 'status' }, { version: CLAUDE_MIN })));
-} finally {
-  claudeDriver.options.effortMinVersion = savedEffortMinVersion;
+const ignoreEffortWarning = "Warning: Unknown --effort value 'ultracode' — ignoring it and using the default effort. Valid values: low, medium, high, xhigh, max.";
+for (const [worker, status, output] of [
+  ['ultra-warning', 0, ignoreEffortWarning],
+  ['ultra-reject', 2, 'error: unsupported --effort ultracode'],
+  ['ultra-ack', 0, 'effort acknowledged: ultracode'],
+]) {
+  claudeSays([], 0, '2.0.0 (Claude Code)');
+  const request = { repo: 'orders-api', brief: BRIEF, task: ULTRA_TASK, worker, effort: 'ultracode' };
+  const planned = await planSpawn(WS, request);
+  claudeSays([{ id: `sess-${worker}`, name: planned.name, state: 'working', pid: 4246 }], status, '2.0.0 (Claude Code)', output);
+  const actual = spawnRun(request);
+  const text = `${actual.stdout}${actual.stderr}`;
+  check(`Claude actual ${worker} output and exit remain visible`,
+    (status === 0 ? actual.status === 0 : actual.status !== 0) && text.includes(output), text);
+  check(`Claude ${worker} never reports requested ultracode as effective`,
+    !/effective(?: effort)?[:= ]+ultracode/i.test(text), text);
+  if (status === 0) {
+    const participant = store.participantOf(store.readTask(HOME, ULTRA_TASK), `worker:${worker}`);
+    check(`Claude ${worker} metadata retains the requested effort and argv`,
+      participant?.metadata?.effort === 'ultracode'
+      && planned.argv[planned.argv.indexOf('--effort') + 1] === 'ultracode');
+  }
 }
+const requestedDryRun = spawnRun({ repo: 'orders-api', brief: BRIEF, task: ULTRA_TASK, worker: 'ultra-dry', effort: 'ultracode', dryRun: true });
+check('worker dry-run explicitly reports requested effort',
+  requestedDryRun.status === 0 && /requested effort: ultracode/.test(`${requestedDryRun.stdout}${requestedDryRun.stderr}`));
 
 // --- : standalone host does not search install dirs ----------------------
 //

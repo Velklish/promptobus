@@ -32,7 +32,7 @@ check(': dry-run names the missing loop-guard hook instead of files that never l
 
 check(': opencode is admitted to teamlead lifts',
   TEAMLEAD_HARNESSES.includes('opencode'), TEAMLEAD_HARNESSES.join(','));
-const { opencodeAvailability, OPENCODE_MIN_VERSION } = await import(
+const { opencodeAvailability } = await import(
   path.join(here, '..', 'lib', 'model-routing', 'adapter-opencode.js'));
 
 // --- registry ---------------------------------------------------------------
@@ -345,20 +345,27 @@ check(': a hanging version call is a timeout, and the harness is not blamed',
 
 const old = await probeWith(async () => ({ launched: true, timedOut: false, status: 0, signal: null, stdout: 'opencode v1.9.0\n' }))(
   { toolBin: { ok: true, bin: 'opencode' }, timeoutMs: 1000 });
-check(`: below the floor ${OPENCODE_MIN_VERSION} the binary is unavailable`,
-  old.state === 'unavailable' && old.reason === 'binary_too_old', JSON.stringify(old));
+check(': an old OpenCode label retains successful binary response telemetry',
+  old.state === 'available' && old.version === '1.9.0' && old.reason === null, JSON.stringify(old));
+for (const label of ['future-build', 'opencode v99.1.0', '']) {
+  const value = await probeWith(async () => ({ status: 0, stdout: label }))({ toolBin: { ok: true, bin: 'opencode' }, timeoutMs: 1000 });
+  check(`OpenCode successful label ${JSON.stringify(label)} does not refuse availability`,
+    value.state === 'available' && value.reason === null && /auth is checked by the lift/.test(value.message), JSON.stringify(value));
+}
+const failedVersion = await probeWith(async () => ({ status: 1, stderr: 'fixture command failure' }))({ toolBin: { ok: true, bin: 'opencode' }, timeoutMs: 1000 });
+check('OpenCode actual version command failure remains probe_failed', failedVersion.state === 'unknown' && failedVersion.reason === 'probe_failed');
 
 const good = await probeWith(async () => ({ launched: true, timedOut: false, status: 0, signal: null, stdout: 'opencode v2.0.20\n' }))(
   { toolBin: { ok: true, bin: 'opencode' }, timeoutMs: 1000 });
-check(': a new-enough binary is available with its version on the verdict',
+check(': a responding binary is available with its version on the verdict',
   good.state === 'available' && good.version === '2.0.20', JSON.stringify(good));
 
 // --- documentation ----------------------------------------------------------
 
 const driversDoc = readFileSync(path.join(here, '..', 'docs', 'reference', '05-drivers.md'), 'utf8');
-check(': the drivers reference names the opencode driver with its floor',
+check(': the drivers reference names OpenCode version telemetry and actual capability boundary',
   driversDoc.includes('`OPENCODE` — opencode harness driver')
-  && driversDoc.includes('the floor is 2.0.0'),
+  && driversDoc.includes('Version labels are telemetry; actual command, auth and holder failures still refuse.'),
   '05-drivers.md lacks the OPENCODE section');
 check(': the drivers reference states the measured wake boundary — no hook channel in serve holders',
   driversDoc.includes('never under `serve`')

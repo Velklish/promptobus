@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Native harness version labels no longer refuse admission. Codex checks the consumed protocol and complete capture provenance through bounded no-model generation; the full 0.163.0 capture preserves historical bytes. Cursor retains its tmux prerequisite, Claude reports a static model dictionary and requested effort with actual CLI refusals/warnings, and OpenCode retains binary/command/auth/holder failure boundaries.
+
 - Codex live runs transfer cleanup ownership synchronously on cancellation, keeping the sandbox until abort stop completes even when an earlier normal stop returns first; normal continuations and hygiene stay cancelled.
 - Abort cleanup diagnoses falsy thrown values from cleanup and thenable getters, preserving the first signal code and one exit.
 

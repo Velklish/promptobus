@@ -983,3 +983,30 @@ calls. It does not grade verdicts, artifact truth, commits or supplied gate reco
 close the task or merge source. Timestamp precision is unchanged. See
 [workflow setup](../../bb-plugin-promptobus/README.md#approver-admission-and-workflow-support)
 and [ADR-035](../adr/adr-035-bb-role-workflow-support.md).
+
+## Consumed Codex schema contract
+
+The checkout schema gate validates the finite protocol consumed by the holder and model adapter,
+independent of harness version labels. Committed captures require complete generated-file inventory,
+byte hashes, resolvable local references and successful stable-binary provenance. The installed
+comparison uses bounded no-model schema generation; a missing binary reports `notRun` only after
+committed validation. It accepts unrelated additive schemas and client methods and refuses missing
+or incompatible consumed fields with their path/method. A changed server approval inventory requires
+explicit security review; unknown approvals remain `-32601`, and reviewer/permission restrictions
+remain enforced. Actual holder approval replies are checked against their schemas.
+
+Numeric usage accepts both integer and number schemas because the consumer normalizes finite numbers; nonnumeric usage types still refuse.
+These are finite witnesses, not proof of all possible responses or caller-forwarded RPC.
+`currentTime/read` remains a documented extension. The captured version is provenance, not a native
+model, hook or authentication measurement. See [driver contract](05-drivers.md#codex-protocol-versions)
+and [capture procedure](../guides/contributing.md).
+
+The open `ThreadStartParams` schema does not declare the holder's `runtimeWorkspaceRoots`
+field directly. The gate retains that outgoing witness and checks its type against the
+captured `TurnEnvironmentParams.runtimeWorkspaceRoots` declaration. This documents a schema
+limitation; it does not establish that a native session applied the requested workspace roots.
+
+Incoming response witnesses project required fields onto the finite consumed shape, so a producer
+can add unrelated required metadata without blocking compatibility. Negative witnesses keep
+consumed identifiers and required fields mandatory; consumed field types cannot widen beyond the
+reader's supported types. Outgoing requests and approval replies retain full schema validation.

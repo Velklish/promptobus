@@ -1044,8 +1044,9 @@ const ultraApprover = spawnSync(process.execPath, ['--input-type=module', '-e',
   env: { ...process.env, PROMPTOBUS_HOME: HOME, PATH: `${ULTRA_BIN}${path.delimiter}${PATH0}` },
 });
 const ultraApproverText = `${ultraApprover.stdout}${ultraApprover.stderr}`;
-check(': an approver with no tool seam still reads the binary and refuses ultracode',
-  ultraApprover.status === 1 && ultraApproverText.includes('2.0.0') && /DEFAULT effort/.test(ultraApproverText),
+check(': an approver without a tool seam reads version telemetry and preserves actual launch refusal',
+  ultraApprover.status === 1 && ultraApproverText.includes('2.0.0')
+    && ultraApproverText.includes('no live session') && !/DEFAULT effort/.test(ultraApproverText),
   `status=${ultraApprover.status} ${ultraApproverText}`);
 
 const { claudeDriver } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));

@@ -25,8 +25,8 @@ check(': OpenCode path fixture physically contains spaces and Unicode',
   realpathSync(subject) === subject && pathToFileURL(subject).href.includes('%20')
   && pathToFileURL(subject).href.includes('%C3%A9'), subject);
 const normal = spawnSync(process.execPath, [subject], { encoding: 'utf8', timeout: 20000 });
-check(': OpenCode encoded-path subject completes all 65 checks',
-  normal.status === 0 && /\n\d+\/65 passed(?:, \d+ skipped)?\n/.test(normal.stdout),
+check(': OpenCode encoded-path subject completes all 69 checks',
+  normal.status === 0 && /\n\d+\/69 passed(?:, \d+ skipped)?\n/.test(normal.stdout),
   `${normal.stdout}${normal.stderr}`);
 const regression = spawnSync(process.execPath,
   [path.join(copy, 'test', 'promptobus-driver-opencode-listen.test.mjs')],

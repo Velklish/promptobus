@@ -273,22 +273,12 @@ check(': harness prompt rules forbid questions and require the mailbox on every 
   && /mailbox at the start of every turn/.test(cursorDriver.phrases.promptRules),
   cursorDriver.phrases.promptRules.slice(0, 120));
 
-// The version refusal is its own, not the shared `minVersion`: participant lift sits on
-// the `persist` layout, and that was taken on the proven version and nothing else.
-check(': a binary older than the proven version — refuse before lift, with the number',
-  /2026\.08\.11/.test(String(cursorDriver.optionRefusal({}, { version: '2026.08.11' })))
-  && cursorDriver.optionRefusal({}, { version: PROVEN_CURSOR_VERSION }) === null
-  && cursorDriver.optionRefusal({}, { version: null }) === null,
-  String(cursorDriver.optionRefusal({}, { version: '2026.08.11' })).slice(0, 90));
-check(': a v-prefixed Cursor version at the proven release passes',
-  cursorDriver.optionRefusal({}, { version: `v${PROVEN_CURSOR_VERSION}` }, { util: () => ({ ok: true }) }) === null,
-  String(cursorDriver.optionRefusal({}, { version: `v${PROVEN_CURSOR_VERSION}` }, { util: () => ({ ok: true }) })));
-check(': a v-prefixed Cursor version below the proven release refuses',
-  /2026\.08\.11/.test(String(cursorDriver.optionRefusal({}, { version: 'v2026.08.11' }))),
-  String(cursorDriver.optionRefusal({}, { version: 'v2026.08.11' })));
-check(': an unparsed nonempty Cursor version refuses explicitly',
-  /could not be parsed: agent unknown/.test(String(cursorDriver.optionRefusal({}, { version: 'agent unknown' }))),
-  String(cursorDriver.optionRefusal({}, { version: 'agent unknown' })));
+for (const version of ['2026.08.11', PROVEN_CURSOR_VERSION, `v${PROVEN_CURSOR_VERSION}`, 'v2026.08.11', 'agent unknown', null]) {
+  check(`Cursor version label ${JSON.stringify(version)} passes with a valid tmux`,
+    cursorDriver.optionRefusal({}, { version }, { util: () => ({ ok: true }) }) === null);
+  check(`Cursor version label ${JSON.stringify(version)} cannot bypass missing tmux`,
+    /fixture tmux missing/.test(cursorDriver.optionRefusal({}, { version }, { util: () => ({ ok: false, reason: 'fixture tmux missing' }) })));
+}
 
 // The adapter resolves the utility by the name the driver named — and asks the binary
 // itself for the version, it does not take it from the declaration: `doctor` and the

@@ -15,6 +15,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import Ajv from 'ajv';
+import { protocolThread, protocolThreadResponse, protocolTurn } from './codex-contract-witnesses.mjs';
 import { diagnoseTrace as formatTraceDiagnosis } from './harness-shared.mjs';
 import { DEFAULT_MODEL, PROVEN_CODEX_VERSION } from '../lib/driver-codex.js';
 
@@ -46,33 +47,6 @@ const validateApprovalResponse = new Map(Object.entries(approvalResponseNames).m
 function validateCodexFixture(label, validate, value) {
   if (validate(value)) return;
   throw new Error(`${label} does not match the codex-cli ${PROVEN_CODEX_VERSION} fixture: ${codexFixtureAjv.errorsText(validate.errors)}`);
-}
-
-function protocolTurn(turn) {
-  return { ...turn, status: turn.status ?? 'inProgress', items: (turn.items ?? []).map((item, index) => ({
-    ...item, id: item.id ?? `${turn.id}-item-${index}`,
-  })) };
-}
-
-function protocolThread(thread, includeTurns = true) {
-  return {
-    id: thread.id, sessionId: thread.id, cliVersion: PROVEN_CODEX_VERSION,
-    createdAt: 0, updatedAt: 0, cwd: thread.cwd, ephemeral: false,
-    modelProvider: 'openai', preview: '', projectId: null, source: 'appServer',
-    name: thread.name ?? null, status: { type: thread.busy ? 'active' : 'idle', ...(thread.busy ? { activeFlags: [] } : {}) },
-    turns: includeTurns ? (thread.turns ?? []).map(protocolTurn) : [],
-  };
-}
-
-function protocolThreadResponse(thread, includeTurns = true) {
-  const sandbox = { 'read-only': 'readOnly', 'workspace-write': 'workspaceWrite', 'danger-full-access': 'dangerFullAccess' };
-  return {
-    thread: protocolThread(thread, includeTurns), cwd: thread.cwd,
-    model: thread.model ?? 'gpt-6-astra', modelProvider: 'openai',
-    approvalPolicy: thread.approvalPolicy ?? 'on-request', approvalsReviewer: 'user',
-    sandbox: { type: sandbox[thread.sandbox] ?? 'workspaceWrite' },
-    ...(thread.config?.model_reasoning_effort ? { reasoningEffort: thread.config.model_reasoning_effort } : {}),
-  };
 }
 
 export const CODEX_HOME_VAR = 'PROMPTOBUS_E2E_CODEX';

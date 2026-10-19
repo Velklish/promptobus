@@ -34,8 +34,8 @@ function run(code = null, site = 0, syscall = 'listen') {
 
 const normal = run();
 const names = normal.names;
-check(': OpenCode normal listener run completes all 65 checks',
-  normal.status === 0 && names.length === 65 && !normal.output.includes('before abort'),
+check(': OpenCode normal listener run completes all 69 checks',
+  normal.status === 0 && names.length === 69 && !normal.output.includes('before abort'),
   JSON.stringify(normal));
 
 for (const code of ['EACCES', 'EPERM']) {

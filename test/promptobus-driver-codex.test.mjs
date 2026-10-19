@@ -883,29 +883,12 @@ check(': without a host home, Codex sessions phrase names its source',
 if (previousCodexHome === undefined) delete process.env.PROMPTOBUS_CODEX_HOME;
 else process.env.PROMPTOBUS_CODEX_HOME = previousCodexHome;
 
-check(': the measured 0.158 compatibility floor lifts while 0.157 refuses',
-  codexDriver.optionRefusal({}, { version: MIN_CODEX_VERSION }) === null
-  && codexDriver.optionRefusal({}, { version: '0.157.0' }) !== null);
-check(': a binary older than the measured minimum — refuse before lift',
-  /0\.140/.test(String(codexDriver.optionRefusal({}, { version: '0.140.0' })))
-  && codexDriver.optionRefusal({}, { version: PROVEN_CODEX_VERSION }) === null
-  && codexDriver.optionRefusal({}, { version: null }) === null,
-  String(codexDriver.optionRefusal({}, { version: '0.140.0' })).slice(0, 90));
-check(': a raw Codex version with the product prefix at the proven release passes',
-  codexDriver.optionRefusal({}, { version: `codex-cli ${PROVEN_CODEX_VERSION}` }) === null,
-  String(codexDriver.optionRefusal({}, { version: `codex-cli ${PROVEN_CODEX_VERSION}` })));
-check(': a raw Codex version with the product prefix below the proven release refuses',
-  /0\.9/.test(String(codexDriver.optionRefusal({}, { version: 'codex-cli 0.9.0' }))),
-  String(codexDriver.optionRefusal({}, { version: 'codex-cli 0.9.0' })));
-check(': a v-prefixed Codex version at the proven release passes',
-  codexDriver.optionRefusal({}, { version: `v${PROVEN_CODEX_VERSION}` }) === null,
-  String(codexDriver.optionRefusal({}, { version: `v${PROVEN_CODEX_VERSION}` })));
-check(': a v-prefixed Codex version below the proven release refuses',
-  /0\.9/.test(String(codexDriver.optionRefusal({}, { version: 'v0.9.0' }))),
-  String(codexDriver.optionRefusal({}, { version: 'v0.9.0' })));
-check(': an unparsed nonempty Codex version refuses explicitly',
-  /could not be parsed: codex-cli unknown/.test(String(codexDriver.optionRefusal({}, { version: 'codex-cli unknown' }))),
-  String(codexDriver.optionRefusal({}, { version: 'codex-cli unknown' })));
+for (const version of [MIN_CODEX_VERSION, '0.157.0', '0.140.0', PROVEN_CODEX_VERSION,
+  `codex-cli ${PROVEN_CODEX_VERSION}`, 'codex-cli 0.9.0', `v${PROVEN_CODEX_VERSION}`, 'v0.9.0', 'codex-cli unknown', null]) {
+  check(`Codex version label ${JSON.stringify(version)} does not refuse native lift`,
+    codexDriver.optionRefusal({}, { version }) === null);
+}
+
 
 check(': shadowedUserServers is empty — the personal set is not isolated, config/read is forbidden',
   JSON.stringify(codexDriver.shadowedUserServers(['promptobus'])) === '[]');

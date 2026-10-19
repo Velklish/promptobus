@@ -386,22 +386,17 @@ test('the inventory the driver hands over is what the adapter reports, not a lis
   assert.deepEqual(verdict.models, [{ model: 'only-this-one' }]);
 });
 
-test('an id below its version floor leaves the inventory, and an unreadable version drops nothing', async () => {
-  // 2.1.263 answers `--model claude-opus-5-5` with a 400 naming 2.1.280, so on an older build a
-  // routed pick must fall to Opus 5 rather than lift a session the API refuses.
-  const listed = async (version) => (await probe(sandbox(
-    `process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`, { version }).host)).models.map((m) => m.model);
-  for (const older of ['2.1.263 (Claude Code)', '2.1.279']) {
-    const models = await listed(older);
-    assert.equal(models.includes('claude-opus-5-5'), false, `${older}: ${models.join(', ')}`);
-    assert.equal(models.includes('claude-opus-5'), true, `${older}: ${models.join(', ')}`);
+test('the static Claude inventory is unchanged across old future and unreadable labels', async () => {
+  const expected = ['claude-fable-5-1', 'claude-fable-5', 'claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5',
+    'claude-haiku-4-5', 'fable', 'opus', 'sonnet', 'haiku'];
+  for (const version of ['2.1.263 (Claude Code)', '2.1.279', '2.1.280 (Claude Code)', '99.0.0', 'a build that names no version']) {
+    const verdict = await probe(sandbox(`process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`, { version }).host);
+    assert.deepEqual(verdict.models.map(m => m.model), expected, version);
   }
-  assert.equal((await listed('2.1.280 (Claude Code)')).includes('claude-opus-5-5'), true);
-  assert.equal((await listed('a build that names no version')).includes('claude-opus-5-5'), true);
 });
 
 test('a host that hands over no version field at all keeps claude-opus-5-5 in the inventory', async () => {
-  // Absence means unread: the floor drops nothing until a host hands a version over.
+  // Version absence does not change the static driver dictionary.
   const box = sandbox(`process.stdout.write(${JSON.stringify(AUTH_JSON(true))});`);
   const host = { ...box.host, resolveToolBin: (name) => ({ ok: true, bin: path.join(box.dir, name) }) };
   const verdict = await probe(host);

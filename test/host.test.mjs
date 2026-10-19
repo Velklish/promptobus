@@ -111,7 +111,7 @@ test('every HostToolBin field a driver or an adapter reads is declared', () => {
   const seen = new Map();
   let toolBinReaders = 0;
   for (const rel of readers) {
-    const src = readFileSync(path.join(ROOT, rel), 'utf8');
+    const src = readFileSync(path.join(ROOT, rel), 'utf8').replace(/^\s*\/\/.*$/gm, '');
     const readsToolBin = /\bresolveToolBin\b|\btoolBin\b/.test(src)
       || /\bfunction\s+optionRefusal\s*\([^)]*\btool\b/.test(src);
     if (!readsToolBin) continue;
@@ -140,9 +140,9 @@ test('every HostToolBin field a driver or an adapter reads is declared', () => {
 
   // This is a reader inventory, not a quota: a changed count needs inspection.
   // The shared driver leaf is not a HostToolBin reader.
-  const expectedToolBinReaders = 8;
+  const expectedToolBinReaders = 5;
   assert.equal(toolBinReaders, expectedToolBinReaders, `${toolBinReaders} tool-bin readers: ${readers.join(' ')}`);
-  assert.equal(seen.get('version')?.size, 6, [...seen.get('version') ?? []].join(' '));
+  assert.equal(seen.get('version')?.size, 3, [...seen.get('version') ?? []].join(' '));
   assert.ok(seen.get('bin')?.size >= 3 && seen.get('ok')?.size >= 3,
     [...seen].map(([f, files]) => `${f}:${files.size}`).join(' '));
 });
@@ -357,8 +357,7 @@ test('the built host declaration carries the writable layer flag a consumer comp
 
 const AUTH_OK = JSON.stringify({ loggedIn: true });
 
-test('standalone models --refresh drops claude-opus-5-5 below 2.1.280 and keeps it on 2.1.280', async () => {
-  // Mutation probe: `readToolVersion` returns null — the 2.1.263 rows stay ranked.
+test('standalone models --refresh keeps static Claude inventory across version telemetry', async () => {
   const { createStandaloneHost } = await import('../dist/host-index.js');
   const { models } = await import('../lib/models.js');
   const { claudeAvailability } = await import('../lib/model-routing/adapter-claude.js');
@@ -424,7 +423,7 @@ process.exit(2);
   const old = await ask('2.1.263 (Claude Code)');
   assert.equal(old.version, '2.1.263 (Claude Code)');
   assert.ok(old.opus.length > 0, 'the catalog has no claude-opus-5-5 rows');
-  assert.ok(old.opus.every((row) => row.excluded?.code === 'model-not-in-inventory'),
+  assert.ok(old.opus.every((row) => row.excluded?.code !== 'model-not-in-inventory'),
     JSON.stringify(old.opus.map((row) => row.excluded)));
   assert.equal(old.refusal, null);
 
@@ -436,7 +435,14 @@ process.exit(2);
   assert.ok(current.opus.some((row) => row.score || row.chosen), '2.1.280 kept no Opus 5.5 row in the ranking');
 
   const below = await ask('2.1.100 (Claude Code)');
-  assert.match(below.refusal, /2\.1\.100/);
+  assert.equal(below.version, '2.1.100 (Claude Code)');
+  assert.equal(below.refusal, null);
+  assert.ok(below.opus.every(row => row.excluded?.code !== 'model-not-in-inventory'));
+
+  const future = await ask('future Claude build');
+  assert.equal(future.version, 'future Claude build');
+  assert.ok(future.opus.every(row => row.excluded?.code !== 'model-not-in-inventory'));
+  assert.equal(future.refusal, null);
 
   const unread = await ask(null, { failVersion: true });
   assert.equal(unread.version, undefined);
