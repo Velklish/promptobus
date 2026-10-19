@@ -1117,6 +1117,48 @@ test('role tool selection uses stored bindings and refuses changed environment, 
   assert.equal(s.host.harness.inspection.experimental_hostRpcCalls.length, before);
 });
 
+test('constrained reviewer delivers a long lossless report through bounded status parts and one terminal result', async t => {
+  const s = await stand(t);
+  assert.equal((await s.create()).exitCode, 0);
+  assert.equal((await s.add('long-review', 'reviewer')).exitCode, 0);
+  const binding = bindingStore(s.host.bb).thread('thr-2');
+  const token = binding.launchContext.grant.token;
+  const findings = Array.from({ length: 12 }, (_, i) => `src/example.ts:${i + 1} [major] Finding ${i + 1}: ${'Keep every detail 🧪. '.repeat(45)}— suggested fix.\n`).join('');
+  assert.ok(findings.length > 7303);
+  await assert.rejects(s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'result', body: findings }));
+  const characters = Array.from(findings);
+  const payloads = [];
+  for (let offset = 0; offset < characters.length; offset += 1000) payloads.push(characters.slice(offset, offset + 1000).join(''));
+  const landed = [];
+  for (const [index, payload] of payloads.entries()) {
+    const body = `Review ${token} part ${index + 1}/${payloads.length}\n${payload}`;
+    assert.ok(body.length <= 2400);
+    const reply = JSON.parse(await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'status', body }));
+    assert.equal(reply.message.sender, 'long-review');
+    assert.equal(reply.artifact, null);
+    landed.push(reply.message);
+    await s.call('thr-1', 'promptobus_mailbox', { mode: 'read' });
+  }
+  const body = `**Done** — Reviewed source; critical 0, major 12, minor 0.\n**Gate** — not run, reviewer runs no mechanical checks.\n**Open** — Fixture only.\n**Decide** — nothing.\nReview ${token} complete ${payloads.length}/${payloads.length}\nAll-calls release: actor long-review, token ${token}, completed scope source review, pending=0 and running=0.`;
+  assert.ok(body.length <= 2400);
+  const terminal = JSON.parse(await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'result', body }));
+  await s.call('thr-1', 'promptobus_mailbox', { mode: 'read' });
+  const engine = openEngine({ root: s.root, recover: false, policy: () => ({ allow: true }) });
+  const messages = engine.history({ task: s.task, all: true, strict: true }).entries.map(entry => entry.message)
+    .filter(message => message.sender === 'long-review').sort((a, b) => a.id.localeCompare(b.id));
+  assert.deepEqual(messages.map(message => message.id), [...landed, terminal.message].map(message => message.id));
+  assert.deepEqual(messages.map(message => message.type), [...payloads.map(() => 'status'), 'result']);
+  assert.equal(messages.slice(0, -1).map(message => message.body.slice(message.body.indexOf('\n') + 1)).join(''), findings);
+  assert.equal(messages.filter(message => message.body.includes('All-calls release:')).length, 1);
+  assert.ok(messages.every(message => message.sender === 'long-review' && !message.artifact));
+  const configuration = await s.host.harness.behavior.resolveAgentConfiguration(makePluginAgentConfigurationContext({
+    thread: { id: 'thr-2' }, project: { id: 'project' }, environment: { id: 'env', path: s.root },
+    host: { id: 'local' }, provider: { id: 'promptobus-codex-reviewer' },
+  }));
+  assert.deepEqual(configuration.tools.map(tool => tool.name), ['promptobus_send', 'promptobus_mailbox', 'promptobus_task', 'promptobus_artifact',
+    'pb_review_read_file', 'pb_review_read_files', 'pb_review_list_files', 'pb_review_search_text']);
+});
+
 test('unrelated dispatches proceed while metadata cannot release a pending plugin thread', async t => {
   const s = await stand(t);
   const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];

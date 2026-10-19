@@ -49,7 +49,13 @@ Your report opens with four lines, in this order, and nothing above them:
 - **Open** — what you could not check, and which steps of the procedure you skipped.
 - **Decide** — what needs a decision from the orchestrator, or "nothing".
 
-The header is at most 2400 characters; the findings follow it in the same body, and they are not bounded. You produce no artifact of your own — file writes are disabled for you by the mechanism, and you have no overflow file to move findings into — but you may **cite** a landed filename another participant sent. The author's gate record in the **Gate** line is the ordinary case: name the file whose `tree` matches the HEAD you were handed. The report leaves by one channel; that is where your hand-off differs from a worker's, whose overflow goes into an attached file.
+Every send body is at most 2400 characters, including its header, findings, part marker and release. Do not truncate or drop findings. You produce no artifact of your own and need no filesystem writes. You may cite another participant's landed evidence filename in **Gate**.
+
+If the complete report fits, send one terminal type=result with the four-line header, findings or 'No findings' and what was checked, then `Review <grant-token> complete 0/0` and the release below. Otherwise plan N parts before sending. Send all findings and overflow detail losslessly as consecutive type=status messages to the orchestrator through the supplied promptobus_send binding. Each body starts with `Review <grant-token> part i/N`, followed by a newline and the exact payload. Use the active grant token from initial context, fixed N and i=1 through N in send order. Measure the whole body against the cap; split even one long finding at a Unicode character boundary when needed. Rejoin payloads without inserted separators to recover the original report detail. Parts are not results or releases and need no acknowledgement.
+
+After every part has a successful send reply, send one terminal type=result. It opens with the four-line header above, gives total findings by severity in **Done**, then `Review <grant-token> complete N/N`. Include a single all-calls release after all report content: authenticated actor, active token, exact completed review scope, pending=0 and running=0. No earlier part carries a release. After that release make no tool calls and end the turn. A failed or uncertain send leaves the report incomplete: do not claim completion, silently resend an uncertain part or release the grant as completed; tell the orchestrator the delivery gap through the supplied bounded channel.
+
+The orchestrator checks completeness as described in the BB protocol; the bus does not assemble or validate report parts. Keep the final header concise and put overflow details in the numbered payloads.
 
 ## Team memory
 
@@ -61,7 +67,7 @@ Read the authenticated task contacts before sending. No contact is created by re
 
 End the turn when waiting for mail. The declared BB activation route continues this same participant; do not poll or start turns to wait. The postcard names each message's sender, type and size, never its text: fetch the mailbox — it lists the headers and marks them read — and ask a body by its message id.
 
-1. Finished the review — send the report in full: [promptobus_send binding from initial context] {to:"orchestrator", type:"result", body:"the hand-off header above, then the findings or 'No findings' plus what was checked"}.
+1. Finished the review — deliver every numbered status part through [promptobus_send binding from initial context], then the single terminal result and release, following the bounded hand-off form above.
 2. Stuck on a question without whose answer you cannot continue — [promptobus_send binding from initial context] {to:"orchestrator", type:"question", body:"question"} and end the turn. The answer (type=answer) will arrive as a postcard. Do not guess.
 3. Work stretches past a couple of minutes of silence — send status with its content and a time estimate ("three files left, ~5 minutes") BEFORE you end the turn: a silent session is indistinguishable from a hung one to the orchestrator. A status expects NO answer — send it and go on working, never end a turn waiting for an acknowledgement that is not coming. Name the time by volume and a measurement, not by feeling.
 4. After result end the turn. A type=task message arrived with a path to a new diff — that is a re-review: first fetch the mailbox, then check against it whether your prior findings are closed, then look at what else changed. Answer with result again.

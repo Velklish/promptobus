@@ -52,6 +52,8 @@ export interface ReviewerInstructionInput {
     close: string;
     operationalRules: string;
     evidenceInstructions?: string;
+    reportInstructions?: string;
+    reportSend?: string;
   };
 }
 export interface ApproverInstructionInput {

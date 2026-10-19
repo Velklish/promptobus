@@ -13,7 +13,7 @@ The problem is requiring unrelated historical read/status payloads again for eac
 
 Evidence: saved redacted dispatch/command timing readback and original schema-mismatch outcomes. Private locations remain in the run-owned supporting sidecar, not this portable card. Next step: future triage review; filing does not authorize implementation or add this card to an ongoing execution batch.
 
-Related [PB-381](PB-381-orchestration-obtainable-admission-evidence.md) owns obtainable admission proof and permission planning; [PB-382](PB-382-optional-resource-scoped-machine-lease.md) owns resource-scoped scheduling. [PB-373.4](PB-373.4-bb-reviewer-result-body-limit.md) owns bounded report delivery rather than evidence selection. Preserve the [BB evidence contract](../../reference/04-protocol.md#bb-evidence-attachments).
+Related [PB-381](PB-381-orchestration-obtainable-admission-evidence.md) owns obtainable admission proof and permission planning; [PB-382](PB-382-optional-resource-scoped-machine-lease.md) owns resource-scoped scheduling. [PB-373.4](../../archive/LOG.md#pb-373.4) owns bounded report delivery rather than evidence selection. Preserve the [BB evidence contract](../../reference/04-protocol.md#bb-evidence-attachments).
 
 ## Work to do
 

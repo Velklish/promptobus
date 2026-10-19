@@ -197,6 +197,17 @@ are refused. New role threads use their selected provider under the role policy
 below; reviewers use the constrained Codex provider. Bus writes do not grant
 reviewer source or shell writes.
 
+Reviewers send every body within the 2400-character cap. A long review uses
+consecutive `status` bodies starting with `Review <grant-token> part i/N` and a
+newline, followed by the exact payload. One terminal `result` retains the four-line
+hand-off header, severity totals, `Review <grant-token> complete N/N` and the sole
+all-calls release. A report wholly in the result uses `complete 0/0`. The
+orchestrator reads full canonical bodies, including acknowledged status parts,
+checks sender, grant token, totals, order and release, and rejects incomplete,
+duplicated or reordered reports before relying on them. This is a procedural
+check; the bus does not assemble or validate parts. Reviewers need no artifact,
+shell or filesystem write. See [bounded reviewer reports](../docs/reference/04-protocol.md#bb-bounded-reviewer-reports).
+
 The six role skills, model-catalog selection and recipient wake/recovery are delivered.
 The measured six-role workflow and its profile limits are recorded below.
 BB queued first prompts are admission state, not the canonical Promptobus mailbox.

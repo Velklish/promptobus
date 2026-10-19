@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- BB reviewer instructions keep every send body within 2400 characters: long findings travel as ordered status parts before one terminal result and all-calls release. The orchestrator checks completeness from full canonical bodies without reviewer artifacts or filesystem writes.
+
 - A replacement for a dead reviewer receives the previous reviewer's last result unchanged in its initial prompt and checks those findings for closure first. Without a prior result, the initial prompt is unchanged.
 
 - Native harness version labels no longer refuse admission. Codex checks the consumed protocol and complete capture provenance through bounded no-model generation; the full 0.163.0 capture preserves historical bytes. Cursor retains its tmux prerequisite, Claude reports a static model dictionary and requested effort with actual CLI refusals/warnings, and OpenCode retains binary/command/auth/holder failure boundaries.

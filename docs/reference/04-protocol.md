@@ -320,7 +320,7 @@ The rule lives in the preambles (`lib/spawn.js`, `lib/review.js` and `lib/approv
 
 **The Gate line is never omitted.** A gate that was not run says `not run, because …` with the reason; an omitted line reads as a green one. The line "gates N, green M" counts by command, and only the entries whose `tree` and `dirty` match the tree the line is about — a worker's clean HEAD, an approver's merged tree. Entries on other trees are history and are not counted. N is the number of distinct `command` values among those gate entries — an entry with no `kind`, or `kind` `gate`. Different spellings of one command are different commands; keep one spelling. M is how many of those have a latest entry that exits 0. An entry whose `counts` carry `gates` and `green` is the aggregate itself, not a gate, and is not counted in N. When the record has no per-command gate entries, the runner entry's own `gates` and `green` are the line. When per-command entries exist, they are counted by command and must agree with the runner entry when the record has one. An entry with `kind` `verification` is a card's own run and is left out of both. After the aggregate, the Gate line names each verification run with its exit code, or says "verification K, green L". A reviewer writes that line on every report it sends — it runs nothing by [ADR-009](../adr/adr-009-reviewer-resolves-no-discrepancy.md) — which is why the line cannot be read as an escape hatch: it is the normal state of the role that runs no gates. An approver may **cite** another participant's landed artifact in the **Gate** line — the worker's gate record is the usual case — while its own overflow and gate record still bind only to its own send.
 
-**The overflow rule is the worker's and the approver's, not the reviewer's.** A worker's and an approver's body is bounded and what does not fit is attached; a reviewer cannot attach anything — file writes are denied to it, and its own isolation text forbids publishing an artifact — so for a reviewer the bound covers the header alone and the findings follow it unbounded in the same body. A limit its holder cannot satisfy is not a strict rule but a wall, and one that would be broken silently on every long review.
+**The native overflow rule is the worker's and the approver's, not the reviewer's.** A worker's and an approver's body is bounded and what does not fit is attached; a native reviewer cannot attach anything — file writes are denied to it, and its own isolation text forbids publishing an artifact — so its bound covers the header alone and findings follow it unbounded in the same body. BB caps every send body and uses [bounded reviewer reports](#bb-bounded-reviewer-reports) instead.
 
 ### The gate record
 
@@ -867,6 +867,45 @@ output and failed or skipped formats are unsupported and must remain incomplete.
 The helper delegates to the same extractor exported by `promptobus/bb-host`.
 It does not certify gates or arbitrary runner output. Retaining raw output and recording a manual lossless opaque UTF-8
 inventory remains valid; no native-schema validation follows from extraction.
+
+### BB bounded reviewer reports
+
+Every BB send body is at most 2400 characters, including markers and release.
+Reviewers publish no artifacts and need no filesystem writes. If the four-line
+hand-off header, findings and release fit, one `result` carries them and the line
+`Review <grant-token> complete 0/0`. Otherwise the reviewer plans N parts and sends
+consecutive `status` bodies through its authenticated `promptobus_send` binding:
+
+```text
+Review <grant-token> part i/N
+<exact payload>
+```
+
+The token is the active grant's token; N is fixed and i runs from 1 through N in
+send order. All findings and overflow detail are retained, splitting even one
+long finding at a Unicode character boundary when necessary. Removing only each
+marker and its following newline, then joining payloads without inserted
+separators, recovers the original report detail. Parts are not results and carry
+no release. A successful part send needs no orchestrator acknowledgement.
+
+After every part returns a successful send reply, the reviewer sends one terminal
+`result`, beginning with the normal **Done**, **Gate**, **Open**, **Decide** lines.
+**Done** states findings by severity. The header stays concise; details that do
+not fit belong in the parts. The result includes `Review <grant-token> complete N/N`
+and ends with the sole all-calls release: authenticated actor, active token, exact
+completed review scope, pending=0 and running=0. No tool calls follow that release.
+A failed or uncertain send leaves the report incomplete; the reviewer reports the
+gap without claiming completion, silently resending an uncertain part or releasing
+the grant as completed.
+
+The orchestrator reads every full canonical body, including acknowledged status
+parts from history. It checks the authenticated sender, current grant token,
+fixed total, consecutive order, severity totals and single terminal result/release
+before relying on the review or reusing the slot. Missing, duplicated, reordered
+or mixed-token parts, inconsistent totals, and an absent or early release are
+rejected. This is a procedural check in the selected role instructions; the bus
+does not assemble or validate report parts. A gap needs repair under the current
+grant, or a fresh grant when the old one ended. Partial findings remain partial.
 
 #### Manifest before reviewer launch
 
