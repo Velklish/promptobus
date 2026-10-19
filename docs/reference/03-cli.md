@@ -200,6 +200,16 @@ A value parsed out of the output binds a participant only in the shape of a sess
 
 ## Review
 
+When a reviewer session is dead, `review` starts a replacement with the previous reviewer's last result unchanged in its initial prompt. The replacement checks those findings for closure first, then reviews the rest of the diff. The result is selected from that reviewer's messages in send order, before launch; no follow-up message is needed. Without a prior result, the initial prompt is unchanged. Live or unknown sessions keep the existing re-review route.
+
+The orchestration guidance assigns this responsibility to the reviewer:
+
+<!-- quote:../../skills/orchestrate/SKILL.md -->
+```markdown
+| Reviewer | `promptobus review` | Read every diff of a piece, send findings, confirm their closure on its next pass; a replacement receives the last result in its initial prompt and checks those findings for closure first | Fix the findings |
+```
+<!-- /quote -->
+
 `step <name> <path> --task <id>` lifts the named gate in the installation's declared pipeline. The first gate has no predecessor precondition. Every later gate requires a `type=result` from the preceding gate's participant for the same subject at or after that participant's current assignment. A `writes-main-tree` gate also requires the owner step's result for the same subject recorded at or after that participant's current assignment, whether or not it is the first gate. A refusal names the missing participant or result; the bus does not judge its body. The command prints the selected step. `--base`, routing flags and `--dry-run` have the review lift's meanings. `--brief <file>` is available to a `writes-main-tree` gate. An unknown name or the owner step is refused with the declared pipeline named.
 
 `review <path>` selects the first `reads-diff` gate and `review <path> --approver` selects the first `writes-main-tree` gate. Both print the selected step. If a kind is absent, the alias refuses and names the declaration. A `reads-diff` step uses the reviewer's read-only working directory and snapshot path; a `writes-main-tree` step uses the approver's worktree from local main. The rights and working directories of other kinds are not generalized by this lift.

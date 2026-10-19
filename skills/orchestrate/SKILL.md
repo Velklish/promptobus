@@ -22,7 +22,7 @@ Launch workers only after the user says yes to a named split. Silence is not app
 | Orchestrator (TGM on a root task) | you | Cut the work, write briefs, spawn, accept results; hold contracts between groups on a root task | Edit a worker's tree or confirm a finding closed |
 | Teamlead | one session with `teamlead:<slug>` in the root and `orchestrator` in its child task | Run one group's workers and delivery pipeline; report upward | Decide a change of logic or requirements for the root |
 | Worker | a session in a worktree | Change that tree, send `status` / `question` / `result` | Decide for you, open tracker files, talk to the user |
-| Reviewer | `promptobus review` | Read every diff of a piece, send findings, confirm their closure on its next pass; a replacement for a dead reviewer starts from a clean slate | Fix the findings |
+| Reviewer | `promptobus review` | Read every diff of a piece, send findings, confirm their closure on its next pass; a replacement receives the last result in its initial prompt and checks those findings for closure first | Fix the findings |
 | Reporter | optional read-only session on a root task | Answer the person from the task journals | Send as `reporter` or treat a result as accepted |
 
 ## Choosing a flat task or a tree

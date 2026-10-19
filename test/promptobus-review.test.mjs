@@ -928,6 +928,59 @@ check('dead session: nothing landed in the dead address\'s inbox',
   store.countInbox(home, task.id, 'reviewer:orders-api') === 0,
   String(store.countInbox(home, task.id, 'reviewer:orders-api')));
 
+const promptSnapshot = (plan) => plan.prompt.replaceAll(plan.snapshot.at, '<snapshot>')
+  .replaceAll(plan.diffPath, '<diff>');
+claudeSays('[]');
+const withoutResult = planReview(WS, { target: REPO, task: pendingTask.id });
+store.sendMessage(home, pendingTask.id, {
+  from: 'reviewer:orders-api', to: store.ORCHESTRATOR, type: 'status', body: 'review in progress',
+});
+const statusOnly = planReview(WS, { target: REPO, task: pendingTask.id });
+check('dead session without a result: the full prompt is unchanged by other message types',
+  promptSnapshot(withoutResult) === promptSnapshot(statusOnly)
+  && !statusOnly.prompt.includes('## Prior reviewer findings'), statusOnly.prompt);
+
+const earlierFindings = 'Earlier finding: obsolete detail';
+// english-authoring: input — preserve the complete Unicode findings body in a replacement prompt.
+const priorFindings = '\nmajor — Проверить закрытие α\n  keep  two spaces\n\n```text\nsecond finding → β\n```\n' + 'full finding '.repeat(400) + '\n';
+// english-authoring: end
+for (const body of [earlierFindings, priorFindings]) {
+  store.sendMessage(home, pendingTask.id, {
+    from: 'reviewer:orders-api', to: store.ORCHESTRATOR, type: 'result', body,
+  });
+}
+store.upsertParticipant(home, pendingTask.id, store.participantRecord('reviewer:other', { repo: 'other' }));
+store.sendMessage(home, pendingTask.id, {
+  from: 'reviewer:other', to: store.ORCHESTRATOR, type: 'result', body: 'Another reviewer result',
+});
+store.sendMessage(home, pendingTask.id, {
+  from: 'reviewer:orders-api', to: store.ORCHESTRATOR, type: 'status', body: 'Later status, not findings',
+});
+const withResult = planReview(WS, { target: REPO, task: pendingTask.id });
+const findingsSection = '## Prior reviewer findings\n\nCheck these findings for closure first, then review the rest of the diff. '
+  + 'The previous reviewer\'s last result follows unchanged:\n\n' + priorFindings;
+check('dead session: the replacement initial prompt carries the last result in full for closure first',
+  withResult.prompt.includes(findingsSection), withResult.prompt);
+check('dead session: prior findings select the last result of this reviewer, not other messages',
+  !withResult.prompt.includes(earlierFindings)
+  && !withResult.prompt.includes('Another reviewer result')
+  && !withResult.prompt.includes('Later status, not findings'), withResult.prompt);
+let replacement;
+await capture(async () => { replacement = await review(WS, { tool: TOOL, target: REPO, task: pendingTask.id }); });
+check('dead session: the launched replacement receives prior findings before its first turn',
+  replacement.prompt.includes(findingsSection) && bgArgv().includes(findingsSection), bgArgv());
+check('dead session: prior findings need no asynchronous mailbox delivery after launch',
+  store.countInbox(home, pendingTask.id, 'reviewer:orders-api') === 0,
+  String(store.countInbox(home, pendingTask.id, 'reviewer:orders-api')));
+const liveWithResult = planReview(WS, { target: REPO, task: pendingTask.id });
+check('live reviewer: prior findings stay in its session rather than being added to a new prompt',
+  liveWithResult.reuse && !liveWithResult.prompt.includes(findingsSection), liveWithResult.prompt);
+check('replacement reviewer guidance carries the prior-result closure contract',
+  ['../docs/reference/03-cli.md', '../skills/solo-review/SKILL.md', '../README.md', '../CHANGELOG.md']
+    .map((file) => readFileSync(new URL(file, import.meta.url), 'utf8'))
+    .every((text) => text.includes('last result unchanged in') && text.includes('initial prompt')
+      && text.includes('for closure first') && !text.includes('Nothing then confirms')));
+
 const unknownTask = store.createTask(home, { id: 't20260925-154800', title: 'reviewer liveness unknown' });
 store.upsertParticipant(home, unknownTask.id, store.participantRecord('reviewer:orders-api', {
   harness: 'claude',
