@@ -110,9 +110,9 @@ The lease is not in the store home: that home is per workspace, and the lease mu
     <pid>.json                  one per process waiting, removed when it stops waiting
 ```
 
-The directory is trusted only when it is this user's own: a symbolic link, a non-directory or another uid's directory is refused before anything is created in it ([03-cli](03-cli.md) § Lease). `PROMPTOBUS_LEASE_DIR` replaces that path. It exists so a test run does not wait on the lease a real run holds around it; the suite's hygiene sets it beside each file's diverted home.
+The directory is trusted only when it is this user's own: a symbolic link, a non-directory or another uid's directory is refused before anything is created in it ([03-cli](03-cli.md) § Lease). Reading applies the same checks to the root and waiter directories, including the keyed parent, before cleanup. A missing directory stays absent on a read. `PROMPTOBUS_LEASE_DIR` replaces that path. It exists so a test run does not wait on the lease a real run holds around it; the suite's hygiene sets it beside each file's diverted home.
 
-`machine.lock/` is the directory lock of § The lock: what it guards and what it cannot, taken with the wrapper's own pid. A lock whose pid no longer answers `kill 0` is dropped by the next taker; nothing is dropped by age. `holder.json` never decides liveness. A waiter's record whose pid is gone is not listed and is harmless to delete.
+`machine.lock/` is the directory lock of § The lock: what it guards and what it cannot, taken with the wrapper's own pid. A lock whose pid no longer answers `kill 0` is dropped by the next taker; nothing is dropped by age. `holder.json` never decides liveness. Callers register before trying the lock; under it, only the oldest live waiter by `since` may run, with pid breaking equal timestamps. Retry timing cannot let a later waiter pass it. Reading removes a dead process's own regular `<pid>.json` waiter file, including an empty or truncated registration. Live incomplete writers, symlink entries, foreign files, unrecognized names and parsed records with a different pid are preserved.
 
 `status` opens with the lease, before the tasks and even when none is active: `free`, `held by …`, or `left by a dead process …`, then one `waiting — …` line per live waiter ([03-cli](03-cli.md) § Status, done, sweep, dismiss, history, prune).
 

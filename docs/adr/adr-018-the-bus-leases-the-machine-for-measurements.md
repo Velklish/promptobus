@@ -71,6 +71,9 @@ owner file alone.
 
 **Decision 3 — waiting.**
 
+A caller records itself before trying the lock. Under the lock, only the oldest live waiter
+by its original `since` may run, with pid breaking equal timestamps; a later caller yields
+regardless of retry timing. Keyed publication leases apply this order within their own key.
 A waiter polls the lock every 250 ms. Once the holder's record exists, and again whenever the
 holder changes, it prints one line to stderr naming the holder — address, task, command, since when and
 for how long, pid — and the bound. Past the bound (`--wait <seconds>`, default 1800) it fails with
@@ -79,8 +82,11 @@ full suite of this repository takes about three minutes on an idle machine, so t
 several holders in a row; a longer wait is a holder that has stopped, and the line names its pid
 for a person to look at. A holder caught between its `mkdir` and its `holder.json` is not
 announced: a line printed then would name nobody and would not be printed again for that pid, so
-the waiter stays silent until the record lands. A waiter records itself in `waiters/<pid>.json` while it waits; a
-waiter's record whose pid is gone is not listed.
+the waiter stays silent until the record lands. A waiter's `waiters/<pid>.json` record is removed
+when it stops waiting. Reads validate the root and waiter directories before cleanup and create
+no missing state. Cleanup removes only this user's regular `<pid>.json` registrations whose
+pids are gone, including empty or truncated files; a parsed record must match its filename pid.
+Live incomplete writers, unrecognized names, foreign files and symlink entries are preserved.
 
 **Decision 4 — visibility.** `promptobus status` opens with the lease, before any task and even
 when no task is active, since the lease is not a task's: `machine lease: free (<path>)`, or

@@ -544,3 +544,4 @@ The release reconciliation gives the [Codex-only journal lookup](#pb-372) the na
 - <a id="pb-352"></a>`PB-352-opencode-test-listen-refusal` · 2026-10-16 · completed · — · OpenCode holder tests abort on denied localhost binding instead of reporting named skips
 - <a id="pb-377"></a>`PB-377-bb-reviewer-capability-admission` · 2026-10-16 · completed · — · Admit constrained BB reviewers by effective capabilities instead of Codex version
 - <a id="pb-379"></a>`PB-379-canonical-scenario-abort-prerequisites` · 2026-10-16 · completed · — · Preserve canonical scenario preflight and interruption cleanup before removing consumer copies
+- <a id="pb-323"></a>`PB-323-machine-lease-polling-race` · 2026-10-19 · completed · — · The machine lease is a polling race, not a queue, and a killed waiter's file stays
