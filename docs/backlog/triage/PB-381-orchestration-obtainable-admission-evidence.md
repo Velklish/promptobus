@@ -7,7 +7,7 @@
 
 ## Context
 
-In an ATI Agent Workspace run on 2026-10-18, a failed test runner completed and its task-owned tool calls drained, but its historical OS descendant inventory was incomplete. The coordinator added a stronger administrative prerequisite: global OS-PID-to-authenticated-BB-session attribution. Available public BB command, tool and terminal records lacked the required PID/birth linkage. That unavailable proof froze all four current cards, including independent source preparation and no-model schema work, although the scheduling contract serialized full suites and performance measurements.
+In an consumer workspace run on 2026-10-18, a failed test runner completed and its task-owned tool calls drained, but its historical OS descendant inventory was incomplete. The coordinator added a stronger administrative prerequisite: global OS-PID-to-authenticated-BB-session attribution. Available public BB command, tool and terminal records lacked the required PID/birth linkage. That unavailable proof froze all four current cards, including independent source preparation and no-model schema work, although the scheduling contract serialized full suites and performance measurements.
 
 Three separately approved read-only observations completed with exit 0/0/0 in 24.133 seconds. They found no original run path/task markers but could not attribute every transient helper. Repeated analysis could not recover the missing public fields. Work resumed only after explicit owner risk acceptance removed the added admission gate; historical ownership remained UNKNOWN/notMeasured and four failed test files remained unclassified. This was an orchestration error, not evidence of clean processes or a reason to waive red tests.
 
@@ -19,7 +19,7 @@ Next step: future triage review of this coordination-policy correction. Filing i
 
 ## Work to do
 
-- Correct the canonical `skills/orchestrate/SKILL.md` and applicable BB-specific instructions/preambles together. Inspect the ATI consumer overlay only for duplicated policy; keep an overlay change conditional on actual duplication.
+- Correct the canonical `skills/orchestrate/SKILL.md` and applicable BB-specific instructions/preambles together. Inspect the consumer overlay only for duplicated policy; keep an overlay change conditional on actual duplication.
 - Before introducing mandatory admission or acceptance proof, name its supported public observation source and verify that the required fields actually exist without model, native-provider or SDK/Stop probes. Do not invent a global PID-to-session prerequisite from unavailable host metadata.
 - Keep product gates, task-owned call/phase lifecycle, optional controlled-measurement leases and execution permissions distinct. Preserve actual owned-call completion and resource-specific serialization for conflicting writes, same-repository publication and explicit performance/controlled-load measurements; isolated ordinary suites may overlap. Missing administrative metadata alone must not freeze independent already-authorized source/preparation work; a shared-resource hold needs a concrete reason and bounded scope. A confirmed active owned job or concrete survivor remains a blocker.
 - Preserve UNKNOWN/notMeasured and red tests when evidence is incomplete. If owner action is necessary, present one feasible bounded decision whose possible result changes the next action. Do not repeat equivalent diagnostics, plan-only phases, manual approvals or evidence reads for a route that cannot satisfy its own criterion.
