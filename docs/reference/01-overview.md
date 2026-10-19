@@ -85,19 +85,19 @@ Layout of one task:
 
 Mailbox readers share one `readRecord(file, name, attic)` for parse, validation and isolation. `read` and `peek` both keep an ENOENT skip and report every other read refusal, and `history` passes `attic = null` so it never moves a delivered record; all three use the same malformed-schema note.
 
-**A ref that cannot be read counts as present and broken, never as absent.** `ENOENT` alone is a skip, and only there is silence right: the file went between the listing and the read because its owner claimed it, and that owner will deliver the message. Every other refusal — `EACCES`, `EPERM`, `EIO`, a directory where a file was expected, a full or unmounted volume — becomes a `BrokenNote` carrying that errno, with `attic: null` because the ref stays in place for a later visit. The two facts a reader must be able to tell apart are "somebody else already has this message" and "this message exists and I cannot open it": in an environment that refuses reads, a peek that dropped what it could not open reported **no mail** where the truth was **cannot read the mail**, and the participant waited for a message that was in front of it.
+**A ref that cannot be read counts as present and broken, never as absent.** `ENOENT` alone is a skip, and only there is silence right: the file went between the listing and the read because its owner claimed it, and that owner will deliver the message. Every other refusal — `EACCES`, `EPERM`, `EIO`, a directory where a file was expected, a full or unmounted volume — becomes a `BrokenNote` carrying that errno, with `attic: null` because the ref stays in place for a later visit. The two facts a reader must be able to tell apart are "somebody else already has this message" and "this message exists and I cannot open it": in an environment that refuses reads, a peek that dropped what it could not open reported no mail where the truth was cannot read the mail, and the participant waited for a message that was in front of it.
 
 `files/` is the folder a person opens, and it holds two kinds of file: artifacts that arrived through the bus — hard links to their blobs under the names they came with — and what the mechanism puts there itself, the `review` diff (`review-<worker>.diff`) and the `spawn` brief (`brief-<worker>.md`). A taken name is never overwritten: the next file of that stem takes the following number (`brief-<worker>-2.md`).
 
 Sidecar files the CLI writes (warden, wake, health, worker catalogs) sit in the same task directory. The engine API does not own them.
 
-One file sits at the **root** of the store rather than under `tasks/`: `model-routing.json`, the `workspace` overlay layer, which under the standalone host is the writable one — the file `promptobus models strategy --set` records `defaults.strategy` in, mode `0600` ([02-host](02-host.md) § The writable layer). It is state the tool writes, which is why it is here and not in the repository root, and it is per-workspace exactly as the store is. The availability cache and the participant telemetry are NOT here: they are account-scoped and live at the paths `routingPaths()` names, off the user home under standalone.
+One file sits at the root of the store rather than under `tasks/`: `model-routing.json`, the `workspace` overlay layer, which under the standalone host is the writable one — the file `promptobus models strategy --set` records `defaults.strategy` in, mode `0600` ([02-host](02-host.md) § The writable layer). It is state the tool writes, which is why it is here and not in the repository root, and it is per-workspace exactly as the store is. The availability cache and the participant telemetry are NOT here: they are account-scoped and live at the paths `routingPaths()` names, off the user home under standalone.
 
 ## Machine lease
 
 Source: `lib/lease.js`. Decision and the options it was chosen over: [ADR-018](../adr/adr-018-the-bus-leases-the-machine-for-measurements.md).
 
-Participants of one task share a machine, and so do participants of different tasks and different workspaces. A **machine lease** lets one measuring run at a time onto it: `promptobus lease -- <command…>` ([03-cli](03-cli.md) § Lease) takes the lease, runs the command, and releases it when the command exits.
+Participants of one task share a machine, and so do participants of different tasks and different workspaces. A machine lease lets one measuring run at a time onto it: `promptobus lease -- <command…>` ([03-cli](03-cli.md) § Lease) takes the lease, runs the command, and releases it when the command exits.
 
 The lease is not in the store home: that home is per workspace, and the lease must be seen by every workspace of the machine. It lives in one directory per user of the machine:
 
@@ -265,7 +265,7 @@ is rendered only by `renderMessage`, for one message asked by id.
 
 Source: `src/index.ts`.
 
-Public Promptobus surface, the "." entry point. It is **one** — protocol and store v1:
+Public Promptobus surface, the "." entry point. It is one — protocol and store v1:
 tasks, participants, messages, artifacts, recoverable fan-out, and history.
 Alongside it go out the bus vocabulary, the role registry ([04-protocol § The role
 registry](04-protocol.md#the-role-registry)), task-directory files the store does not
@@ -324,8 +324,8 @@ on unread mail. Its decisions live in the package state machine; the process
 loop, `fs.watch`, and auto-start live in `lib/warden.js`.
 
 **Two lifetime ceilings, measured at the top of `src/supervisor.ts`.**
-`WARDEN_TOTAL_SEC` (6 h) is the working ceiling: it ends the **warden process**
-for an **idle** task — no live participants and no unread mail — and names
+`WARDEN_TOTAL_SEC` (6 h) is the working ceiling: it ends the warden process
+for an idle task — no live participants and no unread mail — and names
 `sat out the overall ceiling 6 h` in the journal. While participants are alive
 or mail is unread, that ceiling does not fire. `WARDEN_ABSOLUTE_SEC` (72 h) is
 unconditional: it ends the process even with live work and names

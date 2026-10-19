@@ -185,7 +185,7 @@ Both session drivers wait past their own stop command, and the numbers behind th
 from a live run rather than from caution. Measured 2026-09-03 on `claude` 2.1.251, three
 runs in a row: `claude stop <id>` returned in 677, 801 and 898 ms, while the record left
 `claude agents --json` after 1070, 1145 and 1218 ms from the start of the call — so the
-command returns 270–390 ms **before** the session is gone from the registry. The ceiling
+command returns 270–390 ms before the session is gone from the registry. The ceiling
 of 10 s is an eightfold margin on the worst of those; it is not the cost of a normal stop
 but the point past which the wait ends and says so out loud. The poll step is shorter than
 one probe, since each probe is a `claude agents --json` run measured at 0.34–0.41 s, and a
@@ -197,7 +197,7 @@ snapshot until the ceiling.
 Why the wait exists at all: directory cleanup follows the stop, asks for session state, and
 on a still-live record lawfully keeps the worktree with "will be removed on the next
 promptobus done". The live run of 2026-09-03 00:14 went red on exactly that — four verdicts
-on steps 13–14 beside a green stop. The outcome is a **tristate**, not a boolean: `gone` —
+on steps 13–14 beside a green stop. The outcome is a tristate, not a boolean: `gone` —
 no record; `timeout` — the ceiling ran out with the record still there; `unreadable` — the
 registry could not be read. Saying "session closed" on an unreadable registry would assert
 the unchecked, which is what the "unknown is not death" rule exists to prevent. The caller
@@ -501,8 +501,6 @@ both questions. The caller reports that rather than reading it as either answer.
 
 Source: `lib/cursor-persist.js`, `injectText`.
 
-Deliver text into a live session.
-
 Each step of the protocol pays for a
 live miss:
 
@@ -530,7 +528,7 @@ Directories inside the participant's working directory that this driver's launch
 files claim.
 
 Before the first write the caller asks Git what the lift is about to overwrite, and
-it asks about **the paths the lift writes** — never about the claimed directory as a
+it asks about the paths the lift writes — never about the claimed directory as a
 whole. A declared directory is not a claim on everything under it: a repository may
 lawfully keep files of its own there, and a lift that does not write them must not
 announce them. What this field supplies is the boundary — where a launch file's
@@ -705,7 +703,7 @@ Measured 2026-10-01 on codex-cli 0.158.0 in disposable stand `pb-teamlead-parity
 #### The two `mcp_servers` transports, and the field that kills the config load
 
 The workspace MCP set is written into the `[mcp_servers]` tables of the participant home's
-`config.toml`, and Codex has **two transports whose fields do not overlap**:
+`config.toml`, and Codex has two transports whose fields do not overlap:
 `streamable_http` knows `url`, `http_headers` and `bearer_token_env_var`; `stdio` knows
 `command`, `args`, `env` and `cwd`. A foreign field is not ignored — it kills the config
 load entirely and the participant does not lift at all, with the reply *"failed to load
@@ -955,8 +953,6 @@ to separate participant homes cannot provide shared refresh coordination.
 
 Source: `lib/driver-codex.js`, `reviewSandbox`.
 
-Reviewer working directory: the mechanism's own, not the tree under review.
-
 A Codex reviewer used to sit in the reviewed clone, and two things followed. It got no
 workspace skills — the review procedure arrives as a module skill, and copying a canon
 into a foreign tree would dirty the branch a worker is still committing to. And it got
@@ -975,8 +971,6 @@ driver.
 ### `sweepParticipantHomes` — remove every home of this registry that no session record names
 
 Source: `lib/driver-codex.js`, `sweepParticipantHomes`.
-
-Remove every home of this registry that no session record names.
 
 The homes root is one directory, `$TMPDIR/promptobus-codex-homes`. A home is a direct child of it.
 `removeParticipantHome` still refuses anything that is not: the owner's `~/.codex`, a nested path,
@@ -1327,6 +1321,14 @@ evidence. A native reviewer beside BB workers remains a mixed runtime pilot.
 See [the plugin setup](../../bb-plugin-promptobus/README.md) and
 [ADR-029](../adr/adr-029-bb-constrained-codex-reviewer.md). Native Driver permissions
 and launch paths are unchanged.
+
+The ADR retains the original proof profile separately from current admission:
+
+<!-- quote:../adr/adr-029-bb-constrained-codex-reviewer.md -->
+The historical permission proof used BB 0.45.0, SDK 0.6.15, Codex CLI
+0.162.0-alpha.2 and model gpt-6.1-sol with low effort on one local macOS host.
+That provider version refused another Codex version before creating a thread.
+<!-- /quote -->
 
 ## BB async lifecycle observations
 

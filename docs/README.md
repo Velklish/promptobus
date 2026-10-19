@@ -52,4 +52,4 @@ The canonical project documentation. For current work, use `npx --no-install bac
 3. **Use only terms from the glossary.** If a required name is missing, propose it rather than silently inventing it.
 4. **Evidence is stronger than intuition.** Put a number, file path, or command output in task definitions, results, and ADRs; state unverified claims as hypotheses.
 
-Create a new ADR with `npx --no-install backslop adr <slug>` **and add a row to the table above**: without the row, `npx --no-install backslop lint` fails.
+Create a new ADR with `npx --no-install backslop adr <slug>` and add a row to the table above: without the row, `npx --no-install backslop lint` fails.

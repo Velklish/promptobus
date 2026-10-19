@@ -68,7 +68,7 @@ const {
 // check is driven on the one the owner named, and it goes into the report.
 const MODEL = LIVE_ARGS.model ?? 'cursor-grok-4.6-xhigh-fast';
 
-const tool = resolveToolBin('cursor');
+const tool = resolveToolBin(cursorDriver.options.tool);
 if (!tool.ok) {
   console.error(`✖ nothing to drive the live run with: ${tool.reason}`);
   process.exit(1);

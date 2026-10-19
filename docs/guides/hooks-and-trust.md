@@ -22,11 +22,11 @@ Owned records are identified by exact install ids first, not by file position. G
 
 ## A participant's hooks are not the workspace's
 
-`promptobus install` writes hook files at the **workspace root**. A worker works in its worktree, an approver in its own worktree, and a diff reviewer in a separate directory or sandbox. Teamlead and reporter sessions work at the install root (`lib/spawn.js:726`, `lib/report.js:180`). Drivers prepare participant hooks with that participant's identity (`--role`, `--task`, `--home`); the workspace guard carries none. A root hook can therefore also be in the project layer of a teamlead or reporter session.
+`promptobus install` writes hook files at the workspace root. A worker works in its worktree, an approver in its own worktree, and a diff reviewer in a separate directory or sandbox. Teamlead and reporter sessions work at the install root (`lib/spawn.js:726`, `lib/report.js:180`). Drivers prepare participant hooks with that participant's identity (`--role`, `--task`, `--home`); the workspace guard carries none. A root hook can therefore also be in the project layer of a teamlead or reporter session.
 
 For a Codex worker, reviewer or approver, that directory is also the only project the participant trusts: the lift records `[projects."<realpath of the working directory>"]` in the participant's home, and nothing else. In a reviewer sandbox the hooks file goes beside the skills copy, in `.codex/` of the working directory, under the same self-ignoring `.gitignore` that keeps a worker's diff clean. A worker's or approver's linked worktree gets it in the participant home instead, as described below. Managed Codex roots, teamleads and reporters use private homes with hooks disabled in both the home config and the thread config. Their holder and warden deliver turns through the app-server; they do not depend on project hooks at the install root.
 
-**Measured 2026-09-12 on a live Codex reviewer, and the file alone is not enough.** The turn ran end to end — 45 journal lines, `thread/started`, `turn/started`, three `item/*` pairs — with the hooks file in the reviewer's working directory carrying its `--role`, and that directory named `trust_level = "trusted"` in the participant's home. No `hook/*` event of any kind appeared: `grep -c "hook/started"` was 0. The run does **not** distinguish a wrong location from the right one with hooks not enabled — `--dangerously-bypass-hook-trust` waives trust for *enabled* hooks, so enablement is a second gate and it was not tested. One thing it does rule out: the workspace-root file was not read either, since the guard there carries no `--role` and no such command ran. The file stays where it is because removing it would undo correct work if the gate turns out to be enablement rather than place.
+**Measured 2026-09-12 on a live Codex reviewer, and the file alone is not enough.** The turn ran end to end — 45 journal lines, `thread/started`, `turn/started`, three `item/*` pairs — with the hooks file in the reviewer's working directory carrying its `--role`, and that directory named `trust_level = "trusted"` in the participant's home. No `hook/*` event of any kind appeared: `grep -c "hook/started"` was 0. The run does not distinguish a wrong location from the right one with hooks not enabled — `--dangerously-bypass-hook-trust` waives trust for *enabled* hooks, so enablement is a second gate and it was not tested. One thing it does rule out: the workspace-root file was not read either, since the guard there carries no `--role` and no such command ran. The file stays where it is because removing it would undo correct work if the gate turns out to be enablement rather than place.
 
 **Follow-up measured 2026-09-12 on codex-cli 0.146.0, with the installed Promptobus copy at 0.7.0.** Three live participants each took two turns: `turn/started` was 2 and `hook/started` was 0 in every holder journal. Their process argv carried `--dangerously-bypass-hook-trust`; the worktree had `.codex/hooks.json`, and its `.codex/skills` directory had 59 entries. This closes the earlier installed-copy blocker. The flag is `PARTICIPANT_ARGV` in `lib/codex-session.js`; the installed holder file is a shim that imports that module, so a count of the name in the shim is 0 and does not mean the flag arrived by another path.
 
@@ -241,7 +241,7 @@ Source: `src/supervisor.ts`.
 The warden state machine: rounds, knock-retry thresholds, unread health,
 silence escalation, and the decision of whom to activate.
 
-What is here and what is not. Here — DECISIONS: who still has unread, whether
+The state machine decides who still has unread, whether
 it is time to knock, which messages to show, who stalled, and who has already
 been reported. There is no delivery channel here, and no text: the channel
 comes from the driver via `activate`, and the same driver renders the text —
@@ -265,7 +265,7 @@ Source: `src/supervisor.ts`, `wakeTakenBy`.
 The address's contact point is held by a FOREIGN session — or `null` if
 it is held by its own, or there is nothing to compare.
 
-This is not malice: the Stop hook takes identity from its command
+The Stop hook takes identity from its command
 arguments, and when they are missing — from the session environment, and
 the harness background-session environment is not the one the session was
 spawned with. Measurement 2026-09-03: harness background sessions are
@@ -316,8 +316,6 @@ record too broken to read messages from has no right to lift its own report.
 
 Source: `lib/warden.js`.
 
-The task warden is a PROCESS, not a state machine.
-
 Listening on the bus is held by a process, not by model discipline: the warden is
 the only listener of every task mailbox and its only activator. On unread mail it
 wakes the addressee and thereby starts their turn. The process has no state of its
@@ -341,8 +339,7 @@ activation refusal does not kill the process: the participant is marked with the
 
 Source: `src/supervisor.ts`, `sessionBusy`.
 
-Whether the participant's session is busy with a turn. There are two
-branches, because there are two kinds of participant, and one branch
+There are two branches, because there are two kinds of participant, and one branch
 is not enough for both.
 
 **There is a session reference** — take busyness from the snapshot: the
@@ -476,7 +473,7 @@ a knock 60 s before it gives `false`.
 
 Source: `lib/warden.js`, `wardenRound`.
 
-One watch round. A wrapper over the state machine: a session snapshot arrives here,
+A wrapper over the state machine: a session snapshot arrives here,
 the registry leaves from here. `knock` is a suite seam: a stand-in driver for one
 round. The wrapper also hands the machine `mailboxes`, the adapter's answer for each
 participant record (`participantSlots`, `lib/store.js`): which mailbox slots it counts and

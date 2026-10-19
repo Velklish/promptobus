@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The live Cursor check probes the driver-declared `cursor-agent` binary, so an installed `cursor` editor does not satisfy its preflight.
+
 - BB reviewer instructions keep every send body within 2400 characters: long findings travel as ordered status parts before one terminal result and all-calls release. The orchestrator checks completeness from full canonical bodies without reviewer artifacts or filesystem writes.
 
 - A replacement for a dead reviewer receives the previous reviewer's last result unchanged in its initial prompt and checks those findings for closure first. Without a prior result, the initial prompt is unchanged.

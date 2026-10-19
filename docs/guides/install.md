@@ -86,7 +86,7 @@ A worker repository may have its own `promptobus.json` — separate from the wor
 { "generate": ["npx", "--yes", "github:owner/tool", "init"] }
 ```
 
-`spawn` runs it in the fresh worktree after the checkout and after `npm ci`, when the repository has a `package-lock.json`, and the participant preamble says whether the skills were laid out. A generator may therefore run a tool the repository pins in its own lock, such as `npx --no-install <tool> init` or `npm run …`. **Ignore what it generates** — files git can see leave the worker's branch dirty from its first second, and `promptobus done` never sweeps a dirty worktree; the lift warns when it finds them. Skills committed to git stay the default: a repository that has them in the checkout declares nothing. Details in [reference/03-cli](../reference/03-cli.md) § Spawn.
+`spawn` runs it in the fresh worktree after the checkout and after `npm ci`, when the repository has a `package-lock.json`, and the participant preamble says whether the skills were laid out. A generator may therefore run a tool the repository pins in its own lock, such as `npx --no-install <tool> init` or `npm run …`. Ignore what it generates — files git can see leave the worker's branch dirty from its first second, and `promptobus done` never sweeps a dirty worktree; the lift warns when it finds them. Skills committed to git stay the default: a repository that has them in the checkout declares nothing. Details in [reference/03-cli](../reference/03-cli.md) § Spawn.
 
 ## 3. MCP server for the orchestrator
 
@@ -205,7 +205,7 @@ Cursor: the stop guard only, with no SessionStart. Bus text reaches a Cursor par
 ```
 
 A Cursor file carrying an event name known only from the bundle inventory adds one more line — a
-warning, printed **before** `configured` and by `install`, `install --check`, `install --dry-run`
+warning, printed before `configured` and by `install`, `install --check`, `install --dry-run`
 and `uninstall` alike, since the group stays in the file on all four:
 
 ```text

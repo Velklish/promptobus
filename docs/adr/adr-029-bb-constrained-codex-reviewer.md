@@ -47,9 +47,11 @@ The constrained provider does not change native Promptobus reviewers.
 
 ## Permission proof
 
-The measured profile is BB 0.45.0, SDK 0.6.15, Codex CLI 0.162.0-alpha.2,
-model gpt-6.1-sol with low effort, on one local macOS host. The provider refuses
-another Codex version before creating a thread. Public SDK spawn/configuration
+The historical permission proof used BB 0.45.0, SDK 0.6.15, Codex CLI
+0.162.0-alpha.2 and model gpt-6.1-sol with low effort on one local macOS host.
+That provider version refused another Codex version before creating a thread.
+The current provider admits builds by their effective restrictions, as described
+in [the runtime contract](../reference/05-drivers.md#bb-constrained-codex-reviewer). Public SDK spawn/configuration
 can select plugin tools but does not enforce provider-wide read-only restrictions.
 
 The initial test exposed a real gap: an isolated Codex home and a filtered dynamic

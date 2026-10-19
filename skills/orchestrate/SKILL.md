@@ -223,7 +223,9 @@ A fallback **inside** the envelope needs no second approval: a preflight that ex
 
 ### Close-time telemetry refresh
 
-`promptobus done` writes one local telemetry record per participant and automatically refreshes the availability of exactly the window-bearing harnesses represented by those records. It uses the existing 15 s preflight budget for that probe set, so there is no separate `promptobus models --refresh` step to remember. A window entry still lives sixty seconds, and a probe refusal or timeout leaves that harness's end reading `null`; `done` warns with `telemetry: <harness> window <id> not re-read (<reason>) — end reading absent` for a missing window (or the harness-level form when the whole harness is unavailable) and still closes the task. The record is local, holds no prompt, path, session id or token contents, and may carry a numeric output-token count as throughput evidence; nothing sends it anywhere.
+`promptobus done` writes one local telemetry record per recorded harness generation of a participant with a model, plus teamleads and the root orchestrator with a recorded session identity or model.
+
+It automatically refreshes the availability of exactly the window-bearing harnesses represented by those records. It uses the existing 15 s preflight budget for that probe set, so there is no separate `promptobus models --refresh` step to remember. A window entry still lives sixty seconds, and a probe refusal or timeout leaves that harness's end reading `null`; `done` warns with `telemetry: <harness> window <id> not re-read (<reason>) — end reading absent` for a missing window (or the harness-level form when the whole harness is unavailable) and still closes the task. The record is local, holds no prompt, path, session id or token contents, and may carry numeric token-usage counts separately from throughput evidence; nothing sends it anywhere.
 
 ### Constraints the user named
 

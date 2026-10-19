@@ -6,7 +6,7 @@
 
 ## Context
 
-A run needed to stop **one** of a task's two participants and had no command for it. `done`
+A run needed to stop one of a task's two participants and had no command for it. `done`
 closes the task and stops every session in it, the other participant included; `dismiss <address>`
 stops the warden's reports about one address and never touches its process, which is what it
 promises and the right behaviour for what it is. Between them there was nothing.

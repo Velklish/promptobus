@@ -29,13 +29,13 @@ The host names the overlays and their order — `routingPaths().overlays`, lowes
 | Layer | Standalone path | Whose it is |
 |---|---|---|
 | `user` | `~/.promptobus/model-routing.json` | preferences that follow the account across workspaces |
-| `workspace` | `<promptobusHome>/model-routing.json` | a local exception for this repository set — and the **writable** layer |
+| `workspace` | `<promptobusHome>/model-routing.json` | a local exception for this repository set — and the writable layer |
 
-A consumer that ships its own policy inserts a layer of its own between them; that is a host-side choice and needs no change here. **A missing overlay file is normal**, not an error: the host names paths, it does not promise they exist.
+A consumer that ships its own policy inserts a layer of its own between them; that is a host-side choice and needs no change here. A missing overlay file is normal, not an error: the host names paths, it does not promise they exist.
 
 **Exactly one layer is the writable one**, whenever any layer is declared, and it is the layer `promptobus models strategy --set <name>` writes `defaults.strategy` into ([reference/02-host.md](../reference/02-host.md) § The writable layer). Under standalone that is `workspace`, and it sits inside the task store rather than in the repository root because the tool rewrites it: state, not configuration, and not a file anybody commits. **`<workspaceRoot>/model-routing.local.json` is no longer read and there is no fallback** — two paths under one layer id would make the file a person edits depend on which of them exists — so rules kept in the old file have to be moved by hand.
 
-The host names a third routing file beside the two overlays, and it is not a layer: the availability cache, `~/.promptobus/model-routing/cache.json` under standalone, mode `0600`. Nothing in it is edited by hand — it holds what the harnesses last answered, and the one command that changes it deliberately is `promptobus models --clear-exhausted <harness>`. The `user` overlay and the cache sit under the home directory rather than the workspace because they follow the **account** the harness binaries are logged into, not one checkout; the `workspace` layer is per-workspace, which is the whole of what its id says ([reference/02-host.md](../reference/02-host.md) § Model-routing paths).
+The host names a third routing file beside the two overlays, and it is not a layer: the availability cache, `~/.promptobus/model-routing/cache.json` under standalone, mode `0600`. Nothing in it is edited by hand — it holds what the harnesses last answered, and the one command that changes it deliberately is `promptobus models --clear-exhausted <harness>`. The `user` overlay and the cache sit under the home directory rather than the workspace because they follow the account the harness binaries are logged into, not one checkout; the `workspace` layer is per-workspace, which is the whole of what its id says ([reference/02-host.md](../reference/02-host.md) § Model-routing paths).
 
 ## What a layer may change, and how it combines
 
@@ -43,9 +43,9 @@ Three combining rules, and they differ on purpose.
 
 | Field | Rule | Why |
 |---|---|---|
-| `weights.<strategy>` | the named set is replaced **whole** | a half-replaced set silently stops summing to 100, and the resolver would divide a component back by a weight nobody chose. Only the four ADR-005 strategies have one: `balance` orders tuples inside a harness by `balanced`, so re-weighting `balanced` re-weights the inside of `balance` with it |
-| `deny.<kind>` | the lists of every layer are **unioned** | a ban written in any layer stands, and no layer above it lifts one |
-| `allow.<kind>` | the lists of every layer are **intersected** | one rule then covers both lists — a layer's rule survives every layer above it |
+| `weights.<strategy>` | the named set is replaced whole | a half-replaced set silently stops summing to 100, and the resolver would divide a component back by a weight nobody chose. Only the four ADR-005 strategies have one: `balance` orders tuples inside a harness by `balanced`, so re-weighting `balanced` re-weights the inside of `balance` with it |
+| `deny.<kind>` | the lists of every layer are unioned | a ban written in any layer stands, and no layer above it lifts one |
+| `allow.<kind>` | the lists of every layer are intersected | one rule then covers both lists — a layer's rule survives every layer above it |
 | everything else | field by field | naming a field is how an overlay changes it; not naming it is how it leaves the layer below alone |
 
 "Everything else" is `penalties`, `bonuses`, `qualityFloor.<role>`, `balance.band`, `balance.spendUnit`, `payg.allow`, one rating of one tuple (`ratings.<tupleId>.<rating>`) and one tuple's canonical priority (`priority.<tupleId>`). `reviewerQualityFloor` is still read as an alias for `qualityFloor.reviewer`; a layer that states both is a `quality-floor-alias` warning and the explicit key wins.
@@ -66,18 +66,16 @@ For a consumer policy layer that is the intended behaviour: its bans hold whatev
 
 **Two more selectors**, and they work in `allow` and `deny` alike:
 
-- `flags` names a mark the availability snapshot carries on a model — today one, `no-zdr`. `deny: { flags: ["no-zdr"] }` takes every model the harness marks that way out of automatic selection. It is checked against a closed list, so a typo is refused rather than silently matching nothing. **A harness that lists no models has no flag to match**, so this rule gives no guarantee on such a harness — a run reports that as the `flag-not-in-inventory` warning;
+- `flags` names a mark the availability snapshot carries on a model — today one, `no-zdr`. `deny: { flags: ["no-zdr"] }` takes every model the harness marks that way out of automatic selection. It is checked against a closed list, so a typo is refused rather than silently matching nothing. A harness that lists no models has no flag to match, so this rule gives no guarantee on such a harness — a run reports that as the `flag-not-in-inventory` warning;
 - `byRole` scopes a rule to a catalog role or a declared step. `deny: { byRole: { security: { harnesses: ["cursor"] } } }` applies only to `security`; a `reads-diff` step also takes `byRole.reviewer`. Their denies union and their allows intersect. `models validate` refuses an unknown step name against the host's declaration.
 
 An overlay cannot add or remove a tuple. Rating rows are the maintainers' work and go through the catalog; a person who wants a tuple gone denies it.
 
-The top layer is the command line. `--harness`, `--model` and `--effort` are carried through untouched — they are constraints the resolver applies, and the CLI never silently replaces a value a person named. A lift whose `--model` no tuple of the merged catalog names is not routed at all: it runs the id as typed, still under the allow and deny lists in force for every spelling of it, so a newly released model works before the catalog rates it ([reference/03-cli.md § An explicit model the catalog does not rate](../reference/03-cli.md#an-explicit-model-the-catalog-does-not-rate)). `--allow-payg` is different: it is a policy change and is applied at this layer. It is **opt-in only**, so its absence does not undo an overlay that opted pay-as-you-go in.
+The top layer is the command line. `--harness`, `--model` and `--effort` are carried through untouched — they are constraints the resolver applies, and the CLI never silently replaces a value a person named. A lift whose `--model` no tuple of the merged catalog names is not routed at all: it runs the id as typed, still under the allow and deny lists in force for every spelling of it, so a newly released model works before the catalog rates it ([reference/03-cli.md § An explicit model the catalog does not rate](../reference/03-cli.md#an-explicit-model-the-catalog-does-not-rate)). `--allow-payg` is different: it is a policy change and is applied at this layer. It is opt-in only, so its absence does not undo an overlay that opted pay-as-you-go in.
 
 ## The catalog file
 
 `models/catalog.json`, shipped through `files` in `package.json`, valid against [catalog.schema.json](../../schemas/model-routing/catalog.schema.json). One row per thing that can actually be launched: `role + harness + model + effort`.
-
-Two things about the rows are worth knowing before reading them.
 
 **Cursor carries effort inside the model id.** `lib/driver-cursor.js` appends `-<level>` to `--model` when it is given an effort, and the level is a flat suffix of the id — `claude-opus-5-thinking-max`, `gpt-5.6-sol-high`. So a Cursor tuple's `model` is the full id and its `effort` is `null`; the resolver must not add an effort for it, or the run would lift `…-max-max`. Claude and Codex take the level as a separate flag, and their tuples name it.
 
@@ -85,11 +83,11 @@ Read the id, never the display name: `cursor-agent models` prints `claude-opus-5
 
 **Claude rows name a full model id, never an alias.** `claude --model` takes both — its own help says "an alias for the latest model (e.g. 'fable', 'opus', or 'sonnet') or a model's full name (e.g. 'claude-fable-5')" — and the alias is the trap. A row keyed on `opus` is a rating of whatever the vendor points that alias at today: when it moves to a new model, the row keeps its `quality`, its `speed`, its `quotaCost`, its `assessedAt` and its evidence, and starts describing a model nobody assessed. Nothing goes red — the staleness warning fires on the calendar rather than on a re-point, and this harness publishes no inventory for `models validate` to compare against (no `models` subcommand, no `--list-models`, on 2.1.251 and still on 2.1.263). So the rows name `claude-fable-5-1`, `claude-fable-5`, `claude-opus-5-5`, `claude-opus-5`, `claude-sonnet-5` and `claude-haiku-4-5`, the "latest" behaviour of an alias is given up on purpose, and a new model gets a new rated row. The 2.1.263 baked `aliases.haiku` entry points to `claude-haiku-4-5`, and its one-turn liftoff succeeded on 2026-09-09, so `haiku` is the one proven alias carried in the driver even though help omits it; `claude-mythos-5-1` was refused and remains out.
 
-**The `fable` alias moved, and that is the rule being demonstrated rather than a problem for it.** When the Fable rows were written, the binary's baked catalog said `fable:{default:"claude-fable-5"}` beside `best:"fable"` and an empty `alias_migration` (2.1.251, read offline). On 2.1.263 it says `fable:{default:"claude-fable-5-1",per_provider:{gateway:"claude-fable-5"}}` and `latest_per_family.fable:"claude-fable-5-1"`, with `alias_migration` still empty. Under a row keyed on `fable`, that one edit in someone else's binary would silently have re-pointed a rating assessed against Fable 5's 95.0 % at a model nobody had assessed, keeping the `assessedAt` date that says otherwise. Under id-keyed rows, **nothing happened**: the `claude-fable-5` rows go on meaning Fable 5, and Fable 5.1 got rows of its own with its own evidence, its own hypothesis and its own date.
+**The `fable` alias moved, and that is the rule being demonstrated rather than a problem for it.** When the Fable rows were written, the binary's baked catalog said `fable:{default:"claude-fable-5"}` beside `best:"fable"` and an empty `alias_migration` (2.1.251, read offline). On 2.1.263 it says `fable:{default:"claude-fable-5-1",per_provider:{gateway:"claude-fable-5"}}` and `latest_per_family.fable:"claude-fable-5-1"`, with `alias_migration` still empty. Under a row keyed on `fable`, that one edit in someone else's binary would silently have re-pointed a rating assessed against Fable 5's 95.0 % at a model nobody had assessed, keeping the `assessedAt` date that says otherwise. Under id-keyed rows, nothing happened: the `claude-fable-5` rows go on meaning Fable 5, and Fable 5.1 got rows of its own with its own evidence, its own hypothesis and its own date.
 
 **Both Fable ladders ship, because the binary still starts both.** The decision was a read rather than a courtesy: 2.1.263's baked table holds `claude-fable-5` and `claude-fable-5-1` as separate first-party rows of `family:"fable"` — `display_name` "Fable 5" and "Fable 5.1", knowledge cutoffs January 2026 and June 2026 — both are in the binary's own array of accepted ids, `alias_migration` is empty so nothing is rewritten, and Fable 5.1's row names `fallback_3p:"claude-fable-5"`, the vendor's own statement that the predecessor is still served. A rated row is dropped when the vendor stops serving the model, which is a fact to be read out of that table; an alias moving off an id is not that fact. What the two ladders differ on is only what is published about them — Fable 5's `quality` cites a SWE-bench Verified figure, Fable 5.1's states a hypothesis, and the row says which.
 
-A pinned id is only worth pinning if the binary takes it, and there is no listing to check that against. Two of the original three families were **run** once, on 2.1.251 on 2026-09-05; Haiku and Mythos were checked on 2.1.263 on 2026-09-09:
+A pinned id is only worth pinning if the binary takes it, and there is no listing to check that against. Two of the original three families were run once, on 2.1.251 on 2026-09-05; Haiku and Mythos were checked on 2.1.263 on 2026-09-09:
 
 ```text
 claude -p --model claude-opus-5   --max-turns 1 'reply with the single word ok'   → ok
@@ -146,13 +144,13 @@ The lift is `review --approver` once a reviewer result is on record; acceptance 
 state changes, and [ADR-024](../adr/adr-024-approver-acceptance-in-own-worktree.md)
 records why that work rejects 6 without buying the independent defect discovery of 8.
 
-**Upward interpolation never makes a rung a reviewer or approver.** An effort step raises the interpolated `quality` by one band, so a rung above its base row can cross a role floor on arithmetic alone — an unmeasured rung claiming a role its measured base never earned. So a tuple is rated for automatic selection as `reviewer` or `approver` only when its own effective rating AND its **base row's** effective assessed rating are at that role's floor. Effective means the general `ratings` with that tuple's `roleRatings[role]` override applied, exactly as the resolver scores it. `codex-gpt55-xhigh` is the live reviewer case: it interpolates to quality 10 from a base row assessed at 8, and remains outside reviewer. `models validate` refuses a catalog that says otherwise.
+**Upward interpolation never makes a rung a reviewer or approver.** An effort step raises the interpolated `quality` by one band, so a rung above its base row can cross a role floor on arithmetic alone — an unmeasured rung claiming a role its measured base never earned. So a tuple is rated for automatic selection as `reviewer` or `approver` only when its own effective rating AND its base row's effective assessed rating are at that role's floor. Effective means the general `ratings` with that tuple's `roleRatings[role]` override applied, exactly as the resolver scores it. `codex-gpt55-xhigh` is the live reviewer case: it interpolates to quality 10 from a base row assessed at 8, and remains outside reviewer. `models validate` refuses a catalog that says otherwise.
 
-**Money is not `quotaCost`.** A row carries both and they are different facts. `ratings.quotaCost` is a 1–10 band of how much of the *subscription* a run on that tuple spends, and it is scored on every routed pick. Money lives in `prices` (per million tokens) and `billing`, it is never scored at all, and it reaches a decision as one gate: a `billing: "payg"` row is excluded as `payg-not-allowed` unless `--allow-payg` or an overlay's `payg.allow` admits it. Every row shipped today is `billing: "subscription"` with all three prices `null`, because money per token is meaningless for a run billed against a plan. That is not the same as "no price is known": the vendors' published **list** prices ARE the basis of every `quotaCost` band, blended as `(input + output) / 2`, banded against the dated $2.50 → 1 / $30 → 10 anchor pair and cited in the row's `evidence`. A promotional price never moves the anchor — it applies to the model's own figure while the cited promotion is in force, and the row's `evidence` names the list price, the promotion and the band the list price would give, so the row is re-banded the day the promotion ends — they are evidence for a subscription rating, not a price this package would ever charge against. Reading a low `quotaCost` as "cheap in money" is the mistake this split exists to prevent. The `gpt-5.6-sol` max records in [the calibrate fixture](../../test/fixtures/model-routing/telemetry.jsonl) are scaled to agree with `codex-sol-max`'s promotional band 4. When the row re-bands at the promotion's end, rescale them.
+**Money is not `quotaCost`.** A row carries both and they are different facts. `ratings.quotaCost` is a 1–10 band of how much of the *subscription* a run on that tuple spends, and it is scored on every routed pick. Money lives in `prices` (per million tokens) and `billing`, it is never scored at all, and it reaches a decision as one gate: a `billing: "payg"` row is excluded as `payg-not-allowed` unless `--allow-payg` or an overlay's `payg.allow` admits it. Every row shipped today is `billing: "subscription"` with all three prices `null`, because money per token is meaningless for a run billed against a plan. That is not the same as "no price is known": the vendors' published list prices ARE the basis of every `quotaCost` band, blended as `(input + output) / 2`, banded against the dated $2.50 → 1 / $30 → 10 anchor pair and cited in the row's `evidence`. A promotional price never moves the anchor — it applies to the model's own figure while the cited promotion is in force, and the row's `evidence` names the list price, the promotion and the band the list price would give, so the row is re-banded the day the promotion ends — they are evidence for a subscription rating, not a price this package would ever charge against. Reading a low `quotaCost` as "cheap in money" is the mistake this split exists to prevent. The `gpt-5.6-sol` max records in [the calibrate fixture](../../test/fixtures/model-routing/telemetry.jsonl) are scaled to agree with `codex-sol-max`'s promotional band 4. When the row re-bands at the promotion's end, rescale them.
 
 **An unrated model is not a tuple.** The catalog holds only models the maintainers assessed against a source they named: every row carries `source` and `evidence`, and a model nobody could assess at all gets no row.
 
-**A hypothesis is a row that says so, not a row that is missing.** This is the part the v1 wording got wrong and had to be settled. Where no figure can be cited for *that exact model and effort rung*, ADR-005 refuses to invent one — but it does not refuse the row: the rating is named in `evidence.hypothesis`, the reasoning behind the band is written in `evidence.text`, and the row ships. That is deliberate, because the alternative is worse: dropping the row would silently remove a model the person can actually launch, on the grounds that a leaderboard has not got round to it. Twelve of the twenty-two base models shipped today carry a hypothesis for `quality`, `composer-2.5` and `cursor-grok-4.6-high` carry one for all three, and the catalog is more honest for saying so than it would be for hiding them. What `validate` refuses is narrower and sharper: a rating with **neither** a source, **nor** an interpolation from a base row with evidence, **nor** a stated hypothesis.
+**A hypothesis is a row that says so, not a row that is missing.** This is the part the v1 wording got wrong and had to be settled. Where no figure can be cited for *that exact model and effort rung*, ADR-005 refuses to invent one — but it does not refuse the row: the rating is named in `evidence.hypothesis`, the reasoning behind the band is written in `evidence.text`, and the row ships. That is deliberate, because the alternative is worse: dropping the row would silently remove a model the person can actually launch, on the grounds that a leaderboard has not got round to it. Twelve of the twenty-two base models shipped today carry a hypothesis for `quality`, `composer-2.5` and `cursor-grok-4.6-high` carry one for all three, and the catalog is more honest for saying so than it would be for hiding them. What `validate` refuses is narrower and sharper: a rating with neither a source, nor an interpolation from a base row with evidence, nor a stated hypothesis.
 
 **`evidence` says which of its numbers are published and which are not.** The field takes the v1 string still, but the shipped rows use the object form ADR-005 asks for — `{ text, sources, interpolatedFrom, hypothesis }` — and `validate` reads it: for each of `quality`, `speed` and `quotaCost` the row must either cite a figure in `sources` (the benchmark or price source, its version, the agent harness where the page names one, the figure, the size of the field the band was cut from, the URL and the date it was seen), or be marked `interpolatedFrom` a base row with a citation or hypothesis, or name that rating in `hypothesis` — "no citable figure for this model and effort rung, and here is the reasoning instead". A rating in none of the three is a `catalog-invalid` error. So "rated from a source" is now a machine-checkable claim rather than a promise in prose, and a reader can tell at a glance which half of a row rests on a published number. A model the account exposes and the catalog does not rate never enters automatic selection — `promptobus models` shows it as an `unrated` runtime row and nothing picks it.
 
@@ -164,11 +162,11 @@ records why that work rejects 6 without buying the independent defect discovery 
 - inside a group the tuples run from the highest quality down;
 - initial numbers go in steps of ten; a rung added later takes an unused gap between two tens, preserving existing priorities and their relative order.
 
-`validate` enforces this as a **warning**: a catalog that breaks the convention still routes, because priority only ever breaks a tie, but a drifting file should say so out loud. The two warnings are `priority-duplicate` (two tuples share a priority, so the tie-break falls through to the tuple id) and `priority-not-canonical` (a harness block starts inside the block above it, or quality rises as priority rises inside one block).
+`validate` enforces this as a warning: a catalog that breaks the convention still routes, because priority only ever breaks a tie, but a drifting file should say so out loud. The two warnings are `priority-duplicate` (two tuples share a priority, so the tie-break falls through to the tuple id) and `priority-not-canonical` (a harness block starts inside the block above it, or quality rises as priority rises inside one block).
 
 ### Re-rating a row
 
-A rating is a **band**: an integer from 1 through 10, produced from one published figure and the dated anchor pair of its benchmark, version and agent harness. It reads no field, so adding or removing a model moves no other model's band. Four steps, and the fourth is what makes the third checkable:
+A rating is a band: an integer from 1 through 10, produced from one published figure and the dated anchor pair of its benchmark, version and agent harness. It reads no field, so adding or removing a model moves no other model's band. Four steps, and the fourth is what makes the third checkable:
 
 1. **Find the figure, with its version and its harness.** A number without both is not a figure ([ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md)): the same Grok 4.6 was reported at 88.4 on Terminal-Bench 2.1 and 26 on 3.0, and Claude Fable 5 scores 83.8 under Claude Code and 80.4 under Terminus 2 on one version. Where several figures exist, take the harness this catalog runs the model on; where none does, take the highest published one and say in `evidence.text` that this fallback was used. The source order is ADR-005's and is unchanged: SWE-bench Verified, then Terminal-Bench, then Aider polyglot, then the vendor model card. When the page names no effort, a ladder with `max` uses that base rung by catalog convention, not as a claim about the harness default. A ladder without `max` uses the model-specific harness default only after that default has been measured and matched to a catalog rung. Until then the figure cannot be cited for an effort rung; keep the rating a hypothesis.
 2. **Pick the anchor pair** for exactly that source, version and harness from the table in ADR-005 § Absolute bands. If that source, version or harness has no pair, do not compute a band from it or reuse another version's pair: keep the rating as a hypothesis against measured neighbours, name the reasoning in `evidence.hypothesis` and `evidence.text`, and add the anchor through a dated ADR/catalog-wide decision first. Adding one re-bands the whole catalog.
@@ -195,7 +193,7 @@ The no-`max` bases with interpolated rungs in the current catalog have these out
 
 ### Staleness
 
-A rating older than 90 days produces a `stale-rating` warning and is **never** excluded. Catalog updates are event-driven — a changed model line-up, changed prices, a substantial observation — so the number is a mechanism default rather than a schedule: it is longer than a release cycle and shorter than the time in which a harness's model list turns over. It lives in one place, `STALE_RATING_DAYS` in `lib/model-routing/catalog.js`.
+A rating older than 90 days produces a `stale-rating` warning and is never excluded. Catalog updates are event-driven — a changed model line-up, changed prices, a substantial observation — so the number is a mechanism default rather than a schedule: it is longer than a release cycle and shorter than the time in which a harness's model list turns over. It lives in one place, `STALE_RATING_DAYS` in `lib/model-routing/catalog.js`.
 
 ## The overlay to copy
 
@@ -230,10 +228,10 @@ Line by line:
 - `qualityFloor` raises or lowers the bar per catalog role — the defaults are worker 5, reviewer 9 and approver 7 on the 1–10 scale. An explicit floor on a declared step takes precedence; otherwise that step uses its kind's merged catalog-role floor. All are soft choice rules: a candidate below one keeps its place and its score, only the pick moves past it, and if nothing reaches it the best remaining candidate is chosen with a warning rather than the run refusing;
 - `balance` moves the two numbers of the `balance` strategy, both in percentage points of a window: `band` is how close two accounts have to be on pace before the better-rated model wins, and `spendUnit` is how much of a window a heavy tuple gives up before harnesses are compared;
 - `nearLimit` moves when `models` says an account is running short — `usedPercent` (80) is a level, how much of the binding window is gone; `underspend` (−15 points) is a rate, how far ahead of its own pace the account is spending. Either one raises the line. `excludeAtUsedPercent` (90) is the level at which a tuple stops being a candidate at all: its binding window at or past it is the `window-nearly-spent` exclusion, so a `--strategy quality` run no longer lands on an account with 4 % left because the quality weight outran `remaining`. Naming the tuple with `--harness` or `--model` still spends it, with a `window-nearly-spent-named` warning;
-- `caps.liveParticipants.<harness>` is how many participants of **one task** may be live on a harness at once, and under `balance` a harness that has reached its ceiling leaves the pace comparison — the next worker goes to another subscription. Per harness, because your three subscriptions have different capacities. It bounds **one run and not the account**: the count is that task's own participant list, so two tasks going side by side each count their own. Counted in **participants** — the similarly named `penalties.liveParticipantCap` is a ceiling on the live-participant *penalty*, in score points, and the two do different jobs. It is a **ceiling and not a steeper penalty**: `penalties.liveParticipantPerHarness` only orders candidates inside a harness, so an account whose window is ahead of the others would otherwise attract the third and the fourth worker too. `0` means never this harness; a harness you do not name is unbounded, which is how every run behaved before the key existed. When the ceiling moves the pick, the decision and the `spawn` line carry a `live-participant-cap` warning naming it. The key exists because of a measurement rather than a worry: on 2026-09-06 on the consumer, three workers in a row went to one Codex account, the five-hour window was spent in forty minutes, and all three stalled mid-turn;
+- `caps.liveParticipants.<harness>` is how many participants of one task may be live on a harness at once, and under `balance` a harness that has reached its ceiling leaves the pace comparison — the next worker goes to another subscription. Per harness, because your three subscriptions have different capacities. It bounds one run and not the account: the count is that task's own participant list, so two tasks going side by side each count their own. Counted in participants — the similarly named `penalties.liveParticipantCap` is a ceiling on the live-participant *penalty*, in score points, and the two do different jobs. It is a ceiling and not a steeper penalty: `penalties.liveParticipantPerHarness` only orders candidates inside a harness, so an account whose window is ahead of the others would otherwise attract the third and the fourth worker too. `0` means never this harness; a harness you do not name is unbounded, which is how every run behaved before the key existed. When the ceiling moves the pick, the decision and the `spawn` line carry a `live-participant-cap` warning naming it. The key exists because of a measurement rather than a worry: on 2026-09-06 on the consumer, three workers in a row went to one Codex account, the five-hour window was spent in forty minutes, and all three stalled mid-turn;
 - `defaults.strategy` is what `spawn` and `review` route with when `--strategy` is absent. It is the one key a command writes: `promptobus models strategy --set <name>` puts it in the writable layer, `--clear` takes it away, and a flag on the command line always wins over it;
-- `account.<harness>.plan` is a person's answer to a question no harness method returns — today one, Cursor's plan name, and it belongs in the **user** file. **Nothing writes it**: `models` prints the key and the path, and you add the line. It is displayed and scored by nothing;
-- `ratings` corrects one rating of one tuple, by tuple id, and leaves that tuple's other ratings alone. Every value is an integer from 1 through 10, and an overlay that carries a `ratings` block **must** declare `schemaVersion: 2`: a block written on the old 1–5 scale is refused by the load and by `models validate` with the route *rewrite `ratings` on the 1–10 scale and set `schemaVersion: 2`*, because a 3 was a middle of five and is a low third of ten and nothing may translate it silently. The two quality-floor keys are on the same scale and are refused the same way: `reviewerQualityFloor: 5` was the top band of five and is half way up ten, so a v1 file holding one would quietly lower your reviewer floor from 9 to 5. An overlay carrying none of the three — a deny list, a strategy default, an account answer, weights — is still read on `schemaVersion: 1`, unchanged. `models calibrate --write` is the one command that writes this block, and only after you agree to the exact lines it printed;
+- `account.<harness>.plan` is a person's answer to a question no harness method returns — today one, Cursor's plan name, and it belongs in the user file. Nothing writes it: `models` prints the key and the path, and you add the line. It is displayed and scored by nothing;
+- `ratings` corrects one rating of one tuple, by tuple id, and leaves that tuple's other ratings alone. Every value is an integer from 1 through 10, and an overlay that carries a `ratings` block must declare `schemaVersion: 2`: a block written on the old 1–5 scale is refused by the load and by `models validate` with the route *rewrite `ratings` on the 1–10 scale and set `schemaVersion: 2`*, because a 3 was a middle of five and is a low third of ten and nothing may translate it silently. The two quality-floor keys are on the same scale and are refused the same way: `reviewerQualityFloor: 5` was the top band of five and is half way up ten, so a v1 file holding one would quietly lower your reviewer floor from 9 to 5. An overlay carrying none of the three — a deny list, a strategy default, an account answer, weights — is still read on `schemaVersion: 1`, unchanged. `models calibrate --write` is the one command that writes this block, and only after you agree to the exact lines it printed;
 - `payg.allow` admits pay-as-you-go tuples without `--allow-payg` on every call. The shipped catalog has no pay-as-you-go row today — every account the drivers log into is a subscription, and no price was filled in from a source that could be named — so this only matters once one appears or an overlay's own policy needs it.
 
 ## Checking a file
@@ -243,14 +241,14 @@ Line by line:
 | Kind | What it covers |
 |---|---|
 | error `catalog-invalid` | the catalog's shape, duplicate tuple ids, a harness no driver of this CLI drives, an effort outside that driver's `EFFORT_LEVELS`, and a rating with nothing behind it — no source, no interpolation, no stated hypothesis — including an `interpolatedFrom` that names no tuple or names one that is itself interpolated |
-| error `overlay-invalid` | an overlay's shape, a strategy whose four weights do not sum to 100, a reference to a tuple, model, harness, effort, flag or role that does not exist, a name both allowed and denied **in one layer**, allow lists that intersect to nothing (`allow-intersection-empty`) and an allow list every name of which is denied (`deny-covers-allow`) |
+| error `overlay-invalid` | an overlay's shape, a strategy whose four weights do not sum to 100, a reference to a tuple, model, harness, effort, flag or role that does not exist, a name both allowed and denied in one layer, allow lists that intersect to nothing (`allow-intersection-empty`) and an allow list every name of which is denied (`deny-covers-allow`) |
 | warning | `stale-rating`, `priority-duplicate`, `priority-not-canonical`, `promotion-expired`, `allow-shadowed-by-deny`, `quality-floor-alias` — every one of them advisory; `promotion-expired` is validate-only, and none of them stops a run |
 
 Every finding carries `code`, the `layer` id it belongs to, `at` — the field it is about — `message`, and `rule` where the check has a name of its own. `layer` names whoever wrote the key in question: the overlay that wrote that weight set, or the one that wrote the deny half of a pair, and `defaults` where no overlay ever touched it. A finding about allow and deny together names the deny side, because deny is applied last, and its message names the allow side too. `allow-shadowed-by-deny` is a name allowed in one layer and denied in another — lawful since ADR-005, and a warning rather than the error it was, because deny simply wins.
 
 Warnings carry required `code` and `message`; the decision schema also permits optional `harness` and `usedPercent` on a `near-limit` warning, so a caller can name the affected harness and its binding window's usage without parsing prose. Merged-catalog warnings copied into a decision keep their `code` and `message`; the resolver adds the near-limit fields from the availability snapshot. `priority-duplicate` and `priority-not-canonical` are `validate`'s own: they check a convention rather than a routing outcome, and they never reach a decision. `promotion-expired` is also validate-only: it names a quota-cost promotion whose last observed date passed, and never reaches a decision.
 
-`priority-duplicate`, `priority-not-canonical` and `ladder-indistinguishable` carry a `layer` as well, because they are raised from tuple values and after the merge those values may come from anywhere in your stack. It is the **highest-precedence layer among the values that raised the warning**, and `catalog` when your overlays touched none of them — so the question you actually have, *did my own file do this?*, is answered by comparing that field with your layer's id. It is always there: an overlay that collapses two rungs of a ladder gets `ladder-indistinguishable` with your layer's id on it, and the same code from the shipped catalog says `catalog`. `models validate` prints it on the line, as `<code> · <layer>: <message>`, so you do not have to call the library to ask.
+`priority-duplicate`, `priority-not-canonical` and `ladder-indistinguishable` carry a `layer` as well, because they are raised from tuple values and after the merge those values may come from anywhere in your stack. It is the highest-precedence layer among the values that raised the warning, and `catalog` when your overlays touched none of them — so the question you actually have, *did my own file do this?*, is answered by comparing that field with your layer's id. It is always there: an overlay that collapses two rungs of a ladder gets `ladder-indistinguishable` with your layer's id on it, and the same code from the shipped catalog says `catalog`. `models validate` prints it on the line, as `<code> · <layer>: <message>`, so you do not have to call the library to ask.
 
 The same checks are a library call in `lib/model-routing/validate.js`, so a consumer can check a policy layer it ships without starting a subprocess:
 
@@ -262,8 +260,6 @@ The same checks are a library call in `lib/model-routing/validate.js`, so a cons
 Production reads no JSON Schema — the grammar is written out in that file, and a parity check against the schemas keeps the two descriptions one grammar.
 
 ## Adapters, telemetry and calibrate: what each file does and what was measured
-
-Moved here from the file headers in `lib/model-routing/`. Each subsection is the whole of what stood above the code; the files now carry a two-line pointer to it.
 
 ### Claude Code adapter: what the probe reads
 
@@ -281,7 +277,7 @@ status --json`, the one non-interactive check the binary offers today.
 Measured 2026-09-05 on `claude` 2.1.251: three runs, 0.86 / 1.17 / 1.36 s wall,
 exit 0, a JSON object whose `loggedIn` boolean is the one field the adapter reads.
 
-**The auth check is spawned asynchronously, and that is not a style choice.**
+**The auth check is spawned asynchronously.**
 The preflight runs the adapters together and holds ONE budget beside them, as a
 timer racing their promises. A `spawnSync` here would block the event loop for
 its whole run, so that timer could not fire while this adapter worked and each
@@ -301,10 +297,19 @@ and a probe that wants a new fact reads those helps first.
 all: no `models` subcommand and no `--list-models` (measured 2026-09-05 by the
 catalog track on the same build). Its help text publishes `--model` aliases;
 the driver supplies the full model IDs it accepts, those aliases and its default
-model. The inventory is filtered by the resolved binary's version floor for each
-ID. These facts arrive as an argument because the driver owns them beside its
+model. The static inventory is independent of the binary's version label;
+actual CLI/API unavailable-model errors remain authoritative.
+These facts arrive as an argument because the driver owns them beside its
 lift default; the adapter cannot import the private driver through the registry
 ([promptobus-adapter.test.mjs](../../test/promptobus-adapter.test.mjs)).
+
+The host's version field has the same telemetry boundary:
+
+<!-- quote:../reference/02-host.md -->
+```markdown
+The version label is telemetry; it does not filter Claude's static inventory or admit requested effort.
+```
+<!-- /quote -->
 
 **Where the tier and the windows come from, measured 2026-09-06 on 2.1.251.**
 [ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md): the
@@ -469,9 +474,11 @@ all: what is not connected cannot be misread.
 
 Source: `lib/model-routing/telemetry.js`.
 
-Participant telemetry: one JSON Lines record per harness generation of a
-participant that lifted a session, appended when `promptobus done` closes the
-task. A re-bound participant contributes its closed generations and its current
+<!-- quote:../../README.md -->
+`promptobus done` writes one local telemetry record per recorded harness generation of a participant with a model, plus teamleads and the root orchestrator with a recorded session identity or model.
+<!-- /quote -->
+
+A re-bound participant contributes its closed generations and its current
 generation; an explicit unrouted `--model` lift also contributes a record.
 
 **What it is for.** The catalog's ratings come from published benchmarks, and
@@ -663,8 +670,6 @@ exactly as `fail` does; what the code adds is on the way past a consumer.
 ### `mergeWeights` — the four merge rules, and why provenance is a list
 
 Source: `lib/model-routing/catalog.js`, `mergeWeights`.
-
---- the merge itself --------------------------------------------------------
 
 Four different rules live here, and they differ on purpose:
 
@@ -917,8 +922,6 @@ never reaches the file.
 
 Source: `lib/models.js`, the `models` command.
 
-`promptobus models` — what the resolver would pick right now.
-
 The command asks nothing of any harness unless `--refresh` says so: it is the
 question a person types, and a question that starts three harness binaries
 and waits out the preflight budget is not one. `--refresh` is therefore also
@@ -927,8 +930,6 @@ the only thing that writes a cache entry here.
 ### `availabilityOf` — the decision with the availability facts it was made on attached
 
 Source: `lib/models.js`, `availabilityOf`.
-
-The decision with the availability facts it was made on attached (ADR-005).
 
 The block is assembled HERE and not in the resolver, and that is the whole
 reason it exists as a separate step. `resolve` is pure — no disk, no clock of
@@ -1051,12 +1052,12 @@ The inventory ids the `auto` pool covers.
 `autoBucketModels` names FAMILIES — `composer-2.5`, `cursor-grok-4.6` — while
 the inventory names ids with the effort level and the speed tier baked into
 them (`cursor-grok-4.6-xhigh-fast`). ADR-005 requires a scope that covers
-models to name them **by id**, because the resolver matches exactly and infers
+models to name them by id, because the resolver matches exactly and infers
 no family; so the family inference happens here, in the module that holds both
 lists, and what travels is ids.
 
 Two ways an id joins the pool through the bucket list, and the rule says
-which: the id **is** a bucket name, or it starts with a bucket
+which: the id is a bucket name, or it starts with a bucket
 name followed by a hyphen. The hyphen is the whole of the second rule — without
 it `vega` would claim `vegabond-3` — and a bucket name that matches no id
 contributes nothing rather than being carried as a guess.
@@ -1075,8 +1076,6 @@ rather than a limit to report.
 ### `WINDOW_KIND_BY_ID` — the subscription windows of a snapshot, normalised
 
 Source: `lib/model-routing/adapter-codex.js`, `WINDOW_KIND_BY_ID`.
-
-The subscription windows of a snapshot, normalised.
 
 `id` is the name the payload gives the window — `primary` and `secondary` — and
 nothing here renames them into hours and days: the length is a number the
@@ -1129,8 +1128,6 @@ rather than a moment, and an inactive locked row is still locked.
 ### `usageWindows` — the usage answer as ADR-005 windows
 
 Source: `lib/model-routing/adapter-claude.js`, `usageWindows`.
-
-The usage answer as ADR-005 windows.
 
 `limits[]` is the general shape and the only one read: the top-level `five_hour`
 and `seven_day` objects duplicate two of its rows, and the neighbouring keys with
@@ -1192,8 +1189,6 @@ that already filled `version` is not called.
 
 Source: `lib/models.js`, `routingMetadata`.
 
-The decision as it is kept on the participant.
-
 Compact on purpose: the record travels into `task.json` and is read by a
 person through `promptobus status`, not replayed. What is kept is what the
 ADR names — the step, its catalog role, the strategy, the tuple, the score, the age of the snapshot the
@@ -1234,12 +1229,12 @@ Source: `lib/model-routing/adapter-claude.js`, `claudeAvailability`.
 
 The adapter a driver declares as `availability`.
 
-`inventoryOf` is the inventory to report when the account turns out to be logged
-in, as a function of the resolved binary's version: the ids and the alias set the
-driver accepts, together with its default model, less every id whose version
-floor that binary is below. It is a parameter rather than a constant here so that
-those facts stay in one file — the driver's — instead of drifting between the lift
-and the probe.
+`inventoryOf` returns the driver's static dictionary when the account is logged
+in: full ids, aliases and the default model, independent of the binary's version
+label. The adapter passes the resolved version as an argument, but the shipped
+dictionary does not filter on it. Actual CLI/API unavailable-model errors remain
+authoritative. The driver supplies the function so the lift and probe read one
+dictionary.
 
 `scopeIds` is the second half of that dictionary: the display names the harness
 prints on a model-scoped limit row, and the ids each resolves to. It travels the
@@ -1261,7 +1256,7 @@ none.
 
 A `weekly_scoped` row names its model the way a person reads it — "Fable" — and
 ADR-005 asks the adapter to resolve that into ids, because the resolver matches
-by exact id and infers no family. **The table is the driver's** and arrives as
+by exact id and infers no family. The table is the driver's and arrives as
 an argument, beside the inventory and for the same reason: it is one more
 reading of the dictionary the driver owns, and a copy of it here would go on
 naming an id nobody points at after a repin — silently, because a scope
@@ -1277,8 +1272,6 @@ shared one would let a caller edit the driver's table.
 ### `snapshotEntry` — one harness entry, projected onto the closed snapshot shape
 
 Source: `lib/model-routing/cache.js`, `snapshotEntry`.
-
-One harness entry, projected onto the closed snapshot shape.
 
 Field by field on purpose, never a spread: a spread is exactly how a `token`, a
 `rawOutput` or an `account` field an adapter attached would reach the file. The
@@ -1342,15 +1335,13 @@ reset has not passed. So the window that excluded a tuple is the pace table's
 binding window, except when that window's reset has passed — then it is the
 most spent of the others, and a session reset does not hide a weekly window at
 92 %. A window whose
-`resetAt` is absent or is not in the future **is not paced**: the fact has
+`resetAt` is absent or is not in the future is not paced: the fact has
 expired, and the sixty-second TTL is what repairs it — a pace computed from a
 window that has already reset would be a number about a period that is over.
 
 ### `agedSnapshot` — where the decision takes the moment its snapshot was assembled
 
 Source: `lib/models.js`, `agedSnapshot`.
-
-Where the decision takes the moment its snapshot was assembled.
 
 `preflight` stamps its answer with the moment it ran, which is right only for
 a run in which every entry came back from a probe. It is wrong for one that
@@ -1395,9 +1386,6 @@ it returns cover the current billing cycle, so no date range is sent.
 
 Source: `lib/model-routing/adapter-cursor.js`, `autoTierModels`.
 
-The ids Cursor BILLED to the auto pool this cycle, off
-`GetAggregatedUsageEvents`.
-
 The bucket list is a list Cursor maintains and it lags Cursor's own billing:
 measured on the owner's account on 2026-09-06, one turn on
 `cursor-grok-4.6-medium` moved `autoPercentUsed` (86.1025 → 86.105) and left
@@ -1408,6 +1396,6 @@ the harness published about a turn that was really billed.
 
 A row names a WHOLE id (`cursor-grok-4.6-medium`), which is the id the
 inventory prints, so this route matches exactly and infers no family — the rule
-ADR-005 fixed for the resolver. **A model with no row is not in the pool**: no
+ADR-005 fixed for the resolver. A model with no row is not in the pool: no
 events this cycle and no bucket entry leaves it in `api`, which is the
 conservative reading, the api pool being the fuller one.
