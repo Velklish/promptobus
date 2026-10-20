@@ -553,3 +553,4 @@ The release reconciliation gives the [Codex-only journal lookup](#pb-372) the na
 - <a id="pb-390"></a>`PB-390-bb-plugin-layout` · 2026-10-20 · completed · — · Move the optional BB plugin into integrations/bb
 - <a id="pb-381.1"></a>`PB-381.1-bb-runtime-build-identity` · 2026-10-20 · completed · — · Expose executing BB server and host build identities
 - <a id="pb-381.2"></a>`PB-381.2-loaded-bb-build-identity` · 2026-10-20 · completed · — · Make build identity survive the official BB activation path
+- <a id="pb-384.1"></a>`PB-384.1-bb-owner-approval-repro-draft` · 2026-10-20 · completed · — · Reproduce BB approval eligibility and prepare an upstream proposal
