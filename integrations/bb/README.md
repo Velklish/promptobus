@@ -50,6 +50,12 @@ See the [Host reference](../../docs/reference/02-host.md#bb-executing-runtime-id
 for snapshot boundaries, fields and failure reasons, and the standalone
 `promptobus-runtime` skill for diagnosis. The six generated role skills are unchanged.
 
+Use this existing server/selected-host observation and the recorded frozen
+generation with actual public task, thread, environment and owned-command
+receipts. The workflow does not require a global PID-to-BB-session mapping that
+the public API cannot provide. Missing observations remain `UNKNOWN` or
+`notMeasured`; required native process and cleanup checks retain their own scope.
+
 ## Restrictions
 
 Apps, plugins, remote plugins, shell, unified execution, hooks, subagents and
@@ -160,10 +166,22 @@ A measured OpenCode session completed authenticated task, mailbox and send calls
 A measured Cursor session exposed the MCP server, but an agent-initiated turn
 received `User rejected` without a user interaction. BB sets
 `permissionEscalation: "deny"` for non-user turns and rejects approval requests
-before publishing an interaction. A genuine user turn uses `"ask"`; selecting
-**Allow once** for each exact bound-tool request is a prospective remedy whose
-live result remains unverified. Keep the provider permission mode and tool
-selection unchanged. These measurements do not certify other sessions or models.
+before publishing an interaction. BB `accept-edits` and an agent-origin form
+answer do not change that turn's eligibility. A genuine user turn uses `"ask"`.
+When this route is available, give the person the actual bound thread and exact
+bounded command: open that thread, use **Send** for that scope, then select
+**Allow once** on the actual request for that command. Approval covers only that
+request. This is a prospective remedy whose live result remains unverified.
+
+Choose the supported gate checkout and actual permission route before dispatch,
+including process visibility required by native tests. A supplied grant or local
+setup success does not prove provider permission eligibility. If no supported
+route is available, retain the refusal or historical red and name the blocked
+operation with a concrete `notRun` reason. Do not switch actor or transport,
+widen permissions or repeat diagnostics. Keep the provider permission mode and
+tool selection unchanged. Native `full-access` launch requirements apply to
+native participants; they do not describe BB escalation eligibility. These
+measurements do not certify other sessions or models.
 
 ## Local task entry point
 
@@ -399,6 +417,18 @@ idle thread without pending interactions, then explicitly resets the bounded
 delivery budget. Existing bindings created before this delivery state remain paused
 until this command; a reload cannot assume they were running.
 
+For an idle participant with an active unchanged grant and no intentional Stop
+or pending user protection, a canonical `answer` ID establishes only that the
+answer was sent. Inspect `recovery inspect --task TASK --participant PARTICIPANT`,
+then use normal `participant resume --task TASK --participant PARTICIPANT`.
+Within the existing bounded delivery budget, inspect the pending delivery's
+sequence/epoch and fresh status, require canonical mailbox consumption and a
+substantive status naming the answer and applied scope, then the required result
+after the current assignment boundary. Missing acknowledgment stays blocked
+after that bounded attempt. Intentional Stop, ended tokens and pending user
+interactions remain protected; an ended grant needs the fresh-phase protocol
+below. Do not clear all pauses or repeat diagnostic turns to obtain an ACK.
+
 An active BB `Stop` is also observed through the interruption history and remains
 paused after reload. **An ordinary BB `Stop` on an already-idle thread is not a
 durable pause through SDK0.6.15:** on the measured BB0.45.0 test, it changed neither
@@ -620,6 +650,13 @@ through their existing authorized code. No additional model is required solely
 to repeat packaging metadata. Additional roles remain available for an explicit
 responsibility; the global pipeline and optional approver checks are unchanged.
 
+On a new route, take the first real scoped card through independent review and
+acceptance/publication on current main before broader dispatch through that
+route. A shared prerequisite lands before its dependants. Independent work
+already authorized by the owner may continue with separate resources; a
+permission or dependency wait reserves no generic compute capacity. Keep
+historical failures and unresolved calls/resources visible across these stages.
+
 Supply the reviewer with the full current diff, exact source/base, current
 required evidence and relevant prior findings. Do not include the executor's
 private reasoning. Findings require a repaired source and fresh review assignment;
@@ -752,6 +789,39 @@ No additional diagnostic model or similarly named native MCP tool is substituted
 | `preparation` | Exact argv `commands`, `status: complete` or `notRun` with `reason` |
 | `quota` | Named owner-declared `authority`, `missingUsage: informational`, `soft`, `hard`, `maxActiveIncludingOwner`, `PAYG: false`; these declarations do not implement BB scheduler accounting |
 | Reviewer `review` | Original `producer`, explicit `producerBinding`, `sourceEnvironmentId`, full `base`, exact argv `requiredGates`, explicit `requirePassingGates` |
+
+Prepare these inputs without a model before `task create` or `participant add`
+reserves a participant. Use `launchContextSchema` in `launch-context.ts`, the
+command/control schemas and `evidenceManifestSchema` in `review-evidence.ts`
+from the selected generation. Supply the complete role literal and concrete
+`notRun` reasons. Declare exact owned/read roots, command cwd, build/output paths,
+temporary root and writable cache before any relevant command. The existing
+local launcher supports a setup-only invocation with the same command contract:
+
+```sh
+node <generation>/commands/command-runner.js --preflight --admission /absolute/owned/command.json --output /absolute/owned/run --by ACTOR -- EXECUTABLE ARGS
+```
+
+It validates the supplied binding, launch/command shape and role literal/catalog,
+exact invocation and canonical paths. After checking the whole plan it may
+create only declared missing owned/build/tmp/cache/output directories strictly
+below a preexisting explicit owned ancestor. Read roots, environment, cwd and
+lease/measurement authority must preexist; read roots are not created.
+It starts no subprocess, model or provider, reserves no actor or command call,
+takes no lease, writes no receipt and overwrites no output. Stdout is a setup
+observation, not proof of dynamic current authority, evidence bytes/producers,
+installed tools or permission eligibility. Existing runtime admission and
+evidence checks still run before reservation; execution revalidates current
+grant and resources later. Do not spend a diagnostic model to discover missing
+setup or retry unavailable permission checks.
+
+Before reviewer reservation, declare its actual environment/path, clean source
+SHA, original producer and `producerBinding`, source environment and immutable
+binding branch/base separately from `review.base`, the diff base. Select a normal
+matching review environment and grant. The grant's scope must match the recorded
+binding; do not rewrite that binding or substitute the diff base into its base
+to make admission pass. Current source evidence and required prior findings
+remain the review subject.
 
 Before task creation, `control publish --task TASK --initialize --input <JSON>`
 takes this complete input, bounded to 1 MiB:

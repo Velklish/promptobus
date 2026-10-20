@@ -92,6 +92,105 @@ async function fixture(t, shared = null) {
   return { root, reference, current, update, engine, binding, member, run, release, entered, receipt, leases };
 }
 
+function setupFixture(t) {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pb-command-setup-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const repository = path.join(root, 'repository'), owned = path.join(root, 'owned'), leases = path.join(root, 'leases');
+  for (const directory of [repository, owned, leases]) fs.mkdirSync(directory);
+  const task = newTaskIdentity('setup').id, actor = 'worker', createdRoot = path.join(owned, 'new-owned');
+  const launchContext = launchFixture(task, actor, 'worker', repository);
+  launchContext.readRoots = [root]; launchContext.ownedRoots.push(owned, createdRoot);
+  const marker = path.join(repository, 'entered'), output = path.join(createdRoot, 'evidence', 'run');
+  const tmp = path.join(createdRoot, 'runtime', 'tmp'), cache = path.join(createdRoot, 'runtime', 'cache'), build = path.join(createdRoot, 'build');
+  const command = { id: 'run', argv: [process.execPath, '-e', `require('fs').writeFileSync(${JSON.stringify(marker)},'unexpected execution')`],
+    cwd: repository, env: { TMPDIR: tmp, TMP: tmp, TEMP: tmp, XDG_CACHE_HOME: cache, XDG_CONFIG_HOME: cache, XDG_STATE_HOME: cache,
+      XDG_DATA_HOME: cache, npm_config_cache: cache, NPM_CONFIG_CACHE: cache, npm_config_logs_dir: cache, NPM_CONFIG_LOGS_DIR: cache, PROMPTOBUS_LEASE_DIR: leases },
+    output, buildRoot: build, tmpRoot: tmp, cacheRoot: cache, exclusiveKeys: [build, tmp, cache], measurementScope: root };
+  launchContext.grant.execution = { commands: [command] };
+  const control = path.join(root, 'control');
+  launchContext.control = { mode: 'current', reference: { directory: control,
+    owner: { task, participant: 'orchestrator', projectId: 'project', environmentId: 'owner-environment', hostId: 'local', root: repository }, readRoots: [root] } };
+  const binding = { task, participant: actor, role: 'worker', projectId: 'project', environmentId: 'environment', environmentPath: repository,
+    hostId: 'local', providerId: 'codex', root: repository, token: randomUUID(), threadId: null, phase: 'pending',
+    branch: 'main', baseSha: 'a'.repeat(40), launchContext };
+  const input = path.join(repository, 'input.json');
+  const write = () => fs.writeFileSync(input, JSON.stringify({ binding, commandId: command.id }));
+  write();
+  const run = async ({ preflight = true, inputFile = input, argv = command.argv, stem = command.output, by = actor } = {}) => {
+    const child = spawn(process.execPath, [runner, ...(preflight ? ['--preflight'] : []), '--admission', inputFile, '--output', stem, '--by', by, '--', ...argv], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '', stderr = ''; child.stdout.on('data', b => stdout += b); child.stderr.on('data', b => stderr += b);
+    return new Promise(resolve => child.on('close', (exit, signal) => resolve({ exit, signal, stdout, stderr })));
+  };
+  const untouched = () => {
+    assert.equal(fs.existsSync(marker), false); assert.equal(fs.existsSync(control), false);
+    assert.equal(fs.existsSync(path.join(repository, '.promptobus')), false); assert.deepEqual(fs.readdirSync(leases), []);
+    for (const suffix of ['.stdout.txt', '.stderr.txt', '.receipt.txt']) assert.equal(fs.existsSync(`${output}${suffix}`), false);
+  };
+  return { root, repository, owned, leases, createdRoot, command, binding, input, marker, output, control, write, run, untouched };
+}
+
+test('setup preflight creates only declared directories before task admission without executing the command', async t => {
+  const f = setupFixture(t);
+  const result = await f.run(); assert.equal(result.exit, 0, result.stderr);
+  const observation = JSON.parse(result.stdout);
+  assert.equal(observation.mode, 'preflight'); assert.equal(observation.observation, 'setup');
+  assert.equal(observation.commandId, 'run'); assert.equal(observation.actor, 'worker');
+  assert.match(observation.commandSha256, /^[a-f0-9]{64}$/); assert.equal(observation.substantiveCommandStarted, false);
+  assert.deepEqual(observation.declaredTools, ['promptobus_send', 'promptobus_mailbox', 'promptobus_task', 'promptobus_artifact']);
+  assert.deepEqual(observation.notChecked, ['dynamic-current-control', 'evidence-artifact-bytes', 'installed-tool-eligibility', 'execution-permissions']);
+  assert.equal('ready' in observation, false); assert.equal('receipt' in observation, false); assert.equal('complete' in observation, false);
+  const expected = [f.createdRoot, f.command.buildRoot, path.dirname(f.command.tmpRoot), f.command.tmpRoot, f.command.cacheRoot, path.dirname(f.output)].sort();
+  assert.deepEqual([...observation.createdDirectories].sort(), expected);
+  for (const directory of expected) {
+    assert.equal(fs.realpathSync(directory), directory); assert.equal(fs.statSync(directory).mode & 0o777, 0o700);
+  }
+  f.untouched();
+  const repeated = await f.run(); assert.equal(repeated.exit, 0, repeated.stderr);
+  assert.deepEqual(JSON.parse(repeated.stdout).createdDirectories, []); f.untouched();
+});
+
+test('actual execution without setup refuses missing declared directories before command entry', async t => {
+  const f = setupFixture(t), result = await f.run({ preflight: false });
+  assert.equal(result.exit, 1); assert.match(result.stderr, /ENOENT/);
+  assert.equal(fs.existsSync(f.createdRoot), false); f.untouched();
+});
+
+for (const mismatch of ['read-root', 'cwd', 'lease-root', 'measurement', 'environment', 'outside-root', 'symlink', 'missing-key', 'role', 'notRun', 'manifest', 'argv', 'actor', 'output']) {
+  test(`setup preflight rejects ${mismatch} before creating any declared directory`, async t => {
+    const f = setupFixture(t), options = {};
+    if (mismatch === 'read-root') f.binding.launchContext.readRoots.push(path.join(f.root, 'missing-read'));
+    if (mismatch === 'cwd') f.command.cwd = path.join(f.repository, 'missing-cwd');
+    if (mismatch === 'lease-root') f.command.env.PROMPTOBUS_LEASE_DIR = path.join(f.root, 'missing-leases');
+    if (mismatch === 'measurement') f.command.measurementScope = path.join(f.root, 'missing-measurement');
+    if (mismatch === 'environment') f.command.env.TMP = f.root;
+    if (mismatch === 'outside-root') f.command.output = path.join(f.root, 'unowned-output', 'run');
+    if (mismatch === 'symlink') { fs.symlinkSync(f.repository, path.join(f.owned, 'alias'), 'dir'); f.command.output = path.join(f.owned, 'alias', 'nested', 'run'); }
+    if (mismatch === 'missing-key') f.command.exclusiveKeys.push(path.join(f.owned, 'undeclared-key'));
+    if (mismatch === 'role') f.binding.launchContext.role.literal = 'Unbound role';
+    if (mismatch === 'notRun') delete f.binding.launchContext.preparation.reason;
+    if (mismatch === 'manifest') f.binding.evidenceManifest = { version: 1 };
+    if (mismatch === 'argv') options.argv = [...f.command.argv, 'changed'];
+    if (mismatch === 'actor') options.by = 'another-worker';
+    if (mismatch === 'output') options.stem = `${f.command.output}-changed`;
+    f.write();
+    const result = await f.run(options); assert.equal(result.exit, 1);
+    assert.doesNotMatch(result.stderr, /usage:/, 'the production preflight must reject the actual bounded input');
+    assert.equal(fs.existsSync(f.createdRoot), false); assert.equal(fs.existsSync(path.join(f.root, 'unowned-output')), false);
+    assert.equal(fs.existsSync(path.join(f.repository, 'nested')), false); f.untouched();
+  });
+}
+
+test('setup preflight cannot create an admission input parent or overwrite command receipt files', async t => {
+  const f = setupFixture(t), missingInput = path.join(f.createdRoot, 'missing-input.json');
+  const missing = await f.run({ inputFile: missingInput }); assert.equal(missing.exit, 1); assert.match(missing.stderr, /ENOENT/);
+  assert.equal(fs.existsSync(f.createdRoot), false); f.untouched();
+  fs.mkdirSync(path.dirname(f.output), { recursive: true });
+  for (const suffix of ['.stdout.txt', '.stderr.txt', '.receipt.txt']) fs.writeFileSync(`${f.output}${suffix}`, 'original evidence');
+  const result = await f.run(); assert.equal(result.exit, 0, result.stderr);
+  for (const suffix of ['.stdout.txt', '.stderr.txt', '.receipt.txt']) assert.equal(fs.readFileSync(`${f.output}${suffix}`, 'utf8'), 'original evidence');
+  assert.equal(fs.existsSync(f.marker), false); assert.equal(fs.existsSync(f.control), false); assert.deepEqual(fs.readdirSync(f.leases), []);
+});
+
 test('isolated actual children enter together without a global measurement lease and preserve exit 7', async t => {
   const f = await fixture(t), a = f.member('worker-a', { exit: 7 }), b = f.member('worker-b');
   const ac = f.run(a), bc = f.run(b); await Promise.all([f.entered(a), f.entered(b)]);

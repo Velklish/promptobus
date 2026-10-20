@@ -566,3 +566,4 @@ The release reconciliation gives the [Codex-only journal lookup](#pb-372) the na
 - <a id="pb-373.5"></a>`PB-373.5-bb-host-required-rule-dependency` · 2026-10-20 · completed · — · BB Host catalog can omit a repository-required rule dependency
 - <a id="pb-391"></a>`PB-391-legacy-store-retirement` · 2026-10-20 · completed · — · Retire the legacy store and its obsolete tests
 - <a id="pb-392"></a>`PB-392-explicit-task-context` · 2026-10-21 · completed · — · Carry explicit participant context through owned delivery
+- <a id="pb-381"></a>`PB-381-orchestration-obtainable-admission-evidence` · 2026-10-21 · completed · — · Orchestration admission must use obtainable task-scoped evidence and declare user permission steps upfront

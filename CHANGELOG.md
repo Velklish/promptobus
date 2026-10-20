@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Prepare bounded BB command paths and input contracts before participant
+  reservation with a no-model launcher preflight. Keep actual admission,
+  permissions and evidence validation separate; use obtainable runtime evidence,
+  exact review bindings and acknowledged same-grant continuation. Exercise a new
+  route on real scoped work through review and current-main delivery before wider
+  dispatch, while independent authorized work can proceed.
+
 - Carry an explicit per-participant skill and exact-resource declaration through
   BB and native delivery, with reasons and complete declared dependencies.
   Shared Host admission preserves mandatory rules and review skills, refuses
