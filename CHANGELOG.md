@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Replace weak quoting, credential-priority and driver-registry predicates with
+  behavior checks. Keep one import scanner and ADR inventory, replace the BB
+  command-grant toy model with explicit text contracts and retained production
+  guard tests, and reuse one built tarball for package inventory and installation.
+
 - Prepare bounded BB command paths and input contracts before participant
   reservation with a no-model launcher preflight. Keep actual admission,
   permissions and evidence validation separate; use obtainable runtime evidence,

@@ -21,9 +21,11 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const SB = realpathSync(makeSandbox('promptobus-promptobus-adapter-'));
 
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
-const { orderBody: claudeOrderBody } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
-const { orderBody: cursorOrderBody } = await import(path.join(here, '..', 'lib', 'driver-cursor.js'));
-const { orderBody: codexOrderBody } = await import(path.join(here, '..', 'lib', 'driver-codex.js'));
+const { CLAUDE, claudeDriver, orderBody: claudeOrderBody } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
+const { CURSOR, cursorDriver, orderBody: cursorOrderBody } = await import(path.join(here, '..', 'lib', 'driver-cursor.js'));
+const { CODEX, codexDriver, orderBody: codexOrderBody } = await import(path.join(here, '..', 'lib', 'driver-codex.js'));
+const { OPENCODE, opencodeDriver } = await import(path.join(here, '..', 'lib', 'driver-opencode.js'));
+const { driverByHarness, liftDriver } = await import(path.join(here, '..', 'lib', 'drivers.js'));
 
 const home = path.join(SB, 'ws', '.promptobus');
 const HINTS = {
@@ -1092,17 +1094,33 @@ check(': a postcard for a short message carries the stub on every driver — sen
   shortCards.every((card) => card.includes(shortStub) && !card.includes('SHORT-BODY')),
   shortCards.join('\n---\n'));
 
-// : there are two drivers in the map, and both are taken by it itself. This check is not a
-// duplicate of the previous one: that one guards the gate against emptiness, this one against
-// a map where a second production driver is declared but not wired in, and `--harness cursor`
-// would refuse with "unknown harness".
-check(': the registry map holds both production drivers — claude and cursor',
-  /from '\.\/driver-cursor\.js'/.test(doorSrc)
-  && /\[CLAUDE\]: claudeDriver/.test(doorSrc) && /\[CURSOR\]: cursorDriver/.test(doorSrc),
-  doorSrc.split('\n').filter((l) => /driver-|Driver/.test(l)).join(' | '));
-check(': the registry map holds a third production driver — codex',
-  /from '\.\/driver-codex\.js'/.test(doorSrc) && /\[CODEX\]: codexDriver/.test(doorSrc),
-  doorSrc.split('\n').filter((l) => /codex|CODEX/.test(l)).join(' | '));
+for (const [harness, expected] of [
+  [CLAUDE, claudeDriver], [CURSOR, cursorDriver], [CODEX, codexDriver], [OPENCODE, opencodeDriver],
+]) {
+  for (const [name, lookup] of [['driverByHarness', driverByHarness], ['liftDriver', liftDriver]]) {
+    const selected = lookup(harness);
+    check(`: ${name} selects the production ${harness} driver by identity and id`,
+      selected === expected && selected.id === harness, selected.id);
+  }
+}
+
+check(': driverByHarness defaults every falsy harness to Claude',
+  [undefined, null, '', false, 0, NaN].every((harness) => driverByHarness(harness) === claudeDriver));
+check(': liftDriver defaults an absent or blank harness to Claude',
+  [undefined, null, '', '   '].every((harness) => liftDriver(harness) === claudeDriver));
+check(': liftDriver trims a named harness before selecting its production driver',
+  liftDriver(' cursor ') === cursorDriver);
+for (const [name, lookup, values] of [
+  ['driverByHarness', driverByHarness, ['unregistered-production-driver', ' cursor ']],
+  ['liftDriver', liftDriver, ['unregistered-production-driver', false, 0]],
+]) {
+  for (const harness of values) {
+    const refusal = thrown(() => lookup(harness));
+    check(`: ${name} refuses unknown harness ${JSON.stringify(harness)} through a GateError`,
+      refusal.name === 'GateError' && /\bharness\b/.test(refusal.msg) && /\bunknown\b/.test(refusal.msg),
+      `${refusal.name} · ${refusal.msg}`);
+  }
+}
 
 // Halves of the liftoff no longer stick out of the driver: `spawn.js` and `review.js` used to
 // assemble argv and the config themselves, calling `driver.spawnArgv` and `driver.mcpConfig`.

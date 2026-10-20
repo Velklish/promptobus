@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
@@ -54,27 +54,22 @@ const migrated = [
   'docs: sweep and the owner gate grant rights only by positive proof',
   'docs: an MCP child without identity cannot send',
 ];
-check('docs: accepted ADRs identify current capability and ownership rules',
-  resolutions.every(Boolean), resolutions.map((ok, i) => `${migrated[i]}:${ok}`).join(' '));
 migrated.forEach((name, i) => check(name, resolutions[i], name));
 
 const index = read('docs/README.md');
-const listed = readdirSync(path.join(root, 'docs/adr')).filter((name) => /^adr-\d{3}-[a-z0-9-]+\.md$/.test(name));
 const indexRows = new Map(index.split('\n').flatMap((line) => {
   const row = line.match(/^\| \[adr\/(adr-\d{3}-[a-z0-9-]+\.md)\]\(adr\/(adr-\d{3}-[a-z0-9-]+\.md)\) \| ([^|]+) \| ([^|]+) \|$/);
   return row ? [[row[1], { target: row[2], description: row[3], status: row[4] }]] : [];
 }));
-check('docs: the index covers every ADR and names the implemented send door',
-  indexRows.size === listed.length
-  && listed.every((name) => indexRows.get(name)?.target === name)
-  && indexRows.get('adr-019-session-address-per-task-lands.md')?.status === 'Accepted'
+check('docs: the index names positive send binding and the three-harness approver worktree',
+  indexRows.get('adr-019-session-address-per-task-lands.md')?.status === 'Accepted'
   && has(indexRows.get('adr-019-session-address-per-task-lands.md')?.description ?? '',
     'a positive binding gates the registered send command')
   && has(indexRows.get('adr-024-approver-acceptance-in-own-worktree.md')?.description ?? '',
     'accepts in its own worktree')
   && has(indexRows.get('adr-024-approver-acceptance-in-own-worktree.md')?.description ?? '',
     'Claude Code, Cursor and Codex'),
-  listed.filter((name) => indexRows.get(name)?.target !== name).join(', '));
+  JSON.stringify([...indexRows].filter(([name]) => /^adr-(019|024)-/.test(name))));
 
 const protocol = read('docs/reference/04-protocol.md');
 const bbEvidence = section(protocol, '#### Manifest before reviewer launch');
@@ -222,7 +217,6 @@ check('docs: this checkout restores its generated adapters with the command its 
   && has(contributingDoc, 'leaves both unchanged only while the installed backslop is the pin in `package.json` and `backslop.json` that wrote the committed block')
   && has(agentsDoc, '`git status` does not change from it while the installed backslop is the pin')
   && !has(contributingDoc, 'and leaves tracked files unchanged.')
-  && contributingDoc.split('fourteen lines').length === 2
   && has(contributingDoc, 'At another pin it rewrites them ([measured size of that rewrite](#init-rewrite-at-another-pin)).'),
   generatorArgv === null
     ? 'promptobus.json declares no generate argv here: the file is absent, unreadable or has no non-empty "generate" array'

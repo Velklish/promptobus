@@ -36,5 +36,11 @@ import * as os from 'node:os';
 export type { Something } from './neighbour.js';
 const lazy = () => import('./lazy.js');
 const legacy = require('node:url');
+import 'node:assert';
+export * from 'node:events';
+export * as tty from 'node:tty';
+export { parse } from 'node:querystring';
+import type { URL } from 'node:url';
+export type ImportedUrl = typeof import('node:url');
 
 export { MESSAGE_FROM as MARK, QUOTE, DQUOTE, SLASHED, defaultExport, basename, os, lazy, legacy };

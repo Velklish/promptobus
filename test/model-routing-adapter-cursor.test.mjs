@@ -19,6 +19,7 @@
 // what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
 import './home.mjs';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import {
   chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync,
 } from 'node:fs';
@@ -922,26 +923,70 @@ test('a cycle the adapter cannot place is quota_unknown with the tier still repo
   assert.equal(verdict.windows, undefined);
 });
 
-test('the keychain token comes first and the environment key is the fallback', () => {
-  // The keychain token is the one the spike measured this call answering.
-  // `CURSOR_API_KEY` is the other way the binary authenticates and nothing says
-  // DashboardService takes it, so it is a fallback rather than a claim — and the
-  // order is what keeps an exported variable from shadowing the measured
-  // credential.
-  //
-  // The source travels with the token because it decides what a refusal means; the
-  // live reader is pinned here as source, since exercising it would mean asking
-  // the developer's own keychain.
-  const source = readFileSync(path.join(ROOT, 'lib', 'model-routing', 'adapter-cursor.js'), 'utf8');
-  // Both searched from the start of the file, not from a window around one of
-  // them: an offset would make the check depend on how far apart the two lines
-  // happen to sit, which is not what it is about.
-  const keychainAt = source.indexOf('readKeychainSecret(TOKEN_SERVICE');
-  const envAt = source.indexOf('process.env[TOKEN_ENV]');
-  assert.ok(keychainAt > 0, 'the keychain read is not there at all');
-  assert.ok(envAt > keychainAt, 'the environment key is read before the keychain');
-  assert.match(source, /source: 'keychain'/);
-  assert.match(source, /source: 'env'/);
+// A fresh child keeps the real private token reader, with every process launch intercepted
+// before import; neither the host's keychain nor a Cursor executable can be reached.
+const CREDENTIAL_FIXTURE = `
+import cp from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { syncBuiltinESMExports } from 'node:module';
+import { PassThrough } from 'node:stream';
+const fixture = JSON.parse(process.argv[1]);
+Object.defineProperty(process, 'platform', { value: fixture.platform });
+const calls = [];
+cp.spawn = (bin, args) => {
+  calls.push([bin, args]);
+  let out;
+  if (bin === '/synthetic/cursor-agent' && JSON.stringify(args) === '["status"]') {
+    out = 'Logged in as probe-account@example.invalid\\n';
+  } else if (bin === '/synthetic/cursor-agent' && JSON.stringify(args) === '["models"]') {
+    out = 'auto - Auto (default)\\n';
+  } else if (bin === '/usr/bin/security'
+    && JSON.stringify(args) === '["find-generic-password","-s","cursor-access-token","-w"]') {
+    out = fixture.keychain;
+  } else {
+    throw new Error('Unexpected spawn: ' + JSON.stringify([bin, args]));
+  }
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  queueMicrotask(() => { child.stdout.end(out); child.emit('close', 0, null); });
+  return child;
+};
+syncBuiltinESMExports();
+globalThis.fetch = () => { throw new Error('Network is forbidden in the credential fixture'); };
+const { cursorAvailability } = await import(${JSON.stringify(new URL('../lib/model-routing/adapter-cursor.js', import.meta.url).href)});
+let backendReads = 0;
+const requests = [];
+const verdict = await cursorAvailability('cursor', {
+  readBackendUrl: async () => { backendReads += 1; return 'https://backend.invalid'; },
+  postJson: async (url, { token }) => { requests.push({ url, token }); return { status: 401, doc: null }; },
+}).probe({ toolBin: { ok: true, bin: '/synthetic/cursor-agent' }, timeoutMs: 10_000 });
+process.stdout.write(JSON.stringify({ calls, backendReads, requests, state: verdict.state, reason: verdict.reason }));
+`;
+
+for (const fixture of [
+  { name: 'macOS keychain wins over an exported environment key', platform: 'darwin', keychain: 'K', env: 'E', token: 'K', state: 'unavailable', reason: 'not_authenticated' },
+  { name: 'empty macOS keychain falls back to the trimmed environment key', platform: 'darwin', keychain: '', env: ' E ', token: 'E', state: 'unknown', reason: 'quota_unknown' },
+  { name: 'no token skips the backend and the usage call', platform: 'darwin', keychain: '', env: '', token: null, state: 'unknown', reason: 'quota_unknown' },
+  { name: 'non-macOS uses the environment without asking security', platform: 'linux', keychain: 'K', env: 'E', token: 'E', state: 'unknown', reason: 'quota_unknown' },
+]) test(`live credentials: ${fixture.name}`, () => {
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', CREDENTIAL_FIXTURE, JSON.stringify(fixture)], {
+    encoding: 'utf8', timeout: 15_000, env: { ...process.env, CURSOR_API_KEY: fixture.env },
+  });
+  assert.ifError(child.error);
+  assert.equal(child.status, 0, child.stderr);
+  const observed = JSON.parse(child.stdout);
+  assert.deepEqual(observed.calls, [
+    ['/synthetic/cursor-agent', ['status']],
+    ['/synthetic/cursor-agent', ['models']],
+    ...(fixture.platform === 'darwin'
+      ? [['/usr/bin/security', ['find-generic-password', '-s', 'cursor-access-token', '-w']]] : []),
+  ]);
+  assert.equal(observed.backendReads, fixture.token ? 1 : 0);
+  assert.deepEqual(observed.requests, fixture.token ? [{
+    url: 'https://backend.invalid/aiserver.v1.DashboardService/GetCurrentPeriodUsage', token: fixture.token,
+  }] : []);
+  assert.equal(observed.state, fixture.state);
+  assert.equal(observed.reason, fixture.reason);
 });
 
 test('a refused environment key is quota_unknown; a refused keychain token is not_authenticated', async () => {

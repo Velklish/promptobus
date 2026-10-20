@@ -36,20 +36,18 @@ for (const role of ['worker', 'reviewer', 'approver']) {
     const body = renderBbInstructionSkill(role);
     const skill = readFileSync(new URL(`../skills/${BB_ROLE_SKILLS[role]}/SKILL.md`, import.meta.url), 'utf8');
     assert.ok(skill.endsWith(body.trimEnd() + '\n'));
-    for (const text of [body, skill]) {
-      assert.match(text, /UTF-8 opaque|opaque UTF-8/);
-      assert.match(text, /authenticated[^.\n]*participant id/i);
-      assert.match(text, /not schema validation/i);
-      assert.match(text, /exact test names, order and repeated occurrences/);
-      assert.match(text, /only the terminal numeric duration/);
-      assert.match(text, /gate status separate from test names/);
-      assert.match(text, /unsupported formats.*explicitly incomplete/);
-      assert.match(text, /checkout-only reference helper `scripts\/bb-evidence-verdict-names\.mjs`/);
-      assert.match(text, /\.txt/);
-      assert.doesNotMatch(text, /artifactPath/);
-      assert.doesNotMatch(text, /schemas\/v1\/(?:gate|handover)-record\.schema\.json/);
-      assert.doesNotMatch(text, /bus checks (?:the record|the SHAPE)[^.\n]*schema|record is checked against its schema/i);
-    }
+    assert.match(body, /UTF-8 opaque|opaque UTF-8/);
+    assert.match(body, /authenticated[^.\n]*participant id/i);
+    assert.match(body, /not schema validation/i);
+    assert.match(body, /exact test names, order and repeated occurrences/);
+    assert.match(body, /only the terminal numeric duration/);
+    assert.match(body, /gate status separate from test names/);
+    assert.match(body, /unsupported formats.*explicitly incomplete/);
+    assert.match(body, /checkout-only reference helper `scripts\/bb-evidence-verdict-names\.mjs`/);
+    assert.match(body, /\.txt/);
+    assert.doesNotMatch(skill, /artifactPath/);
+    assert.doesNotMatch(skill, /schemas\/v1\/(?:gate|handover)-record\.schema\.json/);
+    assert.doesNotMatch(skill, /bus checks (?:the record|the SHAPE)[^.\n]*schema|record is checked against its schema/i);
   });
 }
 
@@ -63,12 +61,10 @@ for (const role of ['orchestrator', 'approver', 'worker']) {
     assert.deepEqual(delivery.configuration.skills, [BB_ROLE_SKILLS[role]]);
     const body = renderBbInstructionSkill(role);
     const skill = readFileSync(new URL(`../skills/${BB_ROLE_SKILLS[role]}/SKILL.md`, import.meta.url), 'utf8');
-    for (const text of [body, skill]) {
-      assert.match(text, /same canonical task[^.]*owner confirmation|owner confirmation[^.]*same canonical task/i);
-      assert.match(text, /released[^.]*terminal|terminal[^.]*release/i);
-      assert.match(text, /(?:confirmation|resume)[^.]*must not revive/i);
-      assert.doesNotMatch(text, /(?:^|[.!?]\s+|\n)\s*(?:Require|Wait for) a separate (?:owner )?confirmation|do not execute until[^.]*separate canonical task[^.]*owner confirms/i);
-    }
+    assert.match(body, /same canonical task[^.]*owner confirmation|owner confirmation[^.]*same canonical task/i);
+    assert.match(body, /released[^.]*terminal|terminal[^.]*release/i);
+    assert.match(body, /(?:confirmation|resume)[^.]*must not revive/i);
+    assert.doesNotMatch(skill, /(?:^|[.!?]\s+|\n)\s*(?:Require|Wait for) a separate (?:owner )?confirmation|do not execute until[^.]*separate canonical task[^.]*owner confirms/i);
     assert.ok(skill.endsWith(body.trimEnd() + '\n'));
   });
 }

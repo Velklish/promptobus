@@ -24,14 +24,16 @@ check('adr: the teamlead refusal ADR-021 cites is a present Accepted record',
   target ? target[2] : 'no ADR link in the decision');
 
 const index = readFileSync(path.join(root, 'docs/README.md'), 'utf8');
-const rows = [...index.matchAll(/^\| \[adr\/(adr-\d{3}-[a-z0-9-]+\.md)\]\(adr\/(adr-\d{3}-[a-z0-9-]+\.md)\) \|/gm)];
+const candidates = [...index.matchAll(/^\| \[adr\//gm)];
+const rows = [...index.matchAll(/^\| \[adr\/(adr-\d{3}-[a-z0-9-]+\.md)\]\(adr\/(adr-\d{3}-[a-z0-9-]+\.md)\) \| ([^|]+) \| ([^|]+) \|$/gm)];
 const listed = rows.map((row) => row[1]);
 check('adr: the index lists exactly the ADR files present',
-  listed.length === files.length
+  rows.length === candidates.length
+  && listed.length === files.length
   && files.every((name) => listed.includes(name))
   && rows.every((row) => row[1] === row[2])
   && new Set(listed).size === listed.length,
-  `files ${files.length}, rows ${listed.length}`);
+  `files ${files.length}, candidates ${candidates.length}, rows ${listed.length}`);
 
 const adr005 = textOf('adr-005-ten-point-scale-absolute-bands-calibrate.md');
 const bands = adr005.split('### Absolute bands')[1]?.split('**4. Overlays.**')[0] ?? '';

@@ -97,26 +97,23 @@ for (const role of ['worker', 'reviewer', 'approver']) {
     assert.deepEqual(delivery.configuration.skills, [BB_ROLE_SKILLS[role]]);
     const rendered = renderBbInstructionSkill(role);
     const skill = readFileSync(new URL(`../integrations/bb/skills/${BB_ROLE_SKILLS[role]}/SKILL.md`, import.meta.url), 'utf8');
-    for (const [surface, body] of [['canonical', rendered], ['delivered skill', skill]]) {
-      const label = `${role} ${surface}`;
-      assert.match(body, /UTF-8 opaque|opaque UTF-8/, label);
-      assert.match(body, /authenticated[^.\n]*participant id/i, label);
-      assert.match(body, /not schema validation/i, label);
-      assert.match(body, /\.txt/, label);
-      assert.doesNotMatch(body, /artifactPath/, label);
-      assert.match(body, /colon-address alias|substitute the orchestrator/, label);
-      assert.doesNotMatch(body, /schemas\/v1\/(?:gate|handover)-record\.schema\.json/, label);
-      assert.doesNotMatch(body, /bus checks (?:the record|the SHAPE)[^.\n]*schema|record is checked against its schema/i, label);
-      for (const field of ['tree', 'dirty', 'exit']) assert.ok(body.includes(`\`${field}\``), `${label}: ${field}`);
-      assert.match(body, /not run|notRun/, label);
-      assert.match(body, /exact test names, order and repeated occurrences/, label);
-      assert.match(body, /only the terminal numeric duration/, label);
-      assert.match(body, /gate status separate from test names/, label);
-      assert.match(body, /raw output authoritative/, label);
-      assert.match(body, /unsupported formats.*explicitly incomplete/, label);
-      assert.match(body, /checkout-only reference helper `scripts\/bb-evidence-verdict-names\.mjs`/, label);
-      assert.match(body, /manual lossless opaque UTF-8 evidence/, label);
-    }
+    assert.match(rendered, /UTF-8 opaque|opaque UTF-8/, role);
+    assert.match(rendered, /authenticated[^.\n]*participant id/i, role);
+    assert.match(rendered, /not schema validation/i, role);
+    assert.match(rendered, /\.txt/, role);
+    assert.match(rendered, /colon-address alias|substitute the orchestrator/, role);
+    for (const field of ['tree', 'dirty', 'exit']) assert.ok(rendered.includes(`\`${field}\``), `${role}: ${field}`);
+    assert.match(rendered, /not run|notRun/, role);
+    assert.match(rendered, /exact test names, order and repeated occurrences/, role);
+    assert.match(rendered, /only the terminal numeric duration/, role);
+    assert.match(rendered, /gate status separate from test names/, role);
+    assert.match(rendered, /raw output authoritative/, role);
+    assert.match(rendered, /unsupported formats.*explicitly incomplete/, role);
+    assert.match(rendered, /checkout-only reference helper `scripts\/bb-evidence-verdict-names\.mjs`/, role);
+    assert.match(rendered, /manual lossless opaque UTF-8 evidence/, role);
+    assert.doesNotMatch(skill, /artifactPath/, role);
+    assert.doesNotMatch(skill, /schemas\/v1\/(?:gate|handover)-record\.schema\.json/, role);
+    assert.doesNotMatch(skill, /bus checks (?:the record|the SHAPE)[^.\n]*schema|record is checked against its schema/i, role);
     assert.ok(skill.endsWith(rendered.trimEnd() + '\n'));
     if (role === 'worker') {
       assert.match(rendered, /artifact: \{ filename, content \}/);
@@ -154,34 +151,61 @@ for (const role of ['orchestrator', 'approver', 'worker']) {
     const { BB_ROLE_SKILLS, renderBbInstructionSkill } = await import('promptobus/instructions');
     const rendered = renderBbInstructionSkill(role);
     const shipped = readFileSync(new URL(`../integrations/bb/skills/${BB_ROLE_SKILLS[role]}/SKILL.md`, import.meta.url), 'utf8');
-    for (const body of [rendered, shipped]) {
-      assert.match(body, /before the first relevant mechanical check/);
-      assert.match(body, /commands\/record-command\.js/);
-      assert.match(body, /commands\/command-runner\.js/);
-      assert.match(body, /commands\/evidence-prepare\.js/);
-      assert.match(body, /inner receipt[^.]*alone[^.]*finalization/i);
-      assert.match(body, /constructor[^.]*does not run[^.]*suites/i);
-      assert.match(body, /required prior findings and failures/);
-      assert.match(body, /zero current gates/);
-      assert.match(body, /unchanged suite/);
-    }
+    assert.match(rendered, /before the first relevant mechanical check/);
+    assert.match(rendered, /commands\/record-command\.js/);
+    assert.match(rendered, /commands\/command-runner\.js/);
+    assert.match(rendered, /commands\/evidence-prepare\.js/);
+    assert.match(rendered, /inner receipt[^.]*alone[^.]*finalization/i);
+    assert.match(rendered, /constructor[^.]*does not run[^.]*suites/i);
+    assert.match(rendered, /required prior findings and failures/);
+    assert.match(rendered, /zero current gates/);
+    assert.match(rendered, /unchanged suite/);
+    assert.ok(shipped.endsWith(rendered.trimEnd() + '\n'));
   });
   test(`BB ${role}: complete command grants and terminal release belong to the rendered and shipped contract`, async () => {
     const { BB_ROLE_SKILLS, renderBbInstructionSkill } = await import('promptobus/instructions');
     const rendered = renderBbInstructionSkill(role);
     const shipped = readFileSync(new URL(`../integrations/bb/skills/${BB_ROLE_SKILLS[role]}/SKILL.md`, import.meta.url), 'utf8');
-    for (const body of [rendered, shipped]) {
-      assert.match(body, /same canonical task[^.]*owner confirmation|owner confirmation[^.]*same canonical task/i);
-      assert.match(body, /released[^.]*terminal|terminal[^.]*release/i);
-      assert.match(body, /(?:confirmation|resume)[^.]*must not revive/i);
-      assert.doesNotMatch(body, /(?:^|[.!?]\s+|\n)\s*(?:Require|Wait for) a separate (?:owner )?confirmation|do not execute until[^.]*separate canonical task[^.]*owner confirms/i);
-      if (role === 'orchestrator') {
-        assert.match(body, /before[^.]*dispatch|before[^.]*deliver/i);
-        assert.match(body, /acknowledg[^.]*release|release[^.]*acknowledg/i);
-      } else {
-        assert.match(body, /immediately before every mechanical call/i);
-        assert.match(body, /runner-only release[^.]*does not authorize[^.]*closure lint/i);
-      }
+    assert.match(rendered, /same canonical task[^.]*authenticated actor[^.]*immutable authorization token[^.]*exact command scope[^.]*all required preconditions[^.]*owner confirmation/i,
+      `${role}: complete grant text contract includes every owner input`);
+    assert.match(rendered, /released[^.]*terminal|terminal[^.]*release/i, `${role}: terminal grant text contract`);
+    assert.match(rendered, /(?:confirmation|resume)[^.]*must not revive/i, `${role}: terminal grant cannot revive`);
+    assert.match(rendered, /remaining work needs a fresh complete grant/i, `${role}: terminal grant requires a fresh grant`);
+    assert.match(rendered, /runner-only release[^.]*does not authorize[^.]*closure lint/i, `${role}: runner text contract limits closure scope`);
+    assert.doesNotMatch(shipped, /(?:^|[.!?]\s+|\n)\s*(?:Require|Wait for) a separate (?:owner )?confirmation|do not execute until[^.]*separate canonical task[^.]*owner confirms/i,
+      `${role}: whole shipped skill must not add a separate confirmation barrier`);
+    if (role === 'orchestrator') {
+      assert.match(rendered, /Persist[^.]*authenticated actor[^.]*immutable authorization token[^.]*exact command scope[^.]*all preconditions[^.]*before[^.]*task create[^.]*participant dispatch/i,
+        `${role}: prebound text contract persists the complete grant before reservation or dispatch`);
+      assert.match(rendered, /Keep the actor slot until the exact all-calls release is acknowledged, or an official task-owned stop\/pause is verified/i,
+        `${role}: retain text contract holds the actor slot until acknowledgment or verified Stop`);
+      assert.match(rendered, /all-calls release identifies actor, token and completed scope and confirms pending and running calls are zero/i,
+        `${role}: exactRelease text contract requires exact identity, scope and drained calls`);
+      assert.match(rendered, /Validate it against current control before acknowledging it and reallocating the actor slot/i,
+        `${role}: exactRelease text contract validates current control before acknowledgment or reallocation`);
+      assert.match(rendered, /Sent Hold[^.]*sent or queued are not acknowledgments[^.]*read or applied/i,
+        `${role}: retain text contract distinguishes delivery from acknowledgment`);
+      assert.match(rendered, /official task-owned participant stop\/pause route[^.]*verify fresh actual status, paused delivery and zero pending\/running calls before reassigning/i,
+        `${role}: stop text contract requires a fresh official Stop verification`);
+      assert.match(rendered, /Preserve worktrees, raw receipts and unrelated participants/i,
+        `${role}: stop text contract preserves owned evidence and unrelated work`);
+      assert.match(rendered, /changed precondition during a running batch takes effect only after acknowledged application/i,
+        `${role}: update text contract waits for acknowledged precondition application`);
+    } else {
+      assert.match(rendered, /Immediately before every mechanical call[^.]*current control and STOP[^.]*authenticated actor and authorization token[^.]*current granted scope/i,
+        `${role}: guard text contract checks current control, STOP, actor, token and scope before every call`);
+      assert.match(rendered, /earlier Proceed[^.]*insufficient when current ownership has changed/i,
+        `${role}: guard text contract rejects stale Proceed`);
+      assert.match(rendered, /Refuse a call outside that exact scope or under STOP, an ended grant or mismatched ownership/i,
+        `${role}: guard text contract refuses invalid current authority`);
+      assert.match(rendered, /fresh normal-account routing before each substantial suite invocation/i,
+        `${role}: routing text contract requires a fresh receipt for each suite`);
+      assert.match(rendered, /Cached quota is not a fresh routing receipt/i,
+        `${role}: routing text contract excludes cached quota`);
+      assert.match(rendered, /Follow the initial grant's preconditions until a changed precondition has acknowledged application/i,
+        `${role}: update text contract keeps initial guards until acknowledgment`);
+      assert.match(rendered, /later message cannot retroactively change a running call's guard/i,
+        `${role}: update text contract does not change a running call retroactively`);
     }
     assert.ok(shipped.endsWith(rendered.trimEnd() + '\n'));
   });

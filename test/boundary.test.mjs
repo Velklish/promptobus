@@ -6,7 +6,6 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
-import { isBuiltin } from 'node:module';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -18,8 +17,6 @@ const SRC = path.join(ROOT, 'src');
 const stripComments = (text) => text
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/(^|[^:'"\\])\/\/[^\n]*/g, '$1');
-
-const SPECIFIER = /\bfrom\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]|\bimport\s+['"]([^'"]+)['"]|\brequire\s*\(\s*['"]([^'"]+)['"]/g;
 
 function tsFiles(dir, out = []) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -38,31 +35,6 @@ function walk(dir, out = []) {
   }
   return out;
 }
-
-function forbiddenSpec(spec, fileAbs) {
-  // A specifier is one token. English source now has `from` inside a string
-  // (`MESSAGE_FROM = ' from '`), and `\bfrom\s*['"]` would otherwise take the
-  // closing quote as the start of an import and swallow the rest of the file.
-  if (!spec || /[\n\r;]/.test(spec)) return null;
-  if (isBuiltin(spec)) return null;
-  if (!spec.startsWith('.')) return 'external package';
-  const target = path.resolve(path.dirname(fileAbs), spec);
-  if (target === SRC || target.startsWith(SRC + path.sep)) return null;
-  return 'path out of src';
-}
-
-test('package sources import only Node built-ins and their own files', () => {
-  const breaches = [];
-  for (const file of tsFiles(SRC)) {
-    const text = stripComments(readFileSync(file, 'utf8'));
-    for (const m of text.matchAll(SPECIFIER)) {
-      const spec = m[1] ?? m[2] ?? m[3] ?? m[4];
-      const reason = forbiddenSpec(spec, file);
-      if (reason) breaches.push(`${path.relative(ROOT, file)}: ${spec} — ${reason}`);
-    }
-  }
-  assert.deepEqual(breaches, []);
-});
 
 test('package sources do not read the environment and do not write to process streams', () => {
   const ambient = [];

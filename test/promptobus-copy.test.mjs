@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { check } from './check.mjs';
 
 const util = await import('../lib/util.js');
@@ -31,30 +32,53 @@ check('exec.resolveCommand on win32 finds PATHEXT hits',
   && exec.resolveCommand('claude', { platform: 'darwin', env: {} }) === 'claude',
   String(exec.resolveCommand('claude', WIN)));
 
-check('exec.quoteCmdArg quotes spaces and JSON',
-  String(exec.quoteCmdArg('--print')).includes('--print')
-  && exec.quoteCmdArg('C:\\Users\\Ivan Petrov\\ws').includes('Ivan Petrov')
-  && exec.quoteCmdArg('{"deny":["Bash"]}').includes('deny'),
-  exec.quoteCmdArg('{"deny":["Bash"]}'));
+for (const [name, argument, expected] of [
+  ['quotes a safe flag', '--print', '"--print"'],
+  ['quotes spaces', 'a b', '"a b"'],
+  ['quotes a path with spaces', 'C:\\Users\\Ivan Petrov\\ws', '"C:\\Users\\Ivan Petrov\\ws"'],
+  ['doubles an embedded quote', 'a"b', '"a""b"'],
+  ['doubles a trailing backslash', 'a\\', '"a\\\\"'],
+  ['doubles two trailing backslashes', 'a\\\\', '"a\\\\\\\\"'],
+  ['doubles a backslash before a quote', 'a\\"b', '"a\\\\""b"'],
+  ['doubles two backslashes before a quote', 'a\\\\"b', '"a\\\\\\\\""b"'],
+  ['keeps cmd metacharacters quoted', 'a&b|c<d>e^f!g(h)', '"a&b|c<d>e^f!g(h)"'],
+  ['quotes JSON', '{"deny":["Bash"]}', '"{""deny"":[""Bash""]}"'],
+]) {
+  const actual = exec.quoteCmdArg(argument);
+  check(`exec.quoteCmdArg ${name} exactly`, actual === expected,
+    JSON.stringify({ argument, expected, actual }));
+}
 
 const posix = exec.planRun('git', ['status'], { platform: 'linux' });
 check('exec.planRun on POSIX is a direct spawn',
-  posix.ok === true && posix.shell !== true,
+  isDeepStrictEqual(posix, { ok: true, file: 'git', args: ['status'], verbatim: false }),
   JSON.stringify(posix));
 
 // english-authoring: input — a non-ASCII multi-line prompt on the Windows direct-spawn path
-const exe = exec.planRun('claude', ['-p', 'многострочный\nпромпт'], WIN);
+const multilinePrompt = 'многострочный\nпромпт';
 // english-authoring: end
+const exe = exec.planRun('claude', ['-p', multilinePrompt], WIN);
 check('exec.planRun win .exe stays a direct spawn',
-  exe.ok === true, JSON.stringify(exe));
+  isDeepStrictEqual(exe, {
+    ok: true, file: path.join(BIN, 'claude.exe'), args: ['-p', multilinePrompt], verbatim: false,
+  }), JSON.stringify(exe));
 
 const bat = exec.planRun('npm', ['publish', '--userconfig', 'C:\\tmp\\a b\\.npmrc'], WIN);
 check('exec.planRun win .cmd is ok for paths with spaces',
-  bat.ok === true, JSON.stringify(bat));
+  isDeepStrictEqual(bat, {
+    ok: true,
+    file: WIN.env.ComSpec,
+    args: [`/v:off /d /s /c ""${path.join(BIN, 'npm.cmd')}" "publish" "--userconfig" "C:\\tmp\\a b\\.npmrc""`],
+    verbatim: true,
+  }), JSON.stringify(bat));
 
-const percent = exec.planRun('npm', ['run', '%PATH%'], WIN);
-check('exec.planRun win .cmd refuses %',
-  percent.ok === false && percent.code !== undefined, JSON.stringify(percent));
+for (const [name, argument] of [['%', '%PATH%'], ['CR', 'a\rb'], ['LF', 'a\nb']]) {
+  const refusal = exec.planRun('npm', ['run', argument], WIN);
+  check(`exec.planRun win .cmd refuses ${name} without an executable plan`,
+    refusal.ok === false && refusal.code === 'ERR_UNCARRIABLE_ARG'
+    && !('file' in refusal) && !('args' in refusal) && !('verbatim' in refusal),
+    JSON.stringify(refusal));
+}
 
 // A copy shortens only the two shared ceilings: exercising the production minute
 // would add a minute to every suite run, while a caller that forgot the defaults

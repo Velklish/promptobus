@@ -300,7 +300,10 @@ function forbidden(spec, fileAbs) {
 // SHAPE — a constant, then declarations after it — and a file is what the scanner is
 // pointed at everywhere else.
 const TRAPS = path.join(here, 'fixtures', 'import-scan');
-const TRAP_SPECS = ['node:fs', 'node:path', 'node:os', './neighbour.js', './lazy.js', 'node:url'];
+const TRAP_SPECS = [
+  'node:fs', 'node:path', 'node:os', './neighbour.js', './lazy.js', 'node:url',
+  'node:assert', 'node:events', 'node:tty', 'node:querystring', 'node:url', 'node:url',
+];
 const trapSeen = specifiersOf(readFileSync(path.join(TRAPS, 'trap.ts'), 'utf8'));
 check('import scan reads every declaration past strings, regexes and comments that look like imports',
   trapSeen.length === TRAP_SPECS.length && trapSeen.every((s, k) => s === TRAP_SPECS[k]),
@@ -401,18 +404,21 @@ check('PB-173 the bus event name is still declared and imported, and nothing wri
   && hookContract.wroteBus === false,
   JSON.stringify(hookContract));
 
+const packDir = path.join(SB, 'pack');
+mkdirSync(packDir);
 function packList() {
-  const r = npm(['pack', '--dry-run', '--json'], COPY_ROOT);
-  if (r.status !== 0) return { ok: false, files: [], detail: why(r) };
+  const r = npm(['pack', '--json', '--ignore-scripts', '--pack-destination', packDir], COPY_ROOT);
+  if (r.status !== 0) return { ok: false, files: [], filename: null, detail: why(r) };
   try {
-    return { ok: true, files: JSON.parse(r.stdout)[0].files.map((f) => f.path), detail: '' };
+    const result = JSON.parse(r.stdout)[0];
+    return { ok: true, files: result.files.map((f) => f.path), filename: result.filename, detail: '' };
   } catch (e) {
-    return { ok: false, files: [], detail: `${e.message}: ${r.stdout.slice(0, 300)}` };
+    return { ok: false, files: [], filename: null, detail: `${e.message}: ${r.stdout.slice(0, 300)}` };
   }
 }
 
 const packed = packList();
-check('npm pack --dry-run --json succeeded', packed.ok, packed.detail);
+check('npm pack created the artifact and its file inventory', packed.ok, packed.detail);
 const files = packed.files;
 
 check('tarball contains package.json',
@@ -770,13 +776,11 @@ const leaked = files.filter((f) => f.startsWith('src/') || f.startsWith('test/')
 check('tarball does not include source, tests, or tsconfig',
   packed.ok && leaked.length === 0, leaked.join(', '));
 
-const packDir = path.join(SB, 'pack');
 const target = path.join(SB, 'install');
-mkdirSync(packDir);
 mkdirSync(target);
-const packedTgz = npm(['pack', '--pack-destination', packDir], COPY_ROOT);
-const tgz = readdirSync(packDir).find((n) => n.endsWith('.tgz'));
-check('npm pack produced a tarball', packedTgz.status === 0 && !!tgz, why(packedTgz));
+const tgz = packed.filename;
+check('npm pack produced a tarball',
+  packed.ok && !!tgz && existsSync(path.join(packDir, tgz)), packed.detail);
 
 const installed = tgz
   ? npm(['install', '--no-audit', '--no-fund', '--ignore-scripts', '--offline',
