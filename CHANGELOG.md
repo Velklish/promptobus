@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+- Move the optional BB source plugin to `integrations/bb/`. Its package name, public core exports and runtime behavior stay unchanged; the plugin remains outside the core tarball.
+- Packed BB Host setup checks use a fixture-owned npm cache and remove it with the temporary installation.
+
 ## [0.28.0] — 2026-10-20
 
 - The live Cursor check probes the driver-declared `cursor-agent` binary, so an installed `cursor` editor does not satisfy its preflight.
@@ -150,7 +155,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authenticated worker while retaining the orchestrator lifecycle owner and
   selected acceptance workspace; metadata failures remain visible. Coverage is
   SDK fixture evidence; live sidebar and new-source native behavior are unmeasured.
-  [Display names](bb-plugin-promptobus/README.md#display-names-and-acceptance-placement).
+  [Display names](integrations/bb/README.md#display-names-and-acceptance-placement).
 
 - Deliver complete BB command grants with authorization and owner confirmation in
   one task, prebound before activation. Require current ownership and STOP checks
@@ -167,7 +172,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   binding and assignment. Failed or ambiguous launches retain recoverable intent;
   environment-id and managed-worktree routes remain available. Coverage is SDK
   fixture evidence; live path registration remains unmeasured.
-  [Lifecycle](bb-plugin-promptobus/README.md#lifecycle).
+  [Lifecycle](integrations/bb/README.md#lifecycle).
 
 - Align BB worker, reviewer and approver evidence instructions with authenticated
   independent participant ids and UTF-8 opaque text attachments. Keep native
@@ -182,7 +187,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   overlapping requests, retain exact cancelled-wake ownership through late replies
   and reload, and report persisted launch reasoning. BB Host context now explicitly
   refuses symlink skill entries and approver admission refuses unsupported pipeline
-  shapes. [Runtime details](bb-plugin-promptobus/README.md).
+  shapes. [Runtime details](integrations/bb/README.md).
 
 - Require explicit current worker/reviewer results for a BB approver's actual
   subject before launch, dispatch and tool calls, through the existing factual
@@ -202,7 +207,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reservation; keep provider-account windows and unknown usage explicit.
   Role policy refuses provider substitution and leaves native routing defaults
   unchanged. Native children drop inherited BB identity while retaining connection
-  configuration. [Selection](bb-plugin-promptobus/README.md#provider-and-model-selection),
+  configuration. [Selection](integrations/bb/README.md#provider-and-model-selection),
   [decision](docs/adr/adr-033-bb-provider-routing.md).
 
 - Persist BB launch intent, wake outbox and event cursors; reconcile canonical
@@ -210,13 +215,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SDK sent/queued success never ACKs mail. Plugin Stop durably pauses delivery,
   including late replies; explicit resume restores it. Active interruption is
   replayed; already-idle BB Stop has a documented SDK observation limit.
-  [Recovery](bb-plugin-promptobus/README.md#wake-and-recovery),
+  [Recovery](integrations/bb/README.md#wake-and-recovery),
   [decision](docs/adr/adr-032-bb-wake-recovery.md).
 
 - Let BB create participant worktrees and retain actual environment/thread ownership
   refs. SDK observations preserve stopping/offline uncertainty. Archive confirms Stop
   and preserves unaccepted patches in a stable coordinator before BB retirement;
-  native cleanup retains BB resources. [Lifecycle](bb-plugin-promptobus/README.md#lifecycle),
+  native cleanup retains BB resources. [Lifecycle](integrations/bb/README.md#lifecycle),
   [decision](docs/adr/adr-031-bb-environment-lifecycle.md).
 
 - Bind local BB task participants to authenticated thread, project, environment and
@@ -224,7 +229,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   engine on the coordinator host. First prompts wait for binding finalization;
   reload retains bindings and orphaned launches cannot acquire another identity.
   Reviewer bus operations retain the read-only source sandbox and external-tool
-  refusal. [Setup](bb-plugin-promptobus/README.md),
+  refusal. [Setup](integrations/bb/README.md),
   [decision](docs/adr/adr-030-bb-authoritative-participants.md).
 
 - Export typed portable role instruction renderers. Native planners retain their
@@ -236,7 +241,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read-only execution, no approval escalation, bounded file tools and a fail-closed
   external tool allowlist. The built-in BB Codex provider is not admitted as a
   reviewer. This does not yet establish the complete BB role workflow.
-  [Setup](bb-plugin-promptobus/README.md), [decision](docs/adr/adr-029-bb-constrained-codex-reviewer.md).
+  [Setup](integrations/bb/README.md), [decision](docs/adr/adr-029-bb-constrained-codex-reviewer.md).
 
 - Separate Codex role instructions behind the driver boundary. Worker, reviewer
   and managed-root guidance reuses persistent MCP connections and checks native

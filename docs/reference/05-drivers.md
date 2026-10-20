@@ -36,7 +36,7 @@ with `gpt-6.1-sol`, `low` and the shipped pipeline. Codex CLI
 0.162.0-alpha.17.2 has a historical isolated native permission proof with
 `gpt-6.1-sol`, `high`; it does not establish `xhigh` or the full BB workflow on
 that build. [Compatibility proof](02-host.md#bb-reviewer-compatibility-proof).
-Other profiles are unverified; the adapter is source-only and unreleased. [Support and limits](../../bb-plugin-promptobus/README.md#approver-admission-and-workflow-support).
+Other profiles are unverified; the adapter is source-only and unreleased. [Support and limits](../../integrations/bb/README.md#approver-admission-and-workflow-support).
 Provider/model inventory is re-read before
 launch; a model-load error, unsupported model/effort, unavailable host/environment
 or known invalid installation/authentication refuses before canonical reservation.
@@ -1318,7 +1318,7 @@ Host write classification excludes writes before dispatch. Native MCP remains
 disabled. See [Host delivery](02-host.md#bb-host-context-delivery). This provider establishes the reviewer
 restriction contract only; the complete BB role workflow needs separate live
 evidence. A native reviewer beside BB workers remains a mixed runtime pilot.
-See [the plugin setup](../../bb-plugin-promptobus/README.md) and
+See [the plugin setup](../../integrations/bb/README.md) and
 [ADR-029](../adr/adr-029-bb-constrained-codex-reviewer.md). Native Driver permissions
 and launch paths are unchanged.
 
@@ -1343,5 +1343,5 @@ Fresh Stop confirmation requires idle thread/runtime state, zero background agen
 and an available bound host/environment. Archive additionally requires complete
 preservation in the stable coordinator and archived lifecycle children. Actual SDK
 path, branch, base SHA, environment and parent/lifecycle owner ids survive reload.
-[Lifecycle](../../bb-plugin-promptobus/README.md#lifecycle) defines retention and the
+[Lifecycle](../../integrations/bb/README.md#lifecycle) defines retention and the
 explicit BB operator-override boundary. Native Drivers keep their existing behavior.

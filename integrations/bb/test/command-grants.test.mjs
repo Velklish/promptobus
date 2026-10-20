@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { renderBbInstructionSkill } from 'promptobus/instructions';
-import { renderBbInstructionSkill as renderCanonical } from '../../lib/instructions.js';
+import { renderBbInstructionSkill as renderCanonical } from '../../../lib/instructions.js';
 
 const roles = ['orchestrator', 'approver', 'worker'];
 const surfaces = [

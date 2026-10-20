@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@get-bb/plugin-sdk": "0.6.15",
-    "promptobus": "file:..",
+    "promptobus": "file:../..",
     "zod": "4.6.5"
   },
   "devDependencies": {

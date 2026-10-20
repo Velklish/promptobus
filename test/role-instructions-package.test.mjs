@@ -21,6 +21,14 @@ const run = (command, args, cwd) => {
 const packed = JSON.parse(run('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', stand], root))[0];
 run('npm', ['install', '--ignore-scripts', '--offline', '--no-audit', '--no-fund', path.join(stand, packed.filename)], consumer);
 
+test('core tarball excludes the optional BB plugin source package', () => {
+  const plugin = JSON.parse(readFileSync(path.join(root, 'integrations/bb/package.json'), 'utf8'));
+  assert.equal(plugin.name, 'bb-plugin-promptobus');
+  assert.equal(plugin.dependencies.promptobus, 'file:../..');
+  assert.deepEqual(packed.files.map(file => file.path).filter(file =>
+    file.startsWith('integrations/') || file.startsWith('bb-plugin-promptobus/')), []);
+});
+
 test('packed instruction entry and its typed dependencies survive a clean installation', () => {
   const files = new Set(packed.files.map(file => file.path));
   for (const file of ['lib/instructions.js', 'lib/instructions.d.ts', 'lib/prompts/roles.js', 'lib/prompts/roles.d.ts', 'lib/prompts/bb.js', 'lib/prompts/bb.d.ts', 'lib/prompts/README.md']) {

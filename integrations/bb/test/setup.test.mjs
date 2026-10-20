@@ -20,9 +20,15 @@ test('consumer generator builds a fresh packed Host integration without generate
   const source = fileURLToPath(new URL('..', import.meta.url));
   const root = mkdtempSync(path.join(os.tmpdir(), 'pb-bb-engine-setup-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const env = { ...process.env, NPM_CONFIG_CACHE: '/private/tmp/pb-bb-npm-cache' };
+  const cache = path.join(root, 'npm-cache');
+  const env = { ...process.env, npm_config_cache: cache, NPM_CONFIG_CACHE: cache };
   const run = (command, args, cwd) => execFileSync(command, args, { cwd, env, stdio: 'pipe', timeout: 120_000 });
-  const packed = JSON.parse(run('npm', ['pack', '--json', '--pack-destination', root], path.dirname(source)))[0];
+  const effectiveCache = run('npm', ['config', 'get', 'cache'], root).toString().trim();
+  assert.ok(effectiveCache.startsWith(root + path.sep), 'npm cache must belong to the setup fixture');
+  const packed = JSON.parse(run('npm', ['pack', '--json', '--pack-destination', root], path.resolve(source, '../..')))[0];
+  const core = JSON.parse(readFileSync(path.resolve(source, '../../package.json'), 'utf8'));
+  assert.equal(packed.name, core.name);
+  assert.equal(packed.version, core.version);
   const integration = path.join(root, 'consumer.mjs');
   writeFileSync(integration, `import path from 'node:path';
 export default {
@@ -47,7 +53,10 @@ export default {
   assert.throws(() => run(process.execPath, [path.join(source, 'scripts/create-host-plugin.mjs'), '--directory', directory,
     '--integration', integration, '--promptobus', 'unused'], source), /existing files are never overwritten/);
   run('npm', ['install', '--no-audit', '--no-fund'], directory);
+  const installed = JSON.parse(readFileSync(path.join(directory, 'node_modules/promptobus/package.json'), 'utf8'));
+  assert.equal(installed.version, core.version);
   for (const script of ['check', 'skills:check', 'build']) run('npm', ['run', script], directory);
+  for (const entry of ['server.js', 'host.js']) assert.ok(existsSync(path.join(directory, 'dist', entry)), entry);
   const fixture = path.join(root, 'fixture'); mkdirSync(fixture);
   writeFileSync(path.join(fixture, 'AGENTS.md'), 'FICTION_RULE_FROM_PACKED_HOST');
   const probe = path.join(directory, 'probe.mjs');

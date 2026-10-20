@@ -36,7 +36,7 @@ The host entry performs bounded reads and rejects paths outside that root. Clien
 metadata never grants another thread access. An effective sandbox, approval or
 model mismatch refuses startup before the first model turn. Missing or widened
 runtime restrictions refuse startup regardless of the reported Codex version.
-See the [compatibility proof](../docs/reference/02-host.md#bb-reviewer-compatibility-proof)
+See the [compatibility proof](../../docs/reference/02-host.md#bb-reviewer-compatibility-proof)
 for the measured versions, native denials and reproducible test. The test matches
 the entire reviewed exec source, call/output identity and turn, and independent
 router stderr from the isolated child. The nested patch has no separate native
@@ -61,7 +61,7 @@ metadata failures retain an orphan binding instead of claiming success.
 A new approver is spawned below its authenticated worker, retaining its selected
 acceptance workspace and the orchestrator lifecycle owner. Raw metadata reparenting
 of an already bound thread is refused by authentication. The
-[display contract](../docs/reference/02-host.md#bb-display-names-and-acceptance-placement)
+[display contract](../../docs/reference/02-host.md#bb-display-names-and-acceptance-placement)
 describes defaults, inheritance, ownership checks and the SDK fixture evidence
 boundary. Live sidebar and new-source native behavior remain unmeasured.
 
@@ -72,7 +72,7 @@ and a long background run with volume and a measured estimate. Status remains in
 the orchestrator mailbox without its own bus wake; the next actionable message
 carries it. Decisions require questions. BB system child outcomes still follow
 the host lifecycle; their safe suppression needs the public capability described
-in the [host boundary](../docs/reference/02-host.md#local-bb-host-boundary).
+in the [host boundary](../../docs/reference/02-host.md#local-bb-host-boundary).
 
 The six standing role contracts live in `skills/` and are generated from
 `promptobus/instructions`. After refreshing the local package with `npm ci`, run
@@ -133,9 +133,17 @@ selection unchanged. These measurements do not certify other sessions or models.
 
 ## Local task entry point
 
-Build the root library before `npm ci` in this package so the local `file:..`
+Build the root library before `npm ci` in this package so the local `file:../..`
 dependency contains its current public exports. Build and reload the installed
 plugin after source changes. `bb promptobus --help` describes the operator CLI.
+
+From the repository root, install and build the source package:
+
+```sh
+npm ci
+npm --prefix integrations/bb ci
+npm --prefix integrations/bb run build
+```
 
 ```sh
 bb promptobus task create --task demo-t20261008-120000 --title "Demo" \
@@ -206,7 +214,7 @@ orchestrator reads full canonical bodies, including acknowledged status parts,
 checks sender, grant token, totals, order and release, and rejects incomplete,
 duplicated or reordered reports before relying on them. This is a procedural
 check; the bus does not assemble or validate parts. Reviewers need no artifact,
-shell or filesystem write. See [bounded reviewer reports](../docs/reference/04-protocol.md#bb-bounded-reviewer-reports).
+shell or filesystem write. See [bounded reviewer reports](../../docs/reference/04-protocol.md#bb-bounded-reviewer-reports).
 
 The six role skills, model-catalog selection and recipient wake/recovery are delivered.
 The measured six-role workflow and its profile limits are recorded below.
@@ -346,6 +354,10 @@ The SDK optional Hono peer also appears in this checkout's production dependency
 graph; `npm audit --json` checks its resolved version. Build with `bb plugin build`
 to verify the self-contained host bundle as well as the server. Mock SDK evidence
 and actual local tool-turn evidence are reported separately.
+
+The packed Host setup fixture installs into a fresh temporary directory and
+checks that npm resolves its cache inside that directory. Both the installation
+and its cache are removed by the fixture's cleanup.
 
 ## Lifecycle
 
@@ -504,12 +516,12 @@ lint and other gate status separate, and check names, counts and multiplicities
 against the raw test scope. Raw output is authoritative; approximate inventories,
 missing raw and unsupported formats are explicitly incomplete.
 
-The checkout-only [reference helper](../scripts/bb-evidence-verdict-names.mjs)
+The checkout-only [reference helper](../../scripts/bb-evidence-verdict-names.mjs)
 supports one flat passing Node spec scope with one complete footer. Nested or
 concatenated scopes, custom printers, other reporters, ANSI output, failures and
 skips are unsupported. The helper cannot certify gates; the extractor is shipped in the
 library package. Manual lossless opaque UTF-8 evidence with retained raw output
-remains valid. See [BB evidence attachments](../docs/reference/04-protocol.md#bb-evidence-attachments).
+remains valid. See [BB evidence attachments](../../docs/reference/04-protocol.md#bb-evidence-attachments).
 
 ### Required launch and review inputs
 

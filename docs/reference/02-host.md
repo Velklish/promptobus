@@ -624,7 +624,7 @@ until its returned identity is finalized, then a hook recheck allows the queued
 initial prompt. The native tools have an independent ready-binding guard, so
 manual queue release cannot confer rights. Reload retains bindings; orphaned
 launches remain refused. [Decision](../adr/adr-030-bb-authoritative-participants.md)
-and [operator setup](../../bb-plugin-promptobus/README.md) define the local scope.
+and [operator setup](../../integrations/bb/README.md) define the local scope.
 
 `participant add --environment-path <absolute-path>` asks public SDK spawn to
 register an existing local Git worktree in the coordinator's project. The server
@@ -747,7 +747,7 @@ SDK and engine identity checks occur before context reads or calls. Native revie
 MCP stays disabled.
 
 A source generator produces the consumer plugin variant; see
-[setup](../../bb-plugin-promptobus/README.md#consumer-host-setup) and
+[setup](../../integrations/bb/README.md#consumer-host-setup) and
 [ADR-034](../adr/adr-034-bb-host-context-delivery.md). Private source integration
 and server configuration belong to the consumer. Regenerate and create fresh
 participants when delivered context or the native tool catalog changes.

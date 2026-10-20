@@ -800,7 +800,7 @@ unread revision and two missing-result continuations per latest canonical task.
 SDK send and source effects are not an exactly-once transaction. Plugin Stop
 persists pause before SDK Stop; interruption and denied interaction pause replay.
 No native warden or Stop-hook veto is added to this path.
-[Local contract](../../bb-plugin-promptobus/README.md#wake-and-recovery),
+[Local contract](../../integrations/bb/README.md#wake-and-recovery),
 [decision](../adr/adr-032-bb-wake-recovery.md).
 
 ### BB command grant release
@@ -1020,7 +1020,7 @@ adapter address. A result before the latest canonical task assignment is stale;
 This is a fact check at launch, after preparation, dispatch and approver tool
 calls. It does not grade verdicts, artifact truth, commits or supplied gate records,
 close the task or merge source. Timestamp precision is unchanged. See
-[workflow setup](../../bb-plugin-promptobus/README.md#approver-admission-and-workflow-support)
+[workflow setup](../../integrations/bb/README.md#approver-admission-and-workflow-support)
 and [ADR-035](../adr/adr-035-bb-role-workflow-support.md).
 
 ## Consumed Codex schema contract

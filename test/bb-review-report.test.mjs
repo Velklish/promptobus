@@ -18,8 +18,8 @@ test('BB reviewer bounds every send body and delivers findings before its sole t
   assert.match(body, /Do not truncate or drop findings/);
   assert.match(body, /no artifact of your own/);
   assert.match(body, /failed or uncertain send[^.]*incomplete/);
-  assert.ok(readFileSync(new URL('../bb-plugin-promptobus/skills/promptobus-reviewer/SKILL.md', import.meta.url), 'utf8').endsWith(body.trimEnd() + '\n'));
-  const schema = readFileSync(new URL('../bb-plugin-promptobus/protocol.ts', import.meta.url), 'utf8');
+  assert.ok(readFileSync(new URL('../integrations/bb/skills/promptobus-reviewer/SKILL.md', import.meta.url), 'utf8').endsWith(body.trimEnd() + '\n'));
+  const schema = readFileSync(new URL('../integrations/bb/protocol.ts', import.meta.url), 'utf8');
   assert.match(schema, /body: z\.string\(\)\.min\(1\)\.max\(2400\)/);
 });
 

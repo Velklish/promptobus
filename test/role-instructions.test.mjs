@@ -31,13 +31,13 @@ test('worker milestone status and native/BB references retain the progress deliv
   assert.match(read('docs/reference/01-overview.md'), /only `status` does not receive a knock/);
   assert.match(read('docs/reference/03-cli.md'), /does not knock or retry a knock/);
   assert.match(read('docs/reference/02-host.md'), /does not produce a BB bus wake/);
-  assert.match(read('bb-plugin-promptobus/README.md'), /without its own bus wake/);
+  assert.match(read('integrations/bb/README.md'), /without its own bus wake/);
 });
 test('BB skills retain the shared role protocol outside the dynamic instruction limit', async () => {
   const { BB_ROLE_SKILLS, renderBbInstructionSkill } = await import('promptobus/instructions');
   for (const [role, name] of Object.entries(BB_ROLE_SKILLS)) {
     const body = renderBbInstructionSkill(role);
-    const skill = readFileSync(new URL(`../bb-plugin-promptobus/skills/${name}/SKILL.md`, import.meta.url), 'utf8');
+    const skill = readFileSync(new URL(`../integrations/bb/skills/${name}/SKILL.md`, import.meta.url), 'utf8');
     assert.ok(skill.endsWith(body.trimEnd() + '\n'));
     assert.match(body, /not a participant binding or permission grant/);
     assert.doesNotMatch(body, /warden|MCP-server|MCP server|Stop hooks are required|where promptobus\.json lives|\.claude\/worktrees|spawn created/);
@@ -96,7 +96,7 @@ for (const role of ['worker', 'reviewer', 'approver']) {
     assert.deepEqual(JSON.parse(delivery.initialPrompt.split('\n\n')[1]), context);
     assert.deepEqual(delivery.configuration.skills, [BB_ROLE_SKILLS[role]]);
     const rendered = renderBbInstructionSkill(role);
-    const skill = readFileSync(new URL(`../bb-plugin-promptobus/skills/${BB_ROLE_SKILLS[role]}/SKILL.md`, import.meta.url), 'utf8');
+    const skill = readFileSync(new URL(`../integrations/bb/skills/${BB_ROLE_SKILLS[role]}/SKILL.md`, import.meta.url), 'utf8');
     for (const [surface, body] of [['canonical', rendered], ['delivered skill', skill]]) {
       const label = `${role} ${surface}`;
       assert.match(body, /UTF-8 opaque|opaque UTF-8/, label);
@@ -153,7 +153,7 @@ for (const role of ['orchestrator', 'approver', 'worker']) {
   test(`BB ${role}: complete command grants and terminal release belong to the rendered and shipped contract`, async () => {
     const { BB_ROLE_SKILLS, renderBbInstructionSkill } = await import('promptobus/instructions');
     const rendered = renderBbInstructionSkill(role);
-    const shipped = readFileSync(new URL(`../bb-plugin-promptobus/skills/${BB_ROLE_SKILLS[role]}/SKILL.md`, import.meta.url), 'utf8');
+    const shipped = readFileSync(new URL(`../integrations/bb/skills/${BB_ROLE_SKILLS[role]}/SKILL.md`, import.meta.url), 'utf8');
     for (const body of [rendered, shipped]) {
       assert.match(body, /same canonical task[^.]*owner confirmation|owner confirmation[^.]*same canonical task/i);
       assert.match(body, /released[^.]*terminal|terminal[^.]*release/i);

@@ -1,6 +1,6 @@
 # PB-373 · Admit Cursor and OpenCode BB workers and Cursor approvers
 
-- **Scope:** [BB plugin provider selection](../../../bb-plugin-promptobus/README.md#provider-and-model-selection)
+- **Scope:** [BB plugin provider selection](../../../integrations/bb/README.md#provider-and-model-selection)
 - **Created:** 2026-10-12
 - **Dependencies:** none
 - **Cost:** major

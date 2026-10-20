@@ -264,7 +264,7 @@ test('review initial immutable assignment holds every original ID readable throu
 });
 
 test('retained missing-ID review failure blocks zero reviewer starts until the complete initial manifest exists', async t => {
-  const observed = JSON.parse(readFileSync(new URL('../../docs/evidence/bb-orchestration-2026-10-13.json', import.meta.url), 'utf8')).evidenceDeliveryObservation;
+  const observed = JSON.parse(readFileSync(new URL('../../../docs/evidence/bb-orchestration-2026-10-13.json', import.meta.url), 'utf8')).evidenceDeliveryObservation;
   assert.equal(observed.evidenceMajor, 1); assert.equal(observed.sourceFindings, 0);
   const s = await stand(t, { noManifest: true }); await s.create();
   const f = await evidenceFixture(s.root, s.task);

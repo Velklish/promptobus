@@ -2036,9 +2036,9 @@ replayed from interruption history. Already-idle BB Stop has no replayable marke
 in SDK0.6.15; use plugin Stop for a durable pause. `recovery run` reconciles recorded
 threads and canonical mail once, without clearing pause or creating another thread.
 Unknown/offline state waits; errors, stopping, rejected/interrupted turns and denied
-interactions require operator recovery. See [wake recovery](../../bb-plugin-promptobus/README.md#wake-and-recovery).
+interactions require operator recovery. See [wake recovery](../../integrations/bb/README.md#wake-and-recovery).
 
-See [plugin lifecycle](../../bb-plugin-promptobus/README.md#lifecycle) and
+See [plugin lifecycle](../../integrations/bb/README.md#lifecycle) and
 [ADR-031](../adr/adr-031-bb-environment-lifecycle.md).
 
 ### Requested effort
