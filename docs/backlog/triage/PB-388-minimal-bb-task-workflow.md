@@ -15,6 +15,8 @@ Priority: after correctness blockers, before final efficiency acceptance. The ow
 
 ## Work to do
 
+Owner clarification, 2026-10-20: internal implementation/review participants should not inherit unrelated prompts or personal writing profiles. Such a profile belongs to user-facing communication or an explicit task to write in the owner's voice. `lib/bb-host.js` already knows the participant role, but calls the consumer's unscoped `collectRules(root)` and eagerly reads every skill. Make selection mechanical and role/task-aware; do not rely on each worker spending tokens to ignore irrelevant text. Core should not hardcode one consumer's personal profile filename.
+
 - Specify a default with an executor model and a fresh independent reviewer model. Integration bookkeeping and required checks remain explicit, but do not require another model solely to repeat metadata.
 - Preserve author/reviewer independence and exact reviewed source binding. An executor must not approve its own semantic review.
 - Use existing engine, BB adapter and tracker functions for preparation, receipts, admission, state projection and closure; avoid another wrapper platform.
@@ -32,4 +34,8 @@ Priority: after correctness blockers, before final efficiency acceptance. The ow
 - Wrong source, stale review, failed required check and denied permission still prevent acceptance.
 - A reviewer receives the current full diff and relevant prior findings without the author's private reasoning.
 - Large unrelated skills/history do not inflate initial context or current closure; required referenced rules remain readable.
+- Use a personal-style sentinel and an unrelated-skill sentinel: neither appears in a technical worker/reviewer assignment or gets loaded by a blanket rule-loading instruction. Required repository rules and explicitly selected skill dependencies remain present.
+- User-facing communication and an explicit author-voice writing task still receive the requested style. Context selection never removes authority, permission or ownership rules.
+- Separate the Promptobus-rendered payload from BB/provider-inherited instructions and skill discovery. A filter in one layer must not be reported as filtering the other; unavailable official controls remain a named integration dependency.
+- Record selected context sources and reasons so actual initial-context/usage comparisons can explain what was removed. Bytes alone are not tokens.
 - Compare actual input/cached/output tokens, turns, context transfers and manual interventions on matched baseline/candidate scenarios.
