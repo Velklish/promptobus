@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- BB admissions now require an immutable reference to owner-published current
+  control. Explicit `control publish --initialize` takes complete owner inputs
+  before task creation; revisioned owner updates and exact immutable token records
+  prevent stale snapshots and ended grants from authorizing work. Constrained
+  reviewer reads keep their existing roots. Closed or unhealthy owners retain
+  deny-only revocation; legacy file/inline tasks remain historical evidence and
+  require an explicitly initialized new task. This guards existing Promptobus
+  entry points without claiming physical Stop, native command interception or
+  live provider verification.
 - BB `bindings` now returns identity/phase summaries with exact task/participant
   filters and numeric forward cursors, excluding embedded payloads and tokens.
   Pages default to 50 rows, allow at most 100, and keep complete UTF-8 JSON within

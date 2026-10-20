@@ -44,6 +44,7 @@ The canonical project documentation. For current work, use `npx --no-install bac
 | [adr/adr-035-bb-role-workflow-support.md](adr/adr-035-bb-role-workflow-support.md) | BB approver admission reuses factual pipeline currency; full support requires measured six-role profile evidence | Accepted |
 
 | [adr/adr-036-live-run-owned-cleanup.md](adr/adr-036-live-run-owned-cleanup.md) | Live E2E abort cleanup proves its exact session and process lifecycle before deleting the stand; participant live runs have fresh task identities | Accepted |
+| [adr/adr-037-bb-current-control-authority.md](adr/adr-037-bb-current-control-authority.md) | BB admissions recheck owner-published current control through an immutable reference; revisioned updates and terminal token records preserve revocation | Accepted |
 
 ## Cross-cutting principles
 

@@ -8,3 +8,6 @@ export type {
 } from './host.js';
 export { HOST_CONFIG, createStandaloneHost } from './standalone.js';
 export type { StandaloneHostOptions } from './standalone.js';
+
+export { withDirLock } from './fs/lock.js';
+export { writeFileAtomic } from './fs/atomic.js';

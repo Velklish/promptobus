@@ -144,10 +144,11 @@ session before assignment. Configuration remains ready-only and each tool call
 rechecks authenticated identity. These ordering fixtures do not prove live bridge recovery;
 a provisioned session that still lacks the bridge needs separate runtime evidence.
 
-Every bound participant dispatch rechecks current launch control before a model
-turn, including user input and anonymous assignment delivery. Pausing automatic
+Every bound participant dispatch rechecks owner-published current control before
+a model turn, including user input and anonymous assignment delivery. Pausing automatic
 delivery does not revoke a valid grant. User input cannot reactivate an ended or
-stopped grant; use the operator resume and fresh-phase protocol.
+stopped grant; use the operator resume and fresh-phase protocol. Historical
+file/inline launch context cannot authorize work or silently migrate a legacy task.
 
 ## MCP schema and permission boundary
 
@@ -181,6 +182,8 @@ npm --prefix integrations/bb run build
 ```
 
 ```sh
+bb promptobus control publish --task demo-t20261008-120000 --initialize \
+  --input "$CURRENT_CONTROL_INPUT"
 bb promptobus task create --task demo-t20261008-120000 --title "Demo" \
   --project proj_example --environment env_example --model gpt-6.1-sol \
   --provider codex --reasoning-level medium \
@@ -197,11 +200,14 @@ Use real existing project/environment ids on the primary local host and a Git
 coordinator environment with an actual HEAD. The coordinator must be unmanaged:
 its canonical journal must outlive BB worker environment retirement.
 
-Prepare each role's complete bounded JSON input described under
-[required inputs](#required-launch-and-review-inputs); the example variables are
-placeholders for those exact authorized contexts. The first
-command creates the canonical task and a new owner thread; the second adds a
-new participant to that plugin-owned active task. Both hold the first prompt
+Prepare complete supplied owner confirmation and every actor's exact grants in
+`CURRENT_CONTROL_INPUT`, then each role's bounded launch context described under
+[required inputs](#required-launch-and-review-inputs). The example variables are
+placeholders for those exact authorized inputs; assignment prose does not supply
+authorization. The first command explicitly initializes owner control before a
+canonical task exists. The second creates that task and a new owner thread; the
+third adds a new participant to that plugin-owned active task. Task creation and
+participant addition hold the first prompt
 until the returned BB thread identity is finalized. A launch failure remains
 `orphan` in `bindings`; it is never silently reassigned. This CLI is a trusted
 local machine-operator entry point. It does not expose a bind-existing-thread tool.
@@ -604,23 +610,93 @@ No additional diagnostic model or similarly named native MCP tool is substituted
 | `ownedRoots`, `readRoots` | Exact absolute owned paths and provider-permitted reads, declared by the owner; no permission widening |
 | `role` | `name: BB_ROLE_SKILLS[role]` and the complete `literal` |
 | `grant` | Exact `actor`, `task`, immutable `token`, active `state`, fresh `phase`, scope `repository`, `branch`, full `base`, `operations`, and `preconditions` |
-| `control` | `mode: file` with a bounded readable `path`, or `mode: inline` with the complete current snapshot and `signals: ["Hold", "Stop"]` |
-| Inline snapshot | `ownerConfirmed: true`, `STOP: false`, `noNewStages: false`, exact active `grant`, and all `endedTokens` |
+| `control` | `mode: current` with the exact complete owner-published `reference` |
+| Control `reference` | Normalized real `directory`, `owner: { task, participant, projectId, environmentId, hostId, root }`, and declared owner `readRoots` |
 | `preparation` | Exact argv `commands`, `status: complete` or `notRun` with `reason` |
 | `quota` | Named `authority`, `missingUsage: informational`, `soft`, `hard`, `maxActiveIncludingOwner`, `PAYG: false` |
 | Reviewer `review` | Original `producer`, explicit `producerBinding`, `sourceEnvironmentId`, full `base`, exact argv `requiredGates`, explicit `requirePassingGates` |
 
+Before task creation, `control publish --task TASK --initialize --input <JSON>`
+takes this complete input, bounded to 1 MiB:
+
+```json
+{
+  "reference": {
+    "directory": "/absolute/owner/control",
+    "owner": {
+      "task": "TASK", "participant": "orchestrator", "projectId": "PROJECT",
+      "environmentId": "ENV", "hostId": "HOST", "root": "/coordinator"
+    },
+    "readRoots": ["/absolute/owner"]
+  },
+  "ownerConfirmed": true,
+  "STOP": false,
+  "noNewStages": false,
+  "grants": {
+    "orchestrator": {
+      "actor": "orchestrator", "task": "TASK", "token": "owner-phase-1",
+      "state": "active", "phase": "initial",
+      "scope": {
+        "repository": "/coordinator", "branch": "main",
+        "base": "0000000000000000000000000000000000000000",
+        "operations": ["coordinate the supplied task"]
+      },
+      "preconditions": ["supplied owner approval applies to this scope"]
+    },
+    "worker-api": {
+      "actor": "worker-api", "task": "TASK", "token": "worker-phase-1",
+      "state": "active", "phase": "initial",
+      "scope": {
+        "repository": "/worktrees/api", "branch": "demo-api",
+        "base": "0000000000000000000000000000000000000000",
+        "operations": ["implement the supplied API assignment"]
+      },
+      "preconditions": ["fresh normal-account routing before each substantial suite"]
+    }
+  }
+}
+```
+
+Replace every example identity, path, token, SHA, operation and precondition with
+the exact supplied owner input. The initializer does not infer missing grants or
+owner confirmation. Task creation pins the identical reference in canonical
+`task.adapter.bb.currentControl`; a later context cannot replace it. A launch
+uses `control: { "mode": "current", "reference": COMPLETE_REFERENCE }`.
+The runtime rereads and owner-validates current control at existing Promptobus
+admission points, including constrained reviewer reads, without adding reviewer
+filesystem roots.
+
+The current document is bounded to 1 MiB and uses
+`format: "promptobus-bb-control-v1"`, reference, revision, owner confirmation,
+STOP, noNewStages and current grants. Each exact token record is at most 256 KiB
+and uses `format: "promptobus-bb-token-v1"`, task, actor, token, grantSha256 and
+state (`active` or `ended`). Tokens fix immutable grants and move only from active to ended. Update
+with `control publish --task TASK --expected-revision N --input <JSON>`; a stale
+revision refuses. Successful publication returns `{ revision, reference }`.
+Omitting a grant or replacing it with a fresh token in the next complete
+publication ends its old token. The update authenticates persisted canonical owner identity,
+token and session independently of normal owner admission. Closed, orphaned or
+unhealthy owner recovery permits only monotonic denial: it cannot clear
+STOP/noNewStages, reconfirm ownership or issue grants.
+Fresh runtime observation of a missing, errored or unknown owner also forces
+deny-only updates while keeping revocation available.
+Current/token byte bounds exclude the separately verified canonical owner task
+metadata; they do not describe every read performed by admission.
+
 For provisioning, declare the expected target path/branch/base; the actual SDK
 identity must match after preparation. The preparatory READY turn executes no
-assignment. A constrained reader whose external control file is outside its
-read roots receives inline control and Root signals. Ended tokens never resume;
-repairs require a fresh complete bounded phase. Persisted older bindings remain
-explicitly `notMeasured`, without a fabricated startup measurement.
+assignment. Ended tokens never resume; repairs require a fresh complete bounded
+phase. Persisted file/inline bindings remain historical `notMeasured` evidence
+and refuse substantive admission. Resume and fresh-phase updates cannot attach a
+current reference to an existing legacy task. Use an explicitly initialized new
+task through the supported route, retaining the old task status and evidence.
 
 For the same existing actor, `participant resume --launch-context <JSON>
 --assignment <complete-phase-text> --evidence-manifest <JSON>` installs a fresh
-review phase. It requires a different grant token and phase, and current control
-must name the previous token as ended. The complete original manifest is checked
+review phase. It requires a different grant token and phase. The runtime looks
+up the exact previous grant token in current owner storage and requires
+`predecessorEnded: true`, without an ended-token history scan or trusting the old
+launch snapshot. The complete original manifest is checked
 before Stop/context reset and again before delivery. The same BB thread, binding,
 parent and lifecycle owner remain; the new initial assignment contains the full
 context and all original IDs. Mailbox wakes stay fenced while that assignment is
@@ -647,7 +723,7 @@ and nested launchers are unsupported.
 Plain resume preserves the epoch captured before binding/control awaits.
 Anonymous early cancellation is correlated with the actual late queue reply,
 keeping the complete context available for explicit retry. Bound reviewer file
-reads recheck the current owner grant; stopped or ended file-control grants deny
+reads recheck the current owner grant; stopped or ended current-control grants deny
 reads before filesystem access. The shared command guard rejects the POSIX
 `dash`, `ash`, `ksh`, `ksh93`, `csh` and `tcsh` executable forms as well.
 The public typed contracts are in `launch-context.ts` and `review-evidence.ts`.
@@ -681,6 +757,9 @@ ordered parts and bytes/hashes are validated even without name certification.
 Opaque handover details and upload acceptance do not certify truth or native
 schemas. The admission, original-part transport and retained failure replay have
 SDK fixture coverage; the changed live provider workflow is `notMeasured`.
+Current control guards existing Promptobus entry points. Native commands outside
+those points, physical Stop of running calls and provider permission enforcement
+remain separate; a revoked grant alone does not prove task-owned call terminality.
 
 The 2026-10-08 live workflow established the following source profile. It used
 actual canonical messages, committed source and retained artifacts; SDK fixtures

@@ -5,6 +5,7 @@ import { Readable } from 'node:stream';
 import { openEngine, ORCHESTRATOR, WORKER, REVIEWER, APPROVER } from 'promptobus';
 import type { ParticipantV1 } from 'promptobus';
 import { engineInput } from './contract.js';
+import { readCurrentControl } from './control.js';
 import { readDeclaredFile } from './launch-context.js';
 
 export async function engineOperation(input: unknown) {
@@ -27,7 +28,9 @@ export async function engineOperation(input: unknown) {
         ...(b.execution ? { execution: b.execution } : {}) } } };
     if (request.create) {
       if (b.role !== ORCHESTRATOR || b.participant !== ORCHESTRATOR) throw new Error('Task owner must be the orchestrator');
-      engine.createTask({ id: b.task, title: request.title, owner: participant, adapter: { bb: { hostId: b.hostId, root } } });
+      const control = readCurrentControl(b);
+      if (control.outcome !== 'allowed' || b.launchContext?.control.mode !== 'current') throw new Error(control.outcome === 'allowed' ? 'Current reference required' : control.message);
+      engine.createTask({ id: b.task, title: request.title, owner: participant, adapter: { bb: { hostId: b.hostId, root, currentControl: b.launchContext.control.reference } } });
     } else {
       const task = engine.readTask(b.task);
       const coordinator = task.adapter.bb as { hostId?: string; root?: string } | undefined;

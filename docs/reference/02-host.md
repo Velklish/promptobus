@@ -842,12 +842,14 @@ do not prove live sidebar rendering or new-source native BB behavior.
 
 ### BB command grant delivery
 
-The BB orchestrator persists the authenticated actor, immutable authorization token,
-exact command scope and all preconditions in current control before dispatch can
-activate a participant. The same runnable canonical task contains that scope and
+Before `task create`, the operator publishes complete supplied owner confirmation
+and grants with `bb promptobus control publish --task TASK --initialize --input
+<JSON>`. Initialization requires that the canonical task does not yet exist; it
+does not create that task or infer confirmation from assignment prose. Each grant
+names the authenticated actor, immutable authorization token, exact command scope
+and all preconditions. The same runnable canonical task contains that scope and
 owner confirmation. Its returned task id is an audit receipt, not a second
-confirmation barrier. Role skills define these coordination duties; the plugin
-does not add a command scheduler or derive shell authorization from SDK delivery.
+confirmation barrier. The launch input references the published owner authority.
 
 Before every mechanical call, the participant reads current control and STOP,
 checks the granted actor/token/scope against the active slot, and refuses ended,
@@ -863,7 +865,10 @@ Hold do not prove participant application. Stop requires fresh actual status and
 paused delivery, with zero pending and running calls before reassignment.
 Worktrees, raw receipts and unrelated participants remain in place.
 The [release contract](04-protocol.md#bb-command-grant-release) defines the receipt
-and terminal authorization boundary. Controlled-delivery tests model compliance
+and terminal authorization boundary. Control revocation refuses later Promptobus
+admissions; it does not confirm physical Stop or completion of an already running
+call. Native commands outside existing Promptobus entry points and provider
+permission enforcement remain separate. Controlled-delivery tests model compliance
 with the shipped instructions; they do not establish a live BB queue defect or
 historical call overlap.
 
@@ -945,22 +950,45 @@ the actual BB tool names and refuses missing or ambiguous native MCP bindings.
 
 The input declares `ownedRoots`, provider-permitted `readRoots`, `role`, an active
 `grant` with exact actor/task/token/phase, repository/branch/base/operations and
-preconditions, `control`, `preparation` and `quota`. Owner confirmation, STOP and
-ended tokens belong to the current control snapshot. Roots and resource access
-are explicit owner inputs because the public SDK does not expose the provider's
+preconditions, `control`, `preparation` and `quota`. Owner confirmation, STOP,
+noNewStages and current grants come from owner-published current control. Roots
+and resource access are explicit owner inputs because the public SDK does not expose the provider's
 complete filesystem permission profile. They grant no wider session permissions.
 The actual environment path, branch and base are checked through the public SDK.
 For a provisioned environment the owner declares the expected target; admission
 checks its actual identity after preparation and before substantive delivery.
 
-`control.mode: file` declares one exact readable control path under `readRoots`.
-The Host reads at most 1 MiB, checks real paths and projects the active grant from
-`grant` or `grants[actor]`; phase defaults to `initial` for an existing owner file.
-`control.mode: inline` carries the complete bounded current snapshot and the
-literal signal route `["Hold", "Stop"]`. A constrained reader uses that authorized
-snapshot and Root signals instead of an external file it cannot read. Stop and
-delivery epochs retain their existing authority. `endedTokens` prevents an old
-token from being revived; evidence repair uses a fresh bounded phase.
+`control` is `{ mode: "current", reference }`. The exact reference contains a
+normalized real control `directory`, `owner: { task, participant, projectId,
+environmentId, hostId, root }` and declared owner `readRoots`. Task creation pins
+it in canonical `task.adapter.bb.currentControl`; later contexts and updates must
+match it. The runtime validates the current owner identity and reads control
+through that authority, including for a constrained reviewer whose own filesystem
+roots stay unchanged. A participant-selected file, an inline launch snapshot and
+Root signals cannot replace this current reference.
+
+The publish input is bounded to 1 MiB and contains that complete `reference`,
+`ownerConfirmed`, `STOP`, `noNewStages` and `grants` keyed by actor. The stored
+current document uses `format: "promptobus-bb-control-v1"` and adds its revision.
+Updates use `control publish --task TASK --expected-revision N --input <JSON>`;
+stale revisions refuse. Successful publication returns `{ revision, reference }`.
+Omitting a grant or replacing it with a fresh token in the next complete
+publication ends its old token. Each exact token record is bounded to 256 KiB, uses
+`format: "promptobus-bb-token-v1"` and retains task, actor, token, grantSha256 and
+state (`active` or `ended`). A token fixes the complete grant and moves only from active to ended.
+Neither a delayed confirmation nor resume can revive it. A fresh phase supplies
+the exact previous grant for a current token lookup and requires
+`predecessorEnded: true`; it does not trust its old launch snapshot or scan an
+ended-token history. These byte bounds cover current/token files; canonical
+owner task metadata is verified and read separately.
+
+Control updates authenticate the persisted canonical owner identity, token and
+session independently of ordinary owner admission. A closed, orphaned or
+unhealthy owner can still revoke through a deny-only monotonic update; it cannot
+clear STOP/noNewStages, reconfirm ownership or issue new grants. A fresh owner
+observation that is missing, errored or unknown also forces deny-only updates;
+observation failure keeps revocation available. Stop and delivery
+epochs keep their separate authority. See [ADR-037](../adr/adr-037-bb-current-control-authority.md).
 
 Preparation records exact argv commands, `complete` or a concrete `notRun`
 reason. Quota declares its authority, `missingUsage: informational`, soft/hard
@@ -972,8 +1000,11 @@ The entire validated context and selected role literal enter the initial
 immutable assignment. The first ordinary work turn authenticates actual BB task
 and mailbox tools; a refusal is reported once, without another diagnostic model
 or a native-tool fallback. Configuration admission and SDK fixtures do not prove
-that a provider completed this workflow. Persisted bindings from before this
-contract remain explicitly `notMeasured`; they are not certified by migration.
+that a provider completed this workflow. Persisted file/inline bindings are
+historical evidence and remain explicitly `notMeasured`; they cannot authorize
+substantive work. An existing legacy task cannot acquire a reference through
+resume or a fresh phase. Use an explicitly initialized new task through the
+supported route, preserving the historical task and evidence.
 
 Historical native measurements retain their exact builds and scope:
 
@@ -1024,4 +1055,4 @@ A Host can select content for each target repository. Native worker, reviewer an
 
 When `participantLayoutRoot` is absent, native skills use `workspaceRoot()`. A `null` layout disables native skill files; the independently declared Claude plugin remains controlled by `pluginDir`. Existing Hosts can ignore the additional arguments. Root roles without a target repository retain workspace defaults. The consumer resolves module requirements and ensures that its selected paths describe one composition.
 
-Every bound participant dispatch rechecks launch control before admitting a model turn, including anonymous assignment delivery and user input. A later `STOP` or ended grant holds the turn even if the participant was valid when launched. SDK pause and message ownership remain separate: user input can bypass automatic-delivery pause while its launch grant is valid. User text does not reactivate a revoked grant.
+Every bound participant dispatch rechecks owner-published current control before admitting a model turn, including anonymous assignment delivery and user input. Existing Promptobus admission points, including bound reviewer reads, use the same owner-validated reference. A later `STOP` or ended grant holds the turn even if the participant was valid when launched; legacy file/inline context is insufficient. SDK pause and message ownership remain separate: user input can bypass automatic-delivery pause while its current grant is valid. User text does not reactivate a revoked grant.

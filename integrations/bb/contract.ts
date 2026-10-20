@@ -1,5 +1,6 @@
 import { defineRpcContract } from '@get-bb/plugin-sdk';
 import { z } from 'zod';
+import { controlPublicationSchema, controlOutcomeSchema, commandGrantSchema } from './control-schema.js';
 import { buildIdentitySchema } from './build-identity.js';
 import { artifactSchema, bindingSchema, emptySchema, hostCallSchema, hostContextSchema, hostReadSchema, mailboxSchema, sendSchema } from './protocol.js';
 
@@ -23,7 +24,10 @@ export const hostContract = defineRpcContract({
   prepareContext: { input: z.object(bound).strict(), output: hostContextSchema },
   hostContext: { input: z.object({ ...bound, args: hostReadSchema }).strict(), output: z.unknown() },
   canonical: { input: z.object({ ...bound, args: hostCallSchema }).strict(), output: z.unknown() },
-  launchControl: { input: z.object(bound).strict(), output: z.unknown() },
+  launchControl: { input: z.object({ ...bound, predecessor: commandGrantSchema.optional() }).strict(), output: controlOutcomeSchema },
+  controlPublish: { input: z.object({ publication: controlPublicationSchema, initialize: z.boolean(), denyOnly: z.boolean(),
+    expectedRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable(), binding: bindingSchema.optional() }).strict(),
+    output: z.object({ revision: z.number().int().positive(), reference: controlPublicationSchema.shape.reference }).strict() },
   read: { input: z.object({ root: z.string(), name: z.string(), args: z.record(z.string(), z.unknown()) }).strict(), output: z.unknown() },
   engine: { input: engineInput, output: z.unknown() },
 });

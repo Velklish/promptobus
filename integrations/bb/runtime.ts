@@ -16,6 +16,8 @@ import { captureBbWorkspace, observeBbParticipant, recordBbWorkspace, stopBbPart
 import { registerDelivery, LAUNCH_HEADER } from './delivery.js';
 import { REVIEWER_PROVIDER, selectBbExecution, SUPPORTED_PROVIDERS } from './routing.js';
 import { launchContextSchema, underRoots, validateLaunchContext } from './launch-context.js';
+import { controlOutcomeSchema, controlPublicationSchema } from './control-schema.js';
+import type { CommandGrant } from './control-schema.js';
 import { digest, evidenceManifestSchema, validateReviewEvidence } from './review-evidence.js';
 import type { EvidenceArtifact } from './review-evidence.js';
 export { REVIEWER_PROVIDER } from './routing.js';
@@ -34,9 +36,23 @@ export function registerRuntime(bb: BbPluginApi) {
     if (Buffer.byteLength(value) > 256 * 1024) throw new Error(`${field} exceeds 256 KiB`);
     try { return JSON.parse(value) as unknown; } catch { throw new Error(`${field} requires JSON`); }
   };
+  const currentControl = async (b: Binding, signal?: AbortSignal, predecessor?: CommandGrant) => {
+    const owner = store.task(b.task);
+    if (owner && (owner.launchContext?.control.mode !== 'current' || b.launchContext?.control.mode !== 'current'
+      || !isDeepStrictEqual(owner.launchContext.control.reference, b.launchContext.control.reference))) {
+      throw new Error('Current control blocked: canonical owner current reference mismatch; legacy task requires explicit new-task migration');
+    }
+    const result = controlOutcomeSchema.parse(await host.call('launchControl', { binding: b, ...(predecessor ? { predecessor } : {}) }, { hostId: b.hostId, signal }));
+    if (result.outcome !== 'allowed') throw new Error(`Current control ${result.outcome}: ${result.message}`);
+    return result;
+  };
   const admit = async (b: Binding, signal?: AbortSignal) => {
-    b.launchContext = validateLaunchContext(b, b.launchContext, participantTools(b));
-    await host.call('launchControl', { binding: b }, { hostId: b.hostId, signal });
+    if (!b.launchContext || b.launchContext.control.mode !== 'current') {
+      throw new Error('Current control blocked: legacy or missing current launch context requires explicit new-task migration; retain its status and evidence');
+    }
+    try { b.launchContext = validateLaunchContext(b, b.launchContext, participantTools(b)); }
+    catch (error) { throw new Error(`Current control blocked: ${String((error as Error).message)}`); }
+    await currentControl(b, signal);
     signal?.throwIfAborted();
   };
   const checkEvidence = async (b: Binding, reader: Binding, signal?: AbortSignal, snapshot = true) => {
@@ -148,7 +164,7 @@ export function registerRuntime(bb: BbPluginApi) {
     if (!participantTools(b).includes(tool)) throw new Error('Tool is not available to this role');
     await requireThread(b, context.signal);
     await checkStep(b, context.signal);
-    if (b.launchContext) await admit(b, context.signal);
+    await admit(b, context.signal);
     context.signal.throwIfAborted();
     return b;
   };
@@ -209,7 +225,7 @@ export function registerRuntime(bb: BbPluginApi) {
         signal.throwIfAborted();
         await recovery.replay(b, signal);
         signal.throwIfAborted();
-        if (b.launchContext) await admit(b, signal);
+        await admit(b, signal);
         signal.throwIfAborted();
       })(), new Promise<never>((_, reject) => { timer = setTimeout(() => {
         const error = new Error('Promptobus dispatch validation exceeded 5000 ms');
@@ -219,7 +235,7 @@ export function registerRuntime(bb: BbPluginApi) {
       return { action: 'proceed' };
     } catch (error) {
       const message = String((error as Error).message);
-      return /binding mismatch|task is closed|requires explicit|requires the shipped.*pipeline/i.test(message)
+      return /Current control blocked|binding mismatch|task is closed|requires explicit|requires the shipped.*pipeline/i.test(message)
         ? { action: 'reject', message }
         : { action: 'wait', reason: `Promptobus validation unavailable: ${message}`, sendAt: Date.now() + 1000 };
     } finally { clearTimeout(timer!); }
@@ -271,7 +287,8 @@ export function registerRuntime(bb: BbPluginApi) {
     if (prepare) b.bootstrap = `Prepare the BB environment only. Do not use any tools, read files, edit files or perform an assignment. Reply READY and end the turn. Preparation token: ${randomUUID()}`;
     try {
       await checkStep(b);
-      await host.call('launchControl', { binding: b }, { hostId: b.hostId });
+      const scope = b.launchContext!.grant.scope;
+      await currentControl(provision ? { ...b, environmentPath: scope.repository, branch: scope.branch, baseSha: scope.base } : b);
       if (b.role === REVIEWER) await checkEvidence(b, store.task(b.task)!, undefined, !provision);
       const thread = await bb.sdk.threads.spawn({ projectId: b.projectId, environment: baseBranch
         ? { type: 'host', hostId: b.hostId, workspace: { type: 'managed-worktree', baseBranch: { kind: 'named', name: baseBranch } } }
@@ -371,6 +388,37 @@ export function registerRuntime(bb: BbPluginApi) {
   };
   const archiving = new Set<string>();
   bb.cli.register(defineCli({ name: 'promptobus', summary: 'Local engine-backed BB task participants.', commands: {
+    'control publish': cliCommand({ summary: 'Explicitly initialize or revision-check owner current authority; never grants BB permissions.', options: {
+      task: createOptions.task,
+      input: { type: 'string', required: true, stdin: true, description: 'Complete owner-declared reference, confirmation, flags and active grants JSON; at most 1 MiB.' },
+      initialize: { type: 'boolean', description: 'Explicit bootstrap before canonical task creation; no inferred owner confirmation.' },
+      'expected-revision': { type: 'string', description: 'Exact positive revision for updates; required without --initialize.' },
+    }, async run({ options }, context) {
+      if (Buffer.byteLength(options.input) > 1024 * 1024) throw new Error('Current control publication exceeds 1 MiB');
+      let input: unknown;
+      try { input = JSON.parse(options.input); } catch { throw new Error('Current control publication requires JSON'); }
+      const parsed = controlPublicationSchema.safeParse(input);
+      if (!parsed.success) throw new Error('Current control publication requires the complete strict reference, confirmation, flags and active grant schema');
+      const publication = parsed.data;
+      if (publication.reference.owner.task !== options.task) throw new Error('Current control owner task mismatch');
+      const initialize = options.initialize === true;
+      const revision = options['expected-revision'];
+      if (initialize ? revision !== undefined : revision === undefined || !/^[1-9][0-9]*$/.test(revision)) throw new Error('Select --initialize or an exact --expected-revision');
+      const expectedRevision = initialize ? null : Number(revision);
+      if (expectedRevision !== null && !Number.isSafeInteger(expectedRevision)) throw new Error('Current control revision must be a safe positive integer');
+      const binding = initialize ? undefined : store.task(options.task);
+      if (!initialize && !binding) throw new Error('Current control update requires the persisted task owner binding');
+      let denyOnly = true;
+      if (binding?.phase === 'ready') {
+        const observation = await observeBbParticipant(bb, binding, context.signal);
+        denyOnly = observation.view.state !== 'alive' || !['idle', 'active'].includes(observation.status)
+          || !['idle', 'active'].includes(observation.thread?.status ?? 'unknown');
+      }
+      const local = (await bb.sdk.system.config({ signal: context.signal })).primaryHostId;
+      if (!local || publication.reference.owner.hostId !== local || (binding && binding.hostId !== local)) throw new Error('Current control requires the declared local host');
+      return { exitCode: 0, stdout: JSON.stringify(await host.call('controlPublish', { publication, initialize, expectedRevision, denyOnly,
+        ...(binding ? { binding } : {}) }, { hostId: local, signal: context.signal })) };
+    } }),
     'runtime describe': cliCommand({ summary: 'Read executing server and selected host build identities; incomplete exits 1.',
       options: { host: { type: 'string', description: 'Host id; defaults to the invoking thread environment, otherwise the primary host.' },
         json: { type: 'boolean', description: 'Emit JSON (also the default output).' } },
@@ -544,6 +592,7 @@ export function registerRuntime(bb: BbPluginApi) {
     },
       async run({ options }, context) {
         const b = boundParticipant(options.task, options.participant);
+        if (!b.launchContext || b.launchContext.control.mode !== 'current') throw new Error('Current control blocked: legacy binding requires explicit new-task migration; retain its status and evidence');
         const startEpoch = store.delivery(b.threadId!).epoch;
         await requireThread(b, context.signal); await onHost(b, { operation: 'check' }, context.signal);
         if (options['launch-context'] !== undefined) {
@@ -555,8 +604,7 @@ export function registerRuntime(bb: BbPluginApi) {
           if (next.launchContext.grant.token === b.launchContext.grant.token || next.launchContext.grant.phase === b.launchContext.grant.phase) {
             throw new Error('A terminal grant requires a fresh token and bounded phase; old token cannot resume');
           }
-          const current = await host.call('launchControl', { binding: next }, { hostId: next.hostId, signal: context.signal }) as { endedTokens: string[] };
-          if (!current.endedTokens.includes(b.launchContext.grant.token)) throw new Error('The previous grant must be declared ended before phase transfer');
+          await currentControl(next, context.signal, b.launchContext.grant);
           if (b.role === REVIEWER) await checkEvidence(next, store.task(b.task)!, context.signal);
           if (store.delivery(b.threadId!).epoch !== startEpoch) throw new Error('A newer Stop wins over phase transfer');
           const transferEpoch = recovery.pause(b, 'Fresh bounded phase transfer').epoch;
@@ -577,7 +625,7 @@ export function registerRuntime(bb: BbPluginApi) {
           return { exitCode: 0, stdout: JSON.stringify({ ...store.delivery(next.threadId!), phase: next.launchContext.grant.phase, sent }) };
         }
         if (options.assignment !== undefined || options['evidence-manifest'] !== undefined) throw new Error('Fresh assignment/evidence requires --launch-context');
-        if (b.launchContext) await admit(b, context.signal);
+        await admit(b, context.signal);
         if (b.phaseAssignmentPending) {
           if (!b.phaseAssignment) throw new Error('Pending initial assignment has no complete context');
           if (b.phaseAssignmentDelivery?.state === 'queued') throw new Error('Complete initial assignment is still queued; cancel or wait before retry');
@@ -668,7 +716,7 @@ export function registerRuntime(bb: BbPluginApi) {
       if (b) {
         if (b.phase !== 'ready' || b.role !== REVIEWER || b.projectId !== context.projectId) throw new Error('Reviewer participant is not bound');
         await requireThread(b, context.signal); await onHost(b, { operation: 'check' }, context.signal);
-        if (b.launchContext) await admit(b, context.signal);
+        await admit(b, context.signal);
       }
     },
     configuration(context: PluginAgentConfigurationContext) {

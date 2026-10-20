@@ -1,18 +1,15 @@
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { closeSync, constants, fstatSync, openSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
 import { z } from 'zod';
 import { BB_ROLE_SKILLS, renderBbInstructionSkill } from 'promptobus/instructions';
 import type { Binding } from './protocol.js';
+import { commandGrantSchema, controlReferenceSchema } from './control-schema.js';
+export { commandGrantSchema } from './control-schema.js';
 
 const text = z.string().trim().min(1);
 const absolute = text.refine(value => path.isAbsolute(value) && path.dirname(value) !== value, 'requires a bounded absolute path');
 const sha = z.string().regex(/^[a-f0-9]{40,64}$/);
-export const commandGrantSchema = z.object({
-  actor: text, task: text, token: text, state: z.literal('active'), phase: text,
-  scope: z.object({ repository: absolute, branch: text, base: sha, operations: z.array(text).min(1) }).strict(),
-  preconditions: z.array(text).min(1),
-}).strict();
 export const controlSnapshotSchema = z.object({
   ownerConfirmed: z.literal(true), STOP: z.literal(false), noNewStages: z.literal(false),
   grant: commandGrantSchema, endedTokens: z.array(text),
@@ -22,6 +19,7 @@ export const launchContextSchema = z.object({
   role: z.object({ name: text, literal: text }).strict(),
   grant: commandGrantSchema,
   control: z.discriminatedUnion('mode', [
+    z.object({ mode: z.literal('current'), reference: controlReferenceSchema }).strict(),
     z.object({ mode: z.literal('file'), path: absolute }).strict(),
     z.object({ mode: z.literal('inline'), snapshot: controlSnapshotSchema,
       signals: z.tuple([z.literal('Hold'), z.literal('Stop')]) }).strict(),
@@ -51,11 +49,19 @@ export function readDeclaredFile(file: string, roots: readonly string[], maximum
   const fd = openSync(resolved, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const opened = fstatSync(fd), current = statSync(realpathSync(file));
-    if (!opened.isFile() || opened.size > maximum || [before, current].some(entry => entry.dev !== opened.dev || entry.ino !== opened.ino)) {
-      throw new Error('launch context: bounded file changed, is unreadable or exceeds limit');
+    if (!opened.isFile()) throw new Error('launch context: bounded file is not a regular file');
+    if (opened.size > maximum) throw new Error('launch context: bounded file exceeds limit');
+    if ([before, current].some(entry => entry.dev !== opened.dev || entry.ino !== opened.ino)) {
+      throw new Error('launch context: bounded file changed while opening');
     }
-    const bytes = readFileSync(fd);
-    if (bytes.length !== opened.size || !underRoots(realpathSync(file), allowed)) throw new Error('launch context: bounded file changed while reading');
+    const bytes = Buffer.alloc(opened.size);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const count = readSync(fd, bytes, offset, bytes.length - offset, offset);
+      if (!count) break;
+      offset += count;
+    }
+    if (offset !== opened.size || fstatSync(fd).size !== opened.size || !underRoots(realpathSync(file), allowed)) throw new Error('launch context: bounded file changed while reading');
     return bytes;
   } finally { closeSync(fd); }
 }
@@ -89,6 +95,6 @@ export function validateLaunchContext(binding: Binding, input: unknown, tools: r
   }
   if (context.control.mode === 'file') {
     if (!underRoots(context.control.path, context.readRoots)) throw new Error('launch context: control.path outside provider readRoots; use inline control');
-  } else validateControl(context, context.control.snapshot);
+  } else if (context.control.mode === 'inline') validateControl(context, context.control.snapshot);
   return context;
 }

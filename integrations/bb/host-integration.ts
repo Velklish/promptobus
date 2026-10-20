@@ -6,7 +6,7 @@ import { reviewerFiles } from 'promptobus/bb-reviewer';
 import { hostContract } from './contract.js';
 import { BUILD_IDENTITY } from './build-identity.js';
 import { engineOperation } from './engine-host.js';
-import { readDeclaredFile, validateControl } from './launch-context.js';
+import { readCurrentControl, publishControl } from './control.js';
 
 export function createHostEntry(integration: BbHostIntegration = createBbHostIntegration({ resolveHost: root => createStandaloneHost({ cwd: root }) })) {
   return experimental_defineHostEntry({ contract: hostContract, handlers: {
@@ -14,18 +14,13 @@ export function createHostEntry(integration: BbHostIntegration = createBbHostInt
       context.signal.throwIfAborted();
       return { identity: BUILD_IDENTITY };
     },
-    launchControl: async ({ binding: b }, context) => {
+    launchControl: async ({ binding, predecessor }, context) => {
       context.signal.throwIfAborted();
-      const launch = b.launchContext;
-      if (!launch) throw new Error('launch context is required');
-      if (launch.control.mode === 'inline') return validateControl(launch, launch.control.snapshot);
-      const current = JSON.parse(readDeclaredFile(launch.control.path, launch.readRoots, 1024 * 1024).toString('utf8'));
-      const grant = current.grant ?? current.grants?.[b.participant];
-      return validateControl(launch, { ownerConfirmed: current.ownerConfirmed, STOP: current.STOP, noNewStages: current.noNewStages,
-        grant: grant && { actor: grant.actor, task: grant.task, token: grant.token, state: grant.state, phase: grant.phase ?? 'initial',
-          scope: { repository: grant.scope?.repository, branch: grant.scope?.branch, base: grant.scope?.base, operations: grant.scope?.operations },
-          preconditions: grant.preconditions },
-        endedTokens: current.endedTokens ?? current.grantHistory?.map((g: { token: string }) => g.token) ?? [] });
+      return readCurrentControl(binding, predecessor);
+    },
+    controlPublish: async ({ publication, initialize, expectedRevision, binding, denyOnly = true }, context) => {
+      context.signal.throwIfAborted();
+      return publishControl(publication, { initialize, expectedRevision, binding, denyOnly });
     },
     read: async ({ root, name, args }) => reviewerFiles([root])(name, args),
     engine: async (input, context) => {

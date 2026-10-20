@@ -16,7 +16,7 @@ import { digest, evidenceManifestSchema } from '../.test-build/review-evidence.j
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 
 async function stand(t, options = {}) {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'pb-bb-engine-'));
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'pb-bb-engine-')));
   const hostEntry = options.hostSetup?.(root);
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const threads = new Map();
@@ -181,6 +181,7 @@ async function stand(t, options = {}) {
     assert.equal(hostId, 'local');
     if (hostEntry && method !== 'engine') return hostEntry.handlers[method](input, { signal: new AbortController().signal });
     if (method === 'prepareContext') return options.hostContext?.(input.binding) ?? { rules: [], skills: [], tools: [] };
+    if (method === 'controlPublish') return createHostEntry().handlers.controlPublish(input, { signal: signal ?? new AbortController().signal });
     if (method === 'launchControl') {
       if (options.beforeControl) await options.beforeControl(input);
       return createHostEntry().handlers.launchControl(input, { signal: signal ?? new AbortController().signal });
@@ -204,8 +205,35 @@ async function stand(t, options = {}) {
   t.after(() => host.harness.lifecycle.dispose());
   plugin(host.bb);
   const task = newTaskIdentity('engine-test').id;
-  const create = async (extra = []) => host.harness.behavior.runCli(['task', 'create', '--task', task, '--title', 'Engine test', '--project', 'project', '--environment', 'env', '--model', 'test-model', '--assignment', 'Read mailbox, then stop.',
-    ...(options.noLaunchContext ? [] : ['--launch-context', JSON.stringify(launchFixture(task, 'orchestrator', 'orchestrator', root))]), ...extra]);
+  const reference = { directory: path.join(root, 'current-control'), owner: { task, participant: 'orchestrator',
+    projectId: 'project', environmentId: 'env', hostId: 'local', root }, readRoots: [root] };
+  const publish = async (launch, update = {}) => {
+    const file = path.join(reference.directory, 'current.json');
+    const previous = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
+    if (launch && previous && JSON.stringify(previous.grants[launch.grant.actor]) === JSON.stringify(launch.grant) && !Object.keys(update).length) {
+      launch.control = { mode: 'current', reference }; return previous;
+    }
+    const grants = { ...(previous?.grants ?? {}), ...(launch ? { [launch.grant.actor]: launch.grant } : {}) };
+    const publication = { reference, ownerConfirmed: true, STOP: false, noNewStages: false, grants, ...update };
+    const result = await host.harness.behavior.runCli(['control', 'publish', '--task', task,
+      ...(previous ? ['--expected-revision', String(previous.revision)] : ['--initialize']), '--input', JSON.stringify(publication)]);
+    assert.equal(result.exitCode, 0, result.stderr);
+    if (launch) launch.control = { mode: 'current', reference };
+    return publication;
+  };
+  const supplied = async extra => {
+    const i = extra.indexOf('--launch-context');
+    if (i < 0) return extra;
+    const launch = JSON.parse(extra[i + 1]);
+    if (launch.control.mode !== 'current') await publish(launch);
+    const result = [...extra]; result[i + 1] = JSON.stringify(launch); return result;
+  };
+  const create = async (extra = []) => {
+    const launch = launchFixture(task, 'orchestrator', 'orchestrator', root);
+    if (!options.noLaunchContext && !extra.includes('--launch-context')) await publish(launch);
+    return host.harness.behavior.runCli(['task', 'create', '--task', task, '--title', 'Engine test', '--project', 'project', '--environment', 'env', '--model', 'test-model', '--assignment', 'Read mailbox, then stop.',
+      ...(options.noLaunchContext || extra.includes('--launch-context') ? [] : ['--launch-context', JSON.stringify(launch)]), ...await supplied(extra)]);
+  };
   const add = async (id, role = 'worker', extra = []) => {
     const envId = extra.includes('--environment') ? extra[extra.indexOf('--environment') + 1] : 'env';
     const env = extra.includes('--new-environment') || extra.includes('--environment-path') ? workerEnvironment : environments.get(envId);
@@ -216,12 +244,14 @@ async function stand(t, options = {}) {
       launch.review = { producer: 'orchestrator', producerBinding: 'participant', sourceEnvironmentId: env.id, base: 'a'.repeat(40), requiredGates: [['fiction', 'gate']], requirePassingGates: true };
       if (!options.noManifest && !extra.includes('--evidence-manifest')) evidence.push('--evidence-manifest', JSON.stringify((await evidenceFixture(root, task, env.id === 'env' ? 'a'.repeat(40) : 'b'.repeat(40))).manifest));
     }
+    if (!extra.includes('--launch-context')) await publish(launch);
+    extra = await supplied(extra);
     return host.harness.behavior.runCli(['participant', 'add', '--task', task, '--participant', id, '--role', role, '--model', 'test-model', '--assignment', 'Read mailbox, then stop.',
       ...(extra.includes('--launch-context') ? [] : ['--launch-context', JSON.stringify(launch)]), ...evidence, ...extra]);
   };
   const call = (id, name, input = {}, projectId = 'project') => host.harness.behavior.callAgentTool(name, input, { threadId: id, projectId });
   const control = (action, id) => host.harness.behavior.runCli(['participant', action, '--task', task, '--participant', id]);
-  return { root, threads, environment, workerEnvironment, environments, names, spawns, events, get host() { return host; }, task, create, add, call, control,
+  return { root, threads, environment, workerEnvironment, environments, names, spawns, events, get host() { return host; }, task, create, add, call, control, publish,
     wakes, queues, interactions, append, executionOptions, catalogs, get initialArgs() { return initialArgs; },
     reconcile: () => host.harness.behavior.runCli(['recovery', 'run']),
     delivery: id => bindingStore(host.bb).delivery(id),
@@ -293,12 +323,11 @@ test('complete evidence upload lands UTF-8 raw parts and actual artifact IDs wit
 test('bounded file control is current at each BB call and an ended grant refuses without another identity', async t => {
   const s = await stand(t, { noLaunchContext: true });
   const launch = launchFixture(s.task, 'orchestrator', 'orchestrator', s.root);
-  const file = path.join(s.root, 'control.json'); const snapshot = launch.control.snapshot;
-  writeFileSync(file, JSON.stringify(snapshot)); launch.control = { mode: 'file', path: file };
+  await s.publish(launch);
   assert.equal((await s.create(['--launch-context', JSON.stringify(launch)])).exitCode, 0);
   const current = JSON.parse(await s.call('thr-1', 'promptobus_task')); assert.equal(current.participant, 'orchestrator');
-  snapshot.grant.state = 'ended'; writeFileSync(file, JSON.stringify(snapshot));
-  await assert.rejects(s.call('thr-1', 'promptobus_task'), /active/); assert.equal(s.spawns.length, 1);
+  await s.publish(null, { grants: {} });
+  await assert.rejects(s.call('thr-1', 'promptobus_task'), /grant-mismatch/); assert.equal(s.spawns.length, 1);
 });
 
 test('fresh evidence repair keeps the actor, ends the old token and supplies every original ID before resumed delivery', async t => {
@@ -309,7 +338,7 @@ test('fresh evidence repair keeps the actor, ends the old token and supplies eve
   const before = bindingStore(s.host.bb).thread('thr-2');
   const next = structuredClone(before.launchContext);
   next.grant.token = 'fresh-evidence-phase'; next.grant.phase = 'evidence-repair';
-  next.control.snapshot.endedTokens.push(before.launchContext.grant.token); next.control.snapshot.grant = structuredClone(next.grant);
+  await s.publish(next);
   const f = await evidenceFixture(s.root, s.task);
   const resume = extra => s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', 'phase-review',
     '--launch-context', JSON.stringify(next), '--assignment', 'Read complete original evidence in this bounded phase.', ...extra]);
@@ -347,8 +376,7 @@ test('error-state Stop and fresh phase remain refused and paused across reload',
   assert.equal(s.delivery('thr-2').epoch, epoch);
   const next = structuredClone(before.launchContext);
   next.grant.token = 'fresh-error-phase'; next.grant.phase = 'error-repair';
-  next.control.snapshot.endedTokens.push(before.launchContext.grant.token);
-  next.control.snapshot.grant = structuredClone(next.grant);
+  await s.publish(next);
   const f = await evidenceFixture(s.root, s.task);
   const resumed = await s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', 'phase-review',
     '--launch-context', JSON.stringify(next), '--assignment', 'Read complete original evidence in this bounded phase.',
@@ -373,7 +401,7 @@ test('Stop during fresh initial assignment wins and an unknown send cannot start
     await s.call('thr-1', 'promptobus_send', { to: ['phase-review'], type: 'task', body: 'Read the complete original evidence in the fresh bounded phase.' });
     const before = bindingStore(s.host.bb).thread('thr-2'); const next = structuredClone(before.launchContext);
     next.grant.token = 'fresh-stop-phase'; next.grant.phase = 'repair';
-    next.control.snapshot.endedTokens.push(before.launchContext.grant.token); next.control.snapshot.grant = structuredClone(next.grant);
+    await s.publish(next);
     const f = await evidenceFixture(s.root, s.task);
     const result = await s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', 'phase-review',
       '--launch-context', JSON.stringify(next), '--evidence-manifest', JSON.stringify(f.manifest), '--assignment', 'Read all original evidence.']);
@@ -530,7 +558,7 @@ test('unknown BB model availability fails before a canonical task, binding or th
   const result = await s.create();
   assert.equal(result.exitCode, 1); assert.match(result.stderr, /model availability is unknown: timeout/);
   assert.equal(s.threads.size, 0); assert.equal(bindingStore(s.host.bb).task(s.task), undefined);
-  assert.equal(s.host.harness.inspection.experimental_hostRpcCalls.length, 0);
+  assert.deepEqual(s.host.harness.inspection.experimental_hostRpcCalls.map(call => call.method), ['controlPublish']);
 });
 
 test('coordinator progress stays unread without model wakes; result carries it once across reload', async t => {
@@ -1463,6 +1491,7 @@ test('existing path refuses invalid provisioning identity, Git HEAD and lifecycl
   });
   for (const name of ['missing HEAD', 'not Git', 'offline host']) await t.test(name, async t => {
     const s = await stand(t); await s.create(); s.workerEnvironment.managed = false;
+    await s.publish(launchFixture(s.task, 'worker-invalid', 'worker', s.workerEnvironment.path, 'actual-bb-branch', 'b'.repeat(40)));
     if (name === 'offline host') s.host.harness.inspection.sdk.stub('hosts.get', async () => ({ id: 'local', status: 'disconnected', lifecycle: { phase: 'active' } }));
     else s.host.harness.inspection.sdk.stub('environments.status', async () => name === 'not Git'
       ? { outcome: 'unavailable' } : { outcome: 'available', workspace: { checkout: { kind: 'branch', headSha: null } } });
@@ -2048,8 +2077,8 @@ for (const boundary of ['clearContext', 'evidence']) test(`review boundary: Stop
   });
   await s.create(); await s.add('review-boundary', 'reviewer'); await s.control('stop', 'review-boundary');
   const b = bindingStore(s.host.bb).thread('thr-2'), next = structuredClone(b.launchContext);
-  next.grant.token = 'transfer-boundary'; next.grant.phase = 'repair'; next.control.snapshot.grant = structuredClone(next.grant);
-  next.control.snapshot.endedTokens.push(b.launchContext.grant.token);
+  next.grant.token = 'transfer-boundary'; next.grant.phase = 'repair';
+  await s.publish(next);
   const f = await evidenceFixture(s.root, s.task); block = true;
   const pending = s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', b.participant,
     '--launch-context', JSON.stringify(next), '--evidence-manifest', JSON.stringify(f.manifest), '--assignment', 'Complete bounded repair context.']);
@@ -2094,8 +2123,8 @@ test('review boundary: cancelling queued initial context retains its fence and r
   await s.create(); await s.add('queued-review', 'reviewer'); await s.control('stop', 'queued-review');
   await s.call('thr-1', 'promptobus_send', { to: ['queued-review'], type: 'task', body: 'Canonical repair task.' });
   const b = bindingStore(s.host.bb).thread('thr-2'), next = structuredClone(b.launchContext);
-  next.grant.token = 'queued-complete-phase'; next.grant.phase = 'repair'; next.control.snapshot.grant = structuredClone(next.grant);
-  next.control.snapshot.endedTokens.push(b.launchContext.grant.token);
+  next.grant.token = 'queued-complete-phase'; next.grant.phase = 'repair';
+  await s.publish(next);
   const f = await evidenceFixture(s.root, s.task);
   const first = await s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', b.participant,
     '--launch-context', JSON.stringify(next), '--evidence-manifest', JSON.stringify(f.manifest), '--assignment', 'Complete initial original context.']);
@@ -2187,8 +2216,8 @@ for (const phase of ['fresh', 'prepared', 'unrelated-copy']) test(`review2 bound
   } else {
     await s.add('early-cancel', 'reviewer'); await s.control('stop', 'early-cancel');
     const b = bindingStore(s.host.bb).thread('thr-2'), next = structuredClone(b.launchContext);
-    next.grant.token = 'early-cancel-phase'; next.grant.phase = 'repair'; next.control.snapshot.grant = structuredClone(next.grant);
-    next.control.snapshot.endedTokens.push(b.launchContext.grant.token); const f = await evidenceFixture(s.root, s.task);
+    next.grant.token = 'early-cancel-phase'; next.grant.phase = 'repair';
+    await s.publish(next); const f = await evidenceFixture(s.root, s.task);
     pending = s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', b.participant,
       '--launch-context', JSON.stringify(next), '--evidence-manifest', JSON.stringify(f.manifest), '--assignment', 'Whole original context.']);
   }
@@ -2213,30 +2242,26 @@ for (const condition of ['STOP', 'ended']) test(`review2 boundary: bound reviewe
   let reads = 0; const s = await stand(t, { beforeRead: async () => { reads++; } }); await s.create();
   const launch = launchFixture(s.task, 'file-reader', 'reviewer', s.root);
   launch.review = { producer: 'orchestrator', producerBinding: 'participant', sourceEnvironmentId: 'env', base: 'a'.repeat(40), requiredGates: [['fiction', 'gate']], requirePassingGates: true };
-  const control = path.join(s.root, 'reader-control.json'), snapshot = structuredClone(launch.control.snapshot);
-  writeFileSync(control, JSON.stringify(snapshot)); launch.control = { mode: 'file', path: control };
+  await s.publish(launch);
   assert.equal((await s.add('file-reader', 'reviewer', ['--launch-context', JSON.stringify(launch)])).exitCode, 0);
   const file = path.join(s.root, 'owned-source.txt'); writeFileSync(file, 'bounded source');
   await s.call('thr-2', 'pb_review_read_file', { path: file }); assert.equal(reads, 1);
-  if (condition === 'STOP') snapshot.STOP = true; else snapshot.grant.state = 'ended';
-  writeFileSync(control, JSON.stringify(snapshot));
-  await assert.rejects(s.call('thr-2', 'promptobus_task'), /STOP|active/);
-  await assert.rejects(s.call('thr-2', 'pb_review_read_file', { path: file }), /STOP|active/);
+  await s.publish(null, condition === 'STOP' ? { STOP: true } : { grants: { orchestrator: bindingStore(s.host.bb).task(s.task).launchContext.grant } });
+  await assert.rejects(s.call('thr-2', 'promptobus_task'), /STOP|grant-mismatch/);
+  await assert.rejects(s.call('thr-2', 'pb_review_read_file', { path: file }), /STOP|grant-mismatch/);
   assert.equal(reads, 1, 'The admission refusal must precede the actual bounded filesystem handler');
 });
 
 for (const condition of ['STOP', 'ended']) test(`dispatch rechecks file control ${condition} before an owned model turn`, async t => {
   const s = await stand(t); await s.create();
   const launch = launchFixture(s.task, 'controlled-worker', 'worker', s.root);
-  const file = path.join(s.root, 'dispatch-control.json'), snapshot = structuredClone(launch.control.snapshot);
-  writeFileSync(file, JSON.stringify(snapshot)); launch.control = { mode: 'file', path: file };
+  await s.publish(launch);
   assert.equal((await s.add('controlled-worker', 'worker', ['--launch-context', JSON.stringify(launch)])).exitCode, 0);
   const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
   const context = makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), origin: 'plugin', originPluginId: 'promptobus',
     input: { blocks: [{ type: 'text', text: s.initialArgs.prompt }], text: s.initialArgs.prompt } });
   assert.equal((await hook(context)).action, 'proceed');
-  if (condition === 'STOP') snapshot.STOP = true; else snapshot.endedTokens.push(launch.grant.token);
-  writeFileSync(file, JSON.stringify(snapshot));
+  await s.publish(null, condition === 'STOP' ? { STOP: true } : { grants: { orchestrator: bindingStore(s.host.bb).task(s.task).launchContext.grant } });
   assert.notEqual((await hook(context)).action, 'proceed', 'Revoked file control must prevent the next model turn');
 });
 
@@ -2250,8 +2275,7 @@ for (const condition of ['STOP', 'ended']) test(`anonymous initial dispatch rech
   mkdirSync(s.workerEnvironment.path);
   const launch = launchFixture(s.task, 'anonymous-worker', 'worker', s.workerEnvironment.path, 'actual-bb-branch', 'b'.repeat(40));
   launch.readRoots.push(s.root);
-  const file = path.join(s.root, 'anonymous-control.json'), snapshot = structuredClone(launch.control.snapshot);
-  writeFileSync(file, JSON.stringify(snapshot)); launch.control = { mode: 'file', path: file };
+  await s.publish(launch);
   const added = await s.add('anonymous-worker', 'worker', ['--environment-path', s.workerEnvironment.path, '--launch-context', JSON.stringify(launch)]);
   assert.equal(added.exitCode, 0, added.stderr);
   const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
@@ -2259,8 +2283,7 @@ for (const condition of ['STOP', 'ended']) test(`anonymous initial dispatch rech
   const context = queued => makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), originPluginId: null, input, queuedMessages: [queued] });
   assert.equal((await hook(context(entry))).action, 'proceed');
   assert.equal((await hook(context({ ...entry, id: 'unrelated-copy' }))).action, 'proceed');
-  if (condition === 'STOP') snapshot.STOP = true; else snapshot.endedTokens.push(launch.grant.token);
-  writeFileSync(file, JSON.stringify(snapshot));
+  await s.publish(null, condition === 'STOP' ? { STOP: true } : { grants: { orchestrator: bindingStore(s.host.bb).task(s.task).launchContext.grant } });
   assert.notEqual((await hook(context(entry))).action, 'proceed', 'The authoritative initial queue must recheck current control');
   assert.notEqual((await hook(context({ ...entry, id: 'unrelated-copy' }))).action, 'proceed', 'User input cannot reactivate a revoked participant grant');
 });
@@ -2275,18 +2298,85 @@ for (const condition of ['STOP', 'ended']) for (const delivery of ['queued', 'se
   await s.create(); s.workerEnvironment.managed = false; mkdirSync(s.workerEnvironment.path);
   const launch = launchFixture(s.task, 'early-worker', 'worker', s.workerEnvironment.path, 'actual-bb-branch', 'b'.repeat(40));
   launch.readRoots.push(s.root);
-  const file = path.join(s.root, 'early-control.json'), snapshot = structuredClone(launch.control.snapshot);
-  writeFileSync(file, JSON.stringify(snapshot)); launch.control = { mode: 'file', path: file };
+  await s.publish(launch);
   const pending = s.add('early-worker', 'worker', ['--environment-path', s.workerEnvironment.path, '--launch-context', JSON.stringify(launch)]);
   await entered.promise;
   try {
     const binding = bindingStore(s.host.bb).thread('thr-2');
     assert.equal(binding.phaseAssignmentDelivery.state, 'sending'); assert.equal(binding.phaseAssignmentDelivery.queuedId, null);
-    if (condition === 'STOP') snapshot.STOP = true; else snapshot.endedTokens.push(launch.grant.token);
-    writeFileSync(file, JSON.stringify(snapshot));
+    await s.publish(null, condition === 'STOP' ? { STOP: true } : { grants: { orchestrator: bindingStore(s.host.bb).task(s.task).launchContext.grant } });
     const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
     const result = await hook(makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), originPluginId: null,
       input: { blocks: entry.content, text: entry.content[0].text }, queuedMessages: delivery === 'queued' ? [entry] : [] }));
-    assert.equal(result.action, 'wait', 'A revoked participant grant must prevent an early anonymous model turn');
+    assert.equal(result.action, 'reject', 'A revoked participant grant must prevent an early anonymous model turn');
   } finally { release.resolve(); await pending; }
+});
+
+test('owner current source revokes a constrained reviewer after owner thread disappears while inline evidence remains unchanged', async t => {
+  const s = await stand(t); assert.equal((await s.create()).exitCode, 0);
+  const root = path.join(s.root, 'restricted-review'); mkdirSync(root);
+  s.environments.set('restricted', { ...s.environment, id: 'restricted', path: root });
+  const launch = launchFixture(s.task, 'restricted-reviewer', 'reviewer', root, 'actual-bb-branch', 'b'.repeat(40));
+  launch.review = { producer: 'orchestrator', producerBinding: 'participant', sourceEnvironmentId: 'restricted', base: 'a'.repeat(40),
+    requiredGates: [['fiction', 'gate']], requirePassingGates: true };
+  const historical = JSON.stringify(launch.control.snapshot);
+  const evidence = path.join(root, 'historical-inline.json'); writeFileSync(evidence, historical);
+  const manifest = (await evidenceFixture(s.root, s.task, 'b'.repeat(40))).manifest;
+  const added = await s.add('restricted-reviewer', 'reviewer', ['--environment', 'restricted', '--launch-context', JSON.stringify(launch),
+    '--evidence-manifest', JSON.stringify(manifest)]);
+  assert.equal(added.exitCode, 0, added.stderr);
+  const binding = bindingStore(s.host.bb).thread('thr-2');
+  assert.deepEqual(binding.launchContext.readRoots, [root]);
+  assert.equal(binding.launchContext.control.reference.directory.startsWith(`${root}/`), false);
+  await s.call('thr-2', 'promptobus_task');
+  s.threads.delete('thr-1');
+  await s.publish(null, { STOP: true });
+  await assert.rejects(s.call('thr-2', 'promptobus_task'), /Current control blocked.*STOP/);
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  const result = await hook(makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), originPluginId: 'promptobus',
+    input: { blocks: [{ type: 'text', text: s.initialArgs.prompt }], text: s.initialArgs.prompt } }));
+  assert.equal(result.action, 'reject');
+  assert.equal(readFileSync(evidence, 'utf8'), historical);
+  assert.deepEqual(bindingStore(s.host.bb).thread('thr-2').launchContext.readRoots, [root]);
+});
+
+for (const status of ['error', 'missing', 'unknown']) test(`ready owner with ${status} runtime can deny authority while issuance and unstop stay refused`, async t => {
+  const s = await stand(t); assert.equal((await s.create()).exitCode, 0);
+  const file = path.join(s.root, 'current-control', 'current.json');
+  const publish = async patch => {
+    const { format, revision, ...input } = JSON.parse(readFileSync(file, 'utf8'));
+    return s.host.harness.behavior.runCli(['control', 'publish', '--task', s.task, '--expected-revision', String(revision),
+      '--input', JSON.stringify({ ...input, ...patch })]);
+  };
+  if (status === 'missing') s.threads.delete('thr-1');
+  else s.threads.get('thr-1').status = s.threads.get('thr-1').runtime.displayStatus = status === 'error' ? 'error' : 'stopped';
+  const grant = structuredClone(bindingStore(s.host.bb).task(s.task).launchContext.grant);
+  grant.token = 'unhealthy-issued-token'; grant.phase = 'unhealthy-issued-phase';
+  const issue = await publish({ grants: { orchestrator: grant } });
+  assert.equal(issue.exitCode, 1); assert.match(issue.stderr, /deny-only/);
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).revision, 1);
+  const revoked = await publish({ STOP: true }); assert.equal(revoked.exitCode, 0, revoked.stderr);
+  const unstop = await publish({ STOP: false }); assert.equal(unstop.exitCode, 1); assert.match(unstop.stderr, /deny-only/);
+  const ended = await publish({ grants: {} }); assert.equal(ended.exitCode, 0, ended.stderr);
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).revision, 3);
+});
+
+for (const legacy of ['inline', 'missing']) test(`${legacy} historical launch remains status-readable and migration-blocked at every live admission`, async t => {
+  const s = await stand(t); await s.create(); await s.add('legacy-worker');
+  const store = bindingStore(s.host.bb), binding = store.thread('thr-2');
+  if (legacy === 'inline') {
+    binding.launchContext.control = launchFixture(s.task, binding.participant, binding.role, s.root).control;
+    binding.launchContext.role.literal = 'Historical role literal retained as evidence';
+  } else delete binding.launchContext;
+  store.save(binding);
+  const get = await s.host.harness.behavior.runCli(['participant', 'get', '--task', s.task, '--participant', binding.participant]);
+  assert.equal(get.exitCode, 0, get.stderr);
+  await assert.rejects(s.call('thr-2', 'promptobus_task'), /migration/);
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  const dispatch = await hook(makeMessageDispatchHookContext({ thread: s.threads.get('thr-2'), originPluginId: 'promptobus',
+    input: { blocks: [{ type: 'text', text: s.initialArgs.prompt }], text: s.initialArgs.prompt } }));
+  assert.equal(dispatch.action, 'reject'); assert.match(dispatch.message, /migration/);
+  const resumed = await s.control('resume', binding.participant);
+  assert.equal(resumed.exitCode, 1); assert.match(resumed.stderr, /migration/);
+  assert.deepEqual(store.thread('thr-2'), binding);
 });
