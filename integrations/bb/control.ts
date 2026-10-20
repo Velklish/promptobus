@@ -5,8 +5,8 @@ import { isDeepStrictEqual } from 'node:util';
 import { openEngine, ORCHESTRATOR, withTaskLock } from 'promptobus';
 import { withDirLock, writeFileAtomic } from 'promptobus/host';
 import { z } from 'zod';
-import { commandGrantSchema, controlPublicationSchema, controlReferenceSchema, currentControlSchema, tokenRecordSchema } from './control-schema.js';
-import type { CommandGrant, ControlOutcome, ControlPublication, ControlReference } from './control-schema.js';
+import { commandCallSchema, executionCommandSchema, commandGrantSchema, controlPublicationSchema, controlReferenceSchema, currentControlSchema, tokenRecordSchema } from './control-schema.js';
+import type { CommandGrant, ControlOutcome, ControlPublication, ControlReference, ExecutionCommand, CommandRef } from './control-schema.js';
 import type { Binding } from './protocol.js';
 import { readDeclaredFile, underRoots } from './launch-context.js';
 
@@ -142,6 +142,108 @@ export function readCurrentControl(binding: Binding, predecessor?: CommandGrant)
     });
   } catch (error) { return outcome(error); }
 }
+
+export const commandDigest = (command: ExecutionCommand) => hash(JSON.stringify(executionCommandSchema.parse(command)));
+const callPath = (r: ControlReference, command: CommandRef) => path.join(r.directory, 'calls', `${hash(JSON.stringify(command))}.json`);
+export function commandTerminal(reference: ControlReference, command: CommandRef) {
+  try {
+    normalize(reference);
+    canonicalControl({ task: reference.owner.task } as Binding, reference);
+    readCurrent(reference);
+    const call = readJson(reference, callPath(reference, command), TOKEN_LIMIT, commandCallSchema, 'call');
+    if (!isDeepStrictEqual(call.command, command) || call.state !== 'terminal' || !call.receiptSha256) return false;
+    const bytes = readDeclaredFile(`${command.output}.receipt.txt`, reference.readRoots, TOKEN_LIMIT);
+    const receipt = JSON.parse(bytes.toString('utf8'));
+    return hash(bytes.toString('utf8')) === call.receiptSha256 && receipt.complete === true && receipt.direct === true
+      && receipt.by === command.actor && receipt.admission?.token === command.token && receipt.admission?.commandId === command.commandId
+      && receipt.admission?.commandSha256 === command.commandSha256;
+  } catch { return false; }
+}
+function fenceTransition(reference: ControlReference, publication: ControlPublication, previous: z.infer<typeof currentControlSchema> | null) {
+  const unresolved = (previous?.pendingCommands ?? []).filter(command => !commandTerminal(reference, command));
+  const old = previous?.measurementFence, next = publication.measurementFence;
+  if (old && (!next || next.scope !== old.scope || next.cohort !== old.cohort)) {
+    if ([...old.blockers, ...unresolved.filter(command => command.measurementScope === old.scope)].some(command => !commandTerminal(reference, command))) {
+      blocked('measurement-busy', 'unresolved calls retain the previous measurement fence');
+    }
+  }
+  if (next) {
+    for (const member of next.members) {
+      if (old?.members.some(previous => isDeepStrictEqual(previous, member)) && !publication.grants[member.actor]) continue;
+      const grant = publication.grants[member.actor];
+      if (!grant || grant.token !== member.token || grant.phase !== member.phase
+        || !grant.execution?.commands.some(command => command.measurementScope === next.scope)) blocked('measurement-member', 'cohort member requires an exact current grant and command scope');
+    }
+    const retained = old?.scope === next.scope ? old.blockers.filter(command => !commandTerminal(reference, command)) : [];
+    const continuing = old?.state === 'active' && next.state === 'active' && old.scope === next.scope && old.cohort === next.cohort
+      && isDeepStrictEqual(old.members, next.members);
+    const blockers = [...retained, ...(continuing ? [] : unresolved.filter(command => command.measurementScope === next.scope))];
+    for (const command of next.blockers) if (!commandTerminal(reference, command)) blockers.push(command);
+    next.blockers = [...new Map(blockers.map(command => [JSON.stringify(command), command])).values()];
+    if (next.state === 'active' && (!old || old.scope !== next.scope || old.cohort !== next.cohort || next.blockers.length || (old.state === 'active' && !continuing))) {
+      blocked('measurement-busy', 'activate only an explicitly draining cohort after every retained call has a terminal receipt');
+    }
+  }
+  return unresolved;
+}
+export function commandReference(binding: Binding, command: ExecutionCommand): CommandRef {
+  const grant = binding.launchContext!.grant;
+  return { actor: grant.actor, token: grant.token, phase: grant.phase, commandId: command.id,
+    output: command.output, measurementScope: command.measurementScope, commandSha256: commandDigest(command) };
+}
+export function executionCommand(binding: Binding, commandId: string) {
+  const command = binding.launchContext?.grant.execution?.commands.find(command => command.id === commandId);
+  if (!command) blocked('command-mismatch', 'the exact immutable grant must contain this command id');
+  return command;
+}
+export function admitCommand<T>(binding: Binding, commandId: string, start: () => T, validate: () => void = () => {}): T {
+  const launch = binding.launchContext;
+  if (!launch || launch.control.mode !== 'current') blocked('migration-required', 'bounded execution requires canonical current control');
+  const reference = controlReferenceSchema.parse(launch.control.reference), engine = engineFor(reference);
+  return withTaskLock(engine.home, binding.task, () => locked(reference, () => {
+    const canonical = canonicalControl(binding, reference);
+    if (canonical.task.status !== 'active') blocked('inactive-task', 'canonical task must remain active at command entry');
+    const current = readCurrent(reference);
+    if (binding.task !== reference.owner.task || binding.projectId !== reference.owner.projectId || binding.hostId !== reference.owner.hostId
+      || binding.root !== reference.owner.root || launch.grant.task !== binding.task || launch.grant.actor !== binding.participant
+      || launch.grant.scope.repository !== binding.environmentPath || launch.grant.scope.branch !== binding.branch
+      || launch.grant.scope.base !== binding.baseSha) blocked('owner-mismatch', 'binding differs from the exact owner and grant');
+    if (!current.ownerConfirmed || current.STOP || current.noNewStages) blocked('stopped', 'current owner flags deny command entry');
+    if (!isDeepStrictEqual(current.grants[binding.participant], launch.grant)) blocked('grant-mismatch', 'publish this exact immutable command grant before entry');
+    verifyRecord(reference, launch.grant, 'active');
+    const command = executionCommand(binding, commandId), ref = commandReference(binding, command);
+    const fence = current.measurementFence;
+    if (fence?.scope === command.measurementScope && (fence.state !== 'active'
+      || !fence.members.some(member => member.actor === ref.actor && member.token === ref.token && member.phase === ref.phase))) {
+      blocked('measurement-fenced', 'current measurement fence denies command entry in this scope');
+    }
+    validate();
+    const pending = (current.pendingCommands ?? []).filter(command => !commandTerminal(reference, command));
+    const directory = path.join(reference.directory, 'calls');
+    if (!existsSync(directory)) mkdirSync(directory);
+    if (realpathSync(directory) !== directory) blocked('reference-mismatch', 'call directory identity changed');
+    const file = callPath(reference, ref);
+    if (existsSync(file)) blocked('command-used', 'immutable command entries are single use');
+    if (pending.length >= 256) blocked('commands-full', 'finish retained calls before admitting more bounded commands');
+    writeFileAtomic(file, serialized({ format: 'promptobus-bb-call-v1', command: ref, state: 'admitted' }, TOKEN_LIMIT), { mode: 0o600 });
+    writeFileAtomic(path.join(reference.directory, 'current.json'), serialized({ ...current, pendingCommands: [...pending, ref] }, CURRENT_LIMIT), { mode: 0o600 });
+    return start();
+  }));
+}
+export function completeCommand(binding: Binding, commandId: string) {
+  const launch = binding.launchContext;
+  if (!launch || launch.control.mode !== 'current') blocked('migration-required', 'bounded execution requires current control');
+  const reference = launch.control.reference, ref = commandReference(binding, executionCommand(binding, commandId));
+  return locked(reference, () => {
+    const call = readJson(reference, callPath(reference, ref), TOKEN_LIMIT, commandCallSchema, 'call');
+    if (!isDeepStrictEqual(call.command, ref)) blocked('command-mismatch', 'terminal command differs from admitted call');
+    const bytes = readDeclaredFile(`${ref.output}.receipt.txt`, reference.readRoots, TOKEN_LIMIT);
+    const receipt = JSON.parse(bytes.toString('utf8'));
+    if (receipt.complete !== true || receipt.direct !== true) return;
+    writeFileAtomic(callPath(reference, ref), serialized({ ...call, state: 'terminal', receiptSha256: hash(bytes.toString('utf8')) }, TOKEN_LIMIT), { mode: 0o600 });
+  });
+}
+
 export function publishControl(input: unknown, options: { initialize: boolean; expectedRevision: number | null; binding?: Binding; denyOnly?: boolean },
   fault: (point: 'tokens' | 'current') => void = () => {}) {
   const publication = controlPublicationSchema.parse(input);
@@ -162,7 +264,9 @@ export function publishControl(input: unknown, options: { initialize: boolean; e
       || (!previous.ownerConfirmed && publication.ownerConfirmed) || Object.entries(publication.grants).some(([actor, grant]) => !isDeepStrictEqual(previous.grants[actor], grant)))) {
       blocked('deny-only', 'unavailable or closed owner may only remove/end grants or assert STOP/noNewStages');
     }
-    const current = currentControlSchema.parse({ format: 'promptobus-bb-control-v1', ...publication, revision: (previous?.revision ?? 0) + 1 });
+    if (denyOnly && previous && !isDeepStrictEqual(previous.measurementFence, publication.measurementFence)) blocked('deny-only', 'deny-only publication must preserve its measurement fence');
+    const pendingCommands = fenceTransition(reference, publication, previous);
+    const current = currentControlSchema.parse({ format: 'promptobus-bb-control-v1', ...publication, ...(pendingCommands.length ? { pendingCommands } : {}), revision: (previous?.revision ?? 0) + 1 });
     const content = serialized(current, CURRENT_LIMIT);
     const writes = new Map<string, string>();
     const tokens = new Set<string>();

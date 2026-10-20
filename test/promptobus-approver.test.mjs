@@ -302,8 +302,10 @@ check(': the approver preamble forbids push and force-push and leaves the push t
   claudePlan.prompt.includes('You never push, never force-push, and never rewrite commits that are already on the remote: the orchestrator pushes.'),
   claudePlan.prompt.slice(0, 700));
 
-check(': the approver runs the gates, so its preamble puts them under the machine lease at its own address',
-  claudePlan.prompt.includes(`promptobus lease --as approver:orders-api --task ${TASK} -- <command…>`),
+check(': the approver receives an opt-in machine lease without serializing ordinary gates',
+  claudePlan.prompt.includes(`promptobus lease --as approver:orders-api --task ${TASK} -- <command…>`)
+  && claudePlan.prompt.includes('generic machine lease remains opt-in')
+  && claudePlan.prompt.includes('not required for ordinary full suites or gates'),
   claudePlan.prompt.slice(claudePlan.prompt.indexOf('## Machine lease'), claudePlan.prompt.indexOf('## Machine lease') + 300));
 check(': the approver preamble places the clone fast-forward under its canonical publication key',
   claudePlan.prompt.includes(`promptobus lease --as approver:orders-api --task ${TASK} --key ${REPO} -- git -C ${REPO} merge --ff-only ${claudePlan.branch}`),

@@ -97,7 +97,7 @@ One file sits at the root of the store rather than under `tasks/`: `model-routin
 
 Source: `lib/lease.js`. Decision and the options it was chosen over: [ADR-018](../adr/adr-018-the-bus-leases-the-machine-for-measurements.md).
 
-Participants of one task share a machine, and so do participants of different tasks and different workspaces. A machine lease lets one measuring run at a time onto it: `promptobus lease -- <command…>` ([03-cli](03-cli.md) § Lease) takes the lease, runs the command, and releases it when the command exits.
+Independent ordinary suites, gates, source work and preparation may overlap after worktree, output, temporary-root and writable-cache ownership is isolated and the approved actor/card limit is checked. Exclusivity applies to a named conflicting resource or an explicit controlled performance/load measurement. The optional machine lease lets one cooperating measuring run at a time onto it: `promptobus lease -- <command…>` ([03-cli](03-cli.md) § Lease) takes the lease, runs the command, and releases it when the command exits.
 
 The lease is not in the store home: that home is per workspace, and the lease must be seen by every workspace of the machine. It lives in one directory per user of the machine:
 
@@ -116,7 +116,7 @@ The directory is trusted only when it is this user's own: a symbolic link, a non
 
 `status` opens with the lease, before the tasks and even when none is active: `free`, `held by …`, or `left by a dead process …`, then one `waiting — …` line per live waiter ([03-cli](03-cli.md) § Status, done, sweep, dismiss, history, prune).
 
-Who is told: the worker preamble of `spawn` and the approver preamble of `review --approver` carry a `## Machine lease` section with the command already addressed to that participant and task, and the rule for what counts as measuring — the repository's full test suite and its gate command, as the repository's own AGENTS.md, README or contributing guide names them. The reviewer preamble says only that the lease is not the reviewer's: a reviewer runs nothing.
+Who is told: worker and approver preambles carry resource-isolation guidance and an addressed optional measurement command. Full suites and gates require no global lease by default. A controlled measurement names its relevant competitors and intentional parallel children; all relevant admitted work must cooperate with that scope. Bare commands elsewhere are not intercepted. Reviewer mechanics remain zero. Permission waits reserve no generic compute capacity; delayed execution rechecks current phase/token/scope/resource authority. Confirmed and UNKNOWN writers retain resource claims until terminal evidence permits release.
 
 ## MCP tools
 

@@ -78,6 +78,16 @@ check('docs: the index covers every ADR and names the implemented send door',
 
 const manifest = read('test/fixtures/promptobus/MANIFEST.md');
 const protocol = read('docs/reference/04-protocol.md');
+check('docs: resource isolation permits ordinary suites and preserves explicit cooperative conflicts',
+  has(section(read('skills/orchestrate/SKILL.md'), '## Machine lease'),
+    'ordinary full suites and gates need no global machine lease')
+  && has(section(read('docs/reference/01-overview.md'), '## Machine lease'),
+    'Full suites and gates require no global lease by default.')
+  && has(section(read('docs/reference/03-cli.md'), '## Lease'),
+    'The lease coordinates cooperating callers; it is not command authorization or a host scheduler.')
+  && has(section(adr('018', 'the-bus-leases-the-machine-for-measurements'), '## Decision'),
+    'Current execution authority is revalidated after waiting; a launch-time snapshot is insufficient.'),
+  'ordinary isolation, named cooperative conflicts and post-wait authority must agree across canonical guidance');
 const fanout = section(protocol, '## Fan-out');
 check('docs: task close fences new intents and preserves committed fan-out and adopted artifacts',
   has(fanout, 'Close and new message commit serialize under the same task lock.')

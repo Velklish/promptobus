@@ -190,7 +190,7 @@ An approver does its squash, gates, archive and acceptance commit in a separate 
 | `promptobus prune` | Preview journals of tasks closed more than 14 days ago; delete with `--yes` |
 | `promptobus guard` | Loop guard for the Stop hook: exit 2 returns the turn while mail is unread — in this task or in another task this session orchestrates — or while an owed answer has not been sent |
 | `promptobus warden` | Task listener. Any bus command starts it; `PROMPTOBUS_WARDEN=off` disables auto-start |
-| `promptobus lease -- <command…>` | Run one measuring command per machine at a time, oldest live waiter first; a waiter names the lease holder and gives up at `--wait` (default 1800 s); `status` names the holder and removes dead waiter records |
+| `promptobus lease -- <command…>` | Optional FIFO coordination for a declared controlled measurement; `--key <directory>` isolates a named conflict, including same-clone publication. Independent ordinary suites and gates need no global lease. Wait bound defaults to 1800 s |
 | `promptobus mcp` | MCP server over stdio |
 | `promptobus install` / `uninstall` | Write or remove the project-level hooks |
 

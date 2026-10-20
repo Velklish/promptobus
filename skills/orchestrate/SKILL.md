@@ -276,9 +276,13 @@ You do not merge the worker branch until you accept the result. The worker does 
 
 ## Machine lease
 
-Participants share the machine, and runs of other tasks and workspaces load it too. The bus keeps one machine lease: `promptobus lease -- <command…>` holds it for the length of one measuring run, a waiter names the lease holder and gives up at a bound, and a lease holder that dies releases it by liveness. `promptobus status` names the lease holder, since when, and the waiters.
+Independent source work, setup, builds, no-model capture, focused checks, ordinary full suites and gates need no global machine lease. Before allowing overlap, name each actor's distinct worktree, build output, temporary root and writable cache, and stay within the approved card/actor limit. A pending permission or dependency wait reserves no generic compute capacity. Revalidate the exact current phase, token, scope and resource authority immediately before a delayed command executes.
 
-It replaces orchestrator-issued slots. Do not hand out "the test slot" and do not teach a lock in the brief: the worker and approver preambles already carry the command, addressed, and the rule for what is a measurement — the repository's full test suite and its gate command. How many participants run at once is still yours to decide.
+Reserve exclusivity for a named conflict: mutation or publication of the same clone/ref, a shared mutable path/service, or an explicitly controlled performance/load measurement. Publication still uses `promptobus lease --key <clone-root> -- <command…>`; canonical directory keys make aliases share a lease. Distinct resources may progress together. Record a deliberate default-cache diagnostic as an exception with its exact path claim.
+
+`promptobus lease -- <command…>` remains an optional machine measurement wrapper; the FIFO/keyed API is unchanged. A controlled measurement declares its scope, relevant competitors and any intentional parallel children before starting; those competitors must use the same declared boundary. The wrapper does not intercept bare commands elsewhere. Ordinary gates do not silently become controlled measurements. Do not nest a lease on the same resource.
+
+Currently executing work and confirmed or UNKNOWN writers retain their resource until task-owned terminal evidence permits release. Administrative parking, idle metadata or grant revocation alone does not establish Stop/drain. Preserve original commands, failures, call completion, exact source/gates, independent review and quota evidence when allowing concurrency.
 
 ## Stops
 

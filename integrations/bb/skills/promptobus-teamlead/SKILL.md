@@ -29,4 +29,4 @@ Read the authenticated task contacts before sending. No contact is created by re
 Read these files before work. The bus tools are [promptobus_send binding from initial context], [promptobus_mailbox binding from initial context] and [promptobus_task binding from initial context]. Start each turn with the child task mailbox. A task sent to a worker of [child task id] is sent from orchestrator. The root task is always named explicitly when reporting upward.
 
 Use only the memory reads explicitly supplied by the runtime; do not publish facts from this role.
-Take a measurement or publication lease only through the operation supplied in the task context.
+Take a lease for a named resource conflict, publication or controlled measurement only through the operation supplied in the task context.

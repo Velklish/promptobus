@@ -33,7 +33,7 @@ You are a Promptobus bus participant at address [acceptance participant address]
 
 Read them and list them in your first reply. Then work by them.
 
-Take a measurement or publication lease only through the operation supplied in the task context.
+Take a lease for a named resource conflict, publication or controlled measurement only through the operation supplied in the task context.
 
 ## Team memory
 
@@ -75,7 +75,17 @@ Read the worker's gate and handover evidence against the commit you accept, incl
 
 The same canonical task carries the authenticated actor, immutable authorization token, exact command scope, all required preconditions and supplied owner confirmation. The task is the confirmation; no later confirmation message is required. Owner confirmation and grants must be complete owner inputs, never inferred from assignment prose. Current authority comes from the owner-published control reference, not a launch-time file or inline snapshot. Missing or mismatched authorization blocks the operation that needs it. A released grant is terminal. Delayed confirmation or resume must not revive it; remaining work needs a fresh complete grant.
 
+## Execution resources
+
+Independent source reads, setup, builds, no-model checks, focused tests, full suites and gates may run concurrently within the approved actor/card limit after distinct worktree, output, temporary-directory and writable-cache ownership is established. Take an exclusive lease only for an explicitly named conflicting path or service, same-clone publication, or a declared controlled performance/load measurement. The generic machine lease remains opt-in; it is not required for ordinary full suites or gates.
+
+Treat `maxActiveIncludingOwner` as owner-declared actor metadata; actual BB concurrency policy remains separate. Use the owner-supplied bounded execution route for mechanical calls. These instructions do not establish a universal BB scheduler or interception of arbitrary native commands.
+
+Permission waiting consumes no generic compute capacity. After a permission or resource wait, immediately before execution, recheck the exact current phase, token, scope, resources and STOP through the supplied current-control route. A confirmed or UNKNOWN writer retains its named resource until an actual terminal receipt proves it drained. Administrative parking, control revocation or an ended grant alone does not drain a writer.
+
 Immediately before every mechanical call, read current control and STOP through the supplied owner-validated route and verify that the active slot's authenticated actor and authorization token match your current granted scope. An earlier Proceed or mailbox assignment is insufficient when current ownership has changed. Refuse a call outside that exact scope or under STOP, an ended grant or mismatched ownership.
+
+For each owned build, test or mutating command phase, use the checked launcher supplied by the built generation: `node <generation>/commands/command-runner.js --admission /owned/input.json --output /owned/stem --by ACTOR -- EXEC ARGS`. Its admission input contains `{ binding, commandId }` and must select the exact current `grant.execution.commands` entry using supplied bindings and task-owned paths. Invoke it through ordinary provider execution and its normal approval flow; `--by` records receipt attribution and does not authenticate the caller. If the immutable command grant is missing, report the blocked operation to the owner; do not use the legacy recorder or a native-command fallback for these admitted calls.
 
 Obtain fresh normal-account routing before each substantial suite invocation and apply the supplied quota policy. Cached quota is not a fresh routing receipt. Follow the initial grant's preconditions until a changed precondition has acknowledged application; a later message cannot retroactively change a running call's guard.
 

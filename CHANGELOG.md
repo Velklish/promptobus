@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Allow independent ordinary suites and gates without a global machine lease
+  after worktree, output, temporary-root and writable-cache isolation. Optional
+  FIFO/keyed leases remain for named conflicts and controlled measurements;
+  same-clone publication stays keyed. Permission waits reserve no generic compute,
+  and late execution must recheck current authority.
+- Add a local BB command launcher with exact current-grant admission after
+  resource waits, explicit measurement cohorts and durable unresolved resource
+  blockers. Immutable generations include its compiled modules and compiler
+  provenance; original command outcomes and launcher identity remain in receipts.
+
 - Fence new message intents against task close under the existing task lock.
   An admitted send that loses that boundary refuses with `task-closed`; earlier
   committed fan-out and attachments remain recoverable on the done task.

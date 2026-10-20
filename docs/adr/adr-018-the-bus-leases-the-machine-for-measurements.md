@@ -2,27 +2,15 @@
 
 **Status:** Accepted
 **Date:** 2026-09-25
-**Deciders:** the owner decided that the bus owns the lease on 2026-09-25. The design points below are the ones that decision left open.
+**Deciders:** the owner selected the bus lease on 2026-09-25 and resource-scoped parallelism on 2026-10-19. The optional FIFO/keyed mechanism is retained.
 
 ## Context
 
-The bus lifts several participants at once, each in its own worktree. Their trees are isolated;
-the machine is not. Whatever they measure — a performance gate, a wall-clock assertion, a suite
-with a timeout — is measured on a box the others are loading. The card records a run where three
-workers of one task gated at once and the one-minute load average reached 63 on eight cores:
-every number of that window was worthless, and its reds cost review rounds to explain.
+The bus lifts participants in separate worktrees, but output directories, temporary roots and writable caches may still conflict. Independent source work, setup, builds, no-model capture, focused checks, ordinary full suites and gates may overlap after those resources are isolated and the approved actor/card limit is checked.
 
-Runs worked around it by convention: an orchestrator-issued slot, or `mkdir /tmp/<name>.lock` as
-a mutex. An empty directory carries neither pid nor timestamp, so a waiter cannot tell "someone is
-measuring" from "someone was killed and left the directory"; it is invisible to `status`; and it
-reaches a participant only as prose in a brief — which one participant of that run had not yet
-received when it entered the window.
+An exclusive resource claim names an actual shared mutable path/service, publication or mutation of one clone/ref, or an explicitly controlled performance/load measurement. A pending permission or dependency wait reserves no generic compute capacity. Before a delayed command executes, its current phase, token, scope and resource authority must be checked again. Confirmed and UNKNOWN writers retain their resources until actual task-owned terminal evidence permits release; administrative parking, idle or revocation alone does not establish Stop/drain.
 
-The owner decided on 2026-09-25 that the bus owns it: a machine-wide lease with a holder and a
-timestamp; `status` names the holder and since when; a holder that is gone releases it by
-liveness; participants learn of it from the preamble the bus gives them. What was left to decide
-is where the lease lives, what the door is, how a waiter waits, what `status` prints, and what
-the preambles say.
+A machine-wide optional lease remains useful for a cooperating controlled measurement. It does not intercept bare commands or discover all host load. A measurement names relevant competitors and intentional parallel children before starting. Ordinary gates do not implicitly enter that mode. The mechanisms below remain public opt-in coordination features.
 
 ## Options
 
@@ -93,20 +81,11 @@ when no task is active, since the lease is not a task's: `machine lease: free (<
 `held by <address> (task <id>) · <command> · since <time> (<age>) · pid <n>`, or `left by a dead
 process — …; the next taker drops it`, then one `waiting — …` line per live waiter.
 
-**Decision 5 — who is told, and what counts as a measurement.** The worker preamble (`spawn`)
-and the approver preamble (`review --approver`, which runs the full gates on the merged tree)
-carry a `## Machine lease` section with the command already addressed — `lease --as <address>
---task <id> -- <command…>` — and one definition: a measuring command is one whose outcome depends
-on wall-clock or machine load, which in any repository means its full test suite and its gate
-command as that repository's own AGENTS.md, README or contributing guide names them; a single
-test file, a lint, a build or a type check is not. The reviewer preamble says only that the lease
-is not its own: a reviewer runs nothing. No configuration schema lists the measuring commands:
-each repository already names its gates, and a second list would drift from the first.
+**Decision 5 — who is told, and when to acquire.** Worker and approver preambles state the isolation contract and addressed optional lease command. A suite or gate needs no global lease by default. The owner declares concrete conflicts and the bounded controlled-measurement scope. Same-clone publication remains keyed by canonical clone root; independent keys may run together. A reviewer runs no mechanics.
 
 ## Decision
 
-1D, 2C, and the waiting, visibility and preamble rules above. The orchestration skill says once
-that the lease exists and that it replaces orchestrator-issued slots.
+Retain 1D, 2C, FIFO waiting, visibility and optional keyed leases. The orchestration skill permits independent isolated work without a generic machine queue and reserves exclusivity for named conflicts or controlled measurements. Current execution authority is revalidated after waiting; a launch-time snapshot is insufficient.
 
 ## Consequences
 
@@ -121,5 +100,6 @@ that the lease exists and that it replaces orchestrator-issued slots.
   that into a refusal that names the pid instead of a hang.
 - A command leased inside another leased command waits for the outer one until the bound; the
   preamble says not to nest.
-- How many participants may run at once stays the orchestrator's call; the lease only serialises
-  the measuring runs among them.
+- The owner-declared actor/card limit and actual host concurrency policy remain separate. An optional lease is neither an authorization mechanism nor a scheduler limit.
+- Intentional parallel children of a controlled measurement run inside its outer scope without reacquiring the same lease. Unknown relevant external competitors prevent claiming a controlled host measurement; independent ordinary suites remain allowed.
+- Default-cache diagnostics explicitly claim the exact shared cache path. Routine caches, output and temporary roots belong to the task.

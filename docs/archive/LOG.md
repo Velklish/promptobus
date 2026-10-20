@@ -560,3 +560,4 @@ The release reconciliation gives the [Codex-only journal lookup](#pb-372) the na
 - <a id="pb-386"></a>`PB-386-stable-message-order` · 2026-10-20 · completed · — · Canonical message order must survive wall-clock rollback
 - <a id="pb-385"></a>`PB-385-terminal-task-send-race` · 2026-10-20 · completed · — · Define and enforce send and close ordering
 - <a id="pb-385.1"></a>`PB-385.1-await-failed-artifact-writer-close` · 2026-10-20 · completed · — · Await failed artifact writer close before removing its temporary blob
+- <a id="pb-382"></a>`PB-382-optional-resource-scoped-machine-lease` · 2026-10-20 · completed · — · Isolated work must not require a global machine lease; lock only conflicting resources and controlled measurements

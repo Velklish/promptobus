@@ -628,7 +628,7 @@ No additional diagnostic model or similarly named native MCP tool is substituted
 | `control` | `mode: current` with the exact complete owner-published `reference` |
 | Control `reference` | Normalized real `directory`, `owner: { task, participant, projectId, environmentId, hostId, root }`, and declared owner `readRoots` |
 | `preparation` | Exact argv `commands`, `status: complete` or `notRun` with `reason` |
-| `quota` | Named `authority`, `missingUsage: informational`, `soft`, `hard`, `maxActiveIncludingOwner`, `PAYG: false` |
+| `quota` | Named owner-declared `authority`, `missingUsage: informational`, `soft`, `hard`, `maxActiveIncludingOwner`, `PAYG: false`; these declarations do not implement BB scheduler accounting |
 | Reviewer `review` | Original `producer`, explicit `producerBinding`, `sourceEnvironmentId`, full `base`, exact argv `requiredGates`, explicit `requirePassingGates` |
 
 Before task creation, `control publish --task TASK --initialize --input <JSON>`
@@ -763,6 +763,74 @@ own return code. It reserves all three files before spawning; a refusal reports
 evidence. Attachment sender lookup includes `task` and `result` messages before
 and after acknowledgement or reload. This recorder is not an authorization or actor-authentication
 tool. Shell pipeline executables are unsupported.
+
+### Resource-scoped local commands
+
+Independent source work, setup/build, no-model capture, focused checks, ordinary
+full suites and gates may overlap within the approved actor/card limit after
+worktree, build output, temporary root and writable-cache ownership is isolated.
+`quota.maxActiveIncludingOwner` is an owner declaration, not implemented BB
+scheduler accounting. Actual BB host/provider concurrency policy remains separate.
+Permission and dependency waits reserve no generic compute capacity.
+
+The generated local launcher runs through ordinary provider exec and its existing
+sandbox/approval boundary:
+
+```sh
+node <generation>/commands/command-runner.js --admission /absolute/owned/command.json --output /absolute/owned/run --by ACTOR -- EXECUTABLE ARGS
+```
+
+The admission file contains `{ binding, commandId }`. The binding carries the
+exact expected immutable current-control grant. Its `execution.commands` entries
+name unique `id`, direct `argv`, `cwd`, exact environment overrides `env`, single-use
+evidence `output` stem, `buildRoot`, `tmpRoot`, `cacheRoot`, concrete `exclusiveKeys`
+and declared interference `measurementScope`. Paths are normalized existing owned
+or declared read directories. TMPDIR/TMP/TEMP and both npm cache aliases actually
+use the granted roots; npm log and XDG configuration/cache/data/state paths are
+also explicit. Tool-specific output/cache flags belong in the exact argv/env.
+This declares isolation and retains the provider sandbox; it does not monitor
+every filesystem write or authenticate the caller from `--by` or the input file.
+
+Concrete keys use the existing optional keyed lease in sorted order. Different
+resources may progress concurrently. After all key waits, the launcher rereads
+active canonical task and exact current phase/token/grant/command under the short
+task-to-current lock order and invokes child spawn synchronously inside that
+boundary. No permission prompt, RPC or resource wait occurs between that check
+and spawn. A late approval or revoked waiting command therefore cannot rely on
+its earlier snapshot. Publication remains possible while a child runs.
+
+Each admitted command leaves a durable call record before spawn. A bounded
+current `pendingCommands` projection references unresolved calls without scanning
+history. A concrete resource also retains its exact unresolved command reference
+outside the transient lease lock. Other checked launchers using the same resource
+namespace refuse until both the exact terminal call state and original receipt
+are verified. Missing, partial or unreadable evidence, failed finalization and
+UNKNOWN remain blockers; idle, ended grants, administrative parking or dead
+wrapper metadata alone cannot release them. Complete direct nonzero exits retain
+their original outcome. The PID handshake still protects a known surviving keyed
+child. The output stem cannot be overwritten or reused.
+
+An optional owner-published `measurementFence` names `scope`, `cohort`, state
+`draining` or `active`, exact actor/token/phase `members` and retained `blockers`.
+Draining denies new competing calls only in that interference scope; activation
+requires trustworthy terminal receipts for all inherited blockers. Exact fresh
+cohort members may then run intentionally in parallel, each holding only its
+actual mutable-path keys. Different scopes continue. Fence removal/change must
+also retain unresolved calls. Ordinary gates acquire no implicit measurement
+fence or global lease.
+
+This is a cooperative boundary for declared calls using this launcher and shared
+resource namespace/current authority. Bare native commands, plain lease callers,
+other independent authorities and unknown external background work are not
+automatically intercepted. All relevant competitors must use the declared
+boundary; an unknown relevant external writer prevents claiming a controlled host
+measurement. Same-clone publication remains keyed. A default-cache diagnostic is
+an explicit exception naming its exact mutable path.
+
+The immutable generation includes every emitted `commands/` dependency module
+in its manifest hashes/readback. Command receipts name the launcher build identity
+and entry hash alongside original argv, source, streams, exit and signal. The
+local fixtures prove this admitted path; live provider proof remains separate.
 
 The mechanical validator supports complete flat passing Node spec inventories;
 custom, nested and concatenated scopes retain authoritative raw with explicit

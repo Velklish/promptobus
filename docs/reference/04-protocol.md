@@ -1039,6 +1039,16 @@ share this guard. Record the runner itself. The manifest's
 command references this original receipt and the actual landed raw part IDs.
 Incomplete or signalled receipts cannot claim a completed runner.
 
+Owned BB build/test/mutating command phases use the generated checked local
+launcher described in the [BB integration](../../integrations/bb/README.md#resource-scoped-local-commands).
+Its exact immutable command entry is revalidated against current task/phase/token
+after resource waits and immediately before spawn. The checkout recorder above
+remains an evidence collector. A post-spawn finalization failure retains the
+original executed outcome and unresolved resource blocker; it cannot report that
+the command was not run. The checked launcher remains an ordinary permissioned
+native execution, with cooperative resource coverage rather than host-wide command
+interception or caller authentication from a supplied actor.
+
 Fresh phase transfer retains its starting delivery epoch across context reset
 and evidence reads. An intervening Stop refuses resume. The complete initial
 assignment and queued identity stay durable until its matching turn request;

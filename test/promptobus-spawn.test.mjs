@@ -227,8 +227,10 @@ check('host API: workerPreamble receives the actual worktree path',
   && preamblePlan.prompt.includes(preamblePlan.worktreePath),
   JSON.stringify(preambleCtx));
 // The lease reaches the worker by the preamble, addressed to it: no brief carries it.
-check('prompt: the worker is told to measure under the machine lease, with its own address and task',
+check('prompt: the worker receives an opt-in machine lease with its own address and task',
   plan.prompt.includes(`promptobus lease --as worker:orders-api --task ${TASK} -- <command…>`)
+  && plan.prompt.includes('generic machine lease remains opt-in')
+  && plan.prompt.includes('not required for ordinary full suites or gates')
   && !readFileSync(BRIEF, 'utf8').includes('lease'),
   plan.prompt.slice(plan.prompt.indexOf('## Machine lease'), plan.prompt.indexOf('## Machine lease') + 400));
 const SESSION_ID = 'sess-0001';

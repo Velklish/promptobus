@@ -77,6 +77,24 @@ function consumerIntegration(root) {
   return { file: path.resolve(root, JSON.parse(selected[1])), declaration: selected[0] };
 }
 
+function commandToolchain(root) {
+  if (!existsSync(path.join(root, 'command-runner.ts'))) return [];
+  const require = createRequire(path.join(root, 'package.json'));
+  const names = ['typescript', `@typescript/typescript-${process.platform}-${process.arch}`, '@types/node'];
+  const packages = [];
+  for (const name of names) {
+    const directory = path.dirname(require.resolve(`${name}/package.json`));
+    const manifest = readJson(path.join(directory, 'package.json'));
+    if (name === 'typescript' && manifest.version !== readJson(path.join(root, 'package.json')).devDependencies?.typescript) {
+      throw new Error('Command compiler must match the exact local development pin');
+    }
+    packages.push({ name, version: manifest.version, directory, files: filesIn(directory) });
+    for (const dependency of Object.keys(manifest.dependencies ?? {})) if (!names.includes(dependency)) names.push(dependency);
+  }
+  return packages;
+}
+const toolchainIdentity = packages => packages.map(input => ({ name: input.name, version: input.version, sha256: contentDigest(input.directory, input.files) }));
+
 function inspectInputs(root, builderVersion) {
   const manifest = readJson(path.join(root, 'package.json'));
   const selected = [...readdirSync(root).filter(file => file.endsWith('.ts')), 'scripts', 'skills', 'package.json', 'package-lock.json', 'tsconfig.json', 'server.ts', hostSource(root)];
@@ -89,7 +107,8 @@ function inspectInputs(root, builderVersion) {
   const integration = consumerIntegration(root);
   if (integration) integration.bytes = readFileSync(integration.file);
   const consumerIntegrationSha256 = integration ? sha256(integration.bytes) : null;
-  const inputs = { sourceSha256: contentDigest(root, files), sourceRevision,
+  const compiler = toolchainIdentity(commandToolchain(root));
+  const inputs = { ...(compiler.length ? { commandCompiler: compiler } : {}), sourceSha256: contentDigest(root, files), sourceRevision,
     sourceDirty: dirty?.status === 0 ? dirty.stdout.length > 0 : null,
     lockSha256: sha256(readFileSync(path.join(root, 'package-lock.json'))), builderVersion,
     dependencies: dependencyInputs(root, Object.keys(manifest.dependencies ?? {})), consumerIntegrationSha256, consumerBundleSha256: null };
@@ -127,6 +146,7 @@ export async function build(root) {
   try {
     const capturedRoot = path.join(stage, 'inputs');
     copyFiles(root, capturedRoot, before.files);
+    for (const compiler of commandToolchain(root)) copyFiles(compiler.directory, path.join(capturedRoot, 'toolchain/node_modules', compiler.name), compiler.files);
     copyFiles(capturedRoot, stage, ['tsconfig.json']);
     const manifest = readJson(path.join(capturedRoot, 'package.json'));
     const rawHost = before.integration ? 'host.mjs' : 'host.ts';
@@ -134,7 +154,9 @@ export async function build(root) {
     cpSync(path.join(capturedRoot, 'skills'), path.join(stage, 'skills'), { recursive: true });
     freezeDependencies(root, stage, Object.keys(manifest.dependencies ?? {}));
     if (before.integration) writeFileSync(path.join(stage, 'consumer-input.mjs'), before.integration.bytes);
-    const captured = { ...before.inputs, sourceSha256: contentDigest(capturedRoot, before.files),
+    const toolchainRoot = path.join(capturedRoot, 'toolchain');
+    const capturedCompiler = commandToolchain(root).map(compiler => ({ ...compiler, directory: path.join(toolchainRoot, 'node_modules', compiler.name) }));
+    const captured = { ...before.inputs, ...(capturedCompiler.length ? { commandCompiler: toolchainIdentity(capturedCompiler) } : {}), sourceSha256: contentDigest(capturedRoot, before.files),
       lockSha256: sha256(readFileSync(path.join(capturedRoot, 'package-lock.json'))),
       dependencies: dependencyInputs(stage, Object.keys(manifest.dependencies ?? {})),
       consumerIntegrationSha256: before.integration ? sha256(readFileSync(path.join(stage, 'consumer-input.mjs'))) : null };
@@ -172,6 +194,18 @@ export async function build(root) {
     await runBuild(bb, generation);
     if (!unchanged(inspectInputs(root, builderVersion).inputs)) throw new Error('Build inputs changed during capture');
     const artifacts = {};
+    if (capturedCompiler.length) {
+      const compile = spawnSync(process.execPath, [path.join(generation, 'inputs/toolchain/node_modules/typescript/bin/tsc'),
+        '--ignoreConfig', '--strict', '--skipLibCheck', '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+        '--types', 'node', '--typeRoots', './inputs/toolchain/node_modules/@types', '--rootDir', './source', '--outDir', './commands',
+        './source/command-runner.ts'], { cwd: generation, encoding: 'utf8' });
+      if (compile.status !== 0) throw new Error(`Command launcher compilation failed (${compile.status}): ${compile.stdout}${compile.stderr}`);
+      const commandFiles = filesIn(generation, ['commands']);
+      if (!commandFiles.includes('commands/command-runner.js') || !readFileSync(path.join(generation, 'commands/build-identity.js')).includes(encoded)) {
+        throw new Error('Command launcher identity or entry is missing');
+      }
+      for (const file of commandFiles) artifacts[file] = sha256(readFileSync(path.join(generation, file)));
+    }
     for (const name of ['server.js', 'host.js']) {
       const bundle = readFileSync(path.join(generation, 'dist', name));
       if (bundle.toString('utf8').split(encoded).length !== 2 || bundle.includes(Buffer.from(marker))) throw new Error(`Build identity was not embedded in ${name}`);
@@ -179,11 +213,12 @@ export async function build(root) {
     }
     const metadata = readJson(path.join(generation, 'dist/host.meta.json'));
     if (metadata.artifactDigest !== artifacts['host.js']) throw new Error('Host artifact digest does not match the final bundle');
-    const entries = ['inputs', 'source', 'skills', 'node_modules', 'consumer-input.mjs', 'consumer-options.mjs', 'package.json', 'tsconfig.json']
+    const entries = ['inputs', 'source', 'skills', 'commands', 'node_modules', 'consumer-input.mjs', 'consumer-options.mjs', 'package.json', 'tsconfig.json']
       .filter(entry => existsSync(path.join(generation, entry)));
     const result = { identity, installationDirectory,
       snapshot: { sha256: contentDigest(generation, filesIn(generation, entries, true)), entries,
         server: installManifest.bb.server, host: installManifest.bb.host, skills: installManifest.bb.skills },
+      ...(capturedCompiler.length ? { commandLauncher: 'commands/command-runner.js', commandCompiler: toolchainIdentity(capturedCompiler.map(compiler => ({ ...compiler, directory: path.join(generation, 'inputs/toolchain/node_modules', compiler.name) }))) } : {}),
       artifacts, builtWith: metadata.builtWith };
     writeFileSync(path.join(generation, 'dist/build-manifest.json'), JSON.stringify(result, null, 2) + '\n');
     mkdirSync(path.join(root, 'dist'), { recursive: true });
