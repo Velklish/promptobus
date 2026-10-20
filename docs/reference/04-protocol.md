@@ -1049,6 +1049,67 @@ the command was not run. The checked launcher remains an ordinary permissioned
 native execution, with cooperative resource coverage rather than host-wide command
 interception or caller authentication from a supplied actor.
 
+Supply the canonical capture/assembly recipe, exact input contract and owned paths
+before the first relevant mechanical check. Use immutable generation entries:
+
+```sh
+node <generation>/commands/record-command.js --output /absolute/owned/terminal --by ACTOR -- node <generation>/commands/command-runner.js --admission /absolute/owned/command.json --output /absolute/owned/run --by ACTOR -- EXECUTABLE ARGS
+node <generation>/commands/evidence-prepare.js --input /absolute/owned/evidence.json --stage /absolute/owned/staged
+```
+
+Run the outer recorder from the exact granted command cwd, using the native
+execution tool's workdir; both original receipts must retain that cwd and source.
+Await the outer recorder's return before preparing evidence. Retain the original
+inner command receipt and stdout/stderr, the original outer terminal receipt and
+stdout/stderr, and exact admission JSON. An inner receipt with `complete: true`
+alone does not prove launcher finalization. The outer invocation must bind the
+same immutable checked entry, admission path, output stem, actor and direct argv;
+its successful terminal stdout must match the finalized original inner receipt.
+The outer command is `verification`, not a second gate. A denied command, failed
+finalization, nonzero or incomplete terminal outcome remains an error with its
+original raw history; it cannot certify a passing admitted command.
+
+Upload every not-yet-landed path in `<staged>/upload-plan.json` through the
+existing `bb promptobus evidence upload` command, retaining each actual returned
+result. Reuse original upload results for already landed immutable history;
+new IDs would not match the retained historical index.
+Then run `node <generation>/commands/evidence-prepare.js --input
+/absolute/owned/evidence.json --uploads /absolute/owned/uploads.json` to print
+the validated manifest. Upload results are keyed by absolute original path;
+ordered `parts` retain actual IDs, canonical sender, UTF-8 sizes and hashes.
+Do not sort IDs or derive them from filenames. The constructor does not run
+commands or suites. It derives current command records, gate counts and
+gate/handover records from finalized originals and supplied five-check details;
+missing or incomplete originals refuse. Repair formatting from those originals,
+without repeating an unchanged suite, inventing direct receipts or executions
+for `notRun`, or treating a valid package as PASS. The [BB recipe](../../integrations/bb/README.md#compact-current-review-evidence)
+defines the constructor input and staged/upload sequence.
+
+Current `artifacts/commands` keep their exact current source/base, producer,
+relayer, receipt/raw and required-gate validation. Optional `support` carries an
+immutable multipart index and an explicit selection of required prior findings
+and failures. Index metadata retains each original source/base/producer, ordered
+parts, byte counts and hashes; a historical receipt also retains its original
+stdout/stderr. The validator checks the index and fetches selected entries,
+including their raw streams. Unselected indexed payloads remain available on
+demand; unrelated historical read/status output is not mandatory replay for each
+closure. Historical source and failed exits stay historical and contribute zero
+current gates. The owner/reviewer chooses relevance explicitly, rather than
+inferring it from a filename or the latest success. A same-reviewer closure keeps
+its exact changed source/paths, current evidence and relevant earlier findings.
+The initial assignment names exact source/base, changed paths and bounded read
+roots alongside the complete current manifest. Assembly does not replace the
+reviewer's source/diff reads or introduce another source artifact format.
+
+The support selection is covered by the exact owner declaration hash. A changed
+selection requires a matching new declaration where that binding applies, and
+every fresh phase still checks current token/epoch/source. Existing manifests
+remain valid; older strict readers may reject the optional support field, so
+consumer compatibility needs its normal check. Compactness does not waive
+repository gates, independent review or current acceptance. Artifact sender
+lookup can still read historical metadata for each part. This does not establish
+O(current) total I/O or a cache or savings claim.
+
 Fresh phase transfer retains its starting delivery epoch across context reset
 and evidence reads. An intervening Stop refuses resume. The complete initial
 assignment and queued identity stay durable until its matching turn request;

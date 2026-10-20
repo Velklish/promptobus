@@ -78,6 +78,26 @@ check('docs: the index covers every ADR and names the implemented send door',
 
 const manifest = read('test/fixtures/promptobus/MANIFEST.md');
 const protocol = read('docs/reference/04-protocol.md');
+const bbEvidence = section(protocol, '#### Manifest before reviewer launch');
+const bbGuide = read('integrations/bb/README.md');
+check('docs: BB evidence preparation follows terminal launcher capture before the first check',
+  [bbEvidence, bbGuide, read('skills/orchestrate/SKILL.md')].every((text) =>
+    has(text, 'before the first relevant mechanical check')
+    && has(text, 'commands/record-command.js')
+    && has(text, 'commands/command-runner.js')
+    && has(text, 'commands/evidence-prepare.js'))
+  && has(bbEvidence, 'An inner receipt with `complete: true` alone does not prove launcher finalization.')
+  && [bbEvidence, bbGuide].every((text) => has(text, 'Run the outer recorder from the exact granted command cwd'))
+  && has(bbEvidence, 'The constructor does not run commands or suites.'),
+  'initial guidance must capture the checked launcher terminal outcome and assemble only finalized originals');
+check('docs: compact BB review keeps selected history outside current gate counts',
+  [bbEvidence, bbGuide].every((text) => has(text, 'support')
+    && has(text, 'zero current gates')
+    && has(text, 'required prior findings and failures')
+    && has(text, 'unchanged suite'))
+  && has(bbEvidence, 'The support selection is covered by the exact owner declaration hash.')
+  && has(bbEvidence, 'This does not establish O(current) total I/O or a cache or savings claim.'),
+  'required historical evidence must stay explicit, immutable and distinct from current execution proof');
 check('docs: resource isolation permits ordinary suites and preserves explicit cooperative conflicts',
   has(section(read('skills/orchestrate/SKILL.md'), '## Machine lease'),
     'ordinary full suites and gates need no global machine lease')

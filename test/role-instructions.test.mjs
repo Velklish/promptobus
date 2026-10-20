@@ -150,6 +150,22 @@ test('native evidence schemas: colon addresses remain valid; w-pb3502 is not a n
 });
 
 for (const role of ['orchestrator', 'approver', 'worker']) {
+  test(`BB ${role}: the initial evidence recipe captures finalization and separates current proof from history`, async () => {
+    const { BB_ROLE_SKILLS, renderBbInstructionSkill } = await import('promptobus/instructions');
+    const rendered = renderBbInstructionSkill(role);
+    const shipped = readFileSync(new URL(`../integrations/bb/skills/${BB_ROLE_SKILLS[role]}/SKILL.md`, import.meta.url), 'utf8');
+    for (const body of [rendered, shipped]) {
+      assert.match(body, /before the first relevant mechanical check/);
+      assert.match(body, /commands\/record-command\.js/);
+      assert.match(body, /commands\/command-runner\.js/);
+      assert.match(body, /commands\/evidence-prepare\.js/);
+      assert.match(body, /inner receipt[^.]*alone[^.]*finalization/i);
+      assert.match(body, /constructor[^.]*does not run[^.]*suites/i);
+      assert.match(body, /required prior findings and failures/);
+      assert.match(body, /zero current gates/);
+      assert.match(body, /unchanged suite/);
+    }
+  });
   test(`BB ${role}: complete command grants and terminal release belong to the rendered and shipped contract`, async () => {
     const { BB_ROLE_SKILLS, renderBbInstructionSkill } = await import('promptobus/instructions');
     const rendered = renderBbInstructionSkill(role);

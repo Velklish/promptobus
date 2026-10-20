@@ -194,14 +194,15 @@ export async function build(root) {
     await runBuild(bb, generation);
     if (!unchanged(inspectInputs(root, builderVersion).inputs)) throw new Error('Build inputs changed during capture');
     const artifacts = {};
+    const commandEntries = ['command-runner', 'record-command', 'evidence-prepare'].filter(name => existsSync(path.join(generation, 'source', `${name}.ts`)));
     if (capturedCompiler.length) {
       const compile = spawnSync(process.execPath, [path.join(generation, 'inputs/toolchain/node_modules/typescript/bin/tsc'),
         '--ignoreConfig', '--strict', '--skipLibCheck', '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
         '--types', 'node', '--typeRoots', './inputs/toolchain/node_modules/@types', '--rootDir', './source', '--outDir', './commands',
-        './source/command-runner.ts'], { cwd: generation, encoding: 'utf8' });
+        ...commandEntries.map(name => `./source/${name}.ts`)], { cwd: generation, encoding: 'utf8' });
       if (compile.status !== 0) throw new Error(`Command launcher compilation failed (${compile.status}): ${compile.stdout}${compile.stderr}`);
       const commandFiles = filesIn(generation, ['commands']);
-      if (!commandFiles.includes('commands/command-runner.js') || !readFileSync(path.join(generation, 'commands/build-identity.js')).includes(encoded)) {
+      if (commandEntries.some(name => !commandFiles.includes(`commands/${name}.js`)) || !readFileSync(path.join(generation, 'commands/build-identity.js')).includes(encoded)) {
         throw new Error('Command launcher identity or entry is missing');
       }
       for (const file of commandFiles) artifacts[file] = sha256(readFileSync(path.join(generation, file)));
@@ -219,6 +220,8 @@ export async function build(root) {
       snapshot: { sha256: contentDigest(generation, filesIn(generation, entries, true)), entries,
         server: installManifest.bb.server, host: installManifest.bb.host, skills: installManifest.bb.skills },
       ...(capturedCompiler.length ? { commandLauncher: 'commands/command-runner.js', commandCompiler: toolchainIdentity(capturedCompiler.map(compiler => ({ ...compiler, directory: path.join(generation, 'inputs/toolchain/node_modules', compiler.name) }))) } : {}),
+      ...(commandEntries.includes('record-command') ? { commandRecorder: 'commands/record-command.js' } : {}),
+      ...(commandEntries.includes('evidence-prepare') ? { evidencePreparer: 'commands/evidence-prepare.js' } : {}),
       artifacts, builtWith: metadata.builtWith };
     writeFileSync(path.join(generation, 'dist/build-manifest.json'), JSON.stringify(result, null, 2) + '\n');
     mkdirSync(path.join(root, 'dist'), { recursive: true });

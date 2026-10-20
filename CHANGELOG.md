@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Prepare BB review evidence from finalized command originals and actual upload
+  results with shipped local recorder and assembler entries. Admitted commands
+  retain terminal launcher proof; explicit historical indexes keep required old
+  findings and failures available without replaying unrelated archived payloads.
+  Evidence formatting never executes a gate or changes its recorded outcome.
 - Allow independent ordinary suites and gates without a global machine lease
   after worktree, output, temporary-root and writable-cache isolation. Optional
   FIFO/keyed leases remain for named conflicts and controlled measurements;

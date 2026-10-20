@@ -764,6 +764,124 @@ evidence. Attachment sender lookup includes `task` and `result` messages before
 and after acknowledgement or reload. This recorder is not an authorization or actor-authentication
 tool. Shell pipeline executables are unsupported.
 
+### Compact current review evidence
+
+Give the worker this recipe, the exact constructor input and owned paths before
+the first relevant mechanical check. Use entries from the same immutable build
+generation. Capture the checked launcher itself, so its finalization outcome
+survives alongside the executed command:
+
+```sh
+node <generation>/commands/record-command.js --output /absolute/owned/terminal --by ACTOR -- node <generation>/commands/command-runner.js --admission /absolute/owned/command.json --output /absolute/owned/run --by ACTOR -- EXECUTABLE ARGS
+```
+
+Run the outer recorder from the exact granted command cwd, using the native
+execution tool's workdir; both original receipts must retain that cwd and source.
+Await the outer recorder's return. Keep both original receipts and all four raw
+streams, including errors or denied calls, and the exact admission JSON. The
+inner receipt's `complete: true` alone does not establish launcher finalization:
+finalization can fail after that receipt is closed. The outer receipt is a
+`verification` command, not another gate; its exact invocation and terminal
+stdout bind the finalized inner receipt and admission. An unsuccessful terminal
+outcome cannot become passing admitted evidence.
+
+The constructor runs in two local steps with the existing uploader between them:
+
+```sh
+node <generation>/commands/evidence-prepare.js --input /absolute/owned/evidence.json --stage /absolute/owned/staged
+bb promptobus evidence upload --task TASK --file /absolute/owned/staged/gate.txt --to REVIEWER
+node <generation>/commands/evidence-prepare.js --input /absolute/owned/evidence.json --uploads /absolute/owned/uploads.json
+```
+
+The upload line illustrates one plan entry: upload **every** path in
+`staged/upload-plan.json` that has not already landed, including originals.
+Reuse the actual original upload result for already landed immutable history;
+reuploading it creates different IDs from those in its index. Save each actual
+upload result under its absolute path in `uploads.json`. Keep returned `parts` order; their
+actual IDs, sender, `size` and hash become ordered manifest refs with `bytes`.
+Do not sort IDs or infer them from a filename. Staging reserves deterministic
+`gate.txt`, `handover.txt` and `upload-plan.json` files without overwriting them.
+The last step prints the typed manifest after local original/metadata consistency
+checks; reviewer admission still reads actual landed parts and checks their
+sender, bytes, hashes and current source independently.
+
+The constructor does not run commands or suites or upload evidence. It derives
+commands and gate counts from finalized originals, retaining the supplied five
+check details and original inventories. Missing or incomplete originals refuse.
+Repair packaging from retained originals without rerunning an unchanged suite.
+No receipt, PASS, upload ID or `notRun` execution is synthesized.
+
+The exact input is `evidencePreparationSchema` in `evidence-builder.ts`. This
+minimal current-plus-support input uses the owner's actual `source`, `base`,
+`producer`, `relayer`, `requiredGates`, `requirePassingGates` and all five
+`checks`; they are values, not inferred defaults. The paths name retained
+original files from the capture above:
+
+```js
+const input = {
+  source, base, producer, relayer, requiredGates, requirePassingGates, checks,
+  commands: [
+    { receipt: '/absolute/owned/run.receipt.txt', kind: 'gate',
+      finalization: { receipt: '/absolute/owned/terminal.receipt.txt',
+        admission: '/absolute/owned/command.json' } },
+    { receipt: '/absolute/owned/terminal.receipt.txt', kind: 'verification' },
+  ],
+  inventories: { base: '/absolute/owned/base-inventory.txt',
+    source: '/absolute/owned/source-inventory.txt' },
+  derived: '/absolute/owned/staged',
+  support: { index: '/absolute/owned/history-index.txt',
+    required: [
+      { id: 'previous-finding', reason: 'The changed path addresses this finding.' },
+      { id: 'previous-failure', reason: 'The earlier failure remains relevant.' },
+    ],
+    originals: ['/absolute/owned/previous-finding.txt',
+      '/absolute/owned/previous-failure.receipt.txt',
+      '/absolute/owned/previous-failure.stdout.txt',
+      '/absolute/owned/previous-failure.stderr.txt'] },
+};
+```
+
+Write that object as UTF-8 JSON to `evidence.json`. `--stage` must equal `derived`.
+Each inventory JSON carries its exact `tree`, `by` and either supported complete
+`node-spec-flat` names/raw scope or truthful `status: 'notMeasured'` and `reason`.
+Optional `inventoryRaw: [ABSOLUTE_PATH, ...]` supplies original inventory raw
+files, whose actual upload IDs already match that inventory's raw scope. Do not
+claim a certified verdict-name comparison from an unsupported format. Current
+gate/handover/inventory/receipt JSON records require one artifact each; raw streams
+and the history index can use ordered multipart scopes.
+
+`history-index.txt` is immutable JSON with `version: 1`, `artifacts` and `entries`.
+Each `artifacts` item has `{ id, sender, producer, source, base, bytes, sha256 }`
+from the actual original upload. Each `entries` item has `{ id, kind, source,
+base, producer, raw }`, where `kind` is `finding`, `context`, `raw` or `receipt`
+and `raw` is `{ parts: [ACTUAL_ID, ...], bytes, sha256 }` in returned order. A
+`receipt` entry also has `streams: { stdout: RAW_SCOPE, stderr: RAW_SCOPE }`;
+all of its parts appear in the index's artifact metadata. The example's
+`previous-finding` and `previous-failure` are entry IDs selected by `required`,
+not fabricated upload IDs. The selected local originals and retained actual
+upload results must reconstruct those exact historical scopes. Other retained
+entries need metadata in the index, not local payloads in `originals`.
+
+Keep required current source/base, changed paths, bounded read roots and the
+complete current manifest in the initial assignment. The constructor does not
+replace source/diff reads. Current `artifacts/commands` keep strict current
+source, producer/relayer, original receipt/raw and required-gate validation.
+Optional `support` keeps an immutable multipart history index plus explicit
+required prior findings and failures. Each retains original source/base/producer,
+ordered raw parts, bytes/hashes and, for historical receipts, stdout/stderr. The
+index is validated and selected entries are read; unrelated historical
+read/status payloads remain retrievable on demand without mandatory replay.
+Historical errors remain errors and contribute zero current gates.
+
+The owner/reviewer explicitly selects relevance. A same-reviewer findings closure
+keeps exact changed source/paths, current evidence and relevant prior findings.
+The exact owner declaration hash covers the complete support selection; change
+it only with the matching declaration where required. Preserve token/epoch/source
+freshness, repository gates, independent review and current acceptance. Older
+strict readers may reject the optional field; compatibility needs the normal
+consumer check. Sender lookup can still read historical metadata, so fewer raw
+payload refs do not establish O(current) total I/O, caching or measured savings.
+
 ### Resource-scoped local commands
 
 Independent source work, setup/build, no-model capture, focused checks, ordinary
