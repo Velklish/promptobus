@@ -444,15 +444,17 @@ Source: `src/driver.ts`.
 Driver contract and driver registry, entry point "./driver".
 
 Driver — adapter of one harness: it launches a participant session, recognises its
-state, wakes it, and can stop it. Which harness it is — the package does not know
-and has no right to know: only the contract is declared here, and the drivers
-themselves live at the consumer. The registry is passed into core EXPLICITLY, as a
+state, wakes it, and can stop it. The core contract in `src/driver.ts` is
+harness-neutral. The package ships native drivers in `lib/driver-claude.js`,
+`lib/driver-cursor.js`, `lib/driver-codex.js` and `lib/driver-opencode.js`;
+`lib/drivers.js` constructs their registry. Host binary lookup uses
+`resolveToolBin`; the documented environment overrides still select the binary.
+The registry is passed into core EXPLICITLY, as a
 `harness → driver` map, and an unknown harness refuses BEFORE anything changes in
 the store: a refusal after writing the participant would leave in the task journal
 a participant with nothing to wake it by.
 
-Constraint invisible from this file: no harness name is here and none can be —
-the package set gate watches for that.
+No harness name belongs in `src/driver.ts`; the package set gate watches that boundary.
 
 `normalizeTool?(tool, context)` is an optional pre-launch hook. Core calls it after
 `resolveToolBin` and before refusal, launch and provenance recording; a driver may use it to

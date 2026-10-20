@@ -246,9 +246,11 @@ it is time to knock, which messages to show, who stalled, and who has already
 been reported. There is no delivery channel here, and no text: the channel
 comes from the driver via `activate`, and the same driver renders the text —
 the frame and the words belong to the harness channel, not the bus. There is
-also no process here: the detached launcher, the `fs.watch` observers, and the
-loop live at the consumer, because a process death costs nothing by
-construction — the entire state sits in the task store.
+also no process in `src/supervisor.ts`. The package owns this process in
+`lib/warden.js`: the detached launcher, the `fs.watch` observers and the daemon
+loop. The Host supplies `nodePath()` and `busArgv(...)`; the launcher derives its
+child environment from the supplied environment and sets `PROMPTOBUS_HOME`.
+A process death costs nothing by construction — the entire state sits in the task store.
 
 The intervals this machine runs on are not in this guide: `TICK_MS`,
 `KNOCK_RETRY_SEC`, `KNOCK_COALESCE_SEC`, `SILENCE_SEC`, `WARDEN_TOTAL_SEC`, `WARDEN_ABSOLUTE_SEC`,

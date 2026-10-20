@@ -296,6 +296,13 @@ creation intent for `recover()`.
 
 `openEngine({ root, policy })` or `openEngine({ home, policy })`. Exactly one of `root` / `home`. `policy` is required at open: a callback `{ allow: true } | { deny: true, reason }` per sender/recipient pair.
 
+The optional `EngineOptions` fields are:
+
+- `now?: Clock`: a `() => Date` clock for record timestamps; the default reads the current time.
+- `faults?: FaultHook`: the test-only fault-injection callback described above; production omits it.
+- `recover?: boolean`: defaults to `true` and runs recovery at open. With `false`, the caller invokes `recover()` explicitly to inspect its result.
+- `cli?: string | null`: the reader/Host version for journal compatibility diagnostics; the default is `null`. The package version is independent of this reader/Host version.
+
 The engine does not wake anyone. It returns activation events. The warden and the driver wake the session.
 
 Recovery is local to one intent. `RecoverResult` carries `repairs`, activation `events`, unreadable `broken` records, and `failed` fan-outs. A classified hard-link refusal adds `{ task, message, code: "link-refused", note }` to `failed`, leaves the intent for the next pass, and continues through the other intents and tasks. If materialization finds that both the intent and canon are gone, the same entry instead carries `code: "intent-lost"`: the message is permanently lost and will not be retried, but recovery still continues. Neither result aborts `openEngine({ recover: true })`. Other exceptions escape; recovery does not hide programmer errors or broaden the filesystem refusal taxonomy. A classified refusal while creating a recipient inbox directory uses the same `link-refused` classification, leaves the intent for retry, and does not abort open-time recovery. Mkdir errnos outside that hard-link list are classified only for this set: `EROFS` and `ENOSPC` are `dir-blocked` (delivered once the volume is writable again, or has space); `EEXIST` and `ENOTDIR` are `dir-occupied` (remove or move the stray file the error names); `ENOENT` and `ELOOP` are `dir-occupied` on the canonical directory and on a recipient directory (a dangling symlink, or a symlink loop). A `dir-blocked` refusal tells the sender the message is already committed and is delivered once the volume is writable again or has space, and a `dir-occupied` refusal says it is delivered once the path is clear; either way the sender must not resend. Any other mkdir errno escapes raw. A link `ENOENT` — the intent file itself gone, and no canon — is still `intent-lost`. The classified codes carry the errno and the path, leave the intent open, and do not abort open-time recovery. The no-argument `recover()` and `history()` operations cover readable tasks only; callers that need unreadable task journals pair them with `listTasks().broken`, while `RecoverResult.broken` remains for unreadable records inside a readable task.
@@ -408,6 +415,16 @@ The orchestrator mailbox is owned by the session that opened the task. Another s
 Source: `src/v1/messages.ts`, `src/v1/message-order.ts`.
 
 Recoverable fan-out, mailbox, and history protocol v1.
+
+`engine.history({ task?, participant?, limit?, before?, all?, strict? })` returns
+a `HistoryPage` with `entries: HistoryEntry[]`, `cursor: string | null`, and
+`broken: BrokenNote[]`. Each entry carries `task`, `participant` and `message`.
+The `task` and `participant` fields filter the query; omitting `task` covers readable tasks.
+Each page runs from old to new. `limit` defaults to 50 records; `all: true` removes
+the limit. `strict: true` refuses unreadable history directories.
+Pass the opaque `cursor` unchanged as `before` for the next older page;
+`null` means there is nothing older. The cursor's encoding belongs to the package
+and must not be assembled by hand.
 
 **Message IDs order commits within one store, not wall-clock time.** The existing
 timestamp/counter/random-tail grammar is retained. At intent commit the engine

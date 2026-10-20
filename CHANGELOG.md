@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Correct package ownership of the warden runtime and native drivers. Document
+  the existing public engine options and history page contract, including the
+  reader/Host version and opaque cursors toward older pages.
+
 - Replace weak quoting, credential-priority and driver-registry predicates with
   behavior checks. Keep one import scanner and ADR inventory, replace the BB
   command-grant toy model with explicit text contracts and retained production

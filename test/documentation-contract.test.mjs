@@ -72,6 +72,35 @@ check('docs: the index names positive send binding and the three-harness approve
   JSON.stringify([...indexRows].filter(([name]) => /^adr-(019|024)-/.test(name))));
 
 const protocol = read('docs/reference/04-protocol.md');
+const wardenRuntime = compact(section(read('docs/guides/hooks-and-trust.md'),
+  '## The warden state machine: what is here and what is not').split('\n### ')[0]);
+check('docs: the package owns the warden runtime and the Host supplies launch inputs',
+  /\bpackage\b.{0,60}\b(?:owns|implements)\b.{0,60}`lib\/warden\.js`/i.test(wardenRuntime)
+  && ['detached', 'fs.watch', 'loop', 'Host', 'nodePath()', 'busArgv', 'environment']
+    .every((term) => wardenRuntime.includes(term)),
+  'the warden process must belong to lib/warden.js with explicit Host launch inputs');
+
+const engineOptions = section(protocol, '## Engine');
+check('docs: EngineOptions documents injected seams and the reader version',
+  ['now?: Clock', '() => Date', 'faults?: FaultHook', 'recover?: boolean', 'cli?: string | null']
+    .every((type) => has(engineOptions, type))
+  && /\brecover\b[\s\S]{0,80}\btrue\b/.test(engineOptions)
+  && /\bcli\b[\s\S]{0,100}reader\/Host version/.test(engineOptions)
+  && /package version[\s\S]{0,60}independent/.test(engineOptions),
+  'the injected clock, fault seam, open recovery and reader/Host version must remain distinct');
+
+const historyContract = section(protocol, '### Messages: names, order and what a read marks');
+check('docs: history exposes a typed page and an opaque cursor toward older records',
+  ['task?', 'participant?', 'limit?', 'before?', 'all?', 'strict?', 'HistoryPage',
+    'entries: HistoryEntry[]', 'cursor: string | null', 'broken: BrokenNote[]']
+    .every((type) => has(historyContract, type))
+  && /\bopaque\b[\s\S]{0,40}\bcursor\b[\s\S]{0,80}\bbefore\b[\s\S]{0,80}\bolder\b/.test(historyContract)
+  && /\bnull\b[\s\S]{0,40}\bnothing older\b/.test(historyContract)
+  && /\bold to new\b/.test(historyContract)
+  && /all: true[\s\S]{0,60}\blimit\b/.test(historyContract)
+  && /strict: true[\s\S]{0,80}\bunreadable\b[\s\S]{0,30}\bdirectories\b/.test(historyContract),
+  'history must document its filters, response and unchanged cursor as before for the next older page');
+
 const bbEvidence = section(protocol, '#### Manifest before reviewer launch');
 const bbGuide = read('integrations/bb/README.md');
 check('docs: BB evidence preparation follows terminal launcher capture before the first check',
@@ -132,6 +161,12 @@ check('docs: claim distinguishes enforced identity checks from owner liveness',
 
 const cli = read('docs/reference/03-cli.md');
 const drivers = read('docs/reference/05-drivers.md');
+const driverContract = compact(section(drivers, '### The driver contract'));
+check('docs: the package ships native drivers behind a harness-neutral core contract',
+  /\bpackage\b.{0,60}\b(?:ships|provides)\b.{0,60}\bdrivers\b/i.test(driverContract)
+  && ['lib/drivers.js', 'src/driver.ts', 'harness-neutral', 'Host', 'resolveToolBin', 'environment']
+    .every((term) => driverContract.includes(term)),
+  'packaged native implementations and registry must stay distinct from core and Host binary lookup');
 const spawn = section(cli, '## Spawn');
 const codexPhrases = section(drivers, '### Codex: the phrases a participant is addressed by');
 check('docs: Codex home inventory includes conditional hooks and auth',
