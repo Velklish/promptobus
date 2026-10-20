@@ -8,7 +8,7 @@ The bus does not search for a workspace. The caller passes `PromptobusHost` (`sr
 
 ## What the host must answer
 
-The table below is pinned to the current `PromptobusHost` declaration in `src/host.ts`: five readonly identity fields and 49 methods. The last column records the meaning of a nullable or absent result; an empty array, empty string, `false`, or an object with optional fields absent has the ordinary meaning stated there.
+The table below is pinned to the current `PromptobusHost` declaration in `src/host.ts`: five readonly identity fields and 50 methods. The last column records the meaning of a nullable or absent result; an empty array, empty string, `false`, or an object with optional fields absent has the ordinary meaning stated there.
 
 | Member | Signature | Meaning of `null` or an absent answer |
 |---|---|---|
@@ -35,6 +35,7 @@ The table below is pinned to the current `PromptobusHost` declaration in `src/ho
 | `pluginSkillsRel` | `pluginSkillsRel(): string` | Never absent; it is the workspace-relative plugin-skills path. |
 | `declaredTools` | `declaredTools(): string[]` | Never `null`; an empty array means the workspace declares no harnesses. |
 | `collectRules` | `collectRules(repoDir: string): string[]` | Never `null`; an empty array means no rule files were found for the repository. |
+| `selectParticipantContext` | `selectParticipantContext?(input: HostParticipantContextRequest): HostParticipantContextSelection` | Optional task/role selection of exact rule files, their declared required dependencies and skill roots, with reasons. Absent preserves legacy BB context collection; present requires an explicit task id and purpose. |
 | `moduleNote` | `moduleNote(repoDir: string): HostModuleNote` | Never absent; the note is `info` or `warn` even when the repository has no module-specific guidance. |
 | `resolveRepoModule` | `resolveRepoModule(repoDir: string): HostRepoModule \| null` | `null` means no repository module metadata applies. |
 | `reviewSkillDir` | `reviewSkillDir(name: string, repoDir?: string): string` | Selected review skill; a missing path is reported separately. |

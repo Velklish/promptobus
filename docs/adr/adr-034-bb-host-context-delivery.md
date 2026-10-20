@@ -1,4 +1,4 @@
-# ADR-034 · Deliver full Host context and classified canonical calls through the BB host entry
+# ADR-034 · Deliver full selected Host context and classified canonical calls through the BB host entry
 
 **Status:** Accepted
 **Date:** 2026-10-08
@@ -14,10 +14,26 @@ wrong repository rules.
 ## Decision
 
 The exported `promptobus/bb-host` integration collects the consumer Host's ordered
-rule files and complete canonical skill text. The initial assignment carries that
+rule files and complete selected canonical skill text. Without an optional
+selector it preserves legacy full collection. The initial assignment carries that
 context after preparation of the actual environment. Optional consumer preparation
 runs the consumer's source generator before collection; it does not edit generated
 adapters. Rules retain the Host's highest-precedence-first order.
+
+The optional `selectParticipantContext` callback receives the actual repository,
+role and owner-controlled task id/purpose. It declares exact rule files, their
+complete required dependency closure and applicable skill roots with reasons.
+Mandatory authority, permission and ownership rules remain the consumer's
+responsibility; the module review skill remains required. Core validates the
+declared graph but does not infer undeclared dependencies, crawl Markdown or
+hardcode a personal profile. Technical, user-facing and author-voice purposes
+allow the consumer to select the applicable context mechanically.
+
+Preparation persists canonical sources, reasons, dependency edges and a maximum
+tool/resource selection. Later selection can narrow; expansion or a vanished
+selector refuses before unprepared payload reads and requires preparation again.
+Current tool classification can remove access, but cannot add an unprepared tool
+or promote read access to write. Exact-file and symlink guards remain intact.
 
 The plugin supplies two native tools for context/resource reads and canonical
 calls. SDK thread/project checks and canonical engine checks authenticate each
@@ -45,3 +61,8 @@ file and context to 1 MiB. Tool calls recollect admission for every invocation.
 A live native session's tool inventory is fixed: changing Host context or plugin
 source requires new participants, not an assumption that reload mutates existing
 Codex sessions. The complete role workflow still requires its own evidence.
+
+Selected Host payload is separate from BB data-directory/workspace instructions,
+provider-native discovery and forked conversation history. Filtering this payload
+does not establish ambient context isolation. Unsupported public controls remain
+an integration dependency, and selected bytes do not establish token savings.

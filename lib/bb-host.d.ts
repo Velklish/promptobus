@@ -1,14 +1,22 @@
-import type { MessageV1, PromptobusHost, TaskV1 } from '../dist/index.js';
+import type { HostParticipantContextTask, MessageV1, PromptobusHost, TaskV1 } from '../dist/index.js';
 
+export interface BbHostSelection {
+  task: HostParticipantContextTask;
+  rules: { path: string; reason: string; requires: string[] }[];
+  skills: { name: string; root: string; reason: string }[];
+}
 export interface BbHostContext {
   rules: { path: string; text: string }[];
   skills: { name: string; path: string; text: string; root: string }[];
   tools: { server: string; tool: string; description: string; inputSchema: unknown; access: 'read' | 'write' }[];
+  selection?: BbHostSelection;
 }
-export interface BbHostInput { root: string; role: string; signal?: AbortSignal }
+export interface BbHostInput {
+  root: string; role: string; task?: HostParticipantContextTask; preparedContext?: BbHostContext; signal?: AbortSignal;
+}
 export interface BbCanonicalTool { name: string; description: string; inputSchema: unknown; access: 'read' | 'write' }
 export type BbContextHost = Pick<PromptobusHost, 'collectRules' | 'skillsDir' | 'resolveRepoModule' | 'reviewSkillDir'
-  | 'participantServers' | 'participantDenyTools' | 'participantDenyToolsByKind' | 'pipeline'>;
+  | 'participantServers' | 'participantDenyTools' | 'participantDenyToolsByKind' | 'pipeline' | 'selectParticipantContext'>;
 export interface BbCanonicalInput {
   server: string; configuration: unknown; root: string; signal?: AbortSignal;
 }

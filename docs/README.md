@@ -40,8 +40,8 @@ The canonical project documentation. For current work, use `npx --no-install bac
 | [adr/adr-031-bb-environment-lifecycle.md](adr/adr-031-bb-environment-lifecycle.md) | BB owns participant environments; the stable coordinator retains unaccepted snapshots before archive | Accepted |
 | [adr/adr-032-bb-wake-recovery.md](adr/adr-032-bb-wake-recovery.md) | BB wake hints use durable replay and bounded continuation; plugin Stop persists pause independently of SDK state | Accepted |
 | [adr/adr-033-bb-provider-routing.md](adr/adr-033-bb-provider-routing.md) | BB keeps provider/model/reasoning and scoped quota explicit; native routing and defaults retain their contract | Accepted |
-| [adr/adr-034-bb-host-context-delivery.md](adr/adr-034-bb-host-context-delivery.md) | BB delivers full Host rules/skills and authenticated canonical calls through a consumer-owned Host adapter | Accepted |
-| [adr/adr-035-bb-role-workflow-support.md](adr/adr-035-bb-role-workflow-support.md) | BB approver admission reuses factual pipeline currency; full support requires measured six-role profile evidence | Accepted |
+| [adr/adr-034-bb-host-context-delivery.md](adr/adr-034-bb-host-context-delivery.md) | BB delivers full selected Host rules/skills and authenticated canonical calls through a consumer-owned Host adapter | Accepted |
+| [adr/adr-035-bb-role-workflow-support.md](adr/adr-035-bb-role-workflow-support.md) | BB keeps predecessor admission factual and binds explicit owner acceptance to independent current-source review and passing evidence | Accepted |
 
 | [adr/adr-036-live-run-owned-cleanup.md](adr/adr-036-live-run-owned-cleanup.md) | Live E2E abort cleanup proves its exact session and process lifecycle before deleting the stand; participant live runs have fresh task identities | Accepted |
 | [adr/adr-037-bb-current-control-authority.md](adr/adr-037-bb-current-control-authority.md) | BB admissions recheck owner-published current control through an immutable reference; revisioned updates and terminal token records preserve revocation | Accepted |

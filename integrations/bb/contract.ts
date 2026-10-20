@@ -11,6 +11,7 @@ export const engineInput = z.discriminatedUnion('operation', [
   z.object({ ...bound, operation: z.literal('check') }).strict(),
   z.object({ ...bound, operation: z.literal('assignment') }).strict(),
   z.object({ ...bound, operation: z.literal('step'), worker: z.string(), reviewer: z.string() }).strict(),
+  z.object({ ...bound, operation: z.literal('accept'), reviewer: bindingSchema, resultId: z.string().min(1) }).strict(),
   z.object({ ...bound, operation: z.literal('pending') }).strict(),
   z.object({ ...bound, operation: z.literal('preserve'), content: z.string().max(10_000_000) }).strict(),
   z.object({ ...bound, operation: z.literal('send'), args: sendSchema }).strict(),

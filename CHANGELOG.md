@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add explicit logical BB task acceptance for the existing owner/executor and
+  independent reviewer, bound to the current canonical result and passing source
+  evidence. Preserve complete bounded reports and separate physical task close.
+- Add optional role/task-aware Host context selection with declared rule
+  dependencies, selected skill roots and prepared resource/tool limits. Legacy
+  collection remains compatible; ambient BB/provider instructions retain a
+  separate integration boundary.
 - Prepare BB review evidence from finalized command originals and actual upload
   results with shipped local recorder and assembler entries. Admitted commands
   retain terminal launcher proof; explicit historical indexes keep required old

@@ -542,16 +542,113 @@ This variant has the same plugin id `promptobus` and replaces the default varian
 it is not a second parallel plugin.
 
 An optional `prepareEnvironment` callback runs the consumer's generator for the
-actual environment before collection. Existing and newly provisioned environments
-receive full rules and canonical skill text in their assignment, beyond BB's
-4096-character dynamic instructions limit. `promptobus_host_context` can read
-additional declared skill resources; it grants no arbitrary workspace read.
+actual environment before collection. Without a context selector, existing and
+newly provisioned environments retain legacy full-rule and canonical-skill
+collection. A consumer can implement the optional Host
+`selectParticipantContext({ repoDir, role, task: { id, purpose } })` callback.
+It returns `rules: [{ path, reason, requires? }]` and
+`skills: [{ name, root, reason }]`. Purposes are `technical`, `user-facing` and
+`author-voice`; the owner chooses the purpose, not a participant tool argument.
+New bindings explicitly default to `technical`; legacy serialized fields remain
+optional and gain no schema default.
+
+The consumer must select all mandatory authorization, permission, ownership and
+repository instructions, including the complete declared required-rule closure.
+Core validates exact files and dependency edges; it cannot infer an undeclared
+semantic dependency. It reads only the selected rule files and selected
+`SKILL.md` files, plus the mandatory module review skill. It does not hardcode a
+personal profile name or crawl Markdown links. Selected reasons and canonical
+paths/roots are retained in `hostContext.selection`. A missing or unreadable
+declared dependency refuses preparation rather than silently dropping it.
+
+Preparation establishes the maximum resource and tool selection for that
+binding. Later Host reads may narrow it, but a newly selected rule, skill or
+required dependency refuses before its payload is read and requires preparation
+again. Removing the selector from a selected binding refuses instead of falling
+back to loading everything. Current tool classification can remove permissions;
+it cannot add an unprepared tool or turn prepared read access into write access.
+Exact-file, selected-skill-root and symlink guards remain in force.
+
+Assignments carry the complete selected text beyond BB's 4096-character dynamic
+instructions limit. `promptobus_host_context` can read additional resources
+within selected skill roots; it grants no arbitrary workspace read.
 `promptobus_host_call` derives role/root/actor from the binding and freshly checks
 admission before callback dispatch. Tools appear only when the collected context
 requires them. A running Codex session keeps its native tool inventory: after a
 source/context change regenerate the consumer if needed, run `npm run build`,
 explicitly install the new generation and create fresh participants.
 Never hand-edit generated adapters or assume reload changes an existing session.
+
+This selection controls the Promptobus-rendered payload. BB user/workspace
+instructions, provider-native discovery and inherited conversation context are
+separate layers. The inspected BB 0.46.1 guide and installed SDK 0.6.15 do not
+document a per-thread removal policy for those ambient instructions; the saved
+official BB source uses SDK 0.6.49, whose parity was not established. Until a
+supported ambient contract is available, selected payload tests do not prove
+complete worker-context isolation. Selected bytes are not measured tokens.
+
+## Minimal owner and reviewer workflow
+
+The default uses the existing task owner as executor and one fresh independent
+reviewer. Preparation, gates, evidence assembly and integration bookkeeping run
+through their existing authorized code. No additional model is required solely
+to repeat packaging metadata. Additional roles remain available for an explicit
+responsibility; the global pipeline and optional approver checks are unchanged.
+
+Supply the reviewer with the full current diff, exact source/base, current
+required evidence and relevant prior findings. Do not include the executor's
+private reasoning. Findings require a repaired source and fresh review assignment;
+an old result does not accept the new source. Existing fresh-phase Stop and
+context-reset requirements still apply and retain their external limitations.
+
+The terminal reviewer result preserves the existing four-line header, full
+findings or numbered status parts, completion marker and final all-calls release.
+Before the completion marker and release it includes exactly one standalone
+`Acceptance decision: {JSON}` line. Its strict JSON object has:
+
+```json
+{
+  "format": "bb-review-decision-v1",
+  "task": "TASK",
+  "reviewer": "REVIEWER",
+  "assignmentAfterId": "CURRENT_BOUNDARY",
+  "source": "FULL_CURRENT_SOURCE_SHA",
+  "base": "FULL_BASE_SHA",
+  "producer": "AUTHENTICATED_PRODUCER",
+  "evidenceManifestSha256": "CURRENT_MANIFEST_SHA256",
+  "decision": "pass",
+  "findings": { "critical": 0, "major": 0 }
+}
+```
+
+The example values are placeholders. Copy identities from the authenticated
+current reviewer task projection; a reviewer does not run a hashing command.
+`decision` is `pass` or `changes-required`; pass requires zero critical and major
+findings. The entire serialized result, including the decision line, remains
+within 2400 characters. Plain prose results remain authentic facts, but do not
+supply this acceptance decision. Missing, duplicated or malformed decision lines
+refuse acceptance.
+
+After reading every full report part and checking its completion/release, the
+current owner explicitly invokes:
+
+```sh
+bb promptobus task accept --task TASK --reviewer REVIEWER --result RESULT_ID
+```
+
+The runtime revalidates current owner authority, the canonical independent
+reviewer, the exact latest result after the current assignment, matching
+source/base/producer/manifest identity and actual required passing evidence.
+It rechecks the canonical owner binding inside the existing task lock before
+appending the acceptance record. A completed review may have an ended grant;
+acceptance does not revive it. SDK/source checks are point-in-time checks, not a
+continuous source-write lock.
+
+Success appends a logical `bb-task-acceptance-v1` journal status with
+`physicalClose: false`. It does not certify report completeness, Stop, drained
+calls, canonical task done, integration, release or installation. Full report
+checking remains the owner's explicit duty; physical task close retains its
+separate proof requirements and unresolved BB dependencies.
 
 ## Approver admission and workflow support
 

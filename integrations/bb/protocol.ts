@@ -18,10 +18,16 @@ export const executionSchema = z.object({
   }).strict(),
 }).strict();
 export type ExecutionSelection = z.infer<typeof executionSchema>;
+export const contextPurposeSchema = z.enum(['technical', 'user-facing', 'author-voice']);
 export const hostContextSchema = z.object({
   rules: z.array(z.object({ path: z.string(), text: z.string() }).strict()),
   skills: z.array(z.object({ name: z.string(), path: z.string(), text: z.string(), root: z.string() }).strict()),
   tools: z.array(z.object({ server: z.string(), tool: z.string(), description: z.string(), inputSchema: z.unknown(), access: z.enum(['read', 'write']) }).strict()),
+  selection: z.object({
+    task: z.object({ id: z.string().min(1), purpose: contextPurposeSchema }).strict(),
+    rules: z.array(z.object({ path: z.string().min(1), reason: z.string().min(1), requires: z.array(z.string().min(1)) }).strict()),
+    skills: z.array(z.object({ name: z.string().min(1), root: z.string().min(1), reason: z.string().min(1) }).strict()),
+  }).strict().optional(),
 }).strict();
 export const hostReadSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('inspect') }).strict(),
@@ -40,6 +46,7 @@ export const bindingSchema = z.object({
   preservation: z.object({ artifactId: z.string(), sha256: z.string(), at: z.string() }).strict().optional(),
   display: z.object({ label: z.string().trim().min(1), subject: z.string().trim().min(1), repository: z.string().trim().min(1) }).strict().optional(),
   execution: executionSchema.optional(),
+  contextPurpose: contextPurposeSchema.optional(),
   hostContext: hostContextSchema.optional(),
   launchContext: launchContextSchema.optional(),
   evidenceManifest: evidenceManifestSchema.optional(),

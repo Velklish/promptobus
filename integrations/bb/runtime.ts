@@ -55,7 +55,7 @@ export function registerRuntime(bb: BbPluginApi) {
     await currentControl(b, signal);
     signal?.throwIfAborted();
   };
-  const checkEvidence = async (b: Binding, reader: Binding, signal?: AbortSignal, snapshot = true) => {
+  const checkEvidence = async (b: Binding, reader: Binding, signal?: AbortSignal, snapshot = true, requirePassingGates = false) => {
     const review = b.launchContext?.review;
     if (!review) throw new Error('review evidence manifest requires the bounded original producer/source environment/base/gate scope');
     const producer = store.participant(b.task, review.producer);
@@ -90,7 +90,7 @@ export function registerRuntime(bb: BbPluginApi) {
       }
     }
     b.evidenceManifest = await validateReviewEvidence(b.evidenceManifest, { source: workspace.workspace.checkout.headSha, base: review.base,
-      producer: review.producer, requiredGates: review.requiredGates, requirePassingGates: review.requirePassingGates },
+      producer: review.producer, requiredGates: review.requiredGates, requirePassingGates: requirePassingGates || review.requirePassingGates },
     async id => await onHost(reader, { operation: 'artifact', args: { id } }, signal) as EvidenceArtifact);
   };
   const onHost = async (binding: Binding, request: Record<string, unknown>, signal?: AbortSignal) => {
@@ -377,6 +377,7 @@ export function registerRuntime(bb: BbPluginApi) {
     provider: { type: 'enum', values: SUPPORTED_PROVIDERS, description: 'Explicit BB provider; must match the role policy.' },
     'reasoning-level': { type: 'enum', values: reasoningSchema.options, description: 'Supported model reasoning level; defaults to its SDK catalog value.' },
     assignment: { type: 'string', required: true, stdin: true, description: 'Initial assignment text.' },
+    'context-purpose': { type: 'enum', values: ['technical', 'user-facing', 'author-voice'], description: 'Owner-selected context purpose; new tasks default to technical.' },
     'launch-context': { type: 'string', description: 'Required bounded JSON: complete role literal, owned/read roots, grant, current control route, preparation and owner quota policy.' },
   } as const;
   const participantOptions = { task: createOptions.task,
@@ -456,6 +457,7 @@ export function registerRuntime(bb: BbPluginApi) {
         const b = bindingSchema.parse({ task: options.task, participant: ORCHESTRATOR, role: ORCHESTRATOR, projectId: options.project,
           environmentId: options.environment, environmentPath: environment.path, hostId: local, providerId: 'codex', root: environment.path,
           token: randomUUID(), threadId: null, phase: 'pending',
+          contextPurpose: options['context-purpose'] ?? 'technical',
           display: { label: options['display-label'] ?? options.task, subject: options['display-subject'] ?? options.title,
             repository: options['repository-label'] ?? path.basename(environment.path) } });
         await recordBbWorkspace(bb, b, context.signal);
@@ -475,6 +477,7 @@ export function registerRuntime(bb: BbPluginApi) {
       ...participantOptions, ...displayOptions,
       role: { type: 'enum', values: roleSchema.options, required: true, description: 'Instruction role.' },
       model: createOptions.model, provider: createOptions.provider, 'reasoning-level': createOptions['reasoning-level'], assignment: createOptions.assignment,
+      'context-purpose': createOptions['context-purpose'],
       'launch-context': createOptions['launch-context'],
       'evidence-manifest': { type: 'string', description: 'Required reviewer original-artifact manifest JSON; every part must be readable before launch.' },
       environment: { type: 'string', description: 'Reuse an existing local BB environment; defaults to the coordinator.' },
@@ -506,6 +509,7 @@ export function registerRuntime(bb: BbPluginApi) {
         && other.role === 'worker' && other.phase === 'ready' && other.environmentId === (options.environment ?? owner.environmentId)) : [];
       const inherited = worker?.display ?? (sharedWorkers.length === 1 ? sharedWorkers[0].display : undefined);
       const b = bindingSchema.parse({ ...owner, participant: options.participant, role: options.role,
+        ...(options['context-purpose'] !== undefined ? { contextPurpose: options['context-purpose'] } : {}),
         display: { label: options['display-label'] ?? inherited?.label ?? owner.display?.label ?? options.task,
           subject: options['display-subject'] ?? inherited?.subject ?? options.participant,
           repository: options['repository-label'] ?? inherited?.repository ?? owner.display?.repository ?? path.basename(owner.root) },
@@ -577,6 +581,22 @@ export function registerRuntime(bb: BbPluginApi) {
       if (!b || b.phase !== 'ready') throw new Error('Task has no ready plugin-owned orchestrator');
       await requireThread(b, context.signal); await admit(b, context.signal);
       return { exitCode: 0, stdout: JSON.stringify(await onHost(b, { operation: 'uploadEvidence', file: options.file, to: options.to }, context.signal)) };
+    } }),
+    'task accept': cliCommand({ summary: 'Record logical exact-source acceptance after independent PASS and current passing evidence; does not close or stop the task.', options: {
+      task: createOptions.task,
+      reviewer: { type: 'string', required: true, description: 'Bound independent reviewer participant id.' },
+      result: { type: 'string', required: true, description: 'Exact latest canonical reviewer result message id.' },
+    }, async run({ options }, context) {
+      const owner = store.task(options.task), reviewer = store.participant(options.task, options.reviewer);
+      if (!owner?.threadId || owner.phase !== 'ready' || !reviewer?.threadId || reviewer.phase !== 'ready'
+        || reviewer.role !== REVIEWER || reviewer.threadId === owner.threadId
+        || reviewer.projectId !== owner.projectId || reviewer.hostId !== owner.hostId
+        || reviewer.lifecycleOwnerThreadId !== owner.threadId) throw new Error('Logical acceptance requires the ready owner and an independent bound reviewer');
+      await requireThread(owner, context.signal); await requireThread(reviewer, context.signal);
+      await admit(owner, context.signal);
+      await checkEvidence(reviewer, owner, context.signal, true, true);
+      await admit(owner, context.signal);
+      return { exitCode: 0, stdout: JSON.stringify(await onHost(owner, { operation: 'accept', reviewer, resultId: options.result }, context.signal)) };
     } }),
     'participant stop': cliCommand({ summary: 'Request Stop and check fresh runtime state; preserve the environment.', options: participantOptions,
       async run({ options }) {

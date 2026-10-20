@@ -562,3 +562,4 @@ The release reconciliation gives the [Codex-only journal lookup](#pb-372) the na
 - <a id="pb-385.1"></a>`PB-385.1-await-failed-artifact-writer-close` · 2026-10-20 · completed · — · Await failed artifact writer close before removing its temporary blob
 - <a id="pb-382"></a>`PB-382-optional-resource-scoped-machine-lease` · 2026-10-20 · completed · — · Isolated work must not require a global machine lease; lock only conflicting resources and controlled measurements
 - <a id="pb-383"></a>`PB-383-compact-current-review-evidence` · 2026-10-20 · completed · — · Orchestration review handoffs must use compact current evidence and a compatible collector from the first check
+- <a id="pb-388"></a>`PB-388-minimal-bb-task-workflow` · 2026-10-20 · completed · — · Design a minimal BB workflow with one executor and independent review

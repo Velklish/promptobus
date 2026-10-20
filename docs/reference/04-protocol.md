@@ -982,6 +982,43 @@ rejected. This is a procedural check in the selected role instructions; the bus
 does not assemble or validate report parts. A gap needs repair under the current
 grant, or a fresh grant when the old one ended. Partial findings remain partial.
 
+#### Logical acceptance decision
+
+The default BB task uses its existing owner as executor and one fresh independent
+reviewer. The optional approver pipeline remains available for an explicit
+responsibility. Preparation, required checks and evidence assembly use existing
+authorized code rather than another model solely for bookkeeping.
+
+For `bb promptobus task accept --task TASK --reviewer REVIEWER --result RESULT_ID`,
+the terminal reviewer result includes exactly one standalone
+`Acceptance decision: {JSON}` line before the completion marker and final release.
+It retains the four-line header, full findings and numbered status parts. Its
+whole serialized body, including the decision, remains within 2400 characters.
+
+The strict object carries `format: "bb-review-decision-v1"`, `task`, `reviewer`,
+`assignmentAfterId`, full `source` and `base`, authenticated `producer`,
+`evidenceManifestSha256`, `decision: "pass" | "changes-required"`, and
+`findings: { critical, major }`. The reviewer copies identities from its
+authenticated task projection; it does not execute a hashing command. Pass
+requires zero critical and major findings. Missing, duplicated or malformed
+decision lines refuse logical acceptance. Ordinary prose results remain valid
+journal facts but do not imply PASS.
+
+Acceptance requires the current owner's authority, canonical independent reviewer
+binding, exact latest result after the current causal assignment, exact current
+source/base/producer/manifest identity and actual required passing receipts. It
+revalidates the canonical owner binding under the existing task lock after
+asynchronous evidence validation. A valid finished review can be accepted after
+its reviewer grant ended; that grant is not revived. Source/SDK checks are
+point-in-time and do not continuously lock external source writes.
+
+The journal status is `bb-task-acceptance-v1` with `physicalClose: false`.
+Logical acceptance does not certify report completeness, physical Stop, drained
+calls, canonical task done, integration, release or installation. The complete
+report check above remains the owner's duty. Findings and source changes require
+fresh exact-source review; an earlier acceptance is never evidence for a later
+source. Physical task close retains its separate proof and BB dependencies.
+
 #### Manifest before reviewer launch
 
 The optional BB facade requires `--evidence-manifest` for a new reviewer. The

@@ -95,6 +95,7 @@ export {
 export type {
   HostClone, HostFreshness, HostLegacyLayout, HostModuleNote, HostRepo, HostRepoCandidate,
   HostMcpTool, HostMcpToolClassification, HostPipelineStep, HostRepoModule, HostRoutingOverlay, HostRoutingPaths, HostServers, HostToolBin, PromptobusHost,
+  HostParticipantContextPurpose, HostParticipantContextTask, HostParticipantContextRequest, HostParticipantContextSelection,
 } from './host.js';
 export { HOST_CONFIG, createStandaloneHost } from './standalone.js';
 export type { StandaloneHostOptions } from './standalone.js';

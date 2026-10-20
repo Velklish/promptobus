@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync, realpathSync, existsSync, renameSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -48,9 +50,10 @@ async function stand(t, options = {}) {
   let stopStatus = 'idle';
   let behindCount = 0;
   let baseRef;
+  let headSha = 'a'.repeat(40);
   let patches = [{ path: 'result.txt', patch: 'diff --git a/result.txt b/result.txt\nnew file mode 100644\n--- /dev/null\n+++ b/result.txt\n@@ -0,0 +1 @@\n+unaccepted result\n', truncated: false }];
   const workspace = env => ({ outcome: 'available', workspace: {
-    checkout: { kind: 'branch', headSha: env === 'env' ? 'a'.repeat(40) : 'b'.repeat(40) },
+    checkout: { kind: 'branch', headSha: env === 'env' ? headSha : 'b'.repeat(40) },
     branch: { currentBranch: env === 'env' ? 'main' : 'actual-bb-branch' },
     mergeBase: { files: [], behindCount, baseRef: baseRef ?? (env === 'env' ? 'a'.repeat(40) : 'b'.repeat(40)) },
     workingTree: { files: patches.map(p => ({ path: p.path, status: '??' })) },
@@ -231,7 +234,8 @@ async function stand(t, options = {}) {
   const create = async (extra = []) => {
     const launch = launchFixture(task, 'orchestrator', 'orchestrator', root);
     if (!options.noLaunchContext && !extra.includes('--launch-context')) await publish(launch);
-    return host.harness.behavior.runCli(['task', 'create', '--task', task, '--title', 'Engine test', '--project', 'project', '--environment', 'env', '--model', 'test-model', '--assignment', 'Read mailbox, then stop.',
+    return host.harness.behavior.runCli(['task', 'create', '--task', task, '--title', 'Engine test', '--project', 'project', '--environment', 'env', '--model', 'test-model',
+      ...(extra.includes('--assignment') ? [] : ['--assignment', 'Read mailbox, then stop.']),
       ...(options.noLaunchContext || extra.includes('--launch-context') ? [] : ['--launch-context', JSON.stringify(launch)]), ...await supplied(extra)]);
   };
   const add = async (id, role = 'worker', extra = []) => {
@@ -259,8 +263,185 @@ async function stand(t, options = {}) {
     finish(id, status = 'completed') { append(id, 'turn/completed', { status }); const thread = threads.get(id); thread.status = thread.runtime.displayStatus = 'idle'; },
     set stopStatus(value) { stopStatus = value; }, set patches(value) { patches = value; },
     set behindCount(value) { behindCount = value; }, set baseRef(value) { baseRef = value; },
+    set headSha(value) { headSha = value; },
     async reload() { host = await host.harness.lifecycle.reload(plugin); } };
 }
+
+const acceptReview = (s, resultId, reviewer = 'independent') => s.host.harness.behavior.runCli([
+  'task', 'accept', '--task', s.task, '--reviewer', reviewer, '--result', resultId,
+]);
+async function reviewResult(s, changes = {}, participant = 'independent', transform = body => body) {
+  const binding = bindingStore(s.host.bb).participant(s.task, participant);
+  const task = JSON.parse(await s.call(binding.threadId, 'promptobus_task'));
+  const { source, base, producer, evidenceManifestSha256 } = task.reviewEvidence;
+  const decision = { format: 'bb-review-decision-v1', task: s.task, reviewer: participant,
+    assignmentAfterId: task.assignmentAfterId, source, base, producer, evidenceManifestSha256,
+    decision: 'pass', findings: { critical: 0, major: 0 }, ...changes };
+  const body = `**Done** \u2014 Reviewed the full current diff; critical ${decision.findings.critical}, major ${decision.findings.major}.\n**Gate** \u2014 not run, reviewer runs no mechanics.\n**Open** \u2014 Fictional integration fixture.\n**Decide** \u2014 nothing.\nAcceptance decision: ${JSON.stringify(decision)}\nReview ${binding.launchContext.grant.token} complete 1/1\nAll-calls release: actor ${participant}, token ${binding.launchContext.grant.token}, completed scope source review, pending=0 and running=0.`;
+  assert.ok(body.length <= 2400);
+  return JSON.parse(await s.call(binding.threadId, 'promptobus_send', { to: ['orchestrator'], type: 'result', body: transform(body) }));
+}
+
+test('minimal owner execution and independent review repairs findings and accepts a fresh source with exactly two actors', async t => {
+  const s = await stand(t), privateReasoning = 'OWNER_PRIVATE_REASONING_SENTINEL';
+  const created = await s.create(['--assignment', `Read mailbox, then stop. ${privateReasoning}`]);
+  assert.equal(created.exitCode, 0, created.stderr);
+  assert.equal((await s.add('independent', 'reviewer')).exitCode, 0);
+  assert.equal(s.threads.size, 2);
+  assert.equal(s.spawns[1].prompt.includes(privateReasoning), false);
+  const engine = openEngine({ root: s.root, recover: false, policy: () => ({ allow: true }) });
+  const first = await reviewResult(s, { decision: 'changes-required', findings: { critical: 0, major: 1 } });
+  const rejected = await acceptReview(s, first.message.id);
+  assert.equal(rejected.exitCode, 1); assert.match(rejected.stderr, /requires PASS with zero critical and major/);
+  assert.equal(engine.facts(s.task).messages.some(m => m.type === 'result' && m.id === first.message.id), true);
+  const source = 'c'.repeat(40), base = 'a'.repeat(40);
+  s.headSha = source;
+  const stale = await acceptReview(s, first.message.id);
+  assert.equal(stale.exitCode, 1); assert.match(stale.stderr, /source mismatch/);
+  const evidence = await evidenceFixture(s.root, s.task, source, base);
+  const land = async content => {
+    const sent = JSON.parse(await s.call('thr-1', 'promptobus_send', { to: ['orchestrator'], type: 'artifact', body: 'Original relevant review history.',
+      artifact: { filename: 'review-history.txt', content } }));
+    return { id: sent.artifact.id, sender: 'orchestrator', bytes: Buffer.byteLength(content), sha256: digest(content) };
+  };
+  const finding = 'src/example.ts:3 [major] Preserve the required source check.\n';
+  const original = await land(finding);
+  const index = await land(JSON.stringify({ version: 1, artifacts: [{ ...original, producer: 'independent', source: base, base }],
+    entries: [{ id: 'prior-required-finding', kind: 'finding', source: base, base, producer: 'independent',
+      raw: { parts: [original.id], bytes: original.bytes, sha256: original.sha256 } }] }));
+  evidence.manifest.support = { artifacts: [{ ...index, producer: 'orchestrator', source, base }],
+    index: { parts: [index.id], bytes: index.bytes, sha256: index.sha256 },
+    required: [{ id: 'prior-required-finding', reason: 'Recheck this finding against the repaired full diff.' }] };
+  const launch = launchFixture(s.task, 'independent', 'reviewer', s.root);
+  launch.grant.token += '-repair'; launch.grant.phase = 'review-repair';
+  launch.review = { producer: 'orchestrator', producerBinding: 'participant', sourceEnvironmentId: 'env', base,
+    requiredGates: [['fiction', 'gate']], requirePassingGates: true };
+  await s.publish(launch); s.finish('thr-2');
+  const fullDiff = 'diff --git a/src/example.ts b/src/example.ts\n--- a/src/example.ts\n+++ b/src/example.ts\n@@ -1 +1 @@\n-missingCheck()\n+requiredCheck()\n';
+  const resumed = await s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', 'independent',
+    '--launch-context', JSON.stringify(launch), '--evidence-manifest', JSON.stringify(evidence.manifest),
+    '--assignment', `Read mailbox, then stop. Review the full diff ${base}..${source}; revisit prior-required-finding from ${index.id}.\n${fullDiff}`]);
+  assert.equal(resumed.exitCode, 0, resumed.stderr);
+  const fresh = bindingStore(s.host.bb).participant(s.task, 'independent');
+  assert.ok(fresh.phaseAssignment.includes(JSON.stringify(fullDiff).slice(1, -1))); assert.ok(fresh.phaseAssignment.includes(index.id));
+  assert.equal(fresh.phaseAssignment.includes(privateReasoning), false);
+  assert.equal(JSON.parse(await s.call('thr-2', 'promptobus_artifact', { id: original.id })).content, finding);
+  const passed = await reviewResult(s);
+  const current = JSON.parse(readFileSync(path.join(s.root, 'current-control/current.json'), 'utf8'));
+  delete current.grants.independent;
+  await s.publish(null, { grants: current.grants });
+  const before = [...s.events];
+  const accepted = await acceptReview(s, passed.message.id);
+  assert.equal(accepted.exitCode, 0, accepted.stderr);
+  assert.equal(JSON.parse(accepted.stdout).accepted, true); assert.equal(JSON.parse(accepted.stdout).physicalClose, false);
+  assert.equal(JSON.parse(accepted.stdout).source, source);
+  assert.equal(s.threads.size, 2); assert.equal(engine.readTask(s.task).status, 'active');
+  assert.deepEqual(s.events, before, 'Logical acceptance neither stops nor clears a context');
+  const record = engine.facts(s.task).messages.find(m => m.id === JSON.parse(accepted.stdout).messageId);
+  assert.equal(JSON.parse(record.body).resultId, passed.message.id);
+});
+
+test('logical acceptance refuses wrong decision scope, malformed metadata and a superseded result or assignment', async t => {
+  const s = await stand(t); await s.create(); await s.add('independent', 'reviewer');
+  for (const changes of [
+    { source: 'c'.repeat(40) }, { base: 'b'.repeat(40) }, { producer: 'different-author' },
+    { evidenceManifestSha256: 'b'.repeat(64) }, { assignmentAfterId: 'stale-assignment' },
+    { reviewer: 'orchestrator' }, { task: 'wrong-task' },
+    { decision: 'changes-required' }, { findings: { critical: 1, major: 0 } }, { findings: { critical: 0, major: 1 } },
+  ]) {
+    const result = await reviewResult(s, changes), rejected = await acceptReview(s, result.message.id);
+    assert.equal(rejected.exitCode, 1, JSON.stringify(changes)); assert.match(rejected.stderr, /decision .* mismatch|requires PASS/);
+  }
+  for (const transform of [
+    body => body.replace(/^Acceptance decision: .*\n/m, ''),
+    body => body.replace('Acceptance decision: ', 'Acceptance decision: {broken}\nAcceptance decision: '),
+    body => body.replace(/^Acceptance decision: .*$/m, 'Acceptance decision: {broken}'),
+  ]) {
+    const result = await reviewResult(s, {}, 'independent', transform), rejected = await acceptReview(s, result.message.id);
+    assert.equal(rejected.exitCode, 1); assert.match(rejected.stderr, /Acceptance decision|strict bb-review-decision/);
+  }
+  const old = await reviewResult(s), latest = await reviewResult(s);
+  const staleResult = await acceptReview(s, old.message.id);
+  assert.equal(staleResult.exitCode, 1); assert.match(staleResult.stderr, /exact latest result/);
+  const engine = openEngine({ root: s.root, recover: false, policy: () => ({ allow: true }) });
+  engine.assignParticipant(s.task, engine.readTask(s.task).participants.find(p => p.id === 'independent'));
+  const staleAssignment = await acceptReview(s, latest.message.id);
+  assert.equal(staleAssignment.exitCode, 1); assert.match(staleAssignment.stderr, /exact latest result/);
+  const self = await acceptReview(s, latest.message.id, 'orchestrator');
+  assert.equal(self.exitCode, 1); assert.match(self.stderr, /independent bound reviewer/);
+  assert.equal(engine.facts(s.task).messages.some(m => m.body.includes('bb-task-acceptance-v1')), false);
+});
+
+for (const gate of ['failed', 'notRun']) test(`logical acceptance requires passing required receipts when the original review admitted ${gate} gates`, async t => {
+  const s = await stand(t); await s.create();
+  const evidence = await evidenceFixture(s.root, s.task, undefined, undefined, undefined, undefined, gate === 'failed' ? { exit: 7 } : { gateNotRun: true });
+  const launch = launchFixture(s.task, 'independent', 'reviewer', s.root);
+  launch.review = { producer: 'orchestrator', producerBinding: 'participant', sourceEnvironmentId: 'env', base: 'a'.repeat(40),
+    requiredGates: [['fiction', 'gate']], requirePassingGates: false };
+  const added = await s.add('independent', 'reviewer', ['--launch-context', JSON.stringify(launch), '--evidence-manifest', JSON.stringify(evidence.manifest)]);
+  assert.equal(added.exitCode, 0, added.stderr);
+  const passed = await reviewResult(s), rejected = await acceptReview(s, passed.message.id);
+  assert.equal(rejected.exitCode, 1); assert.match(rejected.stderr, /mandatory gates are not all passing/);
+});
+
+test('logical acceptance refuses missing original receipts and denied owner current authority', async t => {
+  const s = await stand(t); await s.create(); await s.add('independent', 'reviewer');
+  const passed = await reviewResult(s), store = bindingStore(s.host.bb), reviewer = store.participant(s.task, 'independent');
+  const saved = structuredClone(reviewer.evidenceManifest);
+  reviewer.evidenceManifest.artifacts = reviewer.evidenceManifest.artifacts.filter(ref => ref.kind !== 'receipt'); store.save(reviewer);
+  const missing = await acceptReview(s, passed.message.id);
+  assert.equal(missing.exitCode, 1); assert.match(missing.stderr, /original command receipt missing/);
+  reviewer.evidenceManifest = saved; store.save(reviewer);
+  await s.publish(null, { STOP: true });
+  const denied = await acceptReview(s, passed.message.id);
+  assert.equal(denied.exitCode, 1); assert.match(denied.stderr, /STOP or noNewStages denies admission/);
+});
+
+test('logical acceptance reauthenticates the owner after asynchronous evidence reads', async t => {
+  const s = await stand(t); await s.create(); await s.add('independent', 'reviewer');
+  const result = await reviewResult(s), store = bindingStore(s.host.bb);
+  const owner = store.task(s.task), reviewer = store.participant(s.task, 'independent');
+  const engine = openEngine({ root: s.root, recover: false, policy: () => ({ allow: true }) });
+  const last = reviewer.evidenceManifest.artifacts.at(-1).sha256, read = fs.readFileSync;
+  const expectedReads = reviewer.evidenceManifest.artifacts.filter(ref => ref.sha256 === last).length;
+  let changed = false, reads = 0;
+  fs.readFileSync = function(file, ...args) {
+    const content = read.call(this, file, ...args);
+    if (path.basename(String(file)) === last) reads++;
+    if (!changed && reads === expectedReads) {
+      changed = true;
+      queueMicrotask(() => {
+        const participant = engine.readTask(s.task).participants.find(p => p.id === 'orchestrator');
+        engine.patchParticipant(s.task, participant.id, { metadata: { ...participant.metadata, bb: { ...participant.metadata.bb, token: 'rebound-owner-token' } } });
+      });
+    }
+    return content;
+  };
+  syncBuiltinESMExports();
+  try {
+    await assert.rejects(engineOperation({ operation: 'accept', binding: owner, reviewer, resultId: result.message.id }), /canonical owner binding changed/);
+    assert.equal(changed, true);
+  } finally { fs.readFileSync = read; syncBuiltinESMExports(); }
+  assert.equal(engine.facts(s.task).messages.some(m => m.body.includes('bb-task-acceptance-v1')), false);
+});
+
+test('owner-selected context purpose defaults explicitly, inherits, permits an explicit task purpose and stays canonical', async t => {
+  const seen = [], s = await stand(t, { hostContext: binding => { seen.push([binding.participant, binding.contextPurpose]); return { rules: [], skills: [], tools: [] }; } });
+  assert.equal((await s.create()).exitCode, 0); assert.equal((await s.add('independent', 'reviewer')).exitCode, 0);
+  assert.equal((await s.add('writer', 'worker', ['--context-purpose', 'author-voice'])).exitCode, 0);
+  const store = bindingStore(s.host.bb), engine = openEngine({ root: s.root, recover: false, policy: () => ({ allow: true }) });
+  assert.equal(store.task(s.task).contextPurpose, 'technical'); assert.equal(store.participant(s.task, 'independent').contextPurpose, 'technical');
+  assert.equal(store.participant(s.task, 'writer').contextPurpose, 'author-voice');
+  assert.ok(seen.some(([id, purpose]) => id === 'writer' && purpose === 'author-voice'));
+  const writer = store.participant(s.task, 'writer'); writer.contextPurpose = 'technical'; store.save(writer);
+  await assert.rejects(s.call(writer.threadId, 'promptobus_task'), /Canonical binding mismatch/);
+  const legacy = store.task(s.task); delete legacy.contextPurpose; store.save(legacy);
+  const participant = engine.readTask(s.task).participants.find(p => p.id === 'orchestrator');
+  const metadata = structuredClone(participant.metadata); delete metadata.bb.contextPurpose;
+  engine.patchParticipant(s.task, participant.id, { metadata });
+  assert.equal((await s.add('legacy-worker')).exitCode, 0);
+  assert.equal(store.participant(s.task, 'legacy-worker').contextPurpose, undefined);
+});
 
 test('launch preflight refuses missing bounded context before any model spawn', async t => {
   const s = await stand(t, { noLaunchContext: true });

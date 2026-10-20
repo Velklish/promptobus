@@ -54,6 +54,24 @@ export interface HostServers {
   external: string[];
 }
 
+export type HostParticipantContextPurpose = 'technical' | 'user-facing' | 'author-voice';
+
+export interface HostParticipantContextTask {
+  id: string;
+  purpose: HostParticipantContextPurpose;
+}
+
+export interface HostParticipantContextRequest {
+  repoDir: string;
+  role: string;
+  task: HostParticipantContextTask;
+}
+
+export interface HostParticipantContextSelection {
+  rules: { path: string; reason: string; requires?: string[] }[];
+  skills: { name: string; root: string; reason: string }[];
+}
+
 /** A canonical MCP tool identity, independent of a harness's spelling. */
 export interface HostMcpTool {
   server: string;
@@ -158,6 +176,8 @@ export interface PromptobusHost {
 
   declaredTools(): string[];
   collectRules(repoDir: string): string[];
+  /** Select the complete declared rule closure and skill roots for this task and role. */
+  selectParticipantContext?(input: HostParticipantContextRequest): HostParticipantContextSelection;
   moduleNote(repoDir: string): HostModuleNote;
   resolveRepoModule(repoDir: string): HostRepoModule | null;
   reviewSkillDir(name: string, repoDir?: string): string;

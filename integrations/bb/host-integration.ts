@@ -29,17 +29,20 @@ export function createHostEntry(integration: BbHostIntegration = createBbHostInt
       if (input.operation === 'step') await integration.checkStep({ ...result as Parameters<BbHostIntegration['checkStep']>[0], signal: context.signal });
       return result;
     },
-    prepareContext: async ({ binding: b }, context) => integration.prepare({ root: b.environmentPath, role: b.role, signal: context.signal }),
+    prepareContext: async ({ binding: b }, context) => integration.prepare({ root: b.environmentPath, role: b.role,
+      ...(b.contextPurpose ? { task: { id: b.task, purpose: b.contextPurpose } } : {}), signal: context.signal }),
     hostContext: async ({ binding: b, args }, context) => {
       context.signal.throwIfAborted();
       await engineOperation({ binding: b, operation: 'check' });
-      const input = { root: b.environmentPath, role: b.role, signal: context.signal };
+      const input = { root: b.environmentPath, role: b.role, preparedContext: b.hostContext,
+        ...(b.contextPurpose ? { task: { id: b.task, purpose: b.contextPurpose } } : {}), signal: context.signal };
       return args.mode === 'inspect' ? integration.collect(input) : integration.read({ ...input, ...args });
     },
     canonical: async ({ binding: b, args }, context) => {
       context.signal.throwIfAborted();
       await engineOperation({ binding: b, operation: 'check' });
-      return integration.invoke({ root: b.environmentPath, role: b.role, ...args,
+      return integration.invoke({ root: b.environmentPath, role: b.role, ...args, preparedContext: b.hostContext,
+        ...(b.contextPurpose ? { task: { id: b.task, purpose: b.contextPurpose } } : {}),
         actor: { task: b.task, participant: b.participant }, signal: context.signal });
     },
   } });
