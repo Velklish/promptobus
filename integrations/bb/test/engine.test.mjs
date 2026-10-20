@@ -330,6 +330,36 @@ test('fresh evidence repair keeps the actor, ends the old token and supplies eve
   assert.equal(retry.exitCode, 1); assert.match(retry.stderr, /fresh token/);
 });
 
+test('error-state Stop and fresh phase remain refused and paused across reload', async t => {
+  const s = await stand(t);
+  assert.equal((await s.create()).exitCode, 0);
+  assert.equal((await s.add('phase-review', 'reviewer')).exitCode, 0);
+  const before = bindingStore(s.host.bb).thread('thr-2');
+  const thread = s.threads.get('thr-2');
+  thread.status = thread.runtime.displayStatus = 'error'; s.stopStatus = 'error';
+  s.events.length = 0;
+  const stopped = await s.control('stop', 'phase-review');
+  assert.equal(stopped.exitCode, 1);
+  assert.equal(JSON.parse(stopped.stdout).confirmed, false);
+  const epoch = s.delivery('thr-2').epoch;
+  await s.reload(); await s.reconcile();
+  assert.equal(s.delivery('thr-2').paused, true);
+  assert.equal(s.delivery('thr-2').epoch, epoch);
+  const next = structuredClone(before.launchContext);
+  next.grant.token = 'fresh-error-phase'; next.grant.phase = 'error-repair';
+  next.control.snapshot.endedTokens.push(before.launchContext.grant.token);
+  next.control.snapshot.grant = structuredClone(next.grant);
+  const f = await evidenceFixture(s.root, s.task);
+  const resumed = await s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', 'phase-review',
+    '--launch-context', JSON.stringify(next), '--assignment', 'Read complete original evidence in this bounded phase.',
+    '--evidence-manifest', JSON.stringify(f.manifest)]);
+  assert.equal(resumed.exitCode, 1);
+  assert.match(resumed.stderr, /Fresh phase Stop was not confirmed/);
+  assert.deepEqual(s.events, ['stop', 'stop'], 'Unconfirmed Stop must precede and block Clear context and assignment');
+  assert.deepEqual(bindingStore(s.host.bb).thread('thr-2'), before);
+  assert.equal(s.delivery('thr-2').paused, true); assert.equal(s.spawns.length, 2);
+});
+
 test('Stop during fresh initial assignment wins and an unknown send cannot start a mailbox-only review', async t => {
   for (const stop of [true, false]) {
     const s = await stand(t, { assignmentSend: async ({ threadId }) => {

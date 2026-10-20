@@ -641,6 +641,15 @@ The existing environment-id route remains immediate; existing paths retain
 workspace ownership, while managed worktrees remain BB-owned. These path checks
 are covered by SDK fixtures; live path registration has not been measured.
 
+Central BB Stop confirmation awaits public SDK Stop, then requires a fresh
+available host/environment, an alive thread with both display and raw status idle,
+and `activeBackgroundAgentCount` and `queuedMessageCount` exactly zero. Missing or
+nonzero queue evidence refuses confirmation, including before fresh-phase
+transfer. Error status remains unconfirmed. Public Stop `ok` and logical idle with
+zero counts do not establish daemon acknowledgement or complete task-owned call
+terminality on unavailable-host or timeout paths; they cannot alone justify
+reassignment under the command grant release contract below.
+
 
 ### BB executing runtime identity
 

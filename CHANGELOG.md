@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- BB Stop confirmation now also requires `queuedMessageCount` exactly zero in the
+  fresh idle observation after SDK Stop; missing or nonzero queue evidence keeps
+  Stop unconfirmed. Error-state refusal and durable delivery pause remain. Public
+  Stop `ok` and logical idle/zero counts do not prove daemon acknowledgement or
+  complete task-owned call terminality after an unavailable host or timeout.
 - Add `bb promptobus runtime describe` to compare the executing BB plugin server
   and selected host through one read-only, bounded RPC. Matching embedded build
   ids and input digests return complete with exit 0; missing, incompatible or

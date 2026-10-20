@@ -40,7 +40,7 @@ export async function stopBbParticipant(bb: BbPluginApi, b: Binding) {
   await bb.sdk.threads.stop({ threadId: b.threadId! });
   const observation = await observeBbParticipant(bb, b);
   const confirmed = observation.view.state === 'alive' && observation.status === 'idle' && observation.thread?.status === 'idle'
-    && observation.thread.activeBackgroundAgentCount === 0;
+    && observation.thread.activeBackgroundAgentCount === 0 && observation.thread.queuedMessageCount === 0;
   return { confirmed, observation };
 }
 

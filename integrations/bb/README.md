@@ -436,11 +436,15 @@ existing-path registration has not been measured on this source change.
 returning a plain `SessionView` and the original BB status. Active/starting is busy;
 idle is reachable and resumable. Stopping, pending, error and unavailable/offline
 observations remain unknown. `alive` is logical thread availability, not proof of
-a native process. `participant stop` succeeds only after a fresh idle observation,
-with no background agents and an available host/environment. Plugin Stop records
-the durable delivery pause described above and releases the
-runtime and leaves the environment in place. A reviewer private home remains for
-resume and evidence.
+a native process. `participant stop` confirms only after awaiting SDK Stop and a
+fresh observation with both display and raw status idle, `activeBackgroundAgentCount`
+and `queuedMessageCount` exactly zero, and an available host/environment. Missing
+or nonzero queue evidence refuses confirmation. Plugin Stop records the durable
+delivery pause described above and leaves the environment in place. A reviewer
+private home remains for resume and evidence. Public Stop `ok` and these logical
+observations do not prove daemon acknowledgement or complete task-owned call
+terminality after an unavailable host or timeout. Error-state recovery remains
+unconfirmed without that proof.
 
 `participant archive` first holds further adapter dispatches, confirms Stop and
 saves a complete SDK patch snapshot relative to the recorded base SHA as an engine

@@ -6,7 +6,7 @@ const binding = { phase: 'ready', threadId: 'thread', projectId: 'project', envi
   environmentPath: '/actual/worktree', hostId: 'local', providerId: 'codex' };
 function sdk(state = 'idle') {
   const thread = { id: 'thread', projectId: 'project', environmentId: 'env', providerId: 'codex', status: state,
-    runtime: { displayStatus: state }, activeBackgroundAgentCount: 0, archivedAt: null, deletedAt: null,
+    runtime: { displayStatus: state }, activeBackgroundAgentCount: 0, queuedMessageCount: 0, archivedAt: null, deletedAt: null,
     parentThreadId: null, lifecycleOwnerThreadId: null };
   const environment = { id: 'env', path: '/actual/worktree', hostId: 'local', status: 'ready', lifecycle: { phase: 'active' } };
   const host = { id: 'local', status: 'connected', lifecycle: { phase: 'active' } };
@@ -48,6 +48,8 @@ test('Stop success is checked against fresh SDK status and background work; stop
   const first = await stopBbParticipant(s.bb, binding);
   assert.equal(first.confirmed, false);
   assert.equal(first.observation.status, 'stopping');
+  s.thread.status = s.thread.runtime.displayStatus = 'error';
+  assert.equal((await stopBbParticipant(s.bb, binding)).confirmed, false);
   s.thread.status = s.thread.runtime.displayStatus = 'idle';
   s.thread.activeBackgroundAgentCount = 1;
   assert.equal((await stopBbParticipant(s.bb, binding)).confirmed, false);
@@ -55,7 +57,33 @@ test('Stop success is checked against fresh SDK status and background work; stop
   assert.equal((await stopBbParticipant(s.bb, binding)).confirmed, true);
   s.host.status = 'disconnected';
   assert.equal((await stopBbParticipant(s.bb, binding)).confirmed, false);
-  assert.equal(s.stopped, 4);
+  assert.equal(s.stopped, 5);
+});
+
+test('Stop refuses idle queued work and missing queue evidence', async () => {
+  const s = sdk();
+  for (const count of [1, undefined]) {
+    if (count === undefined) delete s.thread.queuedMessageCount;
+    else s.thread.queuedMessageCount = count;
+    assert.equal((await stopBbParticipant(s.bb, binding)).confirmed, false,
+      `Idle Stop must remain unconfirmed when queuedMessageCount is ${count}`);
+  }
+});
+
+test('Stop awaits SDK settlement before reading its confirmation snapshot', async () => {
+  const s = sdk('active');
+  const entered = Promise.withResolvers(), release = Promise.withResolvers();
+  let reads = 0, settled = false;
+  s.bb.sdk.threads.get = async () => { reads++; return s.thread; };
+  s.bb.sdk.threads.stop = async () => { entered.resolve(); await release.promise; return { ok: true }; };
+  const pending = stopBbParticipant(s.bb, binding).then(result => { settled = true; return result; });
+  await entered.promise;
+  assert.equal(settled, false);
+  assert.equal(reads, 1, 'No confirmation snapshot may be read while SDK Stop is unresolved');
+  s.thread.status = s.thread.runtime.displayStatus = 'idle';
+  release.resolve();
+  assert.equal((await pending).confirmed, true);
+  assert.equal(reads, 2);
 });
 
 test('existing path workspace recording refuses a different SDK path before changing binding or reading Git', async () => {

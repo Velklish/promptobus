@@ -554,3 +554,4 @@ The release reconciliation gives the [Codex-only journal lookup](#pb-372) the na
 - <a id="pb-381.1"></a>`PB-381.1-bb-runtime-build-identity` · 2026-10-20 · completed · — · Expose executing BB server and host build identities
 - <a id="pb-381.2"></a>`PB-381.2-loaded-bb-build-identity` · 2026-10-20 · completed · — · Make build identity survive the official BB activation path
 - <a id="pb-384.1"></a>`PB-384.1-bb-owner-approval-repro-draft` · 2026-10-20 · completed · — · Reproduce BB approval eligibility and prepare an upstream proposal
+- <a id="pb-373.11"></a>`PB-373.11-bb-stop-queued-work-fence` · 2026-10-20 · completed · — · Refuse BB Stop confirmation while queued work remains
