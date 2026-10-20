@@ -40,7 +40,7 @@ Recovery audit, 2026-10-20, priority: before broad BB admission. At source `5386
 
 Evidence compactness and first-check collector compatibility are separately owned by [PB-383](PB-383-compact-current-review-evidence.md).
 
-[PB-384](PB-384-bb-task-scoped-owner-approval.md) separately owns the supported BB task-scoped authorization capability needed to remove repeated manual composer Send. This card only detects and plans the obtainable permission route; it does not change BB initiator policy.
+[PB-384](../deferred/PB-384-bb-task-scoped-owner-approval.md) separately owns the supported BB task-scoped authorization capability needed to remove repeated manual composer Send. This card only detects and plans the obtainable permission route; it does not change BB initiator policy.
 
 ## Out of scope
 

@@ -1,10 +1,10 @@
 # PB-384 · BB-managed runs need task-scoped owner authorization for agent-origin approval requests
 
-- **Order:** 310
 - **Scope:** [BB-managed participant workflow](../../reference/01-overview.md), supported BB permission/delegation contract and its Promptobus consumer
 - **Created:** 2026-10-19
 - **Dependencies:** a supported BB task-scoped permission/delegation capability; establish the contract or record the upstream requirement before implementation
 - **Cost:** major
+- **Previous order:** 310
 
 ## Context
 
@@ -14,9 +14,9 @@ A later approver also selected its preparation-only guard in a genuine user turn
 
 Evidence: saved task authorization, managed launch/resume and effective-mode records, genuine composer turn records, individual approval/refusal receipts and the preflight failure. Immutable originals and local locations stay in the run-owned sidecar; this portable card contains no private ledgers, command arguments, account identifiers, personal paths or authorization tokens.
 
-[PB-381](PB-381-orchestration-obtainable-admission-evidence.md) detects and plans an obtainable execution route and unavoidable human steps. It does not provide the BB capability that removes repeated manual Send. [PB-373.1](PB-373.1-bb-approval-resolved-tool-rejected.md) concerns a resolved approval whose tool result is rejected, a different defect.
+[PB-381](../queue/PB-381-orchestration-obtainable-admission-evidence.md) detects and plans an obtainable execution route and unavoidable human steps. It does not provide the BB capability that removes repeated manual Send. [PB-373.1](../queue/PB-373.1-bb-approval-resolved-tool-rejected.md) concerns a resolved approval whose tool result is rejected, a different defect.
 
-Next step: future triage review with an explicit BB capability/dependency assessment. Filing is authorized; implementation is outside the current execution batch. Record an upstream feature/dependency locally if needed; filing this card does not authorize contacting another maintainer or modifying a remote platform.
+Return condition: BB exposes an official supported owner-authorization contract for accurately agent-origin approval eligibility, including task/participant/environment/operation scope and revocation. The local source reproduction and unpublished proposal are completed in PB-384.1; the parent remains blocked on this capability. Source-only baseline: Node v25.2.1, 11/11 assertions, exit 0 against BB commit 411eac54ac16d0a3cb57d1de8396d37564884a73; this is not loaded-policy or live delegation proof. Next step: reassess the official capability and its consumer contract before implementation. Filing is authorized; implementation is outside the current execution batch. Record an upstream feature/dependency locally if needed; filing this card does not authorize contacting another maintainer or modifying a remote platform.
 
 ## Work to do
 
@@ -26,7 +26,7 @@ Recovery audit, 2026-10-20, priority: external dependency decision before promis
 - Under that valid owner grant, a managed participant launch/resume can request supported per-command approval without another hand-copied composer Send in every thread or phase. Preserve accurate agent-origin attribution. Record actual execution approval separately through the supported BB decision/delegation flow; an owner grant is not a fabricated per-command decision or successful execution.
 - Enforce grant identity, operation/workspace scope, validity, revocation, Stop and quota boundaries. A new scope still requires explicit authorization. Missing, mismatched or revoked authorization must fail closed; ordinary sandbox and per-command deny semantics remain effective.
 - Update the actual BB integration consumer and canonical [orchestration guidance](../../../skills/orchestrate/SKILL.md) only against the supported contract. Do not promise that Promptobus can implement an unavailable BB policy change by itself. Keep a concrete upstream blocker explicit until the required capability exists.
-- Reuse the first-real-card and permission-planning requirements in [PB-381](PB-381-orchestration-obtainable-admission-evidence.md), resource/capacity rules in [PB-382](PB-382-optional-resource-scoped-machine-lease.md), and compact current evidence rules in [PB-383](PB-383-compact-current-review-evidence.md), rather than adding a generic authorization framework.
+- Reuse the first-real-card and permission-planning requirements in [PB-381](../queue/PB-381-orchestration-obtainable-admission-evidence.md), resource/capacity rules in [PB-382](../queue/PB-382-optional-resource-scoped-machine-lease.md), and compact current evidence rules in [PB-383](../queue/PB-383-compact-current-review-evidence.md), rather than adding a generic authorization framework.
 
 ## Verification
 
@@ -41,3 +41,9 @@ Recovery audit, 2026-10-20, priority: external dependency decision before promis
 - Forged user messages or initiators; blanket global/default/full/auto permission profiles; actor or transport substitution after a refusal; private BB state or runtime edits.
 - Disabling sandbox or approval checks, bypassing a denied command, waiving review/gates/acceptance, automatic publication, or remote upstream changes.
 - New paid/native/model/SDK/Stop probes, OS inventory or a generic permission framework.
+
+## Deferred
+
+- **Deferred:** 2026-10-20
+- **Reason:** The pinned source-only reproduction confirms the current non-user deny policy; the local proposal is prepared, but no supported BB owner-authorization capability exists in the examined contract.
+- **Return condition:** An official supported BB task-scoped and revocable owner-authorization capability is available for an accurately agent-origin consumer; then assess its contract and separately authorize live acceptance.
