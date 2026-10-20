@@ -206,6 +206,26 @@ until the returned BB thread identity is finalized. A launch failure remains
 `orphan` in `bindings`; it is never silently reassigned. This CLI is a trusted
 local machine-operator entry point. It does not expose a bind-existing-thread tool.
 
+`bb promptobus bindings [--task <id>] [--participant <id>] [--limit <1..100>]
+[--cursor <number>]` returns `{ "items": [...], "nextCursor": number | null }`.
+Each item contains only `task`, `participant`, `threadId`, `role`, `phase`,
+`projectId`, `environmentId`, `hostId` and `providerId`; orphan rows remain visible,
+including a null thread id. Tokens, contexts, grants, history, evidence, assignments
+and bootstrap text are excluded. Filters match exact ids; a participant filter
+can span tasks unless `--task` is also supplied.
+
+The default page size is 50, the hard maximum is 100, and complete successful JSON
+is at most 64 KiB in UTF-8, including metadata and the continuation cursor. Rows
+are selected as summaries directly from SQLite in numeric row order, without
+loading full binding payloads into the inventory. Supply the returned `nextCursor`
+as `--cursor` with unchanged filters to continue; null means no matching rows
+remain. Traversal covers unchanged data without duplicates or omissions; it is
+not a snapshot across concurrent changes. A byte-limited page can contain fewer
+rows than `--limit`. A single summary that cannot fit causes exit 1 with an
+actionable bounded error identifying its row; it is never skipped. Invalid limits
+or cursors also refuse with bounded output. This inventory reports stored identity
+and phase, not fresh runtime state, current grant authority or admission evidence.
+
 The plugin records the launch attempt, assignment and model before calling SDK
 spawn. `bb promptobus recovery inspect --task <id> --participant <id>` returns
 the recorded phase, thread id and launch summary. When the spawn reply was lost,
@@ -291,8 +311,9 @@ provider and never borrows regular Codex windows, even if both use one account.
 The selection contains no account email or inferred per-task cost. Account windows
 are evidence, not an automatic fallback or a new quota threshold policy.
 
-Participant bindings and launch replies expose `execution`: runtime, native
+Stored participant bindings and launch replies retain `execution`: runtime, native
 harness, provider/model/reasoning, selection source, scope and observation time.
+The `bindings` inventory omits this launch snapshot.
 The canonical participant also stores it in `metadata.bb.execution`; its top-level
 `harness: bb` remains the adapter/lifecycle discriminator. It is the launch decision snapshot. `participant get` additionally reads SDK
 `currentExecution`, which may be null or differ after an operator changes a

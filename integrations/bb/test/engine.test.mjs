@@ -1122,7 +1122,119 @@ test('a failed finalization stays orphaned across reload and cannot be reassigne
   assert.equal((await s.create()).exitCode, 1);
   const status = await s.host.harness.behavior.runCli(['bindings']);
   assert.equal(status.exitCode, 0);
-  assert.equal(JSON.parse(status.stdout)[0].phase, 'orphan');
+  assert.equal(JSON.parse(status.stdout).items[0].phase, 'orphan');
+});
+
+test('bindings inventory stays bounded when stored instructions exceed the SDK CLI cap', async t => {
+  const s = await stand(t);
+  assert.equal((await s.create()).exitCode, 0);
+  const store = bindingStore(s.host.bb), binding = store.task(s.task);
+  binding.bootstrap = 'OPAQUE_BINDING_PAYLOAD_'.repeat(60_000);
+  store.save(binding);
+  const result = await s.host.harness.behavior.runCli(['bindings']);
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.ok(Buffer.byteLength(result.stdout) <= 64 * 1024);
+  assert.doesNotMatch(result.stdout, /OPAQUE_BINDING_PAYLOAD_/);
+  assert.deepEqual(JSON.parse(result.stdout), { items: [{ task: binding.task, participant: binding.participant,
+    threadId: binding.threadId, role: binding.role, phase: binding.phase, projectId: binding.projectId,
+    environmentId: binding.environmentId, hostId: binding.hostId, providerId: binding.providerId }], nextCursor: null });
+  assert.equal(store.list()[0].bootstrap, binding.bootstrap, 'Scheduler reads must retain the full stored binding');
+});
+
+test('bindings pages traverse unchanged rows exactly once and support exact task and participant filters', async t => {
+  const s = await stand(t); assert.equal((await s.create()).exitCode, 0);
+  const store = bindingStore(s.host.bb), seed = store.task(s.task), expected = [seed];
+  const otherTask = newTaskIdentity('inventory-other').id;
+  for (let i = 0; i < 110; i++) {
+    const binding = { ...seed, task: i % 2 ? otherTask : s.task, participant: `worker-${String(Math.floor(i / 2)).padStart(3, '0')}`,
+      threadId: i === 0 ? null : `inventory-${i}`, role: 'worker', phase: i === 0 ? 'orphan' : 'ready', bootstrap: 'OPAQUE_PAGE_PAYLOAD' };
+    store.reserve(binding, i === 1); expected.push(binding);
+  }
+  const inventory = async args => {
+    const result = await s.host.harness.behavior.runCli(['bindings', ...args]);
+    assert.equal(result.exitCode, 0, result.stderr);
+    assert.ok(Buffer.byteLength(result.stdout) <= 64 * 1024);
+    assert.doesNotMatch(result.stdout, /OPAQUE_PAGE_PAYLOAD/);
+    return JSON.parse(result.stdout);
+  };
+  const first = await inventory([]); assert.equal(first.items.length, 50);
+  const all = [...first.items]; let cursor = first.nextCursor;
+  while (cursor !== null) {
+    const page = await inventory(['--cursor', String(cursor)]);
+    assert.ok(page.nextCursor === null || page.nextCursor > cursor);
+    all.push(...page.items); cursor = page.nextCursor;
+  }
+  assert.deepEqual(all.map(row => [row.task, row.participant]), expected.map(row => [row.task, row.participant]));
+  assert.equal(new Set(all.map(row => JSON.stringify([row.task, row.participant]))).size, expected.length);
+  assert.equal(all.find(row => row.participant === 'worker-000' && row.task === s.task).phase, 'orphan');
+  assert.equal((await inventory(['--limit', '100'])).items.length, 100);
+  const byTask = await inventory(['--task', otherTask, '--limit', '100']);
+  assert.equal(byTask.nextCursor, null); assert.equal(byTask.items.length, 55);
+  assert.ok(byTask.items.every(row => row.task === otherTask));
+  const byParticipant = await inventory(['--participant', 'worker-000']);
+  assert.equal(byParticipant.items.length, 2);
+  const exact = await inventory(['--task', s.task, '--participant', 'worker-000', '--limit', '1']);
+  assert.equal(exact.items.length, 1); assert.equal(exact.nextCursor, null); assert.equal(exact.items[0].threadId, null);
+  assert.deepEqual(await inventory(['--participant', 'worker-00']), { items: [], nextCursor: null });
+  assert.deepEqual(await inventory(['--task', otherTask.slice(0, -1)]), { items: [], nextCursor: null });
+  assert.equal(store.list().length, expected.length); assert.equal(s.spawns.length, 1);
+});
+
+test('bindings byte-limited pages count UTF-8 and preserve every row across continuation', async t => {
+  const s = await stand(t); assert.equal((await s.create()).exitCode, 0);
+  const store = bindingStore(s.host.bb), binding = store.task(s.task);
+  binding.projectId = '東京🙂'.repeat(2000); store.save(binding);
+  for (let i = 1; i <= 4; i++) store.reserve({ ...binding, participant: `unicode-${i}`, threadId: null }, false);
+  const participants = []; let cursor = 0;
+  do {
+    const result = await s.host.harness.behavior.runCli(['bindings', '--limit', '100', '--cursor', String(cursor)]);
+    assert.equal(result.exitCode, 0, result.stderr);
+    assert.ok(Buffer.byteLength(result.stdout) <= 64 * 1024);
+    const page = JSON.parse(result.stdout);
+    assert.ok(page.items.length > 0 && page.items.length < 5);
+    participants.push(...page.items.map(row => row.participant));
+    assert.ok(page.nextCursor === null || page.nextCursor > cursor); cursor = page.nextCursor;
+  } while (cursor !== null);
+  assert.deepEqual(participants, ['orchestrator', 'unicode-1', 'unicode-2', 'unicode-3', 'unicode-4']);
+});
+
+test('bindings budget includes JSON metadata and an oversized summary fails without skipping its row', async t => {
+  const s = await stand(t); assert.equal((await s.create()).exitCode, 0);
+  const store = bindingStore(s.host.bb), binding = store.task(s.task);
+  const initial = JSON.parse((await s.host.harness.behavior.runCli(['bindings'])).stdout).items[0];
+  const overhead = Buffer.byteLength(JSON.stringify({ items: [{ ...initial, projectId: '' }], nextCursor: null }));
+  binding.projectId = 'x'.repeat(64 * 1024 - overhead); store.save(binding);
+  const exact = await s.host.harness.behavior.runCli(['bindings']);
+  assert.equal(exact.exitCode, 0, exact.stderr); assert.equal(Buffer.byteLength(exact.stdout), 64 * 1024);
+  binding.projectId += 'x'; store.save(binding);
+  const oversized = await s.host.harness.behavior.runCli(['bindings']);
+  assert.equal(oversized.exitCode, 1); assert.equal(oversized.stdout, '');
+  assert.match(oversized.stderr, /summary at row 1 exceeds 64 KiB; correct its oversized stored identity fields/);
+  assert.ok(Buffer.byteLength(oversized.stderr) <= 64 * 1024);
+  store.reserve({ ...binding, participant: 'oversized', threadId: null, projectId: '🙂'.repeat(17_000) }, false);
+  binding.projectId = 'project'; store.save(binding);
+  store.reserve({ ...binding, participant: 'after-oversized', threadId: null }, false);
+  const partial = JSON.parse((await s.host.harness.behavior.runCli(['bindings'])).stdout);
+  assert.deepEqual(partial.items.map(row => row.participant), ['orchestrator']);
+  assert.equal(partial.nextCursor, 1);
+  const continuation = await s.host.harness.behavior.runCli(['bindings', '--cursor', String(partial.nextCursor)]);
+  assert.equal(continuation.exitCode, 1); assert.equal(continuation.stdout, '');
+  assert.match(continuation.stderr, /summary at row 2 exceeds 64 KiB/);
+});
+
+test('bindings invalid limit and cursor inputs refuse with bounded output', async t => {
+  const s = await stand(t);
+  const empty = await s.host.harness.behavior.runCli(['bindings']);
+  assert.equal(empty.exitCode, 0); assert.deepEqual(JSON.parse(empty.stdout), { items: [], nextCursor: null });
+  for (const [option, values] of [
+    ['limit', ['0', '101', '-1', '1.5', '1e1', '', 'invalid', '9'.repeat(80_000)]],
+    ['cursor', ['-1', '1.5', '', 'invalid', '9007199254740992', 'invalid'.repeat(12_000)]],
+  ]) for (const value of values) {
+    const result = await s.host.harness.behavior.runCli(['bindings', `--${option}`, value]);
+    assert.equal(result.exitCode, 1, `Invalid ${option} must refuse`);
+    assert.ok(Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr) <= 64 * 1024);
+    assert.match(result.stderr, /bindings (limit|cursor|limit and cursor)/);
+  }
 });
 
 test('role tool selection uses stored bindings and refuses changed environment, provider and worker lateral sends', async t => {

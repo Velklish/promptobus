@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- BB `bindings` now returns identity/phase summaries with exact task/participant
+  filters and numeric forward cursors, excluding embedded payloads and tokens.
+  Pages default to 50 rows, allow at most 100, and keep complete UTF-8 JSON within
+  64 KiB including metadata. Oversized single summaries fail explicitly without
+  being skipped. Scheduler and authorization reads retain full binding data.
 - BB Stop confirmation now also requires `queuedMessageCount` exactly zero in the
   fresh idle observation after SDK Stop; missing or nonzero queue evidence keeps
   Stop unconfirmed. Error-state refusal and durable delivery pause remain. Public

@@ -630,8 +630,17 @@ export function registerRuntime(bb: BbPluginApi) {
             environmentOwner: 'BB', accepted: false }) };
         } finally { archiving.delete(b.threadId!); }
       } }),
-    bindings: cliCommand({ summary: 'List participant binding phases, including orphaned launches.', run: () => ({ exitCode: 0,
-      stdout: JSON.stringify(store.list().map(({ token, ...binding }) => binding)) }) }),
+    bindings: cliCommand({ summary: 'Page binding identity and phase summaries, including orphaned launches; at most 64 KiB.', options: {
+      task: { type: 'string', description: 'Exact task id filter.' },
+      participant: { type: 'string', description: 'Exact participant id filter, within a task or across tasks.' },
+      limit: { type: 'string', description: 'Page size: decimal integer from 1 to 100; default 50.' },
+      cursor: { type: 'string', description: 'Nonnegative numeric row cursor; reuse nextCursor with unchanged filters.' },
+    }, run({ options }) {
+      if ((options.limit !== undefined && !/^\d+$/.test(options.limit))
+        || (options.cursor !== undefined && !/^\d+$/.test(options.cursor))) throw new Error('bindings limit and cursor must be decimal integers');
+      return { exitCode: 0, stdout: JSON.stringify(store.inventory({ task: options.task, participant: options.participant,
+        limit: Number(options.limit ?? 50), cursor: Number(options.cursor ?? 0) })) };
+    } }),
     'recovery inspect': cliCommand({ summary: 'Inspect durable launch intent and candidate threads without binding or spawning.', options: participantOptions,
       async run({ options }, context) {
         const b = store.participant(options.task, options.participant);

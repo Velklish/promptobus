@@ -619,6 +619,22 @@ calling the host entry. Filesystem engine operations run on that host; server cw
 is never used as a participant root. The host checks canonical task/participant
 state before each bound operation. Mutable metadata cannot establish identity.
 
+`bb promptobus bindings` returns stored identity/phase summaries as
+`{ "items": [...], "nextCursor": number | null }`, including orphan rows. Items
+contain only task, participant, thread, role, phase, project, environment, host and
+provider ids; tokens and embedded instructions/control/history/evidence are absent.
+Exact `--task` and `--participant` filters combine. `--limit` defaults to 50 and
+accepts 1 through 100; complete JSON is capped at 64 KiB of UTF-8, including the
+nullable cursor. SQLite selects summary fields in numeric row order without
+loading all full binding payloads. Continue with `--cursor <nextCursor>` and
+unchanged filters; null marks exhaustion. Pages can be shortened by the byte cap.
+Unchanged rows traverse without duplication or omission; concurrent changes are
+not a snapshot. An oversized single summary refuses with an actionable bounded
+error and is never skipped; invalid limit/cursor values also refuse. Full binding
+reads used by scheduling and authorization are unchanged. This stored inventory
+does not prove current grant authority, permission eligibility, Stop acknowledgement
+or provider/workflow acceptance. See [operator setup](../../integrations/bb/README.md).
+
 First-message admission uses `message.dispatch`: a pending plugin thread waits
 until its returned identity is finalized, then a hook recheck allows the queued
 initial prompt. The native tools have an independent ready-binding guard, so
