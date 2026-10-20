@@ -13,12 +13,17 @@ their own behavior.
 
 ## Runtime identity
 
-Build with `npm run build`, then inspect executing server/selected-host parity
+From a local source path, `npm run build` creates an independent
+`.runtime/<buildId>` package; install the receipt's exact `installationDirectory`.
+Building B or reloading registered A leaves A selected; explicitly install B to
+switch. Inspect executing server/selected-host snapshot identity
 with `bb promptobus runtime describe [--host <id>] [--json]`. JSON is the default;
 matching embedded build ids and input digests return `complete` with exit 0,
 otherwise `incomplete` with exit 1. The standalone runtime skill covers this
 read-only check. [Runtime identity](../../docs/reference/02-host.md#bb-executing-runtime-identity)
-defines selection, build provenance, crash recovery and measurement limits.
+defines capture, activation and external runtime boundaries; the id does not hash
+BB's current loader cache bytes. The source root is not a supported install target, and automatic
+npm/Git plugin delivery is not claimed.
 
 ## Review permissions
 

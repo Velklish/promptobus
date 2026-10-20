@@ -13,7 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mismatched identities remain incomplete with exit 1. The npm build wrapper
   stamps measured inputs and records final bundle hashes without replacing BB
   metadata. A standalone runtime diagnostic skill leaves role contracts intact;
-  installed live parity remains unmeasured.
+  local fixtures do not certify a particular BB installation; verify the executing
+  identities after install/reload.
+- Build independent optional BB plugin packages under `.runtime/<buildId>` from
+  captured source, skills, resolved dependencies and static consumer integration.
+  The receipt names the exact local generation to install; building a new one or
+  reloading the registered one never switches it. Input changes during capture or
+  compilation refuse latest-receipt promotion. Tracked source stays unstamped;
+  builds do not install, reload or delete old generations. Snapshot identity and
+  artifact hashes remain distinct from BB's cache and external runtime APIs.
+  Automatic npm/Git plugin installation is not claimed.
 - Move the optional BB source plugin to `integrations/bb/`. Its package name, public core exports and runtime behavior stay unchanged; the plugin remains outside the core tarball.
 - Packed BB Host setup checks use a fixture-owned npm cache and remove it with the temporary installation.
 

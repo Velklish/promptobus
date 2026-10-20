@@ -17,10 +17,9 @@ if (!existsSync(integration)) throw new Error('The consumer integration source m
 if (existsSync(destination)) throw new Error('Generate into a new directory; existing files are never overwritten');
 mkdirSync(destination, { recursive: true });
 for (const name of readdirSync(source)) if (name.endsWith('.ts') && name !== 'host.ts') cpSync(path.join(source, name), path.join(destination, name));
-for (const name of ['skills', 'scripts', 'tsconfig.json', 'README.md', 'PLUGIN_OVERVIEW.md']) cpSync(path.join(source, name), path.join(destination, name), { recursive: true });
+for (const name of ['skills', 'scripts', 'tsconfig.json', '.gitignore', 'README.md', 'PLUGIN_OVERVIEW.md']) cpSync(path.join(source, name), path.join(destination, name), { recursive: true });
 const manifest = JSON.parse(readFileSync(path.join(source, 'package.json'), 'utf8'));
 manifest.dependencies.promptobus = options['--promptobus'];
-manifest.bb.host = './host.mjs';
 manifest.files = [...manifest.files, 'host.mjs'];
 delete manifest.scripts.test;
 writeFileSync(path.join(destination, 'package.json'), JSON.stringify(manifest, null, 2) + '\n');

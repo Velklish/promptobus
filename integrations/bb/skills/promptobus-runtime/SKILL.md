@@ -5,7 +5,7 @@ description: Inspect the executing Promptobus BB plugin server and selected host
 
 # Inspect the executing BB runtime
 
-Use this operator diagnostic for loaded build identity and parity. It needs no
+Use this operator diagnostic for loaded input-snapshot identity. It needs no
 task binding; participant duties and model routing use their existing commands.
 
 ```sh
@@ -22,17 +22,18 @@ non-null identities. Exit 1 with `incomplete` covers unbuilt, mismatched, older 
 unavailable entries. Preserve an older server's unknown-command refusal.
 
 The command makes one read-only RPC with a 5000 ms timeout. Propagate cancellation.
-Do not automatically retry, reload, build, spawn or make model/engine calls to
+Do not automatically retry, install, reload, build, spawn or make model/engine calls to
 repair an incomplete result. Continue only within the user's authorized scope.
 
 - `sourceRevision` is the build-time HEAD, not a later squash. Revision and dirty
   state are `null` unless all measured local source files are tracked by that Git.
-- The digest covers selected source, shipped skills, build inputs and recursively
-  declared runtime dependency content. External transitive integration imports and
-  runtime peers are not exhaustively inventoried; a unique id is no reproducibility claim.
-- `npm run build` stamps identity; direct BB build/dev skips it. Concurrent builds
-  in one directory are unsupported. A crash or SIGKILL can prevent source restoration;
-  verify and restore the unbuilt placeholder, preserving source edits, before rebuilding.
-- A mutable `dist/build-manifest.json` or artifact hash cannot establish loaded
-  parity. Report live parity only from the actual diagnostic reply; builds and
-  fixtures do not supply it. See [setup](../../README.md#executing-runtime-identity).
+- Each `npm run build` creates `.runtime/<buildId>`. Activate only the exact
+  `installationDirectory` from its successful receipt. Building B preserves loaded
+  A; reload stays on registered A. Explicit install B switches. The source root
+  is not a supported install target; builds never install, reload or delete old generations.
+- The id names captured inputs, not BB loader cache bytes or current SDK/Node APIs.
+  Dynamic import/require/eval, consumer file-relative assets and external runtime
+  code are not claimed frozen. Existing host flat-bundle origins remain unchanged.
+- A manifest or artifact hash cannot establish loaded identity. The actual reply
+  measures reported snapshot parity only; a unique id is no reproducibility claim.
+  See [setup](../../README.md#executing-runtime-identity) for activation limits.

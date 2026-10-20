@@ -13,7 +13,7 @@ const source = fileURLToPath(new URL('..', import.meta.url));
 const marker = '__PROMPTOBUS_BUILD_IDENTITY_UNBUILT_V1__';
 const identity = (digit, buildDigit = digit) => ({ format: 1, buildId: `${buildDigit.repeat(8)}-${buildDigit.repeat(4)}-4${buildDigit.repeat(3)}-8${buildDigit.repeat(3)}-${buildDigit.repeat(12)}`,
   pluginVersion: '0.1.0', inputSha256: digit.repeat(64), inputs: { sourceSha256: digit.repeat(64), sourceRevision: digit.repeat(40),
-    sourceDirty: false, lockSha256: digit.repeat(64), builderVersion: '0.46.1', dependencies: [], consumerIntegrationSha256: null } });
+    sourceDirty: false, lockSha256: digit.repeat(64), builderVersion: '0.46.1', dependencies: [], consumerIntegrationSha256: null, consumerBundleSha256: null } });
 
 async function loaded(t, value) {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'pb-bb-loaded-identity-'));

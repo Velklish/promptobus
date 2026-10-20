@@ -14,6 +14,7 @@ export const buildIdentitySchema = z.object({
     builderVersion: z.string().max(100).nullable(),
     dependencies: z.array(z.object({ name: z.string().max(200), version: z.string().max(100), sha256 }).strict()).max(100),
     consumerIntegrationSha256: sha256.nullable(),
+    consumerBundleSha256: sha256.nullable(),
   }).strict(),
 }).strict();
 export type BuildIdentity = z.infer<typeof buildIdentitySchema>;

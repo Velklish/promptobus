@@ -12,7 +12,10 @@ without an exact or maximum numeric Codex version requirement.
 The provider copies only `auth.json` into its private Codex
 home; it does not modify the original authentication or copy personal config.
 
-From this directory, run `npm ci`, `npm run build`, and `bb plugin install .`.
+From this local source directory, run `npm ci` and `npm run build`, then install
+the exact generation named by the build receipt's `installationDirectory`:
+`bb plugin install ./.runtime/<buildId>`. The source root is a build descriptor,
+not a supported install target.
 Select `Codex (Promptobus read-only reviewer)` and an explicit reported model.
 The BB permission mode is `accept-edits`; the provider always requests and verifies
 Codex `readOnly` with approval policy `never`, regardless of that BB label.
@@ -34,15 +37,17 @@ unbuilt, mismatched, older incompatible or unavailable entries return
 cancellation propagates. Inspection performs no retry, reload, spawn, model call,
 engine operation or task-state write.
 
-Build with `npm run build` to stamp measured inputs and a unique build id before
-the official BB build. Direct `bb plugin build` or `bb plugin dev` skips stamping.
-The wrapper restores `build-identity.ts` after ordinary success or failure;
-concurrent same-directory builds are unsupported. After a crash or SIGKILL,
-verify and restore its unbuilt placeholder while preserving source edits before
-rebuilding. A mutable manifest or artifact hash alone cannot establish loaded
-parity. Installed live parity remains unmeasured on this source change.
+`npm run build` captures source, skills and resolved dependencies in a new
+`.runtime/<buildId>` package, stamps only that copy and runs the official BB build.
+Install the exact generation recorded by the successful receipt to activate it.
+Building B preserves loaded A; reloading registered A stays on A. Only explicitly
+installing B switches it. Builds perform no install, reload or old-generation
+deletion. The id names captured inputs, not BB loader cache bytes or external
+SDK/Node APIs. Local path delivery is supported; npm/Git automatic plugin
+installation is not claimed. Local fixtures do not certify a particular BB
+installation; verify the executing identities after install/reload.
 See the [Host reference](../../docs/reference/02-host.md#bb-executing-runtime-identity)
-for provenance scope, fields and failure reasons, and the standalone
+for snapshot boundaries, fields and failure reasons, and the standalone
 `promptobus-runtime` skill for diagnosis. The six generated role skills are unchanged.
 
 ## Restrictions
@@ -162,8 +167,10 @@ selection unchanged. These measurements do not certify other sessions or models.
 ## Local task entry point
 
 Build the root library before `npm ci` in this package so the local `file:../..`
-dependency contains its current public exports. Build and reload the installed
-plugin after source changes. `bb promptobus --help` describes the operator CLI.
+dependency contains its current public exports. After source changes, run
+`npm run build` and explicitly install the new receipt's generation directory.
+Reload alone keeps the generation already registered with BB.
+`bb promptobus --help` describes the operator CLI.
 
 From the repository root, install and build the source package:
 
@@ -485,19 +492,21 @@ npm install
 npm run check
 npm run skills:check
 npm run build
-bb plugin install .
-bb plugin reload promptobus
+bb plugin install ./.runtime/<buildId>
 ```
 
 Use a packed release or another explicit supported package spec. The integration
 module keeps its own dependencies installed in its consumer project. Generation
-copies canonical TypeScript, role skills and setup scripts; it does not copy
-ignored build output, adapters, tests or dependencies. It refuses existing output
-directories. The entry imports the consumer source module, which BB bundles on
-build. The generator selects `host.mjs` and the core dependency before installation;
-after `npm install`, `npm run build` stamps this generated consumer's own inputs
-and selected integration. Keep secrets in host-side runtime configuration, not
-source literals.
+copies canonical TypeScript, shipped skills and setup scripts; it does not copy
+developer `.runtime`/`dist`, adapters, tests or dependencies. It refuses existing
+output directories. The generator selects `host.mjs` and the core dependency
+before installation. After `npm install`, `npm run build` captures the selected
+consumer's static integration graph with the public BB host builder and stamps
+this consumer's own generation. Use the successful receipt's exact `buildId` in
+the install command. Keep secrets in host-side runtime configuration,
+not source literals. The plugin itself is installed from its local generation path;
+the explicit package spec above selects the core dependency, not a plugin
+distribution route.
 This variant has the same plugin id `promptobus` and replaces the default variant;
 it is not a second parallel plugin.
 
@@ -509,7 +518,8 @@ additional declared skill resources; it grants no arbitrary workspace read.
 `promptobus_host_call` derives role/root/actor from the binding and freshly checks
 admission before callback dispatch. Tools appear only when the collected context
 requires them. A running Codex session keeps its native tool inventory: after a
-source/context change regenerate/build/reload and create fresh participants.
+source/context change regenerate the consumer if needed, run `npm run build`,
+explicitly install the new generation and create fresh participants.
 Never hand-edit generated adapters or assume reload changes an existing session.
 
 ## Approver admission and workflow support

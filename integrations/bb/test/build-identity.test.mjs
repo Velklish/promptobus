@@ -14,7 +14,7 @@ function fixture(t) {
   mkdirSync(path.join(root, 'skills'));
   writeFileSync(path.join(root, 'skills/SKILL.md'), 'Shipped instruction');
   writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'bb-plugin-promptobus', version: '0.1.0',
-    bb: { server: './server.ts', host: './host.ts' }, dependencies: { promptobus: '1.0.0', '@get-bb/plugin-sdk': '0.6.15' } }));
+    bb: { server: './.runtime/source/server.ts', host: './.runtime/source/host.ts', skills: ['.runtime/skills'] }, dependencies: { promptobus: '1.0.0', '@get-bb/plugin-sdk': '0.6.15' } }));
   writeFileSync(path.join(root, 'package-lock.json'), '{"lockfileVersion":3}');
   writeFileSync(path.join(root, 'tsconfig.json'), '{}');
   writeFileSync(path.join(root, 'server.ts'), 'server input');
@@ -28,12 +28,19 @@ function fixture(t) {
   return root;
 }
 
-function withFakeBuilder(t, root, exit = 0) {
+function withFakeBuilder(t, root, exit = 0, mutation = null) {
   const executable = path.join(root, 'fake-bb');
   writeFileSync(executable, `#!${process.execPath}\nimport {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
 import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
 if(process.argv.includes('--version')) {console.log('0.46.1');process.exit(0)}
-const source=readFileSync('build-identity.ts','utf8');
+if(${JSON.stringify(mutation)} && process.cwd().includes('.runtime-stage-')) {
+ if(${JSON.stringify(mutation)}==='git-head') execFileSync('git',['-C',${JSON.stringify(root)},'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','--quiet','--allow-empty','-m','Changed during capture']);
+ else { const file=${JSON.stringify(root)}+'/'+${JSON.stringify(mutation)};
+ writeFileSync(file,readFileSync(file,'utf8')+'\\n// CHANGED_DURING_CAPTURE'); }
+}
+const entry=JSON.parse(readFileSync('package.json')).bb.server;
+const source=readFileSync(new URL('./build-identity.ts',new URL(entry,'file://'+process.cwd()+'/')),'utf8');
 if(${exit}) process.exit(${exit});
 mkdirSync('dist',{recursive:true});
 for(const file of ['server.js','host.js'])writeFileSync('dist/'+file,source);
@@ -73,7 +80,7 @@ test('an untracked consumer under an unrelated Git parent does not claim the par
   git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'Unrelated parent');
   const root = path.join(parent, 'consumer'); renameSync(original, root);
   const manifestPath = path.join(root, 'package.json'), manifest = JSON.parse(readFileSync(manifestPath));
-  manifest.bb.host = './host.mjs'; writeFileSync(manifestPath, JSON.stringify(manifest));
+  manifest.bb.host = './.runtime/source/host.mjs'; writeFileSync(manifestPath, JSON.stringify(manifest));
   writeFileSync(path.join(root, 'host.mjs'), 'import options from "./consumer.mjs";\n');
   writeFileSync(path.join(root, 'consumer.mjs'), 'export default {};\n');
   const identity = computeBuildIdentity(root);
@@ -84,7 +91,7 @@ test('an untracked consumer under an unrelated Git parent does not claim the par
 
 test('generated consumer measures the integration selected in its own Host entry', t => {
   const root = fixture(t), manifestPath = path.join(root, 'package.json');
-  const manifest = JSON.parse(readFileSync(manifestPath)); manifest.bb.host = './host.mjs';
+  const manifest = JSON.parse(readFileSync(manifestPath)); manifest.bb.host = './.runtime/source/host.mjs';
   writeFileSync(manifestPath, JSON.stringify(manifest));
   writeFileSync(path.join(root, 'host.mjs'), 'import options from "./consumer.mjs";\n');
   writeFileSync(path.join(root, 'consumer.mjs'), 'export default {};\n');
@@ -99,20 +106,45 @@ test('build embeds one invocation identity and binds final artifacts without cha
   const source = readFileSync(path.join(root, 'build-identity.ts'));
   const manifest = await build(root);
   assert.deepEqual(readFileSync(path.join(root, 'build-identity.ts')), source);
+  assert.equal(computeBuildIdentity(root, '0.46.1').inputSha256, manifest.identity.inputSha256, 'generated snapshot is excluded from measured inputs');
+  assert.equal(manifest.snapshot.sha256.length, 64);
   const encoded = Buffer.from(JSON.stringify(manifest.identity)).toString('base64');
+  const installed = path.join(root, manifest.installationDirectory);
+  assert.equal(manifest.installationDirectory, `.runtime/${manifest.identity.buildId}`);
   for (const name of ['server.js', 'host.js']) {
-    const bundle = readFileSync(path.join(root, 'dist', name));
+    const bundle = readFileSync(path.join(installed, 'dist', name));
     assert.ok(bundle.includes(encoded));
     assert.equal(manifest.artifacts[name], sha256(bundle));
   }
-  assert.equal(JSON.parse(readFileSync(path.join(root, 'dist/host.meta.json'))).artifactDigest, manifest.artifacts['host.js']);
+  assert.equal(JSON.parse(readFileSync(path.join(installed, 'dist/host.meta.json'))).artifactDigest, manifest.artifacts['host.js']);
   assert.deepEqual(JSON.parse(readFileSync(path.join(root, 'dist/build-manifest.json'))), manifest);
   assert.equal(JSON.stringify(manifest).includes(root), false);
 });
 
-test('ordinary builder failure restores the exact tracked identity source', async t => {
+test('ordinary builder failure leaves tracked identity source unchanged', async t => {
   const root = fixture(t); withFakeBuilder(t, root, 7);
   const file = path.join(root, 'build-identity.ts'), original = readFileSync(file);
   await assert.rejects(build(root), /bb plugin build failed \(7\)/);
   assert.deepEqual(readFileSync(file), original);
+});
+
+
+test('capture refuses raw input edits during the consumer builder without replacing the previous receipt', async t => {
+  for (const file of ['server.ts', 'skills/SKILL.md', 'node_modules/promptobus/index.js', 'git-head']) await t.test(file, async t => {
+    const root = fixture(t);
+    writeFileSync(path.join(root, 'host.mjs'), 'import options from "./consumer.mjs";\n');
+    writeFileSync(path.join(root, 'consumer.mjs'), 'export default {};\n');
+    if (file === 'git-head') {
+      const git = (...args) => execFileSync('git', ['-C', root, ...args], { stdio: 'pipe' });
+      git('init', '--quiet');
+      git('add', 'server.ts', 'host.ts', 'host.mjs', 'consumer.mjs', 'build-identity.ts', 'skills', 'package.json', 'package-lock.json', 'tsconfig.json');
+      git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '-m', 'Captured source');
+    }
+    mkdirSync(path.join(root, 'dist'));
+    const receipt = path.join(root, 'dist/build-manifest.json');
+    writeFileSync(receipt, 'PREVIOUS_RECEIPT');
+    withFakeBuilder(t, root, 0, file);
+    await assert.rejects(build(root), /Build inputs changed during capture/, 'a changed raw input must refuse the capture');
+    assert.equal(readFileSync(receipt, 'utf8'), 'PREVIOUS_RECEIPT', 'a refused capture must preserve the previous latest receipt');
+  });
 });

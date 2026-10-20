@@ -11,12 +11,7 @@
     "description": "Local engine-backed task participants and read-only Codex reviewers in BB.",
     "branding": {
       "icon": "Workflow"
-    },
-    "server": "./server.ts",
-    "host": "./host.ts",
-    "skills": [
-      "skills"
-    ]
+    }
   },
   "dependencies": {
     "@get-bb/plugin-sdk": "0.6.15",

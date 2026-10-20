@@ -30,8 +30,11 @@ test('consumer generator builds a fresh packed Host integration without generate
   const core = JSON.parse(readFileSync(path.resolve(source, '../../package.json'), 'utf8'));
   assert.equal(packed.name, core.name);
   assert.equal(packed.version, core.version);
+  const helper = path.join(root, 'consumer-helper.mjs');
+  writeFileSync(helper, "export const description = 'GRAPH_ORIGINAL';\n");
   const integration = path.join(root, 'consumer.mjs');
   writeFileSync(integration, `import path from 'node:path';
+import {description} from './consumer-helper.mjs';
 export default {
   resolveHost(root) { return {
     collectRules: () => [path.join(root, 'AGENTS.md')], skillsDir: () => null,
@@ -39,7 +42,7 @@ export default {
     participantServers: () => ({servers:{canonical:{command:'fiction'}}, external:[]}),
     participantDenyToolsByKind: () => ({complete:true, tools:[{server:'canonical',tool:'write'}]}),
   }; },
-  async listTools() { return ['read','write'].map(name => ({name, description:name, inputSchema:{type:'object'}, access:name})); },
+  async listTools() { return ['read','write'].map(name => ({name, description:description+':'+name, inputSchema:{type:'object'}, access:name})); },
   async invokeTool(input) { return {role:input.role, tool:input.tool, actor:input.actor}; },
 };\n`);
   const directory = path.join(root, 'plugin');
@@ -48,20 +51,30 @@ export default {
   assert.equal(existsSync(path.join(directory, '.test-build')), false);
   assert.equal(existsSync(path.join(directory, 'node_modules')), false);
   assert.equal(existsSync(path.join(directory, 'dist')), false);
+  assert.equal(existsSync(path.join(directory, '.runtime')), false);
   assert.equal(existsSync(path.join(directory, 'test')), false);
   assert.equal(readFileSync(path.join(directory, 'skills/promptobus-worker/SKILL.md'), 'utf8'),
     readFileSync(path.join(source, 'skills/promptobus-worker/SKILL.md'), 'utf8'));
   assert.throws(() => run(process.execPath, [path.join(source, 'scripts/create-host-plugin.mjs'), '--directory', directory,
     '--integration', integration, '--promptobus', 'unused'], source), /existing files are never overwritten/);
   run('npm', ['install', '--no-audit', '--no-fund'], directory);
-  const installed = JSON.parse(readFileSync(path.join(directory, 'node_modules/promptobus/package.json'), 'utf8'));
-  assert.equal(installed.version, core.version);
+  const installedCore = JSON.parse(readFileSync(path.join(directory, 'node_modules/promptobus/package.json'), 'utf8'));
+  assert.equal(installedCore.version, core.version);
   for (const script of ['check', 'skills:check', 'build']) run('npm', ['run', script], directory);
-  for (const entry of ['server.js', 'host.js']) assert.ok(existsSync(path.join(directory, 'dist', entry)), entry);
   const build = JSON.parse(readFileSync(path.join(directory, 'dist/build-manifest.json'), 'utf8'));
+  const installed = path.join(directory, build.installationDirectory);
+  assert.equal(build.installationDirectory, `.runtime/${build.identity.buildId}`);
+  assert.equal(JSON.parse(readFileSync(path.join(directory, 'package.json'))).bb.server, undefined);
+  for (const entry of ['server.js', 'host.js']) assert.ok(existsSync(path.join(installed, 'dist', entry)), entry);
   assert.equal(build.identity.inputs.consumerIntegrationSha256.length, 64);
+  assert.equal(build.identity.inputs.consumerBundleSha256.length, 64);
+  assert.equal(build.snapshot.sha256.length, 64);
+  const captured = readFileSync(path.join(installed, 'consumer-options.mjs'), 'utf8');
+  assert.ok(captured.includes('GRAPH_ORIGINAL'));
+  assert.doesNotMatch(captured, /from\s*['"](?:\.{1,2}\/|\/|promptobus|zod)/);
+  assert.doesNotMatch(captured, /\bimport\s*\(/);
   for (const entry of ['server.js', 'host.js']) assert.equal(build.artifacts[entry],
-    createHash('sha256').update(readFileSync(path.join(directory, 'dist', entry))).digest('hex'));
+    createHash('sha256').update(readFileSync(path.join(installed, 'dist', entry))).digest('hex'));
   assert.ok(build.identity.inputs.dependencies.some(input => input.name === 'promptobus' && input.version === core.version));
   assert.equal(JSON.stringify(build).includes(root), false);
   assert.ok(readFileSync(path.join(directory, 'build-identity.ts'), 'utf8').includes('__PROMPTOBUS_BUILD_IDENTITY_UNBUILT_V1__'));
@@ -69,7 +82,7 @@ export default {
   writeFileSync(path.join(fixture, 'AGENTS.md'), 'FICTION_RULE_FROM_PACKED_HOST');
   const probe = path.join(directory, 'probe.mjs');
   writeFileSync(probe, `import assert from 'node:assert/strict';
-import entry from './dist/host.js';
+import entry from ${JSON.stringify(pathToFileURL(path.join(installed, 'dist/host.js')).href)};
 import {createBbHostIntegration} from 'promptobus/bb-host';
 import options from ${JSON.stringify(pathToFileURL(integration).href)};
 const context={signal:new AbortController().signal};
@@ -79,10 +92,24 @@ assert.equal(identity.identity.inputSha256,${JSON.stringify(build.identity.input
 const collected=await entry.handlers.prepareContext({binding:{environmentPath:${JSON.stringify(fixture)},role:'reviewer'}},context);
 assert.equal(collected.rules[0].text,'FICTION_RULE_FROM_PACKED_HOST');
 assert.deepEqual(collected.tools.map(t=>t.tool),['read']);
+assert.equal(collected.tools[0].description,'GRAPH_ORIGINAL:read');
 const host=createBbHostIntegration(options);
 const input={root:${JSON.stringify(fixture)},role:'reviewer',server:'canonical',tool:'write',args:{},actor:{task:'fiction',participant:'reviewer'}};
 await assert.rejects(host.invoke(input),/not admitted/);
 assert.equal((await host.invoke({...input,role:'worker'})).tool,'write');\n`);
+  run(process.execPath, [probe], directory);
+  writeFileSync(helper, "export const description = 'GRAPH_EDITED';\n");
+  run(process.env.BB_CLI || 'bb', ['plugin', 'build'], installed);
+  run(process.execPath, [probe], directory);
+  run('npm', ['run', 'build'], directory);
+  const next = JSON.parse(readFileSync(path.join(directory, 'dist/build-manifest.json'), 'utf8'));
+  assert.equal(next.identity.inputs.consumerIntegrationSha256, build.identity.inputs.consumerIntegrationSha256);
+  assert.notEqual(next.identity.inputs.consumerBundleSha256, build.identity.inputs.consumerBundleSha256);
+  assert.notEqual(next.identity.inputSha256, build.identity.inputSha256);
+  assert.notEqual(next.identity.buildId, build.identity.buildId);
+  run(process.execPath, [probe], directory);
+  writeFileSync(probe, readFileSync(probe, 'utf8').replaceAll(build.identity.buildId, next.identity.buildId)
+    .replaceAll(build.identity.inputSha256, next.identity.inputSha256).replaceAll('GRAPH_ORIGINAL', 'GRAPH_EDITED'));
   run(process.execPath, [probe], directory);
 });
 

@@ -664,7 +664,7 @@ entry or the following build record:
 | Field | Meaning |
 | --- | --- |
 | `format` | Identity format, currently `1`. |
-| `buildId` | Unique UUID assigned for this wrapper invocation. |
+| `buildId` | Unique UUID assigned to this captured input snapshot. |
 | `pluginVersion` | Build-time BB plugin package version. |
 | `inputSha256` | Digest of plugin version and the measured `inputs` record. |
 | `inputs.sourceSha256` | Digest of selected plugin source, shipped skills and build inputs. |
@@ -674,6 +674,7 @@ entry or the following build record:
 | `inputs.builderVersion` | Reported BB builder version, or `null` when unavailable. |
 | `inputs.dependencies` | Resolved runtime packages with `name`, `version` and content `sha256`, recursively following declared dependencies. |
 | `inputs.consumerIntegrationSha256` | Digest of the generated consumer's directly selected integration module, otherwise `null`. |
+| `inputs.consumerBundleSha256` | Digest of its captured static options bundle, otherwise `null`. |
 
 `status: "complete"` and exit 0 require both identities and equal `buildId` and
 `inputSha256`. The reported outcomes are:
@@ -686,41 +687,92 @@ entry or the following build record:
 | `build-mismatch` | `incomplete` / 1 | Build ids or measured input digests differ. |
 | `host-unavailable-or-incompatible` | `incomplete` / 1 | Selection or the bounded RPC failed, including an older host without this contract. |
 
-Cancellation is rethrown, not converted into an incomplete success-shaped reply.
-The response reports loaded constants; it does not read a mutable manifest to
-infer which build is executing. This command's contract and fixture coverage do
-not establish an installed live parity measurement.
+Cancellation is rethrown, not converted into an incomplete reply. The response
+reports constants embedded in loaded code, not a mutable manifest. Matching
+identities mean the server and host report the same captured input snapshot;
+they do not identify BB's current loader-generated cache bytes, SDK implementation
+or build generation. This command's contract and fixture coverage do not establish
+an installed live parity measurement.
 
-From `integrations/bb/`, `npm run build` runs `node scripts/build.mjs`. The wrapper
-measures selected source, shipped skills and build configuration before invoking
-the official `bb plugin build`. Revision and dirty state remain `null` unless all
-measured local source files belong to that Git repository's tracked files. A
-generated consumer inside an unrelated parent repository therefore cannot claim
-the parent's revision or clean state. It digests
-manifest and lock contents without returning their contents. Resolved runtime
-dependency content, including Promptobus core and Plugin SDK, is hashed recursively
-through declared dependencies. Generated consumers select their `host.mjs` and
-core dependency before installation; their subsequent wrapper build also hashes
-the directly imported consumer integration module. External transitive integration
-imports and runtime peers are not exhaustively inventoried. A unique build id
-distinguishes invocations even for matching inputs; reproducible output is not claimed.
+From `integrations/bb/`, `npm run build` runs `node scripts/build.mjs`. The tracked
+root manifest is a build-source descriptor: its `bb` contains metadata only, with
+no server, host or skills entry. The root is not a supported install target.
+Each invocation creates an independent `.runtime/<buildId>` package with captured
+inputs/config/scripts, raw TypeScript, shipped skills and complete measured
+resolved packages in their dependency layout. Only the copied identity is stamped;
+tracked source and the tracked manifest are never substituted. The generated
+package declares:
 
-The wrapper retains the original `build-identity.ts` bytes in memory, temporarily
-substitutes its unbuilt marker and restores the exact bytes in `finally`, including
-ordinary builder failure. Concurrent builds in the same directory are unsupported.
-A crash or SIGKILL can prevent restoration. Inspect and restore the unbuilt marker,
-preserving unrelated source edits, before another build; the wrapper refuses a
-source without exactly one expected marker. Direct `bb plugin build` or
-`bb plugin dev` bypasses stamping and builds the normal unbuilt source as incomplete.
-An incomplete result never authorizes an automatic reload.
+| Manifest entry | Captured path |
+| --- | --- |
+| `bb.server` | `./source/server.ts` |
+| `bb.host` | `./source/host.ts`, or `./source/host.mjs` for a generated consumer |
+| `bb.skills` | `["skills"]` |
 
-`integrations/bb/dist/build-manifest.json` records the identity, final `server.js` and `host.js`
-SHA-256 hashes and official `builtWith` metadata. The wrapper leaves official
-source maps and metadata intact and verifies that `host.meta.json.artifactDigest`
-matches the final `host.js` hash. Editing the manifest does not change loaded
-constants. A bundle hash or BB artifact metadata alone cannot prove executing
-server/host parity. The standalone `promptobus-runtime` skill covers this operator
-check; the six role skills remain generated from the core instruction renderer.
+The generation moves to its final unique path before the default wrapper runs one
+normal public `bb plugin build`, preserving final module-origin paths. Install
+only the exact safe relative `installationDirectory` from the successful receipt:
+from the source root, `bb plugin install ./.runtime/<buildId>`. Building B leaves
+loaded A's source, core, assets and skills unchanged. `bb plugin reload promptobus`
+on registered A keeps A; explicit installation of B switches it. There is no
+automatic install, reload, garbage collection or old-generation deletion.
+Raw edits require another capture and explicit
+installation of that new generation. Bare build at the source root has no runtime
+entry; the source root is not a supported install target.
+
+The generator selects the consumer's `host.mjs` and core dependency before
+installation and never copies developer `.runtime` or `dist`. After dependency
+installation, its wrapper uses the public BB host builder on an owned staging
+package with an options-only entry reexporting the selected consumer source.
+That captures the static graph as the generation's `consumer-options.mjs`; its
+`source/host.mjs` imports this payload. The direct source digest is retained as
+`consumerIntegrationSha256`, and `consumerBundleSha256` covers the captured payload
+before identity stamping. The supported static fixture audits emitted imports.
+
+All measured raw files/configuration/skills are copied into generation inputs
+before identity is computed from those captured bytes and frozen dependencies.
+The wrapper compares original source/dependency fingerprints and Git revision/state
+before and after the consumer subprocess and final official build. A detected
+change refuses promotion and preserves the previous latest receipt; post-copy
+raw bytes are not presented as executed inputs. Manifest and lock contents are
+digested without returning their contents. Revision and dirty state remain `null`
+unless every measured local source file is tracked by that Git repository.
+`sourceRevision` is the build-time HEAD, not a later squash. Final `dist` artifacts
+and receipts are outside `inputSha256`; the captured consumer payload digest is
+an explicit input. Unique ids are no reproducibility claim.
+
+The copied core package preserves per-source `import.meta` origins for the server.
+The existing flat host bundle's core schema/catalog/native-helper paths and eager
+package-provenance read are not repaired by this change. Node and BB-provided APIs,
+including the runtime SDK, remain external boundaries. Arbitrary dynamic
+import/require/eval, consumer file-relative filesystem assets and external runtime
+code are not claimed frozen. The captured generation-local `tsconfig.json` stops
+mutable ancestor lookup; arbitrary external `extends` or configuration imports
+are unsupported. Snapshot activation makes no model/task behavior claim.
+
+`integrations/bb/dist/build-manifest.json` is the latest successful receipt. It
+records the safe relative `installationDirectory: ".runtime/<UUID>"`, identity,
+aggregate snapshot `sha256`, server/host/skills paths, final artifact hashes and
+official `builtWith` metadata. The immutable generation also retains its own
+receipt under `dist`. Snapshot hashing covers fixed `inputs`, `source`, `skills`
+and `node_modules` roots, top-level captured `tsconfig.json`, captured consumer
+inputs/payload and the generated package manifest. It excludes `dist` and receipts
+to avoid self-reference.
+Source maps and metadata remain intact;
+`host.meta.json.artifactDigest` must match the final `host.js`. These artifact
+hashes are separate from snapshot identity and BB's loader-generated code. A
+manifest edit cannot change loaded constants; artifact metadata alone cannot
+establish loaded snapshot parity.
+
+Supported delivery is a local path: `npm ci` → `npm run build` → installation of
+the exact generation recorded by the receipt. The source fixture models manifest
+recompilation and host rebuilding using the public builder and ESM copies; BB's
+actual server path cache uses CJS with different options. That fixture is not
+actual server-cache execution proof; an actual BB measurement remains separate.
+Nested `node_modules` copies can be excluded by npm packing, so automatic npm/Git
+installation of this optional plugin is not a supported distribution claim.
+The standalone `promptobus-runtime` skill covers diagnosis; the six role skills
+remain generated from the core instruction renderer.
 
 ### BB display names and acceptance placement
 
