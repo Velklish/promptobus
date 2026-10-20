@@ -17,6 +17,8 @@ Related [PB-381](PB-381-orchestration-obtainable-admission-evidence.md) addresse
 
 ## Work to do
 
+Recovery audit, 2026-10-20, priority: after terminal/permission blockers, before scaling. Current `skills/orchestrate/SKILL.md` says the machine lease replaces orchestrator-issued slots and forbids handing out such slots. The inspected consumer overlay still requires a manually issued FIFO slot. Correct both policies together, without rewriting the optional lease algorithm. The BB launch schema also accepts a maximum active participant count but the inspected plugin does not enforce it as a scheduler limit; either implement the promised accounting at the existing admission boundary or remove the misleading claim. Distinguish the actual BB concurrency policy from inert run metadata. Source and consumer file locations remain in the audit sidecar; historical token impact is notMeasured.
+
 - Remove mandatory global machine lease acquisition for independent source work, setup/build, no-model capture, focused checks and ordinary full suites. Permit concurrency within the approved card/actor limit after confirming distinct worktree, build output, temporary root and writable cache ownership.
 - Reserve exclusivity only for a named concrete conflict: publication or mutation of the same repository main/ref, an actually shared mutable path/service, or an explicit performance/controlled-load measurement whose result depends on competing work. Block only relevant competitors; independent suites may overlap.
 - Preserve the public generic lease API and FIFO/keyed correctness as optional/existing-user features. Do not delete that feature or invalidate its tests merely because ordinary orchestration no longer requires acquisition.
