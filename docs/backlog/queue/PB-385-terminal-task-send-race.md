@@ -1,5 +1,6 @@
 # PB-385 · Define and enforce send and close ordering
 
+- **Order:** 320
 - **Scope:** [Protocol and storage](../../reference/04-protocol.md), asynchronous artifact publication and task closure
 - **Created:** 2026-10-20
 - **Dependencies:** none

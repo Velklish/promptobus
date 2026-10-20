@@ -1,5 +1,6 @@
 # PB-382 · Isolated work must not require a global machine lease; lock only conflicting resources and controlled measurements
 
+- **Order:** 290
 - **Scope:** [Machine leases and participant coordination](../../reference/01-overview.md), canonical orchestration workflow and actual consumer scheduling guards
 - **Created:** 2026-10-19
 - **Dependencies:** none

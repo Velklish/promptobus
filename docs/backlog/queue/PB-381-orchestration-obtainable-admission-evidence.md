@@ -1,5 +1,6 @@
 # PB-381 · Orchestration admission must use obtainable task-scoped evidence and declare user permission steps upfront
 
+- **Order:** 280
 - **Scope:** [Participant coordination and machine leases](../../reference/01-overview.md), canonical orchestration skill and BB-specific launch guidance
 - **Created:** 2026-10-18
 - **Dependencies:** none

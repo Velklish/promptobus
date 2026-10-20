@@ -1,5 +1,6 @@
 # PB-383 · Orchestration review handoffs must use compact current evidence and a compatible collector from the first check
 
+- **Order:** 300
 - **Scope:** [Participant coordination](../../reference/01-overview.md), canonical orchestration skill and BB evidence handoffs
 - **Created:** 2026-10-19
 - **Dependencies:** none

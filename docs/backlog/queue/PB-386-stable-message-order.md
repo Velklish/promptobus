@@ -1,5 +1,6 @@
 # PB-386 · Canonical message order must survive wall-clock rollback
 
+- **Order:** 330
 - **Scope:** [Protocol and storage](../../reference/04-protocol.md), canonical message ordering and current-result selection
 - **Created:** 2026-10-20
 - **Dependencies:** none

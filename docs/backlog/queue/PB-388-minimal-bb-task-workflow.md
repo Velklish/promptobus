@@ -1,5 +1,6 @@
 # PB-388 · Design a minimal BB workflow with one executor and independent review
 
+- **Order:** 350
 - **Scope:** [BB workflow](../../reference/01-overview.md), model roles, context delivery and mechanical acceptance
 - **Created:** 2026-10-20
 - **Dependencies:** owner agreement on the workflow; PB-381, PB-383, PB-384 and PB-387 contracts

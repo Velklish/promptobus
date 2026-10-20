@@ -1,5 +1,6 @@
 # PB-387 · BB admission needs bounded current control independent of history growth
 
+- **Order:** 340
 - **Scope:** [BB host boundary](../../reference/02-host.md), launch-control reader and current-state publication
 - **Created:** 2026-10-20
 - **Dependencies:** coordinate the launch preflight contract with PB-381

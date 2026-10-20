@@ -1,5 +1,6 @@
 # PB-389 · Remove redundant assertions and replace tests disconnected from production
 
+- **Order:** 360
 - **Scope:** [Contributing](../../guides/contributing.md), test value and preserved behavior
 - **Created:** 2026-10-20
 - **Dependencies:** none

@@ -1,5 +1,6 @@
 # PB-384 · BB-managed runs need task-scoped owner authorization for agent-origin approval requests
 
+- **Order:** 310
 - **Scope:** [BB-managed participant workflow](../../reference/01-overview.md), supported BB permission/delegation contract and its Promptobus consumer
 - **Created:** 2026-10-19
 - **Dependencies:** a supported BB task-scoped permission/delegation capability; establish the contract or record the upstream requirement before implementation
