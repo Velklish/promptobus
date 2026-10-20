@@ -63,6 +63,7 @@ export async function stashBlob(home: string, task: string, source: ArtifactSour
   const tmp = path.join(dir, `.tmp-blob-${process.pid}-${tmpSeq}`);
   const hash = createHash('sha256');
   let size = 0;
+  let output: ReturnType<typeof createWriteStream> | undefined;
   try {
     await pipeline(inputOf(source), async function* count(chunks: AsyncIterable<Buffer | string>) {
       for await (const chunk of chunks) {
@@ -71,7 +72,7 @@ export async function stashBlob(home: string, task: string, source: ArtifactSour
         size += buf.length;
         yield buf;
       }
-    }, createWriteStream(tmp));
+    }, output = createWriteStream(tmp));
     const sha256 = hash.digest('hex');
     try {
       linkSync(tmp, blobFile(home, task, sha256));
@@ -82,6 +83,14 @@ export async function stashBlob(home: string, task: string, source: ArtifactSour
     }
     return { sha256, size };
   } finally {
+    // A source failure can reject pipeline before the writer opens and closes.
+    // Wait for close so a late open cannot recreate the temporary file after removal.
+    if (output && !output.closed) {
+      const writer = output;
+      const closed = new Promise<void>((resolve) => writer.once('close', resolve));
+      writer.destroy();
+      await closed;
+    }
     rmSync(tmp, { force: true });
   }
 }

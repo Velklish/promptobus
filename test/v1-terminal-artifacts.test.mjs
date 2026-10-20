@@ -193,21 +193,53 @@ for (const close of [false, true]) {
   test(`a failed artifact stream preserves its original error ${close ? 'after close' : 'while active'}`, async t => {
     const f = fixture(t);
     const original = new Error('source failed after its first chunk');
-    let entered, release;
+    const createWriteStream = fs.createWriteStream, open = fs.open;
+    let entered, release, enteredOpen, releaseOpen, output, closed, outcome;
+    let settled = false, settledBeforeOpen, closedBeforeOpen;
+    const openEntered = new Promise(resolve => { enteredOpen = resolve; });
     const barrier = new Promise(resolve => { entered = resolve; });
     const gate = new Promise(resolve => { release = resolve; });
     const source = Readable.from((async function* () {
+      await openEntered;
       yield Buffer.from('partial bytes');
       entered();
       await gate;
       throw original;
     })());
-    const outcome = f.engine.send(f.task, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'failed source',
-      artifact: { filename: 'failed.patch', stream: source } }).then(value => ({ value }), error => ({ error }));
-    await barrier;
-    if (close) assert.equal(f.engine.closeTask(f.task).status, 'done');
-    release();
-    assert.equal((await outcome).error, original);
+    fs.createWriteStream = (file, options) => {
+      if (!path.basename(String(file)).startsWith('.tmp-blob-')) return createWriteStream(file, options);
+      output = createWriteStream(file, { ...options, fs: {
+        open(...args) { releaseOpen = () => open(...args); enteredOpen(); },
+        close: fs.close, write: fs.write, writev: fs.writev,
+      } });
+      closed = new Promise(resolve => output.once('close', resolve));
+      return output;
+    };
+    syncBuiltinESMExports();
+    try {
+      outcome = f.engine.send(f.task, { from: 'owner', to: ['w-api'], type: 'artifact', body: 'failed source',
+        artifact: { filename: 'failed.patch', stream: source } }).then(
+        value => { settled = true; return { value }; }, error => { settled = true; return { error }; });
+      await Promise.race([barrier, outcome.then(() => assert.fail('send settled before the source barrier'))]);
+      if (close) assert.equal(f.engine.closeTask(f.task).status, 'done');
+      release();
+      await new Promise(resolve => setImmediate(resolve));
+      settledBeforeOpen = settled;
+      closedBeforeOpen = output.closed;
+    } finally {
+      release();
+      releaseOpen?.();
+      try { await closed; await outcome; }
+      finally { fs.createWriteStream = createWriteStream; syncBuiltinESMExports(); }
+    }
+    const result = await outcome;
+    t.diagnostic(JSON.stringify({ root: f.root, settledBeforeOpen, closedBeforeOpen, closed: output.closed,
+      originalError: result.error === original,
+      temporaryFiles: fs.readdirSync(path.join(f.directory, 'blobs')).filter(name => name.startsWith('.tmp-blob-')) }));
+    assert.equal(result.error, original);
+    assert.equal(settledBeforeOpen, false, 'send must wait for its failed artifact writer to close');
+    assert.equal(closedBeforeOpen, false);
+    assert.equal(output.closed, true);
     const healed = f.reopen();
     assert.deepEqual(healed.listArtifacts(f.task), { artifacts: [], broken: [] });
     assert.deepEqual(healed.facts(f.task).messages, []);
