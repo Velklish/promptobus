@@ -642,6 +642,86 @@ workspace ownership, while managed worktrees remain BB-owned. These path checks
 are covered by SDK fixtures; live path registration has not been measured.
 
 
+### BB executing runtime identity
+
+`bb promptobus runtime describe [--host <id>] [--json]` describes the executing
+plugin server and the host selected for that invocation. It requires no task or
+participant binding. JSON is the default; `--json` requests the same output.
+
+Host selection uses the explicit `--host`, otherwise the invoking BB thread's
+environment `hostId`, otherwise `system.config().primaryHostId` when there is no
+invoking thread. A failed thread/environment lookup remains incomplete rather
+than silently inspecting the primary machine. The command makes one
+`runtimeDescribe` host RPC with `{}` input and `timeoutMs: 5000`; the handler
+returns its embedded identity without an engine operation. Cancellation from
+the invoking request propagates through the SDK lookups and host call. There is
+no retry, reload, spawn, model turn or task-state write.
+
+The response contains `status`, `server.identity` and
+`host: { id, identity, reason }`. Each identity is either `null` for an unbuilt
+entry or the following build record:
+
+| Field | Meaning |
+| --- | --- |
+| `format` | Identity format, currently `1`. |
+| `buildId` | Unique UUID assigned for this wrapper invocation. |
+| `pluginVersion` | Build-time BB plugin package version. |
+| `inputSha256` | Digest of plugin version and the measured `inputs` record. |
+| `inputs.sourceSha256` | Digest of selected plugin source, shipped skills and build inputs. |
+| `inputs.sourceRevision` | Build-time Git HEAD, or `null` when provenance is unavailable. It need not equal a later squash commit. |
+| `inputs.sourceDirty` | Git dirty observation scoped to those source inputs, or `null` when unavailable. |
+| `inputs.lockSha256` | Digest of the plugin lockfile. |
+| `inputs.builderVersion` | Reported BB builder version, or `null` when unavailable. |
+| `inputs.dependencies` | Resolved runtime packages with `name`, `version` and content `sha256`, recursively following declared dependencies. |
+| `inputs.consumerIntegrationSha256` | Digest of the generated consumer's directly selected integration module, otherwise `null`. |
+
+`status: "complete"` and exit 0 require both identities and equal `buildId` and
+`inputSha256`. The reported outcomes are:
+
+| `host.reason` | Status / exit | Observation |
+| --- | --- | --- |
+| `matching` | `complete` / 0 | Server and selected host report matching embedded build identity. |
+| `host-unbuilt` | `incomplete` / 1 | Host has no wrapper-stamped identity. |
+| `server-unbuilt` | `incomplete` / 1 | Server has no wrapper-stamped identity. |
+| `build-mismatch` | `incomplete` / 1 | Build ids or measured input digests differ. |
+| `host-unavailable-or-incompatible` | `incomplete` / 1 | Selection or the bounded RPC failed, including an older host without this contract. |
+
+Cancellation is rethrown, not converted into an incomplete success-shaped reply.
+The response reports loaded constants; it does not read a mutable manifest to
+infer which build is executing. This command's contract and fixture coverage do
+not establish an installed live parity measurement.
+
+From `integrations/bb/`, `npm run build` runs `node scripts/build.mjs`. The wrapper
+measures selected source, shipped skills and build configuration before invoking
+the official `bb plugin build`. Revision and dirty state remain `null` unless all
+measured local source files belong to that Git repository's tracked files. A
+generated consumer inside an unrelated parent repository therefore cannot claim
+the parent's revision or clean state. It digests
+manifest and lock contents without returning their contents. Resolved runtime
+dependency content, including Promptobus core and Plugin SDK, is hashed recursively
+through declared dependencies. Generated consumers select their `host.mjs` and
+core dependency before installation; their subsequent wrapper build also hashes
+the directly imported consumer integration module. External transitive integration
+imports and runtime peers are not exhaustively inventoried. A unique build id
+distinguishes invocations even for matching inputs; reproducible output is not claimed.
+
+The wrapper retains the original `build-identity.ts` bytes in memory, temporarily
+substitutes its unbuilt marker and restores the exact bytes in `finally`, including
+ordinary builder failure. Concurrent builds in the same directory are unsupported.
+A crash or SIGKILL can prevent restoration. Inspect and restore the unbuilt marker,
+preserving unrelated source edits, before another build; the wrapper refuses a
+source without exactly one expected marker. Direct `bb plugin build` or
+`bb plugin dev` bypasses stamping and builds the normal unbuilt source as incomplete.
+An incomplete result never authorizes an automatic reload.
+
+`integrations/bb/dist/build-manifest.json` records the identity, final `server.js` and `host.js`
+SHA-256 hashes and official `builtWith` metadata. The wrapper leaves official
+source maps and metadata intact and verifies that `host.meta.json.artifactDigest`
+matches the final `host.js` hash. Editing the manifest does not change loaded
+constants. A bundle hash or BB artifact metadata alone cannot prove executing
+server/host parity. The standalone `promptobus-runtime` skill covers this operator
+check; the six role skills remain generated from the core instruction renderer.
+
 ### BB display names and acceptance placement
 
 New participant titles start with `<card/task label> · <role> · <short subject>`.

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -57,6 +58,13 @@ export default {
   assert.equal(installed.version, core.version);
   for (const script of ['check', 'skills:check', 'build']) run('npm', ['run', script], directory);
   for (const entry of ['server.js', 'host.js']) assert.ok(existsSync(path.join(directory, 'dist', entry)), entry);
+  const build = JSON.parse(readFileSync(path.join(directory, 'dist/build-manifest.json'), 'utf8'));
+  assert.equal(build.identity.inputs.consumerIntegrationSha256.length, 64);
+  for (const entry of ['server.js', 'host.js']) assert.equal(build.artifacts[entry],
+    createHash('sha256').update(readFileSync(path.join(directory, 'dist', entry))).digest('hex'));
+  assert.ok(build.identity.inputs.dependencies.some(input => input.name === 'promptobus' && input.version === core.version));
+  assert.equal(JSON.stringify(build).includes(root), false);
+  assert.ok(readFileSync(path.join(directory, 'build-identity.ts'), 'utf8').includes('__PROMPTOBUS_BUILD_IDENTITY_UNBUILT_V1__'));
   const fixture = path.join(root, 'fixture'); mkdirSync(fixture);
   writeFileSync(path.join(fixture, 'AGENTS.md'), 'FICTION_RULE_FROM_PACKED_HOST');
   const probe = path.join(directory, 'probe.mjs');
@@ -65,6 +73,9 @@ import entry from './dist/host.js';
 import {createBbHostIntegration} from 'promptobus/bb-host';
 import options from ${JSON.stringify(pathToFileURL(integration).href)};
 const context={signal:new AbortController().signal};
+const identity=await entry.handlers.runtimeDescribe({},context);
+assert.equal(identity.identity.buildId,${JSON.stringify(build.identity.buildId)});
+assert.equal(identity.identity.inputSha256,${JSON.stringify(build.identity.inputSha256)});
 const collected=await entry.handlers.prepareContext({binding:{environmentPath:${JSON.stringify(fixture)},role:'reviewer'}},context);
 assert.equal(collected.rules[0].text,'FICTION_RULE_FROM_PACKED_HOST');
 assert.deepEqual(collected.tools.map(t=>t.tool),['read']);

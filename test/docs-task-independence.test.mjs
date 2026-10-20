@@ -119,6 +119,7 @@ const productLocations = new Set([
   '~/.cursor/cli-config.json',
   '.codex/hooks.json', '~/.codex/hooks.json', '$CODEX_HOME/hooks.json',
   'waits/warden.exit.json', 'waits/warden.gen.json',
+  'integrations/bb/dist/build-manifest.json',
 ]);
 
 function isPlaceholder(clean, fromRel) {
@@ -225,6 +226,10 @@ check('docs: a product placeholder is not a missing artifact',
   && evidenceIn('`~/.promptobus/model-routing.json`', fromGuide).length === 0
   && evidenceIn('`.cursor/hooks.json`', fromGuide).length === 0
   && evidenceIn('`waits/warden.exit.json`', fromGuide).length === 0);
+check('docs: only the canonical BB build manifest location is a product artifact',
+  evidenceIn('`integrations/bb/dist/build-manifest.json`', fromGuide).length === 0
+  && ['runs/proof/build-manifest.json', 'other/dist/build-manifest.json', 'dist/build-manifest.json']
+    .every((name) => evidenceIn(`\`${name}\``, fromGuide).includes(name)));
 check('docs: a relative product-named capture is refused',
   evidenceIn('`../runs/proof/state.json`', fromGuide).includes('../runs/proof/state.json')
   && evidenceIn('`../runs/.mcp.json`', fromGuide).includes('../runs/.mcp.json'));

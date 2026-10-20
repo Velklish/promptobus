@@ -4,11 +4,16 @@ import { createBbHostIntegration } from 'promptobus/bb-host';
 import type { BbHostIntegration } from 'promptobus/bb-host';
 import { reviewerFiles } from 'promptobus/bb-reviewer';
 import { hostContract } from './contract.js';
+import { BUILD_IDENTITY } from './build-identity.js';
 import { engineOperation } from './engine-host.js';
 import { readDeclaredFile, validateControl } from './launch-context.js';
 
 export function createHostEntry(integration: BbHostIntegration = createBbHostIntegration({ resolveHost: root => createStandaloneHost({ cwd: root }) })) {
   return experimental_defineHostEntry({ contract: hostContract, handlers: {
+    runtimeDescribe: async (_input, context) => {
+      context.signal.throwIfAborted();
+      return { identity: BUILD_IDENTITY };
+    },
     launchControl: async ({ binding: b }, context) => {
       context.signal.throwIfAborted();
       const launch = b.launchContext;

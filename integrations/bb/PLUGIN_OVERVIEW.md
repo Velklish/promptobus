@@ -11,6 +11,15 @@ The reviewer admits Codex by its effective restrictions and supported protocol c
 private Codex home and an empty project sandbox. Existing native providers keep
 their own behavior.
 
+## Runtime identity
+
+Build with `npm run build`, then inspect executing server/selected-host parity
+with `bb promptobus runtime describe [--host <id>] [--json]`. JSON is the default;
+matching embedded build ids and input digests return `complete` with exit 0,
+otherwise `incomplete` with exit 1. The standalone runtime skill covers this
+read-only check. [Runtime identity](../../docs/reference/02-host.md#bb-executing-runtime-identity)
+defines selection, build provenance, crash recovery and measurement limits.
+
 ## Review permissions
 
 The provider verifies Codex read-only sandbox and no approval escalation before a

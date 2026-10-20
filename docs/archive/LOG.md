@@ -551,3 +551,4 @@ The release reconciliation gives the [Codex-only journal lookup](#pb-372) the na
 - <a id="pb-332"></a>`PB-332-participant-token-telemetry` · 2026-10-20 · completed · — · Participant telemetry counts tokens from the harness session logs, covers teamleads and the orchestrator, and a command reports a run
 - <a id="pb-390.1"></a>`PB-390.1-bb-setup-owned-cache` · 2026-10-20 · completed · — · Give the packed Host setup fixture its own npm cache
 - <a id="pb-390"></a>`PB-390-bb-plugin-layout` · 2026-10-20 · completed · — · Move the optional BB plugin into integrations/bb
+- <a id="pb-381.1"></a>`PB-381.1-bb-runtime-build-identity` · 2026-10-20 · completed · — · Expose executing BB server and host build identities

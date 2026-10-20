@@ -12,10 +12,38 @@ without an exact or maximum numeric Codex version requirement.
 The provider copies only `auth.json` into its private Codex
 home; it does not modify the original authentication or copy personal config.
 
-From this directory, run `npm ci`, `bb plugin build`, and `bb plugin install .`.
+From this directory, run `npm ci`, `npm run build`, and `bb plugin install .`.
 Select `Codex (Promptobus read-only reviewer)` and an explicit reported model.
 The BB permission mode is `accept-edits`; the provider always requests and verifies
 Codex `readOnly` with approval policy `never`, regardless of that BB label.
+
+## Executing runtime identity
+
+Inspect the executing plugin server and selected host without a task binding:
+
+```sh
+bb promptobus runtime describe
+bb promptobus runtime describe --host host_example --json
+```
+
+JSON is the default. Selection uses `--host`, then the invoking thread's
+environment host, then the primary host when there is no invoking thread.
+`complete` and exit 0 require matching non-null `buildId` and `inputSha256`;
+unbuilt, mismatched, older incompatible or unavailable entries return
+`incomplete` and exit 1. One read-only host RPC has a 5000 ms timeout;
+cancellation propagates. Inspection performs no retry, reload, spawn, model call,
+engine operation or task-state write.
+
+Build with `npm run build` to stamp measured inputs and a unique build id before
+the official BB build. Direct `bb plugin build` or `bb plugin dev` skips stamping.
+The wrapper restores `build-identity.ts` after ordinary success or failure;
+concurrent same-directory builds are unsupported. After a crash or SIGKILL,
+verify and restore its unbuilt placeholder while preserving source edits before
+rebuilding. A mutable manifest or artifact hash alone cannot establish loaded
+parity. Installed live parity remains unmeasured on this source change.
+See the [Host reference](../../docs/reference/02-host.md#bb-executing-runtime-identity)
+for provenance scope, fields and failure reasons, and the standalone
+`promptobus-runtime` skill for diagnosis. The six generated role skills are unchanged.
 
 ## Restrictions
 
@@ -351,7 +379,7 @@ Archive/deletion and participant binding phases also prevent automatic revival.
 engine for identity/race/reload/mailbox/artifact checks. The SDK harness requires
 the pinned optional testing peers in devDependencies, including Hono `4.13.13`.
 The SDK optional Hono peer also appears in this checkout's production dependency
-graph; `npm audit --json` checks its resolved version. Build with `bb plugin build`
+graph; `npm audit --json` checks its resolved version. Build with `npm run build`
 to verify the self-contained host bundle as well as the server. Mock SDK evidence
 and actual local tool-turn evidence are reported separately.
 
@@ -456,7 +484,7 @@ cd /absolute/new-plugin
 npm install
 npm run check
 npm run skills:check
-bb plugin build
+npm run build
 bb plugin install .
 bb plugin reload promptobus
 ```
@@ -466,7 +494,10 @@ module keeps its own dependencies installed in its consumer project. Generation
 copies canonical TypeScript, role skills and setup scripts; it does not copy
 ignored build output, adapters, tests or dependencies. It refuses existing output
 directories. The entry imports the consumer source module, which BB bundles on
-build. Keep secrets in host-side runtime configuration, not source literals.
+build. The generator selects `host.mjs` and the core dependency before installation;
+after `npm install`, `npm run build` stamps this generated consumer's own inputs
+and selected integration. Keep secrets in host-side runtime configuration, not
+source literals.
 This variant has the same plugin id `promptobus` and replaces the default variant;
 it is not a second parallel plugin.
 

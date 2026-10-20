@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add `bb promptobus runtime describe` to compare the executing BB plugin server
+  and selected host through one read-only, bounded RPC. Matching embedded build
+  ids and input digests return complete with exit 0; missing, incompatible or
+  mismatched identities remain incomplete with exit 1. The npm build wrapper
+  stamps measured inputs and records final bundle hashes without replacing BB
+  metadata. A standalone runtime diagnostic skill leaves role contracts intact;
+  installed live parity remains unmeasured.
 - Move the optional BB source plugin to `integrations/bb/`. Its package name, public core exports and runtime behavior stay unchanged; the plugin remains outside the core tarball.
 - Packed BB Host setup checks use a fixture-owned npm cache and remove it with the temporary installation.
 

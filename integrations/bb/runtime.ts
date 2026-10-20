@@ -8,6 +8,7 @@ import { BB_REVIEWER_HOST_TOOLS, BB_REVIEWER_TOOLS } from 'promptobus/bb-reviewe
 import { renderBbHostContext } from 'promptobus/bb-host';
 import { ORCHESTRATOR, REVIEWER, APPROVER } from 'promptobus';
 import { engineInput, hostContract } from './contract.js';
+import { BUILD_IDENTITY } from './build-identity.js';
 import { bindingStore } from './bindings.js';
 import { artifactSchema, bindingSchema, emptySchema, hostCallSchema, hostContextSchema, hostReadSchema, mailboxSchema, reasoningSchema, roleSchema, sendSchema, toolsFor } from './protocol.js';
 import type { Binding } from './protocol.js';
@@ -370,6 +371,35 @@ export function registerRuntime(bb: BbPluginApi) {
   };
   const archiving = new Set<string>();
   bb.cli.register(defineCli({ name: 'promptobus', summary: 'Local engine-backed BB task participants.', commands: {
+    'runtime describe': cliCommand({ summary: 'Read executing server and selected host build identities; incomplete exits 1.',
+      options: { host: { type: 'string', description: 'Host id; defaults to the invoking thread environment, otherwise the primary host.' },
+        json: { type: 'boolean', description: 'Emit JSON (also the default output).' } },
+      async run({ options }, context) {
+        const signal = context.signal;
+        signal?.throwIfAborted();
+        let hostId = options.host ?? null;
+        let identity = null;
+        let reason = 'host-unavailable-or-incompatible';
+        try {
+          if (!hostId && context.threadId) {
+            const thread = await bb.sdk.threads.get({ threadId: context.threadId, signal });
+            if (!thread.environmentId) throw new Error('Thread has no environment');
+            hostId = (await bb.sdk.environments.get({ environmentId: thread.environmentId, signal })).hostId;
+          } else if (!hostId) hostId = (await bb.sdk.system.config({ signal })).primaryHostId;
+          signal?.throwIfAborted();
+          if (hostId) {
+            identity = (await host.call('runtimeDescribe', {}, { hostId, signal, timeoutMs: 5000 })).identity;
+            reason = !identity ? 'host-unbuilt' : !BUILD_IDENTITY ? 'server-unbuilt'
+              : identity.buildId !== BUILD_IDENTITY.buildId || identity.inputSha256 !== BUILD_IDENTITY.inputSha256 ? 'build-mismatch' : 'matching';
+          }
+        } catch {
+          signal?.throwIfAborted();
+        }
+        signal?.throwIfAborted();
+        const complete = reason === 'matching';
+        return { exitCode: complete ? 0 : 1, stdout: JSON.stringify({ status: complete ? 'complete' : 'incomplete',
+          server: { identity: BUILD_IDENTITY }, host: { id: hostId, identity, reason } }, null, 2) };
+      } }),
     'task create': cliCommand({ summary: 'Create a local task and bind a new Codex orchestrator thread.', options: createOptions,
       async run({ options }, context) {
         const environment = await bb.sdk.environments.get({ environmentId: options.environment, signal: context.signal });
