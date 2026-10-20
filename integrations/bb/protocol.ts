@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import path from 'node:path';
 import { MESSAGE_TYPES, PARTICIPANT_ID_RE, TASK_ID_RE } from 'promptobus';
 import { BB_ROLE_SKILLS } from 'promptobus/instructions';
 import { launchContextSchema } from './launch-context.js';
@@ -19,14 +20,29 @@ export const executionSchema = z.object({
 }).strict();
 export type ExecutionSelection = z.infer<typeof executionSchema>;
 export const contextPurposeSchema = z.enum(['technical', 'user-facing', 'author-voice']);
+const contextNameSchema = z.string().regex(/^(?!\.{1,2}$)[^\\/\0]+$/).regex(/\S/);
+const contextReasonSchema = z.string().regex(/^[^\0]+$/).regex(/\S/);
+const contextPathSchema = z.string().regex(path.sep === '/' ? /^\/[^\0]*$/ : /^(?:[A-Za-z]:[\\/]|\\\\)[^\0]*$/);
+export const contextRefSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('skill'), name: contextNameSchema }).strict(),
+  z.object({ kind: z.literal('rule'), path: contextPathSchema }).strict(),
+  z.object({ kind: z.literal('resource'), path: contextPathSchema }).strict(),
+]);
+export const contextDeclarationSchema = z.object({
+  skills: z.array(z.object({ name: contextNameSchema, reason: contextReasonSchema, requires: z.array(contextRefSchema).optional() }).strict()),
+  resources: z.array(z.object({ path: contextPathSchema, reason: contextReasonSchema, requires: z.array(contextRefSchema).optional() }).strict()),
+}).strict();
+const selectedResourceSchema = z.object({ path: z.string().min(1), sourcePath: z.string().min(1), reason: z.string().min(1), requires: z.array(contextRefSchema) }).strict();
 export const hostContextSchema = z.object({
   rules: z.array(z.object({ path: z.string(), text: z.string() }).strict()),
   skills: z.array(z.object({ name: z.string(), path: z.string(), text: z.string(), root: z.string() }).strict()),
   tools: z.array(z.object({ server: z.string(), tool: z.string(), description: z.string(), inputSchema: z.unknown(), access: z.enum(['read', 'write']) }).strict()),
+  resources: z.array(selectedResourceSchema).optional(),
   selection: z.object({
-    task: z.object({ id: z.string().min(1), purpose: contextPurposeSchema }).strict(),
+    task: z.object({ id: z.string().min(1), purpose: contextPurposeSchema, context: contextDeclarationSchema.optional() }).strict(),
     rules: z.array(z.object({ path: z.string().min(1), reason: z.string().min(1), requires: z.array(z.string().min(1)) }).strict()),
-    skills: z.array(z.object({ name: z.string().min(1), root: z.string().min(1), reason: z.string().min(1) }).strict()),
+    skills: z.array(z.object({ name: z.string().min(1), root: z.string().min(1), sourceRoot: z.string().min(1).optional(), reason: z.string().min(1), requires: z.array(contextRefSchema).optional() }).strict()),
+    resources: z.array(selectedResourceSchema).optional(),
   }).strict().optional(),
 }).strict();
 export const hostReadSchema = z.discriminatedUnion('mode', [
@@ -47,6 +63,7 @@ export const bindingSchema = z.object({
   display: z.object({ label: z.string().trim().min(1), subject: z.string().trim().min(1), repository: z.string().trim().min(1) }).strict().optional(),
   execution: executionSchema.optional(),
   contextPurpose: contextPurposeSchema.optional(),
+  contextDeclaration: contextDeclarationSchema.optional(),
   hostContext: hostContextSchema.optional(),
   launchContext: launchContextSchema.optional(),
   evidenceManifest: evidenceManifestSchema.optional(),

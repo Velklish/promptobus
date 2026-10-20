@@ -14,6 +14,7 @@ import { createHostEntry } from '../.test-build/host-integration.js';
 import { createBbHostIntegration } from 'promptobus/bb-host';
 import { launchFixture, evidenceFixture } from './evidence-fixture.mjs';
 import { digest, evidenceManifestSchema } from '../.test-build/review-evidence.js';
+import { contextDeclarationSchema } from '../.test-build/protocol.js';
 
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 
@@ -443,6 +444,21 @@ test('owner-selected context purpose defaults explicitly, inherits, permits an e
   assert.equal(store.participant(s.task, 'legacy-worker').contextPurpose, undefined);
 });
 
+test('BB context declaration JSON is strict and refuses invalid files before provider model work', async t => {
+  const s = await stand(t), file = path.join(s.root, 'invalid-context.json');
+  const invalid = [{ skills: [], resources: [], extra: true }, { skills: [{ name: '../escape', reason: 'No' }], resources: [] },
+    { skills: [], resources: [{ path: 'relative.md', reason: 'No' }] }, { skills: [{ name: 'catalog', reason: 'No', requires: [{ kind: 'skill', name: 'other', path: '/other' }] }], resources: [] }];
+  for (const value of invalid) {
+    assert.equal(contextDeclarationSchema.safeParse(value).success, false);
+    writeFileSync(file, JSON.stringify(value));
+    const before = s.host.harness.inspection.sdk.calls.filter(call => call.path === 'providers.models').length;
+    const result = await s.create(['--context-file', file]);
+    assert.equal(result.exitCode, 1); assert.equal(s.spawns.length, 0);
+    assert.equal(s.host.harness.inspection.sdk.calls.filter(call => call.path === 'providers.models').length, before);
+  }
+  assert.equal(bindingStore(s.host.bb).task(s.task), undefined);
+});
+
 test('launch preflight refuses missing bounded context before any model spawn', async t => {
   const s = await stand(t, { noLaunchContext: true });
   const result = await s.create();
@@ -592,7 +608,7 @@ test('Stop during fresh initial assignment wins and an unknown send cannot start
   }
 });
 
-function fictionalHost(calls) {
+function fictionalHost(calls, { selected = false } = {}) {
   return root => {
     const base = path.join(root, 'base'), module = path.join(root, 'modules'), skills = path.join(root, 'canon-skills');
     for (const dir of [base, module, path.join(skills, 'catalog')]) mkdirSync(dir, { recursive: true });
@@ -603,6 +619,11 @@ function fictionalHost(calls) {
       skillsDir: () => skills, resolveRepoModule: () => null, reviewSkillDir: () => skills,
       participantServers: () => ({ servers: { catalog: { env: { SECRET: 'not-delivered' } } }, external: [] }),
       participantDenyTools: () => ({ tools: [{ server: 'catalog', tool: 'write' }], complete: true }) };
+    if (selected) host.selectParticipantContext = ({ repoDir, task }) => ({
+      rules: host.collectRules(repoDir).map(file => ({ path: file, reason: 'Mandatory installed rule' })),
+      skills: (task.context?.skills ?? []).map(skill => ({ ...skill, root: path.join(skills, skill.name) })),
+      resources: task.context?.resources ?? [],
+    });
     return createHostEntry(createBbHostIntegration({ resolveHost: () => host,
       prepareEnvironment: ({ root: environment }) => { mkdirSync(environment, { recursive: true });
         writeFileSync(path.join(environment, 'AGENTS.md'), `PRECEDENCE=repo\nENVIRONMENT=${environment}\n${'rule '.repeat(1000)}\nRULE_TAIL`); },
@@ -612,6 +633,56 @@ function fictionalHost(calls) {
     }));
   };
 }
+
+test('BB explicit context survives initial/reviewer/fresh delivery and remains canonical without inheriting owner extras', async t => {
+  let delivered;
+  const s = await stand(t, { hostSetup: fictionalHost([], { selected: true }),
+    assignmentSend: async ({ input }) => { delivered = input[0].text; return { ok: true, delivery: 'sent' }; } });
+  const shared = path.join(s.root, 'canon-skills', '_shared'); mkdirSync(shared);
+  const resource = path.join(shared, 'reference.md'), sibling = path.join(shared, 'private.md'), file = path.join(s.root, 'task-context.json');
+  writeFileSync(resource, 'EXACT_SHARED_BODY'); writeFileSync(sibling, 'UNSELECTED_SHARED_BODY');
+  const declaration = { skills: [{ name: 'catalog', reason: 'Task catalog', requires: [{ kind: 'resource', path: resource }] }],
+    resources: [{ path: resource, reason: 'Exact selected contract' }] };
+  writeFileSync(file, JSON.stringify(declaration));
+  const created = await s.create(['--context-file', file]); assert.equal(created.exitCode, 0, created.stderr);
+  assert.ok(s.initialArgs.prompt.includes('Exact selected contract')); assert.equal(s.initialArgs.prompt.includes('EXACT_SHARED_BODY'), false);
+  const withoutExtras = await s.add('without-owner-extras'); assert.equal(withoutExtras.exitCode, 0, withoutExtras.stderr);
+  const store = bindingStore(s.host.bb), child = store.participant(s.task, 'without-owner-extras');
+  assert.equal(child.contextDeclaration, undefined); assert.deepEqual(child.hostContext.skills, []);
+  const added = await s.add('explicit-review', 'reviewer', ['--context-file', file]); assert.equal(added.exitCode, 0, added.stderr);
+  const before = store.participant(s.task, 'explicit-review');
+  assert.deepEqual(before.contextDeclaration, declaration); assert.deepEqual(before.hostContext.selection.task.context, declaration);
+  assert.match(await s.call(before.threadId, 'promptobus_host_context', { mode: 'read', path: resource }), /EXACT_SHARED_BODY/);
+  await assert.rejects(s.call(before.threadId, 'promptobus_host_context', { mode: 'read', path: sibling }), /outside the declared/);
+  const next = structuredClone(before.launchContext); next.grant.token += '-explicit-context'; next.grant.phase = 'context-review';
+  await s.publish(next); s.finish(before.threadId);
+  const evidence = await evidenceFixture(s.root, s.task);
+  const resumed = await s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', before.participant,
+    '--launch-context', JSON.stringify(next), '--evidence-manifest', JSON.stringify(evidence.manifest), '--assignment', 'Read the exact selected contract in this fresh review phase.']);
+  assert.equal(resumed.exitCode, 0, resumed.stderr); assert.ok(delivered.includes('Exact selected contract'));
+  assert.equal(delivered.includes('EXACT_SHARED_BODY'), false);
+  const after = store.participant(s.task, before.participant);
+  assert.deepEqual(after.contextDeclaration, declaration); assert.deepEqual(after.hostContext.selection, before.hostContext.selection);
+  const engine = openEngine({ root: s.root, recover: false, policy: () => ({ allow: true }) });
+  const canonical = engine.readTask(s.task).participants.find(participant => participant.id === before.participant);
+  assert.deepEqual(canonical.metadata.bb.contextDeclaration, declaration);
+  after.contextDeclaration.skills[0].reason = 'Tampered'; store.save(after);
+  await assert.rejects(s.call(after.threadId, 'promptobus_task'), /Canonical binding mismatch/);
+  const owner = store.task(s.task); owner.contextDeclaration.resources[0].reason = 'Tampered owner'; store.save(owner);
+  await assert.rejects(s.call(owner.threadId, 'promptobus_task'), /Canonical binding mismatch/);
+});
+
+test('a resource-only BB context keeps its exact Host reader visible', async t => {
+  const s = await stand(t, { hostSetup: () => createHostEntry(createBbHostIntegration({ resolveHost: () => ({
+    collectRules: () => [], skillsDir: () => null, resolveRepoModule: () => null, reviewSkillDir: () => null,
+    selectParticipantContext: ({ task }) => ({ rules: [], skills: [], resources: task.context?.resources ?? [] }),
+    participantServers: () => ({ servers: {}, external: [] }),
+  }) })) }), resource = path.join(s.root, 'reference.md'), file = path.join(s.root, 'resources.json');
+  writeFileSync(resource, 'RESOURCE_ONLY_REFERENCE'); writeFileSync(file, JSON.stringify({ skills: [], resources: [{ path: resource, reason: 'Only reference' }] }));
+  const created = await s.create(['--context-file', file]); assert.equal(created.exitCode, 0, created.stderr);
+  const binding = bindingStore(s.host.bb).task(s.task);
+  assert.match(await s.call(binding.threadId, 'promptobus_host_context', { mode: 'read', path: resource }), /RESOURCE_ONLY_REFERENCE/);
+});
 
 test('BB Host delivery uses complete rule/skill content and authentic canonical worker/reviewer capabilities', async t => {
   const calls = []; const s = await stand(t, { hostSetup: fictionalHost(calls) });

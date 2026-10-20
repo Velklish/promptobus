@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync, statSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
 import { cliCommand, defineCli } from '@get-bb/plugin-sdk';
@@ -6,6 +7,7 @@ import type { BbPluginApi, PluginAgentConfigurationContext, PluginAgentToolConte
 import { createBbInstructionDelivery, BB_ROLE_SKILLS } from 'promptobus/instructions';
 import { BB_REVIEWER_HOST_TOOLS, BB_REVIEWER_TOOLS } from 'promptobus/bb-reviewer';
 import { renderBbHostContext } from 'promptobus/bb-host';
+import { normalizeContextDeclaration } from 'promptobus/participant-context';
 import { ORCHESTRATOR, REVIEWER, APPROVER } from 'promptobus';
 import { engineInput, hostContract } from './contract.js';
 import { BUILD_IDENTITY } from './build-identity.js';
@@ -26,7 +28,7 @@ export function registerRuntime(bb: BbPluginApi) {
   const store = bindingStore(bb);
   const host = bb.hosts.experimental_client({ contract: hostContract });
   const participantTools = (b: Binding) => [...toolsFor(b.role),
-    ...(b.hostContext && (b.hostContext.rules.length || b.hostContext.skills.length || b.hostContext.tools.length) ? [BB_REVIEWER_HOST_TOOLS[0]] : []),
+    ...(b.hostContext && (b.hostContext.rules.length || b.hostContext.skills.length || b.hostContext.resources?.length || b.hostContext.tools.length) ? [BB_REVIEWER_HOST_TOOLS[0]] : []),
     ...(b.hostContext?.tools.length ? [BB_REVIEWER_HOST_TOOLS[1]] : [])];
   const prepareContext = async (b: Binding, signal?: AbortSignal) => {
     b.hostContext = hostContextSchema.parse(await host.call('prepareContext', { binding: b }, { hostId: b.hostId, signal }));
@@ -35,6 +37,12 @@ export function registerRuntime(bb: BbPluginApi) {
     if (value === undefined) return undefined;
     if (Buffer.byteLength(value) > 256 * 1024) throw new Error(`${field} exceeds 256 KiB`);
     try { return JSON.parse(value) as unknown; } catch { throw new Error(`${field} requires JSON`); }
+  };
+  const contextFile = (file: string | undefined) => {
+    if (file === undefined) return undefined;
+    if (!file.trim() || !statSync(file).isFile()) throw new Error('--context-file requires a declaration JSON file');
+    if (statSync(file).size > 256 * 1024) throw new Error('Task context declaration exceeds 256 KiB');
+    return normalizeContextDeclaration(boundedJson(readFileSync(file, 'utf8'), 'Task context declaration'));
   };
   const currentControl = async (b: Binding, signal?: AbortSignal, predecessor?: CommandGrant) => {
     const owner = store.task(b.task);
@@ -378,6 +386,7 @@ export function registerRuntime(bb: BbPluginApi) {
     'reasoning-level': { type: 'enum', values: reasoningSchema.options, description: 'Supported model reasoning level; defaults to its SDK catalog value.' },
     assignment: { type: 'string', required: true, stdin: true, description: 'Initial assignment text.' },
     'context-purpose': { type: 'enum', values: ['technical', 'user-facing', 'author-voice'], description: 'Owner-selected context purpose; new tasks default to technical.' },
+    'context-file': { type: 'string', description: 'JSON file declaring the complete additional skills and exact resources for this participant.' },
     'launch-context': { type: 'string', description: 'Required bounded JSON: complete role literal, owned/read roots, grant, current control route, preparation and owner quota policy.' },
   } as const;
   const participantOptions = { task: createOptions.task,
@@ -451,6 +460,7 @@ export function registerRuntime(bb: BbPluginApi) {
       } }),
     'task create': cliCommand({ summary: 'Create a local task and bind a new Codex orchestrator thread.', options: createOptions,
       async run({ options }, context) {
+        const contextDeclaration = contextFile(options['context-file']);
         const environment = await bb.sdk.environments.get({ environmentId: options.environment, signal: context.signal });
         const local = (await bb.sdk.system.config()).primaryHostId;
         if (!environment.path || !local || environment.hostId !== local || environment.managed) throw new Error('A stable local unmanaged coordinator environment is required');
@@ -458,6 +468,7 @@ export function registerRuntime(bb: BbPluginApi) {
           environmentId: options.environment, environmentPath: environment.path, hostId: local, providerId: 'codex', root: environment.path,
           token: randomUUID(), threadId: null, phase: 'pending',
           contextPurpose: options['context-purpose'] ?? 'technical',
+          ...(contextDeclaration ? { contextDeclaration } : {}),
           display: { label: options['display-label'] ?? options.task, subject: options['display-subject'] ?? options.title,
             repository: options['repository-label'] ?? path.basename(environment.path) } });
         await recordBbWorkspace(bb, b, context.signal);
@@ -478,6 +489,7 @@ export function registerRuntime(bb: BbPluginApi) {
       role: { type: 'enum', values: roleSchema.options, required: true, description: 'Instruction role.' },
       model: createOptions.model, provider: createOptions.provider, 'reasoning-level': createOptions['reasoning-level'], assignment: createOptions.assignment,
       'context-purpose': createOptions['context-purpose'],
+      'context-file': createOptions['context-file'],
       'launch-context': createOptions['launch-context'],
       'evidence-manifest': { type: 'string', description: 'Required reviewer original-artifact manifest JSON; every part must be readable before launch.' },
       environment: { type: 'string', description: 'Reuse an existing local BB environment; defaults to the coordinator.' },
@@ -487,6 +499,7 @@ export function registerRuntime(bb: BbPluginApi) {
       worker: { type: 'string', description: 'Required for approver: recorded worker participant for this subject.' },
       reviewer: { type: 'string', description: 'Required for approver: recorded isolated reviewer of the same subject.' },
     }, async run({ options }, context) {
+      const contextDeclaration = contextFile(options['context-file']);
       const owner = store.task(options.task);
       if (!owner || owner.phase !== 'ready') throw new Error('Task has no ready plugin-owned orchestrator');
       if (options.role === ORCHESTRATOR) throw new Error('The task already has its orchestrator');
@@ -509,6 +522,7 @@ export function registerRuntime(bb: BbPluginApi) {
         && other.role === 'worker' && other.phase === 'ready' && other.environmentId === (options.environment ?? owner.environmentId)) : [];
       const inherited = worker?.display ?? (sharedWorkers.length === 1 ? sharedWorkers[0].display : undefined);
       const b = bindingSchema.parse({ ...owner, participant: options.participant, role: options.role,
+        ...(contextDeclaration ? { contextDeclaration } : {}),
         ...(options['context-purpose'] !== undefined ? { contextPurpose: options['context-purpose'] } : {}),
         display: { label: options['display-label'] ?? inherited?.label ?? owner.display?.label ?? options.task,
           subject: options['display-subject'] ?? inherited?.subject ?? options.participant,
@@ -517,6 +531,7 @@ export function registerRuntime(bb: BbPluginApi) {
         parentThreadId: worker?.threadId ?? owner.threadId, lifecycleOwnerThreadId: owner.threadId,
         environmentId: options.environment ?? owner.environmentId, environmentOwner: options['new-environment'] ? 'bb' : 'existing',
         preservation: undefined });
+      if (!contextDeclaration) delete b.contextDeclaration;
       delete b.predecessors;
       if (options.role === APPROVER) b.predecessors = { worker: options.worker!, reviewer: options.reviewer! };
       delete b.preservation;

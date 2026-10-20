@@ -35,7 +35,7 @@ The table below is pinned to the current `PromptobusHost` declaration in `src/ho
 | `pluginSkillsRel` | `pluginSkillsRel(): string` | Never absent; it is the workspace-relative plugin-skills path. |
 | `declaredTools` | `declaredTools(): string[]` | Never `null`; an empty array means the workspace declares no harnesses. |
 | `collectRules` | `collectRules(repoDir: string): string[]` | Never `null`; an empty array means no rule files were found for the repository. |
-| `selectParticipantContext` | `selectParticipantContext?(input: HostParticipantContextRequest): HostParticipantContextSelection` | Optional task/role selection of exact rule files, their declared required dependencies and skill roots, with reasons. Absent preserves legacy BB context collection; present requires an explicit task id and purpose. |
+| `selectParticipantContext` | `selectParticipantContext?(input: HostParticipantContextRequest): HostParticipantContextSelection` | Optional task/role selection of exact rules, skill roots and resource files, with reasons and declared required dependencies. Absent preserves unselected collection but refuses an explicit context declaration; selected delivery requires a task id and purpose. |
 | `moduleNote` | `moduleNote(repoDir: string): HostModuleNote` | Never absent; the note is `info` or `warn` even when the repository has no module-specific guidance. |
 | `resolveRepoModule` | `resolveRepoModule(repoDir: string): HostRepoModule \| null` | `null` means no repository module metadata applies. |
 | `reviewSkillDir` | `reviewSkillDir(name: string, repoDir?: string): string` | Selected review skill; a missing path is reported separately. |
@@ -871,6 +871,71 @@ permission enforcement remain separate. Controlled-delivery tests model complian
 with the shipped instructions; they do not establish a live BB queue defect or
 historical call overlap.
 
+## Explicit participant context
+
+`promptobus/participant-context` exports `normalizeContextDeclaration(value)` and
+`selectParticipantContext(host, { root, role, task, preparedSelection? })`.
+Normalization validates a detached, frozen declaration without filesystem work.
+Selection admits Host metadata, validates the complete declared closure and
+prepared ceiling, and reads no payload bodies.
+
+`HostParticipantContextTask` contains `id`, `purpose` and optional `context`:
+
+```json
+{
+  "skills": [
+    {"name": "task-check", "reason": "Validate the task", "requires": [
+      {"kind": "resource", "path": "/project/.agents/skills/_shared/check.md"}
+    ]}
+  ],
+  "resources": [
+    {"path": "/project/.agents/skills/_shared/check.md", "reason": "Required check instructions"}
+  ]
+}
+```
+
+Each skill/resource may declare `requires` references of kind `skill` (`name`),
+`resource` (`path`) or `rule` (`path`). Paths are exact absolute files. The
+coordinator declares every additional dependency; Host policy must independently
+admit every requested node. A declaration is not a permission grant. Mandatory
+Host rules and the module review skill remain required. Missing, ambiguous,
+unreadable or excluded dependencies refuse with the responsible edge. Markdown
+links are not inferred and missing skills are not installed automatically.
+
+The Host callback receives `task.context` and returns selected `rules`, `skills`
+and optional `resources`. Prepared skills retain canonical `root` and logical
+`sourceRoot`; resources retain canonical `path` and logical `sourcePath`, plus
+reasons and edges. Logical provenance supports native relative-resource mapping;
+it does not authorize additional reads. Exact resources authorize neither their
+parent directory nor siblings. Preparation and reuse compare the full declaration
+and canonical selection; a changed declaration requires new preparation.
+
+Native `lead`, `spawn` (including teamleads), `review` (including approvers) and
+`report` accept `--context-purpose technical|user-facing|author-voice` and
+`--context-file <JSON declaration>`. Library callers use `contextPurpose` and
+`contextDeclaration`. Native selected delivery requires an explicit or recorded
+purpose. Child participants do not inherit an owner's additional declaration.
+Unsupported Hosts refuse an explicit declaration instead of ignoring it.
+
+Selected native delivery builds only the admitted skill/resource set in the
+owned Claude plugin, Cursor/Codex worktree or private review container, OpenCode
+holder, and private Codex home. Reviewer preparation does not add every personal
+skill root. The native bootstrap names the authenticated task and purpose, and embeds each
+exact selected resource's UTF-8 body with its canonical path and reason. This
+supports standalone resources outside the working directory without a parent
+read grant. Bodies are bounded to 256 KiB per file and 1 MiB in total; binary,
+invalid UTF-8, changed canonical paths and oversized bodies refuse before
+provider files or launch. Long selected Claude/Cursor prompts are delivered in a
+task-owned bootstrap file with a short CLI pointer; only its owned directory joins
+`--add-dir`, without admitting the resource's parent. Ownership and symlinks are
+rechecked before writes. Declared skill-internal or sibling `_shared` files also
+retain supported relative paths. Unsupported dependency layouts and non-owned
+destination collisions, including foreign or symlinked Claude manifests, refuse
+before writes or launch. Existing repository/provider/global discovery
+can still supply independent instructions; selection does not rewrite those
+sources or prove complete session isolation. Delivered bytes are local evidence,
+not measured input, cache, output or tool tokens.
+
 ## BB Host context delivery
 
 `promptobus/bb-host` exports `createBbHostIntegration` and
@@ -878,14 +943,16 @@ historical call overlap.
 supplies `resolveHost(root)`, optional `prepareEnvironment({root, role, signal})`,
 and `listTools` / `invokeTool` when canonical servers are declared. The default
 plugin resolves the standalone Host and refuses declared servers without those
-adapters. Native Host delivery defaults are unchanged.
+adapters. Hosts without a selector retain existing unselected delivery.
 
-Collection preserves `collectRules(root)` order, highest precedence first,
+Without a selector, collection preserves `collectRules(root)` order, highest precedence first,
 and embeds each complete rule file and `skillsDir(root)` skill body in the initial
 assignment. A reviewer also receives its module's declared review skill.
 Each file must be text at most 256 KiB; the collected context is at most 1 MiB.
 Symlink entries in `skillsDir()` refuse collection explicitly; they are not
 silently omitted from successful context. The `_shared` directory contains resources rather than a skill; its files remain available through bounded Host resource reads.
+Selected BB bootstraps name their authenticated task and purpose; exact resource
+bodies remain available only through the authenticated resource tool.
 Collection uses the actual ready BB environment after preparation and before
 canonical finalization, including existing-path registrations and newly managed worktrees. It never reuses an
 owner's context for a child environment.
@@ -899,7 +966,8 @@ argument validation and private credentials. No protocol-specific client or
 universal MCP injection is implied.
 
 The authenticated `promptobus_host_context` tool inspects fresh context or reads
-only declared rule files and canonical skill resource roots. The authenticated
+only declared rule files, canonical skill resource roots and selected exact resource
+files. Selected resources remain metadata until explicitly read. The authenticated
 `promptobus_host_call` tool admits only a current catalog pair. Reviewer/reporter
 catalogs require complete Host write classification that includes every declared
 write; denied pairs never reach `invokeTool`. Reporter uses the reviewer's readonly

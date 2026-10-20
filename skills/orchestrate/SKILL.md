@@ -104,6 +104,42 @@ For a tree, the root orchestrator lifts a teamlead with `spawn --teamlead`. Its 
 
 `--repo` is a path on disk. `spawn`'s `--brief` is required. `review --approver` takes `--brief <file>` for the approver's assignment: the lift prompt carries it, and after the lift the bus keeps `brief-approver-<slug>.md` in the task files, beside the worker's `brief-<slug>.md` rather than under that name. Do not send that assignment as a separate message for the approver to race its first turn. A later message to the approver stays legal. `--brief` without `--approver` is refused, because a reviewer's subject is the diff.
 
+### Choose each participant's context
+
+For a Host with selected context, choose `--context-purpose technical`,
+`user-facing` or `author-voice` when preparing each participant. Supply additional
+skills and exact resources with `--context-file <JSON declaration>` on `lead`,
+`spawn`, `review` or `report`; BB uses the same flag on `task create` and
+`participant add`. Make this choice as coordinator within the approved task,
+without a separate question to the person for every launch.
+
+Use the installed index descriptions to choose applicable skills, then read only
+those chosen instructions to identify their required supporting files. Declare
+the complete additional `skills` and `resources`, each with its reason and typed
+`requires` edges. Paths are exact absolute files. Mandatory Host rules and the
+module review skill stay required. Do not copy the owner's whole skill set or
+profile into a technical assignment. Children need their own additional set.
+A missing, ambiguous or excluded dependency blocks preparation; do not silently
+omit it, broaden a directory grant or guess another source. For example:
+
+```json
+{
+  "skills": [{"name": "task-check", "reason": "Validate the task", "requires": [
+    {"kind": "resource", "path": "/project/.agents/skills/_shared/check.md"}
+  ]}],
+  "resources": [{"path": "/project/.agents/skills/_shared/check.md", "reason": "Required check instructions"}]
+}
+```
+
+Replace example paths with admitted exact files. Dependency kinds are `skill`
+with `name`, or `resource`/`rule` with `path`. Every additional dependency needs
+its own declared node; a required rule must already be selected by the Host.
+Native resource bodies must be valid UTF-8 without NUL, at most 256 KiB per file
+and 1 MiB in total. Unsupported relative-resource layouts or non-owned delivery
+collisions block preparation. BB keeps resource bodies behind authenticated
+exact-file reads. Selection does not filter independently loaded provider or
+global instructions, and does not measure actual token/cache/tool usage.
+
 Read the worker's worktree path and branch from `promptobus status` or `promptobus_task`. Do not rebuild them from a name template. The worker may have switched branches: the line then says `WORKER CHANGED BRANCH` (`lib/worktree.js`). Publish the branch git reports.
 
 Every native lift filters its parent's session environment, including

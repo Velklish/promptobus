@@ -1,13 +1,11 @@
-import type { HostParticipantContextTask, MessageV1, PromptobusHost, TaskV1 } from '../dist/index.js';
+import type { HostParticipantContextTask, MessageV1, PreparedHostParticipantContextSelection, PromptobusHost, TaskV1 } from '../dist/index.js';
+import type { ParticipantContextCeiling } from './participant-context.js';
 
-export interface BbHostSelection {
-  task: HostParticipantContextTask;
-  rules: { path: string; reason: string; requires: string[] }[];
-  skills: { name: string; root: string; reason: string }[];
-}
+export type BbHostSelection = ParticipantContextCeiling;
 export interface BbHostContext {
   rules: { path: string; text: string }[];
   skills: { name: string; path: string; text: string; root: string }[];
+  resources?: PreparedHostParticipantContextSelection['resources'];
   tools: { server: string; tool: string; description: string; inputSchema: unknown; access: 'read' | 'write' }[];
   selection?: BbHostSelection;
 }

@@ -56,9 +56,20 @@ export interface HostServers {
 
 export type HostParticipantContextPurpose = 'technical' | 'user-facing' | 'author-voice';
 
+export type HostContextRef =
+  | { kind: 'skill'; name: string }
+  | { kind: 'resource'; path: string }
+  | { kind: 'rule'; path: string };
+
+export interface HostTaskContextDeclaration {
+  skills: { name: string; reason: string; requires?: HostContextRef[] }[];
+  resources: { path: string; reason: string; requires?: HostContextRef[] }[];
+}
+
 export interface HostParticipantContextTask {
   id: string;
   purpose: HostParticipantContextPurpose;
+  context?: HostTaskContextDeclaration;
 }
 
 export interface HostParticipantContextRequest {
@@ -69,7 +80,15 @@ export interface HostParticipantContextRequest {
 
 export interface HostParticipantContextSelection {
   rules: { path: string; reason: string; requires?: string[] }[];
-  skills: { name: string; root: string; reason: string }[];
+  skills: { name: string; root: string; reason: string; requires?: HostContextRef[] }[];
+  resources?: { path: string; reason: string; requires?: HostContextRef[] }[];
+}
+
+export interface PreparedHostParticipantContextSelection {
+  task: HostParticipantContextTask;
+  rules: { path: string; reason: string; requires: string[] }[];
+  skills: { name: string; root: string; sourceRoot: string; reason: string; requires: HostContextRef[] }[];
+  resources: { path: string; sourcePath: string; reason: string; requires: HostContextRef[] }[];
 }
 
 /** A canonical MCP tool identity, independent of a harness's spelling. */

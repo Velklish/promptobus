@@ -53,7 +53,17 @@ test('selected technical contexts skip personal style and invalid unrelated skil
     assert.deepEqual(context.skills.map(skill => skill.name), ['canonical-skill']);
     assert.deepEqual(context.selection.task, s.input.task);
     assert.equal(context.selection.rules[0].reason, `${role} technical instructions`);
-    assert.deepEqual(context.selection.skills, [{ name: 'canonical-skill', root: path.join(s.skills, 'canonical-skill'), reason: 'Task resources' }]);
+    assert.deepEqual(context.selection.skills, [{ name: 'canonical-skill', root: path.join(s.skills, 'canonical-skill'), sourceRoot: path.join(s.skills, 'canonical-skill'), reason: 'Task resources', requires: [] }]);
+  }
+});
+
+test('selected bootstrap states the authenticated task purpose for startup policy', async t => {
+  const s = selectedFixture(t);
+  for (const purpose of ['technical', 'user-facing', 'author-voice']) {
+    const context = await s.integration.prepare({ ...s.input, task: { id: s.input.task.id, purpose } });
+    assert.ok(renderBbHostContext(context).startsWith(
+      `Selected Host task: ${JSON.stringify(s.input.task.id)}. Context purpose: ${JSON.stringify(purpose)}.\n\n`),
+    'Startup policy must receive the authenticated purpose in its delivered bootstrap');
   }
 });
 
@@ -65,6 +75,50 @@ test('consumer explicitly includes personal style for user-facing and author-voi
     assert.equal(context.selection.rules.at(-1).path, s.profile);
     assert.equal(context.selection.rules.at(-1).reason, `${purpose} instructions`);
   }
+});
+
+test('explicit skills and exact shared resources reach Host policy and never become initial authority text', async t => {
+  const s = selectedFixture(t), shared = path.join(s.skills, '_shared'); mkdirSync(shared);
+  const file = path.join(shared, 'contract.md'), sibling = path.join(shared, 'private.md');
+  writeFileSync(file, 'SHARED_REFERENCE_BODY_SENTINEL'); writeFileSync(sibling, 'PRIVATE_SIBLING_SENTINEL');
+  const contextDeclaration = { skills: [{ name: 'canonical-skill', reason: 'Review the contract', requires: [{ kind: 'resource', path: file }] }],
+    resources: [{ path: file, reason: 'Exact contract reference', requires: [{ kind: 'rule', path: path.join(s.base, 'AGENTS.md') }] }] };
+  const select = s.host.selectParticipantContext;
+  s.host.selectParticipantContext = input => { assert.deepEqual(input.task.context, contextDeclaration); return { ...select(input), resources: contextDeclaration.resources }; };
+  const input = { ...s.input, task: { ...s.input.task, context: contextDeclaration } }, context = await s.integration.prepare(input);
+  assert.deepEqual(context.selection.task.context, contextDeclaration);
+  assert.equal(context.resources[0].path, file); assert.equal(context.resources[0].reason, 'Exact contract reference');
+  assert.match(renderBbHostContext(context), /Exact contract reference/);
+  assert.equal(renderBbHostContext(context).includes('SHARED_REFERENCE_BODY_SENTINEL'), false);
+  assert.match(JSON.stringify(await s.integration.read({ ...input, preparedContext: context, path: file })), /SHARED_REFERENCE_BODY_SENTINEL/);
+  await assert.rejects(s.integration.read({ ...input, preparedContext: context, path: sibling }), /outside the declared/);
+  await assert.rejects(s.integration.read({ ...input, preparedContext: context, path: shared }), /outside the declared/);
+});
+
+test('BB refuses missing explicit dependencies and declaration changes before reading invalid selected rules', async t => {
+  const s = selectedFixture(t), select = s.host.selectParticipantContext;
+  const contextDeclaration = { skills: [{ name: 'canonical-skill', reason: 'Task', requires: [{ kind: 'skill', name: 'missing-review' }] }], resources: [] };
+  const input = { ...s.input, task: { ...s.input.task, context: contextDeclaration } };
+  writeFileSync(path.join(s.worktree, 'AGENTS.md'), Buffer.from([0]));
+  await assert.rejects(s.integration.prepare(input), /canonical-skill -> missing-review.*full closure/);
+  writeFileSync(path.join(s.worktree, 'AGENTS.md'), 'Required instructions');
+  contextDeclaration.skills[0].requires = [];
+  const preparedContext = await s.integration.prepare(input);
+  contextDeclaration.skills[0].reason = 'Changed';
+  await assert.rejects(s.integration.collect({ ...input, preparedContext }), /task selection changed/);
+  delete s.host.selectParticipantContext;
+  await assert.rejects(s.integration.prepare(input), /declaration requires Host selector support/);
+  s.host.selectParticipantContext = select;
+});
+
+test('resource-only selected BB context reads exact files and rejects replaced resource symlinks', async t => {
+  const s = fixture(t), file = path.join(s.root, 'reference.md'); writeFileSync(file, 'Resource-only reference');
+  s.host.selectParticipantContext = () => ({ rules: [], skills: [], resources: [{ path: file, reason: 'Only reference' }] });
+  const input = { root: s.worktree, role: 'worker', task: { id: 'resource-context', purpose: 'technical', context: { skills: [], resources: [{ path: file, reason: 'Only reference' }] } } };
+  const preparedContext = await s.integration.prepare(input);
+  assert.match(JSON.stringify(await s.integration.read({ ...input, preparedContext, path: file })), /Resource-only reference/);
+  rmSync(file); symlinkSync(path.join(s.root, 'private.txt'), file);
+  await assert.rejects(s.integration.read({ ...input, preparedContext, path: file }), /expanded to resource/);
 });
 
 test('selected context requires explicit task identity and purpose', async t => {
@@ -82,7 +136,7 @@ test('selected reviewer context retains the module review skill and its resource
   s.host.reviewSkillDir = name => { assert.equal(name, 'module-review'); return directory; };
   const input = { ...s.input, role: 'reviewer' }, context = await s.integration.prepare(input);
   assert.match(renderBbHostContext(context), /MANDATORY_REVIEW_INSTRUCTIONS/);
-  assert.deepEqual(context.selection.skills.at(-1), { name: 'module-review', root: directory, reason: 'Required module review skill' });
+  assert.deepEqual(context.selection.skills.at(-1), { name: 'module-review', root: directory, sourceRoot: directory, reason: 'Required module review skill', requires: [] });
   const resource = await s.integration.read({ ...input, preparedContext: context, path: path.join(directory, 'reference.txt') });
   assert.match(JSON.stringify(resource), /Required review reference/);
 });

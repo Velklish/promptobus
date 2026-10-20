@@ -29,6 +29,7 @@ export async function engineOperation(input: unknown) {
         environmentOwner: b.environmentOwner, branch: b.branch, baseSha: b.baseSha,
         parentThreadId: b.parentThreadId, lifecycleOwnerThreadId: b.lifecycleOwnerThreadId,
         ...(b.contextPurpose ? { contextPurpose: b.contextPurpose } : {}),
+        ...(b.contextDeclaration ? { contextDeclaration: b.contextDeclaration } : {}),
         ...(reviewEvidenceIdentity(b) ? { reviewEvidence: reviewEvidenceIdentity(b) } : {}),
         assignedAt: new Date().toISOString(), ...(b.predecessors ? { predecessors: b.predecessors } : {}),
         ...(b.execution ? { execution: b.execution } : {}) } } };
@@ -58,7 +59,7 @@ export async function engineOperation(input: unknown) {
   if (!participant || participant.role !== b.role || participant.harness !== 'bb' || participant.mode !== 'managed'
     || metadata?.token !== b.token || metadata.projectId !== b.projectId || metadata.environmentId !== b.environmentId
     || metadata.hostId !== b.hostId || metadata.providerId !== b.providerId
-    || metadata.contextPurpose !== b.contextPurpose) throw new Error('Canonical binding mismatch');
+    || metadata.contextPurpose !== b.contextPurpose || !isDeepStrictEqual(metadata.contextDeclaration, b.contextDeclaration)) throw new Error('Canonical binding mismatch');
   if (request.operation === 'finalize') {
     if (!b.threadId || (participant.sessionRef !== null && participant.sessionRef !== b.threadId)) throw new Error('Canonical binding mismatch');
     engine.patchParticipant(b.task, b.participant, { sessionRef: b.threadId });
@@ -85,7 +86,8 @@ export async function engineOperation(input: unknown) {
         if (facts.task.owner !== b.participant || owner?.role !== ORCHESTRATOR || owner.harness !== 'bb' || owner.mode !== 'managed'
           || owner.sessionRef !== b.threadId || ownerBound?.token !== b.token || ownerBound.projectId !== b.projectId
           || ownerBound.environmentId !== b.environmentId || ownerBound.environmentPath !== b.environmentPath
-          || ownerBound.hostId !== b.hostId || ownerBound.providerId !== b.providerId || ownerBound.contextPurpose !== b.contextPurpose) {
+          || ownerBound.hostId !== b.hostId || ownerBound.providerId !== b.providerId || ownerBound.contextPurpose !== b.contextPurpose
+          || !isDeepStrictEqual(ownerBound.contextDeclaration, b.contextDeclaration)) {
           throw new Error('Logical acceptance canonical owner binding changed');
         }
         const canonical = facts.task.participants.find(p => p.id === reviewer.participant);
@@ -96,7 +98,7 @@ export async function engineOperation(input: unknown) {
           || bound?.token !== reviewer.token || bound.projectId !== reviewer.projectId || bound.environmentId !== reviewer.environmentId
           || bound.environmentPath !== reviewer.environmentPath || bound.lifecycleOwnerThreadId !== b.threadId
           || bound.hostId !== reviewer.hostId || bound.providerId !== reviewer.providerId || bound.contextPurpose !== reviewer.contextPurpose
-          || !isDeepStrictEqual(bound.reviewEvidence, identity)) throw new Error('Logical acceptance reviewer/source binding mismatch');
+          || !isDeepStrictEqual(bound.contextDeclaration, reviewer.contextDeclaration) || !isDeepStrictEqual(bound.reviewEvidence, identity)) throw new Error('Logical acceptance reviewer/source binding mismatch');
         const persisted = canonical.metadata.assignmentAfterId;
         if (typeof persisted !== 'string') throw new Error('Logical acceptance requires a current causal review assignment');
         const boundary = facts.messages.filter(m => m.recipients.includes(canonical.id) && (m.type === 'task' || m.type === 'review'))

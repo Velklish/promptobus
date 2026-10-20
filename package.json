@@ -32,6 +32,10 @@
     "node": ">=20"
   },
   "exports": {
+    "./participant-context": {
+      "types": "./lib/participant-context.d.ts",
+      "default": "./lib/participant-context.js"
+    },
     "./bb-host": {
       "types": "./lib/bb-host.d.ts",
       "default": "./lib/bb-host.js"

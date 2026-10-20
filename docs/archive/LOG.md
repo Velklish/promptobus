@@ -565,3 +565,4 @@ The release reconciliation gives the [Codex-only journal lookup](#pb-372) the na
 - <a id="pb-388"></a>`PB-388-minimal-bb-task-workflow` · 2026-10-20 · completed · — · Design a minimal BB workflow with one executor and independent review
 - <a id="pb-373.5"></a>`PB-373.5-bb-host-required-rule-dependency` · 2026-10-20 · completed · — · BB Host catalog can omit a repository-required rule dependency
 - <a id="pb-391"></a>`PB-391-legacy-store-retirement` · 2026-10-20 · completed · — · Retire the legacy store and its obsolete tests
+- <a id="pb-392"></a>`PB-392-explicit-task-context` · 2026-10-21 · completed · — · Carry explicit participant context through owned delivery

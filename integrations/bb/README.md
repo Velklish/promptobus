@@ -545,12 +545,23 @@ An optional `prepareEnvironment` callback runs the consumer's generator for the
 actual environment before collection. Without a context selector, existing and
 newly provisioned environments retain legacy full-rule and canonical-skill
 collection. A consumer can implement the optional Host
-`selectParticipantContext({ repoDir, role, task: { id, purpose } })` callback.
-It returns `rules: [{ path, reason, requires? }]` and
-`skills: [{ name, root, reason }]`. Purposes are `technical`, `user-facing` and
+`selectParticipantContext({ repoDir, role, task: { id, purpose, context? } })`
+callback. It returns `rules: [{ path, reason, requires? }]`,
+`skills: [{ name, root, reason, requires? }]` and optional
+`resources: [{ path, reason, requires? }]`. Purposes are `technical`, `user-facing` and
 `author-voice`; the owner chooses the purpose, not a participant tool argument.
 New bindings explicitly default to `technical`; legacy serialized fields remain
 optional and gain no schema default.
+
+`task create` and `participant add` accept `--context-file <JSON declaration>`
+(up to 256 KiB), structurally validated before provider/model work. Its `skills`
+and exact absolute `resources` declare the complete additional set with reasons
+and optional typed `requires` references. The shared
+[participant-context contract](../../docs/reference/02-host.md#explicit-participant-context)
+defines admission and dependency checks. A child does not inherit the owner's
+extras. Bindings and canonical participant metadata retain the full declaration;
+fresh phases reuse the same prepared selection. A declaration without a Host
+selector refuses.
 
 The consumer must select all mandatory authorization, permission, ownership and
 repository instructions, including the complete declared required-rule closure.
@@ -579,9 +590,13 @@ a route actually available to that participant. Unavailable required content
 blocks acceptance. The [role policy](../../docs/reference/02-host.md#bb-rule-source-routes)
 states the same boundary.
 
-Assignments carry the complete selected text beyond BB's 4096-character dynamic
-instructions limit. `promptobus_host_context` can read additional resources
-within selected skill roots; it grants no arbitrary workspace read.
+Assignments name the authenticated task and purpose, and carry the complete
+selected rule/skill text beyond BB's 4096-character dynamic instructions limit. `promptobus_host_context` can read additional resources
+within selected skill roots and exact selected resource files. Resource bodies
+are not embedded in the initial assignment; exact resources remain readable with
+their reason through the authenticated tool. They grant no parent/sibling or
+arbitrary workspace read. Canonical paths and logical source provenance both
+participate in the prepared ceiling.
 `promptobus_host_call` derives role/root/actor from the binding and freshly checks
 admission before callback dispatch. Tools appear only when the collected context
 requires them. A running Codex session keeps its native tool inventory: after a

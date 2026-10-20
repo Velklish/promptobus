@@ -132,6 +132,7 @@ test('src and its own suite have no names of another contour', () => {
       const codexSkills = needle === CONTOUR.layout && (
         file === path.join(ROOT, 'test', 'harness-codex.mjs')
         || file === path.join(ROOT, 'test', 'lead.test.mjs')
+        || file === path.join(ROOT, 'test', 'native-participant-context.test.mjs')
         || /[/\\]fixtures[/\\]codex-app-server[/\\][^/\\]+[/\\](?:CanonicalSkills|ReviewerReadRoots)-/.test(file));
       if (codexSkills) continue;
       if (text.includes(needle)) hits.push(`${path.relative(ROOT, file)}: ${needle}`);

@@ -2,7 +2,7 @@
 // [reference/05-drivers.md#the-driver-contract](../docs/reference/05-drivers.md#the-driver-contract)
 import { addressOf, GateError } from './protocol.js';
 import type { ORCHESTRATOR, REVIEWER, WORKER } from './registry.js';
-import type { HostMcpTool, HostToolBin, PromptobusHost } from './host.js';
+import type { HostMcpTool, HostToolBin, PreparedHostParticipantContextSelection, PromptobusHost } from './host.js';
 import type { AvailabilityAdapter } from './model-routing.js';
 import { PromptobusError } from './v1/errors.js';
 import type { ParticipantMode, ParticipantV1, TaskV1 } from './v1/model.js';
@@ -183,6 +183,8 @@ export interface SpawnContext {
   readSkillDirs?: string[];
   /** Selected native content layout; undefined keeps root, null disables it. */
   skillsRoot?: string | null;
+  /** Admitted per-task inventory; whole skills containers are disabled when present. */
+  selectedContext?: PreparedHostParticipantContextSelection | null;
   /** Directory with workspace skills for one session. */
   pluginDir?: string | null;
   /** Where the driver puts its MCP config and its settings file. */
@@ -208,6 +210,11 @@ export interface LaunchFile {
   secret: boolean;
   /** Index content of a tracked path the text was merged from: the write sets `skip-worktree` on it. */
   tracked?: string;
+  copyFrom?: string;
+  copyFileFrom?: string;
+  clearDirectory?: boolean;
+  selectedContext?: PreparedHostParticipantContextSelection;
+  selectedPaths?: string[];
 }
 
 /** Launch plan: the harness-neutral context as argv, configs and files. Assembled by ONE `prepare`
@@ -303,6 +310,8 @@ export interface DriverOptions {
   /** Whether the harness takes the workspace skills directory for one session. Not declared means
    * "does not take", and the output says so rather than promising skills never received. */
   skillsDir?: boolean;
+  /** Whether prepare materializes only the supplied selected context. */
+  selectedContext?: boolean;
   /** Directories inside the participant's working directory this driver's launch files claim.
    * [reference/05-drivers.md#launch-directories-a-driver-claims](../docs/reference/05-drivers.md#launch-directories-a-driver-claims) */
   launchDirs?: string[];

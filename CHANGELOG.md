@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Carry an explicit per-participant skill and exact-resource declaration through
+  BB and native delivery, with reasons and complete declared dependencies.
+  Shared Host admission preserves mandatory rules and review skills, refuses
+  missing dependencies before payload reads, and retains the declaration across
+  fresh phases. Selected native containers copy only admitted content; unsupported
+  resource layouts or existing destination collisions refuse before launch.
+  Native bootstraps identify task/purpose and embed bounded exact resource bodies;
+  BB resources stay metadata until explicitly read. Foreign Claude manifests and
+  their symlinks refuse before any write.
+  Provider/global instructions and actual token usage remain separate boundaries.
+
 - Retire the former store, converter and their public APIs and Host layout member.
   Recognized former-format stores and unfinished conversion paths refuse before
   engine recovery or a new task write. Use the isolated v0.28.0 converter after
