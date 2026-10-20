@@ -675,6 +675,7 @@ test('a symlink loop at the canonical messages directory does not take status, h
   const root = sandbox();
   const engine = open(root);
   const id = taskWith(engine, 'mkdir-canon-eloop-t20260925-160000');
+  engine.rebuildMessageOrder();
   const stray = path.join(engine.home, 'tasks', id, 'messages');
   symlinkSync('messages', stray);
   let refused = null;

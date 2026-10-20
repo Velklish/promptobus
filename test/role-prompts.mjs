@@ -8,7 +8,7 @@ import { hostOf } from '../lib/host.js';
 import { planTeamlead } from '../lib/spawn.js';
 import { planApprover } from '../lib/approver.js';
 import { planReport } from '../lib/report.js';
-import { bus, participantRecord, sendMessage, upsertParticipant } from '../lib/store.js';
+import { bus, participantRecord, sendMessage } from '../lib/store.js';
 
 export async function captureRolePrompts() {
   const prompts = await capturePrompts();
@@ -39,7 +39,7 @@ export async function captureRolePrompts() {
     owner: participantRecord('orchestrator', { harness: 'claude', owner: 'fixture-owner' }),
   });
   for (const address of ['worker:sample', 'reviewer:sample']) {
-    upsertParticipant(home, task, participantRecord(address, {
+    bus(home, { cli: host.version }).assignParticipant(task, participantRecord(address, {
       harness: 'claude', repo: 'sample', repoAbs: repo, worktree: repo, branch: 'main',
       started, reviewAssignedAt: started, reviewSubject: repo,
     }));

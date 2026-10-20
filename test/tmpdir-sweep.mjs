@@ -103,6 +103,7 @@ export const SUITE_PREFIXES = [
   // for the sweep's convenience. Each is specific enough not to catch a
   // stranger in a shared `$TMPDIR`; `pb-hooks-` covers `pb-hooks-home-`.
   'pb-home-', 'pb-hooks-', 'pb-install-', 'pb-bb-native-', 'pb-direct-receipt-',
+  'pb-message-order-', 'pb-native-message-order-',
   // As `mutation-probe.test.mjs` spells it, for the reason the three above are kept:
   // the sweep does not care about the name, and a rename would be an edit for its convenience.
   'mutation-probe-',
@@ -114,7 +115,7 @@ export const SUITE_PREFIXES = [
   'promptobus-copy-', 'promptobus-cursor-', 'promptobus-digest-', 'promptobus-driver-', 'promptobus-report-',
   'promptobus-e2e-', 'promptobus-governance-routes-', 'promptobus-harness-', 'promptobus-home-',
   'promptobus-host-', 'promptobus-lease-', 'promptobus-legacy-', 'promptobus-link-',
-  'promptobus-mcp-', 'promptobus-migration-', 'promptobus-owner-gate-', 'promptobus-package-',
+  'promptobus-mcp-', 'promptobus-membership-', 'promptobus-migration-', 'promptobus-owner-gate-', 'promptobus-package-',
   'promptobus-project-hooks-', 'promptobus-promptobus', 'promptobus-races-',
   // Covers the `-a-`/`-b-` pair of host.test.mjs too: an entry sweeps everything
   // that starts with it.

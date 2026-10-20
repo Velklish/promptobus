@@ -13,6 +13,7 @@ const { hostOf } = await import('../lib/host.js');
 const { buildDigest, digest } = await import('../lib/digest.js');
 const { runPromptobus } = await import('../lib/cli.js');
 const { writeStalls } = await import('../dist/index.js');
+const { reserveMessageId } = await import('../dist/v1/message-order.js');
 const host = hostOf(ROOT);
 const HOME = store.promptobusHome(ROOT, host);
 const ROOT_TASK = 'digest-root-t20260926-120000';
@@ -25,16 +26,17 @@ const sequence = new Map();
 function put(task, from, to, type, body, ts = SENT_AT) {
   const next = (sequence.get(task) ?? 0) + 1;
   sequence.set(task, next);
-  const stamp = `${ts.slice(0, 10).replaceAll('-', '')}T${ts.slice(11, 23).replaceAll(':', '').replace('.', '')}`;
-  const id = `${stamp}-${String(next).padStart(4, '0')}-abcdef`;
-  const record = {
-    protocolVersion: 1, id, task, sender: store.addrDir(from),
-    recipients: [store.addrDir(to)], type, body, ts,
-  };
-  const dir = store.messagesDir(HOME, task);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(path.join(dir, `${id}.json`), `${JSON.stringify(record, null, 2)}\n`);
-  return record;
+  return store.withTaskLock(HOME, task, () => {
+    const id = reserveMessageId(HOME, new Date(ts));
+    const record = {
+      protocolVersion: 1, id, task, sender: store.addrDir(from),
+      recipients: [store.addrDir(to)], type, body, ts,
+    };
+    const dir = store.messagesDir(HOME, task);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, `${id}.json`), `${JSON.stringify(record, null, 2)}\n`);
+    return record;
+  });
 }
 
 store.createTask(HOME, { id: ROOT_TASK, title: 'Root', owner: 'root-session', adapter: { slug: 'root' } });
@@ -53,9 +55,9 @@ store.upsertParticipant(HOME, CHILD_B, store.participantRecord('user'));
 const pieces = Array.from({ length: 33 }, (_, i) => `p${String(i).padStart(2, '0')}`);
 for (let i = 0; i < pieces.length; i += 1) {
   const slug = pieces[i];
-  store.upsertParticipant(HOME, ROOT_TASK, store.participantRecord(`worker:${slug}`));
-  if (i >= 11) store.upsertParticipant(HOME, ROOT_TASK, store.participantRecord(`reviewer:${slug}`));
-  if (i >= 22) store.upsertParticipant(HOME, ROOT_TASK, store.participantRecord(`approver:${slug}`));
+  store.bus(HOME, { cli: host.version }).assignParticipant(ROOT_TASK, store.participantRecord(`worker:${slug}`));
+  if (i >= 11) store.bus(HOME).assignParticipant(ROOT_TASK, store.participantRecord(`reviewer:${slug}`));
+  if (i >= 22) store.bus(HOME).assignParticipant(ROOT_TASK, store.participantRecord(`approver:${slug}`));
 }
 
 for (let i = 0; i < 86; i += 1) {
@@ -156,10 +158,10 @@ check('the CLI dispatches digest --json to the same schema-valid page',
 const assignment = '2026-09-26T12:00:01.000Z';
 const formerStep = buildDigest(host, { task: ROOT_TASK, now: NOW }).tasks[0]
   .pieces.find((piece) => piece.slug === 'p22')?.step;
-store.upsertParticipant(HOME, ROOT_TASK, store.participantRecord('reviewer:p22', {
+store.bus(HOME).assignParticipant(ROOT_TASK, store.participantRecord('reviewer:p22', {
   started: assignment, reviewAssignedAt: assignment,
 }));
-store.upsertParticipant(HOME, ROOT_TASK, store.participantRecord('reviewer:p23', {
+store.bus(HOME).assignParticipant(ROOT_TASK, store.participantRecord('reviewer:p23', {
   started: assignment,
 }));
 const relaunched = buildDigest(host, { task: ROOT_TASK, now: NOW }).tasks[0].pieces;
@@ -178,7 +180,7 @@ check('a relaunched reviewer holds its piece until a result after its assignment
 const SOLO = 'digest-solo-t20260926-120000';
 store.createTask(HOME, { id: SOLO, title: 'Standalone review', owner: 'solo-owner',
   adapter: { slug: 'solo' } });
-store.upsertParticipant(HOME, SOLO, store.participantRecord('reviewer:solo', {
+store.bus(HOME).assignParticipant(SOLO, store.participantRecord('reviewer:solo', {
   started: SENT_AT, reviewAssignedAt: SENT_AT,
 }));
 const standalone = buildDigest(host, { task: SOLO, now: NOW }).tasks[0];

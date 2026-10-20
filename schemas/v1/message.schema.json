@@ -9,7 +9,7 @@
   "properties": {
     "protocolVersion": { "const": 1 },
     "id": {
-      "description": "A timestamp, the sender's counter, and a random tail: sorting the strings gives send order.",
+      "description": "Opaque logical message ID. Upgraded same-store writers allocate committed order independently of wall time; retained IDs are unchanged.",
       "type": "string",
       "pattern": "^[0-9]{8}T[0-9]{9}-[0-9]{4}-[0-9a-f]{6}$"
     },

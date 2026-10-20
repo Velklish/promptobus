@@ -1101,13 +1101,13 @@ test('named reviewer and approver Codex tuples dry-run with a role warning and n
     ['approver', 'gpt-6-luna', 'high', 'codex-gpt6-luna-high'],
   ]) {
     const task = freshTask(`named-${role}-t20260905-090000`);
-    store.upsertParticipant(HOME, task, store.participantRecord('worker:orders-api', {
+    store.bus(HOME, { cli: HOST.version }).assignParticipant(task, store.participantRecord('worker:orders-api', {
       harness: 'codex', repoAbs: REPO, worktree: REPO, started: '2026-09-05T09:00:00.000Z',
     }));
     store.sendMessage(HOME, task, { from: 'worker:orders-api', to: store.ORCHESTRATOR,
       type: 'result', body: 'worker completed' });
     if (role === 'approver') {
-      store.upsertParticipant(HOME, task, store.participantRecord('reviewer:orders-api', {
+      store.bus(HOME, { cli: HOST.version }).assignParticipant(task, store.participantRecord('reviewer:orders-api', {
         harness: 'codex', repoAbs: REPO, started: '2026-09-05T09:00:00.000Z',
       }));
       store.sendMessage(HOME, task, { from: 'reviewer:orders-api', to: store.ORCHESTRATOR,

@@ -20,8 +20,8 @@ export { TASK_ID_RE };
 export const PARTICIPANT_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const ROLE_RE = /^[a-z][a-z0-9-]{0,31}$/;
 export const HARNESS_RE = /^[a-z][a-z0-9-]{0,31}$/;
-// Timestamp, sender counter, and a random tail: string sort is send order, and
-// history does not need a second clock.
+// Logical stamp/counter and random tail for committed messages; retained IDs stay opaque.
+// Artifact names share the grammar but do not define causal message order.
 export const RECORD_ID_RE = /^[0-9]{8}T[0-9]{9}-[0-9]{4}-[0-9a-f]{6}$/;
 
 /** Compact UTC stamp used in sortable record ids. */

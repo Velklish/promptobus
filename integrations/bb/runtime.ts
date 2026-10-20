@@ -612,6 +612,7 @@ export function registerRuntime(bb: BbPluginApi) {
           await bb.sdk.threads.clearContext({ threadId: b.threadId!, signal: context.signal });
           await admit(next, context.signal);
           if (b.role === REVIEWER) await checkEvidence(next, store.task(b.task)!, context.signal);
+          await onHost(next, { operation: 'assignment' }, context.signal);
           const intent = store.launchIntent(next)!;
           const delivery = createBbInstructionDelivery(next.role, { taskId: next.task, address: next.participant, environmentId: next.environmentId,
             workspace: next.environmentPath, assignment: options.assignment, launchContext: next.launchContext, evidenceManifest: next.evidenceManifest,

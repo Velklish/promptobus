@@ -613,6 +613,19 @@ export async function runScenario({
   // capabilities snapshot.
   const fieldsOf = (addr) => participantOf(addr)?.metadata ?? {};
   const healthOf = (addr) => (store.readHealth(home, TASK) ?? {})[addr] ?? {};
+  const notificationCount = addr => store.tailWardenLog(home, TASK, Number.MAX_SAFE_INTEGER)
+    .filter(line => line.includes(` notification ${addr}:`)).length;
+  const notificationMark = addr => ({ count: notificationCount(addr), session: store.readWake(home, TASK, addr)?.session ?? null });
+  const notified = (addr, id, before) => {
+    if (!id) return false;
+    const h = healthOf(addr);
+    const endpoint = store.readWake(home, TASK, addr);
+    if (h.knockError || !endpoint?.socket || (h.wakeSession ?? null) !== before.session
+      || (endpoint.session ?? null) !== before.session) return false;
+    const covered = h.coveredUnread?.some(key => key[0] === TASK && key[1] === store.addrDir(addr) && key[2] === id);
+    const taken = existsSync(path.join(store.historyDir(home, TASK, addr), `${id}.json`));
+    return covered || (taken && notificationCount(addr) > before.count);
+  };
   const postcard = (line) => inbox.seen.find((p) => String(p.body ?? '').includes(line)) ?? null;
   const timings = [];
   let sessionNames = [];
@@ -702,9 +715,11 @@ export async function runScenario({
     check('step 4: after the header read the body came by its id',
       opened.isError === false && opened.text.includes(status?.body), tail(opened.text));
     harness.assertRunning?.();
+    const answerBefore = notificationMark(WORKER);
     const sent = await mcp.tool('promptobus_send', { to: WORKER, type: 'answer', body: `${MARK.answer}: edit only ${NOTE_FILE}` });
+    const answerName = linkedNames(home, TASK, WORKER).find(name => messageBody(home, TASK, WORKER, name).includes(MARK.answer));
     check('step 4: the orchestrator answer went to the worker',
-      sent.isError === false && !!msgOf(WORKER, MARK.answer), `${tail(sent.text)} · ${JSON.stringify(inboxOf(WORKER))}`);
+      sent.isError === false && !!answerName, `${tail(sent.text)} · ${JSON.stringify(inboxOf(WORKER))}`);
     const guarded = orchGuard();
     check('step 4: the loop guard released the orchestrator turn and marked its end',
       guarded.status === 0 && !!store.lastTurnAt(home, TASK, store.ORCHESTRATOR),
@@ -734,25 +749,11 @@ export async function runScenario({
 
     // --- step 5: knock and first result ---------------------------------------------
     const t5 = Date.now();
-    // Sign of a successful knock — the channel and the «knocked as far as» mark: a
-    // fetched mailbox zeroes the knock counter together with the other wait marks, and
-    // the counter can judge a knock only before the fetch, that is in a race with the
-    // participant itself.
-    //
-    // What is checked is the FACT of delivery, not the channel NAME in health. That
-    // name is the mechanism's word about a successful activation, and it does not
-    // belong to the scenario: the warden writes it on any driver that wakes itself
-    // (`supervisor.ts`, the `r?.ok` branch), and lineups have different transports
-    // behind it — a TUI injection on Cursor, holder RPC on Codex. The pair «there is a
-    // `knockedTo` mark, there is no knock error» keeps the verdict equally strong on
-    // all: a failed knock writes the reason into `knockError` and puts the participant
-    // on self-wake, and a driver without a knock leaves no mark at all.
-    const knocked = await waitFor(() => {
-      const h = healthOf(WORKER);
-      return h.knockedTo && !h.knockError ? h : null;
-    }, { timeoutMs: step });
-    check('step 5: the warden reached the worker on its channel and remembered how far it knocked',
-      !!knocked?.knockedTo && !knocked?.knockError,
+    // A take prunes coverage; the exact history ref and a fresh successful activation
+    // preserve the proof after fast consumption without retaining historical coverage.
+    const knocked = await waitFor(() => notified(WORKER, answerName?.slice(0, -5), answerBefore), { timeoutMs: step });
+    check('step 5: the warden reached the worker for the exact answer',
+      knocked === true,
       JSON.stringify(healthOf(WORKER)));
     const result1 = await waitFor(() => msgOf(store.ORCHESTRATOR, MARK.result1), { timeoutMs: step });
     check('step 5: the worker fetched the mailbox on the knock and sent the first result',
@@ -1113,16 +1114,9 @@ export async function runScenario({
     const artifact = path.join(sandbox, 'artifact.md');
     harness.assertRunning?.();
     writeFileSync(artifact, `# ${MARK.fan}\n\nOne and the same file goes out twice.\n`);
-    // The «knocked as far as» mark is taken BEFORE the send on BOTH. A mailbox fetch
-    // does not reset it: the warden delivery branch rewrites the mark field by field
-    // and carries `knockedTo` from the previous state (`supervisor.ts`, the
-    // `if (!unread)` branch). On the worker it has been sitting there since the step 5
-    // knock, and the condition «the mark is there» would be green before this send —
-    // that is, even if the knock never fired (checked by a mutation probe :
-    // sending to the reviewer only did not paint the old verdict form red). The real
-    // sign of a fresh knock is a CHANGE of the mark: `knockedTo` carries the id of the
-    // last message that was knocked about.
-    const knockedWas = Object.fromEntries([WORKER, REVIEWER].map((a) => [a, healthOf(a).knockedTo ?? null]));
+    // Snapshot each recipient before sending: stale health or a successful activation
+    // of only one participant cannot prove both new notifications.
+    const knockedWas = Object.fromEntries([WORKER, REVIEWER].map(a => [a, notificationMark(a)]));
     const fanned = [];
     for (const addr of [WORKER, REVIEWER]) {
       harness.assertRunning?.();
@@ -1181,18 +1175,12 @@ export async function runScenario({
       blobs.length === 1 && named.length === 2 && named.every((n) => statSync(path.join(store.filesDir(home, TASK), n)).ino
         === statSync(blobOfOurs).ino),
       `${JSON.stringify(named)} · blob ${blobs[0] ?? 'none'}`);
-    // Both were woken: the warden tick knocks each recipient separately, and a failed
-    // activation of one does not cancel delivery to the other. What is checked is a
-    // CHANGE of the mark against the snapshot above — on a still mark the verdict
-    // would be green without a single knock.
-    const knockedBoth = await waitFor(() => ([WORKER, REVIEWER].every((a) => {
-      const now = healthOf(a).knockedTo ?? null;
-      return !!now && now !== knockedWas[a];
-    }) ? true : null), { timeoutMs: step });
+    const knockedBoth = await waitFor(() => ([WORKER, REVIEWER].every(a =>
+      notified(a, landedFan(a)[0]?.slice(0, -5), knockedWas[a])) ? true : null), { timeoutMs: step });
     check('step 11: the warden knocked both recipients about the new message',
       knockedBoth === true,
       `was ${JSON.stringify(knockedWas)} · became `
-      + JSON.stringify(Object.fromEntries([WORKER, REVIEWER].map((a) => [a, healthOf(a).knockedTo ?? null]))));
+      + JSON.stringify(Object.fromEntries([WORKER, REVIEWER].map(a => [a, { health: healthOf(a), notifications: notificationCount(a) }]))));
     at(STEPS[10], Date.now() - t11);
 
     // --- step 12: history, status and mailbox claim ---------------------------------

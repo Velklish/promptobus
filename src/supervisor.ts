@@ -10,7 +10,7 @@ import {
 } from './protocol.js';
 import { readArtifact } from './v1/artifacts.js';
 import { inboxRef } from './v1/layout.js';
-import { countInbox, glanceInbox, lastSentAt } from './v1/messages.js';
+import { countInbox, glanceInbox, inboxIdentity, lastSentAt } from './v1/messages.js';
 import type { BrokenNote, FaultHook } from './v1/messages.js';
 import type { MessageV1, ParticipantV1, TaskV1 } from './v1/model.js';
 import { readTask } from './v1/store.js';
@@ -75,6 +75,20 @@ function unreadOf(home: string, mailbox: ParticipantSlots): number {
   return mailbox.slots.reduce((n, slot) => n + countInbox(home, slot.task, slot.participant), 0);
 }
 
+type UnreadKey = [task: string, participant: string, message: string];
+
+function keyOf(key: UnreadKey): string { return JSON.stringify(key); }
+
+function unreadKeys(value: unknown): UnreadKey[] {
+  return Array.isArray(value) ? value.filter((key): key is UnreadKey =>
+    Array.isArray(key) && key.length === 3 && key.every(part => typeof part === 'string')) : [];
+}
+
+function uniqueKeys(keys: UnreadKey[]): UnreadKey[] {
+  return [...new Map(keys.map(key => [keyOf(key), key])).entries()]
+    .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([, key]) => key);
+}
+
 /** Which fallback put `channel` at `self-wake`; prognosis per state in [guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not](../docs/guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not) */
 export type SelfWakeState = 'starting' | 'taken' | 'refused';
 
@@ -91,6 +105,8 @@ interface HealthMark {
   // Messages that landed under an outstanding knock and are not yet in a postcard.
   coalesced?: number;
   knockedTo?: string | null;
+  coveredUnread?: UnreadKey[];
+  observedUnread?: UnreadKey[];
   // The oldest message the last knock found: only a take moves it out of the inbox.
   knockedFirst?: string | null;
   escalatedAt?: string | null;
@@ -500,30 +516,52 @@ export async function supervisorRound(home: string, task: string, {
     const addr = addressOf(p);
     if (!addr) continue;
     let mailbox: ParticipantSlots;
-    let unread: number;
+    let snapshots: { task: string; participant: string; ids: string[]; complete: boolean }[];
     try {
       // An address alias is knocked by the warden of its primary task, which counts this slot too.
       mailbox = slotsOf(task, p, mailboxes);
       if (mailbox.alias) continue;
-      unread = unreadOf(home, mailbox);
+      snapshots = mailbox.slots.map(slot => ({ ...slot, ...inboxIdentity(home, slot.task, slot.participant) }));
     } catch {
       // A bad participant record has no right to stop the watch over the others.
       continue;
     }
     const was = marksOf(health, addr);
     const h: HealthMark = { ...was };
+    const complete = snapshots.every(slot => slot.complete);
+    const identities = new Map(snapshots.map(slot => [JSON.stringify([slot.task, slot.participant]),
+      { complete: slot.complete, ids: new Set(slot.ids) }]));
+    const retain = (key: UnreadKey): boolean => {
+      const slot = identities.get(JSON.stringify(key.slice(0, 2)));
+      return slot !== undefined && (!slot.complete || slot.ids.has(key[2]));
+    };
+    const observed = uniqueKeys([
+      ...unreadKeys(was.observedUnread).filter(retain),
+      ...snapshots.flatMap(slot => slot.ids.map(id => [slot.task, slot.participant, id] as UnreadKey)),
+    ]);
+    const previous = new Set(unreadKeys(was.observedUnread).map(keyOf));
+    const unread = Math.max(observed.length, complete ? 0 : was.unread ?? 0);
+    const endpoint = readWake(home, task, addr);
+    const wakeSession = endpoint?.session ?? null;
+    const restarted = wakeSession !== (was.wakeSession ?? null);
+    const baseline = !restarted && Array.isArray(was.coveredUnread);
+    const covered = baseline ? unreadKeys(was.coveredUnread).filter(retain) : [];
+    const coveredSet = new Set(covered.map(keyOf));
+    let arrivals = observed.filter(key => !previous.has(keyOf(key)) && !coveredSet.has(keyOf(key)));
+    if (observed.length || was.observedUnread !== undefined) h.observedUnread = observed;
+    if (baseline) h.coveredUnread = covered;
+    else delete h.coveredUnread;
 
     // The mailbox was taken — that is the delivery confirmation; a mailbox that was always empty is
     // not written. A take is the knocked mail gone, not a count drop: a peek sets broken refs aside too.
-    const took = Boolean(was.unread) && (!unread || leftInbox(home, mailbox, was.knockedFirst ?? null));
+    const took = complete && Boolean(was.unread) && (!unread || leftInbox(home, mailbox, was.knockedFirst ?? null));
     if (took) {
       events.push(`delivered ${addr}: mailbox was taken (had ${was.unread}, knocks ${was.knocks ?? 0}`
         + `${was.coalesced ? `, coalesced ${was.coalesced}` : ''})`);
     }
     if (!unread) {
       if (took) {
-        health[addr] = {
-          ...was,
+        Object.assign(h, {
           unread: 0,
           ...(was.actionableUnread !== undefined ? { actionableUnread: 0 } : {}),
           ...(was.actionableSince !== undefined ? { actionableSince: null } : {}),
@@ -538,9 +576,9 @@ export async function supervisorRound(home: string, task: string, {
           asking: undefined,
           coalesced: undefined,
           knockedFirst: null,
-        };
-        changed = true;
+        });
       }
+      if (JSON.stringify(h) !== JSON.stringify(was)) { health[addr] = h; changed = true; }
       continue;
     }
 
@@ -560,11 +598,16 @@ export async function supervisorRound(home: string, task: string, {
 
     if (addr === ORCHESTRATOR) {
       const progress = mailbox.slots.map(slot => glanceInbox(home, slot.task, slot.participant, faults));
-      const complete = progress.every(box => !box.broken.length)
+      const readable = complete && progress.every(box => !box.broken.length)
         && progress.reduce((n, box) => n + box.messages.length, 0) === unread;
-      h.actionableUnread = complete
+      h.actionableUnread = readable
         ? progress.reduce((n, box) => n + box.messages.filter(message => message.type !== 'status').length, 0) : unread;
-      if (complete && !h.actionableUnread) {
+      if (readable) {
+        const actionable = new Set(progress.flatMap((box, i) => box.messages.filter(m => m.type !== 'status')
+          .map(m => keyOf([mailbox.slots[i]!.task, mailbox.slots[i]!.participant, m.id]))));
+        arrivals = arrivals.filter(key => actionable.has(keyOf(key)));
+      }
+      if (readable && !h.actionableUnread) {
         h.actionableSince = null;
         h.escalatedAt = null;
         if (JSON.stringify(h) !== JSON.stringify(was)) changed = true;
@@ -593,7 +636,6 @@ export async function supervisorRound(home: string, task: string, {
       continue;
     }
 
-    const endpoint = readWake(home, task, addr);
     // Whose contact point this really is, asked before the knock-retry thresholds: a hijacked
     // channel is not "not yet time", it is "nowhere to knock".
     const taken = wakeTakenBy(home, task, p, endpoint);
@@ -605,12 +647,12 @@ export async function supervisorRound(home: string, task: string, {
     // The knock-retry threshold counts from ATTEMPT time, not success, or a dead channel would get
     // an attempt every second. `knockedAt` stays the last SUCCESSFUL delivery.
     const triedAt = Date.parse(h.triedAt ?? '');
-    const grew = (h.actionableUnread ?? unread) > (was.actionableUnread ?? was.unread ?? 0);
+    const grew = arrivals.length > 0;
     // A knock is outstanding from its success until the take, bounded both ways as a clock may step back.
     const knockedAt = Date.parse(h.knockedAt ?? '');
     const outstanding = Number.isFinite(knockedAt) && Math.abs(now - knockedAt) < KNOCK_COALESCE_SEC * 1000;
     // Carried mail knocks once at the window's end; after a failed attempt it waits for the retry.
-    const pending = grew || ((h.coalesced ?? 0) > 0 && h.triedAt === h.knockedAt);
+    const pending = grew || ((!baseline || (h.coalesced ?? 0) > 0) && h.triedAt === h.knockedAt);
     const stale = Number.isFinite(triedAt) && now - triedAt >= KNOCK_RETRY_SEC * 1000;
     // A retry on the SAME unread waits until the session gives the turn back — it will see the
     // notification at the end of it anyway. A fresh mailbox's first knock does not wait.
@@ -683,12 +725,12 @@ export async function supervisorRound(home: string, task: string, {
       const box = glanced.flatMap((g) => g.messages).sort(bySendOrder);
       const broken = glanced.flatMap((g) => g.broken);
       h.unreadableRefs = broken.map(({ code, name }) => `${code} ${name}`);
-      // A retry carries only what arrived after the last knock; the full list goes where the session
-      // has not seen the previous one. The cutoff is by message id — mailbox names sort by send order.
-      const wakeSession = endpoint?.session ?? null;
-      const restarted = wakeSession !== (was.wakeSession ?? null);
-      const upTo = restarted ? null : was.knockedTo ?? null;
-      const msgs = upTo === null ? box : box.filter((m) => String(m?.id ?? '') > upTo);
+      const sampled = glanced.flatMap((g, i) => g.messages.map(message => ({ message,
+        key: typeof message?.id === 'string'
+          ? [mailbox.slots[i]!.task, mailbox.slots[i]!.participant, message.id] as UnreadKey : null,
+      })));
+      const msgs = sampled.filter(({ key }) => key === null || !coveredSet.has(keyOf(key)))
+        .map(({ message }) => message).sort(bySendOrder);
       const previews = [
         ...msgs.map((m) => previewOf(home, m?.task && m.task !== task ? journalOf(m.task) : meta, m)),
         ...broken.map((note) => brokenPreview(note, now)),
@@ -706,14 +748,10 @@ export async function supervisorRound(home: string, task: string, {
         h.knockedAt = h.triedAt;
         h.knocks = (h.knocks ?? 0) + 1;
         h.wakeSession = wakeSession;
+        h.coveredUnread = uniqueKeys([...covered, ...sampled.flatMap(({ key }) => key === null ? [] : [key])]);
         h.knockedFirst = box[0]?.id ?? null;
         delete h.coalesced;
         knocked.push(addr);
-        // Cutoff is the last id the postcard covered, including its "and N more" tail.
-        // A schema-invalid note does not hold it; a refused ref does, until a later glance reads it.
-        if (box.length && !broken.some((note) => note.code !== 'schema-invalid')) {
-          h.knockedTo = box[box.length - 1]?.id ?? h.knockedTo ?? null;
-        }
         const brokenText = broken.map(({ code, name }) => `${code} ${name}`).join(', ');
         events.push(`notification ${addr}: unread ${unread}, knock ${h.knocks}`
           + `${brokenText ? ` (unreadable refs: ${brokenText})` : ''}`
@@ -736,7 +774,7 @@ export async function supervisorRound(home: string, task: string, {
       }
       // There is no write here: the state comparison below decides that.
     } else if (grew) {
-      h.coalesced = (h.coalesced ?? 0) + unread - (was.unread ?? 0);
+      h.coalesced = (h.coalesced ?? 0) + arrivals.length;
     }
 
     // Silence longer than the threshold — escalation, and once: otherwise

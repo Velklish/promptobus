@@ -1,3 +1,4 @@
+import { reserveMessageId, withMessageCommit } from './message-order.js';
 // The v1 store: what is written and in what order.
 // [reference/04-protocol.md#the-v1-store-what-is-written-and-in-what-order](../../docs/reference/04-protocol.md#the-v1-store-what-is-written-and-in-what-order)
 import { existsSync, linkSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -478,6 +479,15 @@ export function putParticipant(home: string, task: string, participant: Particip
     const rest = meta.participants.filter((p) => p.id !== participant.id);
     return writeTask(home, { ...meta, participants: [...rest, participant] }, now);
   });
+}
+
+export function assignParticipant(home: string, task: string, participant: ParticipantV1, now: Clock, cli: ReaderVersion = null): TaskV1 {
+  requireValid('participant', participant, { task, participant: participant?.id });
+  return withTaskLock(home, task, () => withMessageCommit(home, () => {
+    const meta = readTask(home, task, cli);
+    const next = { ...participant, metadata: { ...participant.metadata, assignmentAfterId: reserveMessageId(home, now()) } };
+    return writeTask(home, { ...meta, participants: [...meta.participants.filter(p => p.id !== participant.id), next] }, now);
+  }));
 }
 
 /** What can be patched on a participant record. `id` is not patched: it is the address. */

@@ -224,9 +224,9 @@ check('PB-293 entry points match current hooks tools roles and package',
     && driversIntro.includes('Teamlead and reporter sessions work at the install root')
     && ['promptobus spawn --teamlead', 'promptobus report', 'promptobus step', 'promptobus ask']
       .every((command) => englishCommands.includes(`| \`${command}`))
-    && englishSteps.includes('The first gate has no predecessor precondition; every later gate needs a result from the preceding gate\'s participant for the same subject, recorded at or after that participant\'s current assignment. A `writes-main-tree` gate also needs the owner\'s result, under the same subject and currency condition, whether or not it is the first gate.')
-    && englishAcceptance.includes('once the owner, and the preceding gate\'s participant when the pipeline declares one, have each recorded a result for the same subject at or after their current assignment.')
-    && englishStepCommand.includes('the first gate has no predecessor precondition; a later gate needs the preceding gate\'s result for the same subject at or after that participant\'s current assignment; a `writes-main-tree` gate also needs the owner\'s result under the same condition, whether or not it is the first gate'),
+    && englishSteps.includes('The first gate has no predecessor precondition; every later gate needs a result from the preceding gate\'s participant for the same subject, committed after its current causal assignment boundary. A `writes-main-tree` gate also needs the owner\'s result, under the same subject and currency condition, whether or not it is the first gate.')
+    && englishAcceptance.includes('once the owner, and the preceding gate\'s participant when the pipeline declares one, have each committed a result for the same subject after their current causal assignment boundary.')
+    && englishStepCommand.includes('the first gate has no predecessor precondition; a later gate needs the preceding gate\'s result for the same subject after its causal assignment boundary; a `writes-main-tree` gate also needs the owner\'s result under the same condition, whether or not it is the first gate'),
   'Current entry prose must describe the six-tool, guard-only, root-role and packed-file contracts');
 
 const cli = read('docs/reference/03-cli.md');

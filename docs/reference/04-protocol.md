@@ -168,7 +168,7 @@ When one session orchestrates several tasks, a user question in any of them hold
 
 Stored v1 messages carry `sender` and `recipients` as normalized participant IDs, the same values used for mailbox directories; they do not carry the caller's bus address spelling. For example, `worker:demo` is stored as `worker-demo`. Match a stored message by converting the address with the same normalization before comparing it.
 
-`glanceInbox` only lists unread records; it does not consume them. A wait for a participant's verdict must therefore match both the normalized `sender` and `type`, rather than treating any `result` in the mailbox as that participant's message. Admission checks that depend on complete assignment history use `engine.inspectInbox(task, participant)`: it validates unread records and returns both messages and `broken` diagnostics, without consuming or isolating refs. Inspection refuses directory listing errors other than an absent inbox. Pair it with `engine.history({ task, all: true, strict: true })` to refuse listing errors in read history too. A damaged unread assignment therefore remains visible to repeated checks; `glance` alone cannot establish completeness.
+`glanceInbox` only lists unread records; it does not consume them. A wait for a participant's verdict must match both the normalized `sender` and `type`, rather than treating any `result` as that participant's message. Current-assignment gates use `engine.facts(task)`: after recovery outside the commit lock, it reads task metadata and canonical messages under task then message-commit serialization. Unresolved intents and broken committed records refuse the snapshot, including a live writer or a partial intent without a lease. A newer committed assignment must not disappear behind an older visible assignment/result. `inspectInbox` and strict history remain available for their own views; their union is not a complete committed-facts snapshot because refs move and a committed intent may not yet be materialized.
 
 A `result` body opens with a fixed four-line header — what was done, the gate command with its exit code, what is left open, what needs a decision — inside a bound of 2400 characters, and everything past it is attached as an artifact the header names; the shape, the numbers and the gate record that goes with it are in § Artifacts, and the rule itself is stated in the participant preambles rather than in a consumer's rules.
 
@@ -176,7 +176,7 @@ A `result` body opens with a fixed four-line header — what was done, the gate 
 
 During a consuming mailbox read, a filesystem refusal while reading or moving one record is reported with the errno in `BrokenNote.code` and leaves its ref in place for a later consuming read. The same pass still returns every message it already moved to history. The unread ref keeps the mailbox unread, so the warden repeats its knock until the filesystem condition is lifted. `recover()` applies the same per-record rule to an unreadable intent: it reports the errno, leaves the intent in place, and continues through the other intents and tasks. Only a record that was read and found malformed is moved to `broken/`.
 
-`glanceInbox` reports a filesystem refusal as a `BrokenNote` without moving the ref; the bus itself adds a postcard line naming the errno and ref, and the participant status line repeats the health mark while retries remain unbounded until a later glance reads it. A record that does not parse is named the same way: the postcard line and the health mark carry `schema-invalid` with the ref name, and the glance still does not move the ref. That note does not hold the knock cutoff — a later retry carries only mail that arrived after the knock — while a refused ref still holds it, because a later glance may read the ref.
+`glanceInbox` reports a filesystem refusal as a `BrokenNote` without moving the ref; the bus adds a postcard line naming the errno and ref, and the participant status repeats the health mark until a later glance reads it. A record that does not parse is named the same way, with `schema-invalid`, and the glance still does not move the ref. A diagnostic note does not mark that unread ref successfully previewed. If it later becomes readable, its original identity remains eligible for a message stub; notification coverage never marks mail read.
 
 ## Store layout
 
@@ -384,9 +384,47 @@ The orchestrator mailbox is owned by the session that opened the task. Another s
 
 ### Messages: names, order and what a read marks
 
-Source: `src/v1/messages.ts`.
+Source: `src/v1/messages.ts`, `src/v1/message-order.ts`.
 
 Recoverable fan-out, mailbox, and history protocol v1.
+
+**Message IDs order commits within one store, not wall-clock time.** The existing
+timestamp/counter/random-tail grammar is retained. At intent commit the engine
+reserves a logical prefix above the durable store head: advancing wall time may
+advance the prefix, otherwise the counter advances and carries into the logical
+millisecond. Equal clocks, clock rollback, separate writers and process restarts
+therefore do not reverse new committed messages. The random tail protects names;
+it does not establish order. `ts` remains the supplied wall clock for display and
+telemetry. Artifact naming keeps its own existing semantics.
+
+The store's logical head (`.promptobus/message-order.json` in the native layout)
+is versioned and bounded to 4 KiB before JSON
+materialization. Allocation rereads it under the store-local `.message-order-lock`,
+nested after the task lock. The head reservation is atomically replaced before
+the intent or initial-assignment boundary is published. An interrupted reservation
+may leave a gap; no message is synthesized for it. Artifact streaming and recipient
+ref placement stay outside this short commit section. Intent retirement briefly
+takes the same commit lock so reconstruction cannot miss a record between its
+canonical and intent listings. Recovery's corrupt-intent quarantine and lease
+removal use that lock too, preventing a move into `broken/messages` between the
+snapshot's listings. These are process-crash guarantees from
+the existing atomic-write helpers, not fsync or power-loss guarantees.
+
+A valid head is trusted on normal reopen without scanning retained history.
+Missing state initializes automatically only when a strict scan proves no
+retained messages, intents or assignment boundaries. Populated or malformed
+state requires explicit [message-order rebuild](03-cli.md#message-order-rebuild).
+Reconstruction includes raw canonical records, open intents and participant
+`metadata.assignmentAfterId` boundaries, and preserves a higher valid head.
+Unreadable, partial or unsupported evidence refuses reconstruction; tolerant
+history/task listings cannot prove emptiness. Unsupported head formats refuse.
+
+Retained IDs, message bytes, hard links and opaque history cursors are unchanged.
+Their old deterministic ID order cannot reconstruct historical commit order lost
+under an earlier clock rollback. New IDs follow the reconstructed retained bound.
+All writers sharing a store must use this protocol; an older live writer does not
+honor its lock/head. A coherent external restore of an older valid head is not
+detectable in constant time; explicit reconstruction is the recovery boundary.
 
 **The fan-out design rests on a single inode.** The canonical message, the
 fan-out intent, and every inbox reference are hard links to the same file,
@@ -397,7 +435,8 @@ and "create the intent" is exactly one atomic `open(O_EXCL)`.
 The order is:
 
 1. Validate recipients and the routing policy — before the first side effect.
-2. Create `intents/<id>.json` with the `wx` flag. **This is the commit
+2. Under task then message-commit lock, reserve the logical ID and create
+   `intents/<id>.json` with the `wx` flag. **This is the commit
    point**: from here the message exists, and everything else is recoverable,
    because the intent IS the canonical message whole — the recipients sit
    in it too.
@@ -435,6 +474,20 @@ Differences from the legacy store are not cosmetic, and both were named by a dec
    back THE SAME record — otherwise the first call's fields vanish in
    silence. There is no such invariant here: the patch touches the named
    fields and checks the schema after the merge.
+
+An initial worker, reviewer or approver prompt is an assignment even when no
+`task` message is sent. `engine.assignParticipant(task, participant)` reserves a
+logical boundary and persists it as `metadata.assignmentAfterId` under task then
+commit lock before launch. This boundary names no fictitious mailbox message.
+Actual reassignments clear the prior boundary before send. A new `task` or `review`
+assignment updates the recipient's committed assignment ID under the same
+task/commit serialization after intent publication. If that metadata write is
+interrupted, the recovered canonical assignment still raises the boundary in
+committed facts. Current-result checks require a matching sender/subject
+and a result strictly after the later of this boundary and the latest canonical
+`task` or `review` assignment. Wall-clock `started` and `reviewAssignedAt` remain measurements.
+Legacy metadata without a causal boundary stays readable but requires an explicit
+fresh assignment before it can prove a result current.
 
 The frozen [legacy store snapshot](../../test/fixtures/promptobus/MANIFEST.md)
 is current input to both the [legacy reader test](../../test/promptobus-legacy-fixture.test.mjs)
@@ -1011,15 +1064,18 @@ change, and an old grant token cannot be reactivated by this route.
 
 The local BB facade routes all six standing roles through authenticated bindings.
 An approver chooses explicit worker/reviewer participants. Their canonical actual
-subjects must match. Host `BbHostIntegration.checkStep` projects their current
-assignment and recorded identity into the same `requireStepResults` check as the
-native pipeline. Result tallies use canonical participant id, independent of the
-adapter address. A result before the latest canonical task assignment is stale;
-`review` does not substitute for `result`. Missing initial timestamps refuse.
+subjects must match. Host `BbHostIntegration.checkStep` uses strict committed facts
+and projects their causal assignment boundary and recorded identity into the same
+`requireStepResults` check as the native pipeline. Initial and fresh-phase SDK
+prompts receive a boundary without a synthetic bus message. A result must follow
+that boundary and the latest canonical `task` or `review` assignment; a pending obligation may
+name the boundary without implying a fetchable message. `review` can settle the
+ordinary pending obligation but does not substitute for `result` at a pipeline
+gate. Missing legacy causal evidence refuses current-result proof.
 
 This is a fact check at launch, after preparation, dispatch and approver tool
 calls. It does not grade verdicts, artifact truth, commits or supplied gate records,
-close the task or merge source. Timestamp precision is unchanged. See
+close the task or merge source. Wall-clock timestamps remain measurements. See
 [workflow setup](../../integrations/bb/README.md#approver-admission-and-workflow-support)
 and [ADR-035](../adr/adr-035-bb-role-workflow-support.md).
 

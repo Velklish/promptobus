@@ -601,7 +601,7 @@ test('a malformed inbox ref is named in the postcard and stays in the mailbox', 
   const registry = bus.createRegistry({ drivers: { fake: driver }, fallback: 'fake' });
   put(task, 'worker:a', { harness: 'fake', sessionRef: 'sess-a' });
   bus.writeWake(home, task, 'worker:a', { socket: path.join(SB, 'malformed-ref.sock') });
-  send(task, 'worker:a', 'task', 'the intact message');
+  const intact = send(task, 'worker:a', 'task', 'the intact message').message;
   const box = engine.inboxPath(task, 'worker-a');
   const malformedRef = '20260926T000000000-0001-malformed.json';
   writeFileSync(path.join(box, malformedRef), '{not json');
@@ -623,8 +623,8 @@ test('a malformed inbox ref is named in the postcard and stays in the mailbox', 
   assert.ok(statusLine.includes(`unreadable refs: schema-invalid ${malformedRef}`), statusText);
   assert.ok(existsSync(path.join(box, malformedRef)), 'the glance does not move the ref');
 
-  const knockedTo = bus.readHealth(home, task)['worker:a'].knockedTo;
-  assert.equal(typeof knockedTo, 'string');
+  const covered = [[task, 'worker-a', intact.id]];
+  assert.deepEqual(bus.readHealth(home, task)['worker:a'].coveredUnread, covered);
   const triedAt = Date.parse(bus.readHealth(home, task)['worker:a'].triedAt);
   await bus.supervisorRound(home, task, {
     registry,
@@ -634,6 +634,7 @@ test('a malformed inbox ref is named in the postcard and stays in the mailbox', 
   const secondCard = previewBlock(second.messages);
   assert.ok(!secondCard.includes('task from orchestrator'), secondCard);
   assert.ok(secondCard.includes(malformedRef), secondCard);
+  assert.deepEqual(bus.readHealth(home, task)['worker:a'].coveredUnread, covered);
 
   const read = store.readInbox(home, task, 'worker:a');
   assert.ok(read.broken.some((line) => line.includes(malformedRef)), read.broken.join('\n'));
@@ -781,9 +782,10 @@ test('the warden fell and came back — the state is in place, there is no secon
   const registry = (d) => bus.createRegistry({ drivers: { fake: d }, fallback: 'fake' });
   put(task, 'worker:a', { harness: 'fake', sessionRef: 'sess-a' });
   bus.writeWake(home, task, 'worker:a', { socket: sock });
-  send(task, 'worker:a', 'task', 'first');
+  const firstMessage = send(task, 'worker:a', 'task', 'first').message;
   await bus.supervisorRound(home, task, { registry: registry(first) });
-  const knockedTo = bus.readHealth(home, task)['worker:a'].knockedTo;
+  const covered = bus.readHealth(home, task)['worker:a'].coveredUnread;
+  assert.deepEqual(covered, [[task, 'worker-a', firstMessage.id]]);
 
   // "Restart": a fresh driver and a fresh registry, as after process death.
   // The warden has no state of its own — everything it knew sits in the
@@ -793,18 +795,22 @@ test('the warden fell and came back — the state is in place, there is no secon
   await t.test('the re-knock threshold survived the restart — there is no second knock', () => {
     assert.equal(second.calls.activate.length, 0);
     assert.equal(bus.readHealth(home, task)['worker:a'].knocks, 1);
+    assert.deepEqual(bus.readHealth(home, task)['worker:a'].coveredUnread, covered);
   });
 
   // Past the coalescing window: under it the new message waits for the take instead.
-  send(task, 'worker:a', 'status', 'second');
+  const secondMessage = send(task, 'worker:a', 'status', 'second').message;
   const third = fakeDriver('fake');
   await bus.supervisorRound(home, task, { registry: registry(third), now: Date.now() + bus.KNOCK_COALESCE_SEC * 1000 + 1000 });
-  await t.test('the repeat cutoff survived too: the notification has only the new', () => {
+  await t.test('unread coverage survived too: the notification has only the new identity', () => {
     assert.equal(third.calls.activate.length, 1);
     const msgs = third.calls.activate[0].notification.messages;
     assert.equal(msgs.length, 1);
     assert.equal(msgs[0].body, 'second');
-    assert.ok(String(msgs[0].id) > String(knockedTo), 'shown is what arrived after the previous knock');
+    assert.equal(msgs[0].id, secondMessage.id);
+    assert.ok(!covered.some(key => key[2] === secondMessage.id), 'the new identity was not covered by the previous knock');
+    assert.deepEqual(bus.readHealth(home, task)['worker:a'].coveredUnread,
+      [[task, 'worker-a', firstMessage.id], [task, 'worker-a', secondMessage.id]]);
   });
 });
 

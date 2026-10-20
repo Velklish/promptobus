@@ -17,13 +17,14 @@ import {
 } from './layout.js';
 import { compactStamp, MESSAGE_PROTOCOL_VERSION } from './model.js';
 import type { MessageV1, ParticipantV1, TaskV1 } from './model.js';
+import { reserveMessageId, withMessageCommit } from './message-order.js';
 import { validate } from './validate.js';
 
 /** Durable steps the suite can crash after. `mkdir` fires before the directory is created. */
 export type FanoutStep =
   | 'validate' | 'blob' | 'artifact' | 'intent' | 'canonical' | 'mkdir' | 'ref' | 'close' | 'read'
   | 'task-read' | 'artifact-read' | 'intent-read' | 'intent-materialize' | 'inbox-read' | 'history-ref'
-  | 'task-link' | 'task-link-publish';
+  | 'task-link' | 'task-link-publish' | 'order-reserved';
 
 /** Fault seam. Durable steps fire after the write; reads and `mkdir` fire immediately before
  * their filesystem call. Not supplied in production. */
@@ -57,8 +58,7 @@ export function previewOf(m: MessageV1): NotificationMessage {
 
 let seq = 0;
 
-/** New record id: a timestamp, a sender counter and a random tail, so string sort equals send order.
- * The tail is random because `seq` lives in process memory and two processes share an address. */
+/** Independent draft/artifact name. Message commit replaces it with a durable logical ID. */
 export function newRecordId(now: Date): string {
   seq = (seq + 1) % 10000;
   const stamp = compactStamp(now);
@@ -177,8 +177,10 @@ export function completeFanout(home: string, task: string, message: MessageV1, f
   // Step 5, only after refs for ALL: an intent dropped earlier would take the only trace of the
   // undelivered with it. The lease leaves with it — a closed fan-out needs no owner.
   const intent = intentFile(home, task, message.id);
-  rmSync(intent, { force: true });
-  rmSync(ownerOfIntent(intent), { force: true });
+  withMessageCommit(home, () => {
+    rmSync(intent, { force: true });
+    rmSync(ownerOfIntent(intent), { force: true });
+  });
   fault('close', { task, message: message.id });
   return fresh;
 }
@@ -186,6 +188,11 @@ export function completeFanout(home: string, task: string, message: MessageV1, f
 /** How much unread sits with the participant. */
 export function countInbox(home: string, task: string, participant: string): number {
   return inboxNames(inboxDir(home, task, participant)).length;
+}
+
+export function inboxIdentity(home: string, task: string, participant: string): { ids: string[]; complete: boolean } {
+  try { return { ids: inboxNames(inboxDir(home, task, participant), true).map(name => name.slice(0, -5)), complete: true }; }
+  catch { return { ids: [], complete: false }; }
 }
 
 function inboxNames(dir: string, strict = false): string[] {
@@ -227,18 +234,13 @@ export function newMessage(task: string, sender: string, recipients: string[], t
 }
 
 /** Step 2 with a retry on a taken name: the id is assembled again, not replaced in silence. */
-export function commitIntent(home: string, task: string, message: MessageV1, now: Date): MessageV1 {
-  let current = message;
-  for (let tries = 0; ; tries += 1) {
-    try {
-      openIntent(home, task, current);
-      return current;
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
-      if (tries >= 16) fail('schema-invalid', `could not take a message name in ${tries} attempts`, { task });
-      current = { ...current, id: newRecordId(now) };
-    }
-  }
+export function commitIntent(home: string, task: string, message: MessageV1, now: Date, fault: FaultHook = NO_FAULT): MessageV1 {
+  return withMessageCommit(home, () => {
+    const current = { ...message, id: reserveMessageId(home, now) };
+    fault('order-reserved', { task, message: current.id });
+    openIntent(home, task, current);
+    return current;
+  });
 }
 
 /** What was found unreadable while reading the mailbox. Reason and place are separate fields, not
@@ -509,9 +511,12 @@ export function recoverTask(home: string, task: string, meta: TaskV1, fault: Fau
       // send did not return then, and there was no message for the sender.
       const where = code === 'schema-version-unsupported'
         ? { attic: null, failure: null }
-        : isolate(file, brokenMessagesDir(home, task), name);
-      // The lease lives exactly as long as the intent: the intent left — it leaves too.
-      if (where.attic) rmSync(ownerOfIntent(file), { force: true });
+        : withMessageCommit(home, () => {
+          const isolated = isolate(file, brokenMessagesDir(home, task), name);
+          // Quarantine and lease removal cannot disappear between strict snapshot listings.
+          if (isolated.attic) rmSync(ownerOfIntent(file), { force: true });
+          return isolated;
+        });
       broken.push({ name, code, note, ...where });
       continue;
     }

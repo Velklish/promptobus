@@ -2302,6 +2302,7 @@ check('spawn lifts the declared edits-tree owner under its name and keeps the wo
   ownerPlan.address === 'builder:named-owner'
   && ownerPlan.prompt.includes(`promptobus lease --as builder:named-owner --task ${OWNER_TASK}`)
   && ownerRecord?.role === 'builder'
+  && typeof ownerRecord?.metadata.assignmentAfterId === 'string'
   && ownerRecord?.metadata.worktree === ownerPlan.worktreePath
   && !store.participantOf(store.readTask(HOME, OWNER_TASK), 'worker:named-owner'),
   JSON.stringify({ plan: ownerPlan.address, record: ownerRecord }));

@@ -1,3 +1,4 @@
+import { rebuildMessageOrder, strictCommittedMessages, validOrderId, withMessageCommit } from './message-order.js';
 // The engine: the door every protocol write goes through.
 // [reference/04-protocol.md#the-engine-the-door-every-protocol-write-goes-through](../../docs/reference/04-protocol.md#the-engine-the-door-every-protocol-write-goes-through)
 import { existsSync, linkSync, mkdirSync, rmSync } from 'node:fs';
@@ -12,7 +13,7 @@ import {
   artifactFile, blobFile, brokenInboxDir, historyDir, homeOf, inboxDir, taskDir, taskFile,
 } from './layout.js';
 import {
-  commitIntent, completeFanout, countInbox, eventFor, glanceInbox, history as historyOf,
+  commitIntent, completeFanout, countInbox, eventFor, glanceInbox, history as historyOf, inboxIdentity,
   inspectInbox, lastSentAt as lastSentAtOf, newMessage, newRecordId, peekInbox, readInbox, recoverTask,
 } from './messages.js';
 import type {
@@ -21,7 +22,7 @@ import type {
 import { MESSAGE_TYPES_V1, TASK_ID_RE } from './model.js';
 import type { ArtifactV1, MessageV1, ParticipantV1, TaskV1 } from './model.js';
 import {
-  addParticipant, claimOwner, closeTask, createTask, listTasks, patchParticipant, putParticipant,
+  addParticipant, assignParticipant, claimOwner, closeTask, createTask, listTasks, patchParticipant, putParticipant,
   recoverTaskLinks,
   readTask, requireActive, requireParticipant, taskExists, withBlobLock, withBlobLockAsync,
   withTaskLock, writeTask,
@@ -131,6 +132,10 @@ export interface Engine {
   readTask(task: string): TaskV1;
   listTasks(): { tasks: TaskV1[]; broken: BrokenTask[] };
   taskExists(task: string): boolean;
+  rebuildMessageOrder(): { head: string | null; messages: number; intents: number; fences: number };
+  facts(task: string): { task: TaskV1; messages: MessageV1[] };
+  assignParticipant(task: string, participant: ParticipantV1): TaskV1;
+  inboxIdentity(task: string, participant: string): { ids: string[]; complete: boolean };
   /**
    * Close the task. `adapter` — adapter fields laid down in THE SAME pass: the
    * adapter writes the close mark, and a second lock for one field would cost
@@ -267,7 +272,15 @@ export function openEngine({
     const draft = newMessage(task, sender.id, input.to, input.type, input.body,
       artifact?.id ?? input.linkArtifact ?? null, now(), input.originTask);
     requireValid('message', draft, { task });
-    const message = commitIntent(home, task, draft, now());
+    const message = withTaskLock(home, task, () => withMessageCommit(home, () => {
+      const committed = commitIntent(home, task, draft, now(), faults);
+      if (input.type === 'task' || input.type === 'review') {
+        const meta = readTask(home, task, cli);
+        writeTask(home, { ...meta, participants: meta.participants.map(participant => input.to.includes(participant.id)
+          ? { ...participant, metadata: { ...participant.metadata, assignmentAfterId: committed.id } } : participant) }, now);
+      }
+      return committed;
+    }));
     faults('intent', { task, message: message.id });
     completeFanout(home, task, message, faults);
     // Activation is NOT here: the engine returns a "who to wake" list, and
@@ -283,6 +296,25 @@ export function openEngine({
     readTask: (task) => readTask(home, task, cli, faults),
     listTasks: () => listTasks(home, cli, faults),
     taskExists: (task) => taskExists(home, task),
+    rebuildMessageOrder: () => rebuildMessageOrder(home),
+    assignParticipant: (task, participant) => assignParticipant(home, task, participant, now, cli),
+    inboxIdentity: (task, participant) => inboxIdentity(home, task, participant),
+    facts: (task) => {
+      const recovery = engine.recover(task);
+      if (recovery.broken.length || recovery.failed.length || recovery.linkFailures.length) fail('schema-invalid', 'Canonical committed evidence requires explicit repair before facts', { task });
+      return withTaskLock(home, task, () => withMessageCommit(home, () => {
+        const meta = readTask(home, task, cli, faults);
+        for (const participant of meta.participants) {
+          const boundary = participant.metadata.assignmentAfterId;
+          if (boundary !== undefined && boundary !== null && !validOrderId(boundary)) fail('schema-invalid', 'Canonical assignment boundary requires explicit repair', { task });
+        }
+        try { return { task: meta, messages: strictCommittedMessages(home, task) }; }
+        catch (error) {
+          if (/unresolved task intent/.test((error as Error).message)) throw error;
+          return fail('schema-invalid', 'Canonical committed evidence requires explicit repair before facts', { task });
+        }
+      }));
+    },
     closeTask: (task, patch = {}) => closeTask(home, task, now, patch.adapter, cli),
     patchTask: (task, patch) => withTaskLock(home, task, () => {
       const meta = readTask(home, task, cli);

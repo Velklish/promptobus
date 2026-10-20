@@ -2,7 +2,7 @@ import { realpathSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { Readable } from 'node:stream';
-import { openEngine, ORCHESTRATOR, WORKER, REVIEWER, APPROVER } from 'promptobus';
+import { openEngine, withTaskLock, ORCHESTRATOR, WORKER, REVIEWER, APPROVER } from 'promptobus';
 import type { ParticipantV1 } from 'promptobus';
 import { engineInput } from './contract.js';
 import { readCurrentControl } from './control.js';
@@ -31,11 +31,15 @@ export async function engineOperation(input: unknown) {
       const control = readCurrentControl(b);
       if (control.outcome !== 'allowed' || b.launchContext?.control.mode !== 'current') throw new Error(control.outcome === 'allowed' ? 'Current reference required' : control.message);
       engine.createTask({ id: b.task, title: request.title, owner: participant, adapter: { bb: { hostId: b.hostId, root, currentControl: b.launchContext.control.reference } } });
+      engine.assignParticipant(b.task, participant);
     } else {
       const task = engine.readTask(b.task);
       const coordinator = task.adapter.bb as { hostId?: string; root?: string } | undefined;
       if (task.status !== 'active' || coordinator?.hostId !== b.hostId || coordinator.root !== root) throw new Error('Coordinator binding mismatch');
-      engine.addParticipant(b.task, participant);
+      withTaskLock(engine.home, b.task, () => {
+        if (engine.readTask(b.task).participants.some(p => p.id === b.participant)) throw new Error('Canonical participant already exists');
+        engine.assignParticipant(b.task, participant);
+      });
     }
     return { root };
   }
@@ -79,48 +83,42 @@ export async function engineOperation(input: unknown) {
     case 'step': {
       if (b.role !== ORCHESTRATOR && b.role !== APPROVER) throw new Error('Only the coordinator or approver may check this step');
       if (b.role === APPROVER && (b.predecessors?.worker !== request.worker || b.predecessors.reviewer !== request.reviewer)) throw new Error('Approver predecessor binding mismatch');
-      const worker = task.participants.find(p => p.id === request.worker && p.role === WORKER && p.harness === 'bb');
-      const reviewer = task.participants.find(p => p.id === request.reviewer && p.role === REVIEWER && p.harness === 'bb');
+      const factsSnapshot = engine.facts(b.task);
+      const worker = factsSnapshot.task.participants.find(p => p.id === request.worker && p.role === WORKER && p.harness === 'bb');
+      const reviewer = factsSnapshot.task.participants.find(p => p.id === request.reviewer && p.role === REVIEWER && p.harness === 'bb');
       if (!worker || !reviewer) throw new Error('The approver requires recorded BB worker and reviewer participants');
       const subject = (worker.metadata.bb as { environmentPath?: string }).environmentPath;
       if (!subject || (reviewer.metadata.bb as { environmentPath?: string }).environmentPath !== subject) throw new Error('Reviewer and worker subjects differ');
-      const recovery = engine.recover(b.task);
-      const history = engine.history({ task: b.task, all: true, strict: true });
-      if (recovery.broken.length || recovery.failed.length || recovery.linkFailures.length || history.broken.length) throw new Error('Canonical assignment history is incomplete');
-      for (const p of task.participants) {
-        try {
-          if (readdirSync(engine.brokenPath(b.task, p.id)).some(name => name.endsWith('.json'))) throw new Error('Canonical assignment history is incomplete');
-        } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-      }
-      const inboxes = task.participants.map(p => engine.inspectInbox(b.task, p.id));
-      if (inboxes.some(box => box.broken.length)) throw new Error('Canonical assignment history is incomplete');
-      const messages = [...history.entries.map(e => e.message), ...inboxes.flatMap(box => box.messages)];
       const facts = [worker, reviewer].map(p => {
-        const assignment = messages.filter(m => m.type === 'task' && m.recipients.includes(p.id)).sort((a, c) => a.id.localeCompare(c.id)).at(-1);
-        const at = assignment?.ts ?? (p.metadata.bb as { assignedAt?: string }).assignedAt;
-        return { ...p, metadata: { address: `${p.role}:${worker.id}`, worktree: subject, reviewSubject: subject, started: at } };
+        return { ...p, metadata: { ...p.metadata, address: `${p.role}:${worker.id}`, worktree: subject, reviewSubject: subject } };
       });
-      return { home: engine.home, taskId: b.task, taskMeta: { ...task, participants: facts }, stepName: APPROVER, slug: worker.id, repoDir: subject };
+      return { home: engine.home, taskId: b.task, taskMeta: { ...factsSnapshot.task, participants: facts }, facts: factsSnapshot, stepName: APPROVER, slug: worker.id, repoDir: subject };
     }
     case 'pending': {
-      const recovery = engine.recover(b.task);
-      const history = engine.history({ task: b.task, all: true });
-      if (recovery.broken.length || recovery.failed.length || recovery.linkFailures.length || history.broken.length) throw new Error('Canonical recovery is incomplete');
+      const facts = engine.facts(b.task);
+      const messages = facts.messages;
+      const persisted = facts.task.participants.find(current => current.id === b.participant)?.metadata.assignmentAfterId;
       const unread = engine.glance(b.task, b.participant);
-      const messages = [...history.entries.map(entry => entry.message),
-        ...task.participants.flatMap(contact => engine.glance(b.task, contact.id))];
-      const latestTask = messages.filter(message => message.recipients.includes(b.participant) && message.type === 'task')
+      const latestAssignment = messages.filter(message => message.recipients.includes(b.participant) && (message.type === 'task' || message.type === 'review'))
         .sort((a, c) => a.id.localeCompare(c.id)).at(-1);
-      const terminal = latestTask && messages.some(message => message.sender === b.participant
-        && (message.type === 'result' || message.type === 'review') && message.id > latestTask.id);
+      if (b.role !== ORCHESTRATOR && b.role !== 'reporter' && typeof persisted !== 'string') {
+        throw new Error(persisted === null ? 'Canonical assignment boundary is pending publication' : 'Canonical assignment boundary requires explicit fresh assignment');
+      }
+      const boundary = typeof persisted === 'string' ? (latestAssignment && latestAssignment.id > persisted ? latestAssignment.id : persisted) : null;
+      const terminal = boundary && messages.some(message => message.sender === b.participant
+        && (message.type === 'result' || message.type === 'review') && message.id > boundary);
       const actionable = b.role === ORCHESTRATOR ? unread.filter(message => message.type !== 'status') : unread;
       const ids = actionable.length ? unread.map(message => message.id).sort() : [];
       return { ids, revision: createHash('sha256').update(JSON.stringify(actionable.map(message => message.id).sort())).digest('hex'),
-        obligation: latestTask && !terminal && b.role !== 'reporter' && b.role !== ORCHESTRATOR ? latestTask.id : null };
+        obligation: boundary && !terminal && b.role !== 'reporter' && b.role !== ORCHESTRATOR ? boundary : null };
     }
     case 'preserve': return engine.send(b.task, { from: ORCHESTRATOR, to: [ORCHESTRATOR], type: 'artifact',
       body: `BB lifecycle snapshot for ${b.participant}; this is not acceptance.`,
       artifact: { filename: `${b.participant}-bb-snapshot.json`, stream: Readable.from([Buffer.from(request.content, 'utf8')]) } });
+    case 'assignment': {
+      const assigned = engine.assignParticipant(b.task, participant);
+      return { assignmentAfterId: assigned.participants.find(p => p.id === b.participant)!.metadata.assignmentAfterId };
+    }
     case 'check': return { ready: true };
     case 'task': return { id: task.id, title: task.title, status: task.status, owner: task.owner,
       participant: b.participant, role: b.role,

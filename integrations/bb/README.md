@@ -568,11 +568,17 @@ bb promptobus participant add --task demo-t20261008-120000 \
 The reviewer must use the worker's actual environment (`--environment <worker-env>`).
 Approver can use its own managed environment. SDK/source ownership remains BB's.
 Both predecessors must be canonical BB participants of the selected task and
-subject. The existing pipeline gate requires their `type: result` after each
-current assignment; `type: review` alone is not that result. Selection checks
+subject. The existing pipeline gate requires their `type: result` committed after
+the current causal assignment boundary and any later canonical `task` or `review` assignment;
+`type: review` alone is not that result. Initial SDK prompts and fresh bounded
+phase prompts reserve `metadata.assignmentAfterId` without a synthetic mailbox
+message. Fresh-phase epoch, verified Stop, Clear context and current-control
+admission checks still apply. Selection checks
 before reservation/spawn, after preparation, at dispatch and before approver tools.
-A new canonical `task` assignment makes the old result stale. Legacy participants
-without an initial assignment timestamp require fresh participants. A pipeline
+A new canonical assignment makes the old result stale. Strict committed facts
+refuse unresolved intents or broken records rather than selecting an older visible
+assignment/result from inbox/history alone. Missing legacy causal evidence needs
+a supported fresh assignment, not a timestamp fallback. A pipeline
 without the shipped approver step refuses; custom BB step names are unsupported.
 
 Results and artifacts are facts. The gate does not inspect verdict truth, execute
@@ -580,6 +586,15 @@ reported tests, verify a claimed commit or accept a task. Worker/reviewer/approv
 judgment and the operator's final source verification remain required. Approver
 archive is preservation, not acceptance; task journals remain unaccepted until an
 explicit operator acceptance action.
+
+Pending worker/reviewer/approver obligations use that same causal boundary;
+an initial or fresh prompt can owe a result even without a `task` message.
+An obligation boundary is opaque and is not a message ID to fetch. A later
+result/review settles the ordinary obligation; the pipeline still requires
+`result`. The owner's and reporter's exclusions remain. Wall-clock `ts` and
+participant times stay display/measurement fields; BB event replay still uses
+its own numeric `row.seq`, not the logical message-ID prefix. See
+[message order](../../docs/reference/04-protocol.md#messages-names-order-and-what-a-read-marks).
 
 Evidence inventories preserve exact test names, order and repeated occurrences
 from complete raw output. Remove only a supported verdict's terminal numeric

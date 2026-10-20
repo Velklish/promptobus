@@ -154,8 +154,8 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
     const key = isMail ? `mail:${mail.revision}` : `result:${mail.obligation}`;
     const text = `${marker}\nTask ${b.task}; participant ${b.participant}; mailbox revision ${mail.revision}.\n`
       + (isMail ? `Canonical unread IDs: ${JSON.stringify(mail.ids)}. Read promptobus_mailbox with mode read. Process each canonical ID once; a repeated wake does not repeat an acknowledged assignment.`
-        : `Canonical task ${mail.obligation} was acknowledged but has no result/review. Finish its protocol obligation or report a blocker to orchestrator; do not repeat completed source work.`)
-      + '\nUse canonical messages and artifacts as the source of work. This hint is not mailbox ACK or acceptance. End the turn when waiting.';
+        : `Assignment boundary ${mail.obligation} has no result/review. Finish the supplied assignment or report a blocker to orchestrator; do not repeat completed source work. This boundary may name an initial prompt rather than a mailbox message.`)
+      + '\nUse the supplied assignment, canonical messages and artifacts as the source of work. This hint is not mailbox ACK or acceptance. End the turn when waiting.';
     const saved = store.updateDelivery(id, current => {
       if (current.epoch !== epoch || current.paused) return;
       if (isMail) current.attempts += 1; else current.continuations += 1;

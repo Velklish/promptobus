@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Reserve store-local logical message IDs at intent commit, retaining the existing
+  grammar and wall-clock timestamps. Initial and fresh assignments record causal
+  boundaries; native and BB current-result gates read strict committed facts
+  rather than compare timestamps or accept a stale visible assignment behind an
+  unresolved intent. Explicit `message-order rebuild` includes retained messages,
+  intents and assignment boundaries without rewriting old evidence. Wake coverage
+  follows current unread membership, so delayed lower-ID refs and equal-count
+  replacement remain eligible without repeating prior stubs on ordinary growth.
+  Retained stores need an explicit rebuild where required, and all same-store
+  writers must honor the new protocol; historical lost order is not reconstructed.
 - BB admissions now require an immutable reference to owner-published current
   control. Explicit `control publish --initialize` takes complete owner inputs
   before task creation; revisioned owner updates and exact immutable token records

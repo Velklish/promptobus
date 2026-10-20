@@ -6,7 +6,7 @@ import type { HostMcpTool, HostToolBin, PromptobusHost } from './host.js';
 import type { AvailabilityAdapter } from './model-routing.js';
 import { PromptobusError } from './v1/errors.js';
 import type { ParticipantMode, ParticipantV1, TaskV1 } from './v1/model.js';
-import { putParticipant } from './v1/store.js';
+import { assignParticipant, putParticipant } from './v1/store.js';
 
 /** How the participant is named to a person: the address if the adapter wrote one, otherwise the record id. */
 function named(participant: ParticipantV1 | null | undefined): string {
@@ -543,7 +543,7 @@ export function sessionRefOf(participant: ParticipantV1 | null | undefined): str
 
 /** Write a participant the driver launched or attached to. The registry is asked FIRST: a refusal
  * after the write would leave a participant in the journal with nothing to wake it by. */
-export function openParticipant(home: string, task: string, participant: ParticipantV1, registry: Registry, { mode = 'managed' as ParticipantMode } = {}): {
+export function openParticipant(home: string, task: string, participant: ParticipantV1, registry: Registry, { mode = 'managed' as ParticipantMode, assignment = false } = {}): {
   driver: Driver; meta: TaskV1; record: ParticipantV1;
 } {
   const driver = driverFor(registry, harnessOf(participant, registry));
@@ -555,10 +555,11 @@ export function openParticipant(home: string, task: string, participant: Partici
   }
   // The record is given to the caller in full: whoever appends a session id must put back THE SAME
   // record. A store refusal becomes a `GateError` — a busy journal is lawful for two lift commands.
-  const record: ParticipantV1 = { ...participant, ...participantDriverFields(driver, { mode, ref }) };
+  let record: ParticipantV1 = { ...participant, ...participantDriverFields(driver, { mode, ref }) };
   let meta: TaskV1;
   try {
-    meta = putParticipant(home, task, record, () => new Date());
+    meta = (assignment ? assignParticipant : putParticipant)(home, task, record, () => new Date());
+    record = meta.participants.find(p => p.id === record.id)!;
   } catch (e) {
     if (e instanceof PromptobusError) throw new GateError(e.message);
     throw e;

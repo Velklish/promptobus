@@ -120,6 +120,7 @@ const productLocations = new Set([
   '.codex/hooks.json', '~/.codex/hooks.json', '$CODEX_HOME/hooks.json',
   'waits/warden.exit.json', 'waits/warden.gen.json',
   'integrations/bb/dist/build-manifest.json',
+  '.promptobus/message-order.json',
 ]);
 
 function isPlaceholder(clean, fromRel) {
@@ -233,6 +234,10 @@ check('docs: only the canonical BB build manifest location is a product artifact
 check('docs: a relative product-named capture is refused',
   evidenceIn('`../runs/proof/state.json`', fromGuide).includes('../runs/proof/state.json')
   && evidenceIn('`../runs/.mcp.json`', fromGuide).includes('../runs/.mcp.json'));
+check('docs: only the native store message-order head location is a product artifact',
+  evidenceIn('`.promptobus/message-order.json`', fromGuide).length === 0
+  && ['message-order.json', 'runs/proof/message-order.json', 'other/.promptobus/message-order.json']
+    .every((name) => evidenceIn(`\`${name}\``, fromGuide).includes(name)));
 check('docs: a concrete gates or handover path is refused',
   evidenceIn('`../runs/gates-review.json`', fromGuide).includes('../runs/gates-review.json')
   && evidenceIn('`../runs/handover-note.json`', fromGuide).includes('../runs/handover-note.json'));

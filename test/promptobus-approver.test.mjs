@@ -86,10 +86,12 @@ const worker = store.participantRecord('worker:orders-api', {
 });
 store.upsertParticipant(HOME, TASK, worker);
 const assignedAt = '2026-09-13T12:00:00.000Z';
+const assignParticipant = (home, task, participant) => store.bus(home, { cli: '0.28.0' })
+  .assignParticipant(task, participant);
 function recordOwnerResult(home, task, repo, slug = 'orders-api') {
   const address = `worker:${slug}`;
   const existing = store.participantOf(store.readTask(home, task), address);
-  store.upsertParticipant(home, task, store.participantRecord(address, {
+  assignParticipant(home, task, store.participantRecord(address, {
     ...(existing?.metadata ?? {}),
     harness: existing?.harness ?? 'claude',
     worktree: repo,
@@ -106,7 +108,7 @@ const reviewer = store.participantRecord('reviewer:orders-api', {
   started: assignedAt,
   reviewAssignedAt: assignedAt,
 });
-store.upsertParticipant(HOME, TASK, reviewer);
+assignParticipant(HOME, TASK, reviewer);
 
 store.upsertParticipant(HOME, TASK, {
   ...worker,
@@ -148,7 +150,10 @@ store.stampSnapshot(HOME, TASK, 'reviewer:orders-api', {
 check(': a prior-round result does not unlock the approver before the new assignment is sent',
   reviewerResultSent(HOME, TASK, 'reviewer:orders-api', store.participantOf(store.readTask(HOME, TASK), 'reviewer:orders-api')) === false,
   nextAssignment);
-store.stampReviewAssignment(HOME, TASK, 'reviewer:orders-api', nextAssignment);
+const reAssignment = store.sendMessage(HOME, TASK, {
+  from: store.ORCHESTRATOR, to: 'reviewer:orders-api', type: 'task', body: 'review again',
+});
+store.stampReviewAssignment(HOME, TASK, 'reviewer:orders-api', reAssignment.message.id, nextAssignment);
 check(': a prior-round result still does not unlock after the new assignment watermark',
   reviewerResultSent(HOME, TASK, 'reviewer:orders-api', store.participantOf(store.readTask(HOME, TASK), 'reviewer:orders-api')) === false,
   nextAssignment);
@@ -158,7 +163,7 @@ store.sendMessage(HOME, TASK, {
   type: 'result',
   body: 're-review done',
 });
-check(': a reviewer result at or after the assignment watermark unlocks the approver again',
+check(': a reviewer result after the causal assignment boundary unlocks the approver again',
   reviewerResultSent(HOME, TASK, 'reviewer:orders-api', store.participantOf(store.readTask(HOME, TASK), 'reviewer:orders-api')) === true,
   nextAssignment);
 
@@ -171,7 +176,7 @@ store.createTask(HOME, {
   participants: [],
 });
 recordOwnerResult(HOME, HARNESS_TASK, REPO);
-store.upsertParticipant(HOME, HARNESS_TASK, store.participantRecord('reviewer:orders-api', {
+assignParticipant(HOME, HARNESS_TASK, store.participantRecord('reviewer:orders-api', {
   harness: 'claude',
   repo: 'repos/demo_team/orders-api',
   repoAbs: REPO,
@@ -220,7 +225,7 @@ store.createTask(HOME, {
   participants: [],
 });
 recordOwnerResult(HOME, WRONG_REUSE_TASK, OTHER_REPO);
-store.upsertParticipant(HOME, WRONG_REUSE_TASK, store.participantRecord('reviewer:orders-api', {
+assignParticipant(HOME, WRONG_REUSE_TASK, store.participantRecord('reviewer:orders-api', {
   harness: 'claude',
   repo: 'repos/other/orders-api',
   repoAbs: OTHER_REPO,
@@ -527,7 +532,7 @@ store.createTask(HOME, {
   participants: [],
 });
 recordOwnerResult(HOME, REUSE_TASK, REPO);
-store.upsertParticipant(HOME, REUSE_TASK, store.participantRecord('reviewer:orders-api', {
+assignParticipant(HOME, REUSE_TASK, store.participantRecord('reviewer:orders-api', {
   harness: 'claude',
   repo: 'repos/demo_team/orders-api',
   repoAbs: REPO,
@@ -630,7 +635,7 @@ store.createTask(HOME, {
   adapter: { slug: 'pb2065', stamp: 't20260913-120001' },
   participants: [],
 });
-store.upsertParticipant(HOME, OWNERLESS, store.participantRecord('reviewer:orders-api', {
+assignParticipant(HOME, OWNERLESS, store.participantRecord('reviewer:orders-api', {
   harness: 'claude',
   repo: 'repos/demo_team/orders-api',
   repoAbs: REPO,
@@ -720,7 +725,7 @@ store.upsertParticipant(LIVE_HOME, LIVE_TASK, store.participantRecord('worker:wa
   branch: 'worktree-promptobus-a2a-warden',
   worktree: LIVE_WT,
 }));
-store.upsertParticipant(LIVE_HOME, LIVE_TASK, store.participantRecord('reviewer:warden', {
+assignParticipant(LIVE_HOME, LIVE_TASK, store.participantRecord('reviewer:warden', {
   harness: 'claude',
   repo: 'repos/external/promptobus',
   repoAbs: LIVE_WT,
@@ -792,6 +797,7 @@ check(': approver lift names its own worktree cwd',
 const liveApprover = store.participantOf(store.readTask(LIVE_HOME, LIVE_TASK), 'approver:warden');
 check(': approver record separates the durable clone and the review subject',
   liveApprover?.metadata?.repoAbs === LIVE_REPO
+  && typeof liveApprover?.metadata.assignmentAfterId === 'string'
   && liveApprover?.metadata?.reviewSubject === LIVE_WT
   && liveApprover?.metadata?.worktree?.startsWith(path.join(LIVE_REPO, '.claude', 'worktrees') + path.sep)
   && existsSync(liveApprover.metadata.worktree),
@@ -823,7 +829,7 @@ store.upsertParticipant(LIVE_HOME, BRIEF_TASK, store.participantRecord('worker:w
   worktree: LIVE_WT,
 }));
 recordOwnerResult(LIVE_HOME, BRIEF_TASK, LIVE_WT, 'warden');
-store.upsertParticipant(LIVE_HOME, BRIEF_TASK, store.participantRecord('reviewer:warden', {
+assignParticipant(LIVE_HOME, BRIEF_TASK, store.participantRecord('reviewer:warden', {
   harness: 'claude',
   repo: 'repos/external/promptobus',
   repoAbs: LIVE_WT,
@@ -889,7 +895,7 @@ store.upsertParticipant(LIVE_HOME, FAIL_TASK, store.participantRecord('worker:wa
   worktree: LIVE_WT,
 }));
 recordOwnerResult(LIVE_HOME, FAIL_TASK, LIVE_WT, 'warden');
-store.upsertParticipant(LIVE_HOME, FAIL_TASK, store.participantRecord('reviewer:warden', {
+assignParticipant(LIVE_HOME, FAIL_TASK, store.participantRecord('reviewer:warden', {
   harness: 'claude',
   repo: 'repos/external/promptobus',
   repoAbs: LIVE_WT,
@@ -1014,7 +1020,7 @@ store.createTask(HOME, {
   participants: [],
 });
 recordOwnerResult(HOME, ULTRA_TASK, REPO);
-store.upsertParticipant(HOME, ULTRA_TASK, store.participantRecord('reviewer:orders-api', {
+assignParticipant(HOME, ULTRA_TASK, store.participantRecord('reviewer:orders-api', {
   harness: 'claude',
   repo: 'repos/demo_team/orders-api',
   repoAbs: REPO,
@@ -1243,7 +1249,7 @@ async function liftWithGenerator(name, generate, npmSource, { enclosing = false 
     harness: 'claude', repo: `repos/demo_team/${name}`, repoAbs: repo, branch: `worktree-${name}`, worktree: repo,
   }));
   recordOwnerResult(HOME, task, repo, name);
-  store.upsertParticipant(HOME, task, store.participantRecord(`reviewer:${name}`, {
+  assignParticipant(HOME, task, store.participantRecord(`reviewer:${name}`, {
     harness: 'claude', repo: `repos/demo_team/${name}`, repoAbs: repo, started: assignedAt, reviewAssignedAt: assignedAt,
   }));
   store.sendMessage(HOME, task, {

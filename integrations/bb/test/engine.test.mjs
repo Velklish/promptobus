@@ -565,17 +565,17 @@ test('coordinator progress stays unread without model wakes; result carries it o
   const s = await stand(t); await s.create(); await s.add('worker-one');
   const status = JSON.parse(await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'status', body: 'Gate is running' }));
   await s.reconcile(); await s.reload(); await s.reconcile();
-  assert.equal(s.wakes.length, 0);
+  assert.equal(s.wakes.filter(wake => wake.threadId === 'thr-1').length, 0);
   const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
   assert.equal(engine.unread(s.task, 'orchestrator'), 1);
   const result = JSON.parse(await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'result', body: 'Done' }));
   await s.reconcile(); await s.reconcile();
-  assert.equal(s.wakes.length, 1);
-  assert.ok(s.wakes[0].input[0].text.includes(status.message.id));
-  assert.ok(s.wakes[0].input[0].text.includes(result.message.id));
+  assert.equal(s.wakes.filter(wake => wake.threadId === 'thr-1').length, 1);
+  assert.ok(s.wakes.filter(wake => wake.threadId === 'thr-1')[0].input[0].text.includes(status.message.id));
+  assert.ok(s.wakes.filter(wake => wake.threadId === 'thr-1')[0].input[0].text.includes(result.message.id));
   assert.deepEqual(JSON.parse(await s.call('thr-1', 'promptobus_mailbox', { mode: 'read' })).messages.map(m => m.type), ['status', 'result']);
   s.finish('thr-1'); await s.reconcile();
-  assert.equal(s.wakes.length, 1);
+  assert.equal(s.wakes.filter(wake => wake.threadId === 'thr-1').length, 1);
 });
 
 for (const type of ['task', 'question', 'answer', 'review', 'artifact']) {
@@ -583,12 +583,12 @@ for (const type of ['task', 'question', 'answer', 'review', 'artifact']) {
     const s = await stand(t); await s.create(); await s.add('worker-one');
     const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
     engine.sendSync(s.task, { from: 'worker-one', to: ['orchestrator'], type: 'status', body: 'Progress' });
-    await s.reconcile(); assert.equal(s.wakes.length, 0);
+    await s.reconcile(); assert.equal(s.wakes.filter(wake => wake.threadId === 'thr-1').length, 0);
     const artifact = path.join(s.root, 'progress.txt');
     if (type === 'artifact') writeFileSync(artifact, 'Evidence');
     engine.sendSync(s.task, { from: 'worker-one', to: ['orchestrator'], type, body: 'Action',
       ...(type === 'artifact' ? { artifact: { path: artifact } } : {}) });
-    await s.reconcile(); assert.equal(s.wakes.length, 1);
+    await s.reconcile(); assert.equal(s.wakes.filter(wake => wake.threadId === 'thr-1').length, 1);
     assert.equal(engine.unread(s.task, 'orchestrator'), 2);
   });
 }
@@ -626,7 +626,9 @@ test('wake hints and duplicate BB announcements do not ACK or repeat canonical c
   await s.reload(); await s.reconcile(); assert.equal(s.wakes.length, 1);
   assert.equal(JSON.parse(await s.call('thr-2', 'promptobus_mailbox', { mode: 'read' })).messages.length, 1);
   assert.equal(JSON.parse(await s.call('thr-2', 'promptobus_mailbox', { mode: 'read' })).messages.length, 0);
-  s.finish('thr-2'); await s.reconcile(); assert.equal(s.wakes.length, 1); assert.equal(s.delivery('thr-2').pending, null);
+  s.finish('thr-2'); await s.reconcile();
+  assert.equal(s.wakes.filter(wake => wake.threadId === 'thr-2' && wake.input[0].text.includes('Canonical unread IDs')).length, 1);
+  assert.match(s.delivery('thr-2').pending.key, /^result:/, 'The initial prompt still owes its result after the mailbox is consumed');
 });
 
 test('recovery closes the canon-to-outbox crash gap and reconciles a lost accepted send without another executor', async t => {
@@ -1019,6 +1021,8 @@ test('Cursor approver retains provider and authenticated current predecessors ac
   const worker = engine.readTask(s.task).participants.find(p => p.id === 'alpha');
   engine.patchParticipant(s.task, 'alpha', { metadata: { ...worker.metadata, bb: { ...worker.metadata.bb,
     assignedAt: new Date(Date.now() + 60_000).toISOString() } } });
+  await s.call(threadId, 'promptobus_task');
+  engine.assignParticipant(s.task, engine.readTask(s.task).participants.find(p => p.id === 'alpha'));
   await assert.rejects(s.call(threadId, 'promptobus_task'), /requires a type=result/);
 });
 
@@ -1042,6 +1046,8 @@ test('approver requires current worker and isolated reviewer results for the sam
   const worker = engine.readTask(s.task).participants.find(p => p.id === 'alpha');
   engine.patchParticipant(s.task, 'alpha', { metadata: { ...worker.metadata, bb: { ...worker.metadata.bb,
     assignedAt: new Date(Date.now() + 60_000).toISOString() } } });
+  await s.call(thread, 'promptobus_task');
+  engine.assignParticipant(s.task, engine.readTask(s.task).participants.find(p => p.id === 'alpha'));
   await assert.rejects(s.call(thread, 'promptobus_task'), /requires a type=result/);
 });
 
@@ -1073,7 +1079,7 @@ test('damaged unread assignments refuse approver admission repeatedly without mo
     for (let attempt = 0; attempt < 2; attempt++) {
       const refused = await s.add('acceptor', 'approver', ['--worker', 'alpha', '--reviewer', 'beta']);
       assert.equal(refused.exitCode, 1, 'Incomplete assignment history must never admit old results');
-      assert.match(refused.stderr, /assignment history is incomplete/);
+      assert.match(refused.stderr, /committed evidence requires explicit repair/);
       assert.equal(s.threads.size, 3);
       assert.equal(existsSync(retained), true, 'Repeated checks must retain the damaged ref');
     }
@@ -1081,7 +1087,7 @@ test('damaged unread assignments refuse approver admission repeatedly without mo
   }
 });
 
-test('unlistable unread assignment directories refuse admission without reserving an approver', async t => {
+test('canonical outstanding assignment refuses admission despite an unlistable unread directory without reserving an approver', async t => {
   const s = await stand(t); await s.create(); await s.add('alpha'); await s.add('beta', 'reviewer');
   const engine = openEngine({ root: s.root, policy: () => ({ allow: true }) });
   for (const from of ['alpha', 'beta']) await engine.send(s.task, { from, to: ['orchestrator'], type: 'result', body: 'Recorded result.' });
@@ -1089,13 +1095,13 @@ test('unlistable unread assignment directories refuse admission without reservin
   const box = engine.inboxPath(s.task, 'beta'); renameSync(box, box + '.saved'); writeFileSync(box, 'not a directory');
   for (let attempt = 0; attempt < 2; attempt++) {
     const refused = await s.add('acceptor', 'approver', ['--worker', 'alpha', '--reviewer', 'beta']);
-    assert.equal(refused.exitCode, 1); assert.match(refused.stderr, /ENOTDIR/);
+    assert.equal(refused.exitCode, 1); assert.match(refused.stderr, /requires a type=result/);
     assert.equal(s.threads.size, 3);
     assert.equal(bindingStore(s.host.bb).participant(s.task, 'acceptor'), undefined);
   }
 });
 
-test('unlistable read assignment history refuses admission at both root and participant directories', async t => {
+test('canonical outstanding assignment survives unlistable read history at root and participant directories', async t => {
   for (const participant of [null, 'beta']) {
     const s = await stand(t); await s.create(); await s.add('alpha'); await s.add('beta', 'reviewer');
     const engine = openEngine({ root: s.root, policy: () => ({ allow: true }) });
@@ -1106,7 +1112,7 @@ test('unlistable read assignment history refuses admission at both root and part
     renameSync(box, box + '.saved'); writeFileSync(box, 'not a directory');
     for (let attempt = 0; attempt < 2; attempt++) {
       const refused = await s.add('acceptor', 'approver', ['--worker', 'alpha', '--reviewer', 'beta']);
-      assert.equal(refused.exitCode, 1); assert.match(refused.stderr, /ENOTDIR/);
+      assert.equal(refused.exitCode, 1); assert.match(refused.stderr, /requires a type=result/);
       assert.equal(s.threads.size, 3);
       assert.equal(bindingStore(s.host.bb).participant(s.task, 'acceptor'), undefined);
     }
@@ -1709,6 +1715,7 @@ for (const originPluginId of [null, 'promptobus']) test(`failed queued wake dele
   assert.equal((await s.control('stop', 'worker-one')).exitCode, 0); await s.reload();
   assert.equal(s.queues.get('thr-2').length, 1);
   fail = false; await s.call('thr-2', 'promptobus_mailbox', { mode: 'read' });
+  await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'result', body: 'Initial assignment completed.' });
   const result = await s.control('resume', 'worker-one'); assert.equal(result.exitCode, 0, result.stderr);
   assert.deepEqual(s.queues.get('thr-2'), []); assert.equal(s.delivery('thr-2').paused, false);
   assert.ok(s.delivery('thr-2').retired.some(receipt => receipt.text === old));

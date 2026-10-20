@@ -557,3 +557,4 @@ The release reconciliation gives the [Codex-only journal lookup](#pb-372) the na
 - <a id="pb-373.11"></a>`PB-373.11-bb-stop-queued-work-fence` · 2026-10-20 · completed · — · Refuse BB Stop confirmation while queued work remains
 - <a id="pb-381.4"></a>`PB-381.4-bb-bindings-bounded-inventory` · 2026-10-20 · completed · — · Bound the BB binding inventory without embedded payloads
 - <a id="pb-387"></a>`PB-387-bounded-current-control` · 2026-10-20 · completed · — · BB admission needs bounded current control independent of history growth
+- <a id="pb-386"></a>`PB-386-stable-message-order` · 2026-10-20 · completed · — · Canonical message order must survive wall-clock rollback

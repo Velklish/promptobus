@@ -2232,9 +2232,10 @@ const dMark = dHealth()['worker:api'];
 check(': someone wrote to the dismissed one — the knock goes out to it just like to anyone else',
   dKnock.calls.length === 2 && dKnock.calls.some((c) => c.endpoint.address === 'worker:api'),
   JSON.stringify(dKnock.calls.map((c) => c.endpoint.address)));
-check(`: a dismissed one's health record is a delivery mark: the driver's channel (socket, for Claude Code), the knock counter, and how far knocking reached`,
+check(`: a dismissed one's health record is a delivery mark: the driver's channel (socket, for Claude Code), the knock counter, and covered unread membership`,
   dMark?.unread === 1 && dMark.knocks === 1 && dMark.channel === 'socket'
-  && typeof dMark.knockedTo === 'string' && typeof dMark.knockedAt === 'string',
+  && typeof dMark.knockedFirst === 'string' && typeof dMark.knockedAt === 'string'
+  && JSON.stringify(dMark.coveredUnread) === JSON.stringify([[DISMISSED, store.addrDir('worker:api'), dMark.knockedFirst]]),
   JSON.stringify(dMark));
 
 // Neither participant's session is in the list — both get the `gone` outcome, and a report

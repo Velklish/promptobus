@@ -857,7 +857,7 @@ async function inFlight(root, body = 'in flight') {
 
 function leaveIntent(engine, task, id, body) {
   const ts = '2026-09-02T10:10:00.000Z';
-  commitIntent(engine.home, task, {
+  const committed = commitIntent(engine.home, task, {
     protocolVersion: 1,
     id,
     task,
@@ -867,7 +867,7 @@ function leaveIntent(engine, task, id, body) {
     body,
     ts,
   }, new Date(ts));
-  return { id, file: path.join(engine.home, 'tasks', task, 'intents', `${id}.json`) };
+  return { id: committed.id, file: path.join(engine.home, 'tasks', task, 'intents', `${committed.id}.json`) };
 }
 
 const lease = (file, pid, host = os.hostname()) => writeFileSync(file, `${JSON.stringify({ pid, host })}\n`);
@@ -999,12 +999,7 @@ test('lease: an intent abandoned by this same process is picked up', async (t) =
 });
 
 test('lease: a fresh intent does not inherit an orphaned owner record', async () => {
-  // Record names can repeat — the code itself counts that reachable:
-  // `commitIntent` rebuilds the id on `EEXIST` up to sixteen times. If an
-  // orphaned lease of a previous fan-out is left under the same name, a
-  // fresh intent must overwrite it with itself: otherwise it carries
-  // foreign pid and host and is declared abandoned at once — the window is
-  // open again.
+  // An orphan lease at the reserved name must be overwritten by the new intent.
   const root = sandbox();
   const engine = open(root);
   const id = taskWith(engine);
@@ -1020,9 +1015,13 @@ test('lease: a fresh intent does not inherit an orphaned owner record', async ()
     body: 'fresh',
     ts: '2026-09-02T10:07:00.000Z',
   };
-  const orphan = path.join(dir, `${record.id}.owner`);
-  lease(orphan, await deadStranger(), `${os.hostname()}-drugaya`);
-  commitIntent(engine.home, id, record, new Date(record.ts));
+  const dead = await deadStranger();
+  let orphan;
+  commitIntent(engine.home, id, record, new Date(record.ts), (step, info) => {
+    if (step !== 'order-reserved') return;
+    orphan = path.join(dir, `${info.message}.owner`);
+    lease(orphan, dead, `${os.hostname()}-drugaya`);
+  });
   assert.deepEqual(JSON.parse(readFileSync(orphan, 'utf8')), { pid: process.pid, host: os.hostname() });
 });
 

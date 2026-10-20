@@ -48,7 +48,7 @@ const task = 'step-t20260927-000000';
 store.createTask(home, { id: task, title: 'gate steps', status: 'active', participants: [] });
 const assignedAt = '2026-09-26T00:00:00.000Z';
 const registry = registryOf(host);
-const participant = (address, fields) => store.upsertParticipant(home, task,
+const participant = (address, fields) => store.bus(home, { cli: '0.28.0' }).assignParticipant(task,
   store.participantRecord(address, { harness: 'claude', started: assignedAt, ...fields }, registry));
 const result = (address) => store.sendMessage(home, task, {
   from: address, to: store.ORCHESTRATOR, type: 'result', body: 'reported',
@@ -70,11 +70,10 @@ test('a later gate requires the current result at the same subject', () => {
   const security = planReview(host, { target: subject, task, stepName: 'security', dryRun: true });
   assert.equal(security.address, 'security:piece');
   assert.ok(security.diffPath.includes('security-piece.diff'));
-  const future = new Date(Date.now() + 60_000).toISOString();
-  store.stampReviewAssignment(home, task, 'reviewer:piece', future);
+  store.bus(home).assignParticipant(task, store.participantOf(store.readTask(home, task), 'reviewer:piece'));
   assert.throws(() => planReview(host, { target: subject, task, stepName: 'security', dryRun: true }),
-    /no result is recorded at or after its current assignment/);
-  store.stampReviewAssignment(home, task, 'reviewer:piece', assignedAt);
+    /no result is recorded after its current assignment/);
+  result('reviewer:piece');
   participant('security:piece', { repoAbs: clone, reviewAssignedAt: assignedAt });
   result('security:piece');
   assert.throws(() => planApprover(host, { target: subject, task, stepName: 'approver', dryRun: true }),
@@ -97,7 +96,7 @@ test('a main-tree gate needs both predecessor and owner results', () => {
 test('a named reads-diff gate keeps the reviewer sandbox and accepts kind or legacy role classification', () => {
   const denyTask = 'step-denies-t20260927-000005';
   store.createTask(home, { id: denyTask, title: 'kind denies', status: 'active', participants: [] });
-  store.upsertParticipant(home, denyTask, store.participantRecord('worker:piece', {
+  store.bus(home, { cli: '0.28.0' }).assignParticipant(denyTask, store.participantRecord('worker:piece', {
     harness: 'claude', worktree: subject, baseSha: base, started: assignedAt,
   }, registry));
   const shippedHost = { ...host, pipeline: () => [pipeline.owner, pipeline.gates[0]] };
@@ -140,7 +139,7 @@ test('a named reads-diff gate keeps the reviewer sandbox and accepts kind or leg
   const writerHost = { ...legacyHost, pipeline: () => [pipeline.owner, pipeline.gates[2]] };
   const writerTask = 'step-legacy-writer-t20260927-000006';
   store.createTask(home, { id: writerTask, title: 'strict legacy classifier', status: 'active', participants: [] });
-  store.upsertParticipant(home, writerTask, store.participantRecord('worker:piece', {
+  store.bus(home, { cli: '0.28.0' }).assignParticipant(writerTask, store.participantRecord('worker:piece', {
     harness: 'claude', worktree: subject, started: assignedAt,
   }, registryOf(writerHost)));
   store.sendMessage(home, writerTask, { from: 'worker:piece', to: store.ORCHESTRATOR, type: 'result', body: 'reported' });
@@ -152,10 +151,14 @@ test('a named reads-diff gate keeps the reviewer sandbox and accepts kind or leg
 
 test('a cleared predecessor assignment refuses the next gate until a new result', async () => {
   store.stampReviewAssignment(home, task, 'security:piece', null);
-  const missing = /step approver requires a type=result message from security:piece.*current assignment timestamp is absent/;
+  const missing = /step approver requires a type=result message from security:piece.*pending publication/;
   assert.throws(() => planApprover(host, { target: subject, task, stepName: 'approver', dryRun: true }), missing);
   await assert.rejects(() => step(host, { stepName: 'approver', target: subject, task, dryRun: true }), missing);
-  store.stampReviewAssignment(home, task, 'security:piece', assignedAt);
+  const assignment = store.sendMessage(home, task, {
+    from: store.ORCHESTRATOR, to: 'security:piece', type: 'task', body: 'review again',
+  });
+  store.stampReviewAssignment(home, task, 'security:piece', assignment.message.id, assignment.message.ts);
+  result('security:piece');
   assert.equal(planApprover(host, { target: subject, task, stepName: 'approver', dryRun: true }).address, 'approver:piece');
 });
 
@@ -187,7 +190,7 @@ test('an approver-only declaration has no review alias and waits for the owner r
   assert.match(out, /step approver \(writes-main-tree\)/);
   const noOwnerTask = 'step-no-owner-t20260927-000001';
   store.createTask(home, { id: noOwnerTask, title: 'missing owner result', status: 'active', participants: [] });
-  store.upsertParticipant(home, noOwnerTask, store.participantRecord('worker:piece', {
+  store.bus(home, { cli: '0.28.0' }).assignParticipant(noOwnerTask, store.participantRecord('worker:piece', {
     harness: 'claude', worktree: subject, started: assignedAt,
   }, registryOf(onlyHost)));
   assert.throws(() => planApprover(onlyHost, { target: subject, task: noOwnerTask, stepName: 'approver', dryRun: true }),
@@ -206,7 +209,7 @@ test('a renamed owner is the recorded worktree owner and its result opens the ma
   assert.equal(addressList(renamedRegistry), 'orchestrator, builder:<slug> or approver:<slug>');
   const noOwnerTask = 'step-renamed-owner-t20260927-000002';
   store.createTask(home, { id: noOwnerTask, title: 'renamed owner without result', status: 'active', participants: [] });
-  store.upsertParticipant(home, noOwnerTask, store.participantRecord('builder:piece', {
+  store.bus(home, { cli: '0.28.0' }).assignParticipant(noOwnerTask, store.participantRecord('builder:piece', {
     harness: 'claude', worktree: subject, started: assignedAt,
   }, renamedRegistry));
   assert.throws(() => planApprover(renamedHost, { target: subject, task: noOwnerTask, stepName: 'approver', dryRun: true }),
@@ -238,7 +241,7 @@ test('the one direct route joins the declared owner and writes-main-tree step on
     ['merge:piece', '00000000-0000-4000-8000-000000000023'],
   ];
   for (const [address, sessionId] of addresses) {
-    store.upsertParticipant(home, routedTask, store.participantRecord(address, {
+    store.bus(home, { cli: '0.28.0' }).assignParticipant(routedTask, store.participantRecord(address, {
       harness: 'claude', sessionId, started: assignedAt,
       ...(address.startsWith('builder:') ? { worktree: subject } : {}),
       ...(address.startsWith('security:') ? { repoAbs: subject, reviewAssignedAt: assignedAt } : {}),
@@ -286,7 +289,7 @@ test('a renamed first review gate keeps solo review pickup on repeat', async () 
   const soloHost = { ...host, pipeline: () => [pipeline.owner, pipeline.gates[1]] };
   const soloTask = 'step-solo-t20260927-000003';
   store.createTask(home, { id: soloTask, title: 'solo security review', status: 'active', participants: [] });
-  store.upsertParticipant(home, soloTask, store.participantRecord('security:project', {
+  store.bus(home, { cli: '0.28.0' }).assignParticipant(soloTask, store.participantRecord('security:project', {
     harness: 'claude', repoAbs: clone, started: assignedAt, reviewAssignedAt: assignedAt,
   }, registryOf(soloHost)));
   const picked = planReview(soloHost, { target: clone, stepName: 'security', dryRun: true });

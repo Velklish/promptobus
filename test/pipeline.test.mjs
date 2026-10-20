@@ -169,7 +169,7 @@ test('gate instructions reach real lifts, live re-review, and dead-session relif
   store.createTask(home, { id: task, title: 'gate instructions', owner: null });
   const assigned = '2020-01-01T00:00:00.000Z';
   const recordResult = (address, metadata, taskId = task) => {
-    store.upsertParticipant(home, taskId, store.participantRecord(address, {
+    store.bus(home, { cli: '0.28.0' }).assignParticipant(taskId, store.participantRecord(address, {
       harness: 'claude', repo: 'repos/team/app', repoAbs: repo, started: assigned,
       ...metadata,
     }, bus.registryOf(host)));

@@ -862,7 +862,7 @@ claudeSays('[]');
 await capture(() => review(WS, { tool: TOOL, target: REPO, task: pendingTask.id }));
 const relaunched = store.participantOf(store.readTask(home, pendingTask.id), 'reviewer:orders-api')?.metadata;
 check(`: a successful launch clears pending — the record becomes an ordinary reviewer`,
-  !!relaunched && !('pending' in relaunched), JSON.stringify(relaunched));
+  !!relaunched && !('pending' in relaunched) && typeof relaunched.assignmentAfterId === 'string', JSON.stringify(relaunched));
 
 // : the reviewer needs the loop-warden hook for the same reason as the worker — it's
 // the same kind of participant with a mailbox, and the workspace hook doesn't reach a
@@ -944,11 +944,20 @@ const earlierFindings = 'Earlier finding: obsolete detail';
 // english-authoring: input — preserve the complete Unicode findings body in a replacement prompt.
 const priorFindings = '\nmajor — Проверить закрытие α\n  keep  two spaces\n\n```text\nsecond finding → β\n```\n' + 'full finding '.repeat(400) + '\n';
 // english-authoring: end
+let findingsClock = Date.now();
+const { openEngine } = await import('../dist/index.js');
+const findingsEngine = openEngine({ home, now: () => new Date(findingsClock), recover: false,
+  policy: () => ({ allow: true }) });
+const findingsMessages = [];
 for (const body of [earlierFindings, priorFindings]) {
-  store.sendMessage(home, pendingTask.id, {
-    from: 'reviewer:orders-api', to: store.ORCHESTRATOR, type: 'result', body,
-  });
+  findingsMessages.push(findingsEngine.sendSync(pendingTask.id, {
+    from: store.addrDir('reviewer:orders-api'), to: [store.addrDir(store.ORCHESTRATOR)], type: 'result', body,
+  }).message);
+  findingsClock -= 1_000;
 }
+check('dead session: the later findings commit sorts after the earlier one through clock rollback',
+  findingsMessages[1].id > findingsMessages[0].id && findingsMessages[1].ts < findingsMessages[0].ts,
+  JSON.stringify(findingsMessages.map(({ id, ts }) => ({ id, ts }))));
 store.upsertParticipant(home, pendingTask.id, store.participantRecord('reviewer:other', { repo: 'other' }));
 store.sendMessage(home, pendingTask.id, {
   from: 'reviewer:other', to: store.ORCHESTRATOR, type: 'result', body: 'Another reviewer result',
