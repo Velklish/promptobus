@@ -569,6 +569,16 @@ back to loading everything. Current tool classification can remove permissions;
 it cannot add an unprepared tool or turn prepared read access into write access.
 Exact-file, selected-skill-root and symlink guards remain in force.
 
+Host resources and independently authorized bounded source reads are separate
+routes; launch `readRoots` do not expand the Host catalog. Complete rule content
+relayed by the owner inline or through a canonical artifact requires its source
+identity and explicit authorization within the existing role and grant. Such a
+handover is evidence of rule content, not a successful Host read, a permission
+grant or a bypass of declared dependency validation during preparation. Use only
+a route actually available to that participant. Unavailable required content
+blocks acceptance. The [role policy](../../docs/reference/02-host.md#bb-rule-source-routes)
+states the same boundary.
+
 Assignments carry the complete selected text beyond BB's 4096-character dynamic
 instructions limit. `promptobus_host_context` can read additional resources
 within selected skill roots; it grants no arbitrary workspace read.

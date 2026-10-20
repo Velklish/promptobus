@@ -941,6 +941,22 @@ The root Git package does not include or install the optional BB plugin.
 The optional plugin's constrained reviewer verifies the runtime restrictions without a numeric Codex version limit.
 <!-- /quote -->
 
+### BB rule source routes
+
+The selected role distinguishes exact Host resources from independently
+authorized bounded source reads and a complete owner-provided rule handover.
+Source identity and explicit authorization establish what content was supplied;
+they do not establish that a participant consumed it or resumed acceptance.
+The existing role, current grant and available runtime route still apply.
+Constrained reviewers gain no native tool or identity fallback. A missing
+declared required dependency still refuses Host preparation.
+
+The canonical role preface states the delivery boundary:
+
+<!-- quote:../../lib/prompts/bb.js -->
+Declared Host resources are separate from bounded source reads and complete rule handovers supplied inline or as canonical artifacts. Use these other routes only when the owner explicitly authorizes them within the existing grant; retain their exact source identity and authorization. A handover is not a successful Host read; it does not expand allowlists or read roots, override role or current control, or bypass declared required-dependency validation and Host preparation. If required rule content is unavailable through an authorized route, stop acceptance.
+<!-- /quote -->
+
 ### BB launch context admission
 
 New BB `task create` and `participant add` calls require `--launch-context`,

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Clarify BB rule delivery through exact Host resources, independently authorized
+  bounded source reads and complete owner-authorized rule handovers. A handover
+  does not expand Host admission or bypass declared dependency preparation.
 - Add explicit logical BB task acceptance for the existing owner/executor and
   independent reviewer, bound to the current canonical result and passing source
   evidence. Preserve complete bounded reports and separate physical task close.
