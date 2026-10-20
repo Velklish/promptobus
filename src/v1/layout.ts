@@ -52,8 +52,8 @@ export function lockDir(home: string, task: string): string {
   return path.join(taskDir(home, task), '.lock');
 }
 
-/** The publication lock, held while a payload is written and named and while a sweep judges
- * it. Its own and not the journal's: that one is held across git, and a send must not wait. */
+/** Artifact publication lock: payload, metadata and sweep reachability checks.
+ * Separate from the task and store message-commit locks; streaming stays outside commit. */
 export function blobLockDir(home: string, task: string): string {
   return path.join(taskDir(home, task), '.lock-blobs');
 }

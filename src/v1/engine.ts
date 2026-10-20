@@ -63,12 +63,8 @@ export interface EngineOptions {
   faults?: FaultHook;
   /** Whether to recover fan-out at open. A consumer may recover explicitly to report the result. */
   recover?: boolean;
-  /**
-   * Version of the mechanism that reads journals through this engine. The
-   * package has none of its own — the opener names it, like `home` and
-   * `policy`. Unnamed — a mix of versions is not distinguished: a record with
-   * unfamiliar fields stays corruption.
-   */
+  /** Reader/Host version for journal diagnostics, independent of the package version.
+   * Null leaves unfamiliar fields classified as corruption. */
   cli?: string | null;
 }
 

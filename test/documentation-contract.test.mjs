@@ -164,7 +164,8 @@ const drivers = read('docs/reference/05-drivers.md');
 const driverContract = compact(section(drivers, '### The driver contract'));
 check('docs: the package ships native drivers behind a harness-neutral core contract',
   /\bpackage\b.{0,60}\b(?:ships|provides)\b.{0,60}\bdrivers\b/i.test(driverContract)
-  && ['lib/drivers.js', 'src/driver.ts', 'harness-neutral', 'Host', 'resolveToolBin', 'environment']
+  && ['lib/drivers.js', 'src/driver.ts', 'harness-neutral', 'Host', 'resolveToolBin',
+    'Host-specific overrides', '02-host.md#tool-binaries', '02-host.md#the-standalone-host', 'declared tool name']
     .every((term) => driverContract.includes(term)),
   'packaged native implementations and registry must stay distinct from core and Host binary lookup');
 const spawn = section(cli, '## Spawn');

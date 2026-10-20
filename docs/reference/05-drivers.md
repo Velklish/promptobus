@@ -447,8 +447,10 @@ Driver — adapter of one harness: it launches a participant session, recognises
 state, wakes it, and can stop it. The core contract in `src/driver.ts` is
 harness-neutral. The package ships native drivers in `lib/driver-claude.js`,
 `lib/driver-cursor.js`, `lib/driver-codex.js` and `lib/driver-opencode.js`;
-`lib/drivers.js` constructs their registry. Host binary lookup uses
-`resolveToolBin`; the documented environment overrides still select the binary.
+`lib/drivers.js` constructs their registry. The Host selects binary lookup through
+[`resolveToolBin`](02-host.md#tool-binaries), including any Host-specific overrides.
+The [standalone Host](02-host.md#the-standalone-host) returns the declared tool name
+for resolution through `PATH`; it does not define a shared set of override variables.
 The registry is passed into core EXPLICITLY, as a
 `harness → driver` map, and an unknown harness refuses BEFORE anything changes in
 the store: a refusal after writing the participant would leave in the task journal

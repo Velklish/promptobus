@@ -48,7 +48,9 @@ installation is not claimed. Local fixtures do not certify a particular BB
 installation; verify the executing identities after install/reload.
 See the [Host reference](../../docs/reference/02-host.md#bb-executing-runtime-identity)
 for snapshot boundaries, fields and failure reasons, and the standalone
-`promptobus-runtime` skill for diagnosis. The six generated role skills are unchanged.
+`promptobus-runtime` skill for diagnosis. The six role skills are generated from
+the canonical instruction renderer; their text can change without changing the
+role names or tool contract.
 
 Use this existing server/selected-host observation and the recorded frozen
 generation with actual public task, thread, environment and owned-command

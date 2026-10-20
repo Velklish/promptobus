@@ -233,7 +233,7 @@ export function newMessage(task: string, sender: string, recipients: string[], t
   };
 }
 
-/** Step 2 with a retry on a taken name: the id is assembled again, not replaced in silence. */
+/** Reserve store order under the message-commit lock, then publish the intent. */
 export function commitIntent(home: string, task: string, message: MessageV1, now: Date, fault: FaultHook = NO_FAULT): MessageV1 {
   return withMessageCommit(home, () => {
     const current = { ...message, id: reserveMessageId(home, now) };

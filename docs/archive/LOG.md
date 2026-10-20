@@ -569,3 +569,8 @@ The release reconciliation gives the [Codex-only journal lookup](#pb-372) the na
 - <a id="pb-381"></a>`PB-381-orchestration-obtainable-admission-evidence` · 2026-10-21 · completed · — · Orchestration admission must use obtainable task-scoped evidence and declare user permission steps upfront
 - <a id="pb-389"></a>`PB-389-test-value-pruning` · 2026-10-21 · completed · — · Remove redundant assertions and replace tests disconnected from production
 - <a id="pb-393"></a>`PB-393-canonical-runtime-ownership` · 2026-10-21 · completed · — · Document package-owned runtime and library query contracts
+- <a id="pb-394"></a>`PB-394-minor-contract-guidance` · 2026-10-21 · completed · — · Clarify generated guidance and engine/Host contracts
+- <a id="pb-381.6"></a>`PB-381.6-generated-role-skill-stability-prose` · 2026-10-21 · batch PB-394 · — · Clarify the generated role skill stability claim
+- <a id="pb-386.1"></a>`PB-386.1-stale-message-order-lock-prose` · 2026-10-21 · batch PB-394 · — · Storage lock overview and inline comments retain pre-message-order assumptions
+- <a id="pb-393.1"></a>`PB-393.1-engine-reader-version-comment` · 2026-10-21 · batch PB-394 · — · Clarify the engine reader-version comment
+- <a id="pb-393.2"></a>`PB-393.2-driver-guide-environment-overrides` · 2026-10-21 · batch PB-394 · — · Clarify the Host environment overrides in the driver guide
