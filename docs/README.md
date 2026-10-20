@@ -46,6 +46,7 @@ The canonical project documentation. For current work, use `npx --no-install bac
 | [adr/adr-036-live-run-owned-cleanup.md](adr/adr-036-live-run-owned-cleanup.md) | Live E2E abort cleanup proves its exact session and process lifecycle before deleting the stand; participant live runs have fresh task identities | Accepted |
 | [adr/adr-037-bb-current-control-authority.md](adr/adr-037-bb-current-control-authority.md) | BB admissions recheck owner-published current control through an immutable reference; revisioned updates and terminal token records preserve revocation | Accepted |
 | [adr/adr-038-durable-message-order.md](adr/adr-038-durable-message-order.md) | Store-local logical message IDs and causal assignment boundaries establish current results; unread membership preserves wake coverage across delayed fan-out | Accepted |
+| [adr/adr-039-terminal-send-barrier.md](adr/adr-039-terminal-send-barrier.md) | Task close fences new intent publication; committed fan-out and already-public artifacts remain recoverable | Accepted |
 
 ## Cross-cutting principles
 

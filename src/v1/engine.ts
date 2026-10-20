@@ -273,6 +273,7 @@ export function openEngine({
       artifact?.id ?? input.linkArtifact ?? null, now(), input.originTask);
     requireValid('message', draft, { task });
     const message = withTaskLock(home, task, () => withMessageCommit(home, () => {
+      requireActive(readTask(home, task, cli));
       const committed = commitIntent(home, task, draft, now(), faults);
       if (input.type === 'task' || input.type === 'review') {
         const meta = readTask(home, task, cli);

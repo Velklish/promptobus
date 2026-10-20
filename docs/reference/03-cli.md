@@ -1093,6 +1093,13 @@ A Cursor participant's liveness is judged by three signals, and a stall verdict 
 
 `done` closes the task. The mailbox owner may call it. Sessions the bus started are stopped unless `--keep-sessions`. Journals of tasks closed more than `PRUNE_DEFAULT_DAYS` (14) days ago are removed on that last call. Before it appends telemetry, it probes the window-bearing harnesses represented by those records and may wait up to the 15 s preflight budget; a refusal or timeout leaves that harness's end reading `null` and emits the telemetry warning while the close still succeeds.
 
+The core close mark fences message publication: a send without a committed intent
+refuses with `task-closed`, including one admitted before an artifact stream was
+held. An earlier committed intent may finish and recover on the done task. Close
+does not drain those streams or roll back public artifact records/adapter links;
+another committed message or intent may already use them. See
+[the fan-out boundary](04-protocol.md#fan-out).
+
 The cleanup pass removes contact points for every address in each closed task, including
 sessionless `user`. It removes mcp-configs, settings, Claude Code session records and
 participant directories only for slugged addresses whose sessions are known dead. A user question and its answer stay in

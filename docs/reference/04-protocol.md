@@ -218,6 +218,27 @@ The publication lock exists because the window between a payload and its record 
 
 `send` validates the active task, sender, recipients, message type, body and routing policy before its first side effect. If an artifact is present, its name is checked first; the payload is then streamed or read once into a content-addressed blob and its metadata is validated and written before the message. The same checks apply to `sendSync`.
 
+Close and new message commit serialize under the same task lock. After staging,
+the sender rereads task activity under task then message-commit lock. If close
+commits first, both send variants refuse with typed `task-closed` before reserving
+an ID or creating an intent. The refused send creates no canonical message,
+mailbox/history ref or activation event, and does not advance assignment boundaries.
+Close does not wait for an already admitted artifact stream to finish.
+
+Published artifact metadata, blobs and adapter file links remain on that refusal
+because another committed message or intent may already reference them. A refused
+message therefore does not imply that its already-public artifact was removed.
+Shared deduplicated bytes and pre-existing links remain valid; normal retention
+owns their removal. Private temporary files from a failed stream are cleaned by
+the existing blob writer, and its original source error remains the send error.
+
+A committed intent may finish fan-out and recover on a done task. Once the intent
+exists, an error during assignment metadata publication or recipient placement
+leaves that message and its attachments recoverable. Recovery does not apply the
+new-publication activity check. The barrier orders message commit against close;
+it does not prove that external calls or provider processes have ended. See
+[ADR-039](../adr/adr-039-terminal-send-barrier.md).
+
 The message commit point is the exclusive creation of `intents/<id>.json` with `wx`. The intent is the complete canonical message, including recipients, and the sender writes `<id>.owner` beside it as a best-effort lease. The engine then links the intent to `messages/<id>.json`, links one reference to each recipient's inbox, and removes the intent and lease only after every reference exists. Each link is idempotent: `EEXIST` means the neighbouring pass already put that link. Hard links must stay on one filesystem; a lawful refusal is the typed `link-refused` result and leaves the intent open for recovery.
 
 The engine returns `ActivationEvent` values after the fan-out is on disk. It does not wake participants itself: the supervisor and driver activate each recipient independently. A message can therefore be fully durable while activation is still pending.
@@ -435,7 +456,8 @@ and "create the intent" is exactly one atomic `open(O_EXCL)`.
 The order is:
 
 1. Validate recipients and the routing policy — before the first side effect.
-2. Under task then message-commit lock, reserve the logical ID and create
+2. Under task then message-commit lock, reread the task and require it active,
+   then reserve the logical ID and create
    `intents/<id>.json` with the `wx` flag. **This is the commit
    point**: from here the message exists, and everything else is recoverable,
    because the intent IS the canonical message whole — the recipients sit

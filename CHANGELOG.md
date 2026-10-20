@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Fence new message intents against task close under the existing task lock.
+  An admitted send that loses that boundary refuses with `task-closed`; earlier
+  committed fan-out and attachments remain recoverable on the done task.
+  Already-public artifact records and links remain because another committed
+  message can adopt them. Close does not drain admitted artifact streams.
 - Reserve store-local logical message IDs at intent commit, retaining the existing
   grammar and wall-clock timestamps. Initial and fresh assignments record causal
   boundaries; native and BB current-result gates read strict committed facts

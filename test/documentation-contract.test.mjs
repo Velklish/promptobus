@@ -78,6 +78,13 @@ check('docs: the index covers every ADR and names the implemented send door',
 
 const manifest = read('test/fixtures/promptobus/MANIFEST.md');
 const protocol = read('docs/reference/04-protocol.md');
+const fanout = section(protocol, '## Fan-out');
+check('docs: task close fences new intents and preserves committed fan-out and adopted artifacts',
+  has(fanout, 'Close and new message commit serialize under the same task lock.')
+  && has(fanout, 'If close commits first, both send variants refuse with typed `task-closed` before reserving an ID or creating an intent.')
+  && has(fanout, 'Published artifact metadata, blobs and adapter file links remain on that refusal because another committed message or intent may already reference them.')
+  && has(fanout, 'A committed intent may finish fan-out and recover on a done task.'),
+  'terminal publication must distinguish uncommitted sends, committed intents and public artifact ownership');
 const provenance = section(manifest, '## Provenance');
 const frozen = section(manifest, '## Why the snapshot is frozen');
 const legacyStore = section(protocol, '### The v1 store: what is written and in what order');
