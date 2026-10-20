@@ -869,24 +869,13 @@ check('the counter is named by address: colon gives way to hyphen, suffix .guard
   && path.basename(workerMark) === 'worker-api.guard.json',
   `${path.basename(MARK_FILE)} · ${path.basename(workerMark)}`);
 
-// ---  the guard does not trigger a move ------------------------------
-//
-// No one will see a report from here: at code 0 the hook's stderr never surfaces, and a move
-// is promised to the user in numbers. The guard therefore resolves the home but doesn't move
-// the store — and on a workspace that needs a move, it silently lets the turn through.
-// --- leftover foreign store: standalone host has no legacyLayout, so guard
-// neither migrates nor skips the live mailbox. ---------------------------------
+// An unrelated adjacent directory never becomes the current mailbox.
 const MIG_ROOT = path.join(ROOT, 'ne-dvigay');
 writeHostConfig(MIG_ROOT);
-const MIG_LEFTOVER = path.join(MIG_ROOT, 'legacy', 'a2a');
+const MIG_LEFTOVER = path.join(MIG_ROOT, 'unrelated', 'mail');
 const MIG_TASK = 'guard-migr-t20260902-100000';
-const { legacy } = await import(path.join(here, '..', 'dist', 'index.js'));
-legacy.createTask(MIG_LEFTOVER, { id: MIG_TASK, title: 'the former bus store', owner: SESSION });
-legacy.upsertParticipant(MIG_LEFTOVER, MIG_TASK, { address: 'worker:api', name: WORKER_NAME });
-legacy.sendMessage(MIG_LEFTOVER, MIG_TASK, {
-  from: 'worker:api', to: 'orchestrator', type: 'result', body: 'unread mail of the former store',
-});
-legacy.closeTask(MIG_LEFTOVER, MIG_TASK);
+mkdirSync(path.join(MIG_LEFTOVER, 'tasks'), { recursive: true });
+writeFileSync(path.join(MIG_LEFTOVER, 'tasks', 'untouched.json'), 'unrelated bytes');
 const beforeGuard = readdirSync(path.join(MIG_LEFTOVER, 'tasks')).sort();
 
 const migRun = spawnSync(process.execPath, [BIN, 'guard'], {
@@ -903,11 +892,11 @@ const migRun = spawnSync(process.execPath, [BIN, 'guard'], {
   encoding: 'utf8',
 });
 
-check(': leftover foreign store: standalone guard does not migrate it',
+check(': an unrelated adjacent directory is untouched',
   existsSync(MIG_LEFTOVER)
   && readdirSync(path.join(MIG_LEFTOVER, 'tasks')).sort().join(',') === beforeGuard.join(','),
   `legacy ${existsSync(MIG_LEFTOVER) ? 'kept' : 'gone'} · guard ${migRun.status} ${migRun.stderr}`);
-check(': leftover foreign store: guard does not treat it as the live mailbox',
+check(': guard does not treat an unrelated directory as the live mailbox',
   migRun.status === 0 && !migRun.stderr.includes(GUARD_MARK),
   `code ${migRun.status} · out «${migRun.stdout.trim()}» · err «${migRun.stderr.trim()}»`);
 
@@ -921,7 +910,7 @@ store.upsertParticipant(BOTH_HOME, BOTH_TASK, store.participantRecord('worker:ap
 store.sendMessage(BOTH_HOME, BOTH_TASK, {
   from: 'worker:api', to: 'orchestrator', type: 'result', body: 'unread mail in the new root',
 });
-mkdirSync(path.join(BOTH_ROOT, 'legacy', 'a2a', 'tasks'), { recursive: true });
+mkdirSync(path.join(BOTH_ROOT, 'unrelated', 'mail', 'tasks'), { recursive: true });
 
 const bothRun = spawnSync(process.execPath, [BIN, 'guard'], {
   cwd: BOTH_ROOT,
@@ -943,7 +932,7 @@ check(': leftover catalog does not skip the live mailbox — unread still return
   `code ${bothRun.status} · out «${bothRun.stdout.trim()}» · err «${bothRun.stderr.trim()}»`
   + ` · unread ${store.countInbox(BOTH_HOME, BOTH_TASK, 'orchestrator')}`);
 check(': leftover catalog and live store both stay on disk',
-  existsSync(path.join(BOTH_ROOT, 'legacy', 'a2a')) && existsSync(BOTH_HOME));
+  existsSync(path.join(BOTH_ROOT, 'unrelated', 'mail')) && existsSync(BOTH_HOME));
 
 // A retained wake from a previous owner proves nothing about the current owner.
 const CONTACT_ROOT = path.join(ROOT, 'contact-root');

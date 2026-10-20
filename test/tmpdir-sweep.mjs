@@ -114,9 +114,9 @@ export const SUITE_PREFIXES = [
   'promptobus-ambient-', 'promptobus-ask-', 'promptobus-codex-', 'promptobus-contact-list-',
   'promptobus-copy-', 'promptobus-cursor-', 'promptobus-digest-', 'promptobus-driver-', 'promptobus-report-',
   'promptobus-e2e-', 'promptobus-governance-routes-', 'promptobus-harness-', 'promptobus-home-',
-  'promptobus-host-', 'promptobus-lease-', 'promptobus-legacy-', 'promptobus-link-',
-  'promptobus-mcp-', 'promptobus-membership-', 'promptobus-migration-', 'promptobus-owner-gate-', 'promptobus-package-',
-  'promptobus-project-hooks-', 'promptobus-promptobus', 'promptobus-races-',
+  'promptobus-host-', 'promptobus-lease-', 'promptobus-link-',
+  'promptobus-mcp-', 'promptobus-membership-', 'promptobus-owner-gate-', 'promptobus-package-',
+  'promptobus-project-hooks-', 'promptobus-promptobus', 'promptobus-races-', 'promptobus-retirement-',
   // Covers the `-a-`/`-b-` pair of host.test.mjs too: an entry sweeps everything
   // that starts with it.
   'promptobus-routing-',

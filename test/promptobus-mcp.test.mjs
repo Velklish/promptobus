@@ -1457,44 +1457,6 @@ check(': the connection survived the unparsable line',
   afterParse.result && Object.keys(afterParse.result).length === 0, JSON.stringify(afterParse));
 words.stop();
 
-// --- : migration with PROMPTOBUS_HOME declared --------------------------------
-//
-// The most common first touch of the store is a bus tool call from a session whose home is
-// declared via the environment variable. A standalone host doesn't declare a legacy layout
-// (`legacyLayout() === null`), so the migration here is invoked through the same adapter, with an
-// explicit layout, the way commands invoke it.
-const MIG_ROOT = path.join(SB, 'pereezd');
-mkdirSync(MIG_ROOT, { recursive: true });
-writeFileSync(path.join(MIG_ROOT, 'promptobus.json'), `${JSON.stringify({ commandName: 'promptobus', tools: ['claude'] })}\n`);
-const MIG_LEGACY = path.join(MIG_ROOT, 'legacy', 'a2a');
-const MIG_TASK = 'pereezd-t20260902-090000';
-const { legacy } = await import(path.join(here, '..', 'dist', 'index.js'));
-legacy.createTask(MIG_LEGACY, { id: MIG_TASK, title: 'a task of the former store', owner: OWNER });
-legacy.upsertParticipant(MIG_LEGACY, MIG_TASK, { address: 'worker:orders-api', repo: 'orders-api' });
-legacy.sendMessage(MIG_LEGACY, MIG_TASK, {
-  from: 'worker:orders-api', to: 'orchestrator', type: 'result', body: 'a result from the former store',
-});
-legacy.closeTask(MIG_LEGACY, MIG_TASK);
-
-const migHost = { legacyLayout: () => ({ rel: 'legacy/a2a', done: 'promptobus done <id>' }) };
-const movedId = store.resolveIdentity({
-  PROMPTOBUS_ROLE: 'orchestrator',
-  PROMPTOBUS_HOME: MIG_LEGACY,
-  PROMPTOBUS_TASK: MIG_TASK,
-}, MIG_ROOT, { host: migHost });
-check(': resolveIdentity with a host that names a legacy layout migrates into the new store',
-  movedId.home === realpathSync(path.join(MIG_ROOT, '.promptobus'))
-  && !existsSync(MIG_LEGACY)
-  && existsSync(path.join(MIG_ROOT, '.promptobus', 'tasks', MIG_TASK, 'task.json')),
-  `${movedId.home} · legacy ${existsSync(MIG_LEGACY)}`);
-
-const stale = store.resolveIdentity({
-  PROMPTOBUS_ROLE: 'orchestrator', PROMPTOBUS_HOME: MIG_LEGACY,
-}, MIG_ROOT, { host: migHost });
-check(': a stale PROMPTOBUS_HOME leads to the new root and does not recreate the legacy one',
-  stale.home === realpathSync(path.join(MIG_ROOT, '.promptobus')) && !existsSync(MIG_LEGACY),
-  `${stale.home} · legacy ${existsSync(MIG_LEGACY) ? 'revived' : 'removed'}`);
-
 // --- : the participant lines assembled by the adapter ----------------------
 //
 // `repository`, `worktree … (branch)`, and `bg-session` in the `task` response are assembled by

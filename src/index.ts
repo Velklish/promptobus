@@ -60,14 +60,6 @@ export type {
 // implementation modules; higher-level consumers should prefer protocol and store APIs.
 export { pidAlive } from './fs/proc.js';
 
-// Store `v0.61.0` as a namespace, not a scatter: its names and v1's are the same and would collide.
-// Two callers only — migration, and the suite that checks reading a legacy fixture.
-export * as legacy from './legacy-store.js';
-
-// Former-store migration → `.promptobus`. Where to migrate from is declared by the host.
-export { migrate, migrationNeeded, preflight, splitLegacyRel } from './migrate.js';
-export type { MigrationOptions, MigrationPlan, MigrationReport, TaskReport } from './migrate.js';
-
 // Bus MCP server: transport, negotiation and the tool dispatcher. Workspace, Git and harness do not
 // cross this boundary ([mcp/server.ts](mcp/server.ts)).
 export { createMcpServer, negotiateProtocol } from './mcp/server.js';
@@ -93,7 +85,7 @@ export {
   HOST_KIND, HostResolveError, homeOfRoot, isPromptobusHost,
 } from './host.js';
 export type {
-  HostClone, HostFreshness, HostLegacyLayout, HostModuleNote, HostRepo, HostRepoCandidate,
+  HostClone, HostFreshness, HostModuleNote, HostRepo, HostRepoCandidate,
   HostMcpTool, HostMcpToolClassification, HostPipelineStep, HostRepoModule, HostRoutingOverlay, HostRoutingPaths, HostServers, HostToolBin, PromptobusHost,
   HostParticipantContextPurpose, HostParticipantContextTask, HostParticipantContextRequest, HostParticipantContextSelection,
 } from './host.js';

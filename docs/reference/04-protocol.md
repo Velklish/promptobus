@@ -511,13 +511,6 @@ and a result strictly after the later of this boundary and the latest canonical
 Legacy metadata without a causal boundary stays readable but requires an explicit
 fresh assignment before it can prove a result current.
 
-The frozen [legacy store snapshot](../../test/fixtures/promptobus/MANIFEST.md)
-is current input to both the [legacy reader test](../../test/promptobus-legacy-fixture.test.mjs)
-and the [migration test](../../test/promptobus-migration.test.mjs). Its original
-generator and recorded baseline revision are absent from the public repository;
-the manifest describes the available provenance and how to maintain this
-compatibility input without recapturing it.
-
 ### Validation of a v1 record
 
 Source: `src/v1/validate.ts`.
@@ -624,10 +617,8 @@ Source: `src/protocol.ts`.
 Bus vocabulary: message types, addresses, task identity, and the foreign-mailbox
 gate wording. No disk, no store — only the grammar and the strings everyone prints.
 
-The home is here, not in either store, because the package has two: production v1
-(`store.ts`) and legacy, kept so migration can still read
-([legacy-store.ts](../../src/legacy-store.ts)). A value that lived in one of them would be
-imported by the other across a version boundary — and they would drift in silence.
+The vocabulary is shared by the v1 engine and its adapters. Neither side owns a
+second copy of address grammar, task identity or refusal strings.
 
 ### The role registry
 

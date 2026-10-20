@@ -3,7 +3,7 @@
     "fileOnly": 34,
     "citation": 46,
     "crossFile": 6,
-    "fileLevel": 57,
+    "fileLevel": 55,
     "bound": 53,
     "sameFileCitation": 11
   },
@@ -263,9 +263,6 @@
       "../docs/reference/01-overview.md#the-package-entry-point",
       "mcp/server.ts"
     ],
-    "src/legacy-store.ts": [
-      "../docs/reference/01-overview.md#the-legacy-store-and-the-one-reader-it-still-lives-for"
-    ],
     "src/mcp/render.ts": [
       "../../docs/reference/01-overview.md#rendering-a-reply-for-a-participant"
     ],
@@ -278,9 +275,6 @@
     ],
     "src/mcp/tools.ts": [
       "../../docs/reference/01-overview.md#the-tool-declarations"
-    ],
-    "src/migrate.ts": [
-      "../docs/reference/01-overview.md#migration-reading-an-older-store"
     ],
     "src/model-routing.ts": [
       "../docs/guides/model-routing.md#the-routing-contract-types"

@@ -29,7 +29,6 @@ const { done } = await import(path.join(here, '..', 'lib', 'done.js'));
 // Imported here and not later: `lib/drivers.js` binds the real resolver at import, and it
 // would take the seam below with it.
 const { resolveSessionIdentity } = await import(path.join(here, '..', 'lib', 'drivers.js'));
-const { legacy } = await import(path.join(here, '..', 'dist', 'index.js'));
 
 writeFileSync(path.join(ROOT, 'AGENTS.md'), '# stand\n');
 writeHostConfig(ROOT);
@@ -296,42 +295,6 @@ for (const [name, call] of CONSUMERS.slice(1)) {
     if (value === undefined) delete process.env[name];
     else process.env[name] = value;
   }
-}
-
-// --- the second producer of the same answer ---------------------------------------
-//
-// `ownership` is written twice: here and in the legacy store the migration reads. The copies
-// cannot be merged — the two stores have different journals — so the five outcomes are run
-// through both, and a silent divergence becomes a red check rather than a surprise later.
-{
-  const LEGACY = path.join(ROOT, 'legacy');
-  const write = (id, owner) => {
-    const dir = path.join(LEGACY, 'tasks', id);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(path.join(dir, 'task.json'), `${JSON.stringify({
-      id, title: id, status: 'active', participants: [{ address: 'orchestrator', ...(owner ? { owner } : {}) }],
-    })}\n`);
-  };
-  write(OWNED, OWNER);
-  write(OWNERLESS, null);
-  const cases = [
-    ['no-identity on an owned task', OWNED, store.ORCHESTRATOR, null],
-    ['the owner', OWNED, store.ORCHESTRATOR, OWNER],
-    ['a foreign session', OWNED, store.ORCHESTRATOR, FOREIGN],
-    ['a task with no owner', OWNERLESS, store.ORCHESTRATOR, OWNER],
-    ['no-identity on a task with no owner', OWNERLESS, store.ORCHESTRATOR, null],
-    ['an address this gate does not judge', OWNED, WORKER, OWNER],
-  ];
-  const diverged = cases.filter(([, id, addr, session]) => {
-    const mine = store.ownership(HOME, id, addr, session);
-    const theirs = legacy.ownership(LEGACY, id, addr, session);
-    return mine.gated !== theirs.gated || mine.allowed !== theirs.allowed || mine.right !== theirs.right;
-  });
-  check('PB-223: the legacy store answers the same five outcomes — the two copies of the gate have not drifted',
-    diverged.length === 0,
-    JSON.stringify(diverged.map(([label, id, addr, session]) => ({
-      label, mine: store.ownership(HOME, id, addr, session), theirs: legacy.ownership(LEGACY, id, addr, session),
-    }))));
 }
 
 // The owner closes their own run — the case the whole gate exists to keep working.

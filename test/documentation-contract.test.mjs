@@ -76,7 +76,6 @@ check('docs: the index covers every ADR and names the implemented send door',
     'Claude Code, Cursor and Codex'),
   listed.filter((name) => indexRows.get(name)?.target !== name).join(', '));
 
-const manifest = read('test/fixtures/promptobus/MANIFEST.md');
 const protocol = read('docs/reference/04-protocol.md');
 const bbEvidence = section(protocol, '#### Manifest before reviewer launch');
 const bbGuide = read('integrations/bb/README.md');
@@ -115,19 +114,14 @@ check('docs: task close fences new intents and preserves committed fan-out and a
   && has(fanout, 'Published artifact metadata, blobs and adapter file links remain on that refusal because another committed message or intent may already reference them.')
   && has(fanout, 'A committed intent may finish fan-out and recover on a done task.'),
   'terminal publication must distinguish uncommitted sends, committed intents and public artifact ownership');
-const provenance = section(manifest, '## Provenance');
-const frozen = section(manifest, '## Why the snapshot is frozen');
-const legacyStore = section(protocol, '### The v1 store: what is written and in what order');
-check('docs: frozen legacy fixture provenance names both consumers and missing source',
-  has(manifest.split('\n## Provenance')[0],
-    'This frozen `v0.61.0` snapshot is the input to both the [legacy reader test](../../promptobus-legacy-fixture.test.mjs) and the [migration test](../../promptobus-migration.test.mjs). The tests read a copy of the snapshot; they do not regenerate it.')
-  && has(provenance,
-    'The original generator and the recorded baseline revision are not preserved in this complete public repository. There is no working Git recovery command for either one here. The snapshot itself and its current consumers are the reproducible sources: run the linked tests to check how the legacy reader and migration handle these bytes.')
-  && has(frozen, 'The 17 tracked fixture files therefore remain byte-for-byte frozen.')
-  && has(legacyStore,
-    'The frozen [legacy store snapshot](../../test/fixtures/promptobus/MANIFEST.md) is current input to both the [legacy reader test](../../test/promptobus-legacy-fixture.test.mjs) and the [migration test](../../test/promptobus-migration.test.mjs). Its original generator and recorded baseline revision are absent from the public repository; the manifest describes the available provenance and how to maintain this compatibility input without recapturing it.')
-  && !/\bgit\s+show\s+(?:e2ea30a|8ca22be)\b/.test(provenance),
-  'the provenance or one of its current consumer relationships changed');
+const upgrade = section(read('docs/reference/01-overview.md'), '### Upgrading a former store');
+check('docs: former stores require the pinned upgrade while current malformed records keep their verdicts',
+  has(upgrade, 'use the pinned `promptobus` GitHub release `v0.28.0`')
+  && has(upgrade, 'including an explicitly named arbitrary home')
+  && has(upgrade, 'It is not forensic detection of every damaged directory.')
+  && has(upgrade, 'an explicit `schemaVersion` retains its existing validator verdict.')
+  && has(upgrade, 'A completed `migrated.json` or preserved `migration-broken/` alone does not block a current store.'),
+  'the upgrade route, recognition limit and current-record behavior must remain explicit');
 
 const retention = section(protocol, '### Artifacts: how a file becomes a message attachment');
 check('docs: artifact retention covers active sweep and whole-task prune',

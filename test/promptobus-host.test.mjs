@@ -102,8 +102,7 @@ check('standalone host contract members that otherwise would have no call site',
   && hostA.inWorkspace(a)
   && !hostA.inWorkspace(b)
   && hostA.cloneHint('x') === 'git clone <url> x'
-  && hostA.formatNpx(['clone', 'x']) === 'npx alpha clone x'
-  && hostA.legacyLayout() === null,
+  && hostA.formatNpx(['clone', 'x']) === 'npx alpha clone x',
   `${hostA.promptobusHome()} ${hostA.toolsManifestRel()}`);
 
 mkdirSync(path.join(a, 'skills'), { recursive: true });

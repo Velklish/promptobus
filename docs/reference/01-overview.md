@@ -269,7 +269,7 @@ Public Promptobus surface, the "." entry point. It is one — protocol and store
 tasks, participants, messages, artifacts, recoverable fan-out, and history.
 Alongside it go out the bus vocabulary, the role registry ([04-protocol § The role
 registry](04-protocol.md#the-role-registry)), task-directory files the store does not
-hold, former-root migration, the MCP factory, the driver contract, and the
+hold, the MCP factory, the driver contract, and the
 warden state machine.
 
 Package-owned low-level helpers have one implementation in `src/`, and the
@@ -301,13 +301,12 @@ bindings, and the participant files directory.
 Why they live here, not in a store. The store is versioned — correspondence,
 participants, and artifacts move with the protocol version. These files do
 not belong to the protocol at all: the adapter names their format and is the
-one that reads and writes them, and a migration copies them byte for byte.
+one that reads and writes them.
 A separate module makes that boundary visible: cutover replaced the store,
 not these files.
 
-Both stores name the task-directory layout (`<home>/tasks/<id>`) the same
-way, so the path comes from [protocol.ts](../../src/protocol.ts) — the shared bus
-dictionary.
+The task-directory layout (`<home>/tasks/<id>`) comes from
+[protocol.ts](../../src/protocol.ts), the shared bus dictionary.
 
 ### Warden
 
@@ -385,47 +384,60 @@ contacts retain their probe behavior, and authorized manual recovery remains ava
 Stop path and the SessionStart transcript mark take the proved-foreign route — nothing
 registered or marked, the turn not returned — same as `join()` (03-cli § The owner gate).
 
-### Migration: reading an older store
+### Upgrading a former store
 
-Source: `src/migrate.ts`.
+The current package reads and writes protocol v1 only. The former maildir
+reader, converter and host layout member are no longer public APIs. Before
+opening a former store, use the pinned `promptobus` GitHub release `v0.28.0`
+in an isolated temporary installation. That release exports `preflight` and
+`migrate`; its standalone CLI does not infer a consumer's former directory.
+The embedding product supplies the absolute workspace root, its former
+`{ rel, done }` layout and the harness for records written before that field
+existed. Close active former tasks with that product's former CLI first.
 
-Migration of the former store → `.promptobus`.
+Install the old dependency in a separate temporary directory, put the upgrade
+script there so its import resolves to that installation, and pass the layout
+and harness explicitly:
 
-One-way and one-shot: there is no backup and no reverse migration, the old
-CLI does not read the new store. From that follows the single requirement
-that governs the whole step order — **a partially written new store never
-exists**: it is assembled in a neighbouring temporary directory and takes
-its place in one `rename`, and the legacy directory is removed only after.
+```js
+import { preflight, migrate } from 'promptobus';
+const [root, rel, done, harness] = process.argv.slice(2);
+const layout = { rel, done };
+const plan = preflight(root, layout);
+if (plan.refusal) throw new Error(plan.refusal);
+console.error(migrate(root, { layout, harness }));
+```
 
-Where to migrate from is declared by the host (`legacyLayout`). No layout —
-nothing to move.
+The old converter assembles a neighboring temporary store and switches it
+atomically. It removes the former directory after the switch; this is a
+one-way upgrade. Keep a separate backup before running it. Repeat the same
+pinned converter after interruption: it rebuilds before the switch or finishes
+cleanup afterward. Two stores without its transient authorization are refused,
+not merged. A completed `migrated.json` record is never cleanup authorization.
+Update stale declared home paths to the current store after successful upgrade.
 
-Order:
+`openEngine` refuses recognizable former-writer task headers before recovery or
+creation, including an explicitly named arbitrary home. Recognition requires an
+unversioned task with its matching id, an active/done status and nonempty
+address-based participants without v1 participant ids. It is not forensic
+detection of every damaged directory. Unreadable, malformed or unrecognized
+current records retain task-local validation; an explicit `schemaVersion`
+retains its existing validator verdict.
 
-1. preflight — both roots at once, active tasks, a damaged root: a refusal
-   BEFORE any mutation;
-2. assemble in `<root>/.promptobus.migrating` — next to the target, so the
-   `rename` is atomic;
-3. `migrating.json` mark inside the assembled directory — before the switch;
-4. `rename` the temporary directory to `.promptobus`;
-5. remove the former directory, then the mark.
-
-**The mark closes the window between 4 and 5.** A process death exactly
-there would leave both roots, and "both roots at once" is a refusal; a
-person would hit a wall on a clear path. The mark names the legacy
-directory the new one was built from: while it is there, the migration
-succeeded and a repeat just finishes cleanup. It is missing when this move
-never happened or when cleanup completed; either case carries no cleanup
-authority, so a side-by-side former root is refused. Releases before this
-rule left a distinct completed-move record, so that old name is deliberately
-not a resume token.
+A `migrating.json` inside the chosen home also refuses opening. Reserved
+`.promptobus.migrating` and `.promptobus.migrating.lock` paths block the
+canonical `.promptobus` home and cannot themselves be opened as stores.
+Arbitrary sibling directories are not interpreted as conversion evidence.
+The current runtime removes none of these paths. A completed `migrated.json`
+or preserved `migration-broken/` alone does not block a current store.
+Consumer-specific former paths and stale configuration belong to that
+consumer's upgrade diagnostic, not a new host layout member.
 
 ### The lock: what it guards and what it cannot
 
 Source: `src/fs/lock.ts`.
 
-Directory lock: task-journal read-modify-write sits under it, for both the
-legacy store and protocol v1.
+Directory lock: task-journal read-modify-write sits under it.
 
 The lock is a directory, not a file: `mkdir` is atomic on every FS and does
 not need a descriptor cleaned up; a second process gets `EEXIST` instead of
@@ -440,16 +452,15 @@ processes have exited before removing only the claim named by the refusal.
 Never remove a live or replacement claim. Retry then recovers the ordinary
 dead-owner lock.
 
-Refusal wording did not move here and will not: the legacy store has its own
-(`GateError` with a path for a person), v1 has its own (a typed code). The
-module takes them as callbacks.
+The caller supplies refusal wording as callbacks: adapters use a `GateError`
+with a path for a person, while protocol v1 uses a typed code.
 
 ### Atomic writes
 
 Source: `src/fs/atomic.ts`.
 
-Atomic file and JSON writes — raw primitives shared by the legacy store, protocol
-v1, and the bundled `lib/` runtime through `dist/fs/atomic.js`. `writeFileAtomic`
+Atomic file and JSON writes are raw primitives shared by protocol v1 and the
+bundled `lib/` runtime through `dist/fs/atomic.js`. `writeFileAtomic`
 keeps the optional `preserveMode` behavior in this one implementation; callers that
 need a private new file may pass an explicit mode. External consumers should use the
 protocol and store APIs rather than these disk-level helpers.
@@ -461,34 +472,6 @@ Source: `src/fs/proc.ts`.
 Process liveness and a synchronous pause. `pidAlive` is exported from the package
 entry point so the bundled `lib/` registries use the same implementation; raw process
 helpers remain lower-level than the protocol and store APIs.
-
-### The legacy store, and the one reader it still lives for
-
-Source: `src/legacy-store.ts`.
-
-Bus store `v0.61.0` — a maildir store of a task. **It is no longer the
-production store**: cutover moved the mechanism to protocol v1
-([v1/](../../src/v1)), and what remains here is the one reader this code still
-lives for — migration of the former store → `.promptobus`
-([migrate.ts](../../src/migrate.ts)). The second caller is the suite: a legacy
-slice is read by its own reader, and missing adapter files are written
-into its copy through the same store API.
-
-The surface goes out as the `legacy` namespace from [index.ts](../../src/index.ts).
-It cannot be a flat export: both stores share the same names, and in a
-common space they would collide. The home stays as long as the migration
-input is read: the former-layout reader is its subject, and it can be
-removed only together with the migration itself.
-
-There is no daemon: each session has its own MCP-server stdio process,
-shared state is on disk. One message = one JSON file in the addressee
-mailbox, landing in place by an atomic rename; a mailbox has exactly one
-consumer (address = process), so "read" is moving the file into read/.
-
-The store path arrives as the `home` argument. Where it lives, the
-package does not know at all: the workspace root is found by the adapter,
-which also supplies diagnostics and session identity
-([host.ts](../../src/host.ts)).
 
 ### `join` — entering a task: hand over the contact point and lift a listener
 

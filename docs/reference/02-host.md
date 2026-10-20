@@ -58,7 +58,6 @@ The table below is pinned to the current `PromptobusHost` declaration in `src/ho
 | `resolveToolBin` | `resolveToolBin(name: string): HostToolBin` | The result is required; `bin` may be absent when no launch path is available, and `version` absent means unread, not old. |
 | `readToolVersion` | `readToolVersion?(name: string, bin: string): string \| null` | Optional member, asked only when `resolveToolBin` returned no version for a tool that declares the read; `null` means nothing was read and the version stays unread ([§ Tool binaries](#tool-binaries)). Absent, no version is read. |
 | `substituteVars` | `substituteVars(value: unknown): unknown` | `null` may be a legitimate transformed value, not an absent host answer. |
-| `legacyLayout` | `legacyLayout(): HostLegacyLayout \| null` | `null` means this workspace has no former store and migration does not run. |
 | `formatCommand` | `formatCommand(args: string[]): string` | Never absent; it formats a command for a person. |
 | `formatNpx` | `formatNpx(args: string[]): string` | Never absent; it formats a consumer-owned command for a person, never a bus subcommand. |
 | `busCommand` | `busCommand(args: string[]): string` | Never absent; it formats a bus command for diagnostics. |
@@ -69,17 +68,15 @@ The table below is pinned to the current `PromptobusHost` declaration in `src/ho
 | `workerPreamble` | `workerPreamble(ctx: { taskId: string; nsPath: string; branch: string; worktreePath: string }): string` | Never absent; it supplies the worker's host-specific preamble. `worktreePath` is the absolute path used as the worker session's cwd. A host may omit it from its own text: the package's allowed-roots line still names it, and no preamble check refuses that omission. |
 | `liveRunNote` | `liveRunNote(nsPath: string): string` | Never absent; an empty string means this host has no extra live-run note. |
 
-`promptobusHome()` is the authoritative task-store path. Store commands use that answer directly; they do not rebuild `<workspaceRoot>/.promptobus`, because a host may deliberately choose another home. A host whose `legacyLayout()` is not `null` MUST run `preflight()` and, when its plan says so, `migrate()` inside its own `promptobusHome()`; both functions are package-root exports, and a preflight refusal must surface from that member. The `status`, `history`, `dismiss`, and `prune` commands no longer perform migration on the host's behalf. `sweep` is a store command of the same shape and never performed one: it takes `promptobusHome()` as given, and every path it removes is built under that answer. The standalone host returns its configured `home` directly and declares `legacyLayout() === null`, so there is no migration to skip.
+`promptobusHome()` is the authoritative task-store path. Store commands use that
+answer directly; they do not rebuild `<workspaceRoot>/.promptobus`, because a
+host may deliberately choose another home. The host owns diagnostics for its
+former workspace paths and stale declared homes. The package performs no
+conversion and its host contract has no former-layout member. The engine's
+read-only format and unfinished-conversion refusals are described in
+[Upgrading a former store](01-overview.md#upgrading-a-former-store).
 
 `formatNpx()` exists for commands owned by the consumer CLI. It must never wrap a bus subcommand: package-owned hints use `busCommand()`, whose host-defined spelling places the command under the bus entry point. The two formatters may happen to return similar text on the standalone host, but they are separate contract members because a consumer host can place its own commands and the bus at different command paths.
-
-## `legacyLayout()`
-
-`legacyLayout()` declares the former store as a two-segment relative path and supplies the former CLI's close command. `null` means that this host has no former store and migration never runs.
-
-Migration writes `migrating.json` into the assembled new store before the atomic switch. The mark authorizes only cleanup interrupted between that switch and removal of the former directory; after the former directory is removed successfully, the mark is removed too. If the former directory is already gone but that final removal was interrupted, `preflight()` reports `needed: true, sweep: true` and the next open removes the dead mark; it authorizes nothing and does not report a data move. Accordingly, `migrationNeeded()` remains true because cleanup is still needed; callers that need to distinguish a data move use `preflight().sweep`. A former store that appears beside the new store later is refused rather than resumed. In particular, `migrated.json` left by an older release is a completed-migration record, not cleanup authorization: a matching path alone never permits deletion.
-
-Migration also refuses before mutation if the former `tasks/` contains a non-empty directory entry whose name is outside the v1 task-id grammar: 1 to 128 characters, with an ASCII letter or digit first and then ASCII letters, digits, `.`, `_`, or `-`. The check runs before resumed-cleanup detection because cleanup removes the former root whole: an entry migration cannot move must not disappear with it. An empty invalid directory carries no data and is skipped. The bus will not open until an operator renames or removes a refused entry by hand and repeats the command.
 
 ## Standalone host
 
@@ -97,7 +94,7 @@ package version to `createStandaloneHost`. Therefore `commandName` and `version`
 
 The interface for that file, `HostFile`, declares two fields whose values the standalone host does not read: `generate` and `trustedHooks`; root discovery looks only at whether a file holds anything else. Each belongs to a spawned repository's own `promptobus.json`, which the lift reads by path ([03-cli](03-cli.md) § Spawn, [hooks and trust](../guides/hooks-and-trust.md#a-projects-own-hook-records)) — a generator and the project hook commands a repository trusts belong to the repository being spawned into, and a host describes a workspace, so no host method answers them. It is declared here because this is the interface every other field of that file is named in, and a field named nowhere is the drift `HostToolBin.version` already cost this package once.
 
-`legacyLayout()` is always `null`. `pluginDir()` is `null`, so its absence is not a plugin warning; the participant instead says that this host ships no workspace-skills plugin. `memorySection()` is `null`. `resolveRepo` accepts a path on disk, not a remote namespace. `cloneOf` descends from the root to the first directory with `.git`; the root itself is never a clone. `reviewLayoutError` knows `not-clone`, `outside`, `no-clone`, `cwd-outside`, `ask-path`; a host that requires a shape of clone (a group/repo pair, a known zone) words that in its `no-clone` text.
+`pluginDir()` is `null`, so its absence is not a plugin warning; the participant instead says that this host ships no workspace-skills plugin. `memorySection()` is `null`. `resolveRepo` accepts a path on disk, not a remote namespace. `cloneOf` descends from the root to the first directory with `.git`; the root itself is never a clone. `reviewLayoutError` knows `not-clone`, `outside`, `no-clone`, `cwd-outside`, `ask-path`; a host that requires a shape of clone (a group/repo pair, a known zone) words that in its `no-clone` text.
 
 `routingPaths()` answers `cacheFile` `~/.promptobus/model-routing/cache.json` and two overlays, `user` at `~/.promptobus/model-routing.json` and `workspace` at `<promptobusHome>/model-routing.json` — the writable one. Standalone declares no product-policy layer; a consumer inserts its own between those two, read-only.
 
@@ -331,7 +328,8 @@ handshake of its own. `claude agents --json` named the session's own full id in
 
 ## Passing the host
 
-`lib/cli.js` refuses to run without `host.commandName`. `lib/store.js` refuses `promptobusHome`, `rootOfHome`, `ensureStore`, and related helpers without a host: a missing host is not the same as `legacyLayout() === null`.
+`lib/cli.js` refuses to run without `host.commandName`. The adapter helpers
+`promptobusHome` and `resolveIdentity` in `lib/store.js` also require a host.
 
 ## The host integration entry point
 

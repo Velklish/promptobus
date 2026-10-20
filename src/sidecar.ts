@@ -344,8 +344,8 @@ export function dropBinding(home: string, session: string): void {
   if (file) rmSync(file, { force: true });
 }
 
-// --- task-journal lock: the primitive is shared by both stores ([fs/lock.ts](fs/lock.ts)); what stays
-// here are its refusal words and suspending the journal cache. Holders register as a list, not a field.
+// --- task-journal lock: [fs/lock.ts](fs/lock.ts) owns the primitive; these wrappers suspend registered
+// journal caches and supply adapter refusal wording.
 
 /** Wrapper that suspends the journal cache for the duration of the call. */
 export type Suspend = <T>(fn: () => T) => T;

@@ -117,13 +117,6 @@ export interface HostClone {
   nsPath: string;
 }
 
-/** Former store, if this workspace ever has one. `rel` is two non-empty segments from the workspace
- * root — absolute or `\\` is a shape error, not "no legacy"; `done` closes former tasks, `<id>`. */
-export interface HostLegacyLayout {
-  rel: string;
-  done: string;
-}
-
 /** One model-routing overlay layer: `id` names it in diagnostics, `path` is the file. */
 export interface HostRoutingOverlay {
   id: string;
@@ -217,9 +210,6 @@ export interface PromptobusHost {
    * See 02-host, section The standalone host. */
   readToolVersion?(name: string, bin: string): string | null;
   substituteVars(value: unknown): unknown;
-  /** Where to migrate from and how to close former tasks. `null` — nothing to migrate from, which is
-   * how standalone and any host without a former-store history look. */
-  legacyLayout(): HostLegacyLayout | null;
 
   formatCommand(args: string[]): string;
   formatNpx(args: string[]): string;

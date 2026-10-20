@@ -334,7 +334,6 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
       return line;
     },
     substituteVars: (value) => value,
-    legacyLayout: () => null,
 
     formatCommand: (args) => [commandName, ...args].join(' '),
     formatNpx: (args) => ['npx', commandName, ...args].join(' '),

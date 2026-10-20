@@ -5,7 +5,6 @@ import path from 'node:path';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { capture } from './console.mjs';
 import * as store from '../lib/store.js';
-import * as legacy from '../dist/legacy-store.js';
 import { createRegistry } from '../dist/index.js';
 import { opencodeDriver } from '../lib/driver-opencode.js';
 import { sweep } from '../lib/sweep.js';
@@ -48,8 +47,6 @@ hook = async () => {
   await delayed;
   check(': public sweep suspends adapter journal cache across the delayed hook',
     cacheRead(store, 'adapter reread') === 'adapter reread', 'readTask reused a cached journal under the lock');
-  check(': public sweep suspends legacy journal cache across the delayed hook',
-    cacheRead(legacy, 'legacy reread') === 'legacy reread', 'legacy readTask reused a cached journal under the lock');
 };
 let code;
 const pending = capture(async () => { code = await sweep(SB, { task, address }, { registry }); finished = true; });
@@ -103,18 +100,17 @@ const second = store.withTaskLockAsync(home, other, async () => { enteredSecond(
 await Promise.all([firstEntered, secondEntered]);
 finishFirst();
 await first;
-check(': overlapping task locks keep both journal caches suspended after one settles',
-  cacheRead(store, 'overlap adapter') === 'overlap adapter'
-  && cacheRead(legacy, 'overlap legacy') === 'overlap legacy', 'one settled lock restored a cache still suspended by another');
+check(': overlapping task locks keep the adapter journal cache suspended after one settles',
+  cacheRead(store, 'overlap adapter') === 'overlap adapter', 'one settled lock restored a cache still suspended by another');
 finishSecond();
 await second;
-const cachesResume = () => [store, legacy].every((reader) => reader.withTaskCache(() =>
-  reader.readTask(home, task) === reader.readTask(home, task)));
-check(': both journal caches resume after all asynchronous task locks settle',
+const cachesResume = () => store.withTaskCache(() =>
+  store.readTask(home, task) === store.readTask(home, task));
+check(': the adapter journal cache resumes after all asynchronous task locks settle',
   cachesResume(), 'cache suspension survived the last lock');
 let rejected;
 try { await store.withTaskLockAsync(home, task, () => { throw new Error('lock callback rejected'); }); }
 catch (error) { rejected = error.message; }
-check(': throwing asynchronous task-lock callback releases the lock and restores both caches',
+check(': throwing asynchronous task-lock callback releases the lock and restores the adapter cache',
   rejected === 'lock callback rejected' && !existsSync(lock) && cachesResume(),
   JSON.stringify({ rejected, lock: existsSync(lock) }));

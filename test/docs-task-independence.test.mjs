@@ -44,7 +44,7 @@ const reportSection = /REPORT §/;
 const productJson = new Set([
   'promptobus.json', 'hooks.json', 'auth.json', 'state.json', 'holder.json', 'stalls.json',
   'migrating.json', 'migrated.json', 'manifest.json', 'model-routing.json', 'cache.json',
-  'package.json', 'tsconfig.json', 'backslop.json',
+  'package.json', 'tsconfig.json', 'backslop.json', 'task.json', 'health.json',
 ]);
 
 /** Destinations come from the documentation-link parser, including titles and reference links. */

@@ -6,7 +6,7 @@
 
 ## Context
 
-The bus starts sessions, delivers mail, and keeps an on-disk task. It does not own a workspace layout: where clones live, which tools a site declared, how a repository name is resolved, or whether an older store still exists.
+The bus starts sessions, delivers mail, and keeps an on-disk task. It does not own a workspace layout: where clones live, which tools a site declared, how a repository name is resolved, or which former paths need an upgrade diagnostic.
 
 Those answers belong to the product that embeds the bus. If the bus learned them from a global object or from paths baked into its own tree, a second product could not host it, and two hosts in one process would share state.
 
@@ -24,14 +24,19 @@ The bus does not know the workspace. Knowledge of the workspace lives behind `Pr
 
 `PromptobusHost` answers workspace questions: command name and version, workspace root and store home, tool list, skill and plugin paths, MCP servers for a participant, repository resolve, freshness, extra environment, and how to format commands. Field names describe a workspace in general, not one product's directories.
 
-The standalone host (`src/standalone.ts`, `createStandaloneHost`) builds that object from `cwd`, Git, and `promptobus.json`. It does not search another product's tree and does not invent remote namespaces. `legacyLayout()` on that host returns `null`.
+The standalone host (`src/standalone.ts`, `createStandaloneHost`) builds that object from `cwd`, Git, and `promptobus.json`. It does not search another product's tree and does not invent remote namespaces.
 
-`legacyLayout() === null` is a declared state, not a crash. It means this workspace has no former store to migrate. Callers that omit the host are rejected: absence of a legacy store is something the host must say, not something a missing argument can imply (`lib/store.js`, `src/migrate.ts`).
+The host contract has no former-layout member. The package no longer converts
+former stores; the embedding product owns obsolete-path diagnostics and the
+one-time upgrade route through the existing `v0.28.0` release. The current engine
+refuses recognized old format and unfinished conversion before recovery or
+creation; it does not infer product paths or mutate them. See
+[Upgrading a former store](../reference/01-overview.md#upgrading-a-former-store).
 
 ## Consequences
 
 - A second product hosts the bus by implementing `PromptobusHost`. It does not fork the bus to change paths.
 - Tests and adapters may construct two hosts in one process. Nothing hidden in module scope joins them.
-- The standalone CLI is one host among others. Its empty legacy layout is as valid as a host that points at an old store.
-- Migration code must take `legacyLayout()` from the host. It must not guess a previous directory.
+- The standalone CLI is one host among others; no host provides a migration implementation.
+- Upgrade diagnostics name paths the embedding product owns. The package never guesses a product's former directory.
 - New workspace facts go on the host, not into core or driver files.

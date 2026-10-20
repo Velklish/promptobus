@@ -1,8 +1,9 @@
 import { rebuildMessageOrder, strictCommittedMessages, validOrderId, withMessageCommit } from './message-order.js';
 // The engine: the door every protocol write goes through.
 // [reference/04-protocol.md#the-engine-the-door-every-protocol-write-goes-through](../../docs/reference/04-protocol.md#the-engine-the-door-every-protocol-write-goes-through)
-import { existsSync, linkSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, linkSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
+import { isAddress } from '../protocol.js';
 import {
   blobStats, listArtifacts, nameOf, newArtifact, orphanBlobs, readArtifact, readBlob, stashBlob,
   stashBlobSync, writeArtifact,
@@ -10,7 +11,7 @@ import {
 import type { ArtifactSource } from './artifacts.js';
 import { fail } from './errors.js';
 import {
-  artifactFile, blobFile, brokenInboxDir, historyDir, homeOf, inboxDir, taskDir, taskFile,
+  artifactFile, blobFile, brokenInboxDir, historyDir, homeOf, inboxDir, ROOT_DIR, taskDir, taskFile, tasksDir,
 } from './layout.js';
 import {
   commitIntent, completeFanout, countInbox, eventFor, glanceInbox, history as historyOf, inboxIdentity,
@@ -207,6 +208,32 @@ export function openEngine({
     fail('schema-invalid', 'the engine opens on exactly one of: the workspace root, or the store home itself');
   }
   const home = at ?? homeOf(root as string);
+  const normalizedHome = path.resolve(home);
+  const pending = [path.join(normalizedHome, 'migrating.json')];
+  const homeName = path.basename(normalizedHome);
+  if (homeName === ROOT_DIR) pending.push(`${normalizedHome}.migrating`, `${normalizedHome}.migrating.lock`);
+  const unfinished = homeName === `${ROOT_DIR}.migrating` || homeName === `${ROOT_DIR}.migrating.lock`
+    ? normalizedHome : pending.find(existsSync);
+  if (unfinished) {
+    fail('schema-invalid', `unfinished store conversion at ${unfinished}; finish the upgrade with promptobus v0.28.0 before opening ${home}`,
+      { home, file: unfinished });
+  }
+  let names: string[];
+  try { names = readdirSync(tasksDir(home)); } catch { names = []; }
+  for (const id of names.filter(name => TASK_ID_RE.test(name))) {
+    let raw: unknown;
+    try { raw = JSON.parse(readFileSync(taskFile(home, id), 'utf8')); } catch { continue; }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const meta = raw as Record<string, unknown>;
+    if (Object.hasOwn(meta, 'schemaVersion') || meta.id !== id
+      || (meta.status !== 'active' && meta.status !== 'done')) continue;
+    const participants = meta.participants;
+    if (Array.isArray(participants) && participants.length > 0 && participants.every(p =>
+      p && typeof p === 'object' && isAddress(p.address) && !Object.hasOwn(p, 'id'))) {
+      fail('schema-version-unsupported', `former store format at ${taskFile(home, id)} is unsupported; upgrade with promptobus v0.28.0 before opening ${home}`,
+        { home, task: id, file: taskFile(home, id) });
+    }
+  }
 
   function decide(sender: ParticipantV1, recipient: ParticipantV1, meta: TaskV1, type: string): void {
     const decision = policy(sender, recipient, meta, type);

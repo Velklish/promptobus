@@ -3,7 +3,7 @@ export {
   HOST_KIND, HostResolveError, homeOfRoot, isPromptobusHost,
 } from './host.js';
 export type {
-  HostClone, HostFreshness, HostLegacyLayout, HostModuleNote, HostRepo, HostRepoCandidate,
+  HostClone, HostFreshness, HostModuleNote, HostRepo, HostRepoCandidate,
   HostMcpTool, HostMcpToolClassification, HostPipelineStep, HostRepoModule, HostRoutingOverlay, HostRoutingPaths, HostServers, HostToolBin, PromptobusHost,
   HostParticipantContextPurpose, HostParticipantContextTask, HostParticipantContextRequest, HostParticipantContextSelection,
 } from './host.js';

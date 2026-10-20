@@ -122,22 +122,6 @@ const WHOLE_FILE = /^[\s\S]*$/u;
 const REGION_START = /^\s*(?:\/\/|#|<!--)\s*english-authoring: input\b(.*)$/u;
 const REGION_END = /^\s*(?:\/\/|#|<!--)\s*english-authoring: end\b/u;
 const RUNTIME_PATH = /^(?:bin|lib|src|schemas|templates|dist)\//u;
-const LEGACY_V061 = 'test/fixtures/promptobus/legacy-v061/tasks/';
-const LEGACY_V061_FILES = [
-  't20260830-140000/task.json',
-  't20260830-140000/read/orchestrator/20260830T153000000-0002-worker-stale.json',
-  't20260830-140000/read/worker-stale/20260830T140100000-0001-orchestrator.json',
-  't20260831-090000/task.json',
-  't20260831-090000/supervisor.log',
-  't20260831-090000/artifacts/demo-diff.patch',
-  't20260831-090000/inbox/orchestrator/20260831T100000000-0010-worker-demo.json',
-  't20260831-090000/inbox/worker-demo/20260831T090500000-0003-orchestrator.json',
-  't20260831-090000/inbox/worker-demo/20260831T095000000-0008-orchestrator.json',
-  't20260831-090000/read/orchestrator/20260831T092000000-0004-worker-demo.json',
-  't20260831-090000/read/orchestrator/20260831T094000000-0005-worker-demo.json',
-  't20260831-090000/read/orchestrator/20260831T094500000-0007-reviewer-demo.json',
-  't20260831-090000/read/reviewer-demo/20260831T094200000-0006-orchestrator.json',
-];
 // [file, the span it excuses, why that span is not authored prose]
 const AUTHORING_SNAPSHOTS = [
   ['src/protocol.ts', /const TRANSLIT(?:\s*:\s*Record<string, string>)?\s*=\s*\{[\s\S]*?\n\};/u,
@@ -147,8 +131,7 @@ const AUTHORING_SNAPSHOTS = [
   [/^docs\/backlog\/[a-z]+\/PB-278\.1-mixed-step7-delivered-after-own-send\.md$/u,
     /^✖ step 7: the worker closed the note and sent a second result .*$/mu,
     'a run trace quoted as captured evidence'],
-  ...LEGACY_V061_FILES.map((file) => [`${LEGACY_V061}${file}`, WHOLE_FILE,
-    'a frozen v0.61 store snapshot, kept byte for byte (test/fixtures/promptobus/MANIFEST.md)']),
+
 ];
 const GENERATED_FROM = new Map([
   ['dist/protocol.js', 'src/protocol.ts'],

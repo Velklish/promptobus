@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Retire the former store, converter and their public APIs and Host layout member.
+  Recognized former-format stores and unfinished conversion paths refuse before
+  engine recovery or a new task write. Use the isolated v0.28.0 converter after
+  closing former tasks and taking a backup; current v1 journals remain supported.
+  Remove the dedicated reader/converter suites and frozen input while retaining
+  current ownership, mail, causal, locking and cache checks.
 - Clarify BB rule delivery through exact Host resources, independently authorized
   bounded source reads and complete owner-authorized rule handovers. A handover
   does not expand Host admission or bypass declared dependency preparation.
@@ -862,7 +868,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   both current consumers and explains why the frozen snapshot cannot be
   regenerated from the public checkout. It no longer offers a Git command
   for historical objects that are not present there.
-  [Legacy snapshot](test/fixtures/promptobus/MANIFEST.md).
+  [Legacy snapshot](https://github.com/Velklish/promptobus/blob/v0.28.0/test/fixtures/promptobus/MANIFEST.md).
 
 - **Accepted decisions point to the current contract** (PB-298). Resolutions in the
   Codex, session-address, approver and cleanup ADRs distinguish dated observations

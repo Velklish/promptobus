@@ -5,11 +5,9 @@
 // what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
 import './home.mjs';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { isBuiltin } from 'node:module';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
-import process from 'node:process';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -184,45 +182,4 @@ test('declared exports resolve and yield a surface', async () => {
     const file = path.join(ROOT, 'schemas', 'v1', `${model}.schema.json`);
     JSON.parse(readFileSync(file, 'utf8'));
   }
-});
-
-test('LEGACY layout comes from the host: without it there is no migration, two segments are the rel form', async () => {
-  const {
-    createStandaloneHost, splitLegacyRel, migrationNeeded, preflight, GateError,
-  } = await import('../dist/index.js');
-  const host = createStandaloneHost({ cwd: '.' });
-  assert.equal(host.legacyLayout(), null);
-  assert.equal(migrationNeeded('/no/such/root', null), false);
-  assert.equal(preflight('/no/such/root', null).needed, false);
-
-  let omitted = null;
-  try { migrationNeeded('/no/such/root'); } catch (e) { omitted = e; }
-  assert.ok(omitted instanceof GateError);
-  omitted = null;
-  try { preflight('/no/such/root'); } catch (e) { omitted = e; }
-  assert.ok(omitted instanceof GateError);
-
-  assert.deepEqual(splitLegacyRel('old/bus'), ['old', 'bus']);
-
-  const badRel = ['only', '/old/bus', 'old//bus', '../bus', 'old\\bus', 'old/../bus'];
-  for (const rel of badRel) {
-    let threw = null;
-    try { splitLegacyRel(rel); } catch (e) { threw = e; }
-    assert.ok(threw instanceof GateError, `rel ${JSON.stringify(rel)} must refuse`);
-  }
-
-  const dir = mkdtempSync(path.join(tmpdir(), 'promptobus-legacy-'));
-  process.on('exit', () => { rmSync(dir, { recursive: true, force: true }); });
-  mkdirSync(path.join(dir, 'old', 'bus'), { recursive: true });
-  const layout = { rel: 'old/bus', done: 'oldcli done --task <id>' };
-  assert.equal(migrationNeeded(dir, layout), true);
-  assert.equal(preflight(dir, layout).legacyHome, path.join(dir, 'old', 'bus'));
-  assert.equal(migrationNeeded(dir, null), false);
-
-  let cfg = null;
-  try { preflight(dir, { rel: '../bus', done: 'x' }); } catch (e) { cfg = e; }
-  assert.ok(cfg instanceof GateError);
-  cfg = null;
-  try { migrationNeeded(dir, { rel: '../bus', done: 'x' }); } catch (e) { cfg = e; }
-  assert.ok(cfg instanceof GateError);
 });
