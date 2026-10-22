@@ -1004,6 +1004,7 @@ The root overview states the delivery and admission boundary:
 
 <!-- quote:../../README.md -->
 The root Git package does not include or install the optional BB plugin.
+The optional plugin's constrained reviewer verifies the runtime restrictions without a numeric Codex version limit.
 <!-- /quote -->
 
 ### BB rule source routes

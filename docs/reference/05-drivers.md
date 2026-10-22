@@ -1300,7 +1300,7 @@ The constrained provider requests and verifies the effective Codex read-only
 sandbox, approval policy never and explicit model before starting a turn.
 
 <!-- quote:../../README.md -->
-The reviewer checks required runtime restrictions rather than a numeric Codex version.
+The optional plugin's constrained reviewer verifies the runtime restrictions without a numeric Codex version limit.
 <!-- /quote -->
 
 Apps, plugins and remote plugins are disabled at process startup, together with shell, unified
