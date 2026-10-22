@@ -126,7 +126,7 @@ A task without attachments reaches the default branch as one commit; one with at
 
 The `writer.style` glob selects `lib/cli.js`, but the style pass applies only to its human-facing `helpText` block. Refusal strings and comments elsewhere in that file are outside the style pass. Check their behaviour against code when a changed command makes them relevant.
 
-For a release, the currency ledger also has one row for the CLI help and one row for every shipped skill under `skills/`. Each row names the behaviour change it was checked against or says `no change touches it`. Keep the upstream rows for behaviour-changing commits and the style ledger. Releases have no writer task: put both ledgers in the message body of the commit carrying the writer fixes.
+For a release, the currency ledger also has one row for the CLI help and one row for **every** shipped skill under `skills/`. Each row names the behaviour change it was checked against or says `no change touches it`. Keep the upstream rows for behaviour-changing commits and the style ledger. Releases have no writer task: put both ledgers in the message body of the commit carrying the writer fixes.
 
 For a parenthetical break, use a spaced em dash. Preserve existing em dashes; do not strip them or replace them with hyphens or en dashes.
 
