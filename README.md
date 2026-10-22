@@ -32,7 +32,6 @@ The bus does not know your workspace. Every call receives a host that answers fo
 - **Process skills included.** `promptobus install` lays out `skills/orchestrate` and `skills/solo-review` into the project skill location of each selected harness and owns them. The orchestration skill gives the measured thresholds for a flat task or a two-level tree, teamlead escalation rules and the reporter's journal-answering contract; the review skill tells an agent how to ask for a review.
 
 The root Git package does not include or install the optional BB plugin.
-The optional plugin's constrained reviewer verifies the runtime restrictions without a numeric Codex version limit.
 
 ## Requirements
 
@@ -319,7 +318,7 @@ A change is complete when the reference, the affected README and `CHANGELOG.md` 
 
 [MIT](LICENSE)
 
-### BB plugin
+## BB plugin
 
 The repository contains a separate source package, `integrations/bb/`,
 which supplies a constrained Codex read-only reviewer provider and local engine-backed
