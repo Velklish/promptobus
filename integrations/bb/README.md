@@ -824,6 +824,10 @@ matching review environment and grant. The grant's scope must match the recorded
 binding; do not rewrite that binding or substitute the diff base into its base
 to make admission pass. Current source evidence and required prior findings
 remain the review subject.
+Original checked-command admissions retain the producer's immutable grant branch
+and base. Evidence validates those against the supplied command binding; the
+manifest's base selects the review diff and can precede the producer's launch.
+Every current command receipt must still name the exact reviewed source SHA.
 
 Before task creation, `control publish --task TASK --initialize --input <JSON>`
 takes this complete input, bounded to 1 MiB:
@@ -1092,8 +1096,19 @@ sandbox/approval boundary:
 node <generation>/commands/command-runner.js --admission /absolute/owned/command.json --output /absolute/owned/run --by ACTOR -- EXECUTABLE ARGS
 ```
 
-The admission file contains `{ binding, commandId }`. The binding carries the
-exact expected immutable current-control grant. Its `execution.commands` entries
+Initial and fresh runtime context supply `commandAdmission` with
+`{ format: 'promptobus-bb-command-admission-v1', role }`, next to the complete
+`launchContext`. Write `{ ...commandAdmission, launchContext, commandId }` into
+an owned admission file. The launcher derives task/actor/repository identity from
+that exact grant and its current owner reference; it does not require or export
+the private bridge Binding token. Before reservation, the owner may form this
+same input from its explicit local plan for the setup-only preflight. Unknown or
+mixed envelopes and wrong role literals refuse before creating setup paths.
+
+The compatibility admission file contains `{ binding, commandId }` with an
+already supplied complete internal binding; its identity mismatch checks remain
+unchanged. Do not synthesize a bridge token or read private runtime storage.
+Both inputs carry the exact expected immutable current-control grant. Its `execution.commands` entries
 name unique `id`, direct `argv`, `cwd`, exact environment overrides `env`, single-use
 evidence `output` stem, `buildRoot`, `tmpRoot`, `cacheRoot`, concrete `exclusiveKeys`
 and declared interference `measurementScope`. Paths are normalized existing owned

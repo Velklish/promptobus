@@ -1102,6 +1102,15 @@ node <generation>/commands/record-command.js --output /absolute/owned/terminal -
 node <generation>/commands/evidence-prepare.js --input /absolute/owned/evidence.json --stage /absolute/owned/staged
 ```
 
+Public BB launch and fresh-phase context supplies a token-free `commandAdmission`
+descriptor beside the complete `launchContext`. The checked launcher input is
+`{ ...commandAdmission, launchContext, commandId }`; its format is
+`promptobus-bb-command-admission-v1`. It selects the immutable command through
+the current owner/grant reference without disclosing bridge credentials.
+The complete supplied `{ binding, commandId }` input remains supported with its
+original identity checks. Neither input authenticates an OS caller or widens the
+provider sandbox. See the [bounded command contract](../../integrations/bb/README.md#resource-scoped-local-commands).
+
 Run the outer recorder from the exact granted command cwd, using the native
 execution tool's workdir; both original receipts must retain that cwd and source.
 Await the outer recorder's return before preparing evidence. Retain the original

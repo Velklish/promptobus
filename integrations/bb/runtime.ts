@@ -12,7 +12,7 @@ import { ORCHESTRATOR, REVIEWER, APPROVER } from 'promptobus';
 import { engineInput, hostContract } from './contract.js';
 import { BUILD_IDENTITY } from './build-identity.js';
 import { bindingStore } from './bindings.js';
-import { artifactSchema, bindingSchema, emptySchema, hostCallSchema, hostContextSchema, hostReadSchema, mailboxSchema, reasoningSchema, roleSchema, sendSchema, toolsFor } from './protocol.js';
+import { artifactSchema, bindingSchema, COMMAND_ADMISSION_FORMAT, emptySchema, hostCallSchema, hostContextSchema, hostReadSchema, mailboxSchema, reasoningSchema, roleSchema, sendSchema, toolsFor } from './protocol.js';
 import type { Binding } from './protocol.js';
 import { captureBbWorkspace, observeBbParticipant, recordBbWorkspace, stopBbParticipant } from './lifecycle.js';
 import { registerDelivery, LAUNCH_HEADER } from './delivery.js';
@@ -289,6 +289,7 @@ export function registerRuntime(bb: BbPluginApi) {
     store.launch(b, intent);
     const delivery = () => createBbInstructionDelivery(b.role, { taskId: b.task, address: b.participant, environmentId: b.environmentId,
       workspace: b.environmentPath, assignment, launchContext: b.launchContext, evidenceManifest: b.evidenceManifest,
+      commandAdmission: { format: COMMAND_ADMISSION_FORMAT, role: b.role },
       bridgeCheck: 'First turn: call the actual BB promptobus_task and promptobus_mailbox bindings; report a refusal once. No native fallback, substitute identity or diagnostic model session.',
       tools: Object.fromEntries(participantTools(b).map(name => [name, name])) });
     const initialPrompt = () => `${LAUNCH_HEADER}${intent.attemptId}\n${delivery().initialPrompt}\n\n${b.hostContext ? renderBbHostContext(b.hostContext) : ''}`;
@@ -651,6 +652,7 @@ export function registerRuntime(bb: BbPluginApi) {
           const intent = store.launchIntent(next)!;
           const delivery = createBbInstructionDelivery(next.role, { taskId: next.task, address: next.participant, environmentId: next.environmentId,
             workspace: next.environmentPath, assignment: options.assignment, launchContext: next.launchContext, evidenceManifest: next.evidenceManifest,
+            commandAdmission: { format: COMMAND_ADMISSION_FORMAT, role: next.role },
             tools: Object.fromEntries(participantTools(next).map(name => [name, name])) });
           const prompt = `${LAUNCH_HEADER}${intent.attemptId}\n${delivery.initialPrompt}\n\n${next.hostContext ? renderBbHostContext(next.hostContext) : ''}`;
           next.phaseAssignment = prompt; next.phaseAssignmentPending = true; store.save(next);

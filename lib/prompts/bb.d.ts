@@ -14,6 +14,7 @@ export function createBbInstructionDelivery(role: BbInstructionRole, context: {
   snapshot?: { head: string; base: string; dirty: boolean; diffPath: string };
   gateRecords?: readonly string[];
   launchContext?: unknown;
+  commandAdmission?: { format: 'promptobus-bb-command-admission-v1'; role: BbInstructionRole };
   evidenceManifest?: unknown;
   bridgeCheck?: string;
 }): { configuration: { tools: string[]; skills: string[]; instructions: string }; initialPrompt: string };

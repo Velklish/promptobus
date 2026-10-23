@@ -75,6 +75,13 @@ export const bindingSchema = z.object({
   predecessors: z.object({ worker: z.string().regex(PARTICIPANT_ID_RE), reviewer: z.string().regex(PARTICIPANT_ID_RE) }).strict().optional(),
 }).strict();
 export type Binding = z.infer<typeof bindingSchema>;
+export const COMMAND_ADMISSION_FORMAT = 'promptobus-bb-command-admission-v1' as const;
+export const commandAdmissionSchema = z.object({
+  format: z.literal(COMMAND_ADMISSION_FORMAT), role: roleSchema,
+  launchContext: launchContextSchema, commandId: z.string().min(1),
+}).strict();
+export type CommandBinding = Pick<Binding, 'task' | 'participant' | 'role' | 'projectId' | 'environmentPath'
+  | 'hostId' | 'root' | 'branch' | 'baseSha' | 'launchContext'>;
 export const launchSchema = z.object({
   attemptId: z.string().uuid(), assignment: z.string(), model: z.string(), reasoningLevel: reasoningSchema.optional(), baseBranch: z.string().optional(),
   environmentPath: z.string().min(1).optional(),

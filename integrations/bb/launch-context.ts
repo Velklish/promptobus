@@ -73,7 +73,7 @@ export function validateControl(context: LaunchContext, input: unknown) {
   return current;
 }
 
-export function validateLaunchContext(binding: Binding, input: unknown, tools: readonly string[]) {
+export function validateLaunchContext(binding: Pick<Binding, 'role' | 'task' | 'participant' | 'environmentPath' | 'branch' | 'baseSha'>, input: unknown, tools: readonly string[]) {
   if (input === undefined) throw new Error('launch context is required before substantive assignment');
   const parsed = launchContextSchema.safeParse(input);
   if (!parsed.success) throw new Error(`launch context: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`);

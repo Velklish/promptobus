@@ -5,16 +5,16 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { assertBbDirectCommand, recordBbDirectCommand, underLease, leaseRoot, keyedCommandPlan } from 'promptobus/bb-host';
-import { bindingSchema, toolsFor } from './protocol.js';
+import { toolsFor } from './protocol.js';
+import { parseCommandAdmission } from './command-admission.js';
 import { readDeclaredFile, underRoots, validateLaunchContext } from './launch-context.js';
 import { writeFileAtomic } from 'promptobus/host';
 import { controlReferenceSchema, commandCallSchema } from './control-schema.js';
 import { commandReference, commandTerminal, admitCommand, completeCommand, executionCommand, commandDigest } from './control.js';
 import { BUILD_IDENTITY } from './build-identity.js';
-import type { Binding } from './protocol.js';
+import type { CommandBinding } from './protocol.js';
 import type { ExecutionCommand } from './control-schema.js';
 
-const inputSchema = z.object({ binding: bindingSchema, commandId: z.string().min(1) }).strict();
 type Invocation = { command: string[]; stem: string; by: string };
 function directory(file: string, roots: string[]) {
   if (path.resolve(file) !== file || realpathSync(file) !== file || !statSync(file).isDirectory() || !underRoots(file, roots)) {
@@ -31,7 +31,7 @@ function validateCommandEnvironment(command: ExecutionCommand) {
     throw new Error('exact environment must configure TMPDIR/TMP/TEMP and XDG cache/config/state/data and npm cache/logs from granted roots');
   }
 }
-export function validateCommandPaths(binding: Binding, command: ExecutionCommand) {
+export function validateCommandPaths(binding: CommandBinding, command: ExecutionCommand) {
   const launch = binding.launchContext!;
   for (const root of launch.readRoots) directory(root, launch.readRoots);
   for (const root of launch.ownedRoots) directory(root, launch.readRoots);
@@ -43,7 +43,7 @@ export function validateCommandPaths(binding: Binding, command: ExecutionCommand
   validateCommandEnvironment(command);
 }
 function parseInvocation(input: unknown, invocation: Invocation) {
-  const { binding, commandId } = inputSchema.parse(input), command = executionCommand(binding, commandId);
+  const { binding, commandId } = parseCommandAdmission(input), command = executionCommand(binding, commandId);
   if (invocation.by !== binding.launchContext!.grant.actor || invocation.stem !== command.output || !isDeepStrictEqual(invocation.command, command.argv)) {
     throw new Error('invocation must equal the immutable command argv, output and actor');
   }
@@ -151,7 +151,8 @@ export async function commandMain(argv: string[]) {
   if (argv.indexOf('--') !== 6 || argv[0] !== '--admission' || argv[2] !== '--output' || argv[4] !== '--by' || !argv[7]
     || !path.isAbsolute(argv[1])) throw new Error('usage: command-runner [--preflight] --admission <absolute-input.json> --output <absolute-stem> --by <actor> -- <executable> [args]');
   const input = JSON.parse(readDeclaredFile(argv[1], [path.dirname(argv[1])], 1024 * 1024).toString('utf8'));
-  if (!input.binding?.launchContext || !underRoots(realpathSync(argv[1]), input.binding.launchContext.ownedRoots)) throw new Error('admission input must be in a declared owned root');
+  const { binding } = parseCommandAdmission(input);
+  if (!binding.launchContext || !underRoots(realpathSync(argv[1]), binding.launchContext.ownedRoots)) throw new Error('admission input must be in a declared owned root');
   if (preflight) return { observation: preflightCommand(input, { command: argv.slice(7), stem: argv[3], by: argv[5] }), exitCode: 0 };
   return runBoundedCommand(input, { command: argv.slice(7), stem: argv[3], by: argv[5] });
 }

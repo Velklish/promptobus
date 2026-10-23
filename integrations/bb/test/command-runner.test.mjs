@@ -74,6 +74,7 @@ async function fixture(t, shared = null) {
       output, buildRoot: build, tmpRoot: tmp, cacheRoot: cache, exclusiveKeys: key ? [key] : [build, tmp, cache], measurementScope: scope };
     for (const key of omitEnv) delete command.env[key];
     const b = structuredClone(binding); b.participant = actor; b.role = 'worker'; b.environmentId = `env-${actor}`; b.environmentPath = directory;
+    b.launchContext.role = launchFixture(task, actor, 'worker', directory).role;
     b.launchContext.ownedRoots = [directory]; b.launchContext.readRoots = reference.readRoots;
     b.launchContext.grant = { ...b.launchContext.grant, actor, token: randomUUID(), phase: 'test', scope: { ...b.launchContext.grant.scope, repository: directory }, execution: { commands: [command] } };
     update({ grants: { ...current().grants, [actor]: b.launchContext.grant } });
@@ -147,6 +148,64 @@ test('setup preflight creates only declared directories before task admission wi
   f.untouched();
   const repeated = await f.run(); assert.equal(repeated.exit, 0, repeated.stderr);
   assert.deepEqual(JSON.parse(repeated.stdout).createdDirectories, []); f.untouched();
+});
+
+test('public token-free command input prepares owned paths before any task or runtime binding exists', async t => {
+  const f = setupFixture(t);
+  fs.writeFileSync(f.input, JSON.stringify({ format: 'promptobus-bb-command-admission-v1', role: 'worker',
+    launchContext: f.binding.launchContext, commandId: f.command.id }));
+  const result = await f.run();
+  assert.equal(result.exit, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).substantiveCommandStarted, false);
+  assert.equal(fs.existsSync(f.command.tmpRoot), true); f.untouched();
+});
+
+for (const invalid of ['version', 'role', 'literal', 'mixed', 'bridge-token', 'missing-context', 'legacy-control']) {
+  test(`public command input rejects ${invalid} before creating setup paths`, async t => {
+    const f = setupFixture(t);
+    const input = { format: 'promptobus-bb-command-admission-v1', role: 'worker', launchContext: f.binding.launchContext, commandId: f.command.id };
+    if (invalid === 'version') input.format = 'unknown';
+    if (invalid === 'role') delete input.role;
+    if (invalid === 'literal') input.launchContext.role.literal = 'Unbound role';
+    if (invalid === 'mixed') input.binding = f.binding;
+    if (invalid === 'bridge-token') input.token = randomUUID();
+    if (invalid === 'missing-context') delete input.launchContext;
+    if (invalid === 'legacy-control') input.launchContext.control = { mode: 'inline', snapshot: {} };
+    fs.writeFileSync(f.input, JSON.stringify(input));
+    const result = await f.run(); assert.equal(result.exit, 1);
+    assert.equal(fs.existsSync(f.createdRoot), false); f.untouched();
+  });
+}
+
+for (const denied of ['STOP', 'revoked', 'scope', 'argv', 'actor', 'output']) {
+  test(`public command input preserves ${denied} refusal before spawning a child`, async t => {
+    const f = await fixture(t), m = f.member('public-worker', { code: `require('fs').writeFileSync('entered','unexpected')` });
+    const input = { format: 'promptobus-bb-command-admission-v1', role: 'worker', launchContext: m.binding.launchContext, commandId: m.command.id };
+    if (denied === 'STOP') f.update({ STOP: true });
+    if (denied === 'revoked') { const grants = { ...f.current().grants }; delete grants['public-worker']; f.update({ grants }); }
+    if (denied === 'scope') input.launchContext.grant.scope.repository = f.root;
+    if (denied === 'argv') input.launchContext.grant.execution.commands[0].argv = [process.execPath, '-e', 'changed'];
+    if (denied === 'actor') input.launchContext.grant.actor = 'another-worker';
+    if (denied === 'output') input.launchContext.grant.execution.commands[0].output += '-changed';
+    fs.writeFileSync(m.input, JSON.stringify(input));
+    const result = await f.run(m).done; assert.equal(result.exit, 1, result.stderr);
+    assert.equal(fs.existsSync(m.marker), false);
+  });
+}
+
+test('public command input rereads revocation and accepts only the newly published exact phase', async t => {
+  const f = await fixture(t), m = f.member('public-worker', { code: `require('fs').writeFileSync('entered','actual');process.exitCode=7` });
+  const input = { format: 'promptobus-bb-command-admission-v1', role: 'worker', launchContext: structuredClone(m.binding.launchContext), commandId: m.command.id };
+  fs.writeFileSync(m.input, JSON.stringify(input));
+  const next = structuredClone(m.binding.launchContext.grant); next.token = randomUUID(); next.phase = 'fresh';
+  next.execution.commands[0].id = 'fresh'; next.execution.commands[0].output += '-fresh';
+  f.update({ grants: { ...f.current().grants, 'public-worker': next } });
+  assert.equal((await f.run(m).done).exit, 1); assert.equal(fs.existsSync(m.marker), false);
+  input.launchContext.grant = next; input.commandId = 'fresh'; m.command = next.execution.commands[0]; m.output = m.command.output;
+  fs.writeFileSync(m.input, JSON.stringify(input));
+  const fresh = await f.run(m).done; assert.equal(fresh.exit, 7, fresh.stderr); assert.equal(fs.readFileSync(m.marker, 'utf8'), 'actual');
+  assert.equal(f.receipt(m).admission.token, next.token);
+  assert.equal((await f.run(m).done).exit, 1, 'the fresh immutable command remains single use');
 });
 
 test('actual execution without setup refuses missing declared directories before command entry', async t => {

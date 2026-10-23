@@ -138,8 +138,8 @@ export async function validateReviewEvidence(input: unknown, expected: { source:
     if (!outer || outer === command || outer.kind !== 'verification' || terminalReceipts.has(outer.receipt)
       || receipts.get(outer.receipt)!.admission !== undefined) throw new Error('review evidence manifest: terminal launcher must be a distinct original verification command');
     terminalReceipts.add(outer.receipt);
-    const [{ bindingSchema }, { commandDigest }] = await Promise.all([import('./protocol.js'), import('./control.js')]);
-    const admission = z.object({ binding: bindingSchema, commandId: text }).strict().parse(JSON.parse(rawContent(finalization.admission, 'admission')));
+    const [{ parseCommandAdmission }, { commandDigest }] = await Promise.all([import('./command-admission.js'), import('./control.js')]);
+    const admission = parseCommandAdmission(JSON.parse(rawContent(finalization.admission, 'admission')));
     for (const id of finalization.admission.parts) finalizationRaw.add(id);
     const grant = admission.binding.launchContext?.grant;
     const executed = grant?.execution?.commands.find(candidate => candidate.id === admission.commandId);
@@ -152,7 +152,8 @@ export async function validateReviewEvidence(input: unknown, expected: { source:
       || grant.actor !== command.by || outer.by !== command.by || outer.tree !== command.tree
       || receipts.get(outer.receipt)!.cwd !== executed.cwd || outer.exit !== command.exit
       || admission.binding.task !== grant.task || admission.binding.participant !== grant.actor
-      || admission.binding.environmentPath !== grant.scope.repository || admission.binding.baseSha !== manifest.base
+      || admission.binding.environmentPath !== grant.scope.repository || admission.binding.baseSha !== grant.scope.base
+      || admission.binding.branch !== grant.scope.branch
       || !isDeepStrictEqual(receipt.admission, { task: grant.task, token: grant.token, phase: grant.phase,
         commandId: executed.id, commandSha256: commandDigest(executed) })) {
       throw new Error('review evidence manifest: terminal launcher invocation/actor/source/output/admission mismatch');

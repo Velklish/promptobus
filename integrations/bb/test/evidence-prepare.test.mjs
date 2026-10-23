@@ -16,11 +16,13 @@ import { engineOperation } from '../.test-build/engine-host.js';
 import { launchFixture } from './evidence-fixture.mjs';
 
 const runner = fileURLToPath(new URL('../.test-build/command-runner.js', import.meta.url));
-async function fixture(t, { admitted = false, exit = 0 } = {}) {
+async function fixture(t, { admitted = false, exit = 0, publicInput = false, differentReviewBase = false } = {}) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pb-direct-receipt-'))), repo = path.join(root, 'repo');
   fs.mkdirSync(repo);
   const git = (...args) => execFileSync('git', ['-C', repo, ...args], { stdio: 'pipe' }).toString().trim();
   git('init', '--quiet'); git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--allow-empty', '--quiet', '-m', 'Fixture');
+  const reviewBase = git('rev-parse', 'HEAD');
+  if (differentReviewBase) git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--allow-empty', '--quiet', '-m', 'Candidate');
   fs.appendFileSync(path.join(repo, '.git/info/exclude'), '\n.promptobus/\n');
   const source = git('rev-parse', 'HEAD'), task = newTaskIdentity('evidence').id;
   const binding = { task, participant: 'orchestrator', role: 'orchestrator', projectId: 'project', environmentId: 'environment', environmentPath: repo,
@@ -28,6 +30,7 @@ async function fixture(t, { admitted = false, exit = 0 } = {}) {
     lifecycleOwnerThreadId: null, environmentOwner: 'existing', branch: 'main', baseSha: source,
     launchContext: launchFixture(task, 'orchestrator', 'orchestrator', root, 'main', source) };
   const grant = binding.launchContext.grant; grant.scope.repository = repo; grant.token = randomUUID();
+  if (publicInput) binding.launchContext.ownedRoots.push(repo);
   const reference = { directory: path.join(root, 'control'), owner: { task, participant: 'orchestrator', projectId: 'project', environmentId: 'environment', hostId: 'local', root: repo }, readRoots: [root] };
   binding.launchContext.control = { mode: 'current', reference };
   const counter = path.join(root, 'counter'), output = path.join(root, 'gate');
@@ -61,19 +64,21 @@ async function fixture(t, { admitted = false, exit = 0 } = {}) {
     return result;
   };
   const checks = Object.fromEntries(['verdictNames', 'mutationProbe', 'treeState', 'environmentalRed', 'gatesNotRun'].map(name => [name, { status: 'notRun', reason: 'This fixture exercises originals, not repository acceptance.' }]));
-  const baseInventory = write('inventory-base.txt', { tree: source, by: 'orchestrator', status: 'notMeasured', reason: 'No verdict inventory measured in fixture.' });
+  const baseInventory = write('inventory-base.txt', { tree: reviewBase, by: 'orchestrator', status: 'notMeasured', reason: 'No verdict inventory measured in fixture.' });
   const sourceInventory = write('inventory-source.txt', { tree: source, by: 'orchestrator', status: 'notMeasured', reason: 'No verdict inventory measured in fixture.' });
-  const input = { source, base: source, producer: 'orchestrator', relayer: 'orchestrator', requiredGates: [argv], requirePassingGates: true,
+  const input = { source, base: reviewBase, producer: 'orchestrator', relayer: 'orchestrator', requiredGates: [argv], requirePassingGates: true,
     checks, commands: [{ receipt: `${output}.receipt.txt`, kind: 'gate' }], inventories: { base: baseInventory, source: sourceInventory }, derived: path.join(root, 'derived') };
   let original;
   if (admitted) {
-    const admission = write('admission.json', { binding, commandId: 'gate' }), outerStem = path.join(root, 'launcher');
+    const admission = write('admission.json', publicInput
+      ? { format: 'promptobus-bb-command-admission-v1', role: binding.role, launchContext: binding.launchContext, commandId: 'gate' }
+      : { binding, commandId: 'gate' }), outerStem = path.join(root, 'launcher');
     const invocation = [process.execPath, runner, '--admission', admission, '--output', output, '--by', 'orchestrator', '--', ...argv];
     original = await recordBbDirectCommand({ command: invocation, stem: outerStem, by: 'orchestrator', cwd: repo });
     input.commands[0].finalization = { receipt: `${outerStem}.receipt.txt`, admission };
     input.commands.push({ receipt: `${outerStem}.receipt.txt`, kind: 'verification' });
   } else original = await recordBbDirectCommand({ command: argv, stem: output, by: 'orchestrator', cwd: repo });
-  const expected = { source, base: source, producer: 'orchestrator', requiredGates: [argv], requirePassingGates: true };
+  const expected = { source, base: reviewBase, producer: 'orchestrator', requiredGates: [argv], requirePassingGates: true };
   const prepare = async (value = input) => prepareCurrentReviewEvidence(value, { readOriginal: async file => fs.readFileSync(file, 'utf8'), uploaded: upload });
   const stage = async (value = input) => {
     const { files, derived } = await currentEvidenceFiles(value, { readOriginal: async file => fs.readFileSync(file, 'utf8') });
@@ -151,6 +156,36 @@ test('real checked launcher original terminal JSON links gate, admission and out
     f.change(changed, id, raw => { const receipt = JSON.parse(raw); receipt.admission[field] = value; return JSON.stringify(receipt); });
     await assert.rejects(f.validate(changed), /admission mismatch/); f.records.set(id, saved);
   }
+});
+
+test('public command admission survives original upload and independent review evidence validation', async t => {
+  const f = await fixture(t, { admitted: true, publicInput: true });
+  assert.equal(f.original.exitCode, 0);
+  const manifest = await f.stage();
+  assert.equal((await f.validate(manifest)).commands[0].exit, 0);
+  assert.equal(fs.readFileSync(f.counter, 'utf8'), 'one\n');
+});
+
+for (const publicInput of [false, true]) test(`${publicInput ? 'public' : 'supplied-binding'} command evidence preserves a launch base distinct from the review diff base`, async t => {
+  const f = await fixture(t, { admitted: true, publicInput, differentReviewBase: true });
+  assert.equal(f.original.exitCode, 0);
+  assert.notEqual(f.binding.baseSha, f.input.base);
+  assert.equal(f.binding.baseSha, f.grant.scope.base);
+  const manifest = await f.stage();
+  assert.equal((await f.validate(manifest)).commands[0].tree, f.source);
+  assert.equal(fs.readFileSync(f.counter, 'utf8'), 'one\n');
+});
+
+for (const field of ['baseSha', 'branch']) test(`command evidence rejects a supplied binding ${field} that differs from its immutable grant scope`, async t => {
+  const f = await fixture(t, { admitted: true, differentReviewBase: true }), manifest = await f.stage();
+  const scope = manifest.commands[0].finalization.admission, id = scope.parts[0];
+  f.change(manifest, id, raw => {
+    const input = JSON.parse(raw); input.binding[field] = field === 'baseSha' ? manifest.base : 'other-branch';
+    return JSON.stringify(input);
+  });
+  scope.bytes = f.records.get(id).size; scope.sha256 = f.records.get(id).sha256;
+  await assert.rejects(f.validate(manifest), /admission mismatch/);
+  assert.equal(fs.readFileSync(f.counter, 'utf8'), 'one\n');
 });
 
 test('matching launcher exits cannot replace exact terminal frame or exact checked invocation', async t => {

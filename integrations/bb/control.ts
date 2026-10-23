@@ -7,7 +7,7 @@ import { withDirLock, writeFileAtomic } from 'promptobus/host';
 import { z } from 'zod';
 import { commandCallSchema, executionCommandSchema, commandGrantSchema, controlPublicationSchema, controlReferenceSchema, currentControlSchema, tokenRecordSchema } from './control-schema.js';
 import type { CommandGrant, ControlOutcome, ControlPublication, ControlReference, ExecutionCommand, CommandRef } from './control-schema.js';
-import type { Binding } from './protocol.js';
+import type { Binding, CommandBinding } from './protocol.js';
 import { readDeclaredFile, underRoots } from './launch-context.js';
 
 export const CURRENT_LIMIT = 1024 * 1024;
@@ -93,7 +93,7 @@ function ownerMatches(binding: Binding, reference: ControlReference) {
     && binding.projectId === owner.projectId && binding.environmentId === owner.environmentId && binding.hostId === owner.hostId
     && binding.root === owner.root && binding.environmentPath === owner.root;
 }
-export function canonicalControl(binding: Binding, reference: ControlReference) {
+export function canonicalControl(binding: Pick<Binding, 'task'>, reference: ControlReference) {
   const engine = engineFor(reference);
   const task = engine.readTask(binding.task);
   const adapter = task.adapter.bb as { hostId?: string; root?: string; currentControl?: unknown } | undefined;
@@ -186,17 +186,17 @@ function fenceTransition(reference: ControlReference, publication: ControlPublic
   }
   return unresolved;
 }
-export function commandReference(binding: Binding, command: ExecutionCommand): CommandRef {
+export function commandReference(binding: CommandBinding, command: ExecutionCommand): CommandRef {
   const grant = binding.launchContext!.grant;
   return { actor: grant.actor, token: grant.token, phase: grant.phase, commandId: command.id,
     output: command.output, measurementScope: command.measurementScope, commandSha256: commandDigest(command) };
 }
-export function executionCommand(binding: Binding, commandId: string) {
+export function executionCommand(binding: CommandBinding, commandId: string) {
   const command = binding.launchContext?.grant.execution?.commands.find(command => command.id === commandId);
   if (!command) blocked('command-mismatch', 'the exact immutable grant must contain this command id');
   return command;
 }
-export function admitCommand<T>(binding: Binding, commandId: string, start: () => T, validate: () => void = () => {}): T {
+export function admitCommand<T>(binding: CommandBinding, commandId: string, start: () => T, validate: () => void = () => {}): T {
   const launch = binding.launchContext;
   if (!launch || launch.control.mode !== 'current') blocked('migration-required', 'bounded execution requires canonical current control');
   const reference = controlReferenceSchema.parse(launch.control.reference), engine = engineFor(reference);
@@ -230,7 +230,7 @@ export function admitCommand<T>(binding: Binding, commandId: string, start: () =
     return start();
   }));
 }
-export function completeCommand(binding: Binding, commandId: string) {
+export function completeCommand(binding: CommandBinding, commandId: string) {
   const launch = binding.launchContext;
   if (!launch || launch.control.mode !== 'current') blocked('migration-required', 'bounded execution requires current control');
   const reference = launch.control.reference, ref = commandReference(binding, executionCommand(binding, commandId));

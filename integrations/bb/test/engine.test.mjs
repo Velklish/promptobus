@@ -5,6 +5,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync, realpathSync, existsSync, renameSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createFakePluginHost, makeThreadResponse, makePluginAgentConfigurationContext, makeMessageDispatchHookContext } from '@get-bb/plugin-sdk/testing';
 import { openEngine, newTaskIdentity } from 'promptobus';
 import plugin from '../.test-build/server.js';
@@ -477,6 +478,40 @@ test('source reviewer refuses missing original manifest before any reviewer spaw
   assert.equal(s.spawns.length, before);
 });
 
+test('public launch supplies token-free command input that executes the exact child without private binding reads', async t => {
+  const s = await stand(t);
+  execFileSync('git', ['init', '--quiet', '--initial-branch=main', s.root]);
+  execFileSync('git', ['-C', s.root, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--quiet', '--allow-empty', '-m', 'Fixture']);
+  assert.equal((await s.create()).exitCode, 0);
+  const launch = launchFixture(s.task, 'command-worker', 'worker', s.root);
+  launch.readRoots = [s.root];
+  const tmp = path.join(s.root, 'tmp'), cache = path.join(s.root, 'cache'), build = path.join(s.root, 'build'), leases = path.join(s.root, 'leases');
+  for (const directory of [tmp, cache, build, leases]) mkdirSync(directory);
+  const marker = path.join(s.root, 'entered'), output = path.join(s.root, 'command');
+  const argv = [process.execPath, '-e', `require('fs').writeFileSync(${JSON.stringify(marker)},'actual child');process.stdout.write('original output');process.exitCode=7`];
+  launch.grant.execution = { commands: [{ id: 'actual', argv, cwd: s.root,
+    env: { TMPDIR: tmp, TMP: tmp, TEMP: tmp, XDG_CACHE_HOME: cache, XDG_CONFIG_HOME: cache, XDG_STATE_HOME: cache, XDG_DATA_HOME: cache,
+      npm_config_cache: cache, NPM_CONFIG_CACHE: cache, npm_config_logs_dir: cache, NPM_CONFIG_LOGS_DIR: cache, PROMPTOBUS_LEASE_DIR: leases },
+    output, buildRoot: build, tmpRoot: tmp, cacheRoot: cache, exclusiveKeys: [], measurementScope: s.root }] };
+  assert.equal((await s.add('command-worker', 'worker', ['--launch-context', JSON.stringify(launch)])).exitCode, 0);
+  const prompt = s.initialArgs.prompt;
+  const context = JSON.parse(prompt.split('## Runtime task context\n\n')[1].split('\n\n')[0]);
+  assert.deepEqual(context.commandAdmission, { format: 'promptobus-bb-command-admission-v1', role: 'worker' });
+  assert.equal(Object.hasOwn(context, 'binding'), false);
+  const task = JSON.parse(await s.call('thr-2', 'promptobus_task'));
+  assert.equal(task.participant, 'command-worker');
+  const input = { ...context.commandAdmission, launchContext: context.launchContext, commandId: 'actual' };
+  assert.equal(Object.hasOwn(input, 'token'), false);
+  const file = path.join(s.root, 'admission.json'); writeFileSync(file, JSON.stringify(input));
+  const runner = new URL('../.test-build/command-runner.js', import.meta.url);
+  const result = spawnSync(process.execPath, [runner.pathname, '--admission', file, '--output', output, '--by', task.participant, '--', ...argv], { encoding: 'utf8' });
+  assert.equal(result.status, 7, result.stderr);
+  assert.equal(readFileSync(marker, 'utf8'), 'actual child');
+  const receipt = JSON.parse(readFileSync(`${output}.receipt.txt`, 'utf8'));
+  assert.equal(receipt.exit, 7); assert.equal(receipt.complete, true);
+  assert.equal(readFileSync(`${output}.stdout.txt`, 'utf8'), 'original output');
+});
+
 test('review initial immutable assignment holds every original ID readable through the bound BB artifact tool', async t => {
   const s = await stand(t); await s.create();
   assert.equal((await s.add('original-review', 'reviewer')).exitCode, 0);
@@ -543,6 +578,9 @@ test('fresh evidence repair keeps the actor, ends the old token and supplies eve
   assert.equal(delivered, undefined); assert.equal(s.spawns.length, 2);
   const accepted = await resume(['--evidence-manifest', JSON.stringify(f.manifest)]);
   assert.equal(accepted.exitCode, 0, accepted.stderr);
+  const freshContext = JSON.parse(delivered.split('## Runtime task context\n\n')[1].split('\n\n')[0]);
+  assert.deepEqual(freshContext.commandAdmission, { format: 'promptobus-bb-command-admission-v1', role: 'reviewer' });
+  assert.equal(delivered.includes(before.token), false, 'fresh delivery must not expose the bridge credential');
   assert.ok(delivered.includes('fresh-evidence-phase')); for (const ref of f.manifest.artifacts) assert.ok(delivered.includes(ref.id));
   const after = bindingStore(s.host.bb).thread('thr-2');
   assert.equal(after.participant, before.participant); assert.equal(after.token, before.token); assert.equal(after.threadId, before.threadId);

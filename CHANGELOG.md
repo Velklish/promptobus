@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Supply a token-free BB command-admission descriptor in initial and fresh task
+  context. Checked commands and setup preflight use the supplied current grant
+  without requiring private bridge credentials; existing identity and resource
+  checks remain in force.
+- Validate captured BB command branch/base against its immutable grant separately
+  from the review diff base, allowing review of a pre-existing candidate from an
+  earlier base while retaining exact source and original receipt checks.
+
 ## [0.29.0] — 2026-10-22
 
 - Clarify generated role guidance, the independent reader/Host version, Host
