@@ -18,7 +18,7 @@
       "skills/**"
     ]
   },
-  "version": "0.21.0",
+  "version": "1.0.0",
   "source": "https://github.com/Velklish/backslop.git",
   "lang": "en",
   "tools": [

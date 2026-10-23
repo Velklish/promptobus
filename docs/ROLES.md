@@ -16,7 +16,7 @@ This file belongs to backslop: an update (`npx --no-install backslop upgrade`, t
   - put an entry in the queue and choose its place;
   - defer it with a return condition.
 - Verifies a factual claim of an entry with evidence before queuing it, and rewrites unverified text as a hypothesis.
-- Asks the owner only before rejecting an entry: a finding discarded without asking will not be rediscovered.
+- Asks the owner **only before rejecting** an entry: a finding discarded without asking will not be rediscovered.
 
 ## Owner
 

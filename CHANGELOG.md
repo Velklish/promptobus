@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Update the local Backslop dependency and managed project guidance to v1.0.0.
+  Keep generated skills ignored and version the `CLAUDE.md` import for fresh
+  checkouts. Preserve the archived task identity note in the agent guide.
+
 ### Fixed
 
 - Supply a token-free BB command-admission descriptor in initial and fresh task

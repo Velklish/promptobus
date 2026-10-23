@@ -16,5 +16,4 @@ coverage/
 .claude/skills/backslop-*
 .cursor/rules/backslop-*
 .agents/skills/backslop-*
-/CLAUDE.md
 # backslop:end
