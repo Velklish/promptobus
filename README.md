@@ -115,8 +115,9 @@ from a plain terminal, `promptobus ask "What is complete?" --task <id>` asks it 
 `promptobus ask --answers --task <id>` reads its replies. Its private home avoids a shared
 project layer. Selected skills support an aliased system temporary directory while
 preserving the participant's home identity and refusing links inside its private container.
-Before idle turns, the holder reloads fresh owner access in the same native
-thread. If owner access expires, renew the normal owner login and retry. Participants never
+Before model input, the holder refuses changed owner access and requires a fresh lift.
+If owner access expires, renew the normal owner login and perform a fresh lift. A retained
+managed root uses `lead --resume` after confirmed Stop to start a new app-server. Participants never
 receive the owner's refresh token. See [Lead](https://github.com/Velklish/promptobus/blob/v0.29.0/docs/reference/03-cli.md).
 
 The managed root requires explicit `full-access`: `workspace-write` participant lifts are

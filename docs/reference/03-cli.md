@@ -93,9 +93,11 @@ and owner stayed unchanged. [Cold-root evidence](../../test/fixtures/codex-app-s
 The same public assignment injection materialized an empty native thread on
 [0.158.0](../../test/fixtures/codex-app-server/0.158.0/ManagedRootAssignment-0.158.0-2026-10-01.json).
 
-Long-lived holders accept fresh owner access before an idle turn through the same native
-app-server; they never rotate the owner's refresh token. Expired owner access requires
-normal owner login and a retry. The source, guards and evidence are in
+Long-lived holders refuse changed owner access before the next model input and require
+a fresh lift. Expired owner access requires normal owner sign-in and a fresh lift too.
+For a retained managed root, confirm Stop before `lead --resume` starts a new app-server
+from fresh access-only credentials; unresolved Stop and launch admission still apply.
+Participants never rotate the owner's refresh token. The source, guards and evidence are in
 [participant authentication](05-drivers.md#codex-participant-authentication).
 
 ## Spawn

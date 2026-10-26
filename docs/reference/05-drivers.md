@@ -937,7 +937,7 @@ removes nothing. Managed root `lead --resume` and `prepareRootLaunch` still use
 their separate PID-based recovery contract. Managed root lead requires explicit
 full access and is outside the restricted attached-controller profile here; these
 changes do not certify that route as terminally safe.
-Model input rechecks launch ownership and persistent `stopping` after auth reload,
+Model input rechecks launch ownership and persistent `stopping` after the auth check,
 under the existing launch transition lock through synchronous RPC enqueue.
 
 A response near the deadline may leave a confirmed record after holder exit. A later
@@ -1154,29 +1154,40 @@ They cannot rotate the owner's OAuth refresh token. A lift requires a decodable 
 expiry at least ten minutes ahead; otherwise it refuses before starting a model turn and
 names the owner's Codex home and sign-in. API-key files retain their native format.
 
-Before each new model turn, the holder compares the latest owner access snapshot with
-its private file and last loaded snapshot. A changed snapshot from the original account
-is copied without its refresh token, then public `account/read(refreshToken: false)` reloads
-the existing app-server before that turn. Turn requests serialize this check and RPC;
-an active or accepted turn refuses a changed snapshot before any private write. Reservations
-track accepted and started turn ids: a delayed completion releases only its own turn,
-and an idle notification cannot clear a queued turn's reservation. Failed
-reloads remain pending for a later retry. A changed account or auth mode refuses.
+Before each model input, the holder compares the latest owner access snapshot and
+its private file with the snapshot captured when the holder started.
+A changed owner sign-in/access snapshot requires a fresh lift before another model turn.
+This includes same-account access changes, a changed account or auth mode, and missing
+credentials. Invalid or expiring owner access also refuses. The refusal persists for
+the holder's lifetime, including after an active turn ends or the old file is restored.
+The holder neither rewrites its private snapshot nor calls `account/read` to reload it.
+Turn requests serialize the check and RPC; launch ownership, Stop and active-turn
+reservations still govern admission. A delayed completion releases only its own turn,
+and an idle notification cannot clear a queued turn's reservation.
 
 The session record stores the durable owner-home path, never credentials. A host can name
 `PROMPTOBUS_CODEX_OWNER_HOME` to keep that source separate from an ephemeral `CODEX_HOME`;
 without it, `CODEX_HOME` or `~/.codex` supplies the source. The participant never writes there.
 If the owner has no fresh access token, the ten-minute expiry guard refuses another turn;
-renew the owner through its normal login, then retry. The mechanism does not refresh the
+renew the owner through its normal login, then perform a fresh lift. The mechanism does not refresh the
 owner's login, interrupt an active turn to change auth, or use the internal-only
 `chatgptAuthTokens` API. An inactive retained managed root can instead use `lead --resume`
-with the same native identity. A lift reads the latest owner credentials.
+with the same native identity after confirmed Stop. That supported lift creates a new
+app-server from fresh access-only credentials under the existing lifecycle guards;
+it does not bypass an unresolved Stop or restart the running holder automatically.
 
 On Codex 0.159.2, an initial invalid cached access failed with HTTP 401. After the disposable
 owner received fresh access, the next turn returned `AUTH_RELOAD_RECOVERED` in the same
 thread, holder and app-server; both owner files stayed unchanged and the private refresh
 token stayed empty. [Native reload evidence](../../test/fixtures/codex-app-server/0.159.2/ParticipantAuthReload-0.159.2-2026-10-01.json).
-The real OAuth token-rotation hypothesis was not forced on the owner's account.
+This historical 0.159.2 run does not establish hot reload on 0.164.0.
+In a synthetic 0.164.0 audit on 2026-10-26, repeated `account/read(refreshToken: false)`
+retained old metadata after same-account file replacement. The app-server exited 0;
+the outer fixture exited 1 because its proxy guard rejected a background CONNECT.
+This bounded metadata observation does not prove a real-account model-turn failure
+or actual OAuth rotation. The [0.164.0 account processor](https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server/src/request_processors/account_processor.rs)
+does not provide an unconditional file-reload contract for that public call.
+The destructive real-owner OAuth token-rotation hypothesis remains unmeasured.
 The pinned 0.158.0 auth implementation reloads
 before refreshing, but its refresh semaphore is process-local; copying a renewable token
 to separate participant homes cannot provide shared refresh coordination.

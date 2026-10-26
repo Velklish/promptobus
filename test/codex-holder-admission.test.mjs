@@ -10,7 +10,7 @@ import { dropSession, holderAsk, pidAlive, readSession, sessionFile, waitReady, 
 
 for (const change of ['ownership', 'stopping', 'enqueue-lock']) {
 test(change === 'enqueue-lock' ? 'holder releases launch lock before awaiting the RPC response'
-  : 'holder refuses ' + change + ' changed during awaited auth reload', async () => {
+  : 'holder refuses ' + change + ' changed before queued model input', async () => {
   const root = makeSandbox('promptobus-admission-');
   const owner = path.join(root, 'owner'), privateHome = path.join(root, 'private');
   mkdirSync(owner); mkdirSync(privateHome);
@@ -31,7 +31,6 @@ for await (const line of readline.createInterface({input:process.stdin})) {
  appendFileSync(process.env.FIXTURE_TRACE,JSON.stringify({method,params})+'\\n');
  if(method==='initialize') { emit({id,result:{}}); emit({method:'account/rateLimits/updated',params:{primary:{usedPercent:0}}}); }
  else if(method==='thread/start') emit({id,result:{thread:{id:'actual-thread'},approvalPolicy:'on-request',sandbox:{type:'readOnly'}}});
- else if(method==='account/read') { writeFileSync(process.env.FIXTURE_WAITING,'waiting'); while(!existsSync(process.env.FIXTURE_RELEASE)) await new Promise(r=>setTimeout(r,5)); emit({id,result:{}}); }
  else if(method==='turn/start') { if(params.input?.[0]?.text==='pending-enqueue') { writeFileSync(process.env.FIXTURE_WAITING,'waiting'); while(!existsSync(process.env.FIXTURE_RELEASE)) await new Promise(r=>setTimeout(r,5)); } emit({id,result:{turn:{id:'idle-turn'}}}); emit({method:'turn/started',params:{id:'idle-turn'}}); setTimeout(()=>emit({method:'turn/completed',params:{id:'idle-turn',status:'completed'}}),20); }
  else emit({id,result:{}});
 }
@@ -59,18 +58,20 @@ for await (const line of readline.createInterface({input:process.stdin})) {
       await pending;
       return;
     }
-    writeFileSync(path.join(owner, 'auth.json'), auth('changed'));
+    const held = holderAsk(ref, 'rpc', { method: 'turn/start', params: { threadId: 'actual-thread',
+      input: [{ type: 'text', text: 'pending-enqueue' }] } }, env);
+    assert.equal(await waitFor(() => existsSync(waiting), { timeoutMs: 3000 }), true, 'fixture must hold the preceding RPC response');
     const pending = holderAsk(ref, 'rpc', { method: 'turn/start', params: {
       threadId: 'actual-thread', input: [{ type: 'text', text: 'must-not-dispatch' }],
     } }, env).then(result => ({ result }), error => ({ error: error.message }));
-    assert.equal(await waitFor(() => existsSync(waiting), { timeoutMs: 3000 }), true, 'fixture must hold the auth await');
     writeSession({ ...readSession(ref, env), ...(change === 'ownership'
       ? { launchId: 'replacement-launch' } : { stopping: true }) }, env);
     writeFileSync(release, 'release');
+    await held;
     const answer = await pending;
     const requests = readFileSync(trace, 'utf8').trim().split('\n').map(JSON.parse);
     assert.equal(requests.filter(r => r.method === 'turn/start' && r.params.input?.[0]?.text === 'must-not-dispatch').length, 0,
-      'lost ownership after auth await must prevent model input');
+      'changed launch state must prevent queued model input');
     assert.match(answer.error ?? '', change === 'ownership' ? /ownership changed/ : /stopping/);
     if (change === 'stopping') {
       const stopped = await holderAsk(ref, 'shutdown', { launchId: 'old-launch', deadlineAt: Date.now() + 1500 }, env, 2000);

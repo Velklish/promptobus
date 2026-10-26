@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Refuse changed Codex owner access before another model input and require a fresh
+  lift. Keep the running holder's access-only snapshot unchanged, retain the refusal
+  across retries, and preserve Stop and launch admission for the new app-server.
 - Reserve a fresh Codex approver launch before preparing its worktree and pass
   that identity through startup. Retain its base before setup can fail. Keep callback fencing and terminal-proof checks
   for earlier or unresolved launches.
