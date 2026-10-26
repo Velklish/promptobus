@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fence automatic BB system dispatch through a participant's pause and delivery
+  epoch, including senderless start and join attempts. System attention that
+  arrives during any delivery pause is rejected and not redelivered after
+  resume. Retain explicit user input under
+  current-grant validation, keep queued groups with user or agent input waiting
+  together and reject groups of system rows alone. A refused system dispatch
+  does not pause a resumed participant again. Provider start after the hook
+  returns still needs separate live verification.
 - Refuse changed Codex owner access before another model input and require a fresh
   lift. Keep the running holder's access-only snapshot unchanged, retain the refusal
   across retries, and preserve Stop and launch admission for the new app-server.
@@ -45,6 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bind both native teamlead seats to the actual new launch on same-slug relift.
   Validate and retain prior terminal proof until rebind; interrupted dispatch and
   changed generations refuse close or replay without overwriting evidence.
+- Select BB's public `stuck` parent-notification policy for new managed children,
+  avoiding routine completion wakes while retaining failure, interruption, and
+  approval or question attention. Final results use the canonical bus; existing
+  child policies and lifecycle ownership remain intact. Live turn savings remain
+  unmeasured.
 - Align the BB package's app and SDK compatibility declarations with the exact
   BB 0.47.1 / Plugin SDK 0.6.79 source profile. Keep other versions outside the
   current declaration until separately checked.

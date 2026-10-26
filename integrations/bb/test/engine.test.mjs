@@ -119,7 +119,8 @@ async function stand(t, options = {}) {
         initialArgs = args; spawns.push(args);
         nativeCatalogCleared = false;
         const thread = makeThreadResponse({ id: `thr-${++next}`, projectId: args.projectId, environmentId: args.environment.type === 'reuse' ? args.environment.environmentId : null, providerId: args.providerId,
-          parentThreadId: args.parentThreadId ?? null, lifecycleOwnerThreadId: args.lifecycleOwnerThreadId ?? null, title: options.titleUnconfirmed ? 'Unconfirmed title' : args.title });
+          parentThreadId: args.parentThreadId ?? null, lifecycleOwnerThreadId: args.lifecycleOwnerThreadId ?? null,
+          parentNotifications: options.childNotifications ?? args.parentNotifications ?? 'auto', title: options.titleUnconfirmed ? 'Unconfirmed title' : args.title });
         threads.set(thread.id, thread);
         executionOptions.set(thread.id, { model: args.model, reasoningLevel: args.reasoningLevel, permissionMode: args.permissionMode,
           serviceTier: args.serviceTier ?? options.projectServiceTier ?? 'default', source: 'client/thread/start' });
@@ -964,6 +965,150 @@ test('unknown BB model availability fails before a canonical task, binding or th
   assert.equal(result.exitCode, 1); assert.match(result.stderr, /model availability is unknown: timeout/);
   assert.equal(s.threads.size, 0); assert.equal(bindingStore(s.host.bb).task(s.task), undefined);
   assert.deepEqual(s.host.harness.inspection.experimental_hostRpcCalls.map(call => call.method), ['controlPublish']);
+});
+
+test('child notification policy uses stuck without changing parent or lifecycle ownership', async t => {
+  const s = await stand(t); assert.equal((await s.create()).exitCode, 0);
+  assert.equal(s.spawns[0].parentNotifications, undefined);
+  for (const role of ['worker', 'reviewer', 'teamlead', 'reporter']) {
+    const result = await s.add(`child-${role}`, role);
+    assert.equal(result.exitCode, 0, result.stderr);
+    const spawned = s.spawns.at(-1), actual = s.threads.get(JSON.parse(result.stdout).threadId);
+    assert.equal(spawned.parentNotifications, 'stuck'); assert.equal(actual.parentNotifications, 'stuck');
+    assert.equal(actual.parentThreadId, 'thr-1'); assert.equal(actual.lifecycleOwnerThreadId, 'thr-1');
+  }
+});
+
+test('an unconfirmed child notification policy retains an orphan and stops its thread', async t => {
+  const s = await stand(t, { childNotifications: 'auto' }); await s.create();
+  const result = await s.add('worker-one');
+  assert.equal(result.exitCode, 1); assert.match(result.stderr, /child parent notifications were not confirmed/);
+  const binding = bindingStore(s.host.bb).participant(s.task, 'worker-one');
+  assert.equal(binding.phase, 'orphan'); assert.equal(binding.threadId, 'thr-2');
+  assert.equal(s.events.at(-1), 'stop');
+});
+
+test('synthetic child completion replay leaves coordinator idle until one canonical result', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  assert.equal(s.spawns[1].parentNotifications, 'stuck');
+  const messages = [];
+  for (let i = 0; i < 80; i++) {
+    const sent = JSON.parse(await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'status', body: `Synthetic progress ${i}` }));
+    messages.push(sent.message.id); s.finish('thr-2');
+    for (let duplicate = 0; duplicate < 2; duplicate++) await s.host.harness.behavior.emitThreadEvent('thread.idle', { thread: s.threads.get('thr-2') });
+  }
+  await s.reconcile(); await s.reload(); await s.reconcile();
+  assert.equal(s.wakes.filter(wake => wake.threadId === 'thr-1').length, 0);
+  const result = JSON.parse(await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'result', body: 'Synthetic final result' }));
+  messages.push(result.message.id); await s.reconcile(); await s.reconcile();
+  const ownerWakes = s.wakes.filter(wake => wake.threadId === 'thr-1');
+  assert.equal(ownerWakes.length, 1);
+  for (const id of messages) assert.ok(ownerWakes[0].input[0].text.includes(id));
+  assert.deepEqual(JSON.parse(await s.call('thr-1', 'promptobus_mailbox', { mode: 'read' })).messages.map(m => m.id), messages);
+  assert.deepEqual(JSON.parse(await s.call('thr-1', 'promptobus_mailbox', { mode: 'read' })).messages, []);
+  s.finish('thr-1'); await s.reconcile(); assert.equal(s.wakes.filter(wake => wake.threadId === 'thr-1').length, 1);
+  assert.equal(s.spawns.length, 2);
+});
+
+for (const condition of ['STOP', 'ended']) test(`system child attention dispatch respects ${condition} coordinator grant`, async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  const contexts = ['Child failed', 'Child interrupted', 'Child approval pending', 'Child question pending'].map(text =>
+    makeMessageDispatchHookContext({ thread: s.threads.get('thr-1'), initiator: 'system', senderThreadId: null, origin: null,
+      originPluginId: null, input: { text, blocks: [{ type: 'text', text }] } }));
+  for (const context of contexts) assert.equal((await hook(context)).action, 'proceed');
+  await s.publish(null, condition === 'STOP' ? { STOP: true } : { grants: { 'worker-one': bindingStore(s.host.bb).participant(s.task, 'worker-one').launchContext.grant } });
+  for (const context of contexts) assert.equal((await hook(context)).action, 'reject');
+  assert.equal(s.spawns.length, 2); assert.equal(s.wakes.filter(wake => wake.threadId === 'thr-1').length, 0);
+});
+
+for (const attempt of ['start-turn', 'join-turn']) test(`paused parent refuses senderless system ${attempt} while retaining explicit user input`, async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  const input = { text: 'An SDK child outcome', blocks: [{ type: 'text', text: 'An SDK child outcome' }] };
+  const dispatch = () => s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  const context = initiator => makeMessageDispatchHookContext({ thread: s.threads.get('thr-1'),
+    initiator, senderThreadId: null, origin: null, originPluginId: null, attempt, input });
+  assert.equal((await dispatch()(context('system'))).action, 'proceed');
+  assert.equal((await s.control('stop', 'orchestrator')).exitCode, 0);
+  assert.equal((await dispatch()(context('system'))).action, 'reject');
+  assert.equal((await dispatch()(context('user'))).action, 'proceed');
+  await s.reload();
+  assert.equal((await dispatch()(context('system'))).action, 'reject');
+  assert.equal((await s.control('resume', 'orchestrator')).exitCode, 0);
+  assert.equal((await dispatch()(context('system'))).action, 'proceed');
+});
+
+for (const resume of [false, true]) test(`Stop during system admission fences the original epoch with resume ${resume}`, async t => {
+  const entered = deferred(), release = deferred(); let armed = false;
+  const s = await stand(t, { beforeControl: async () => {
+    if (armed) { armed = false; entered.resolve(); await release.promise; }
+  } });
+  await s.create(); await s.add('worker-one');
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  const context = makeMessageDispatchHookContext({ thread: s.threads.get('thr-1'), initiator: 'system',
+    senderThreadId: null, origin: null, originPluginId: null,
+    input: { text: 'An SDK child outcome', blocks: [{ type: 'text', text: 'An SDK child outcome' }] } });
+  armed = true; const admission = hook(context);
+  await entered.promise;
+  assert.equal((await s.control('stop', 'orchestrator')).exitCode, 0);
+  if (resume) assert.equal((await s.control('resume', 'orchestrator')).exitCode, 0);
+  release.resolve();
+  const rejected = await admission, epoch = s.delivery('thr-1').epoch;
+  assert.equal(rejected.action, 'reject');
+  s.append('thr-1', 'client/turn/rejected', { requestId: 'system-request', reason: 'plugin-rejected', message: rejected.message });
+  await s.reconcile();
+  assert.equal(s.delivery('thr-1').paused, !resume);
+  assert.equal(s.delivery('thr-1').epoch, epoch);
+  if (resume) assert.equal((await hook(context)).action, 'proceed');
+});
+
+test('paused system-only group is rejected rather than held for a later resume', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  const row = (id, text) => ({ id, threadId: 'thr-1', initiator: 'system', senderThreadId: null,
+    origin: null, originPluginId: null, content: [{ type: 'text', text }] });
+  const context = makeMessageDispatchHookContext({ thread: s.threads.get('thr-1'), initiator: 'system',
+    senderThreadId: null, origin: null, originPluginId: null,
+    input: { text: 'First outcome\nSecond outcome', blocks: [
+      { type: 'text', text: 'First outcome' }, { type: 'text', text: 'Second outcome' },
+    ] },
+    queuedMessages: [row('first-row', 'First outcome'), row('second-row', 'Second outcome')] });
+  assert.equal((await s.control('stop', 'orchestrator')).exitCode, 0);
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  assert.equal((await hook(context)).action, 'reject');
+});
+
+test('senderless system admission replays an unannounced parent interruption', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  s.append('thr-1', 'system/thread/interrupted', {});
+  assert.equal(s.delivery('thr-1').paused, false);
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  const context = makeMessageDispatchHookContext({ thread: s.threads.get('thr-1'), initiator: 'system',
+    senderThreadId: null, origin: null, originPluginId: null,
+    input: { text: 'An SDK child outcome', blocks: [{ type: 'text', text: 'An SDK child outcome' }] } });
+  assert.equal((await hook(context)).action, 'reject');
+  assert.equal(s.delivery('thr-1').paused, true);
+});
+
+test('paused mixed system and user dispatch waits without consuming either queued input', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  const context = makeMessageDispatchHookContext({ thread: s.threads.get('thr-1'), initiator: 'mixed',
+    senderThreadId: null, origin: null, originPluginId: null,
+    input: { text: 'Outcome\nExplicit user message', blocks: [
+      { type: 'text', text: 'Outcome' }, { type: 'text', text: 'Explicit user message' },
+    ] },
+    queuedMessages: [
+      { id: 'system-row', threadId: 'thr-1', initiator: 'system', senderThreadId: null,
+        origin: null, originPluginId: null, content: [{ type: 'text', text: 'Outcome' }] },
+      { id: 'user-row', threadId: 'thr-1', initiator: 'user', senderThreadId: null,
+        origin: null, originPluginId: null, content: [{ type: 'text', text: 'Explicit user message' }] },
+    ] });
+  s.queues.set('thr-1', context.queuedMessages);
+  assert.equal((await s.control('stop', 'orchestrator')).exitCode, 0);
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  assert.equal((await hook(context)).action, 'wait');
+  assert.deepEqual(s.queues.get('thr-1').map(row => row.id), ['system-row', 'user-row']);
+  assert.equal((await s.control('resume', 'orchestrator')).exitCode, 0);
+  assert.equal((await hook(context)).action, 'proceed');
 });
 
 test('coordinator progress stays unread without model wakes; result carries it once across reload', async t => {
@@ -2360,6 +2505,7 @@ for (const pair of [false, true]) test(`SDK display acceptance: authenticated wo
   const b = store.participant(s.task, 'acceptor'); const thread = s.threads.get(b.threadId);
   assert.equal(thread.parentThreadId, 'thr-2'); assert.equal(b.parentThreadId, 'thr-2');
   assert.equal(s.spawns.at(-1).parentThreadId, 'thr-2'); assert.equal(s.spawns.at(-1).lifecycleOwnerThreadId, 'thr-1');
+  assert.equal(s.spawns.at(-1).parentNotifications, 'stuck');
   assert.equal(thread.lifecycleOwnerThreadId, 'thr-1'); assert.equal(b.lifecycleOwnerThreadId, 'thr-1');
   assert.equal(thread.title, `${pair ? 'TASK-12 + TASK-13' : s.task} · Acceptance · ${pair ? 'Markdown anchors' : 'alpha'}`);
   assert.equal(b.environmentId, 'acceptance-env'); assert.equal(b.environmentPath, '/dedicated/acceptance');

@@ -26,6 +26,7 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
       (originPluginId === 'promptobus' || receipt.visibility === 'agent-only') && matches(blocks, receipt.text, receipt.visibility));
   };
   const obsoleteMessage = (marker: string) => `Promptobus cancelled wake was superseded: ${marker}`;
+  const automaticRefusal = 'Promptobus refused automatic BB input while delivery was stopped or superseded';
   const retire = (state: ReturnType<Store['delivery']>) => {
     if (state.pending && !state.retired.some(receipt => receipt.marker === state.pending!.marker)) {
       state.retired.push({ marker: state.pending.marker, text: state.pending.text, visibility: state.pending.visibility,
@@ -62,8 +63,8 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
             if (receipt.visibility === 'agent-only' && matches(row.data.input, receipt.text, receipt.visibility)
               && !receipt.requests.includes(row.data.requestId)) receipt.requests.push(row.data.requestId);
           }
-          const obsolete = row.type === 'client/turn/rejected' && state.retired.some(receipt => receipt.requests.includes(row.data.requestId)
-            || row.data.message === obsoleteMessage(receipt.marker));
+          const obsolete = row.type === 'client/turn/rejected' && (row.data.message === automaticRefusal
+            || state.retired.some(receipt => receipt.requests.includes(row.data.requestId) || row.data.message === obsoleteMessage(receipt.marker)));
           const interaction = row.type === 'system/interaction/lifecycle' ? row.data.interaction : null;
           if (row.type === 'system/thread/interrupted' || (row.type === 'client/turn/rejected' && !obsolete)
             || (row.type === 'turn/completed' && row.data.status !== 'completed')
@@ -225,6 +226,7 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
       const receipt = store.delivery(id).retired.find(receipt => receipt.text === text);
       return receipt ? obsoleteMessage(receipt.marker) : 'Promptobus dispatch was stopped or superseded; operator recovery is required';
     },
+    automaticRefusal,
     async arm(b: Binding) {
       await replay(b, AbortSignal.timeout(5000));
       store.updateDelivery(b.threadId!, state => {

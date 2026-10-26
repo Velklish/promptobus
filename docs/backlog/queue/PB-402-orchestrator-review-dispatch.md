@@ -21,7 +21,7 @@ Investigate the existing pipeline, role handover, command receipts and warden be
 - Keep complete source/evidence identity through review, concrete corrections and acceptance. Preserve owner decisions, model/permission policy, role separation and concurrency limits.
 - Deliver bounded actionable summaries to the orchestrator while retaining original streams. Notification delivery must not imply processing or mailbox acknowledgement.
 - Delegate isolated execution and live-demo resources explicitly. Keep integration into each repository main sequential. Do not add another coordinator model by default.
-- Produce a concrete design, dependency map and bounded verification plan for owner approval before implementation. Separate this dispatch problem from routine BB child-completion activation covered by [PB-374](../active/PB-374-bb-child-outcome-wake-budget.md).
+- Produce a concrete design, dependency map and bounded verification plan for owner approval before implementation. Separate this dispatch problem from routine BB child-completion activation covered by [PB-374](../../archive/LOG.md#pb-374).
 
 ## Out of scope
 

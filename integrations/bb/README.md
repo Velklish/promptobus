@@ -121,9 +121,53 @@ boundary. Live sidebar and new-source native behavior remain unmeasured.
 Workers send milestone status: their first message, a change of plan or blocker,
 and a long background run with volume and a measured estimate. Status remains in
 the orchestrator mailbox without its own bus wake; the next actionable message
-carries it. Decisions require questions. BB system child outcomes still follow
-the host lifecycle; their safe suppression needs the public capability described
-in the [host boundary](../../docs/reference/02-host.md#local-bb-host-boundary).
+carries it. Decisions require questions.
+
+New managed children use SDK `parentNotifications: 'stuck'`. Routine completed
+turns do not wake their parent; failures, interruptions, and approval or question
+blockers retain BB's notifications. Children send final results and questions
+through the canonical bus. Parenting and lifecycle ownership stay unchanged.
+
+The public `bb guide threads` documents this policy for the BB 0.47.1 / Plugin
+SDK 0.6.79 profile. `off` would also suppress attention and is not used. The
+adapter confirms the spawn response; a child whose policy is not confirmed is
+retained as an orphan and stopped. Existing threads keep their recorded policy;
+this change does not update global settings or retrofit existing children.
+Under `stuck`, unassigning a child also does not notify its former parent.
+Canonical mailbox reads remain the only acknowledgement. Stop, current-grant
+validation, predecessor checks, and active-session limits retain their existing
+guards. A retained BB 0.47.1 / Plugin SDK 0.6.79 observation on 2026-10-26
+recorded a system child-interruption request 559 ms after confirmed parent Stop,
+then a new parent turn. The policy itself establishes no stopped-grant guarantee.
+See the [host boundary](../../docs/reference/02-host.md#local-bb-host-boundary)
+for the measurement limits.
+
+Paused plugin-owned threads refuse automatic system dispatch at the public
+`message.dispatch` hook, including senderless start and join attempts. Every
+delivery pause counts, not only operator Stop: a BB interruption, a failed or
+rejected turn and a denied interaction pause delivery too. A Stop or Resume that
+changes the delivery epoch invalidates an in-flight automatic admission.
+Explicit user input still requires a current grant. Input from another agent
+thread is not held by the pause unless it is queued together with system input.
+
+BB system attention that arrives while delivery is paused, including child
+failures, interruptions and approval or question blockers, is rejected rather
+than deferred: BB shows the refusal text in the thread and does not deliver the
+notification again after resume. Before resuming, check the state of the
+participant's children directly; canonical bus mail is unaffected. A queued
+group of system rows alone is rejected the same way. A group that also holds
+user or agent input waits, so neither part is consumed. When BB records the
+refusal as a rejected turn, replay does not count that row as a new pause: it
+neither pauses a resumed participant again nor moves the epoch.
+
+The hook checks local pause and epoch before and after asynchronous validation.
+It does not serialize its final decision with BB's later provider start or join.
+Public `threads.update` supports `parentNotifications: 'off'`, but changing that
+policy does not establish cancellation of an already admitted notification.
+The adapter keeps `stuck`; with an unpaused current grant, failure,
+interruption, approval and question attention still reach the parent. This hook
+fix still requires a bounded live check; it does not certify the terminal-parent
+race after the hook has returned.
 
 The six standing role contracts live in `skills/` and are generated from
 `promptobus/instructions`. After refreshing the local package with `npm ci`, run

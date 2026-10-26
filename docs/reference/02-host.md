@@ -596,20 +596,85 @@ actual CLI/API unavailable-model errors remain authoritative.
 
 An orchestrator mailbox containing only `status` does not produce a BB bus wake.
 The next actionable message includes all retained unread IDs; mailbox reads
-remain the only acknowledgement. This policy does not suppress BB system child
-outcomes. Lifecycle ownership and predecessor validation remain intact.
+remain the only acknowledgement. Lifecycle ownership and predecessor validation
+remain intact.
 For the orchestrator, the recovery revision counts actionable unread IDs only;
 new progress cannot reset the pending message activation budget.
 
-Public Plugin SDK 0.6.15 and 0.6.37 expose `message.dispatch` with `proceed`,
-`wait` and `reject`. The inline context has no typed `systemMessageKind` or
-`systemMessageSubject`, and no outcome acknowledgement without provider input.
-`wait` queues work; `reject` refuses it and displays a rejection. Neither is a
-display-only completion policy. Suppressing routine child completion requires a
-public typed child-outcome policy that retains visible completion without a
-model turn, preserves failures, interruption and approval attention, and never
-resumes a stopped owner. Prompt text matching and ownership removal do not
-satisfy that boundary. Live completion suppression remains unmeasured.
+The BB 0.47.1 / Plugin SDK 0.6.79 profile exposes the public
+`parentNotifications` lifecycle option on thread spawn. The public
+`bb guide threads` documents `auto` as reporting completed, failed, and interrupted
+turns and blockers; `stuck` skips completed turns while preserving failures,
+interruptions, and approval or question blockers; `off` reports none. The adapter
+selects `stuck` for new children and confirms it in the spawn response. It keeps
+the parent, immutable lifecycle owner, independent roles, and predecessor checks.
+The lifecycle option owns routine completion suppression. The adapter uses
+typed dispatch initiators for automatic pause admission without matching prompt
+text or changing lifecycle ownership.
+
+The role contract states the delivery boundary:
+
+<!-- quote:../../integrations/bb/README.md -->
+```markdown
+New managed children use SDK `parentNotifications: 'stuck'`. Routine completed
+turns do not wake their parent; failures, interruptions, and approval or question
+blockers retain BB's notifications. Children send final results and questions
+through the canonical bus. Parenting and lifecycle ownership stay unchanged.
+```
+<!-- /quote -->
+
+The [retained run measurements](../evidence/bb-orchestration-2026-10-13.json)
+record 142 trigger requests and 83 coordinator turns on 2026-10-13, including
+80 single completed-child requests and one completed-child batch. Ordered trigger
+metadata classifies 81 completion requests, 17 failure, interruption, or attention
+requests, and 44 explicit inputs without retained content. Canonical bus-message
+availability is absent, so neither request counts nor request chronology measure
+avoidable turns. Repeated child identities also do not establish duplicate
+outcomes without child-turn identity. A synthetic SDK fixture checks the selected
+spawn option and existing bus recovery separately from BB's outcome scheduler.
+Live before/after coordinator turn savings and visible completion retention
+remain unmeasured. A retained BB 0.47.1 / Plugin SDK 0.6.79 observation on
+2026-10-26 recorded parent-grant removal completing at 19:25:51.641Z and
+confirmed parent Stop at 19:25:52.216Z. A senderless system child-interruption
+request followed at 19:25:52.775Z and a parent turn started at 19:25:53.268Z.
+The earlier observation window with no parent request was a bounded negative;
+it does not establish permanent suppression. The cause of the delayed
+notification and its hook/control ordering are not established by that history.
+
+The plugin admission contract is:
+
+<!-- quote:../../integrations/bb/README.md -->
+```markdown
+Paused plugin-owned threads refuse automatic system dispatch at the public
+`message.dispatch` hook, including senderless start and join attempts. Every
+delivery pause counts, not only operator Stop: a BB interruption, a failed or
+rejected turn and a denied interaction pause delivery too. A Stop or Resume that
+changes the delivery epoch invalidates an in-flight automatic admission.
+Explicit user input still requires a current grant. Input from another agent
+thread is not held by the pause unless it is queued together with system input.
+```
+<!-- /quote -->
+
+The public hook context carries the system initiator, sender and per-row author
+categories, but no typed system-outcome kind or subject. The check therefore
+covers automatic system input to plugin-owned recipients, including senderless
+notifications; it does not infer a child from prompt text or a parent identity.
+`threads.update` accepts `parentNotifications: 'off'`, but it supplies no atomic
+cancellation receipt for an already admitted notification. The adapter retains
+`stuck` and existing current-control, role, predecessor and session-limit checks.
+BB system attention that arrives during a pause is rejected, not deferred; BB
+does not deliver it again after resume, so the operator checks child state
+before resuming. A refusal caused by the pause or an epoch change carries a
+fixed text that replay does not count as a new pause, so a refused notification
+neither pauses a resumed participant nor moves the epoch. A queued group of
+system rows alone is rejected the same way.
+
+The final hook decision and the later provider start or join remain separate.
+A Stop or revocation after the last validation can cross that boundary. A public
+per-thread cancellation generation checked at actual provider start or join,
+ordered with Stop and grant revocation, would be needed to close that gap if the
+live race occurs there. The hook change requires live verification and is not
+proof that the retained terminal-parent race has been eliminated.
 
 The optional `bb-plugin-promptobus` package owns the BB server and host entries.
 The server authenticates tool calls from SDK thread/project context and persistent
@@ -1138,7 +1203,7 @@ A Host can select content for each target repository. Native worker, reviewer an
 
 When `participantLayoutRoot` is absent, native skills use `workspaceRoot()`. A `null` layout disables native skill files; the independently declared Claude plugin remains controlled by `pluginDir`. Existing Hosts can ignore the additional arguments. Root roles without a target repository retain workspace defaults. The consumer resolves module requirements and ensures that its selected paths describe one composition.
 
-Every bound participant dispatch rechecks owner-published current control before admitting a model turn, including anonymous assignment delivery and user input. Existing Promptobus admission points, including bound reviewer reads, use the same owner-validated reference. A later `STOP` or ended grant holds the turn even if the participant was valid when launched; legacy file/inline context is insufficient. SDK pause and message ownership remain separate: user input can bypass automatic-delivery pause while its current grant is valid. User text does not reactivate a revoked grant.
+Every bound participant dispatch rechecks owner-published current control before admitting a model turn, including anonymous assignment delivery and user input. Existing Promptobus admission points, including bound reviewer reads, use the same owner-validated reference. A `STOP` or ended grant observed during dispatch validation refuses the turn even if the participant was valid when launched; legacy file/inline context is insufficient. SDK pause and message ownership remain separate: user input can bypass automatic-delivery pause while its current grant is valid. User text does not reactivate a revoked grant.
 
 ## Native observer dashboard
 

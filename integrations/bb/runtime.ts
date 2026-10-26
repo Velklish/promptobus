@@ -214,13 +214,22 @@ export function registerRuntime(bb: BbPluginApi) {
       || recovery.owns(b.threadId!, entry.content, entry.originPluginId))
       .map(entry => entry.content.filter(block => block.type === 'text').map(block => block.text).join('\n'))
       : context.originPluginId === 'promptobus' || recovery.owns(b.threadId!, context.input.blocks, context.originPluginId) ? [context.input.text] : [];
-    const grouped = owned.length > 0 && context.queuedMessages.length > 1;
+    const system = context.initiator === 'system' || context.queuedMessages.some(entry => entry.initiator === 'system');
+    const automatic = owned.length > 0 || system;
+    const epoch = store.delivery(b.threadId!).epoch;
+    const grouped = automatic && context.queuedMessages.length > 1
+      && (owned.length > 0 || context.queuedMessages.some(entry => entry.initiator !== 'system'));
+    const fenced = () => { const state = store.delivery(b.threadId!); return state.paused || state.epoch !== epoch; };
     const refusal = () => grouped
-      ? { action: 'wait' as const, reason: 'Waiting for owned Promptobus wake cancellation', sendAt: Date.now() + 1000 }
+      ? { action: 'wait' as const, reason: 'Waiting for stopped or superseded automatic BB dispatch', sendAt: Date.now() + 1000 }
       : { action: 'reject' as const, message: owned.length ? recovery.rejection(b.threadId!, owned[0])
-        : 'Promptobus dispatch was stopped or superseded; operator recovery is required' };
-    const admits = () => store.thread(b.threadId!)?.phase === 'ready' && recovery.admits(b.threadId!, context.input.text, false)
-      && owned.every(text => recovery.admits(b.threadId!, text)) && (!owned.length || !store.delivery(b.threadId!).paused);
+        : system && fenced() ? recovery.automaticRefusal : 'Promptobus dispatch was stopped or superseded; operator recovery is required' };
+    const admits = () => {
+      const state = store.delivery(b.threadId!);
+      return store.thread(b.threadId!)?.phase === 'ready' && recovery.admits(b.threadId!, context.input.text, false)
+        && owned.every(text => recovery.admits(b.threadId!, text))
+        && (!automatic || (!state.paused && state.epoch === epoch));
+    };
     if (!admits()) return refusal();
     const controller = new AbortController(), signal = controller.signal;
     let timer: ReturnType<typeof setTimeout>;
@@ -305,13 +314,14 @@ export function registerRuntime(bb: BbPluginApi) {
         : environmentPath ? { type: 'host', hostId: b.hostId, workspace: { type: 'unmanaged', path: environmentPath } }
         : { type: 'reuse', environmentId: b.environmentId },
         providerId: b.providerId, model, reasoningLevel, serviceTier: 'default', permissionMode: 'accept-edits', pluginMetadata: { launchAttemptId: intent.attemptId },
-        ...(b.parentThreadId ? { parentThreadId: b.parentThreadId } : {}),
+        ...(b.parentThreadId ? { parentThreadId: b.parentThreadId, parentNotifications: 'stuck' } : {}),
         ...(b.lifecycleOwnerThreadId ? { lifecycleOwnerThreadId: b.lifecycleOwnerThreadId } : {}),
         prompt: b.bootstrap ?? initialPrompt(), title: titleFor(b) });
       b.threadId = thread.id;
       store.save(b);
       recorded = true;
       store.launch(b, { ...intent, status: 'recorded' });
+      if (b.parentThreadId && thread.parentNotifications !== 'stuck') throw new Error('BB child parent notifications were not confirmed');
       if (prepare) {
         b.phase = 'provisioning'; store.save(b);
         await bb.experimental_hooks.recheck('message.dispatch');
