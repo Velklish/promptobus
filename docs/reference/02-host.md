@@ -1139,3 +1139,42 @@ A Host can select content for each target repository. Native worker, reviewer an
 When `participantLayoutRoot` is absent, native skills use `workspaceRoot()`. A `null` layout disables native skill files; the independently declared Claude plugin remains controlled by `pluginDir`. Existing Hosts can ignore the additional arguments. Root roles without a target repository retain workspace defaults. The consumer resolves module requirements and ensures that its selected paths describe one composition.
 
 Every bound participant dispatch rechecks owner-published current control before admitting a model turn, including anonymous assignment delivery and user input. Existing Promptobus admission points, including bound reviewer reads, use the same owner-validated reference. A later `STOP` or ended grant holds the turn even if the participant was valid when launched; legacy file/inline context is insufficient. SDK pause and message ownership remain separate: user input can bypass automatic-delivery pause while its current grant is valid. User text does not reactivate a revoked grant.
+
+## Native observer dashboard
+
+The optional [native observer](../../integrations/bb-native-observer/README.md) is a
+BB navigation page for Promptobus sessions. Configure an enrolled host and owned
+canonical store/native roots, then discover and select a task on the page. The
+selection persists in plugin Settings. Each view names its host, roots and task;
+configuration changes invalidate pending views before they can combine identities.
+Catalogue and selected-snapshot errors remain separate, so a broken selection
+leaves the configured identity and healthy sibling choices available after remount.
+Discovery returns at most 256 valid tasks from at most 4096 scanned directory
+entries, with an explicit truncation flag. Discovery limits or errors do not block
+the independently read selected task.
+
+The host exposes read-only `snapshot` and `tasks` calls. The server additionally
+exposes `view` and `selectTask`; only `selectTask` persists plugin configuration.
+Observation reads validated selected-task inbox/history and matching native
+registry/receipt records without consuming mail or opening a writable engine.
+Native detail requires a matching canonical launch binding. Current worker and
+reviewer registration persists session/thread identity without that launch binding;
+those participants retain canonical identity with native launch/state/profile and
+command counts explicitly unavailable. It
+provides no sender, ACK, launch, recovery or Stop controls. Recorded results and
+review outcomes retain their canonical types and sender roles; owner acceptance
+is not inferred. Native registry activity does not prove process liveness, and
+full native transcripts and command output are unavailable.
+
+The page refreshes one second after the preceding read finishes, discards late
+responses after disconnect or task changes, and retains the last successful
+sample with its identity when a read fails. Errors, disconnection and snapshots
+older than ten seconds are labelled paused or stale. Remount and plugin reload
+recover the explicit selection without restarting native actors.
+
+Plugin tests require the pinned root development dependencies and always rebuild
+the core before the producer regression loads its adapter. The self-contained
+host bundle has no root `dist/` or root dependency requirement. Source tests and
+clean-bundle fixtures are separate from actual BB visual verification. An installed bundle may also provide owner notifications; replacing
+that service is a separate installation decision. See the integration's live
+verification checklist before accepting the UI.

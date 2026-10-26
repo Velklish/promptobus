@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add an optional read-only BB dashboard for native tasks, with bounded discovery,
+  persistent selection, canonical messages and participant identities. Retain
+  identity-matched stale samples during reconnect and show native details as
+  unavailable when their launch binding is not proven.
+
 ### Changed
 
 - Update the local Backslop dependency and managed project guidance to v1.0.0.
