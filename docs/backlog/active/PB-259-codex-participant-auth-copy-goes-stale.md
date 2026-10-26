@@ -3,7 +3,7 @@
 - **Scope:** `lib/driver-codex.js` (`makeParticipantHome`), [05-drivers](../../reference/05-drivers.md), [03-cli](../../reference/03-cli.md) § The Codex holder
 - **Created:** 2026-09-26
 - **Dependencies:** none
-- **Cost:** major (hypothesis)
+- **Cost:** major
 - **Previous order:** 150
 - **Taken:** 2026-10-26
 
@@ -19,26 +19,35 @@ Measured on 2026-09-25 during a backlog run, codex-cli 0.156.1, installed prompt
 
 ## Work to do
 
-- Measure the rotation with a person present to sign in again: two homes copied from one `auth.json`, a refresh forced in the first, then a turn in the second. Cite the refresh path in codex-rs at the tag of the installed binary.
-- If it holds, a lift must not leave the owner's own credentials unable to refresh, and a lift whose copy cannot refresh refuses before any turn with a reason naming the owner's sign-in. The owner decides the shape.
-- 05-drivers and 03-cli § The Codex holder say what a participant's credentials are and what a refresh in one home does to the others.
+- Keep access-only private snapshots; do not copy or use the owner's refresh token.
+- If the original owner's access snapshot changes, refuse before the next model turn with a clear owner-sign-in/snapshot-change reason and require a fresh lift. Do not silently accept the changed file or promise that `account/read(refreshToken: false)` reloads an existing app-server's credentials.
+- Preserve expiry, account-identity, active-turn and current-launch checks. A fresh lift follows the existing Stop and admission rules; no automatic restart or unresolved-seat recovery is added.
+- Update 05-drivers and 03-cli § The Codex holder with this contract and the separate historical version boundaries. Test only disposable synthetic homes; the real owner authorization remains unchanged.
+- Keep the destructive rotation experiment open in PB-259.1. Its hypothesis is neither measured nor refuted by this mitigation.
 
 ## Out of scope
 
 - The homes sweep (PB-258).
+- Forcing real-owner refresh, login/logout, rotating credentials or claiming acceptance of the historical OAuth hypothesis.
 
 ## Verification
 
-- The rotation measured, or the hypothesis refuted by the measurement that refutes it.
-- After the owner's session has refreshed, a lift either works or refuses before any turn with the reason above.
+- A meaningful regression shows a changed same-account access snapshot cannot enter `turn/start`; the fixed holder refuses before a model turn and requires a fresh lift.
+- Unchanged snapshots retain the normal path. Missing/expired/changed-identity snapshots and active turns keep their existing protections; repeated requests do not revive the rejected snapshot or weaken Stop/admission.
+- Synthetic owner files remain unchanged and tokens do not appear in output. A supported fresh lift uses a fresh access-only snapshot without bypassing an unresolved prior lifecycle.
+- Focused checks, a committed meaningful mutation probe, repository gates and independent review pass on the exact accepted source.
+- The Codex 0.164.0 account-metadata observation remains bounded: it does not prove a real-account model-turn failure or measure refresh-token rotation. The historical 0.159.2 fixture is preserved.
+
+## Owner decision · 2026-10-26
+
+The owner approved fail-closed behavior and a fresh lift through AskUserQuestion. These criteria replace the destructive experiment as this card's acceptance. PB-259.1 retains that separate open hypothesis and requires a person present to sign in again before any real-owner rotation experiment.
 
 ## Measured mitigation · 2026-10-01
 
-The migration scope uses access-only private snapshots; no participant receives an owner
-refresh token. Unknown or near expiry refuses before a model turn. Before each idle turn,
-the holder accepts a fresh snapshot from its original owner account and reloads its existing
-app-server through public `account/read(refreshToken: false)`. Changed auth during active
-turns refuses before writes. A durable owner-home path survives host scoped-home cleanup.
+The 2026-10-01 migration introduced access-only private snapshots, expiry checks and a
+durable owner-home path. Its holder attempted idle snapshot replacement through public
+`account/read(refreshToken: false)`; that historical implementation is not a current hot-reload
+guarantee. The newly approved work above replaces that promise with refusal and a fresh lift.
 
 On native 0.159.2 an invalid cached access failed HTTP 401; after a disposable owner received
 fresh access, the same thread, holder and app-server completed the next turn. Both owner
