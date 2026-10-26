@@ -1,4 +1,7 @@
 import { experimental_defineHostEntry } from '@get-bb/plugin-sdk/host';
+import { lstatSync, realpathSync } from 'node:fs';
+import path from 'node:path';
+import { openEngine } from 'promptobus';
 import { createStandaloneHost } from 'promptobus/host';
 import { createBbHostIntegration } from 'promptobus/bb-host';
 import type { BbHostIntegration } from 'promptobus/bb-host';
@@ -19,6 +22,15 @@ export function createHostEntry(integration: BbHostIntegration = createBbHostInt
     runtimeDescribe: async (_input, context) => {
       context.signal.throwIfAborted();
       return { identity: BUILD_IDENTITY };
+    },
+    messageOrderRebuild: async ({ root: suppliedRoot }, context) => {
+      context.signal.throwIfAborted();
+      if (!path.isAbsolute(suppliedRoot) || path.dirname(suppliedRoot) === suppliedRoot) throw new Error('Coordinator root must be bounded and absolute');
+      const root = realpathSync(suppliedRoot), home = path.join(root, '.promptobus');
+      if (path.resolve(suppliedRoot) !== root) throw new Error('Coordinator root must be its canonical local path');
+      if (!lstatSync(home, { throwIfNoEntry: false })?.isDirectory() || realpathSync(home) !== home) throw new Error('Message-order rebuild requires an existing coordinator store without symlinks');
+      const engine = openEngine({ root, recover: false, policy: () => ({ deny: true, reason: 'Maintenance cannot route messages' }) });
+      return { root, home: engine.home, ...engine.rebuildMessageOrder(), identity: BUILD_IDENTITY };
     },
     launchControl: async ({ binding, predecessor }, context) => {
       context.signal.throwIfAborted();

@@ -29,7 +29,8 @@ export function registerRuntime(bb: BbPluginApi) {
   const host = bb.hosts.experimental_client({ contract: hostContract });
   const participantTools = (b: Binding) => [...toolsFor(b.role),
     ...(b.hostContext && (b.hostContext.rules.length || b.hostContext.skills.length || b.hostContext.resources?.length || b.hostContext.tools.length) ? [BB_REVIEWER_HOST_TOOLS[0]] : []),
-    ...(b.hostContext?.tools.length ? [BB_REVIEWER_HOST_TOOLS[1]] : [])];
+    ...(b.hostContext?.tools.length ? [BB_REVIEWER_HOST_TOOLS[1]] : []),
+    ...(b.role === REVIEWER ? BB_REVIEWER_TOOLS : [])];
   const prepareContext = async (b: Binding, signal?: AbortSignal) => {
     b.hostContext = hostContextSchema.parse(await host.call('prepareContext', { binding: b }, { hostId: b.hostId, signal }));
   };
@@ -303,7 +304,7 @@ export function registerRuntime(bb: BbPluginApi) {
         ? { type: 'host', hostId: b.hostId, workspace: { type: 'managed-worktree', baseBranch: { kind: 'named', name: baseBranch } } }
         : environmentPath ? { type: 'host', hostId: b.hostId, workspace: { type: 'unmanaged', path: environmentPath } }
         : { type: 'reuse', environmentId: b.environmentId },
-        providerId: b.providerId, model, reasoningLevel, permissionMode: 'accept-edits', pluginMetadata: { launchAttemptId: intent.attemptId },
+        providerId: b.providerId, model, reasoningLevel, serviceTier: 'default', permissionMode: 'accept-edits', pluginMetadata: { launchAttemptId: intent.attemptId },
         ...(b.parentThreadId ? { parentThreadId: b.parentThreadId } : {}),
         ...(b.lifecycleOwnerThreadId ? { lifecycleOwnerThreadId: b.lifecycleOwnerThreadId } : {}),
         prompt: b.bootstrap ?? initialPrompt(), title: titleFor(b) });
@@ -458,6 +459,27 @@ export function registerRuntime(bb: BbPluginApi) {
         const complete = reason === 'matching';
         return { exitCode: complete ? 0 : 1, stdout: JSON.stringify({ status: complete ? 'complete' : 'incomplete',
           server: { identity: BUILD_IDENTITY }, host: { id: hostId, identity, reason } }, null, 2) };
+      } }),
+    'coordinator storage': cliCommand({ summary: 'Discover the actual local controller thread storage without provisioning or model calls.',
+      options: { thread: { type: 'string', required: true, description: 'Existing controller thread with a local environment.' } },
+      async run({ options }, context) {
+        const location = await bb.sdk.threads.storageLocation({ threadId: options.thread, signal: context.signal });
+        const local = (await bb.sdk.system.config({ signal: context.signal })).primaryHostId;
+        if (!local || location.hostId !== local || !path.isAbsolute(location.storageRootPath)
+          || path.dirname(location.storageRootPath) === location.storageRootPath
+          || path.resolve(location.storageRootPath) !== location.storageRootPath) throw new Error('A local controller storage location is required');
+        return { exitCode: 0, stdout: JSON.stringify({ threadId: options.thread, ...location }) };
+      } }),
+    'message-order rebuild': cliCommand({ summary: 'Rebuild retained journal ordering after backup and writer quiescence; starts no actors.',
+      options: { environment: { type: 'string', required: true, description: 'Existing stable local unmanaged coordinator environment.' } },
+      async run({ options }, context) {
+        const environment = await bb.sdk.environments.get({ environmentId: options.environment, signal: context.signal });
+        const local = (await bb.sdk.system.config({ signal: context.signal })).primaryHostId;
+        if (!environment?.path || environment.id !== options.environment || !local || environment.hostId !== local || environment.managed
+          || !path.isAbsolute(environment.path) || path.dirname(environment.path) === environment.path
+          || path.resolve(environment.path) !== environment.path) throw new Error('A stable local unmanaged coordinator environment is required');
+        return { exitCode: 0, stdout: JSON.stringify(await host.call('messageOrderRebuild', { root: environment.path },
+          { hostId: local, signal: context.signal })) };
       } }),
     'task create': cliCommand({ summary: 'Create a local task and bind a new Codex orchestrator thread.', options: createOptions,
       async run({ options }, context) {
@@ -762,7 +784,7 @@ export function registerRuntime(bb: BbPluginApi) {
       if (!b) return undefined;
       if (b.phase !== 'ready' || b.projectId !== context.project.id || b.environmentId !== context.environment.id
         || b.environmentPath !== context.environment.path || b.hostId !== context.host.id || b.providerId !== context.provider.id) return { tools: [], skills: [] };
-      return { tools: [...participantTools(b), ...(b.role === REVIEWER ? BB_REVIEWER_TOOLS : [])], skills: [BB_ROLE_SKILLS[b.role]],
+      return { tools: participantTools(b), skills: [BB_ROLE_SKILLS[b.role]],
         instructions: `Authenticated Promptobus task ${b.task}, participant ${b.participant}, role ${b.role}. Use promptobus_task for current contacts. Identity fields are not tool arguments. Use the complete initial context and the selected role skill. ${b.launchContext ? 'Bounded launch context admitted; actual provider bridge remains unmeasured until the first authenticated task/mailbox calls.' : 'Legacy binding: launch context notMeasured; no readiness certification.'} BB owns Stop and continuation; end the turn when waiting.` };
     },
   };

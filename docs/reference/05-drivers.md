@@ -1580,6 +1580,43 @@ The historical permission proof used BB 0.45.0, SDK 0.6.15, Codex CLI
 That provider version refused another Codex version before creating a thread.
 <!-- /quote -->
 
+## BB standard workspace profile
+
+The optional BB adapter supplies ordinary reviewer source tools in initial and
+fresh runtime context: `pb_review_read_file`, `pb_review_read_files`,
+`pb_review_list_files` and `pb_review_search_text`. They read the bound review
+workspace under current-control and identity checks. Selected Host rules, skills
+and resources use `promptobus_host_context`; that catalog does not select ordinary
+source files. Stop, ended grants and outside-root reads retain their refusals.
+
+Participant SDK launches explicitly select `serviceTier: default`. The public
+`bb promptobus coordinator storage --thread THREAD` command discovers the local
+controller's actual storage without provisioning or model calls. A task-owned
+coordinator checkout below that storage can share journal/control/output writes
+across separate native worker environments when their existing provider roots
+permit it. Prepare valid Git worktrees before provider construction; declarations
+and preflight never widen sandbox permissions. Host does not execute worker
+commands. See the [shared coordinator profile](../../integrations/bb/README.md#shared-coordinator-storage)
+for preparation, historical Git-write diagnostics and support boundaries.
+
+`bb promptobus message-order rebuild --environment ENVIRONMENT` selects an
+existing local unmanaged coordinator through the SDK. The Host requires a
+canonical bounded root and existing non-symlink store, then calls strict core
+rebuild without recovery or routing. Canonical records remain unchanged. Backup,
+writer quiescence and byte/ID/order verification remain operator obligations;
+the command starts no actors. See [message-order maintenance](../../integrations/bb/README.md#message-order-maintenance).
+
+These adapter commands use public `threads.storageLocation`, `environments.get`
+and `system.config` contracts. The source package pins SDK 0.6.79 and admits
+the exact BB 0.47.1 / SDK 0.6.79 pair in its app/SDK engine declarations.
+The Host provider bridge requires the SDK in runtime dependencies. Historical
+BB 0.45.0 / SDK 0.6.15 observations do not extend this current manifest's range.
+Public type compatibility does not
+establish a live acceptance run on BB 0.47.1 or upgrade the historical readiness
+matrix. Real worker-native checked add, commit, final test, independent review,
+approver integration, logical acceptance and Stop require their original receipts
+on the exact executing generation.
+
 ## BB async lifecycle observations
 
 BB participants use an SDK adapter outside the native synchronous Driver registry.

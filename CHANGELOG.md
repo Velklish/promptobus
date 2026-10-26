@@ -45,6 +45,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bind both native teamlead seats to the actual new launch on same-slug relift.
   Validate and retain prior terminal proof until rebind; interrupted dispatch and
   changed generations refuse close or replay without overwriting evidence.
+- Align the BB package's app and SDK compatibility declarations with the exact
+  BB 0.47.1 / Plugin SDK 0.6.79 source profile. Keep other versions outside the
+  current declaration until separately checked.
+- Supply ordinary reviewer file-tool identities in initial and fresh BB context,
+  select the default service tier on participant launches, and expose bounded
+  local coordinator-storage discovery and message-order rebuild commands.
+  Document shared coordinator storage and native Git permission requirements.
 - Prepare selected skills for private Codex reporters and managed roots when the
   system temporary directory has an alias. Resolve only that system base; retain
   recorded home identity and reject symlinks in the private container or leaf.

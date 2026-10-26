@@ -6,6 +6,20 @@ import { executionSchema } from '../.test-build/protocol.js';
 const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
 const drivers = readFileSync(new URL('../../../docs/reference/05-drivers.md', import.meta.url), 'utf8');
 
+test('standard BB workspace documentation carries storage, maintenance and native permission boundaries', () => {
+  for (const text of [readme, drivers]) {
+    assert.match(text, /coordinator storage --thread/);
+    assert.match(text, /message-order rebuild --environment/);
+    assert.match(text, /serviceTier: default/);
+    assert.match(text, /Host does not execute worker/);
+    assert.match(text, /pb_review_read_files/);
+    assert.match(text, /quiescen/);
+  }
+  assert.match(readme, /preflight add no\nsandbox permission/);
+  assert.match(readme, /32.35754 seconds after its original deadline/);
+  assert.match(drivers, /Public type compatibility does not\nestablish a live acceptance/);
+});
+
 test('BB role documentation does not replace explicitly selected ACP providers with Codex', () => {
   assert.equal(readme.includes('New role threads use built-in Codex except reviewers'), false, 'Remove the blanket Codex-only role claim');
   assert.match(readme, /New role threads use their selected provider/);

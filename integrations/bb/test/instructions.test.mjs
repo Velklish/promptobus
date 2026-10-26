@@ -7,6 +7,16 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { BB_ROLE_SKILLS, createBbInstructionDelivery, renderBbInstructionSkill } from 'promptobus/instructions';
 
+test('reviewer role names ordinary source reads separately from selected Host resources', () => {
+  const body = renderBbInstructionSkill('reviewer');
+  for (const name of ['pb_review_read_file', 'pb_review_read_files', 'pb_review_list_files', 'pb_review_search_text']) assert.ok(body.includes(name), name);
+  assert.match(body, /TASK.md, AGENTS.md and source files within the supplied owned review workspace/);
+  assert.match(body, /promptobus_host_context only for selected Host rules, skills and exact declared resources/);
+  assert.match(body, /content completely through bounded ranges/);
+  assert.match(body, /Shell execution and edits remain forbidden/);
+  assert.ok(readFileSync(new URL('../skills/promptobus-reviewer/SKILL.md', import.meta.url), 'utf8').endsWith(body.trimEnd() + '\n'));
+});
+
 test('installed instruction delivery is a complete SDK configuration with explicit authenticated tool selection', () => {
   const stand = mkdtempSync(path.join(tmpdir(), 'promptobus-bb-instruction-types-'));
   const installed = name => fileURLToPath(new URL(`../node_modules/${name}`, import.meta.url)).replaceAll('\\', '/');

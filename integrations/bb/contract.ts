@@ -23,6 +23,10 @@ export const engineInput = z.discriminatedUnion('operation', [
 
 export const hostContract = defineRpcContract({
   runtimeDescribe: { input: emptySchema, output: z.object({ identity: buildIdentitySchema.nullable() }).strict() },
+  messageOrderRebuild: { input: z.object({ root: z.string().min(1) }).strict(), output: z.object({
+    root: z.string(), home: z.string(), head: z.string().nullable(), messages: z.number().int().nonnegative(),
+    intents: z.number().int().nonnegative(), fences: z.number().int().nonnegative(), identity: buildIdentitySchema.nullable(),
+  }).strict() },
   prepareContext: { input: z.object(bound).strict(), output: hostContextSchema },
   hostContext: { input: z.object({ ...bound, args: hostReadSchema }).strict(), output: z.unknown() },
   canonical: { input: z.object({ ...bound, args: hostCallSchema }).strict(), output: z.unknown() },

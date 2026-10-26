@@ -6,7 +6,10 @@ The native Promptobus CLI and harness registry keep their existing entry points.
 
 ## Setup
 
-Use BB 0.45.0 or 0.46.0 and Plugin SDK 0.6.15 on one local host. Install Codex CLI
+Use BB 0.47.1 and Plugin SDK 0.6.79 on one local host. The manifest admits
+that exact app/SDK pair; adjacent and future versions require a separate
+compatibility check. Older live profiles below remain historical observations.
+Install Codex CLI
 and sign in with `codex`. The provider verifies the required runtime restrictions,
 without an exact or maximum numeric Codex version requirement.
 The provider copies only `auth.json` into its private Codex
@@ -16,9 +19,16 @@ From this local source directory, run `npm ci` and `npm run build`, then install
 the exact generation named by the build receipt's `installationDirectory`:
 `bb plugin install ./.runtime/<buildId>`. The source root is a build descriptor,
 not a supported install target.
+BB checks `engines.bb` against the app version and `engines.bbPluginSdk` against
+its SDK compatibility contract. The SDK stays in runtime `dependencies` because
+the Host artifact bundles the public provider bridge from that exact package.
+Build and type checks establish source compatibility; a live workflow still
+requires the exact installed generation and its original receipts.
 Select `Codex (Promptobus read-only reviewer)` and an explicit reported model.
 The BB permission mode is `accept-edits`; the provider always requests and verifies
 Codex `readOnly` with approval policy `never`, regardless of that BB label.
+Participant launches explicitly select `serviceTier: default`, including preparation
+turns, so remembered project Fast preferences do not select another tier.
 
 ## Executing runtime identity
 
@@ -220,6 +230,85 @@ Use real existing project/environment ids on the primary local host and a Git
 coordinator environment with an actual HEAD. The coordinator must be unmanaged:
 its canonical journal must outlive BB worker environment retirement.
 
+
+### Shared coordinator storage
+
+For separate worker repositories, place the task-owned coordinator Git checkout
+under the controller's actual BB thread storage. Discover that location through
+the public SDK without guessing a data directory:
+
+```sh
+bb promptobus coordinator storage --thread thr_controller
+```
+
+This read-only lookup returns `threadId`, local `hostId` and `storageRootPath`.
+It creates no directory or environment and starts no model. Prepare a new
+coordinator Git repository with an actual commit below that path. Register its
+existing path through ordinary `bb thread spawn` with an explicitly authorized
+READY-only preparation turn, the selected provider/model/reasoning, default
+service tier and `accept-edits`. Wait for idle, verify the returned environment's
+exact local unmanaged path and Git HEAD, then Stop the preparation thread and
+reuse its environment id for `task create`. Existing registered environments need
+no preparation actor. The SDK provides no model-free environment-registration
+contract; an empty prompt does not establish one.
+
+Declare the exact task-owned coordinator, current-control, command output and
+source paths in each actor's plan. Verify that the actual native provider already
+permits writes to those paths. The shared thread-storage layout uses existing
+provider permissions; `ownedRoots`, `readRoots` and a successful preflight add no
+sandbox permission. The checked launcher writes single-use admission/completion
+records to the coordinator. A sibling journal outside the worker's writable roots
+can therefore refuse before spawning the child. Keep source work in the worker's
+separate environment and execute commands through that worker's native provider.
+Host does not execute worker commands.
+
+Prepare the Git layout before the first provider session. For the historically
+measured Codex Git-write profile, use a BB-managed worktree or a valid linked
+worktree whose regular `.git` file points into the task-owned common repository's
+`worktrees` directory with a matching backpointer. `--environment-path` registers
+an existing checkout; it does not convert a plain clone. Keep all affected common
+Git metadata owned by the task. Do not add manual writable roots or move execution
+to Host to bypass a refusal. After a denied single-use command, retain its original
+receipt and stop that stage. A separately authorized attempt needs a fresh bounded
+grant and correctly prepared provider session.
+
+The 2026-10-23 plain-checkout attempt failed at native `git add` with exit 128 and
+`index.lock: Operation not permitted`; commit and final tests did not run. A
+separate linked-worktree attempt completed checked native add, commit, final test
+and approver fast-forward. Commit and merge each retained a `packed-refs.lock:
+Operation not permitted` diagnostic with exit 0. Preserve stderr and independently
+check HEAD, refs, parent, tree and clean status. That attempt reached logical
+acceptance 32.35754 seconds after its original deadline and did not establish
+physical task closure. These historical observations do not certify a new build
+or the complete readiness matrix.
+
+### Message-order maintenance
+
+For an existing populated journal reporting `missing high-water`, the operator
+must quiesce every writer, including older native writers, and take a coherent
+private backup before running:
+
+```sh
+bb promptobus message-order rebuild --environment env_example
+```
+
+The command selects the exact SDK environment on the primary local host and
+requires its existing local, canonical, unmanaged coordinator directory and
+non-symlink `.promptobus` store. Relative paths, filesystem roots, remote or
+managed environments and missing stores refuse before engine writes. The Host
+calls the existing strict core rebuild with recovery disabled and message routing
+denied. It returns `root`, `home`, `head`, retained `messages`/`intents`/`fences`
+counts and executing Host `identity`. It starts no thread, reserves no task and
+leaves canonical records unchanged. Invalid retained records refuse; do not replace
+those records or manufacture a head to obtain success.
+
+Keep writers quiescent through backup, rebuild and canonical byte/ID/order checks.
+Restore the coherent backup only before new writes: restoring an older head after
+new writes can reuse ordering positions. This command does not acquire writer
+quiescence or authorize repeating maintenance on a live store. See
+[message-order rebuild](../../docs/reference/03-cli.md#message-order-rebuild) and
+[the BB workspace profile](../../docs/reference/05-drivers.md#bb-standard-workspace-profile).
+
 Prepare complete supplied owner confirmation and every actor's exact grants in
 `CURRENT_CONTROL_INPUT`, then each role's bounded launch context described under
 [required inputs](#required-launch-and-review-inputs). The example variables are
@@ -277,6 +366,14 @@ the SQLite rows; changed or missing threads/tasks/participants are refused.
 | `promptobus_artifact` | artifact `id` | Current-task metadata and verified UTF-8 content, up to 1 MB |
 | `promptobus_host_context` | `mode: inspect`, or `read` with `path`, optional `start_line`, `line_count` | Fresh Host rules/skills/catalog or bounded reads of declared rule/skill resources |
 | `promptobus_host_call` | `server`, `tool`, `args` | Freshly admitted canonical call through the consumer adapter; role/root/actor come from the binding |
+
+A constrained reviewer reads ordinary TASK.md, AGENTS.md and source files with
+`pb_review_read_file`, `pb_review_read_files`, `pb_review_list_files` and
+`pb_review_search_text` within its supplied review workspace. Initial and fresh
+runtime context name those exact available tools. `promptobus_host_context` reads
+only selected Host rules, skills and declared resources; it is a separate route.
+Current-control, Stop, ended-grant, foreign identity and outside-root checks still
+apply before a reviewer file read.
 
 All argument objects are strict. Sender, task and address are derived from the
 binding, and cannot be supplied. Body size is capped at 2400 characters; attachment

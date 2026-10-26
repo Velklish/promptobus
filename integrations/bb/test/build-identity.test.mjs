@@ -14,6 +14,7 @@ function fixture(t) {
   mkdirSync(path.join(root, 'skills'));
   writeFileSync(path.join(root, 'skills/SKILL.md'), 'Shipped instruction');
   writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'bb-plugin-promptobus', version: '0.1.0',
+    engines: { bb: '0.47.1', bbPluginSdk: '0.6.79' },
     bb: { server: './.runtime/source/server.ts', host: './.runtime/source/host.ts', skills: ['.runtime/skills'] }, dependencies: { promptobus: '1.0.0', '@get-bb/plugin-sdk': '0.6.15' } }));
   writeFileSync(path.join(root, 'package-lock.json'), '{"lockfileVersion":3}');
   writeFileSync(path.join(root, 'tsconfig.json'), '{}');
@@ -110,6 +111,8 @@ test('build embeds one invocation identity and binds final artifacts without cha
   assert.equal(manifest.snapshot.sha256.length, 64);
   const encoded = Buffer.from(JSON.stringify(manifest.identity)).toString('base64');
   const installed = path.join(root, manifest.installationDirectory);
+  assert.deepEqual(JSON.parse(readFileSync(path.join(installed, 'package.json'))).engines,
+    JSON.parse(readFileSync(path.join(root, 'package.json'))).engines, 'captured packages must preserve the declared compatibility pair');
   assert.equal(manifest.installationDirectory, `.runtime/${manifest.identity.buildId}`);
   for (const name of ['server.js', 'host.js']) {
     const bundle = readFileSync(path.join(installed, 'dist', name));

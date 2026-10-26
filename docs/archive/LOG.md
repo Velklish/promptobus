@@ -578,3 +578,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-397"></a>`PB-397-bb-native-visual-dashboard` · 2026-10-26 · completed · — · Show native Promptobus work in a visual BB dashboard
 - <a id="pb-401"></a>`PB-401-native-stop-terminal-accounting` · 2026-10-26 · completed · — · Confirm native Stop termination and retain final command accounting
 - <a id="pb-259"></a>`PB-259-codex-participant-auth-copy-goes-stale` · 2026-10-26 · completed · — · Codex participant homes copy the owner's auth.json, and a lift can start with a refresh token that no longer refreshes
+- <a id="pb-396"></a>`PB-396-bb-standard-workspace` · 2026-10-27 · completed · — · Make standard BB workspace tasks usable

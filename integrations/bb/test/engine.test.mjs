@@ -88,6 +88,10 @@ async function stand(t, options = {}) {
       } },
     hosts: { get: async () => ({ id: 'local', status: 'connected', lifecycle: { phase: 'active' } }) },
     threads: {
+      storageLocation: async ({ threadId }) => {
+        assert.equal(threadId, 'controller');
+        return options.storageLocation ?? { hostId: environment.hostId, storageRootPath: path.join(root, 'thread-storage', threadId) };
+      },
       events: { list: async ({ threadId, afterSeq = '0', order = 'asc', limit = '200', types }) => {
         assert.equal(Number(limit) <= 100, true, 'Thread event limit cannot exceed 100');
         const rows = (history.get(threadId) ?? []).filter(row => row.seq > Number(afterSeq) && (!types || types.includes(row.type)));
@@ -118,7 +122,7 @@ async function stand(t, options = {}) {
           parentThreadId: args.parentThreadId ?? null, lifecycleOwnerThreadId: args.lifecycleOwnerThreadId ?? null, title: options.titleUnconfirmed ? 'Unconfirmed title' : args.title });
         threads.set(thread.id, thread);
         executionOptions.set(thread.id, { model: args.model, reasoningLevel: args.reasoningLevel, permissionMode: args.permissionMode,
-          serviceTier: 'default', source: 'client/thread/start' });
+          serviceTier: args.serviceTier ?? options.projectServiceTier ?? 'default', source: 'client/thread/start' });
         metadata.set(thread.id, args.pluginMetadata ?? {});
         if (options.freezeEarlyCatalog) await freezeCatalog(thread);
         const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
@@ -187,6 +191,7 @@ async function stand(t, options = {}) {
     if (hostEntry && method !== 'engine') return hostEntry.handlers[method](input, { signal: new AbortController().signal });
     if (method === 'prepareContext') return options.hostContext?.(input.binding) ?? { rules: [], skills: [], tools: [] };
     if (method === 'controlPublish') return createHostEntry().handlers.controlPublish(input, { signal: signal ?? new AbortController().signal });
+    if (method === 'messageOrderRebuild') return createHostEntry().handlers.messageOrderRebuild(input, { signal: signal ?? new AbortController().signal });
     if (method === 'launchControl') {
       if (options.beforeControl) await options.beforeControl(input);
       return createHostEntry().handlers.launchControl(input, { signal: signal ?? new AbortController().signal });
@@ -517,6 +522,10 @@ test('review initial immutable assignment holds every original ID readable throu
   assert.equal((await s.add('original-review', 'reviewer')).exitCode, 0);
   const launch = s.initialArgs.prompt;
   const b = bindingStore(s.host.bb).thread('thr-2');
+  const context = JSON.parse(launch.split('## Runtime task context\n\n')[1].split('\n\n')[0]);
+  for (const name of ['pb_review_read_file', 'pb_review_read_files', 'pb_review_list_files', 'pb_review_search_text']) {
+    assert.equal(context.tools[name], name, `Initial context must name actual reviewer tool ${name}`);
+  }
   assert.ok(launch.includes(b.launchContext.role.literal.slice(0, 30)));
   for (const ref of b.evidenceManifest.artifacts) {
     assert.ok(launch.includes(ref.id), `Initial assignment is missing ${ref.kind} ID`);
@@ -580,6 +589,9 @@ test('fresh evidence repair keeps the actor, ends the old token and supplies eve
   assert.equal(accepted.exitCode, 0, accepted.stderr);
   const freshContext = JSON.parse(delivered.split('## Runtime task context\n\n')[1].split('\n\n')[0]);
   assert.deepEqual(freshContext.commandAdmission, { format: 'promptobus-bb-command-admission-v1', role: 'reviewer' });
+  for (const name of ['pb_review_read_file', 'pb_review_read_files', 'pb_review_list_files', 'pb_review_search_text']) {
+    assert.equal(freshContext.tools[name], name, `Fresh context must name actual reviewer tool ${name}`);
+  }
   assert.equal(delivered.includes(before.token), false, 'fresh delivery must not expose the bridge credential');
   assert.ok(delivered.includes('fresh-evidence-phase')); for (const ref of f.manifest.artifacts) assert.ok(delivered.includes(ref.id));
   const after = bindingStore(s.host.bb).thread('thr-2');
@@ -646,6 +658,82 @@ test('Stop during fresh initial assignment wins and an unknown send cannot start
   }
 });
 
+test('operator rebuild selects the actual coordinator journal and preserves retained bytes without actors', async t => {
+  const s = await stand(t), engine = openEngine({ root: s.root, recover: false, policy: () => ({ allow: true }) });
+  const task = newTaskIdentity('legacy-order').id;
+  const owner = { id: 'orchestrator', role: 'orchestrator', harness: 'bb', mode: 'managed', sessionRef: null, capabilities: null, metadata: {} };
+  engine.createTask({ id: task, title: 'Retained legacy task', owner });
+  const sent = engine.sendSync(task, { from: 'orchestrator', to: ['orchestrator'], type: 'question', body: 'Retained canonical body' }).message;
+  const second = engine.sendSync(task, { from: 'orchestrator', to: ['orchestrator'], type: 'status', body: 'Second retained body' }).message;
+  const file = path.join(engine.home, 'tasks', task, 'messages', `${sent.id}.json`), original = readFileSync(file);
+  const secondFile = path.join(engine.home, 'tasks', task, 'messages', `${second.id}.json`), secondOriginal = readFileSync(secondFile);
+  const taskFile = engine.taskFile(task), taskOriginal = readFileSync(taskFile);
+  fs.unlinkSync(path.join(engine.home, 'message-order.json'));
+  const result = await s.host.harness.behavior.runCli(['message-order', 'rebuild', '--environment', 'env']);
+  assert.equal(result.exitCode, 0, result.stderr);
+  const rebuilt = JSON.parse(result.stdout);
+  assert.equal(rebuilt.root, s.root); assert.equal(rebuilt.home, engine.home);
+  assert.equal(rebuilt.head, second.id); assert.equal(rebuilt.messages, 2);
+  assert.equal(rebuilt.intents, 0); assert.equal(rebuilt.fences, 0);
+  assert.deepEqual(readFileSync(file), original);
+  assert.deepEqual(readFileSync(secondFile), secondOriginal); assert.deepEqual(readFileSync(taskFile), taskOriginal);
+  assert.deepEqual(engine.facts(task).messages.map(message => message.id), [sent.id, second.id]);
+  assert.equal(JSON.parse(readFileSync(path.join(engine.home, 'message-order.json'), 'utf8')).head, second.id);
+  assert.equal(s.spawns.length, 0); assert.equal(bindingStore(s.host.bb).task(s.task), undefined);
+});
+
+for (const storageRootPath of ['relative/storage', '/', '/tmp/../storage']) test(`coordinator storage refuses an unbounded location ${storageRootPath}`, async t => {
+  const s = await stand(t, { storageLocation: { hostId: 'local', storageRootPath } });
+  const result = await s.host.harness.behavior.runCli(['coordinator', 'storage', '--thread', 'controller']);
+  assert.equal(result.exitCode, 1); assert.match(result.stderr, /local controller storage/);
+  assert.equal(s.spawns.length, 0); assert.equal(existsSync(path.join(s.root, '.promptobus')), false);
+});
+
+test('coordinator storage discovers the actual local controller storage without provisioning or guessing a path', async t => {
+  const s = await stand(t), run = () => s.host.harness.behavior.runCli(['coordinator', 'storage', '--thread', 'controller']);
+  const result = await run(); assert.equal(result.exitCode, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { threadId: 'controller', hostId: 'local', storageRootPath: path.join(s.root, 'thread-storage', 'controller') });
+  assert.equal(existsSync(path.join(s.root, 'thread-storage')), false); assert.equal(s.spawns.length, 0);
+  s.environment.hostId = 'remote';
+  const remote = await run(); assert.equal(remote.exitCode, 1); assert.match(remote.stderr, /local controller storage/);
+});
+
+test('operator rebuild refuses missing stores and malformed retained messages without manufacturing a head', async t => {
+  const s = await stand(t), run = () => s.host.harness.behavior.runCli(['message-order', 'rebuild', '--environment', 'env']);
+  const missing = await run(); assert.equal(missing.exitCode, 1); assert.match(missing.stderr, /existing coordinator store/);
+  assert.equal(existsSync(path.join(s.root, '.promptobus')), false);
+  const engine = openEngine({ root: s.root, recover: false, policy: () => ({ allow: true }) });
+  const task = newTaskIdentity('invalid-order').id;
+  engine.createTask({ id: task, title: 'Invalid retained task', owner: { id: 'orchestrator', role: 'orchestrator', harness: 'bb', mode: 'managed', sessionRef: null, capabilities: null, metadata: {} } });
+  const id = '20261020T120000000-0000-ffffff', messages = path.join(engine.home, 'tasks', task, 'messages');
+  mkdirSync(messages, { recursive: true }); writeFileSync(path.join(messages, `${id}.json`), '{malformed');
+  const invalid = await run(); assert.equal(invalid.exitCode, 1);
+  assert.equal(existsSync(path.join(engine.home, 'message-order.json')), false);
+  assert.equal(readFileSync(path.join(messages, `${id}.json`), 'utf8'), '{malformed');
+  assert.equal(s.spawns.length, 0);
+});
+
+test('operator rebuild rejects managed, remote and unprovisioned environments before touching the journal', async t => {
+  const s = await stand(t);
+  for (const change of [{ managed: true }, { hostId: 'remote' }, { path: null }, { path: 'relative' }, { path: '/' }, { id: 'foreign' }]) {
+    const original = { ...s.environment }; Object.assign(s.environment, change);
+    const result = await s.host.harness.behavior.runCli(['message-order', 'rebuild', '--environment', 'env']);
+    assert.equal(result.exitCode, 1); assert.match(result.stderr, /stable local unmanaged coordinator environment/);
+    Object.assign(s.environment, original);
+  }
+  assert.equal(existsSync(path.join(s.root, '.promptobus')), false); assert.equal(s.spawns.length, 0);
+});
+
+test('operator rebuild refuses a symlink coordinator store before touching its target', async t => {
+  const s = await stand(t), target = path.join(s.root, 'other-store');
+  mkdirSync(target); writeFileSync(path.join(target, 'sentinel'), 'Unchanged');
+  fs.symlinkSync(target, path.join(s.root, '.promptobus'));
+  const result = await s.host.harness.behavior.runCli(['message-order', 'rebuild', '--environment', 'env']);
+  assert.equal(result.exitCode, 1); assert.match(result.stderr, /without symlinks/);
+  assert.deepEqual(fs.readdirSync(target), ['sentinel']); assert.equal(readFileSync(path.join(target, 'sentinel'), 'utf8'), 'Unchanged');
+  assert.equal(s.spawns.length, 0);
+});
+
 function fictionalHost(calls, { selected = false } = {}) {
   return root => {
     const base = path.join(root, 'base'), module = path.join(root, 'modules'), skills = path.join(root, 'canon-skills');
@@ -671,6 +759,23 @@ function fictionalHost(calls, { selected = false } = {}) {
     }));
   };
 }
+
+test('reviewer reads its ordinary TASK and source through repository tools while Host selection stays bounded', async t => {
+  const s = await stand(t, { hostSetup: fictionalHost([]) });
+  const outside = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'pb-bb-outside-')));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  writeFileSync(path.join(outside, 'outside.md'), 'Must not reach the reviewer');
+  writeFileSync(path.join(s.root, 'TASK.md'), 'Complete ordinary task specification');
+  writeFileSync(path.join(s.root, 'source.mjs'), 'export const result = 42;');
+  assert.equal((await s.create()).exitCode, 0);
+  assert.equal((await s.add('ordinary-review', 'reviewer')).exitCode, 0);
+  const b = bindingStore(s.host.bb).participant(s.task, 'ordinary-review');
+  for (const [file, text] of [['TASK.md', 'Complete ordinary task specification'], ['source.mjs', 'export const result = 42;']]) {
+    assert.ok((await s.call(b.threadId, 'pb_review_read_file', { path: path.join(s.root, file) })).includes(text));
+  }
+  await assert.rejects(s.call(b.threadId, 'promptobus_host_context', { mode: 'read', path: path.join(s.root, 'TASK.md') }), /outside the declared/);
+  await assert.rejects(s.call(b.threadId, 'pb_review_read_file', { path: path.join(outside, 'outside.md') }), /outside the declared/);
+});
 
 test('BB explicit context survives initial/reviewer/fresh delivery and remains canonical without inheriting owner extras', async t => {
   let delivered;
@@ -811,6 +916,16 @@ test('BB launch persists explicit provider/model/reasoning and sends the same se
   const observed = JSON.parse((await s.control('get', 'orchestrator')).stdout);
   assert.deepEqual(observed.execution, selected);
   assert.equal(observed.currentExecution.reasoningLevel, 'low');
+});
+
+test('BB launches pin default service tier instead of inheriting project Fast', async t => {
+  const s = await stand(t, { projectServiceTier: 'fast' });
+  assert.equal((await s.create()).exitCode, 0);
+  assert.equal((await s.add('reviewer-standard', 'reviewer')).exitCode, 0);
+  assert.equal((await s.add('worker-standard', 'worker', ['--new-environment', '--base-branch', 'main'])).exitCode, 0);
+  assert.equal(s.spawns.length, 3);
+  for (const args of s.spawns) assert.equal(args.serviceTier, 'default');
+  for (const current of s.executionOptions.values()) assert.equal(current.serviceTier, 'default');
 });
 
 test('BB role policy refuses an explicit provider mismatch without canonical reservation or spawn', async t => {
