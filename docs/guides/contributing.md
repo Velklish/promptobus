@@ -224,6 +224,12 @@ positive liveness and cleanup assertions red, and continue teardown. Run these
 tests in an environment that permits their process measurements; changing global
 permissions or skipping a failed measurement does not verify cleanup.
 
+When a session record has several publication stages, wait for the stage the
+assertion checks. In `promptobus-driver-codex.test.mjs`, the unresolved-request
+check waits for both `pendingRequest` and `lastEvent: holder-reply:<method>`.
+The earlier request record alone does not establish that the holder has replied.
+See [the Codex holder](../reference/03-cli.md#the-codex-holder).
+
 ## What the stands prove, and what they cannot
 
 **A live measurement without its executing copy recorded is not attributable.** The lift line

@@ -43,7 +43,7 @@ function participant(f, address, harness, sessionId, rows = null, extra = {}) {
   store.upsertParticipant(f.home, f.id, p);
   if (rows) {
     const file = log(f, sessionId, rows);
-    if (harness === 'codex') {
+    if (harness === 'codex' && p.sessionRef) {
       createHarnessRegistry({ harness }).writeSession({ ref: p.sessionRef, threadId: sessionId,
         home: f.home, task: f.id, address, rolloutPath: file },
       { PROMPTOBUS_CODEX_HOME: f.host.harnessStateHome('codex') });
@@ -73,12 +73,24 @@ test('done reads recorded Claude usage, latest Codex totals, teamlead and root e
     assistant('b', 4, usage(5, 30, 0, 2)),
     assistant('foreign', 5, usage(900, 900, 900, 900), { sessionId: 'another-fixture-session' }),
   ]);
+  // Attached transcript fixtures carry no controller-owned native launch.
   participant(f, 'reviewer:codex', 'codex', 'fixture-codex', [meta('fixture-codex'),
-    cumulative(2, 100, 60, 10, 3), cumulative(4, 250, 160, 20, 8), cumulative(5, 250, 160, 20, 8)]);
+    cumulative(2, 100, 60, 10, 3), cumulative(4, 250, 160, 20, 8), cumulative(5, 250, 160, 20, 8)],
+  { mode: 'attached', sessionRef: null });
   participant(f, 'teamlead:fixture', 'claude', 'fixture-lead', [
     assistant('lead', 3, usage(7, 4, 3, 2), { sessionId: 'fixture-lead' }),
   ]);
-  participant(f, 'orchestrator', 'codex', 'fixture-root', [meta('fixture-root'), cumulative(3, 90, 50, 0, 6)]);
+  participant(f, 'orchestrator', 'codex', 'fixture-root', [meta('fixture-root'), cumulative(3, 90, 50, 0, 6)],
+    { mode: 'attached', sessionRef: null });
+  for (const address of ['reviewer:codex', 'orchestrator']) {
+    const p = store.participantOf(store.readTask(f.home, f.id), address);
+    const transcript = telemetry.sessionLogOf(f.host, f.home, f.id, p);
+    assert.equal(p.mode, 'attached');
+    assert.equal(p.sessionRef, null);
+    assert.equal(p.metadata.nativeStop, undefined);
+    assert.equal(transcript.sessionId, p.metadata.sessionId);
+    assert.equal(JSON.parse(readFileSync(transcript.path, 'utf8').split('\n')[0]).payload.id, transcript.sessionId);
+  }
   await capture(() => done(f.host, { task: f.id, 'keep-sessions': true,
     snapshot: () => ({}), adapterFor: () => { throw new Error('fixture must not call any adapter'); } }));
   const rows = records(f);

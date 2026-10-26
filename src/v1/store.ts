@@ -484,7 +484,7 @@ export function putParticipant(home: string, task: string, participant: Particip
 export function assignParticipant(home: string, task: string, participant: ParticipantV1, now: Clock, cli: ReaderVersion = null): TaskV1 {
   requireValid('participant', participant, { task, participant: participant?.id });
   return withTaskLock(home, task, () => withMessageCommit(home, () => {
-    const meta = readTask(home, task, cli);
+    const meta = requireActive(readTask(home, task, cli));
     const next = { ...participant, metadata: { ...participant.metadata, assignmentAfterId: reserveMessageId(home, now()) } };
     return writeTask(home, { ...meta, participants: [...meta.participants.filter(p => p.id !== participant.id), next] }, now);
   }));
@@ -540,6 +540,7 @@ export function closeTask(home: string, task: string, now: Clock, adapter?: Reco
   cli: ReaderVersion = null): TaskV1 {
   return withTaskLock(home, task, () => {
     const meta = readTask(home, task, cli);
+    if (meta.status === 'done') return meta;
     if (meta.parent === undefined) {
       const listed = listTasks(home, cli);
       const active = listed.tasks.filter((child) => child.parent === task && child.status === 'active')

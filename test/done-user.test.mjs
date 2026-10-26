@@ -5,6 +5,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox, stubCommand, writeHostConfig } from './sandbox.mjs';
+import { releaseNativeReservation, reserveNativeParticipant } from '../lib/native-lifecycle.js';
+import { REGISTRY } from '../lib/drivers.js';
+import { readSession } from '../lib/codex-session.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const bin = path.join(here, '..', 'bin', 'promptobus.js');
@@ -18,8 +21,9 @@ const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => ![
   'PROMPTOBUS_CODEX_SESSION', 'PROMPTOBUS_CURSOR_SESSION',
   'PROMPTOBUS_ROLE', 'PROMPTOBUS_TASK',
 ].includes(key)));
-Object.assign(env, { PROMPTOBUS_HOME: home, PROMPTOBUS_WARDEN: 'off',
+Object.assign(env, { PROMPTOBUS_HOME: home, PROMPTOBUS_CODEX_HOME: path.join(root, 'native'), PROMPTOBUS_WARDEN: 'off',
   PATH: `${stubBin}${path.delimiter}${process.env.PATH}` });
+process.env.PROMPTOBUS_CODEX_HOME = env.PROMPTOBUS_CODEX_HOME;
 
 writeHostConfig(root);
 stubCommand(stubBin, 'claude', `
@@ -45,12 +49,16 @@ const asked = cli(['ask', 'Can this task close?', '--task', task]);
 check('ask registers user through the CLI', asked.status === 0
   && store.participantOf(store.readTask(home, task), 'user')?.sessionRef === null, result(asked));
 
-store.upsertParticipant(home, task, store.participantRecord('worker:after', {
-  harness: 'codex', mode: 'managed', sessionRef: 'missing-done-user-after',
-}));
-store.upsertParticipant(home, task, store.participantRecord('worker:swept', {
-  harness: 'codex', mode: 'managed', sessionRef: 'missing-done-user-swept',
-}));
+for (const worker of ['after', 'swept']) {
+  const { record } = reserveNativeParticipant(home, task, store.participantRecord(`worker:${worker}`, {
+    harness: 'codex', mode: 'managed', sessionRef: `missing-done-user-${worker}`,
+  }), null, REGISTRY);
+  releaseNativeReservation(home, task, record);
+  const cold = store.participantOf(store.readTask(home, task), `worker:${worker}`);
+  check(`native fixture ${worker} releases only its exact never-invoked launch`,
+    cold.metadata.nativeLaunchId === record.metadata.nativeLaunchId
+    && cold.metadata.nativeUnlaunched === record.metadata.nativeLaunchId && !readSession(record.sessionRef));
+}
 store.upsertParticipant(home, task, store.participantRecord('reporter', {
   harness: 'claude', mode: 'managed', name: 'Reporter: user asks before close',
   sessionRef: 'missing-done-user-reporter', sessionId: 'missing-done-user-reporter',

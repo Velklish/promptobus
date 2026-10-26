@@ -70,6 +70,18 @@ function linesOf(buf) {
 
 {
   const incoming = new PassThrough();
+  const logs = [];
+  const rpc = CodexRpc({ stdin: new PassThrough(), stdout: incoming }, {
+    onLog: (dir, msg) => logs.push({ dir, msg }),
+  });
+  incoming.write('{"unfinished":');
+  rpc.close();
+  check(': an unterminated final JSON-RPC fragment is retained as a broken stream',
+    logs.some(e => e.dir === 'raw' && e.msg === '{"unfinished":'), JSON.stringify(logs));
+}
+
+{
+  const incoming = new PassThrough();
   const outgoing = new PassThrough();
   const logs = [];
   const rpc = CodexRpc({ stdin: outgoing, stdout: incoming }, {

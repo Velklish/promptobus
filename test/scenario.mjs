@@ -1273,11 +1273,16 @@ export async function runScenario({
     const secretsBefore = [[WORKER, wh], [REVIEWER, rh]]
       .flatMap(([a, h]) => [store.wakeFile(home, TASK, a), ...(h.files ? [store.participantMcpPath(home, TASK, a)] : [])])
       .filter((f) => existsSync(f));
+    const native = store.readTask(home, TASK).participants.filter((p) => p.harness === 'codex' && p.mode === 'managed');
+    const nativeStops = native.map((p) => runCli(['stop', store.addressOf(p), '--task', TASK], { cwd: ws, env: orchEnv }));
     sessionNames = [WORKER, REVIEWER].map((addr) => participantOf(addr)?.metadata?.name ?? null);
     const done = runCli([ 'done', '--task', TASK], { cwd: ws, env: orchEnv });
-    check('step 13: promptobus done closed the task and named the sessions it is tearing down',
-      done.status === 0 && /stopping participant sessions \(2\)/.test(done.out) && /worker:e2e/.test(done.out),
-      tail(done.out));
+    const remaining = refs.length - native.length;
+    check('step 13: confirmed native Stop precedes done, which names the remaining sessions it tears down',
+      nativeStops.every((r) => r.status === 0 && /thread .* stopped/.test(r.out))
+      && done.status === 0 && (remaining ? done.out.includes(`stopping participant sessions (${remaining})`) : /nothing to stop:/.test(done.out))
+      && /worker:e2e/.test(nativeStops.map((r) => r.out).join('\n') + done.out),
+      nativeStops.map((r) => tail(r.out)).join('\n') + '\n' + tail(done.out));
     // With a short wait — the same race as the twin in the harness unit: stub
     // `claude stop` waits for the process to die itself, but no longer than its
     // ceiling, and the live one does not even promise that (review note).

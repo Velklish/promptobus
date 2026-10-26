@@ -60,7 +60,13 @@ for (const [index, title] of ['Startup root', 'Different startup root'].entries(
     && after?.launchId === before.launchId && after?.prompt === before.prompt
     && registrySessions(env).filter(value => value.task === task).length === 1,
     `${retry.status} ${retry.stdout}${retry.stderr}`);
-  await codexDriver.stop(before.ref);
+  const bound = await waitFor(() => {
+    const record = readSession(before.ref, env);
+    return record?.launchId === before.launchId && record.threadId && record.holderPid && record.appPid ? record : null;
+  }, { timeoutMs: 10000 });
+  const stopped = await codexDriver.stop(before.ref);
+  check(`${title}: fixture cleanup waits for published ownership before Stop and directory removal`,
+    !holderAlive(before.ref, env) && !pidAlive(bound.appPid), JSON.stringify(stopped));
 }
 const ref = 'delayed-old-holder';
 const replacement = { ref, launchId: 'replacement-nonce', state: 'starting', prompt: 'Replacement scope',

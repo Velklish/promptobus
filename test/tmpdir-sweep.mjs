@@ -96,6 +96,7 @@ export const SUITE_PREFIXES = [
   // adapter, and the sweep does not care which harness left the directory.
   'promptobus-adapter-',
   'participant-context-', 'promptobus-native-context-',
+  'promptobus-admission-', 'promptobus-lifecycle-closure-', 'promptobus-lifecycle-', 'promptobus-close-repeat-',
   'review-file-swap-', 'pb-git-metadata-', 'promptobus-turn-reservation-', 'promptobus-lock-',
   'promptobus-approver-', 'promptobus-auth-', 'promptobus-lead-', 'promptobus-review-files-',
   // Three prefixes without the package name, and they stay as the files spell

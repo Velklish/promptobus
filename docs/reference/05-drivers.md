@@ -96,8 +96,19 @@ the approver prompt, and an incomplete classification still refuses the lift.
 [ADR-024](../adr/adr-024-approver-acceptance-in-own-worktree.md) records the floor of 7,
 the worker↔approver routing exception, the `--approver` flag and the reviewer-result
 precondition, and the worktree and publication rule. A repeat lift reuses an
-alive or unknown session the way a reviewer reuses one; a pending unlaunched record or a dead
-session starts a fresh approver instead of spawning a second session beside the first.
+alive or unknown session the way a reviewer reuses one. Other harnesses can restart
+a pending unlaunched record or a dead session. Codex requires retained terminal
+proof for a previous launch; a pending flag alone does not authorize replacement.
+
+A fresh Codex approver reserves its native launch identity before worktree creation
+and preparation. It records the worktree base before dependency or generator setup,
+so a refused preparation retains that base for retry. The driver receives the exact identity and binds the actual
+thread and session-record pointer to it. Preparation and startup callbacks preserve
+that reservation and refuse a changed or stopped generation. A caught preparation
+failure releases only the matching never-invoked reservation. A legacy record with
+no launch proof, an orphan registry or an unresolved prior launch still refuses.
+The CLI fixture in `test/codex-approver-admission.test.mjs` covers first launch,
+active reuse, confirmed Stop and relift, and those refusal cases.
 
 ## Approver worktree, project layer and publication
 
@@ -738,6 +749,10 @@ was an observed mailbox stall and is unused.
 
 #### The holder's record watch
 
+The parent publishes `holderPid` under the same per-session launch lock as the holder's
+receipt metadata. It revalidates the launch inside that lock, preserving concurrently
+published fields and refusing to update a replacement launch.
+
 The holder outlives the command that started it — that is the point of it — but it must not
 outlive its own SESSION, and nothing else can reap it: `stop` and the suite stands both reap
 from a cleanup hook, and the take-down that leaks is the one no hook reaches. The suite
@@ -806,14 +821,227 @@ This is mock schema validation, not a native model-turn measurement.
 
 ### Codex holder shutdown
 
-Shutdown interrupts only nonempty turn IDs in the holder's active-turn reservations.
-Completed turns are removed; the retained currentTurnId alone is not an active target.
-Concurrent interrupts share one five-second deadline. Errors, missing IDs and absent
-responses still lead to unconditional app-server termination, followed by the existing
-50 ms socket cleanup delay so the shutdown caller receives its acknowledgement.
-Queued turn requests refuse once stopping begins, and a late response cannot add a
-reservation. A temporary per-request set records completions that arrive before a
-turn response, even when another completion later replaces lastTurn.
+Stop closes admission to new model turns and approvals, settles in-flight turn requests,
+and waits for already-observed active commands to complete naturally before interrupting
+remaining nonempty active-turn IDs. An active command that exceeds the deadline remains
+unresolved without an interrupt that would abort its output readers. This is bounded
+natural completion, not a forced cancellation guarantee. A late accepted response remains accounted;
+a completion received before its response does not resurrect a completed reservation.
+Thread-scoped notifications are filtered after thread identity is bound; startup hooks
+coalesced with the `thread/start` response remain visible before that binding completes.
+The driver, holder interrupt requests, terminal-event wait and holder-exit wait share one
+deadline, bounded by ten seconds. An interrupt ACK is not terminal proof. Refusal, timeout,
+unknown turn identity, broken output and receipt write failure return `ok: false`,
+`attempted: true`, `stopped: false`; the record and participant home remain recoverable.
+Repeated unresolved Stop does not resend an interrupt whose outcome was already consumed.
+
+The holder appends selected `commandExecution` start/completion, output deltas and terminal
+turn events to private, fsynced JSONL under the explicit Codex state home's
+`receipts/<session-key>/<launch-key>.jsonl`. `commandReceiptFile` on the record names it.
+This location is outside the disposable participant `CODEX_HOME`. Each launch has an
+exclusive receipt file; a duplicate writer or malformed command identity fails closed.
+An executed command needs `completed` or `failed` and an actual nonnegative integer exit
+code. Null or synthetic negative exits remain unresolved, including after
+`backgroundTerminals/terminate` acknowledges or `backgroundTerminals/list` is empty.
+A terminal turn with a pending background command does not permit shutdown.
+
+An explicit `declined` completion can instead prove that a command never started.
+It must match one `inProgress` start by item, thread, known turn, command and cwd, with
+explicit null process and exit fields in both events, no output deltas and no
+nonempty aggregate output. Missing, conflicting or repeated evidence stays unresolved.
+The retained outcome remains `declined` with a null exit; it proves no command or test
+execution. Receipt replay applies the same checks. Codex CLI 0.164.0's generated schema
+includes `declined`; other unknown statuses do not establish a non-start outcome.
+
+Only after terminal turn/command accounting does the holder close app-server stdin and
+await its `close` event, including output closure and exit zero, then persist
+`stop/confirmed`. The holder exits after its response; the driver confirms holder absence
+and retires only the same launch with `stopConfirmed`. Stop sends no cached-PID signal
+fallback and absence of a record sweeps no other participant home. `EPERM` from a process
+observation remains alive. A genuine nonzero command exit can be terminal for Stop while
+remaining a failed command/test outcome.
+
+One failed audit permits graceful resource cleanup without successful Stop: the
+experimental raw parser's unsupported single-call code envelope refusal. The holder
+requires a settled turn request, an explicitly idle thread with a known terminal turn,
+no active turn, pending command, original tool result, server request or in-flight RPC,
+and the current launch. Each refused envelope must bind to that thread and terminal
+turn through a nonempty, unique call ID that does not collide with a recorded call.
+Only those identity fields are retained; the refused code body stays unrecorded.
+The holder fsyncs a same-launch `failedStopCleanup` record before
+closing app-server stdin and again after observed app-server output closure and exit.
+The projection retains the audit error, terminal lifecycle snapshot, actual `appClose`
+and `holderExitRequested`; it does not certify descendants or prove holder absence.
+The holder then exits with failure. Stop still returns `ok: false`, `stopped: false`;
+the original receipt ledger stays failed, no `stop/confirmed` is written, and the record
+and private home remain. Native done and recovery still refuse this launch. Unknown
+turn identities, pending work, broken streams and other audit errors do not take this
+cleanup path. Record persistence failure retains the holder rather than authorizing exit.
+Any additional ledger, lifecycle, output or persistence integrity failure permanently
+disables this exception, while the first audit error remains unchanged.
+
+The holder checks the shared deadline again after app-server close and after confirmation
+persistence. A confirmation that cannot finish within that allowance is followed by an
+unresolved record. Recovery validates the request's thread, finite ten-second-bounded
+deadline and timestamps through confirmation; late app-server close or confirmation
+cannot authorize retirement on a later call. Old confirmations without this deadline
+binding remain unresolved rather than being upgraded into timely proof.
+
+For a task-bound launch, retirement also preserves a nonsecret, digest-bound
+`metadata.nativeStop` reference on the matching participant before removing the
+session record. The actual thread, launch and task/address identities
+must agree; missing or mismatched evidence prevents native CLI close or recovery.
+The reserved `metadata.nativeLaunchId` is the driver's actual launch ID; mailbox
+assignment changes do not replace it. A failed launch's binding undo preserves a
+newer launch or a retained Stop reference under the task lock.
+
+A Codex teamlead shares one launch between the child orchestrator and the parent
+teamlead address. Stop verifies the reciprocal task link, unique teamlead address,
+harness, modes, child owner, thread, session reference and any existing launch IDs
+under parent, child and session locks, in that order. The child retains the original
+receipt identity. The parent retains that same proof with `alias: {task, address}`
+for its own seat; it does not invent a receipt for the parent task. Both references
+must be published before the shared registry entry can be retired. A write failure,
+including an exception after publication, keeps that entry for a repeat Stop that
+revalidates the current pair. A newer binding or changed prior proof refuses recovery.
+The lock waits consume the current Stop deadline.
+
+Parent close and piece sweep validate the alias against the current child owner and
+identical child proof before cleanup. The existing parent task lock stays held while
+the guard takes the child and session locks; an asynchronous sweep does not retake
+its own parent lock synchronously. A copied child proof without that alias is not
+parent terminal evidence. The parent alias owns no additional private home, so its
+driver cleanup removes none; the shared launch's owned home retires with Stop.
+
+A same-slug native teamlead relift validates the previous terminal proof before
+reserving a new launch. Both seats retain that proof and record
+`nativePendingLaunchId` until the driver supplies the new thread. Pending dispatch
+blocks close and another relift; an unknown invoked outcome retains the reservation.
+A known failure before driver invocation releases only unchanged owned reservations.
+The durable rebind intent records both previous seats and the actual new launch ID.
+Publication replaces generation-specific fields on both seats, without inheriting
+`nativeStop` from the previous launch. Recovery holds parent then child locks and
+accepts only the reserved old or intended new generation. A newer binding refuses
+replay; a completed Stop of the new generation retains its proof. Previous receipt
+files remain unchanged.
+
+Re-review checks that same launch under the task lock before publishing its diff,
+assignment and snapshot. Prelaunch bind, legacy handshake and failed-bind undo
+cannot replace a current native binding or retained Stop with a stale legacy plan.
+
+Native worker, reviewer and reporter recovery share that guard. Piece cleanup
+checks the same proof before its first destructive step; process absence alone
+does not license deleting the private home. A known never-invoked reservation
+keeps its worktree and mail and permits retry or close; its private-home sweep
+removes nothing. Managed root `lead --resume` and `prepareRootLaunch` still use
+their separate PID-based recovery contract. Managed root lead requires explicit
+full access and is outside the restricted attached-controller profile here; these
+changes do not certify that route as terminally safe.
+Model input rechecks launch ownership and persistent `stopping` after auth reload,
+under the existing launch transition lock through synchronous RPC enqueue.
+
+A response near the deadline may leave a confirmed record after holder exit. A later
+Stop can retire it without a socket only after validating its pinned receipt path,
+complete row sequence, same launch/thread/holder/app identities, terminal commands and
+app-server close, and observing both original process IDs absent. Missing, foreign or
+incomplete evidence remains unresolved; an alive or permission-denied PID is never
+signalled as a recovery shortcut. Retirement's transition-lock wait uses only the remaining
+Stop allowance, and lock refusal returns a structured nonpassing result with state retained.
+After synchronous proof parsing/replay the driver checks the current call's remaining
+deadline, then checks again after digest-bound task proof retention before removing the record.
+A timely old confirmation cannot authorize
+knowingly late retirement under a new, shorter Stop allowance.
+
+These are selected lifecycle receipts, not fabricated original native tool receipts or
+a claim that upstream delivered complete original streams. An externally interrupted
+model command that loses its final item/exit remains unresolved. The inspected upstream
+model-terminal termination route can abort output readers; this Stop does not replace it
+with standalone command execution, a controller model turn or broader permissions.
+Successful forced termination with complete final command streams still requires a
+native API that preserves readers and reports actual exit/output closure. Source fixtures
+establish this implementation's accounting rules, not that missing live capability.
+
+For a bounded fresh-thread experiment, `PROMPTOBUS_CODEX_RAW_TOOL_RECEIPTS=1` opts into
+`thread/start.experimentalRawEvents`. It refuses resume rather than assuming the flag
+exists there. This uses the pinned 0.163.0 [experimental internal field](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L158)
+and [actual response-item notification](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/app-server/src/bespoke_event_handling.rs#L1159);
+it is not a stable protocol compatibility claim. No binary, sandbox or permission change
+is implied. Default sessions keep lifecycle-only capture.
+
+The opt-in filters before payload persistence: direct `exec_command`/`write_stdin` calls,
+or code-mode `exec` envelopes containing one literal `text(await tools.NAME({...}));`
+call, and their matching actual outputs. Code is never evaluated. Literal non-command
+calls are omitted, as are reasoning, auth and foreign-thread notifications. Unsupported
+code shapes fail closed; only the fixed metadata-only Promptobus discovery expression
+used by this experiment is also recognized without persistence. This is a constrained
+capture profile, not a general JavaScript analyzer or a count of arbitrary inner calls.
+
+Selected received notifications are fsynced in the same launch receipt file before
+interruption and private-home removal. Their JSON values are retained; upstream removes
+execution metadata and may transform media, so these are not rollout-byte copies.
+Direct original output uses the producer's text header before the first `Output:`
+delimiter; stdout cannot override its exit or session. Each command needs a direct raw
+`function_call.call_id` matching the lifecycle `itemId`, the same turn and independently proven cwd,
+and a matching actual final exit. Requested command text and displayed shell argv remain
+separate evidence; neither same-turn membership nor command-string normalization supplies
+an identity edge. A running exec binds its returned session to that original call and
+lifecycle `processId`. Direct poll inputs/outputs have their own call IDs and capture the
+owning exec at input time. A genuine final poll, including empty stdout, finalizes only
+that lifetime; a delayed result cannot finalize or remove a newer use of the same session.
+A custom code-mode poll remains unresolved even after another direct poll succeeds.
+A foreign returned session
+is retained as failed evidence and is never adopted. Missing or reused original pairs,
+unknown output and mismatched lifecycle process identity remain unresolved in memory and
+when replaying a retained confirmation. Nonzero exits remain valid terminal Stop evidence
+while remaining failed command/test outcomes.
+
+For implicit cwd the experimental holder supports only a fixed single-local profile.
+Before child spawn it requires an actual private directory pinned by CODEX_HOME, rejects
+any inherited CODEX_EXEC_SERVER_URL or CODEX_EXEC_SERVER_NOISE_REGISTRY_URL,
+CODEX_EXEC_SERVER_NOISE_ENVIRONMENT_ID, CODEX_EXEC_SERVER_NOISE_AUTH_TOKEN or
+CODEX_EXEC_SERVER_NOISE_CHATGPT_ACCOUNT_ID key (even empty), and requires known absence
+of that home's environments.toml. Existing files, directories, symlinks and unreadable
+or unproved paths refuse admission without logging selector values. With these inputs
+absent the pinned [environment manager](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/exec-server/src/environment.rs#L191-L216)
+uses its [local-only fallback](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/exec-server/src/environment_provider.rs#L60-L102).
+The requested stable_environment_tools=false controls advertisement; it is not executor proof.
+The holder also requires accepted thread/start.cwd to equal the immutable absolute launch
+cwd, and records the accepted thread and each
+actual `turn/start` ID in the same receipt. Raw calls arriving before the turn response
+remain unresolved until that exact ID is accepted. The default is never copied from a
+command lifecycle item. Missing, JSON null and exactly empty workdir use that proven
+default; whitespace is not trimmed. This follows pinned [exec default resolution](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs#L185-L200).
+Absolute explicit workdir remains strict. Relative paths, nonlocal URIs and explicit
+environment IDs are unsupported; JSON null environment ID uses the primary default.
+
+Ordinary owner-mail turns may inherit this proof. Before forwarding a turn override,
+steer/review, resume, settings/environment mutation or any other generic RPC, the holder
+permanently invalidates implicit proof for the launch. The narrow supported turn input
+contains only threadId, input and effort. Invalidation also withdraws earlier implicit
+bindings conservatively; explicit bindings remain strict. Replay validates the same
+launch/thread/turn evidence and preserves cwd provenance, including launch cwd in the
+retained `nativeStop` reference. Historical receipts lacking this proof stay unresolved.
+These fixtures establish source behavior; they do not retrofit a prior native Stop result.
+
+Code-mode `exec` envelopes are provenance only: nested exec gets a fresh child call ID,
+and the raw notification strips the metadata that could expose that relation. Even one
+literal inner call with matching parameters cannot provide the direct identity proof.
+Such command capture remains unresolved; arbitrary discovery/batch code also fails closed.
+The same explicit opt-in writes the pinned
+[`[features.code_mode] direct_only_tool_namespaces = ["functions"]`](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/features/src/feature_configs.rs#L53-L60)
+into that participant's generated private `config.toml` before app-server starts.
+This exposes the eligible whole `functions` namespace directly
+and omits it from nested code-mode tools, even for a CodeModeOnly model. It changes tool
+presentation, not sandbox/approval/network authority, and is never applied globally.
+Configuration alone is not effective-runtime proof: actual direct call/output shapes must
+be observed. Ordinary code-mode remains unsupported for authoritative Stop receipts.
+The original-receipt wait shares the existing Stop deadline, and recovery replays the
+retained selection/outcomes before accepting the confirmation. Retiring a launch copies
+its actual `rawToolReceipts` flag into the task's `nativeStop` proof; `done` and recovery
+must still validate that selection against the same launch receipt after the session
+record is removed. Omitting or changing a strict selection refuses both operations.
+Actorless fixtures do
+not prove actual native delivery, persistence ordering or forced cancellation.
 
 The live Codex check latches cancellation before awaiting its abort stop. An already
 pending normal stop retains its owned reference but cannot remove the sandbox or

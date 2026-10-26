@@ -164,12 +164,14 @@ const probeLiftoff = liftoffSource
   .replace("'../dist/index.js'", JSON.stringify(new URL('../dist/index.js', import.meta.url).href))
   .replace("'./util.js'", JSON.stringify(new URL('../lib/util.js', import.meta.url).href))
   .replace("'./harness-home.js'", JSON.stringify(new URL('../lib/harness-home.js', import.meta.url).href))
+  .replace("'./native-lifecycle.js'", JSON.stringify(new URL('../lib/native-lifecycle.js', import.meta.url).href))
   .replace("'./store.js'", JSON.stringify(new URL('../lib/store.js', import.meta.url).href));
 check('bgSessions probe keeps the production reader and redirects only its neighbours',
   probeLiftoff !== liftoffSource
   && !probeLiftoff.includes("'../dist/index.js'")
   && !probeLiftoff.includes("'./util.js'")
   && !probeLiftoff.includes("'./harness-home.js'")
+  && !probeLiftoff.includes("'./native-lifecycle.js'")
   && !probeLiftoff.includes("'./store.js'"));
 writeFileSync(path.join(PROBE, 'liftoff.js'), probeLiftoff);
 

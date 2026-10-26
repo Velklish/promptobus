@@ -35,7 +35,7 @@ export const MIN_AGE_MS = 60 * 60 * 1000;
 // Unix-socket directories are created directly under `/tmp` by the test and
 // live harness helpers. The shared sweep owns this list so a runner copy can
 // carry the complete cleanup seam without importing a test-only module.
-export const SOCK_PREFIXES = ['a2l-', 'a2e-', 'a2h-', 'a2s-', 'ags-', 'a2m-'];
+export const SOCK_PREFIXES = ['a2l-', 'a2e-', 'a2h-', 'a2s-', 'ags-', 'a2m-', 'pb-stop-account-', 'pb-stop-recovery-', 'pb-stop-lock-'];
 
 // The age cut-off is the first line of defence: children keep updating their
 // run root while they work, and FILE_TIMEOUT_MS is five minutes, so a going

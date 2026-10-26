@@ -15,6 +15,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import os from 'node:os';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { check } from './check.mjs';
+import { commandReceipts, readStopConfirmation } from '../lib/codex-command-receipts.js';
+import { codexStateHome, sessionKey } from '../lib/codex-session.js';
+import { retainNativeStop } from '../lib/native-lifecycle.js';
 import { stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture, expectThrow } from './console.mjs';
 import {
@@ -45,6 +48,21 @@ const { planReview, review, denyToolsRefusal, writeDiff } = await import(reviewU
 // own, not the bus's.
 const { EFFORT_LEVELS, REVIEWER_DENY, SESSION_ENV_DROP } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
+function stoppedCodexFixture(home, task) {
+  const p = store.participantOf(store.readTask(home, task), 'reviewer:orders-api');
+  process.env.PROMPTOBUS_CODEX_HOME = path.join(SB, 'native-state');
+  const record = { home, task, address: 'reviewer:orders-api', ref: p.sessionRef,
+    launchId: p.metadata.nativeLaunchId ?? 'fixture-' + task, threadId: p.metadata.sessionId,
+    holderPid: 2147483646, appPid: 2147483645 };
+  const file = path.join(codexStateHome(), 'receipts', sessionKey(record.ref), sessionKey(record.launchId) + '.jsonl');
+  const receipt = commandReceipts(file, { format: 1, ...record });
+  const deadlineAt = Date.now() + 5000;
+  receipt.append('stop/requested', { threadId: record.threadId, deadlineAt });
+  receipt.append('app-server/close', { code: 0, signal: null });
+  receipt.append('stop/confirmed', { ...record, commands: [], appClose: { code: 0, signal: null }, deadlineAt, originalToolReceipt: 'not synthesized' });
+  check('telemetry fixture: prior native generation has a bound terminal receipt', readStopConfirmation(file, record).ok);
+  store.withTaskLock(home, task, () => retainNativeStop(record, file));
+}
 const { status } = await import(path.join(here, '..', 'lib', 'status.js'));
 const { hostOf } = await import(path.join(here, '..', 'lib', 'host.js'));
 const { GUARD_HOOK_EVENT, guardHookCommand } = await import(path.join(here, '..', 'dist', 'hooks.js'));
@@ -1039,6 +1057,7 @@ store.sendMessage(home, rebindTask.id, {
   from: 'reviewer:orders-api', to: store.ORCHESTRATOR, type: 'result', body: 'round before rebind',
 });
 let reboundErr = null;
+stoppedCodexFixture(home, rebindTask.id);
 let reboundOut = '';
 try {
   reboundOut = await capture(() => review(WS, {
@@ -1160,6 +1179,7 @@ store.upsertParticipant(home, tileTask.id, {
   },
 });
 let tileRebindErr = null;
+stoppedCodexFixture(home, tileTask.id);
 try {
   await capture(() => review(WS, {
     tool: TOOL, target: REPO, task: tileTask.id, harness: 'claude',
@@ -1251,6 +1271,7 @@ try {
   const closedClaude = JSON.stringify(store.participantOf(store.readTask(home, producerTask.id), 'reviewer:orders-api')
     .metadata.harnessHistory[0]);
   producerClock += 1000;
+  stoppedCodexFixture(home, producerTask.id);
   await liftProducer('claude');
   const producerFinal = store.participantOf(store.readTask(home, producerTask.id), 'reviewer:orders-api');
   const expectedProducer = [tokenShape(3, 5, 7, 9), tokenShape(36, 50, 4, 6), tokenShape(4, 5, 6, 7)];

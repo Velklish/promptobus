@@ -22,6 +22,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reserve a fresh Codex approver launch before preparing its worktree and pass
+  that identity through startup. Retain its base before setup can fail. Keep callback fencing and terminal-proof checks
+  for earlier or unresolved launches.
+- Wait for the holder reply before checking an unresolved Codex request in the
+  driver suite, so an intermediate request record cannot fail the reply assertion.
+- Allow Codex Stop to retain an explicit `declined` command as a non-start outcome
+  when matching start/completion evidence has no process, exit or output. Keep its
+  exit null and reject conflicting evidence during observation and receipt replay.
+- Require terminal command accounting, complete selected output and app-server
+  closure within one deadline for Codex Stop. Refused or unresolved stops retain
+  their record and private home; nonzero command exits remain nonzero.
+- Require matching retained Stop proof for native launch recovery, task close and
+  piece cleanup. Stale launch callbacks cannot overwrite it. Experimental
+  direct-tool capture binds omitted cwd to accepted local thread and turn context.
+- Retain a native teamlead's terminal proof for its verified parent and child
+  addresses before retiring their shared launch. Parent close and cleanup validate
+  that relationship; partial publication remains recoverable through repeat Stop.
+- Bind both native teamlead seats to the actual new launch on same-slug relift.
+  Validate and retain prior terminal proof until rebind; interrupted dispatch and
+  changed generations refuse close or replay without overwriting evidence.
 - Prepare selected skills for private Codex reporters and managed roots when the
   system temporary directory has an alias. Resolve only that system base; retain
   recorded home identity and reject symlinks in the private container or leaf.

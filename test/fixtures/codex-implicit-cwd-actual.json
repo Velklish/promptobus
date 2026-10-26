@@ -1,0 +1,832 @@
+{
+  "sourceSha256": "0618264659f1c41771116414c9d01f4372705ee891c87510d7598a59ceae7010",
+  "manifestSha256": "14fc6c2af115ad5974b05dcf379101789f5475b714cdc9f853118a98cd661211",
+  "projection": "Selected arguments and call/turn/thread identities unchanged; lifecycle cwd consistently normalized to /fixture/native-implicit-cwd; terminal output is its exact public wrapper prefix, body omitted.",
+  "originalCwdSha256": "71e552fb93113011098f1c7e88c32c256b14185047a936b5e9f348fc33c0dc41",
+  "outputPrefixes": [
+    {
+      "callId": "call_cd8642e7cffa4e05accb5141a5b87878",
+      "originalOutputSha256": "2e05b66ef6e5677d50a95c4810d24c530cea3e1da12315776ba4b3f3fdd8f437",
+      "retainedPrefixSha256": "a1e3bd8b65ce4141d902189295534ce5eadd5d014455004653fe8ff603352c66",
+      "retainedBytes": 103
+    },
+    {
+      "callId": "call_7c7322c85d6141db9c263ee93e725f4d",
+      "originalOutputSha256": "23a91f098c284d9fcc25bb83b9289b2f00557177e3b6eb89d5bce3a18c20bfe6",
+      "retainedPrefixSha256": "e5dc577065fc706b23189070a8aefa6dfd40fa22bf3dbfe663725104085b1108",
+      "retainedBytes": 104
+    },
+    {
+      "callId": "call_5e98b7fe71af4374a5163d05829f071f",
+      "originalOutputSha256": "9fd837ee5b2c7c954a5d82b2a4b2167bac8886ae71f430b7aef559d2a4989b92",
+      "retainedPrefixSha256": "48f08007ba5b922aab517c23a155371ea7a1e600b17f480cf144eabfcf134134",
+      "retainedBytes": 104
+    },
+    {
+      "callId": "call_c10c5cc5c6c14ea79d0deed9775e5fcd",
+      "originalOutputSha256": "e43ec42a949930e1ede3b1b2dc02f67a4c0ddbd5233d8705446b4697240c75af",
+      "retainedPrefixSha256": "1fef2e6d0c4ba06914d8734cbbcf5e5a4cbdb429205c16469b527eb715ce5ac2",
+      "retainedBytes": 104
+    },
+    {
+      "callId": "call_8db05a3f16b7400eb1c70f86fb019cc6",
+      "originalOutputSha256": "1e0887223082bda2a0c9b45657036a031a2ccfbd14c199bb7172dc3d98d6e503",
+      "retainedPrefixSha256": "1e0887223082bda2a0c9b45657036a031a2ccfbd14c199bb7172dc3d98d6e503",
+      "retainedBytes": 102
+    },
+    {
+      "callId": "call_3b2b4281863f466086bbcbfb01c53574",
+      "originalOutputSha256": "e93125ad32cb2205013970d34aff94c66141a56fbc43206b194af3fee6b7d369",
+      "retainedPrefixSha256": "26b0979d46dd0652d93ac6b6f472299c51e5419271960bbb76345d7e6a3c3674",
+      "retainedBytes": 103
+    },
+    {
+      "callId": "call_9f523fc082d74890834628e68ff2ba2a",
+      "originalOutputSha256": "85ab68b855520699a21829d06aae3da9db4d5ab97c0af7797f3bac450070af27",
+      "retainedPrefixSha256": "06f72b9c9acccfd6b9b2a89d4ca09cc8dbffe27c61a14834f8d8ef32513bfc0d",
+      "retainedBytes": 103
+    },
+    {
+      "callId": "call_5c5a9384fa4d4fcc82787267655691b3",
+      "originalOutputSha256": "9bb1f25ec3f8770fbf555f64c7813828cb6b66a1992088ef32901898f6ee21c7",
+      "retainedPrefixSha256": "23cbfd8dbfed39d78797df2c8d3a26b39f7a8d08018e235a76f7d9f273625c2f",
+      "retainedBytes": 103
+    },
+    {
+      "callId": "call_7ef8b0d1073b4cc686bcef0072bbb3d2",
+      "originalOutputSha256": "b6ad89537983f41309c6fc6ad2889a86214b9d382ed9635bb18f2edf2097884b",
+      "retainedPrefixSha256": "b6ad89537983f41309c6fc6ad2889a86214b9d382ed9635bb18f2edf2097884b",
+      "retainedBytes": 102
+    },
+    {
+      "callId": "call_f4a17e2190c14ff9aa369b95593735f4",
+      "originalOutputSha256": "0d60cb24750a42b303274d008b9859062bc4d0bda08ca406de26f90b7c1d9d11",
+      "retainedPrefixSha256": "7011206eeb92e748aa616a11a7153b8a638536a1d68c85458996cecf56a800af",
+      "retainedBytes": 105
+    },
+    {
+      "callId": "call_87a327629cf141e1b6fd6c102e44dd3b",
+      "originalOutputSha256": "8198e13c6eec106814f681f3096e6a8d07e3bed397e1aafa7ea2cd58deedf4fd",
+      "retainedPrefixSha256": "5a5ce40783ef66ebc5069348c4f1b03f8599d64d5cd9ec7bf53723fb8466652f",
+      "retainedBytes": 102
+    },
+    {
+      "callId": "call_f624cb3131274c3d9dbe47eda6850c73",
+      "originalOutputSha256": "1b35dbdc470f961887c00ec5806690186cef5c8ae4bf47790286607e91167f61",
+      "retainedPrefixSha256": "01532efefe9fcda28af9bb370d64889c889365c32bff6af6eaf0a4ee52bd6b6e",
+      "retainedBytes": 103
+    },
+    {
+      "callId": "call_bd8c95e11f4c41108062212e0ee87542",
+      "originalOutputSha256": "eaf2ac044154f850e29785b15d4ba71b9a79900406944a8b5e617b287ae71024",
+      "retainedPrefixSha256": "7ecba067cd0ef5d01a08d20864090a601dc35628ce258f6b454cfb26c8cb9142",
+      "retainedBytes": 104
+    },
+    {
+      "callId": "call_87252d9d2f6d421c91f5680c1a51a202",
+      "originalOutputSha256": "424dc64d1023b5678e7650595b8aa724cfb96781864298196437e1fb9b42b611",
+      "retainedPrefixSha256": "08135b2ebcb5f2a7d986022509462ab3a0f3b1f4e0e726a01449c90c0cb6a4a6",
+      "retainedBytes": 103
+    }
+  ],
+  "rows": [
+    {
+      "kind": "turn/started",
+      "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+      "turnId": "01a16c64-5bba-73b2-a7b7-f3bad14aefe9",
+      "status": "inProgress"
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c64-5bba-73b2-a7b7-f3bad14aefe9",
+          "item": {
+            "type": "function_call",
+            "name": "exec_command",
+            "arguments": "{\"cmd\":\"cat AGENTS.md\",\"max_output_tokens\":2000}",
+            "call_id": "call_cd8642e7cffa4e05accb5141a5b87878"
+          }
+        }
+      }
+    },
+    {
+      "kind": "item/started",
+      "itemId": "call_cd8642e7cffa4e05accb5141a5b87878",
+      "turnId": "01a16c64-5bba-73b2-a7b7-f3bad14aefe9",
+      "processId": "56629",
+      "command": "/bin/zsh -lc 'cat AGENTS.md'",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "inProgress",
+      "exitCode": null
+    },
+    {
+      "kind": "item/completed",
+      "itemId": "call_cd8642e7cffa4e05accb5141a5b87878",
+      "turnId": "01a16c64-5bba-73b2-a7b7-f3bad14aefe9",
+      "processId": "56629",
+      "command": "/bin/zsh -lc 'cat AGENTS.md'",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "completed",
+      "exitCode": 0
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c64-5bba-73b2-a7b7-f3bad14aefe9",
+          "item": {
+            "type": "function_call_output",
+            "call_id": "call_cd8642e7cffa4e05accb5141a5b87878",
+            "output": "Chunk ID: f1f0db\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 69\nOutput:\n"
+          }
+        }
+      }
+    },
+    {
+      "kind": "turn/completed",
+      "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+      "turnId": "01a16c64-5bba-73b2-a7b7-f3bad14aefe9",
+      "status": "completed"
+    },
+    {
+      "kind": "turn/started",
+      "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "status": "inProgress"
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call",
+            "name": "exec_command",
+            "arguments": "{\"cmd\":\"git status --porcelain\\n git rev-parse HEAD HEAD^ HEAD^{tree}\\n git branch --show-current\\n cat package.json src/summarize-runs.mjs test/summarize-runs.test.mjs\",\"max_output_tokens\":5000}",
+            "call_id": "call_7c7322c85d6141db9c263ee93e725f4d"
+          }
+        }
+      }
+    },
+    {
+      "kind": "item/started",
+      "itemId": "call_7c7322c85d6141db9c263ee93e725f4d",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "90344",
+      "command": "/bin/zsh -lc 'git status --porcelain\n git rev-parse HEAD HEAD''^ HEAD''^{tree}\n git branch --show-current\n cat package.json src/summarize-runs.mjs test/summarize-runs.test.mjs'",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "inProgress",
+      "exitCode": null
+    },
+    {
+      "kind": "item/completed",
+      "itemId": "call_7c7322c85d6141db9c263ee93e725f4d",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "90344",
+      "command": "/bin/zsh -lc 'git status --porcelain\n git rev-parse HEAD HEAD''^ HEAD''^{tree}\n git branch --show-current\n cat package.json src/summarize-runs.mjs test/summarize-runs.test.mjs'",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "completed",
+      "exitCode": 0
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call_output",
+            "call_id": "call_7c7322c85d6141db9c263ee93e725f4d",
+            "output": "Chunk ID: 0f7f6c\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 182\nOutput:\n"
+          }
+        }
+      }
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call",
+            "name": "exec_command",
+            "arguments": "{\"cmd\":\"npm test\",\"max_output_tokens\":5000}",
+            "call_id": "call_5e98b7fe71af4374a5163d05829f071f"
+          }
+        }
+      }
+    },
+    {
+      "kind": "item/started",
+      "itemId": "call_5e98b7fe71af4374a5163d05829f071f",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "59945",
+      "command": "/bin/zsh -lc 'npm test'",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "inProgress",
+      "exitCode": null
+    },
+    {
+      "kind": "item/completed",
+      "itemId": "call_5e98b7fe71af4374a5163d05829f071f",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "59945",
+      "command": "/bin/zsh -lc 'npm test'",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "failed",
+      "exitCode": 1
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call_output",
+            "call_id": "call_5e98b7fe71af4374a5163d05829f071f",
+            "output": "Chunk ID: 0e5825\nWall time: 0.0000 seconds\nProcess exited with code 1\nOriginal token count: 245\nOutput:\n"
+          }
+        }
+      }
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call",
+            "name": "exec_command",
+            "arguments": "{\"cmd\":\"git diff --check\\n git diff -- src/summarize-runs.mjs test/summarize-runs.test.mjs\\n git show --no-patch --format='%H%n%P%n%T' HEAD\",\"max_output_tokens\":5000}",
+            "call_id": "call_c10c5cc5c6c14ea79d0deed9775e5fcd"
+          }
+        }
+      }
+    },
+    {
+      "kind": "item/started",
+      "itemId": "call_c10c5cc5c6c14ea79d0deed9775e5fcd",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "72107",
+      "command": "/bin/zsh -lc \"git diff --check\n git diff -- src/summarize-runs.mjs test/summarize-runs.test.mjs\n git show --no-patch --format='%H%n%P%n%T' HEAD\"",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "inProgress",
+      "exitCode": null
+    },
+    {
+      "kind": "item/completed",
+      "itemId": "call_c10c5cc5c6c14ea79d0deed9775e5fcd",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "72107",
+      "command": "/bin/zsh -lc \"git diff --check\n git diff -- src/summarize-runs.mjs test/summarize-runs.test.mjs\n git show --no-patch --format='%H%n%P%n%T' HEAD\"",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "completed",
+      "exitCode": 0
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call_output",
+            "call_id": "call_c10c5cc5c6c14ea79d0deed9775e5fcd",
+            "output": "Chunk ID: 6f48ae\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 572\nOutput:\n"
+          }
+        }
+      }
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call",
+            "name": "exec_command",
+            "arguments": "{\"cmd\":\"git add src/summarize-runs.mjs test/summarize-runs.test.mjs\",\"max_output_tokens\":2000}",
+            "call_id": "call_8db05a3f16b7400eb1c70f86fb019cc6"
+          }
+        }
+      }
+    },
+    {
+      "kind": "item/started",
+      "itemId": "call_8db05a3f16b7400eb1c70f86fb019cc6",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "80833",
+      "command": "/bin/zsh -lc 'git add src/summarize-runs.mjs test/summarize-runs.test.mjs'",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "inProgress",
+      "exitCode": null
+    },
+    {
+      "kind": "item/completed",
+      "itemId": "call_8db05a3f16b7400eb1c70f86fb019cc6",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "80833",
+      "command": "/bin/zsh -lc 'git add src/summarize-runs.mjs test/summarize-runs.test.mjs'",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "completed",
+      "exitCode": 0
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call_output",
+            "call_id": "call_8db05a3f16b7400eb1c70f86fb019cc6",
+            "output": "Chunk ID: c37a45\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 0\nOutput:\n"
+          }
+        }
+      }
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call",
+            "name": "exec_command",
+            "arguments": "{\"cmd\":\"git commit -m 'Implement run summary with immutable input coverage'\",\"max_output_tokens\":2000}",
+            "call_id": "call_3b2b4281863f466086bbcbfb01c53574"
+          }
+        }
+      }
+    },
+    {
+      "kind": "item/started",
+      "itemId": "call_3b2b4281863f466086bbcbfb01c53574",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "62192",
+      "command": "/bin/zsh -lc \"git commit -m 'Implement run summary with immutable input coverage'\"",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "inProgress",
+      "exitCode": null
+    },
+    {
+      "kind": "item/completed",
+      "itemId": "call_3b2b4281863f466086bbcbfb01c53574",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "62192",
+      "command": "/bin/zsh -lc \"git commit -m 'Implement run summary with immutable input coverage'\"",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "completed",
+      "exitCode": 0
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call_output",
+            "call_id": "call_3b2b4281863f466086bbcbfb01c53574",
+            "output": "Chunk ID: 769bcd\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 42\nOutput:\n"
+          }
+        }
+      }
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call",
+            "name": "exec_command",
+            "arguments": "{\"cmd\":\"git status --porcelain\\n git show --no-patch --format='%H%n%P%n%T' HEAD\\n date -u '+%Y-%m-%dT%H:%M:%S.000Z'\",\"max_output_tokens\":2000}",
+            "call_id": "call_9f523fc082d74890834628e68ff2ba2a"
+          }
+        }
+      }
+    },
+    {
+      "kind": "item/started",
+      "itemId": "call_9f523fc082d74890834628e68ff2ba2a",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "46852",
+      "command": "/bin/zsh -lc \"git status --porcelain\n git show --no-patch --format='%H%n%P%n%T' HEAD\n date -u '+%Y-%m-%dT%H:%M:%S.000Z'\"",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "inProgress",
+      "exitCode": null
+    },
+    {
+      "kind": "item/completed",
+      "itemId": "call_9f523fc082d74890834628e68ff2ba2a",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "46852",
+      "command": "/bin/zsh -lc \"git status --porcelain\n git show --no-patch --format='%H%n%P%n%T' HEAD\n date -u '+%Y-%m-%dT%H:%M:%S.000Z'\"",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "completed",
+      "exitCode": 0
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call_output",
+            "call_id": "call_9f523fc082d74890834628e68ff2ba2a",
+            "output": "Chunk ID: dd3040\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 37\nOutput:\n"
+          }
+        }
+      }
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call",
+            "name": "exec_command",
+            "arguments": "{\"cmd\":\"npm test\",\"max_output_tokens\":5000}",
+            "call_id": "call_5c5a9384fa4d4fcc82787267655691b3"
+          }
+        }
+      }
+    },
+    {
+      "kind": "item/started",
+      "itemId": "call_5c5a9384fa4d4fcc82787267655691b3",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "99342",
+      "command": "/bin/zsh -lc 'npm test'",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "inProgress",
+      "exitCode": null
+    },
+    {
+      "kind": "item/completed",
+      "itemId": "call_5c5a9384fa4d4fcc82787267655691b3",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "99342",
+      "command": "/bin/zsh -lc 'npm test'",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "completed",
+      "exitCode": 0
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call_output",
+            "call_id": "call_5c5a9384fa4d4fcc82787267655691b3",
+            "output": "Chunk ID: 89f937\nWall time: 0.4438 seconds\nProcess exited with code 0\nOriginal token count: 92\nOutput:\n"
+          }
+        }
+      }
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call",
+            "name": "exec_command",
+            "arguments": "{\"cmd\":\"git status --porcelain\",\"max_output_tokens\":2000}",
+            "call_id": "call_7ef8b0d1073b4cc686bcef0072bbb3d2"
+          }
+        }
+      }
+    },
+    {
+      "kind": "item/started",
+      "itemId": "call_7ef8b0d1073b4cc686bcef0072bbb3d2",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "14104",
+      "command": "/bin/zsh -lc 'git status --porcelain'",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "inProgress",
+      "exitCode": null
+    },
+    {
+      "kind": "item/completed",
+      "itemId": "call_7ef8b0d1073b4cc686bcef0072bbb3d2",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "14104",
+      "command": "/bin/zsh -lc 'git status --porcelain'",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "completed",
+      "exitCode": 0
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call_output",
+            "call_id": "call_7ef8b0d1073b4cc686bcef0072bbb3d2",
+            "output": "Chunk ID: 3cd9a1\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 0\nOutput:\n"
+          }
+        }
+      }
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call",
+            "name": "exec_command",
+            "arguments": "{\"cmd\":\"npm test\",\"max_output_tokens\":8000}",
+            "call_id": "call_f4a17e2190c14ff9aa369b95593735f4"
+          }
+        }
+      }
+    },
+    {
+      "kind": "item/started",
+      "itemId": "call_f4a17e2190c14ff9aa369b95593735f4",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "4110",
+      "command": "/bin/zsh -lc 'npm test'",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "inProgress",
+      "exitCode": null
+    },
+    {
+      "kind": "item/completed",
+      "itemId": "call_f4a17e2190c14ff9aa369b95593735f4",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "4110",
+      "command": "/bin/zsh -lc 'npm test'",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "failed",
+      "exitCode": 1
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call_output",
+            "call_id": "call_f4a17e2190c14ff9aa369b95593735f4",
+            "output": "Chunk ID: da9994\nWall time: 0.0000 seconds\nProcess exited with code 1\nOriginal token count: 1021\nOutput:\n"
+          }
+        }
+      }
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call",
+            "name": "exec_command",
+            "arguments": "{\"cmd\":\"git status --porcelain\\n git diff --exit-code HEAD -- src/summarize-runs.mjs test/summarize-runs.test.mjs\\n date -u '+%Y-%m-%dT%H:%M:%S.000Z'\",\"max_output_tokens\":2000}",
+            "call_id": "call_87a327629cf141e1b6fd6c102e44dd3b"
+          }
+        }
+      }
+    },
+    {
+      "kind": "item/started",
+      "itemId": "call_87a327629cf141e1b6fd6c102e44dd3b",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "23821",
+      "command": "/bin/zsh -lc \"git status --porcelain\n git diff --exit-code HEAD -- src/summarize-runs.mjs test/summarize-runs.test.mjs\n date -u '+%Y-%m-%dT%H:%M:%S.000Z'\"",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "inProgress",
+      "exitCode": null
+    },
+    {
+      "kind": "item/completed",
+      "itemId": "call_87a327629cf141e1b6fd6c102e44dd3b",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "23821",
+      "command": "/bin/zsh -lc \"git status --porcelain\n git diff --exit-code HEAD -- src/summarize-runs.mjs test/summarize-runs.test.mjs\n date -u '+%Y-%m-%dT%H:%M:%S.000Z'\"",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "completed",
+      "exitCode": 0
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call_output",
+            "call_id": "call_87a327629cf141e1b6fd6c102e44dd3b",
+            "output": "Chunk ID: 9414f8\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 7\nOutput:\n"
+          }
+        }
+      }
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call",
+            "name": "exec_command",
+            "arguments": "{\"cmd\":\"npm test\",\"max_output_tokens\":5000}",
+            "call_id": "call_f624cb3131274c3d9dbe47eda6850c73"
+          }
+        }
+      }
+    },
+    {
+      "kind": "item/started",
+      "itemId": "call_f624cb3131274c3d9dbe47eda6850c73",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "93462",
+      "command": "/bin/zsh -lc 'npm test'",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "inProgress",
+      "exitCode": null
+    },
+    {
+      "kind": "item/completed",
+      "itemId": "call_f624cb3131274c3d9dbe47eda6850c73",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "93462",
+      "command": "/bin/zsh -lc 'npm test'",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "completed",
+      "exitCode": 0
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call_output",
+            "call_id": "call_f624cb3131274c3d9dbe47eda6850c73",
+            "output": "Chunk ID: 556a61\nWall time: 0.4871 seconds\nProcess exited with code 0\nOriginal token count: 93\nOutput:\n"
+          }
+        }
+      }
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call",
+            "name": "exec_command",
+            "arguments": "{\"cmd\":\"git show 057fbae7b7d2d119418db7cdb80b9b2ff1d8cd39:test/summarize-runs.test.mjs\\n git diff --stat 057fbae7b7d2d119418db7cdb80b9b2ff1d8cd39 HEAD\\n git status --porcelain\\n rg --files --hidden -g '!.git' -g '!node_modules'\\n git show --no-patch --format='%H%n%P%n%T' HEAD\\n date -u '+%Y-%m-%dT%H:%M:%S.000Z'\",\"max_output_tokens\":4000}",
+            "call_id": "call_bd8c95e11f4c41108062212e0ee87542"
+          }
+        }
+      }
+    },
+    {
+      "kind": "item/started",
+      "itemId": "call_bd8c95e11f4c41108062212e0ee87542",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "12002",
+      "command": "/bin/zsh -lc \"git show 057fbae7b7d2d119418db7cdb80b9b2ff1d8cd39:test/summarize-runs.test.mjs\n git diff --stat 057fbae7b7d2d119418db7cdb80b9b2ff1d8cd39 HEAD\n git status --porcelain\n rg --files --hidden -g '\"'!.git'\"' -g '\"'!node_modules'\"'\n git show --no-patch --format='%H%n%P%n%T' HEAD\n date -u '+%Y-%m-%dT%H:%M:%S.000Z'\"",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "inProgress",
+      "exitCode": null
+    },
+    {
+      "kind": "item/completed",
+      "itemId": "call_bd8c95e11f4c41108062212e0ee87542",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "12002",
+      "command": "/bin/zsh -lc \"git show 057fbae7b7d2d119418db7cdb80b9b2ff1d8cd39:test/summarize-runs.test.mjs\n git diff --stat 057fbae7b7d2d119418db7cdb80b9b2ff1d8cd39 HEAD\n git status --porcelain\n rg --files --hidden -g '\"'!.git'\"' -g '\"'!node_modules'\"'\n git show --no-patch --format='%H%n%P%n%T' HEAD\n date -u '+%Y-%m-%dT%H:%M:%S.000Z'\"",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "completed",
+      "exitCode": 0
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call_output",
+            "call_id": "call_bd8c95e11f4c41108062212e0ee87542",
+            "output": "Chunk ID: c0eee5\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 163\nOutput:\n"
+          }
+        }
+      }
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call",
+            "name": "exec_command",
+            "arguments": "{\"cmd\":\"rmdir .native-evidence\\n git status --porcelain\\n git show --no-patch --format='%H%n%P%n%T' HEAD\",\"max_output_tokens\":2000}",
+            "call_id": "call_87252d9d2f6d421c91f5680c1a51a202"
+          }
+        }
+      }
+    },
+    {
+      "kind": "item/started",
+      "itemId": "call_87252d9d2f6d421c91f5680c1a51a202",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "45945",
+      "command": "/bin/zsh -lc \"rmdir .native-evidence\n git status --porcelain\n git show --no-patch --format='%H%n%P%n%T' HEAD\"",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "inProgress",
+      "exitCode": null
+    },
+    {
+      "kind": "item/completed",
+      "itemId": "call_87252d9d2f6d421c91f5680c1a51a202",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "processId": "45945",
+      "command": "/bin/zsh -lc \"rmdir .native-evidence\n git status --porcelain\n git show --no-patch --format='%H%n%P%n%T' HEAD\"",
+      "cwd": "/fixture/native-implicit-cwd",
+      "status": "completed",
+      "exitCode": 0
+    },
+    {
+      "kind": "rawResponseItem/completed",
+      "notification": {
+        "method": "rawResponseItem/completed",
+        "params": {
+          "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+          "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+          "item": {
+            "type": "function_call_output",
+            "call_id": "call_87252d9d2f6d421c91f5680c1a51a202",
+            "output": "Chunk ID: 18984b\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 31\nOutput:\n"
+          }
+        }
+      }
+    },
+    {
+      "kind": "turn/completed",
+      "threadId": "01a16c64-59e8-7833-9b7c-5ef74a9458cb",
+      "turnId": "01a16c67-dfdf-7db0-9863-46ee602f2017",
+      "status": "completed"
+    }
+  ]
+}

@@ -387,6 +387,8 @@ export type Notification =
  * was actually stopped — nothing to stop is success, and must not print as "session closed". */
 export interface StopResult {
   ok: boolean;
+  /** Native Stop confirms terminal command accounting before retiring its owned launch.
+   * Missing command outcomes remain unresolved even when an interrupt was acknowledged. */
   stopped: boolean;
   note: string;
   /** The driver ISSUED the stop and could not confirm the session vanished. Without this flag

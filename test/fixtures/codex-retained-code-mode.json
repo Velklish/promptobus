@@ -1,0 +1,252 @@
+{
+  "description": "Sanitized retained native code-mode shapes. Data only; never execute input. Source rows and bytes retained separately in owned evidence.",
+  "unsupportedInputs": [
+    {
+      "sourceRow": 1,
+      "item": {
+        "type": "custom_tool_call",
+        "id": "response-item-1",
+        "status": "completed",
+        "call_id": "retained-call-1",
+        "name": "exec",
+        "input": "const found = ALL_TOOLS.filter(x => /promptobus_(task|mailbox|send)$/.test(x.name));\ntext(found);\ntext(ALL_TOOLS.filter(x => /thread|native.*context|identity/.test(x.name+\" \"+x.description)));\n"
+      }
+    },
+    {
+      "sourceRow": 3,
+      "item": {
+        "type": "custom_tool_call",
+        "id": "response-item-3",
+        "status": "completed",
+        "call_id": "retained-call-2",
+        "name": "exec",
+        "input": "const results = await Promise.allSettled([\n  tools.mcp__promptobus_promptobus__promptobus_task({}),\n  tools.mcp__promptobus_promptobus__promptobus_mailbox({})\n]);\nfor (let i = 0; i < results.length; i++) text({source: i === 0 ? \"task\" : \"mailbox\", ...results[i]});\n"
+      }
+    }
+  ],
+  "commandRecords": [
+    {
+      "sourceRow": 7,
+      "item": {
+        "type": "custom_tool_call",
+        "id": "response-item-7",
+        "status": "completed",
+        "call_id": "retained-call-3",
+        "name": "exec",
+        "input": "text(await tools.exec_command({\n  cmd: \"node heartbeat.mjs\",\n  workdir: \"/owned\",\n  sandbox_permissions: \"use_default\",\n  yield_time_ms: 1000,\n  max_output_tokens: 1000\n}));\n"
+      }
+    },
+    {
+      "sourceRow": 8,
+      "item": {
+        "type": "custom_tool_call_output",
+        "id": "response-item-8",
+        "call_id": "retained-call-3",
+        "output": [
+          {
+            "type": "input_text",
+            "text": "Script completed\nWall time 1.2 seconds\nOutput:\n"
+          },
+          {
+            "type": "input_text",
+            "text": "{\"chunk_id\": \"sanitized\", \"wall_time_seconds\": 1.001737875, \"session_id\": 431, \"original_token_count\": 92, \"output\": \"sanitized original output\"}"
+          }
+        ]
+      }
+    },
+    {
+      "sourceRow": 9,
+      "item": {
+        "type": "custom_tool_call",
+        "id": "response-item-9",
+        "status": "completed",
+        "call_id": "retained-call-4",
+        "name": "exec",
+        "input": "text(await tools.write_stdin({session_id:431,chars:\"\",yield_time_ms:1000,max_output_tokens:2500}));\n"
+      }
+    },
+    {
+      "sourceRow": 10,
+      "item": {
+        "type": "custom_tool_call_output",
+        "id": "response-item-10",
+        "call_id": "retained-call-4",
+        "output": [
+          {
+            "type": "input_text",
+            "text": "Script completed\nWall time 5.0 seconds\nOutput:\n"
+          },
+          {
+            "type": "input_text",
+            "text": "{\"chunk_id\": \"sanitized\", \"wall_time_seconds\": 5.001140167, \"session_id\": 431, \"original_token_count\": 228, \"output\": \"sanitized original output\"}"
+          }
+        ]
+      }
+    },
+    {
+      "sourceRow": 11,
+      "item": {
+        "type": "custom_tool_call",
+        "id": "response-item-11",
+        "status": "completed",
+        "call_id": "retained-call-5",
+        "name": "exec",
+        "input": "text(await tools.write_stdin({session_id:431,chars:\"\",yield_time_ms:30000,max_output_tokens:2500}));\n"
+      }
+    },
+    {
+      "sourceRow": 12,
+      "item": {
+        "type": "custom_tool_call_output",
+        "id": "response-item-12",
+        "call_id": "retained-call-5",
+        "output": [
+          {
+            "type": "input_text",
+            "text": "Script completed\nWall time 30.0 seconds\nOutput:\n"
+          },
+          {
+            "type": "input_text",
+            "text": "{\"chunk_id\": \"sanitized\", \"wall_time_seconds\": 30.001799209, \"session_id\": 431, \"original_token_count\": 978, \"output\": \"sanitized original output\"}"
+          }
+        ]
+      }
+    },
+    {
+      "sourceRow": 13,
+      "item": {
+        "type": "custom_tool_call",
+        "id": "response-item-13",
+        "status": "completed",
+        "call_id": "retained-call-6",
+        "name": "exec",
+        "input": "text(await tools.write_stdin({session_id:431,chars:\"\",yield_time_ms:30000,max_output_tokens:2200}));\n"
+      }
+    },
+    {
+      "sourceRow": 14,
+      "item": {
+        "type": "custom_tool_call_output",
+        "id": "response-item-14",
+        "call_id": "retained-call-6",
+        "output": [
+          {
+            "type": "input_text",
+            "text": "Script completed\nWall time 30.0 seconds\nOutput:\n"
+          },
+          {
+            "type": "input_text",
+            "text": "{\"chunk_id\": \"sanitized\", \"wall_time_seconds\": 30.003058, \"session_id\": 431, \"original_token_count\": 1035, \"output\": \"sanitized original output\"}"
+          }
+        ]
+      }
+    },
+    {
+      "sourceRow": 15,
+      "item": {
+        "type": "custom_tool_call",
+        "id": "response-item-15",
+        "status": "completed",
+        "call_id": "retained-call-7",
+        "name": "exec",
+        "input": "text(await tools.write_stdin({session_id:431,chars:\"\",yield_time_ms:20000,max_output_tokens:2200}));\n"
+      }
+    },
+    {
+      "sourceRow": 16,
+      "item": {
+        "type": "custom_tool_call_output",
+        "id": "response-item-16",
+        "call_id": "retained-call-7",
+        "output": [
+          {
+            "type": "input_text",
+            "text": "Script completed\nWall time 20.0 seconds\nOutput:\n"
+          },
+          {
+            "type": "input_text",
+            "text": "{\"chunk_id\": \"sanitized\", \"wall_time_seconds\": 20.001571917, \"session_id\": 431, \"original_token_count\": 662, \"output\": \"sanitized original output\"}"
+          }
+        ]
+      }
+    },
+    {
+      "sourceRow": 17,
+      "item": {
+        "type": "custom_tool_call",
+        "id": "response-item-17",
+        "status": "completed",
+        "call_id": "retained-call-8",
+        "name": "exec",
+        "input": "text(await tools.write_stdin({session_id:431,chars:\"\",yield_time_ms:30000,max_output_tokens:2200}));\n"
+      }
+    },
+    {
+      "sourceRow": 18,
+      "item": {
+        "type": "custom_tool_call_output",
+        "id": "response-item-18",
+        "call_id": "retained-call-8",
+        "output": [
+          {
+            "type": "input_text",
+            "text": "Script completed\nWall time 30.0 seconds\nOutput:\n"
+          },
+          {
+            "type": "input_text",
+            "text": "{\"chunk_id\": \"sanitized\", \"wall_time_seconds\": 30.002759042, \"session_id\": 431, \"original_token_count\": 986, \"output\": \"sanitized original output\"}"
+          }
+        ]
+      }
+    },
+    {
+      "sourceRow": 19,
+      "item": {
+        "type": "custom_tool_call",
+        "id": "response-item-19",
+        "status": "completed",
+        "call_id": "retained-call-9",
+        "name": "exec",
+        "input": "text(await tools.write_stdin({session_id:431,chars:\"\",yield_time_ms:15000,max_output_tokens:1800}));\n"
+      }
+    },
+    {
+      "sourceRow": 20,
+      "item": {
+        "type": "custom_tool_call_output",
+        "id": "response-item-20",
+        "call_id": "retained-call-9",
+        "output": [
+          {
+            "type": "input_text",
+            "text": "Script completed\nWall time 15.0 seconds\nOutput:\n"
+          },
+          {
+            "type": "input_text",
+            "text": "{\"chunk_id\": \"sanitized\", \"wall_time_seconds\": 15.00373325, \"session_id\": 431, \"original_token_count\": 493, \"output\": \"sanitized original output\"}"
+          }
+        ]
+      }
+    },
+    {
+      "sourceRow": 21,
+      "item": {
+        "type": "custom_tool_call",
+        "id": "response-item-21",
+        "status": "completed",
+        "call_id": "retained-call-10",
+        "name": "exec",
+        "input": "text(await tools.write_stdin({session_id:431,chars:\"\",yield_time_ms:30000,max_output_tokens:2200}));\n"
+      }
+    },
+    {
+      "sourceRow": 22,
+      "item": {
+        "type": "custom_tool_call_output",
+        "id": "response-item-22",
+        "call_id": "retained-call-10",
+        "output": "aborted by user after 20.0s"
+      }
+    }
+  ]
+}

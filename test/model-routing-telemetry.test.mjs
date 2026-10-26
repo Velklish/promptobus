@@ -30,6 +30,9 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import { check } from './check.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { capture } from './console.mjs';
+import { releaseNativeReservation, reserveNativeParticipant } from '../lib/native-lifecycle.js';
+import { REGISTRY } from '../lib/drivers.js';
+import { readSession } from '../lib/codex-session.js';
 import { adapterMap, answeringStub, availableStub, counter } from './routing-stubs.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -188,7 +191,7 @@ writeFileSync(workerThroughputFile, `${JSON.stringify({
 })}\n`, { mode: telemetry.THROUGHPUT_SIDECAR_MODE });
 // Routed reviewer on another harness, dismissed mid-run: its record must end at
 // the dismissal, not at the close.
-store.upsertParticipant(HOME, TASK, store.participantRecord('reviewer:api', {
+const { record: nativeReviewer } = reserveNativeParticipant(HOME, TASK, store.participantRecord('reviewer:api', {
   harness: 'codex',
   mode: 'managed',
   sessionRef: 'sess-reviewer',
@@ -197,7 +200,12 @@ store.upsertParticipant(HOME, TASK, store.participantRecord('reviewer:api', {
   routing: {
     strategy: 'quality', role: 'reviewer', tupleId: 'codex.gpt-x', windows: [],
   },
-}));
+}), null, REGISTRY);
+releaseNativeReservation(HOME, TASK, nativeReviewer);
+const coldReviewer = store.participantOf(store.readTask(HOME, TASK), 'reviewer:api');
+check(': the synthetic native routing fixture has only its exact never-invoked launch',
+  coldReviewer.metadata.nativeLaunchId === nativeReviewer.metadata.nativeLaunchId
+  && coldReviewer.metadata.nativeUnlaunched === nativeReviewer.metadata.nativeLaunchId && !readSession(nativeReviewer.sessionRef));
 store.dismissParticipant(HOME, TASK, 'reviewer:api', T2);
 store.upsertParticipant(HOME, TASK, store.participantRecord('approver:api', {
   harness: 'claude',

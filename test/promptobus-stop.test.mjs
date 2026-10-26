@@ -35,10 +35,10 @@ const HOST = createStandaloneHost({ cwd: SB, commandName: 'promptobus', home: HO
 // Sessions the stand-in calls alive, and the records it has retired. A `stop` removes the ref
 // from `live` — the same move the real drivers make with `dropSession`.
 const live = new Set();
-function fakeRegistry(reply = () => ({ ok: true, stopped: true, note: 'closed' })) {
+function fakeRegistry(reply = () => ({ ok: true, stopped: true, note: 'closed' }), harness = 'claude') {
   const calls = [];
   const driver = {
-    id: 'claude',
+    id: harness,
     capabilities: {
       spawn: true, attach: false, activation: 'push', inspect: true, stop: true,
       denyTools: true, systemPrompt: true, sessionList: true, enter: true,
@@ -57,7 +57,7 @@ function fakeRegistry(reply = () => ({ ok: true, stopped: true, note: 'closed' }
       return r;
     },
   };
-  return { registry: bus.createRegistry({ drivers: { claude: driver }, fallback: 'claude' }), calls };
+  return { registry: bus.createRegistry({ drivers: { [harness]: driver }, fallback: harness }), calls };
 }
 
 const TASK = 'stop-t20260912-020000';
@@ -261,3 +261,12 @@ store.upsertParticipant(HOME, TASK, store.participantRecord('orchestrator', { ha
 const attachedRootStop = fakeRegistry();
 const rootRefusal = await expectFail(() => stop(HOST, { task: TASK, address: 'orchestrator' }, { registry: attachedRootStop.registry }));
 check(': an attached human root remains outside the stop lifecycle', rootRefusal.failed && attachedRootStop.calls.length === 0 && /not ours to close/.test(rootRefusal.out));
+
+store.upsertParticipant(HOME, TASK, store.participantRecord('worker:native', {
+  harness: 'codex', mode: 'managed', sessionRef: 'native-stale',
+}));
+const nativeStop = fakeRegistry(() => ({ ok: false, attempted: true, stopped: false, note: 'final command exit unknown; retained' }), 'codex');
+const nativeRefusal = await expectFail(() => stop(HOST, { task: TASK, address: 'worker:native' }, { registry: nativeStop.registry }));
+check(': a stale Codex session still asks its driver and preserves unresolved accounting as failure',
+  nativeRefusal.failed && nativeStop.calls[0] === 'native-stale' && /final command exit unknown/.test(nativeRefusal.out)
+    && !/nothing to stop/.test(nativeRefusal.out), nativeRefusal.out);

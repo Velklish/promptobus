@@ -51,9 +51,11 @@ test('close-first held stream rejects publication before reservation and retains
   assert.equal(fs.existsSync(path.join(f.directory, '.lock-blobs')), true);
   noMessage(f.engine, f.task);
   f.engine.closeTask(f.task, { adapter: { first: true } });
+  const first = fs.readFileSync(f.engine.taskFile(f.task));
   const closed = f.engine.closeTask(f.task, { adapter: { second: true } });
   assert.equal(closed.status, 'done');
-  assert.deepEqual(closed.adapter, { first: true, second: true });
+  assert.deepEqual(closed.adapter, { first: true });
+  assert.deepEqual(fs.readFileSync(f.engine.taskFile(f.task)), first);
   release();
   const settled = await outcome;
   assert.ok(settled.error instanceof PromptobusError,

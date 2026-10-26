@@ -24,6 +24,12 @@ const section = (document, heading) => {
 const decision = (document, label, nextLabel) => section(document, '## Decision')
   .split(`**${label}.**`)[1]?.split(`**${nextLabel}.**`)[0] ?? '';
 
+check('docs: declined Stop evidence preserves the non-start outcome and null exit',
+  has(section(read('docs/reference/05-drivers.md'), '### Codex holder shutdown'),
+    'The retained outcome remains `declined` with a null exit; it proves no command or test execution.')
+  && has(read('README.md'), 'its null exit stays null.')
+  && has(read('CHANGELOG.md'), 'Keep its exit null and reject conflicting evidence during observation and receipt replay.'));
+
 const adr008 = adr('008', 'codex-reviewer-working-directory');
 const adr017 = adr('017', 'the-owner-gate-is-a-positive-proof');
 const adr019 = adr('019', 'session-address-per-task-lands');
@@ -72,6 +78,26 @@ check('docs: the index names positive send binding and the three-harness approve
   JSON.stringify([...indexRows].filter(([name]) => /^adr-(019|024)-/.test(name))));
 
 const protocol = read('docs/reference/04-protocol.md');
+const shutdown = section(read('docs/reference/05-drivers.md'), '### Codex holder shutdown');
+check('docs: Codex Stop distinguishes terminal accounting from interrupt ACK and original tool receipts',
+  ['An interrupt ACK is not terminal proof', '`ok: false`', '`attempted: true`', '`stopped: false`',
+    'outside the disposable participant `CODEX_HOME`', 'not fabricated original native tool receipts',
+    'Null or synthetic negative exits remain unresolved', 'complete final command streams still requires']
+    .every(claim => has(shutdown, claim)),
+  'unknown exits and incomplete original streams cannot be documented as successful forced drain');
+check('docs: native teamlead Stop retains the verified child proof before parent cleanup',
+  ['parent, child and session locks, in that order', '`alias: {task, address}`',
+    'Both references must be published', 'keeps that entry for a repeat Stop',
+    'identical child proof before cleanup', 'parent alias owns no additional private home']
+    .every(claim => has(shutdown, claim)),
+  'the parent alias must keep its original child evidence, recovery record and lock order');
+check('docs: native teamlead relift retains prior proof until the actual generation rebinds',
+  ['validates the previous terminal proof', '`nativePendingLaunchId`',
+    'actual new launch ID', 'without inheriting `nativeStop`',
+    'accepts only the reserved old or intended new generation',
+    'completed Stop of the new generation retains its proof', 'Previous receipt files remain unchanged']
+    .every(claim => has(shutdown, claim)),
+  'relift must fence unresolved dispatch and preserve proof across generation-aware recovery');
 const wardenRuntime = compact(section(read('docs/guides/hooks-and-trust.md'),
   '## The warden state machine: what is here and what is not').split('\n### ')[0]);
 check('docs: the package owns the warden runtime and the Host supplies launch inputs',

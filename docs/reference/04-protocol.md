@@ -528,6 +528,38 @@ and a result strictly after the later of this boundary and the latest canonical
 Legacy metadata without a causal boundary stays readable but requires an explicit
 fresh assignment before it can prove a result current.
 
+Assignment refuses a closed task under the same task/commit locks. Native CLI
+launches reserve the participant before worktree or launch writes. They store the
+actual launch ID as `metadata.nativeLaunchId` and pass that same ID to the driver;
+callbacks require the current launch binding. Mail may advance `assignmentAfterId`
+without changing that binding. Native Stop retains `metadata.nativeStop`: task,
+address, session and launch binding,
+selected receipt path and SHA-256, and the recorded holder/app identities. Native
+CLI close validates this reference under the task lock; missing or invalid evidence
+refuses close. Reserving another launch invalidates the old proof. Core close itself
+is logical and idempotent: a repeated call preserves the first journal bytes and
+close stamps, without claiming native resource termination.
+
+A native teamlead's parent proof keeps the original child task/address identity
+and adds `alias: {task, address}` for the verified parent seat. Retirement holds
+parent, child and session locks and publishes both references before removing the
+registry record. A partial publication remains recoverable through repeat Stop.
+Parent terminal validation requires the current reciprocal task and owner binding
+and the identical child proof; an alias grants no separate private-home ownership.
+
+A native teamlead relift retains the validated previous proof while both seats carry
+`nativePendingLaunchId`. Until the new thread is bound, close and another relift
+refuse. Its rebind intent records the old seats and actual new launch ID; publication
+replaces their generation-specific metadata. Recovery refuses changed generations
+and preserves an already completed Stop of the new generation.
+
+All launch replacements inspect the fresh canonical seat under the task lock,
+including stale plans and callbacks from a non-native harness. The native receipt
+reference survives a rejected legacy writer. The registry close scan is independent
+of the canonical harness list. A caught synchronous failure before driver invocation
+may retain the exact ID in `metadata.nativeUnlaunched`; only that known never-issued
+reservation can be released without a Stop receipt. It is not a crash-recovery marker.
+
 ### Validation of a v1 record
 
 Source: `src/v1/validate.ts`.

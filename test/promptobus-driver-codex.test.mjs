@@ -1207,11 +1207,10 @@ const sweptByTask = codexDriver.participantCodexHome(
   sweepRegistry,
 );
 mkdirSync(sweptByTask, { recursive: true });
-check('PB-161: a closed participant with no session record is swept by task and address',
-  codexDriver.sweepParticipant({ metadata: { address: 'reviewer:none' } }, 'pb161-sweep-task', sweepRegistry) === true
-  && !existsSync(sweptByTask)
-  && codexDriver.sweepParticipant({ metadata: {} }, 'pb161-sweep-task', sweepRegistry) === false,
-  sweptByTask);
+const unknownSweep = thrown(() => codexDriver.sweepParticipant({ metadata: { address: 'reviewer:none' } }, 'pb161-sweep-task', sweepRegistry));
+check('native participant cleanup refuses missing terminal binding and retains its home',
+  unknownSweep.threw && /active or unresolved/.test(unknownSweep.msg) && existsSync(sweptByTask), unknownSweep.msg);
+rmSync(sweptByTask, { recursive: true, force: true });
 
 // Two registries, one homes root, the process TMPDIR — not a diverted one per registry.
 // The sweep a lift runs is `sweepParticipantHomes`. An older flat name has no registry suffix.
@@ -2284,7 +2283,9 @@ const pendW = cli(['spawn', '--repo', repo, '--brief', brief, '--task', TASK,
 const pendWp = store.participantOf(store.readTask(home, TASK), 'worker:pend');
 const pendRec = await waitFor(() => {
   const r = readSession(pendWp?.sessionRef ?? '', env);
-  return r?.pendingRequest?.method ? r : null;
+  // The request and holder reply are separate writes; wait for the state asserted below.
+  return r?.pendingRequest?.method === 'mcpServer/elicitation/request'
+    && r.lastEvent === 'holder-reply:mcpServer/elicitation/request' ? r : null;
 }, { timeoutMs: 20000 });
 const pendView = codexDriver.inspect(pendWp?.sessionRef ?? '');
 let pendLog = '';
@@ -2946,13 +2947,7 @@ for (const pid of [reapRec?.holderPid, reapRec?.appPid]) {
   }
 }
 
-// ── The home does not outlive the task, even when the holder died first ───────────
-//
-// `done` stops only participants whose session is ALIVE. A Codex participant whose
-// app-server died reports `stale`, which is `dead` to the walk — so its `stop` is
-// never called, and before this the only thing that removed the home was `stop`. What
-// was left behind was a directory holding a copy of the owner's credentials and the
-// canonical MCP set's `http_headers` in the clear.
+// A dead process alone does not prove terminal command accounting for native done.
 planParticipant(HARNESS, 'worker:orphan', {
   turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'CODEX-ORPHAN' } }] }],
 });
@@ -2975,9 +2970,11 @@ check('PB-161: a participant whose holder was killed still has its home, and its
     && codexDriver.inspect(orphanPart?.sessionRef ?? '').state === 'stale',
   `${orphanHomeLive} · ${JSON.stringify(codexDriver.inspect(orphanPart?.sessionRef ?? ''))}`);
 
+const beforeNativeDone = readFileSync(store.taskFile(home, TASK));
 const doneOut = cli(['done', '--task', TASK], { cwd: ws, env });
-check('PB-161: done takes the home of a participant whose session died without a stop',
-  doneOut.status === 0 && !existsSync(orphanHomeLive),
+check('native done refuses unresolved work and retains the killed participant home and task bytes',
+  doneOut.status !== 0 && doneOut.out.includes('native work is active or unresolved') && existsSync(orphanHomeLive)
+    && readFileSync(store.taskFile(home, TASK)).equals(beforeNativeDone),
   `${doneOut.status} · ${orphanHomeLive} · ${doneOut.out.slice(-400)}`);
 
 }
