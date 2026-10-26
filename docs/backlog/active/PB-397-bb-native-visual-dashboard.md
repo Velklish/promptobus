@@ -1,10 +1,11 @@
 # PB-397 · Show native Promptobus work in a visual BB dashboard
 
-- **Order:** 40
 - **Scope:** [Host and BB integration](../../reference/02-host.md), native observer UI and read-only task projection
 - **Created:** 2026-10-26
 - **Dependencies:** none
 - **Cost:** —
+- **Previous order:** 40
+- **Taken:** 2026-10-26
 
 ## Context
 
