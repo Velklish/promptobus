@@ -573,3 +573,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-393.1"></a>`PB-393.1-engine-reader-version-comment` · 2026-10-21 · batch PB-394 · — · Clarify the engine reader-version comment
 - <a id="pb-393.2"></a>`PB-393.2-driver-guide-environment-overrides` · 2026-10-21 · batch PB-394 · — · Clarify the Host environment overrides in the driver guide
 - <a id="pb-395"></a>`PB-395-bb-public-command-admission` · 2026-10-23 · completed · — · Deliver bounded command admission without bridge credentials
+- <a id="pb-315"></a>`PB-315-codex-managed-root` · 2026-10-26 · completed · — · Start and resume a managed Codex root orchestrator with native wake and owner binding

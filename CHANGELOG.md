@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Prepare selected skills for private Codex reporters and managed roots when the
+  system temporary directory has an alias. Resolve only that system base; retain
+  recorded home identity and reject symlinks in the private container or leaf.
 - Supply a token-free BB command-admission descriptor in initial and fresh task
   context. Checked commands and setup preflight use the supplied current grant
   without requiring private bridge credentials; existing identity and resource

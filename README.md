@@ -112,7 +112,9 @@ promptobus status --task <id>
 The command prints the new task id. The holder continues the owner in the background;
 from a plain terminal, `promptobus ask "What is complete?" --task <id>` asks it and
 `promptobus ask --answers --task <id>` reads its replies. Its private home avoids a shared
-project layer. Before idle turns, the holder reloads fresh owner access in the same native
+project layer. Selected skills support an aliased system temporary directory while
+preserving the participant's home identity and refusing links inside its private container.
+Before idle turns, the holder reloads fresh owner access in the same native
 thread. If owner access expires, renew the normal owner login and retry. Participants never
 receive the owner's refresh token. See [Lead](https://github.com/Velklish/promptobus/blob/v0.29.0/docs/reference/03-cli.md).
 

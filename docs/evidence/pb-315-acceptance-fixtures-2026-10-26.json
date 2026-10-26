@@ -1,0 +1,76 @@
+{
+  "source": "f6290d118106d4c368d4cf12ac42e965122fa150",
+  "command": "python3 -",
+  "fixtures": [
+    {
+      "path": "test/fixtures/codex-app-server/0.158.0/ManagedRoot-0.158.0-2026-10-01.json",
+      "bytes": 951,
+      "sha256": "8ba856fe30c06836d4609c9a6c40feabbc337a78e0f15a9bd406b12196043f4f",
+      "introduced": "fa1b5a18bc360a0b80c8497a13efdfbe61e2b271",
+      "unchangedFromIntroduction": true,
+      "version": "0.158.0",
+      "versionSource": "embedded",
+      "structure": "passed"
+    },
+    {
+      "path": "test/fixtures/codex-app-server/0.159.2/ManagedRootResume-0.159.2-2026-10-01.json",
+      "bytes": 1630,
+      "sha256": "c51f4e569970671d8ad3c7faeaaa0e2ba484ac3648a4466036a0be13247aa8df",
+      "introduced": "fa1b5a18bc360a0b80c8497a13efdfbe61e2b271",
+      "unchangedFromIntroduction": true,
+      "version": "0.159.2",
+      "versionSource": "embedded",
+      "structure": "passed"
+    },
+    {
+      "path": "test/fixtures/codex-app-server/0.158.0/ReviewerFiles-0.158.0-2026-10-01.json",
+      "bytes": 1118,
+      "sha256": "3f6ebca889390371fb49761f64ad2e94288fd321e2ad9483ea7274c6d1696fa7",
+      "introduced": "94652bd89ab557e132b61074990dd61bc2d63c99",
+      "unchangedFromIntroduction": true,
+      "version": "0.158.0",
+      "versionSource": "embedded",
+      "structure": "passed"
+    },
+    {
+      "path": "test/fixtures/codex-app-server/0.159.2/ReviewerFiles-0.159.2-2026-10-01.json",
+      "bytes": 1140,
+      "sha256": "093ee1c7de336de1c81442663105d5b37a9893cc0e57fac9a2635def1e500058",
+      "introduced": "fa1b5a18bc360a0b80c8497a13efdfbe61e2b271",
+      "unchangedFromIntroduction": true,
+      "version": "0.159.2",
+      "versionSource": "embedded",
+      "structure": "passed"
+    },
+    {
+      "path": "test/fixtures/codex-app-server/0.159.2/ReviewerReadRoots-0.159.2-2026-10-01.json",
+      "bytes": 2168,
+      "sha256": "54c865d35b951ca3944ff9db78d460a5c6c5b7916d45236b3ec00e4d15cbe90d",
+      "introduced": "5b87e937a7c6dad1caad0a7f15727e1978114688",
+      "unchangedFromIntroduction": true,
+      "version": "0.159.2",
+      "versionSource": "embedded",
+      "structure": "passed"
+    },
+    {
+      "path": "test/fixtures/codex-app-server/0.158.0/ManagedRootAssignment-0.158.0-2026-10-01.json",
+      "bytes": 485,
+      "sha256": "02fdd6ff3d9d4985066119b9e8207107727aaa1b1658a68d5237f792749319ce",
+      "introduced": "5b87e937a7c6dad1caad0a7f15727e1978114688",
+      "unchangedFromIntroduction": true,
+      "version": "0.158.0",
+      "versionSource": "directory and binary field only",
+      "structure": "passed"
+    },
+    {
+      "path": "test/fixtures/codex-app-server/0.159.2/ManagedRootEmptyRecovery-0.159.2-2026-10-01.json",
+      "bytes": 1629,
+      "sha256": "a0854efac8cf56b0b0888fc9c8d78d10f3c9866e8e74a7aa9815a0ce91c7ba70",
+      "introduced": "5b87e937a7c6dad1caad0a7f15727e1978114688",
+      "unchangedFromIntroduction": true,
+      "version": "0.159.2",
+      "versionSource": "embedded",
+      "structure": "passed"
+    }
+  ]
+}

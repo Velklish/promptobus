@@ -1,0 +1,36 @@
+{
+  "source": "f6290d118106d4c368d4cf12ac42e965122fa150",
+  "command": "python3 -",
+  "fixtures": [
+    {
+      "path": "test/fixtures/codex-app-server/0.158.0/Reporter-0.158.0-2026-10-01.json",
+      "bytes": 1197,
+      "sha256": "99a0b8699d52ed4061bc5e9c5389e2e1bd2d1489507ac0fc82561309b76bef82",
+      "introduced": "b58bbce024d85a9616aea97a399081996d7f29ba",
+      "unchangedFromIntroduction": true,
+      "version": "0.158.0",
+      "versionSource": "embedded",
+      "structure": "passed"
+    },
+    {
+      "path": "test/fixtures/codex-app-server/0.159.2/Reporter-0.159.2-2026-10-01.json",
+      "bytes": 1299,
+      "sha256": "9a3d98b35dd3d69c8f4ccd3866870352c3b880c56d419f5ce4d40748fff3bfb3",
+      "introduced": "fa1b5a18bc360a0b80c8497a13efdfbe61e2b271",
+      "unchangedFromIntroduction": true,
+      "version": "0.159.2",
+      "versionSource": "embedded",
+      "structure": "passed"
+    },
+    {
+      "path": "test/fixtures/codex-app-server/0.158.0/CanonicalSkills-0.158.0-2026-10-01.json",
+      "bytes": 2631,
+      "sha256": "08c86d604648a7efacbcc8cfea6c8655a18a510ccd5e75162f4830c49c1e68ae",
+      "introduced": "b58bbce024d85a9616aea97a399081996d7f29ba",
+      "unchangedFromIntroduction": true,
+      "version": "0.158.0",
+      "versionSource": "embedded",
+      "structure": "passed"
+    }
+  ]
+}

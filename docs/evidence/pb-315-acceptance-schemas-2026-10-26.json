@@ -1,0 +1,22 @@
+{
+  "source": "f6290d118106d4c368d4cf12ac42e965122fa150",
+  "command": "python3 -",
+  "captures": [
+    {
+      "version": "0.158.0",
+      "schemaFiles": 314,
+      "unchangedGitBlobs": 314,
+      "introduced": "fa1b5a18bc360a0b80c8497a13efdfbe61e2b271",
+      "inventorySha256": "4c3891dc63b47cd38d1d7aa913df970bc2ce705033cabd777fed35bfacf3dcee",
+      "inventoryFormat": "sorted UTF-8 relative-path TAB byte-length TAB sha256 LF"
+    },
+    {
+      "version": "0.159.2",
+      "schemaFiles": 314,
+      "unchangedGitBlobs": 314,
+      "introduced": "fa1b5a18bc360a0b80c8497a13efdfbe61e2b271",
+      "inventorySha256": "a7b7fca4bba76c3e716c7887aee8c3f3e26c467e1bef1673111d3409614ebcab",
+      "inventoryFormat": "sorted UTF-8 relative-path TAB byte-length TAB sha256 LF"
+    }
+  ]
+}

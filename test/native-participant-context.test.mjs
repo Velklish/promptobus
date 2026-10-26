@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
 import test from 'node:test';
@@ -434,6 +434,65 @@ test('Codex private root home receives selected content and reviewer exact roots
   const read = reviewerFiles(roots, exact);
   assert.doesNotThrow(() => read('read_file', { path: resource }));
   assert.throws(() => read('read_file', { path: path.join(installed, '_shared', 'sibling.md') }));
+});
+
+function withAliasedTemp(name, run) {
+  const canonical = path.join(sandbox, name), alias = `${canonical}-alias`;
+  mkdirSync(canonical);
+  symlinkSync(canonical, alias, 'dir');
+  const variables = ['TMPDIR', 'TEMP', 'TMP'];
+  const saved = variables.map(key => process.env[key]);
+  try {
+    for (const key of variables) process.env[key] = alias;
+    return run({ canonical, alias });
+  } finally {
+    variables.forEach((key, index) => {
+      if (saved[index] === undefined) delete process.env[key];
+      else process.env[key] = saved[index];
+    });
+  }
+}
+
+const privateSelectedPlan = role => codexDriver.prepare({
+  ref: `temp-alias-${role}`, role, task: selection.task.id, address: role, cwd: root, root,
+  selectedContext: selection, permissionMode: role === 'reporter' ? 'read-only' : 'full-access',
+  mcp: { servers: {} }, env: process.env,
+});
+
+test('Codex private selected skills use a canonical temp base without changing home identity', () => {
+  withAliasedTemp('private-selected-temp', ({ canonical, alias }) => {
+    for (const role of ['reporter', 'orchestrator']) {
+      const plan = privateSelectedPlan(role);
+      const homeLeaf = path.basename(plan.codexHome);
+      assert.equal(plan.codexHome, path.join(alias, 'promptobus-codex-homes', homeLeaf));
+      assert.equal(plan.canonicalSkillsDir, path.join(canonical, 'promptobus-codex-homes', homeLeaf, 'skills'));
+      assert.equal(plan.files.length, 0);
+      installPrivateHomeLayer(plan, plan.codexHome);
+      assert.equal(readFileSync(path.join(plan.codexHome, 'skills', 'alpha', 'SKILL.md'), 'utf8'), readFileSync(alpha, 'utf8'));
+      assert.equal(existsSync(path.join(plan.codexHome, 'skills', 'my-voice')), false);
+    }
+  });
+});
+
+test('Codex private selected skills refuse symlinks below the system temp base', () => {
+  withAliasedTemp('private-selected-links', ({ canonical }) => {
+    const foreign = path.join(canonical, 'foreign');
+    const marker = put(path.join(foreign, 'marker.txt'), 'Foreign bytes stay untouched.\n');
+    for (const role of ['reporter', 'orchestrator']) {
+      const plan = privateSelectedPlan(role);
+      mkdirSync(plan.codexHome, { recursive: true });
+      for (const target of [path.dirname(plan.codexHome), plan.codexHome]) {
+        const retained = `${target}-retained`;
+        renameSync(target, retained);
+        symlinkSync(foreign, target, 'dir');
+        try {
+          assert.throws(() => privateSelectedPlan(role), /destination traverses a symbolic link/);
+          assert.deepEqual(readdirSync(foreign), ['marker.txt']);
+          assert.equal(readFileSync(marker, 'utf8'), 'Foreign bytes stay untouched.\n');
+        } finally { unlinkSync(target); renameSync(retained, target); }
+      }
+    }
+  });
 });
 
 test('exact standalone resources stay at their original path without granting their parent', () => {

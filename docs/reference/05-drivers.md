@@ -1065,6 +1065,13 @@ owner's: an empty home lifts no personal MCP server, and the `[projects]` record
 the marketplace snapshot a run writes land in it instead of in `~/.codex` (measured on
 codex-cli 0.146.0 by the consumer, with no paid turn).
 
+Private install-root skill destinations resolve the system temporary-directory base to
+its canonical path before appending the mechanism's home container and participant leaf.
+An OS temporary-directory alias therefore works with selected-context delivery. The
+session's recorded home spelling and cleanup identity stay unchanged. The context writer
+still refuses symlinks in the mechanism's container or participant leaf; it never resolves
+those untrusted components to authorize a write.
+
 At lift, `config.toml` holds the mechanism's `[mcp_servers]` entries and
 `[features] apps = false` for every role. Worker, reviewer and approver homes
 also carry a trust record for their own working directory. The lift writes
