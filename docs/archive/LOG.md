@@ -580,3 +580,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-259"></a>`PB-259-codex-participant-auth-copy-goes-stale` · 2026-10-26 · completed · — · Codex participant homes copy the owner's auth.json, and a lift can start with a refresh token that no longer refreshes
 - <a id="pb-396"></a>`PB-396-bb-standard-workspace` · 2026-10-27 · completed · — · Make standard BB workspace tasks usable
 - <a id="pb-374"></a>`PB-374-bb-child-outcome-wake-budget` · 2026-10-27 · completed · — · Avoid coordinator model turns for routine BB child-turn completion
+- <a id="pb-373"></a>`PB-373-bb-executable-providers` · 2026-10-27 · completed · — · Admit Cursor and OpenCode BB workers and Cursor approvers

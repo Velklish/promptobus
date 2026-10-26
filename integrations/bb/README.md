@@ -452,7 +452,14 @@ BB queued first prompts are admission state, not the canonical Promptobus mailbo
 between providers. Every selected provider must support `accept-edits`.
 Optional `--reasoning-level` must be supported by that model; omission selects the
 SDK catalog's default, which can differ from the native Promptobus defaults.
+When that advertised default is the literal `default`, omission leaves
+`execution.reasoningLevel` absent and sends no reasoning override. An explicit
+reasoning level must still be supported; `default` is not an explicit level.
 The SDK model id sent to spawn and the native model name are recorded separately.
+For `acp-opencode`, a listed `opencode-go/` model may advertise the backend
+`routeProviderId: opencode-go`. Both its SDK id and native model name must carry
+that prefix. The execution provider remains `acp-opencode`; other foreign routes
+and unlisted models refuse. This namespace identifies no billing entitlement.
 Use the selected provider's SDK catalog spelling: Cursor's BB model and
 reasoning level are separate fields, unlike the native Cursor CLI suffix.
 An unlisted or selected-only model remains refused.

@@ -37,9 +37,12 @@ export async function selectBbExecution(bb: BbPluginApi, b: Pick<Binding, 'role'
   const catalog = await bb.sdk.providers.models({ ...scope, providerId: required, signal });
   if (catalog.modelLoadError) throw new Error(`BB provider ${required} model availability is unknown: ${catalog.modelLoadError.code}`);
   const model = catalog.models.find(m => m.id === request.model || m.model === request.model);
-  if (!model || (model.routeProviderId && model.routeProviderId !== required)) throw new Error(`Model ${request.model} is unavailable on provider ${required}`);
-  const reasoningLevel = request.reasoningLevel ?? model.defaultReasoningEffort;
-  if (!model.supportedReasoningEfforts.some(r => r.reasoningEffort === reasoningLevel)) throw new Error(`Model ${request.model} does not support reasoning level ${reasoningLevel}`);
+  const openCodeBackend = required === 'acp-opencode' && model?.routeProviderId === 'opencode-go'
+    && model.id.startsWith('opencode-go/') && model.model.startsWith('opencode-go/');
+  if (!model || (model.routeProviderId && model.routeProviderId !== required && !openCodeBackend)) throw new Error(`Model ${request.model} is unavailable on provider ${required}`);
+  const selectedReasoning = request.reasoningLevel ?? model.defaultReasoningEffort;
+  if (!model.supportedReasoningEfforts.some(r => r.reasoningEffort === selectedReasoning)) throw new Error(`Model ${request.model} does not support reasoning level ${selectedReasoning}`);
+  const reasoningLevel = request.reasoningLevel === undefined && selectedReasoning === 'default' ? undefined : selectedReasoning;
   let health: ExecutionSelection['health'] = 'unknown';
   if (provider.maintenance.health) {
     let state: string | undefined;
@@ -68,6 +71,6 @@ export async function selectBbExecution(bb: BbPluginApi, b: Pick<Binding, 'role'
   const harness = required === 'acp-cursor' ? 'cursor' : required === 'acp-opencode' ? 'opencode' : 'codex';
   return executionSchema.parse({ runtime: 'bb', harness, providerId: required,
     providerSource: request.provider ? 'explicit' : 'role', requestedModel: request.model, model: model.id, nativeModel: model.model,
-    reasoningLevel, reasoningSource: request.reasoningLevel ? 'explicit' : 'catalog', health, quota,
+    ...(reasoningLevel === undefined ? {} : { reasoningLevel }), reasoningSource: request.reasoningLevel ? 'explicit' : 'catalog', health, quota,
     observedAt: new Date().toISOString(), scope: { hostId: b.hostId, environmentId: 'environmentId' in scope ? scope.environmentId : null } });
 }

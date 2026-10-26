@@ -11,7 +11,7 @@ export const executionSchema = z.object({
   runtime: z.literal('bb'), harness: z.enum(['codex', 'cursor', 'opencode']),
   providerId: z.enum(['codex', 'promptobus-codex-reviewer', 'acp-cursor', 'acp-opencode']),
   providerSource: z.enum(['role', 'explicit']), model: z.string().min(1), nativeModel: z.string().min(1),
-  requestedModel: z.string().min(1), reasoningLevel: reasoningSchema, reasoningSource: z.enum(['catalog', 'explicit']),
+  requestedModel: z.string().min(1), reasoningLevel: reasoningSchema.optional(), reasoningSource: z.enum(['catalog', 'explicit']),
   observedAt: z.string(), scope: z.object({ hostId: z.string(), environmentId: z.string().nullable() }).strict(),
   health: z.enum(['ready', 'unknown']),
   quota: z.object({ status: z.enum(['known', 'unknown']), reason: z.string().nullable(),

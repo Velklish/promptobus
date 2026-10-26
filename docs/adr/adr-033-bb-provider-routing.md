@@ -29,6 +29,14 @@ Other role/provider pairs fail, and every selected provider must support the
 `accept-edits` permission mode used by the SDK spawn.
 Require a reported model; validate explicit reasoning or select the model catalog
 default. Reject cross-provider model routes and selected-only stale models.
+An advertised literal `default` means no reasoning override when the caller
+omits one; leave the execution snapshot's reasoning level absent. Explicit
+levels remain restricted to the reasoning enum and the selected model's support.
+For a model listed by `acp-opencode`, allow the backend namespace `opencode-go`
+only when its SDK id and native model name both start with `opencode-go/`.
+The ACP SDK derives this backend field from the model id prefix; it is distinct
+from the BB execution provider, which remains `acp-opencode`. This exception
+does not admit unlisted models, other backend namespaces or billing assumptions.
 Record SDK model id separately from the native model name and keep the launch
 snapshot distinct from SDK current execution options.
 Store that snapshot both in plugin bindings and canonical `metadata.bb.execution`.

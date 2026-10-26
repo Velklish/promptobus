@@ -83,6 +83,81 @@ test('Cursor and OpenCode workers and Cursor approvers keep their provider throu
   }
 });
 
+function openCodeGoFixture() {
+  const s = fixture();
+  s.provider.id = 'acp-opencode'; s.provider.family = 'acp'; s.provider.capabilities.modelCatalogScope = 'workspace';
+  Object.assign(s.model, { id: 'opencode-go/gpt-6-luna', model: 'opencode-go/gpt-6-luna', routeProviderId: 'opencode-go',
+    defaultReasoningEffort: 'default', supportedReasoningEfforts: [{ reasoningEffort: 'default' }, { reasoningEffort: 'high' }],
+    supportedServiceTiers: [] });
+  s.health.providers[0].providerId = 'acp-opencode';
+  s.usage['acp-opencode'] = s.usage.codex;
+  return { ...s, selectGo: (request = {}, b = binding) => s.select({ model: 'opencode-go/gpt-6-luna',
+    provider: 'acp-opencode', reasoningLevel: 'high', ...request }, b) };
+}
+
+test('OpenCode Go catalog models retain their backend namespace and BB execution provider', async () => {
+  const s = openCodeGoFixture(); const original = structuredClone(s.model);
+  const selected = await s.selectGo();
+  assert.equal(selected.providerId, 'acp-opencode'); assert.equal(selected.harness, 'opencode');
+  assert.equal(selected.model, 'opencode-go/gpt-6-luna'); assert.equal(selected.nativeModel, selected.model);
+  assert.equal(selected.requestedModel, selected.model); assert.equal(selected.reasoningLevel, 'high');
+  assert.equal(selected.health, 'ready'); assert.equal(selected.quota.status, 'known');
+  assert.deepEqual(s.model, original);
+  assert.deepEqual(s.calls.find(c => c.method === 'models').args,
+    { environmentId: 'env', providerId: 'acp-opencode', signal: undefined });
+  assert.equal(s.calls.find(c => c.method === 'usage').args.providerId, 'acp-opencode');
+});
+
+test('OpenCode Go catalog default omits the native reasoning override', async () => {
+  const s = openCodeGoFixture();
+  const selected = await s.selectGo({ reasoningLevel: undefined });
+  assert.equal(Object.hasOwn(selected, 'reasoningLevel'), false);
+  assert.equal(selected.reasoningSource, 'catalog'); assert.equal(selected.providerId, 'acp-opencode');
+});
+
+test('OpenCode Go native default preserves explicit reasoning and named catalog defaults', async () => {
+  const s = openCodeGoFixture(); const explicit = await s.selectGo();
+  assert.equal(explicit.reasoningLevel, 'high'); assert.equal(explicit.reasoningSource, 'explicit');
+  await assert.rejects(s.selectGo({ reasoningLevel: 'default' }), /Invalid option/);
+  s.model.defaultReasoningEffort = 'medium'; s.model.supportedReasoningEfforts.push({ reasoningEffort: 'medium' });
+  const named = await s.selectGo({ reasoningLevel: undefined });
+  assert.equal(named.reasoningLevel, 'medium'); assert.equal(named.reasoningSource, 'catalog');
+});
+
+test('OpenCode Go backend selection refuses foreign routes, inconsistent prefixes and unlisted models', async () => {
+  for (const change of [
+    s => { s.model.routeProviderId = 'claude'; },
+    s => { s.model.id = 'foreign/gpt-6-luna'; },
+    s => { s.model.model = 'foreign/gpt-6-luna'; },
+    s => { s.catalog.models = []; },
+    s => { s.catalog.models = []; s.catalog.selectedOnlyModels = [s.model]; },
+  ]) {
+    const s = openCodeGoFixture(); change(s);
+    await assert.rejects(s.selectGo(), /unavailable on provider acp-opencode/);
+    assert.equal(s.calls.some(c => c.method === 'health' || c.method === 'usage'), false);
+  }
+  await assert.rejects(openCodeGoFixture().selectGo({ model: 'opencode-go/unlisted' }), /unavailable on provider acp-opencode/);
+  for (const provider of ['codex', 'acp-cursor']) {
+    const s = openCodeGoFixture(); s.provider.id = provider; s.provider.family = provider === 'codex' ? 'codex' : 'acp';
+    await assert.rejects(s.selectGo({ provider }), new RegExp(`unavailable on provider ${provider}`));
+  }
+});
+
+test('OpenCode Go selection retains permission, reasoning, health and workspace catalog guards', async () => {
+  const permission = openCodeGoFixture(); permission.provider.capabilities.permissionModes = ['full'];
+  await assert.rejects(permission.selectGo(), /does not support accept-edits/);
+  assert.equal(permission.calls.some(c => c.method === 'models'), false);
+  const reasoning = openCodeGoFixture();
+  await assert.rejects(reasoning.selectGo({ reasoningLevel: 'ultra' }), /does not support reasoning level ultra/);
+  assert.equal(reasoning.calls.some(c => c.method === 'health' || c.method === 'usage'), false);
+  const health = openCodeGoFixture(); health.health.providers[0].status = 'unauthenticated';
+  await assert.rejects(health.selectGo(), /is unauthenticated/);
+  assert.equal(health.calls.some(c => c.method === 'usage'), false);
+  const provision = openCodeGoFixture();
+  await assert.rejects(provision.selectGo({}, { ...binding, environmentOwner: 'bb' }), /host-scoped/);
+  assert.equal(provision.calls.some(c => c.method === 'models'), false);
+});
+
 test('ACP providers cannot replace the constrained reviewer or Codex governance roles', async () => {
   for (const role of ['reviewer', 'orchestrator', 'teamlead', 'reporter']) {
     for (const provider of ['acp-cursor', 'acp-opencode']) {
@@ -91,7 +166,9 @@ test('ACP providers cannot replace the constrained reviewer or Codex governance 
       assert.equal(s.calls.length, 0);
     }
   }
-  await assert.rejects(fixture().select({ model: 'model', provider: 'acp-opencode' }, { ...binding, role: 'approver' }), /requires provider/);
+  const approver = openCodeGoFixture();
+  await assert.rejects(approver.selectGo({}, { ...binding, role: 'approver' }), /requires provider/);
+  assert.equal(approver.calls.length, 0);
 });
 
 test('an executable provider without accept-edits permission support is refused before model selection', async () => {

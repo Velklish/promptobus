@@ -29,6 +29,11 @@ approvers can explicitly select Cursor. Every selected provider must support
 `accept-edits`. Other role/provider pairs refuse. The selected provider survives
 binding, environment preparation, spawn, authenticated tools and recovery.
 These paths have SDK fixture coverage, distinct from the historical live profile.
+The `acp-opencode` catalog may list an `opencode-go/` model with backend
+`routeProviderId: opencode-go`. Both its SDK id and native model name must use
+that prefix; the BB execution provider stays `acp-opencode`. Unlisted models,
+other foreign routes and unsupported roles still refuse before reservation.
+The backend namespace does not establish billing entitlement or a live model turn.
 
 The historical full six-role workflow used BB 0.45.0, SDK 0.6.15 and Codex CLI
 0.162.0-alpha.2 on the 2026-10-08 local macOS 27.0 / Node 25.2.1 source profile
@@ -55,6 +60,9 @@ Native constraints stay in the native CLI, with its existing catalog, overlays,
 defaults and account caches. There is no automatic provider fallback, quota
 threshold policy, permission elevation or import of a native strategy into BB.
 The SDK catalog default is an explicit BB choice, not the native effort default.
+If that advertised value is the literal `default` and no level was requested,
+the execution snapshot omits `reasoningLevel` and the SDK receives no override.
+Explicit levels still require enum and model support; they cannot request `default`.
 See [ADR-033](../adr/adr-033-bb-provider-routing.md).
 
 The current project hook is a loop guard: Claude Code and Codex install Stop and SessionStart,
