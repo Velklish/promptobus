@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `done` no longer stops native Codex participants. Stop each one with
+  `promptobus stop <address>` first: active or unresolved native Codex work,
+  the managed root and a Codex reporter included, refuses close before any
+  journal, telemetry or cleanup change, even with `--keep-sessions`. Other
+  harnesses still stop on close.
+- Refuse changed Codex owner access before another model input and require a fresh
+  lift. Keep the running holder's access-only snapshot unchanged, retain the refusal
+  across retries, and preserve Stop and launch admission for the new app-server.
 - Update the local Backslop dependency and managed project guidance to v1.0.0.
   Keep generated skills ignored and version the `CLAUDE.md` import for fresh
   checkouts. Preserve the archived task identity note in the agent guide.
@@ -25,22 +33,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fence automatic BB system dispatch through a participant's pause and delivery
   epoch, including senderless start and join attempts. System attention that
   arrives during any delivery pause is rejected and not redelivered after
-  resume. Retain explicit user input under
-  current-grant validation, keep queued groups with user or agent input waiting
-  together and reject groups of system rows alone. A refused system dispatch
-  does not pause a resumed participant again. Provider start after the hook
-  returns still needs separate live verification.
-- Refuse changed Codex owner access before another model input and require a fresh
-  lift. Keep the running holder's access-only snapshot unchanged, retain the refusal
-  across retries, and preserve Stop and launch admission for the new app-server.
+  resume. Retain explicit user input under current-grant validation, keep queued
+  groups with user or agent input waiting together and reject groups of system
+  rows alone. A refused system dispatch does not pause a resumed participant
+  again. Provider start after the hook returns still needs separate live
+  verification.
 - Admit a listed OpenCode Go model's backend namespace through the BB OpenCode
   provider when both model names carry its prefix. Preserve the selected BB
   provider and refuse foreign routes, unlisted models and unsupported roles.
 - Preserve a BB catalog's native `default` reasoning selection without an
   explicit override. Keep explicit reasoning levels restricted to model support.
 - Reserve a fresh Codex approver launch before preparing its worktree and pass
-  that identity through startup. Retain its base before setup can fail. Keep callback fencing and terminal-proof checks
-  for earlier or unresolved launches.
+  that identity through startup. Retain its base before setup can fail. Keep
+  callback fencing and terminal-proof checks for earlier or unresolved launches.
 - Wait for the holder reply before checking an unresolved Codex request in the
   driver suite, so an intermediate request record cannot fail the reply assertion.
 - Allow Codex Stop to retain an explicit `declined` command as a non-start outcome
