@@ -322,3 +322,9 @@ check('docs: Codex Stop sends no signal fallback, and managed-root resume is gua
   && has(drivers, 'with the same native identity once its holder and app-server have both exited.')
   && !has(drivers, 'with the same native identity after confirmed Stop.'),
   '03-cli or 05-drivers ties managed-root resume to a confirmed Stop, which retires the record resume needs, or keeps the old SIGKILL stop');
+const readme = read('README.md');
+check('docs: the README resumes a managed root after its processes exit and names the native observer package',
+  has(readme, 'A retained managed root whose holder and app-server have both exited uses `lead --resume` to start a new app-server.')
+  && !has(readme, 'uses `lead --resume` after confirmed Stop')
+  && has(readme, 'A second optional package, `integrations/bb-native-observer/`, is a read-only BB dashboard for native Promptobus tasks.'),
+  'the README ties managed-root resume to a confirmed Stop or omits the native observer package');

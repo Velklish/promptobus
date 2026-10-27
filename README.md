@@ -116,9 +116,9 @@ from a plain terminal, `promptobus ask "What is complete?" --task <id>` asks it 
 project layer. Selected skills support an aliased system temporary directory while
 preserving the participant's home identity and refusing links inside its private container.
 Before model input, the holder refuses changed owner access and requires a fresh lift.
-If owner access expires, renew the normal owner login and perform a fresh lift. A retained
-managed root uses `lead --resume` after confirmed Stop to start a new app-server. Participants never
-receive the owner's refresh token. See [Lead](https://github.com/Velklish/promptobus/blob/v0.29.0/docs/reference/03-cli.md).
+If owner access expires, renew the normal owner login and perform a fresh lift.
+A retained managed root whose holder and app-server have both exited uses `lead --resume`
+to start a new app-server. Participants never receive the owner's refresh token. See [Lead](https://github.com/Velklish/promptobus/blob/v0.29.0/docs/reference/03-cli.md).
 
 The managed root requires explicit `full-access`: `workspace-write` participant lifts are
 unsupported and refuse before launch. Each participant keeps its own permission profile.
@@ -155,7 +155,7 @@ Close the task when the work is accepted:
 promptobus done
 ```
 
-For native Codex participants, call `stop <address>` before `done`: active or unresolved native work refuses close before journal or cleanup changes, even with `--keep-sessions`. A repeated native close preserves the first stamps and does not repeat cleanup. Other harnesses retain stop-on-close behavior. A caught preparation failure before driver invocation releases only its exact never-invoked native reservation, retaining the worktree and mail for retry. Native reporter recovery and piece sweep require the same terminal proof as the worker and reviewer. After the barrier, `done` removes a mechanism-created worktree and its branch once the work is proven merged, and appends local telemetry records at close. It removes contact points for closed tasks and the files of dead, slugged participants; a sessionless `user` keeps its journal and mail without needing participant files.
+For native Codex participants, call `stop <address>` before `done`: active or unresolved native work refuses close before journal or cleanup changes, even with `--keep-sessions`. A repeated native close preserves the first stamps and does not repeat cleanup. Other harnesses retain stop-on-close behavior. A caught preparation failure before driver invocation releases only its exact never-invoked native reservation, retaining the worktree and mail for retry. Native reporter recovery and piece sweep require the same terminal proof as the worker and reviewer. After that check, `done` removes a mechanism-created worktree and its branch once the work is proven merged, and appends local telemetry records at close. It removes contact points for closed tasks and the files of dead, slugged participants; a sessionless `user` keeps its journal and mail without needing participant files.
 
 At the core message boundary, closing refuses sends whose intent has not committed
 with `task-closed`. Earlier committed fan-out can still finish or recover on the
@@ -334,3 +334,6 @@ The repository contains a separate source package, `integrations/bb/`,
 which supplies a constrained Codex read-only reviewer provider and local engine-backed
 participant tools. It is separate from the native harness registry. Setup and the
 current activation boundary are described in that package's README.
+
+A second optional package, `integrations/bb-native-observer/`, is a read-only BB
+dashboard for native Promptobus tasks. Its README covers setup and limits.
