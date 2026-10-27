@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `abandon [<address>]` lets the mailbox owner retire a participant whose own
+  harness reports the session dead and who has no Stop receipt. The owner may
+  be any harness that names this session, and the participant may be on any
+  harness. The journal records the missing receipt and does not gain a Stop
+  receipt. A live session is refused. `done` then closes the task and still
+  keeps a worktree whose work is not in the default branch.
+
 ## [0.30.0] — 2026-10-27
 
 ### Added

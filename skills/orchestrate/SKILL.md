@@ -86,6 +86,7 @@ promptobus spawn --repo <path> --brief <file> [--task <id> | --new-task] [--titl
 promptobus spawn --teamlead --brief <file> --task <root> [--slug <s>] [--strategy <s>] [--model <m>] [--effort <e>] [--harness claude|codex|opencode] [--permission-mode <p>] [--allow-payg] [--refresh] [--dry-run]
 promptobus status [--task <id>]
 promptobus done [--task <id>] [--keep-sessions]
+promptobus abandon [<address>] [--task <id>]
 promptobus stop <address> [--task <id>]
 promptobus sweep <address> [--task <id>]
 promptobus dismiss <address> [--task <id>]
@@ -95,6 +96,8 @@ promptobus review <path> [--task <id> | --title <name>] [--base <ref>] [--model 
 promptobus models [--strategy <s>] [--role <worker|reviewer|approver>] [--refresh] [--json]
 promptobus lease [--as <address>] [--task <id>] [--wait <seconds>] -- <command…>
 ```
+
+`abandon` is how the mailbox owner retires a participant whose harness reports the session dead and who has no Stop receipt. The owner's harness is whichever named this session, and the participant may be on any harness. The journal names the missing receipt and does not gain a Stop receipt. A live session is refused. `done` then closes the task.
 
 `--harness` must be listed in `promptobus.json` `tools`. For a new ordinary `spawn` or `review` without the flag, an explicit or recorded strategy can select a harness from that list. With no strategy, the new unrouted lift falls back to `claude`. A repeat `spawn` uses its participant's recorded harness; a repeat `review` uses the reviewer's recorded harness unless an allowed explicit harness rebind takes effect. A teamlead lifts on Claude Code, Codex or opencode; Cursor is refused. With no `--harness`, no Codex-only `--model` and no strategy, a new teamlead lifts on Claude Code; a relift keeps its harness. A reporter lifts on Claude Code or Codex; name `--harness codex` for a Codex-only workspace. Its Codex private home disables project hooks and bus send, without writing the shared root. Ask that existing reporter with `promptobus report --task <root> --question <text>`; the command prints its completed reply. Launch options cannot accompany a question.
 

@@ -1,6 +1,6 @@
 # CLI
 
-Parser: `lib/cli.js`. Commands: `lead`, `spawn`, `step`, `review`, `report`, `models`, `stats`, `status`, `digest`, `send`, `ask`, `link`, `unlink`, `message-order`, `done`, `stop`, `sweep`, `dismiss`, `history`, `prune`, `guard`, `warden`, `mcp`, `install`, `uninstall`, `lease`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `promptobus/cli` exports it as the frozen `COMMANDS`, and the refusal of an unknown command joins that array, so a host passthrough reads the vocabulary rather than a copy. `test/cli.test.mjs` reads the dispatcher's own `case` labels, holds this Commands list equal to them aside from the aliases, and checks both the command name and its wrapper: it fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them, and on a `formatCommand` or `formatNpx` call whose literal command is one of the package's own labels. It also scans non-comment string literals recursively under `lib/` for `promptobus <known-subcommand>` outside those wrappers; low-level seams receive the formatted command from their host-aware callers, so no allowlist is needed. A hint a host assembles by template is not checked — the package cannot read it.
+Parser: `lib/cli.js`. Commands: `lead`, `spawn`, `step`, `review`, `report`, `models`, `stats`, `status`, `digest`, `send`, `ask`, `link`, `unlink`, `message-order`, `done`, `abandon`, `stop`, `sweep`, `dismiss`, `history`, `prune`, `guard`, `warden`, `mcp`, `install`, `uninstall`, `lease`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `promptobus/cli` exports it as the frozen `COMMANDS`, and the refusal of an unknown command joins that array, so a host passthrough reads the vocabulary rather than a copy. `test/cli.test.mjs` reads the dispatcher's own `case` labels, holds this Commands list equal to them aside from the aliases, and checks both the command name and its wrapper: it fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them, and on a `formatCommand` or `formatNpx` call whose literal command is one of the package's own labels. It also scans non-comment string literals recursively under `lib/` for `promptobus <known-subcommand>` outside those wrappers; low-level seams receive the formatted command from their host-aware callers, so no allowlist is needed. A hint a host assembles by template is not checked — the package cannot read it.
 
 Help and `--version` do not load the standalone host. Every other command does.
 
@@ -1114,6 +1114,19 @@ the task journal, telemetry or cleanup changes, including with `--keep-sessions`
 Call `stop <address>` first. Stop retains a digest-bound `metadata.nativeStop`
 reference to its selected receipt before deleting the disposable session record.
 Missing or mismatched proof is unresolved, not an idle session.
+
+`abandon [<address>]` is the route for a session that harness already reports
+dead and that has no Stop receipt. The mailbox owner calls it. The owner's
+harness and model are whichever one named this session; the participant's
+harness is whichever the record says. Neither side is fixed to one tool. With
+no address, every participant in that state is retired, and a participant the
+harness cannot be asked about is left untouched. A live session is refused and
+nothing is written for it. The journal gains `metadata.abandoned`: when, who,
+and `unknown` containing `stop-receipt`. It does not gain `metadata.nativeStop`.
+`done` then accepts that participant only while a fresh read still says the
+session is dead. A registry record whose holder or app process is alive still
+refuses. Cleanup keeps a worktree whose work is not in the default branch, and
+abandonment does not delete the participant's private home.
 
 For a native teamlead, Stop retains the child orchestrator's original receipt proof
 and a verified reference for the parent teamlead alias before retiring their shared

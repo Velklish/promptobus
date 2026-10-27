@@ -1,13 +1,16 @@
 {
   "classes": {
     "fileOnly": 34,
-    "citation": 46,
+    "citation": 47,
     "crossFile": 6,
     "fileLevel": 55,
     "bound": 53,
     "sameFileCitation": 11
   },
   "byFile": {
+    "lib/abandon.js": [
+      "../docs/reference/03-cli.md#status-done-sweep-dismiss-history-prune"
+    ],
     "lib/answers.js": [
       "../docs/reference/04-protocol.md",
       "../docs/reference/03-cli.md#guard-and-warden"
