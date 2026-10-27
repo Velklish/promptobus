@@ -1,7 +1,7 @@
 # PB-403 · The orchestrate skill does not forbid a bespoke verification harness, so runs build receipt packets instead of running the gates
 
 - **Order:** 310
-- **Scope:** [skills/orchestrate](../../../skills/orchestrate/SKILL.md), [Worker protocol](../../../skills/orchestrate/SKILL.md#worker-protocol)
+- **Scope:** [skills/orchestrate](../../../skills/orchestrate/SKILL.md), [Worker protocol](../../../skills/orchestrate/SKILL.md#worker-protocol), the BB participant skills in `integrations/bb/skills/`
 - **Created:** 2026-10-27
 - **Dependencies:** none; a consumer workspace filed the matching change to its own orchestration skill on 2026-10-27
 - **Cost:** major
@@ -20,6 +20,7 @@ Evidence:
 
 - State in the skill that evidence of a check is the command, its exit code and the gate count in the participant report and in `result.md`. The repository gates (`backslop gates`) and the package's own live scripts do the checking. The orchestrator does not add wrapper scripts, receipt files, hash manifests or frozen review packets.
 - State that a task's closing criteria must be checkable on the current machine. A live measurement that needs an unavailable resource (another OS, an exhausted limit, an owner action) moves to a child card, and the parent closes on the checkable part.
+- Apply the same rule to the BB participant skills in `integrations/bb/skills/`: the runs above went through BB, and their participants read those skills, not `skills/orchestrate`.
 - Keep the wording consistent with the consumer workspace orchestration skill.
 
 ## Out of scope
@@ -29,4 +30,4 @@ Evidence:
 
 ## Verification
 
-- A documentation check goes red when the evidence rule or the ban on a bespoke harness leaves the skill.
+- A documentation check goes red when the evidence rule or the ban on a bespoke harness leaves `skills/orchestrate` or any BB participant skill.
