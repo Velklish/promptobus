@@ -1180,9 +1180,9 @@ If the owner has no fresh access token, the ten-minute expiry guard refuses anot
 renew the owner through its normal login, then perform a fresh lift. The mechanism does not refresh the
 owner's login, interrupt an active turn to change auth, or use the internal-only
 `chatgptAuthTokens` API. An inactive retained managed root can instead use `lead --resume`
-with the same native identity after confirmed Stop. That supported lift creates a new
-app-server from fresh access-only credentials under the existing lifecycle guards;
-it does not bypass an unresolved Stop or restart the running holder automatically.
+with the same native identity once its holder and app-server have both exited. That supported
+lift creates a new app-server from fresh access-only credentials under the PID-based resume
+guard; it refuses a live holder or app-server and never restarts a running holder automatically.
 
 On Codex 0.159.2, an initial invalid cached access failed with HTTP 401. After the disposable
 owner received fresh access, the next turn returned `AUTH_RELOAD_RECOVERED` in the same

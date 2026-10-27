@@ -50,9 +50,9 @@ reviewer, approver and teamlead commands use the same task id and their existing
 
 The holder and warden wake this owner when mail arrives. From a plain terminal, `ask --task
 <id>` sends a question as `user`, and `ask --answers --task <id>` consumes its replies.
-`status` and `digest` inspect progress. `done --task <id>` stops the managed owner alongside
-other managed participants, unless `--keep-sessions` is explicit. `--dry-run` prints the
-plan without creating a task, a participant home or a model turn. Actual launches hold a task-scoped
+`status` and `digest` inspect progress. `done --task <id>` refuses while the managed owner
+or another native Codex participant lacks confirmed Stop, `--keep-sessions` included.
+`--dry-run` prints the plan without creating a task, a participant home or a model turn. Actual launches hold a task-scoped
 lease until native binding completes; a competing launcher refuses before touching session files.
 A dead launcher does not make its detached holder dead: a retained live unbound root also
 refuses retry, even under a different title. Once its owned processes are gone, a retry
@@ -95,8 +95,8 @@ The same public assignment injection materialized an empty native thread on
 
 Long-lived holders refuse changed owner access before the next model input and require
 a fresh lift. Expired owner access requires normal owner sign-in and a fresh lift too.
-For a retained managed root, confirm Stop before `lead --resume` starts a new app-server
-from fresh access-only credentials; unresolved Stop and launch admission still apply.
+A retained managed root whose holder and app-server have both exited can use `lead --resume`;
+it starts a new app-server from fresh access-only credentials and refuses a live process.
 Participants never rotate the owner's refresh token. The source, guards and evidence are in
 [participant authentication](05-drivers.md#codex-participant-authentication).
 
@@ -1165,7 +1165,7 @@ A second session snapshot per task is not a second harness poll: the parse of `c
 
 A worktree the walk leaves because the session state is unknown names why on that same line: the harness binary was not found or does not start, tmux could not be run, the registry could not be read, the registry home is named by nobody, there is nobody to ask, or the record carries no session reference. Those are the reasons `stop` and `sweep` already print, and the directory still stays. A session that is still alive is named as still alive, with no such reason.
 
-**What the close does about a stopped session's own processes differs by harness, and for one of the three it is unmeasured.** `done` stops every participant through `stopParticipant`, which dispatches to the driver, so the driver's `stop` is the whole of it. Cursor's (`lib/cursor-persist.js`, `stopSession`) runs the harness command, waits for the session to vanish, then reaps — `treeOf(panePid)` with `killPids` for the turn's tool children, and `reapOrphans(marker)` for the `worker-server`. It earned that from a measurement: `agent persist stop` stops the pane in 0.14 s and leaves the turn's tool children alive, and an orphaned `worker-server` outlives even a normally finished turn by 11 minutes. Codex's (`lib/codex-session.js`, `reapHolder`) asks the holder to shut down and, on refusal, sends `SIGKILL` to the process GROUP of the holder pid and the app-server pid, so descendants go by construction. Claude's (`lib/driver-claude.js`, `stop`) runs `claude stop <id>` and waits for the record to leave the registry: it reads no process, walks no tree and signals no group. Whether it needs to is open — nothing observed says `claude stop` fails to reap a session's grandchildren, and nothing observed says it does. No reap is added on that silence; the other two each earned theirs from a measurement that showed the harness leaving processes behind.
+**What the close does about a stopped session's own processes differs by harness, and for one of the three it is unmeasured.** `done` stops every participant through `stopParticipant`, which dispatches to the driver, so the driver's `stop` is the whole of it. Cursor's (`lib/cursor-persist.js`, `stopSession`) runs the harness command, waits for the session to vanish, then reaps — `treeOf(panePid)` with `killPids` for the turn's tool children, and `reapOrphans(marker)` for the `worker-server`. It earned that from a measurement: `agent persist stop` stops the pane in 0.14 s and leaves the turn's tool children alive, and an orphaned `worker-server` outlives even a normally finished turn by 11 minutes. Codex's (`lib/driver-codex.js`, `stop`) is not reached by `done` for live work, because a native Codex participant must already have confirmed Stop; that `stop` asks the holder to shut down within one deadline, retires the record only after terminal command accounting and sends no signal fallback ([05-drivers § Codex holder shutdown](05-drivers.md#codex-holder-shutdown)). Claude's (`lib/driver-claude.js`, `stop`) runs `claude stop <id>` and waits for the record to leave the registry: it reads no process, walks no tree and signals no group. Whether it needs to is open — nothing observed says `claude stop` fails to reap a session's grandchildren, and nothing observed says it does. No reap is added on that silence; Cursor earned its reap from a measurement that showed the harness leaving processes behind.
 
 **Measured, and it moved the question upstream of `stop`** (claude 2.1.263, 2026-09-12). The stand was a background Claude session lifted as a participant, a long-lived process started from inside its turn carrying a mark of the stand's own in its command line, the mark and never a program name as the scope, then `promptobus done` on the task. `done` closed the session — `session of participant worker:stand closed` — and the marked process was there in `ps` both before and after it, one occurrence each time. It is only an answer because the "before" reading exists: "nothing is left" is equally green on a stand that never started anything.
 
@@ -1271,8 +1271,9 @@ the existing restricted thread and prints that exact completed turn. It refuses 
 and never starts another reporter. See [Reporter question channel](reporter-channel.md).
 
 `status` lists the reporter beneath its root. `done` of that root stops
-the reporter with the other managed sessions, unless `--keep-sessions` was
-chosen. The reporter owes no bus answer: its answer is spoken in its
+a Claude Code reporter with the other managed sessions, unless `--keep-sessions`
+was chosen. A Codex reporter needs confirmed Stop before that `done`, as every
+native Codex participant does. The reporter owes no bus answer: its answer is spoken in its
 window, so the Stop guard does not wait for a `promptobus_send` it cannot
 make. These instructions are the lift's copy of the reporter rules in
 [`skills/orchestrate/SKILL.md` § Reporter for the person](../../skills/orchestrate/SKILL.md#reporter-for-the-person).

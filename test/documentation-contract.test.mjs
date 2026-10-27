@@ -308,3 +308,17 @@ check('docs: 01-overview § join says an address alias is judged at its primary,
   has(section(read('docs/reference/01-overview.md'), '### `join` — entering a task: hand over the contact point and lift a listener'),
     'An address alias is judged at its primary address, by `join` and by the Stop guard alike: a session that does not own the child\'s `orchestrator`, or names none, hands over nothing and marks no turn.'),
   '01-overview § join does not state that an address alias hands over only through its primary\'s owner gate');
+check('docs: done refuses live native Codex work, the managed owner and a Codex reporter included',
+  has(cli, '`done --task <id>` refuses while the managed owner or another native Codex participant lacks confirmed Stop, `--keep-sessions` included.')
+  && !has(cli, 'stops the managed owner alongside other managed participants')
+  && has(cli, 'A Codex reporter needs confirmed Stop before that `done`, as every native Codex participant does.')
+  && !has(cli, 'stops the reporter with the other managed sessions'),
+  '03-cli says done stops a native Codex owner or reporter, but done refuses until each has confirmed Stop');
+check('docs: Codex Stop sends no signal fallback, and managed-root resume is guarded by process liveness',
+  has(cli, 'that `stop` asks the holder to shut down within one deadline, retires the record only after terminal command accounting and sends no signal fallback')
+  && !has(cli, 'sends `SIGKILL` to the process GROUP of the holder pid')
+  && has(cli, 'A retained managed root whose holder and app-server have both exited can use `lead --resume`;')
+  && !has(cli, 'confirm Stop before `lead --resume`')
+  && has(drivers, 'with the same native identity once its holder and app-server have both exited.')
+  && !has(drivers, 'with the same native identity after confirmed Stop.'),
+  '03-cli or 05-drivers ties managed-root resume to a confirmed Stop, which retires the record resume needs, or keeps the old SIGKILL stop');
