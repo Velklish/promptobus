@@ -42,6 +42,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { waitDelivered } from './delivery-wait.mjs';
 import { diagnoseTrace as formatTraceDiagnosis } from './harness-shared.mjs';
 import { KNOWN_HOOK_EVENTS, PROVEN_CURSOR_VERSION } from '../lib/driver-cursor.js';
 
@@ -1010,7 +1011,7 @@ async function runScript({ home, address, cfg, turn, workspace, env }) {
   }
   const bus = await openBus(cfg);
   for (const action of plan.do ?? []) {
-    await act({ home, address, bus, action, workspace });
+    await act({ home, address, bus, action, workspace, cfg });
   }
   await bus.close();
   return 'done';
@@ -1058,8 +1059,13 @@ async function openBus(cfg) {
 }
 
 async function act({
-  home, address, bus, action, workspace,
+  home, address, bus, action, workspace, cfg,
 }) {
+  if (action.untilDelivered) {
+    const marked = await waitDelivered(cfg?.env?.PROMPTOBUS_HOME, cfg?.env?.PROMPTOBUS_TASK, address, action.untilDelivered);
+    note(home, address, { kind: 'untilDelivered', ms: action.untilDelivered, deliveredAt: marked.deliveredAt, timeout: marked.note });
+    return;
+  }
   if (action.wait) {
     await new Promise((r) => { setTimeout(r, action.wait); });
     note(home, address, { kind: 'wait', ms: action.wait });

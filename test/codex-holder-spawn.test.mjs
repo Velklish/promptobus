@@ -16,12 +16,13 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const HOLD_JS = path.join(here, '..', 'lib', 'codex-hold.js');
 const PACKAGE_PATH = path.join(here, '..', 'package.json');
 const PACKAGE_VERSION = JSON.parse(readFileSync(PACKAGE_PATH, 'utf8')).version;
+const READY_MS = 4_000;
 const HOME = mkdtempSync(path.join(os.tmpdir(), 'promptobus-codex-'));
 process.on('exit', () => { try { rmSync(HOME, { recursive: true, force: true }); } catch { /* gone */ } });
 const env = {
   ...process.env,
   PROMPTOBUS_CODEX_HOME: HOME,
-  PROMPTOBUS_CODEX_READY_MS: '4000',
+  PROMPTOBUS_CODEX_READY_MS: String(READY_MS),
   PROMPTOBUS_CODEX_LIMIT_MS: '50',
   PROMPTOBUS_HOST_NAME: '',
   PROMPTOBUS_HOST_VERSION: '',
@@ -78,8 +79,8 @@ function runHold(file) {
       && rec?.state === 'failed'
       && /did not start|ENOENT/i.test(String(lifted.error ?? rec?.error ?? ''))
       && !/did not confirm lift/i.test(String(lifted.error ?? ''))
-      && took < 2_000,
-    `took ${took} ms · ${JSON.stringify({ lifted, rec })}`);
+      && took < READY_MS,
+    `took ${took} ms · ready budget ${READY_MS} ms · ${JSON.stringify({ lifted, rec })}`);
   check(': the missing-binary holder does not die on an unhandled spawn error',
     !/Unhandled ['"]error['"] event/i.test(stderr),
     stderr.slice(0, 400));
@@ -208,7 +209,7 @@ function runHold(file) {
   check(': startHolder surfaces the spawn failure through waitReady instead of sitting out the budget',
     lifted.ok === false
       && /did not start|ENOENT/i.test(String(lifted.error ?? ''))
-      && took < 2_000,
-    `took ${took} ms · ${JSON.stringify(lifted)}`);
+      && took < READY_MS,
+    `took ${took} ms · ready budget ${READY_MS} ms · ${JSON.stringify(lifted)}`);
   dropSession(ref, env);
 }

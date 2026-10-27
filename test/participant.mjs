@@ -32,6 +32,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, appendFileSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { waitDelivered } from './delivery-wait.mjs';
 import {
   HARNESS_HOME_VAR, claudeConfigDir, handshakeMark, readSession, scriptFile, traceFile, writeSession,
 } from './harness.mjs';
@@ -239,13 +240,12 @@ function git(args) {
 }
 
 async function act(action) {
-  // A pause inside the turn is not decoration. Store marks are laid down by warden
-  // ticks: it notices a mailbox fetch on its own tick, and sees a send immediately. A
-  // live session turn runs for seconds and minutes, and the mark order there is set
-  // with slack; a turn collapsed into milliseconds breaks that order — `deliveredAt`
-  // may land AFTER the send, and a normal end of turn would be read as silent
-  // (`stallStands`). The pause gives the stand the scale of life, it does not bypass
-  // the check.
+  // Fetch-then-send only. A `{ wait }` holds the turn for the whole interval.
+  if (action.untilDelivered) {
+    const marked = await waitDelivered(busHome, task, address, action.untilDelivered);
+    note({ kind: 'untilDelivered', ms: action.untilDelivered, deliveredAt: marked.deliveredAt, timeout: marked.note });
+    return;
+  }
   if (action.wait) {
     await new Promise((r) => { setTimeout(r, action.wait); });
     note({ kind: 'wait', ms: action.wait });

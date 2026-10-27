@@ -25,11 +25,26 @@ const task = 'lead-lifecycle-t20261001-000001';
 const brief = path.join(root, 'brief.md');
 writeFileSync(brief, '# Recover this root\nRead the task metadata.\n');
 const cliFile = path.resolve('bin/promptobus.js');
+// Above the holder's 60s thread-start budget. A 45s kill left the journal
+// uncreated, and the next read aborted the file with "task is not in".
+const CLI_MS = 120_000;
 const cli = (args, extra = {}) => spawnSync(process.execPath, [cliFile, ...args], {
-  cwd: root, env: { ...env, ...extra }, encoding: 'utf8', timeout: 45000,
+  cwd: root, env: { ...env, ...extra }, encoding: 'utf8', timeout: CLI_MS,
 });
+const metaOf = (id) => waitFor(() => {
+  try { return core().readTask(id); } catch { return null; }
+}, { timeoutMs: 5_000 });
+const readJson = (file) => waitFor(() => {
+  try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; }
+}, { timeoutMs: 10_000 });
+const readText = (file) => waitFor(() => {
+  try {
+    const raw = readFileSync(file, 'utf8');
+    return raw.length ? raw : null;
+  } catch { return null; }
+}, { timeoutMs: 10_000 });
 const core = () => bus(host.promptobusHome(), { cli: host.version });
-const owner = () => participantOf(core().readTask(task), 'orchestrator');
+const owner = async () => participantOf(await metaOf(task), 'orchestrator');
 planParticipant(harness.home, 'orchestrator', { turns: [
   { do: [{ tool: 'promptobus_task', args: { task } }] },
   { do: [{ tool: 'promptobus_task', args: { task } }] },
@@ -37,53 +52,58 @@ planParticipant(harness.home, 'orchestrator', { turns: [
 const started = cli(['lead', '--permission-mode', 'full-access', '--brief', brief, '--task', task]);
 check('managed root native holder launches after complete task binding', started.status === 0,
   `${started.status} ${started.stdout} ${started.stderr}`);
-const originalOwner = owner();
-const ref = originalOwner.sessionRef;
-const first = await waitFor(() => {
+const originalOwner = await owner();
+const ref = originalOwner?.sessionRef;
+const first = ref ? await waitFor(() => {
   const record = readSession(ref, env);
   return record?.turns >= 1 && record.busy === false ? record : null;
-}, { timeoutMs: 15000 });
+}, { timeoutMs: 15000 }) : null;
 check('managed root completes its first task-metadata turn', first?.lastTurn?.status === 'completed');
-const initialHistory = JSON.parse(readFileSync(path.join(harness.home, 'threads', first.threadId + '.json'), 'utf8'));
+const initialHistory = first?.threadId
+  ? await readJson(path.join(harness.home, 'threads', first.threadId + '.json')) : null;
 check('new root persists its original assignment as a user message before binding without duplicate first input',
-  first.initialAssignmentInjected === true && initialHistory.injectedItems[0].content[0].text === first.initialPrompt
-  && !initialHistory.firstRpc.params.input[0].text.includes('Recover this root'));
+  first?.initialAssignmentInjected === true && initialHistory?.injectedItems?.[0]?.content?.[0]?.text === first.initialPrompt
+  && !initialHistory?.firstRpc?.params?.input?.[0]?.text?.includes('Recover this root'),
+  initialHistory ? '' : `TIMEOUT after 10000 ms waiting for the thread file of ${first?.threadId ?? 'no thread'}`);
 
-const creation = core().readTask(task).created;
-await holderAsk(ref, 'shutdown', {}, env);
-await waitFor(() => !holderAlive(ref, env) && !pidAlive(readSession(ref, env)?.appPid), { timeoutMs: 10000 });
+const creation = (await metaOf(task))?.created;
+if (ref) await holderAsk(ref, 'shutdown', {}, env);
+if (ref) await waitFor(() => !holderAlive(ref, env) && !pidAlive(readSession(ref, env)?.appPid), { timeoutMs: 10000 });
 unlinkSync(brief);
 const resumed = cli(['lead', '--resume', '--task', task]);
 check('resume succeeds without the original assignment file', resumed.status === 0,
   `${resumed.status} ${resumed.stdout} ${resumed.stderr}`);
-const second = await waitFor(() => {
+const second = ref ? await waitFor(() => {
   const record = readSession(ref, env);
   return record?.turns >= 2 && record.busy === false ? record : null;
-}, { timeoutMs: 15000 });
+}, { timeoutMs: 15000 }) : null;
 check('resume preserves the original native owner and journal creation',
   second?.threadId === first?.threadId && second?.turns === 2
-  && ownerOf(owner()) === ownerOf(originalOwner) && core().readTask(task).created === creation);
-await holderAsk(ref, 'shutdown', {}, env);
-await waitFor(() => !holderAlive(ref, env) && !pidAlive(readSession(ref, env)?.appPid), { timeoutMs: 10000 });
-const nativeThreadFile = path.join(harness.home, 'threads', first.threadId + '.json');
-const emptyHistory = JSON.parse(readFileSync(nativeThreadFile, 'utf8'));
-emptyHistory.turns = [];
-emptyHistory.injectedItems = [];
-writeSession({ ...second, initialAssignmentInjected: false }, env);
-writeFileSync(nativeThreadFile, JSON.stringify(emptyHistory));
+  && ownerOf(await owner()) === ownerOf(originalOwner) && (await metaOf(task))?.created === creation);
+if (ref) await holderAsk(ref, 'shutdown', {}, env);
+if (ref) await waitFor(() => !holderAlive(ref, env) && !pidAlive(readSession(ref, env)?.appPid), { timeoutMs: 10000 });
+const nativeThreadFile = path.join(harness.home, 'threads', `${first?.threadId ?? 'missing'}.json`);
+const emptyHistory = await readJson(nativeThreadFile);
+if (emptyHistory && second) {
+  emptyHistory.turns = [];
+  emptyHistory.injectedItems = [];
+  writeFileSync(nativeThreadFile, JSON.stringify(emptyHistory));
+  writeSession({ ...second, initialAssignmentInjected: false }, env);
+}
 const recovered = cli(['lead', '--resume', '--task', task]);
-const third = await waitFor(() => {
+const third = ref ? await waitFor(() => {
   const record = readSession(ref, env);
   return record?.turns >= 3 && record.busy === false ? record : null;
-}, { timeoutMs: 15000 });
-const restoredHistory = JSON.parse(readFileSync(nativeThreadFile, 'utf8'));
+}, { timeoutMs: 15000 }) : null;
+const restoredHistory = await readJson(nativeThreadFile);
 check('an owner bound before assignment delivery replays immutable scope from its retained record',
   recovered.status === 0 && third?.initialPrompt === first.initialPrompt
-  && restoredHistory.turns[0].items[0].content[0].text.includes('Recover this root')
-  && restoredHistory.turns[0].items[0].content[0].text.includes('Recovery continuation'));
-await holderAsk(ref, 'shutdown', {}, env);
-await waitFor(() => !holderAlive(ref, env) && !pidAlive(readSession(ref, env)?.appPid), { timeoutMs: 10000 });
-const retainedBefore = readFileSync(path.join(second.codexHome, 'config.toml'), 'utf8');
+  && restoredHistory?.turns?.[0]?.items?.[0]?.content?.[0]?.text?.includes('Recover this root')
+  && restoredHistory?.turns?.[0]?.items?.[0]?.content?.[0]?.text?.includes('Recovery continuation'),
+  restoredHistory ? '' : `TIMEOUT after 10000 ms waiting for ${nativeThreadFile}`);
+if (ref) await holderAsk(ref, 'shutdown', {}, env);
+if (ref) await waitFor(() => !holderAlive(ref, env) && !pidAlive(readSession(ref, env)?.appPid), { timeoutMs: 10000 });
+const retainedBefore = second?.codexHome ? await readText(path.join(second.codexHome, 'config.toml')) : null;
 const payload = Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 20 })).toString('base64url');
 writeFileSync(path.join(ownerHome, 'auth.json'), JSON.stringify({ tokens: {
   access_token: `fixture.${payload}.fixture`, refresh_token: 'owner-retained',
@@ -91,26 +111,27 @@ writeFileSync(path.join(ownerHome, 'auth.json'), JSON.stringify({ tokens: {
 const expired = cli(['lead', '--resume', '--task', task]);
 check('resume refuses short-lived owner auth without deleting retained history or ownership',
   expired.status === 1 && /ten minutes|10 minutes/.test(`${expired.stdout}${expired.stderr}`)
-  && readSession(ref, env)?.threadId === first.threadId && existsSync(second.codexHome)
-  && readFileSync(path.join(second.codexHome, 'config.toml'), 'utf8') === retainedBefore
-  && ownerOf(owner()) === ownerOf(originalOwner),
+  && ref && readSession(ref, env)?.threadId === first?.threadId && second?.codexHome && existsSync(second.codexHome)
+  && (second?.codexHome ? await readText(path.join(second.codexHome, 'config.toml')) : null) === retainedBefore
+  && ownerOf(await owner()) === ownerOf(originalOwner),
   `${expired.status} ${expired.stdout} ${expired.stderr}`);
-const stopped = cli(['stop', 'orchestrator', '--task', task], { CODEX_THREAD_ID: first.threadId });
+const stopped = cli(['stop', 'orchestrator', '--task', task],
+  first?.threadId ? { CODEX_THREAD_ID: first.threadId } : {});
 check('stop cleans a dead managed Codex root home without closing its task',
-  stopped.status === 0 && !existsSync(second.codexHome) && !readSession(ref, env)
-  && core().readTask(task).status === 'active', `${stopped.status} ${stopped.stdout}${stopped.stderr}`);
+  stopped.status === 0 && second?.codexHome && !existsSync(second.codexHome) && ref && !readSession(ref, env)
+  && (await metaOf(task))?.status === 'active', `${stopped.status} ${stopped.stdout}${stopped.stderr}`);
 writeFileSync(path.join(ownerHome, 'auth.json'), '{"stub":"credentials"}\n');
 writeFileSync(brief, '# Failed first turn\nKeep recovery history.\n');
 const failedTask = 'lead-lifecycle-t20261001-000002';
 const failed = cli(['lead', '--permission-mode', 'full-access', '--brief', brief, '--task', failedTask], {
   [HANG_FIRST_VAR]: '1', PROMPTOBUS_CODEX_READY_MS: '20000',
 });
-const failedOwner = participantOf(core().readTask(failedTask), 'orchestrator');
-const failedRecord = readSession(failedOwner.sessionRef, env);
+const failedOwner = participantOf(await metaOf(failedTask), 'orchestrator');
+const failedRecord = failedOwner?.sessionRef ? readSession(failedOwner.sessionRef, env) : null;
 check('a bound first-turn startup failure keeps its matching root record and private history',
   failed.status === 1 && /lead --resume/.test(`${failed.stdout}${failed.stderr}`)
-  && failedRecord?.threadId === ownerOf(failedOwner) && existsSync(failedRecord.codexHome)
-  && !holderAlive(failedOwner.sessionRef, env),
+  && failedRecord?.threadId === ownerOf(failedOwner) && failedRecord?.codexHome && existsSync(failedRecord.codexHome)
+  && failedOwner?.sessionRef && !holderAlive(failedOwner.sessionRef, env),
   `${failed.status} ${failed.stdout} ${failed.stderr}`);
-await codexDriver.stop(failedOwner.sessionRef);
+if (failedOwner?.sessionRef) await codexDriver.stop(failedOwner.sessionRef);
 harness.restore();

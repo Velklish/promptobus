@@ -582,3 +582,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-374"></a>`PB-374-bb-child-outcome-wake-budget` · 2026-10-27 · completed · — · Avoid coordinator model turns for routine BB child-turn completion
 - <a id="pb-373"></a>`PB-373-bb-executable-providers` · 2026-10-27 · completed · — · Admit Cursor and OpenCode BB workers and Cursor approvers
 - <a id="pb-405"></a>`PB-405-close-dead-native-task` · 2026-10-27 · completed · — · A task whose native Codex holders died without a Stop receipt can never be closed
+- <a id="pb-325"></a>`PB-325-suite-reds-under-machine-load` · 2026-10-28 · completed · — · Three test files go red under machine load: lead-lifecycle, promptobus-e2e and codex-holder-spawn

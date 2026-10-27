@@ -63,7 +63,7 @@ export const PROMPTOBUS_BIN = path.join(MECHANISM_ROOT, 'bin', 'promptobus.js');
 // (`stalls.json`), and the scenario takes it from the package directly. It does not
 // start its own file read: the mark format is the store's business, not the test's.
 export const store = await import(path.join(MECHANISM_ROOT, 'lib', 'store.js'));
-const { readStalls, TICK_MS } = await import(path.join(MECHANISM_ROOT, 'dist', 'index.js'));
+const { readStalls } = await import(path.join(MECHANISM_ROOT, 'dist', 'index.js'));
 // Stall parse and the reason from `state.json` come from the mechanism, not from our
 // own file read: the report must be checked with the same thing the warden uses.
 const { lastActivation, stallStands } = await import(path.join(MECHANISM_ROOT, 'lib', 'status.js'));
@@ -100,16 +100,9 @@ export const REVIEWER = 'reviewer:e2e';
 // directory, rather than the bus address used by the caller.
 export const sentBy = (m, addr) => m?.sender === store.addrDir(addr);
 
-// A pause inside the participant turn is not decoration and not a round number. The
-// «mailbox fetched» mark (`deliveredAt`) is laid not by the participant but by the
-// warden TICK, and an `fs.watch` observer loses events that arrive during the tick —
-// the next tick comes from a poll, after `TICK_MS`. A live session turn runs for
-// seconds and minutes, and there the mark lands long before the send; a collapsed turn
-// breaks the order: a 2026-09-02 measurement with a 400 ms pause gave `deliveredAt` 8 ms
-// AFTER the send, and a normal end of turn would be read as silent (`stallStands`). So
-// the pause is taken from the warden's own tick, not as a literal: raise the tick — and
-// it grows too.
-const TURN_PAUSE_MS = TICK_MS + 500;
+// Timeout for the delivery mark on a fetch-then-send pause, not a hold.
+// `{ wait }` stays a sleep. See contributing § Suite isolation.
+const TURN_PAUSE_MS = 10_000;
 
 /**
  * Role scripts — the only source both for the stub harness (it plays them literally)
@@ -131,7 +124,7 @@ export const WORKER_SCRIPT = {
       detail: 'result sent; awaiting next cycle',
       do: [
         { tool: 'promptobus_mailbox' },
-        { wait: TURN_PAUSE_MS },
+        { untilDelivered: TURN_PAUSE_MS },
         { write: { path: NOTE_FILE, text: `# ${MARK.result1}\n\nThe E2E scenario worker's edit.\n` } },
         { commit: { message: `: the E2E scenario worker's edit` } },
         { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${MARK.result1}: the edit is in and committed` } },
@@ -142,7 +135,7 @@ export const WORKER_SCRIPT = {
       detail: 'second result sent; awaiting next cycle',
       do: [
         { tool: 'promptobus_mailbox' },
-        { wait: TURN_PAUSE_MS },
+        { untilDelivered: TURN_PAUSE_MS },
         { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${MARK.result2}: the review note is closed` } },
       ],
     },
@@ -191,7 +184,7 @@ export const REVIEWER_SCRIPT = {
       detail: 'review sent; awaiting next cycle',
       do: [
         { tool: 'promptobus_mailbox' },
-        { wait: TURN_PAUSE_MS },
+        { untilDelivered: TURN_PAUSE_MS },
         { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${MARK.review}: note — the edit's heading carries no task number` } },
       ],
     },
@@ -212,7 +205,7 @@ export const REVIEW_ROUND_TURN = {
   detail: 'second review sent; awaiting next cycle',
   do: [
     { tool: 'promptobus_mailbox' },
-    { wait: TURN_PAUSE_MS },
+    { untilDelivered: TURN_PAUSE_MS },
     { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${MARK.review2}: the new diff is checked, the previous note is closed` } },
   ],
 };

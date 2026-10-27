@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The pause between a mailbox fetch and the following send waits for the
+  warden's delivery mark instead of sleeping one tick, so a late tick does
+  not make a finished turn look stalled. A pause that holds the turn stays a
+  sleep. A missing Codex binary is judged against the ready budget the test
+  configured. A lifecycle file retries a task journal or thread file another
+  process is writing, and a journal that is still absent fails that verdict
+  instead of aborting the file.
+
 ### Added
 
 - `abandon [<address>]` lets the mailbox owner retire a participant whose own

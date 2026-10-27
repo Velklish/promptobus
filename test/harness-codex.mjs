@@ -16,6 +16,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import Ajv from 'ajv';
 import { protocolThread, protocolThreadResponse, protocolTurn } from './codex-contract-witnesses.mjs';
+import { waitDelivered } from './delivery-wait.mjs';
 import { diagnoseTrace as formatTraceDiagnosis } from './harness-shared.mjs';
 import { DEFAULT_MODEL, PROVEN_CODEX_VERSION } from '../lib/driver-codex.js';
 
@@ -1058,8 +1059,14 @@ async function runScript({ home, address, thread, sandbox }) {
   let bus = null;
   if (cfg && (plan.do ?? []).some((a) => a.tool)) bus = await openBus(cfg);
   for (const action of plan.do ?? []) {
+    if (action.untilDelivered) {
+      const marked = await waitDelivered(cfg?.env?.PROMPTOBUS_HOME, cfg?.env?.PROMPTOBUS_TASK, address, action.untilDelivered);
+      note(home, address, { kind: 'untilDelivered', ms: action.untilDelivered, deliveredAt: marked.deliveredAt, timeout: marked.note });
+      continue;
+    }
     if (action.wait) {
       await new Promise((r) => { setTimeout(r, action.wait); });
+      note(home, address, { kind: 'wait', ms: action.wait });
       continue;
     }
     if (action.write) {

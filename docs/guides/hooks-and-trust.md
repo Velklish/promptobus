@@ -469,7 +469,12 @@ asserted on its own line** — without it the verdict races the warden and
 goes red on sound code. Measured by hand on a store with the
 stamps set, 2026-09-17: one reply, one end of turn, and the answer flips
 with the knock's stamp alone — a knock 60 s after the reply gives `true`,
-a knock 60 s before it gives `false`.
+a knock 60 s before it gives `false`. The fetch-then-send pause in the
+scripted end-to-end turn polls the health file until `deliveredAt` is newer
+than it was at the fetch, then sends. That pause's bound is the poll's
+timeout, and a timeout is named against the health file. A fixed sleep of
+one tick does not keep the send after the mark when the tick itself is late.
+A pause that holds the turn stays a sleep for its whole interval.
 
 ### `wardenRound` — one watch round
 

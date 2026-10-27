@@ -343,3 +343,15 @@ check('docs: the 0.30.0 CHANGELOG lists the done and owner-access behaviour chan
   has(releaseChanged, '`done` no longer stops native Codex participants. Stop each one with `promptobus stop <address>` first')
   && has(releaseChanged, 'Refuse changed Codex owner access before another model input and require a fresh lift.'),
   'the 0.30.0 CHANGELOG hides a behaviour change an upgrading reader must act on');
+const suiteIsolation = section(contributingDoc, '## Suite isolation');
+check('docs: a fetch-then-send pause waits for the delivery mark, and a hold stays a sleep',
+  has(suiteIsolation, 'only on the pause that sits between that fetch and the send')
+  && has(suiteIsolation, 'A scripted pause that must hold the turn, `{ wait: ms }`, stays a sleep for the whole interval')
+  && has(suiteIsolation, 'A fixed sleep of one warden tick between the fetch and the send was late when the machine was loaded')
+  && has(suiteIsolation, 'A lifecycle file that reads the task journal or a thread file another process writes retries a torn or missing read.')
+  && has(read('docs/guides/hooks-and-trust.md'), 'The fetch-then-send pause in the scripted end-to-end turn polls the health file until `deliveredAt` is newer than it was at the fetch, then sends.')
+  && has(read('docs/guides/hooks-and-trust.md'), 'A pause that holds the turn stays a sleep for its whole interval.')
+  && has(read('README.md'), 'The pause between a mailbox fetch and the following send waits for the warden\'s `deliveredAt` mark instead of sleeping a fixed interval.')
+  && has(read('README.md'), 'A pause that holds the turn stays a sleep.')
+  && has(section(read('CHANGELOG.md'), '## [Unreleased]'), 'The pause between a mailbox fetch and the following send waits for the warden\'s delivery mark instead of sleeping one tick'),
+  'suite isolation still tells every scripted pause to poll, or drops the hold that stays a sleep');
