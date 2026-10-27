@@ -1,5 +1,5 @@
 // Standalone host through the CLI adapter: two hosts in one process, liftHarness, sessionEnv.
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
@@ -27,8 +27,8 @@ const thrown = (fn) => {
   catch (e) { return { threw: true, msg: String(e.message ?? e) }; }
 };
 
-const a = makeSandbox('promptobus-host-a-');
-const b = makeSandbox('promptobus-host-b-');
+const a = realpathSync(makeSandbox('promptobus-host-a-'));
+const b = realpathSync(makeSandbox('promptobus-host-b-'));
 writeHostConfig(a, { tools: ['claude', 'cursor'] });
 writeHostConfig(b, { tools: ['claude'] });
 

@@ -2,7 +2,7 @@
 // [reference/02-host.md#the-standalone-host](../docs/reference/02-host.md#the-standalone-host)
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -135,11 +135,35 @@ function defaultBranchOf(repoDir: string): string | null {
   return git(repoDir, ['rev-parse', '--abbrev-ref', 'HEAD']);
 }
 
+// A path that is not on disk yet keeps its missing tail after the nearest existing directory is canonicalized.
+function canonicalPath(target: string): string {
+  const missing: string[] = [];
+  let dir = path.resolve(target);
+  while (!existsSync(dir)) {
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    missing.push(path.basename(dir));
+    dir = parent;
+  }
+  let abs = realpathSync(dir);
+  for (let i = missing.length - 1; i >= 0; i -= 1) abs = path.join(abs, missing[i]);
+  return abs;
+}
+
+// True when `candidate` is outside `root`. Both sides are canonicalized first.
+export function pathOutsideRoot(root: string, candidate: string): boolean {
+  const rel = path.relative(canonicalPath(root), canonicalPath(candidate));
+  // A parent segment is outside; a directory name that starts with ".." is not.
+  return rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
+}
+
 // The clone `dir` sits in: descend from the root to the first directory with `.git`. The root itself
 // is never a clone here — a standalone workspace holds its clones below it. `nsPath` is the path from it.
 function cloneBelow(root: string, dir: string): HostClone | null {
-  const rel = path.relative(root, dir);
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  if (pathOutsideRoot(root, dir)) return null;
+  const rel = path.relative(canonicalPath(root), canonicalPath(dir));
+  if (!rel) return null;
+  // The host passes its canonical install root, so this path matches realpath.
   let abs = root;
   const taken: string[] = [];
   for (const part of rel.split(path.sep)) {
@@ -153,7 +177,7 @@ function cloneBelow(root: string, dir: string): HostClone | null {
 export function createStandaloneHost(options: StandaloneHostOptions = {}): PromptobusHost {
   const found = findConfig(options.cwd ?? '.');
   const config: HostFile = { ...found.config, ...(options.config ?? {}) };
-  const root = found.root;
+  const root = canonicalPath(found.root);
   const commandName = options.commandName ?? config.commandName ?? DEFAULT_COMMAND;
   const version = options.version ?? config.version ?? '0.0.0';
   const locale = options.locale ?? config.locale ?? 'en';
@@ -186,7 +210,8 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
     promptobusHome: () => home,
     findRoot: (cwd) => {
       const hit = findConfig(cwd);
-      return existsSync(path.join(hit.root, HOST_CONFIG)) ? hit.root : path.resolve(cwd);
+      const foundRoot = existsSync(path.join(hit.root, HOST_CONFIG)) ? hit.root : path.resolve(cwd);
+      return canonicalPath(foundRoot);
     },
     // Routing files of a standalone workspace: the user home carries the account's cache and `user`
     // overlay, the store home the workspace layer the tool writes. A consumer inserts its own between.
@@ -255,19 +280,21 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
       if (!existsSync(abs)) {
         throw new HostResolveError(`«${query}» was not found on disk (${abs})`);
       }
-      const rel = path.relative(root, abs);
-      const nsPath = (!rel || rel.startsWith('..') || path.isAbsolute(rel))
-        ? path.basename(abs)
-        : rel.split(path.sep).join('/');
-      return { nsPath, abs, via: 'path on disk' };
+      const canonical = realpathSync(abs);
+      const installRoot = realpathSync(root);
+      if (pathOutsideRoot(root, abs)) {
+        throw new HostResolveError(
+          `${canonical} is outside the install root ${installRoot}: name a repository inside it`,
+        );
+      }
+      const rel = path.relative(installRoot, canonical);
+      const nsPath = rel === '' ? path.basename(canonical) : rel.split(path.sep).join('/');
+      return { nsPath, abs: canonical, via: 'path on disk' };
     },
     repoAbsPath: (nsPath) => (path.isAbsolute(nsPath) ? nsPath : path.join(root, nsPath)),
     isClone: (abs) => existsSync(path.join(abs, '.git')),
     formatCandidate: (candidate: HostRepoCandidate) => candidate.nsPath,
-    inWorkspace: (abs) => {
-      const rel = path.relative(root, abs);
-      return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
-    },
+    inWorkspace: (abs) => !pathOutsideRoot(root, abs),
     cloneOf: (abs) => cloneBelow(root, abs),
     reviewLayoutError: (kind, ctx = {}) => {
       switch (kind) {

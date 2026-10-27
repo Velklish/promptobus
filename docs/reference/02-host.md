@@ -94,7 +94,23 @@ package version to `createStandaloneHost`. Therefore `commandName` and `version`
 
 The interface for that file, `HostFile`, declares two fields whose values the standalone host does not read: `generate` and `trustedHooks`; root discovery looks only at whether a file holds anything else. Each belongs to a spawned repository's own `promptobus.json`, which the lift reads by path ([03-cli](03-cli.md) § Spawn, [hooks and trust](../guides/hooks-and-trust.md#a-projects-own-hook-records)) — a generator and the project hook commands a repository trusts belong to the repository being spawned into, and a host describes a workspace, so no host method answers them. It is declared here because this is the interface every other field of that file is named in, and a field named nowhere is the drift `HostToolBin.version` already cost this package once.
 
-`pluginDir()` is `null`, so its absence is not a plugin warning; the participant instead says that this host ships no workspace-skills plugin. `memorySection()` is `null`. `resolveRepo` accepts a path on disk, not a remote namespace. `cloneOf` descends from the root to the first directory with `.git`; the root itself is never a clone. `reviewLayoutError` knows `not-clone`, `outside`, `no-clone`, `cwd-outside`, `ask-path`; a host that requires a shape of clone (a group/repo pair, a known zone) words that in its `no-clone` text.
+`pluginDir()` is `null`, so its absence is not a plugin warning; the participant instead says that this host ships no workspace-skills plugin. `memorySection()` is `null`. The install root is canonicalized once, when the host is created. `workspaceRoot`, the store, `repoAbsPath`, `resolveRepo`'s absolute path and `cloneOf`'s absolute path use that spelling, so a symlink spelling of the install root is the same root. Review of the main checkout is not treated as a worktree. `resolveRepo` accepts a path on disk, not a remote namespace. `pathOutsideRoot` canonicalizes the install root and the candidate, then treats a parent segment as outside. A path that is not on disk yet is compared from the nearest existing directory. `resolveRepo`, `inWorkspace` and `cloneOf` call that predicate. A path that is then outside the install root is refused before it becomes a namespace path. The refusal names that location and the install root, and spawn reports it before the clone check. A directory whose name starts with `..` stays inside, and review of that directory names that clone. A path inside the root is the path from the root, with `/` separators. When the path is the install root itself, the namespace path is that directory's name. `repoAbsPath` joins a namespace path to the install root. `cloneOf` descends from the root to the first directory with `.git`. It returns null for the root and for a directory outside the root. Review refuses that outside directory with `outside`. `reviewLayoutError` knows `not-clone`, `outside`, `no-clone`, `cwd-outside`, `ask-path`; a host that requires a shape of clone (a group/repo pair, a known zone) words that in its `no-clone` text.
+
+<!-- quote:../../src/standalone.ts -->
+```text
+export function pathOutsideRoot(root: string, candidate: string): boolean {
+  const rel = path.relative(canonicalPath(root), canonicalPath(candidate));
+  // A parent segment is outside; a directory name that starts with ".." is not.
+  return rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
+}
+```
+<!-- /quote -->
+
+<!-- quote:../../src/standalone.ts -->
+```text
+  const root = canonicalPath(found.root);
+```
+<!-- /quote -->
 
 `routingPaths()` answers `cacheFile` `~/.promptobus/model-routing/cache.json` and two overlays, `user` at `~/.promptobus/model-routing.json` and `workspace` at `<promptobusHome>/model-routing.json` — the writable one. Standalone declares no product-policy layer; a consumer inserts its own between those two, read-only.
 

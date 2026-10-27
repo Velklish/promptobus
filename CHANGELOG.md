@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Refuse a repository path that resolves outside the install root before spawn
+  turns it into a namespace path. The comparison uses the canonical paths, so a
+  symlink spelling of an in-root clone is that clone, and a directory whose
+  name starts with `..` stays inside. The refusal names that location and the
+  install root. `resolveRepo`, `inWorkspace` and `cloneOf` share that comparison,
+  so a directory whose name starts with `..` is that clone for spawn and for
+  review. The install root is canonicalized once, when the host is created, so a
+  symlink spelling of that root is the same root for spawn and for review.
+  A repository inside the root resolves to that clone for both.
+
 ### Fixed
 
 - The pause between a mailbox fetch and the following send waits for the

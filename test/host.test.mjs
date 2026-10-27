@@ -3,7 +3,7 @@
 // what it applies; the sentinel in tmpdir-sweep.test.mjs keeps the order.
 import './home.mjs';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -15,8 +15,8 @@ const ROOT = path.join(here, '..');
 
 test('createStandaloneHost lifts two independent hosts in one process', async () => {
   const { createStandaloneHost, isPromptobusHost, HOST_KIND } = await import('../dist/host-index.js');
-  const dirA = mkdtempSync(path.join(tmpdir(), 'promptobus-host-a-'));
-  const dirB = mkdtempSync(path.join(tmpdir(), 'promptobus-host-b-'));
+  const dirA = realpathSync(mkdtempSync(path.join(tmpdir(), 'promptobus-host-a-')));
+  const dirB = realpathSync(mkdtempSync(path.join(tmpdir(), 'promptobus-host-b-')));
   process.on('exit', () => {
     rmSync(dirA, { recursive: true, force: true });
     rmSync(dirB, { recursive: true, force: true });
@@ -159,8 +159,8 @@ test('routingPaths keeps the account files out of the per-workspace store', asyn
   // repository and not with this package. It is also the one layer marked
   // writable, and standalone marks no other.
   const { createStandaloneHost } = await import('../dist/host-index.js');
-  const dirA = mkdtempSync(path.join(tmpdir(), 'promptobus-routing-a-'));
-  const dirB = mkdtempSync(path.join(tmpdir(), 'promptobus-routing-b-'));
+  const dirA = realpathSync(mkdtempSync(path.join(tmpdir(), 'promptobus-routing-a-')));
+  const dirB = realpathSync(mkdtempSync(path.join(tmpdir(), 'promptobus-routing-b-')));
   process.on('exit', () => {
     rmSync(dirA, { recursive: true, force: true });
     rmSync(dirB, { recursive: true, force: true });
@@ -202,7 +202,7 @@ test('entry point ./hooks returns a plan without a foreign workspace layout', as
 
 test('an explicit cwd reads promptobus.json; options.config overlays it', async () => {
   const { createStandaloneHost } = await import('../dist/host-index.js');
-  const dir = mkdtempSync(path.join(tmpdir(), 'promptobus-host-json-'));
+  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'promptobus-host-json-')));
   process.on('exit', () => { rmSync(dir, { recursive: true, force: true }); });
   writeFileSync(path.join(dir, 'promptobus.json'), `${JSON.stringify({
     commandName: 'fromfile',
