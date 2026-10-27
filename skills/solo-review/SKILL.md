@@ -53,9 +53,9 @@ The report arrives as `type=result` on the bus.
 
 ## Close
 
-The two halves are independent:
+Stop the reviewer, then close the task. For a Codex reviewer the order is required: `done` refuses while a native Codex participant lacks confirmed Stop.
 
-- Stop the reviewer session in the harness (the driver route is in `promptobus status`).
+- Stop the reviewer session with `promptobus stop <address> --task <id>`. A Codex reviewer needs this command, because it records the Stop proof; on other harnesses the driver route that `promptobus status` prints also works.
 - Close the task: `promptobus done --task <id>`. The review command prints this line.
 
 The close automatically refreshes the availability of the window-bearing harnesses represented by the reviewer's telemetry records, using the existing 15 s preflight budget. A refusal or timeout leaves the end reading absent, prints `telemetry: <harness> window <id> not re-read (<reason>) — end reading absent` for a missing window (or the harness-level form when the whole harness is unavailable), and does not block the close; `promptobus models calibrate` counts that run under "without windows" rather than as spend evidence.

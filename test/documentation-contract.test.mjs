@@ -328,3 +328,13 @@ check('docs: the README resumes a managed root after its processes exit and name
   && !has(readme, 'uses `lead --resume` after confirmed Stop')
   && has(readme, 'A second optional package, `integrations/bb-native-observer/`, is a read-only BB dashboard for native Promptobus tasks.'),
   'the README ties managed-root resume to a confirmed Stop or omits the native observer package');
+const soloReviewSkill = read('skills/solo-review/SKILL.md');
+check('skills: shipped guidance requires confirmed native Stop before done and a fresh lift after changed owner access',
+  has(orchestrateSkill, '`done` refuses while the managed root or another native Codex participant lacks confirmed Stop.')
+  && has(orchestrateSkill, 'Before each model input, the holder refuses changed owner access and requires a fresh lift; restoring the old file does not clear the refusal.')
+  && !has(orchestrateSkill, 'the holder reloads fresh access from the original owner account')
+  && has(orchestrateSkill, 'first refusing while any native Codex participant lacks confirmed Stop (`--keep-sessions` included)')
+  && has(orchestrateSkill, 'A Codex stop that cannot confirm terminal command accounting exits 1 and keeps the record and private home.')
+  && has(soloReviewSkill, 'For a Codex reviewer the order is required: `done` refuses while a native Codex participant lacks confirmed Stop.')
+  && !has(soloReviewSkill, 'The two halves are independent'),
+  'a shipped skill still says done stops native Codex sessions or that the holder reloads changed owner access in place');
