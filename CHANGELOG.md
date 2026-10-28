@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Codex limit windows now take `session` or `weekly` from their duration rather than their `primary` or `secondary` slot. An explicit `lengthSec` is accepted when `windowDurationMins` is absent.
 - An OpenCode holder grants `external_directory` for the session directory and each
   `addDirs` entry (`<root>/*` and `<root>/**`). A filesystem root is not granted and
   is not answered. It still replies `once` when an ask for those roots is pending,

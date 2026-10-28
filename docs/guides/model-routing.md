@@ -1076,29 +1076,27 @@ rather than a limit to report.
 
 ### `WINDOW_KIND_BY_ID` — the subscription windows of a snapshot, normalised
 
-Source: `lib/model-routing/adapter-codex.js`, `WINDOW_KIND_BY_ID`.
+Source: `lib/model-routing/adapter-codex.js`, `WINDOW_KIND_BY_ID`, `rateLimitWindows` and `windowKind`.
 
 `id` is the name the payload gives the window — `primary` and `secondary` — and
-nothing here renames them into hours and days: the length is a number the
-harness states (`windowDurationMins`), and a label invented from it would be a
-second, quieter claim about the same fact. A window whose `usedPercent` is not a
-number is not a window and is left out; the projection would drop it anyway.
+nothing here renames them into hours and days. The adapter reads the length from
+`windowDurationMins` × 60, or from `lengthSec` when the minutes are absent.
+A window whose `usedPercent` is not a number is left out.
 
-`kind` and `scope` are ADR-005's and are stated rather than derived: `primary`
-is the five-hour SESSION window and `secondary` the seven-day WEEKLY one — the
-names app-server gives two windows whose lengths it also states — and neither
-binds a model, so the scope is `null`, the account. A window whose length the
-payload does not state is LEFT OUT rather than given one: without a length
-there is no pace, and a length invented here would be a number app-server
-never said.
+The length determines `kind`: seven days or longer is `weekly`; a shorter
+positive length is `session`. The `primary` and `secondary` names are retained as
+ids, not used to override a supplied duration. `WINDOW_KIND_BY_ID` supplies the
+kind only when duration is absent. Such a window is left out of the snapshot:
+ADR-005 requires `lengthSec` for pace, and the adapter does not invent it.
+Neither kind binds a model, so `scope` is `null`, the account.
 
 A snapshot that names no window at all but carries the numbers at its own top
 level is one window, and it is `primary`. That shape is not invented here:
 `rateLimitReached` counts the snapshot itself among the windows it checks, and
 `rateLimitNote` reads `snap.primary?.usedPercent ?? snap.usedPercent` — the
 flat form has always been the primary window written without its name. Losing
-it would turn an exhaustion the harness DID time into a sticky one that only
-`--clear-exhausted` lifts.
+it would discard a usable limit measurement. A lengthless flat form is omitted
+from `windows`, while `reachedResetAt` still carries the exhaustion's reset.
 
 ### `spentWindow` — the account-wide row that is spent, or none
 

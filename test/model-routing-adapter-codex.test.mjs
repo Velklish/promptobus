@@ -39,7 +39,7 @@ import { listedModels } from '../lib/codex-session.js';
 import { isoStamp, snapshotEntry } from '../lib/model-routing/cache.js';
 import {
   accountCredits, accountTier, rateLimitSnapshot, rateLimitWindows, reachedResetAt, resetCreditCount,
-  resetIso, unsupportedMethod,
+  resetIso, unsupportedMethod, windowKind,
 } from '../lib/model-routing/adapter-codex.js';
 import { makeSandbox, resolveToolBin } from './sandbox.mjs';
 import {
@@ -156,6 +156,22 @@ test('windows keep the harness names and the harness numbers', () => {
     { id: 'primary', kind: 'session', lengthSec: 18_000, usedPercent: 12, resetAt: '2100-01-01T00:00:00.000Z', scope: null },
     { id: 'secondary', kind: 'weekly', lengthSec: 604_800, usedPercent: 46, resetAt: null, scope: null },
   ]);
+});
+
+test('a Codex window kind follows its duration even when the slot names disagree', () => {
+  assert.deepEqual(rateLimitWindows({
+    primary: { usedPercent: 12, windowDurationMins: 10080 },
+    secondary: { usedPercent: 46, windowDurationMins: 300 },
+  }).map(({ id, kind, lengthSec }) => ({ id, kind, lengthSec })), [
+    { id: 'primary', kind: 'weekly', lengthSec: 604_800 },
+    { id: 'secondary', kind: 'session', lengthSec: 18_000 },
+  ]);
+  assert.deepEqual(rateLimitWindows({ usedPercent: 12, lengthSec: 604_800 })
+    .map(({ id, kind, lengthSec }) => ({ id, kind, lengthSec })), [
+    { id: 'primary', kind: 'weekly', lengthSec: 604_800 },
+  ]);
+  assert.equal(windowKind('primary', null), 'session');
+  assert.equal(windowKind('secondary', null), 'weekly');
 });
 
 test('a snapshot that names no window is the primary window, and it needs a length like any other', () => {

@@ -5,6 +5,8 @@ import { resolve } from '../lib/model-routing/resolver.js';
 
 const guide = readFileSync(new URL('../docs/guides/model-routing.md', import.meta.url), 'utf8');
 const cli = readFileSync(new URL('../docs/reference/03-cli.md', import.meta.url), 'utf8');
+const glossary = readFileSync(new URL('../docs/GLOSSARY.md', import.meta.url), 'utf8');
+const adr = readFileSync(new URL('../docs/adr/adr-005-ten-point-scale-absolute-bands-calibrate.md', import.meta.url), 'utf8');
 const orchestrate = readFileSync(new URL('../skills/orchestrate/SKILL.md', import.meta.url), 'utf8');
 const warningSchema = JSON.parse(readFileSync(
   new URL('../schemas/model-routing/decision.schema.json', import.meta.url), 'utf8',
@@ -22,6 +24,12 @@ const optionalWarnings = Object.keys(warningSchema.properties)
   .filter((field) => !warningSchema.required.includes(field));
 const fieldsIn = (text) => [...(text ?? '').matchAll(/`([^`]+)`/g)].map((match) => match[1]).sort();
 const sameFields = (text, expected) => JSON.stringify(fieldsIn(text)) === JSON.stringify([...expected].sort());
+
+check('routing docs: Codex duration selects a kind before the snapshot and display',
+  /^\| window \|.*Codex selects the kind from source duration.*seven days or longer.*`weekly`.*shorter positive duration.*`session`.*\|/m.test(glossary)
+  && /\*\*6\. The snapshot\*\*.*Codex adapter chooses that name from source duration.*seven days or longer.*`weekly`.*shorter positive duration.*`session`/.test(adr)
+  && /^A `kind` is a name.*Codex adapter selects its kind from source duration before writing the snapshot/m.test(cli)
+  && /The length determines `kind`: seven days or longer is `weekly`/.test(guide));
 
 check('routing docs: late-limit marks are read and clearable',
   /preflight reads this cache mark on the next routing decision/.test(lateLimit)

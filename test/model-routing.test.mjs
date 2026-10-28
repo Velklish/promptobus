@@ -128,11 +128,8 @@ test('the snapshot schema is version 2, and a version 1 document is not one', ()
 });
 
 test('a window states its kind, its length and what it binds — or it is not a window', () => {
-  // The three rules of ADR-005 that the schema itself can hold. `kind` is a NAME
-  // and `lengthSec` is the number, and neither is derived from the other; a
-  // window with no length has no pace; and a scope is explicit, because a scope
-  // read from an ABSENCE would silently mean "the whole account", which is the
-  // one claim an adapter that forgot the field did not make.
+  // ADR-005 requires separate kind, length and scope fields; the schema derives
+  // none. Codex may choose kind from source duration before writing those fields.
   const validate = validatorFor('urn:promptobus:model-routing:snapshot');
   const doc = readJson(path.join(FIXTURES, 'snapshot.json'));
   const withWindow = (w) => {
