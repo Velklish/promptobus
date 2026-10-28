@@ -129,6 +129,31 @@ check('docs: history exposes a typed page and an opaque cursor toward older reco
 
 const bbEvidence = section(protocol, '#### Manifest before reviewer launch');
 const bbGuide = read('integrations/bb/README.md');
+const evidenceRule = 'Evidence of a check is the command, its exit code and the gate count in the participant report and in';
+const bespokeBan = 'Do not build a bespoke verification harness.';
+const packetBan = 'wrapper scripts, receipt files, hash manifests or frozen review packets';
+const closingRule = "A task's closing criteria must be checkable on the current machine.";
+const childCard = 'moves to a child card, and the parent closes on the checkable part.';
+const bbParticipants = [
+  'promptobus-worker', 'promptobus-reviewer', 'promptobus-approver',
+  'promptobus-orchestrator', 'promptobus-teamlead', 'promptobus-reporter',
+];
+const workerProtocol = section(read('skills/orchestrate/SKILL.md'), '## Worker protocol');
+check('docs: a bespoke verification harness is refused in the orchestrate skill and every BB participant skill',
+  [workerProtocol, read('lib/prompts/bb.js'), ...bbParticipants.map((name) => read(`integrations/bb/skills/${name}/SKILL.md`))]
+    .every((text) => has(text, evidenceRule) && has(text, bespokeBan) && has(text, packetBan)
+      && has(text, closingRule) && has(text, childCard))
+  && has(workerProtocol, 'The orchestrator does not add wrapper scripts, receipt files, hash manifests or frozen review packets.')
+  && has(workerProtocol, 'They are not a bespoke verification harness')
+  && has(workerProtocol, 'commands/evidence-prepare.js')
+  && has(protocol, 'A bespoke verification harness is not that evidence')
+  && has(protocol, 'The orchestrator does not add wrapper scripts, receipt files, hash manifests or frozen review packets.')
+  && has(protocol, 'The package\'s own BB evidence recipe stays.')
+  && has(read('README.md'), 'a bespoke verification harness is not evidence')
+  && has(read('integrations/bb/README.md'), bespokeBan)
+  && has(read('lib/prompts/README.md'), 'bespoke verification harness')
+  && has(read('CHANGELOG.md'), 'bespoke verification harness'),
+  'the evidence rule or the ban on a bespoke harness left the orchestrate skill or a BB participant skill');
 check('docs: BB evidence preparation follows terminal launcher capture before the first check',
   [bbEvidence, bbGuide, read('skills/orchestrate/SKILL.md')].every((text) =>
     has(text, 'before the first relevant mechanical check')

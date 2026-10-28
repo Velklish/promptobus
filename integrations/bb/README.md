@@ -1113,7 +1113,14 @@ tool. Shell pipeline executables are unsupported.
 ### Compact current review evidence
 
 Give the worker this recipe, the exact constructor input and owned paths before
-the first relevant mechanical check. Use entries from the same immutable build
+the first relevant mechanical check. Evidence of a check is still the command,
+its exit code and the gate count in the participant report and in `result.md`.
+This recipe is the package's own tool. Do not build a bespoke verification harness.
+Do not add wrapper scripts, receipt files, hash manifests or frozen review
+packets beyond it. A task's closing criteria must
+be checkable on the current machine. A live measurement that needs an
+unavailable resource moves to a child card, and the parent closes on the
+checkable part. Use entries from the same immutable build
 generation. Capture the checked launcher itself, so its finalization outcome
 survives alongside the executed command:
 

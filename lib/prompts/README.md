@@ -8,7 +8,10 @@ retain state reads, snapshot construction, permission and launch planning. They
 supply task context and concrete tool, environment, continuation and publication
 bindings. `renderReviewProcedure` preserves the common finding-cost definitions.
 
-`bb.js` binds those contracts to BB role skills. `renderBbInstructionSkill` uses
+`bb.js` binds those contracts to BB role skills. Each rendered role states that
+evidence of a check is the command, its exit code and the gate count, and that
+a bespoke verification harness sits outside the package's own evidence recipe.
+`renderBbInstructionSkill` uses
 descriptive context fields; they are not usable identities or paths.
 `createBbInstructionDelivery` selects one skill with a short dynamic instruction
 and puts complete task, tool, environment, snapshot and gate context in an initial

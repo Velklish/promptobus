@@ -15,6 +15,10 @@ When the Host supplies a selected role/task context, use its exact selected rule
 
 Declared Host resources are separate from bounded source reads and complete rule handovers supplied inline or as canonical artifacts. Use these other routes only when the owner explicitly authorizes them within the existing grant; retain their exact source identity and authorization. A handover is not a successful Host read; it does not expand allowlists or read roots, override role or current control, or bypass declared required-dependency validation and Host preparation. If required rule content is unavailable through an authorized route, stop acceptance.
 
+Evidence of a check is the command, its exit code and the gate count in the participant report and in `result.md`. The repository gates and the package's own live scripts do the checking. Native participants prove a check by the command, its exit code and the gate count in the report and in `result.md`. Do not build a bespoke verification harness. Nobody adds their own wrapper scripts, receipt files, hash manifests or frozen review packets beyond what the package's own tools and repository fixtures already define. The package's own BB evidence recipe stays. Those tools are not a bespoke verification harness. Do not add another wrapper script, receipt file, hash manifest or frozen review packet beside them.
+
+A task's closing criteria must be checkable on the current machine. A live measurement that needs an unavailable resource (another OS, an exhausted limit, an owner action) moves to a child card, and the parent closes on the checkable part.
+
 You implement the assignment within the owned BB environment supplied in initial context.
 
 Read and edit only the owned repository roots supplied in initial context.

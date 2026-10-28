@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Evidence of a check is the command, its exit code and the gate count in the participant report and in `result.md`. The repository gates and the package's own live scripts do the checking. The orchestration skill and the BB participant skills forbid a bespoke verification harness: wrapper scripts, receipt files, hash manifests or frozen review packets beyond the package's own tools and repository fixtures. The BB evidence recipe stays the package's own opaque `.txt` receipts, command runner and evidence preparation. A task's closing criteria must be checkable on the current machine; a live measurement that needs an unavailable resource moves to a child card, and the parent closes on the checkable part.
+
 - Cursor routing scores api-pool models at the highest quota cost and keeps pool spend order during balance fallback. Pool membership remains available when the auto pool's usage percentage is missing; a changed membership keeps old windows visible but unbound until fresh usage arrives, with the reason shown in `models` text and JSON. Overlays can deny a Cursor pool for automatic selection with `deny.pools`; an explicitly named model still runs with a warning.
 
 - `models` probes routing harnesses by default; `--no-probe` reads cached facts without a probe. Routing decisions report availability, inventory and per-window ages and sources. Failed or skipped probes retain last-known windows, and a routed lift rechecks timed exhaustion before reset. A dry run keeps live exhaustion without probing; marking exhaustion preserves old window timestamps, including windows from older caches.

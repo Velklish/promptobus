@@ -346,6 +346,14 @@ Before the gate record and the handover record are sent, the worker runs `npm ru
 
 The rule lives in the preambles (`lib/spawn.js`, `lib/review.js` and `lib/approver.js`) and not only here, because a convention kept in a consumer's own rules is not delivered to a participant this package lifts.
 
+Evidence of a check is the command, its exit code and the gate count in the participant report and in `result.md`. The repository gates — the commands `backslop gates` runs — and the package's own live scripts do the checking. A bespoke verification harness is not that evidence. The orchestration skill forbids wrapper scripts, receipt files, hash manifests and frozen review packets beyond the package's own tools and repository fixtures. The BB participant skills state the same ban and keep the BB evidence recipe. A task's closing criteria must be checkable on the current machine. A live measurement that needs an unavailable resource (another OS, an exhausted limit, an owner action) moves to a child card, and the parent closes on the checkable part.
+
+<!-- quote:../../skills/orchestrate/SKILL.md -->
+Evidence of a check is the command, its exit code and the gate count in the participant report and in `result.md`. The repository gates and the package's own live scripts do the checking. Native participants prove a check by the command, its exit code and the gate count in the report and in `result.md`. Do not build a bespoke verification harness. The orchestrator does not add wrapper scripts, receipt files, hash manifests or frozen review packets. Nobody adds their own wrapper scripts, receipt files, hash manifests or frozen review packets beyond what the package's own tools and repository fixtures already define.
+
+A task's closing criteria must be checkable on the current machine. A live measurement that needs an unavailable resource (another OS, an exhausted limit, an owner action) moves to a child card, and the parent closes on the checkable part.
+<!-- /quote -->
+
 **The Gate line is never omitted.** A gate that was not run says `not run, because …` with the reason; an omitted line reads as a green one. The line "gates N, green M" counts by command, and only the entries whose `tree` and `dirty` match the tree the line is about — a worker's clean HEAD, an approver's merged tree. Entries on other trees are history and are not counted. N is the number of distinct `command` values among those gate entries — an entry with no `kind`, or `kind` `gate`. Different spellings of one command are different commands; keep one spelling. M is how many of those have a latest entry that exits 0. An entry whose `counts` carry `gates` and `green` is the aggregate itself, not a gate, and is not counted in N. When the record has no per-command gate entries, the runner entry's own `gates` and `green` are the line. When per-command entries exist, they are counted by command and must agree with the runner entry when the record has one. An entry with `kind` `verification` is a card's own run and is left out of both. After the aggregate, the Gate line names each verification run with its exit code, or says "verification K, green L". A reviewer writes that line on every report it sends — it runs nothing by [ADR-009](../adr/adr-009-reviewer-resolves-no-discrepancy.md) — which is why the line cannot be read as an escape hatch: it is the normal state of the role that runs no gates. An approver may cite another participant's landed artifact in the **Gate** line — the worker's gate record is the usual case — while its own overflow and gate record still bind only to its own send.
 
 **The native overflow rule is the worker's and the approver's, not the reviewer's.** A worker's and an approver's body is bounded and what does not fit is attached; a native reviewer cannot attach anything — file writes are denied to it, and its own isolation text forbids publishing an artifact — so its bound covers the header alone and findings follow it unbounded in the same body. BB caps every send body and uses [bounded reviewer reports](#bb-bounded-reviewer-reports) instead.
@@ -982,6 +990,14 @@ comparisons against base, and gates not run. An impossible check has a concrete
 evidence against their supplied snapshot without executing mechanical checks.
 Approvers judge it under the assigned acceptance procedure and record their own
 authorized gate executions under their own authenticated id.
+
+The same ban sits in each rendered BB role skill. The package's own evidence recipe is not a bespoke verification harness:
+
+<!-- quote:../../integrations/bb/skills/promptobus-worker/SKILL.md -->
+Evidence of a check is the command, its exit code and the gate count in the participant report and in `result.md`. The repository gates and the package's own live scripts do the checking. Native participants prove a check by the command, its exit code and the gate count in the report and in `result.md`. Do not build a bespoke verification harness. Nobody adds their own wrapper scripts, receipt files, hash manifests or frozen review packets beyond what the package's own tools and repository fixtures already define. The package's own BB evidence recipe stays. Those tools are not a bespoke verification harness. Do not add another wrapper script, receipt file, hash manifest or frozen review packet beside them.
+
+A task's closing criteria must be checkable on the current machine. A live measurement that needs an unavailable resource (another OS, an exhausted limit, an owner action) moves to a child card, and the parent closes on the checkable part.
+<!-- /quote -->
 
 Test-name inventories preserve exact names, order and repeated occurrences from
 complete raw output. Parentheses, punctuation, Unicode and internal spacing belong
