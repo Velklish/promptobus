@@ -62,6 +62,8 @@
           "type": "string"
         },
         "checkedAt": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
+        "inventoryCheckedAt": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
+        "inventorySource": { "enum": ["probe", "cache", "manual"] },
         "source": {
           "description": "probe — this run asked the harness; cache — a live entry was reused; manual — a person marked it.",
           "enum": ["probe", "cache", "manual"]
@@ -174,6 +176,8 @@
         "kind": { "enum": ["session", "weekly", "monthly"] },
         "lengthSec": { "type": "integer", "minimum": 1 },
         "usedPercent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "checkedAt": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
+        "source": { "enum": ["probe", "cache", "manual"] },
         "resetAt": {
           "oneOf": [
             { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },

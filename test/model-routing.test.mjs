@@ -394,7 +394,7 @@ function sink() {
 
 /**
  * The clock the fixtures README freezes — twelve seconds after the snapshot was
- * taken, which is where `ageSec: 12` comes from.
+ * taken, which is where each cached reading's `ageSec: 12` comes from.
  *
  * `Date.now` is replaced rather than a `now` argument passed, because the age is
  * not the only thing the clock decides: the cache TTLs are read against it too,
@@ -423,7 +423,7 @@ function normalise(box, text) {
 }
 
 /**
- * The golden run: `models --strategy balanced --role worker`, against the fixture
+ * The golden run: `models --strategy balanced --role worker --no-probe`, against the fixture
  * catalog and the fixture cache, with a probe counter in place of every adapter.
  *
  * The counter is the point of the stand-ins here rather than their answers: this
@@ -438,12 +438,13 @@ async function goldenRun({ json = false } = {}) {
   await atFrozenClock(() => models(box.host, {
     strategy: 'balanced',
     role: 'worker',
+    noProbe: true,
     json,
     catalogFile: path.join(FIXTURES, 'catalog.json'),
     adapterFor: adapterMap({ example: availableStub(probes), other: availableStub(probes) }),
     output: out,
   }));
-  assert.equal(probes.probes, 0, '`models` without --refresh must ask no harness anything');
+  assert.equal(probes.probes, 0, '`models --no-probe` must ask no harness anything');
   return { box, text: out.text };
 }
 

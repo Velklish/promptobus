@@ -635,7 +635,9 @@ test('a Codex window survives the cache projection — kind, length and scope ar
   const projected = snapshotEntry({
     state: 'available', reason: null, message: 'ok', checkedAt: isoStamp(), source: 'probe', windows,
   });
-  assert.deepEqual(projected.windows, windows, 'the projection dropped a window the adapter reported');
+  assert.deepEqual(projected.windows,
+    windows.map((w) => ({ ...w, checkedAt: projected.checkedAt, source: 'probe' })),
+    'the projection dropped a window the adapter reported');
   assert.equal(validates({ schemaVersion: 2, takenAt: isoStamp(), harnesses: { codex: projected } }), true);
 
   // A window whose length app-server did not state is left out by the adapter

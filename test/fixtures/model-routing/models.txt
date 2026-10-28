@@ -1,5 +1,11 @@
 strategy: balanced · role: worker
-snapshot: 2026-09-05T09:00:00.000Z · 12 s old · source cache
+snapshot: 2026-09-05T09:00:12.000Z · 0 s old · source cache
+  example: availability 12 s old · source cache · checked 2026-09-05T09:00:00.000Z
+  example: inventory 12 s old · source cache · checked 2026-09-05T09:00:00.000Z
+  example: window 5h 12 s old · source cache · checked 2026-09-05T09:00:00.000Z
+  example: window 7d-deep 12 s old · source cache · checked 2026-09-05T09:00:00.000Z
+  other: availability 12 s old · source cache · checked 2026-09-05T09:00:00.000Z
+  other: inventory 12 s old · source cache · checked 2026-09-05T09:00:00.000Z
 overlays: user (absent) · workspace (absent)
 chosen: example-quick · example / example-quick · score 71.78
 

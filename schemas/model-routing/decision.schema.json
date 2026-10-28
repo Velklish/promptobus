@@ -137,11 +137,48 @@
         "source": {
           "description": "mixed — some harnesses came from a live probe and some from the cache.",
           "enum": ["probe", "cache", "mixed"]
+        },
+        "harnesses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["harness", "availability", "inventory", "windows"],
+            "properties": {
+              "harness": { "type": "string", "minLength": 1 },
+              "availability": { "$ref": "#/$defs/readingAge" },
+              "inventory": { "oneOf": [{ "$ref": "#/$defs/readingAge" }, { "type": "null" }] },
+              "windows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["id", "checkedAt", "ageSec", "source"],
+                  "properties": {
+                    "id": { "type": "string", "minLength": 1 },
+                    "checkedAt": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
+                    "ageSec": { "type": "integer", "minimum": 0 },
+                    "source": { "enum": ["probe", "cache", "manual"] }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     }
   },
   "$defs": {
+    "readingAge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checkedAt", "ageSec", "source"],
+      "properties": {
+        "checkedAt": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
+        "ageSec": { "type": "integer", "minimum": 0 },
+        "source": { "enum": ["probe", "cache", "manual"] }
+      }
+    },
     "harnessAvailability": {
       "type": "object",
       "additionalProperties": false,

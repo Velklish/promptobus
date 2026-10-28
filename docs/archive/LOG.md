@@ -592,3 +592,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-313"></a>`PB-313-owner-questions-self-contained` · 2026-10-28 · completed · — · The orchestrator's questions to the owner are self-contained, and a task is named with its title
 - <a id="pb-286.3"></a>`PB-286.3-codex-teamlead-open-limits` · 2026-10-28 · completed · — · Measure the open limits of the Codex teamlead admission
 - <a id="pb-406.4"></a>`PB-406.4-codex-window-kind-by-duration` · 2026-10-28 · completed · — · A Codex window's kind follows its duration, not its slot name
+- <a id="pb-406.1"></a>`PB-406.1-routing-fresh-windows` · 2026-10-28 · completed · — · Routing windows stay current, and an expired probe keeps its last windows with their age

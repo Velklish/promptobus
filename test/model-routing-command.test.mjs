@@ -45,12 +45,12 @@ import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 
 import { captureSplit, quiet } from './console.mjs';
-import { adapterMap, answeringStub, counter, unauthenticatedStub } from './routing-stubs.mjs';
+import { adapterMap, answeringStub, counter, throwingStub, unauthenticatedStub } from './routing-stubs.mjs';
 import { stubCommand, writeHostConfig } from './sandbox.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const {
-  models, routingContext, routingLine, routingMetadata,
+  models, routeLift, routingContext, routingLine, routingMetadata,
 } = await import(path.join(here, '..', 'lib', 'models.js'));
 const SCHEMAS = path.join(here, '..', 'schemas', 'model-routing');
 const { planSpawn, spawn: spawnRaw } = await import(path.join(here, '..', 'lib', 'spawn.js'));
@@ -868,6 +868,29 @@ test('a routed --dry-run prints the decision and writes neither cache nor task s
   assert.equal(cacheBytes(), cache, 'a dry run must not touch the availability cache');
 });
 
+test('models probes by default and --no-probe explicitly reads only the cache', async () => {
+  seedCache(HEALTHY());
+  const probes = counter();
+  await models(WS, { strategy: 'balanced', role: 'worker', json: true,
+    adapterFor: probeSet(probes), output: sink() });
+  assert.equal(probes.probes, 3, 'the default asks every declared harness');
+  const before = readFileSync(CACHE, 'utf8');
+  await models(WS, { strategy: 'balanced', role: 'worker', noProbe: true, json: true,
+    adapterFor: probeSet(probes), output: sink() });
+  assert.equal(probes.probes, 3, '--no-probe asks none');
+  assert.equal(readFileSync(CACHE, 'utf8'), before, '--no-probe writes nothing');
+});
+
+test('a routed lift re-probes held timed exhaustion before its reset', async () => {
+  seedCache(HEALTHY());
+  markExhausted(HOST, 'claude', { resetAt: new Date(Date.now() + 60_000).toISOString() });
+  const probes = counter();
+  const lift = await routeLift(HOST, { role: 'worker', strategy: 'balanced', adapterFor: probeSet(probes) });
+  assert.equal(probes.probes, 1, 'only the held timed exhaustion needs a new probe');
+  assert.equal(lift.harness, 'claude');
+  assert.equal(readSnapshot(HOST).harnesses.claude.state, 'available');
+});
+
 test('--refresh --dry-run probes and still writes nothing', async () => {
   seedCache(HEALTHY());
   const task = freshTask('refresh-t20260905-090004');
@@ -911,10 +934,8 @@ test('a routed lift served entirely from the cache leaves the cache file byte fo
   assert.equal(statSync(CACHE).mtimeMs, stamp, 'the cache file was not touched at all');
 });
 
-test('the decision is aged from the oldest entry, not from the freshest one', async () => {
-  // A mixed snapshot is the case the document stamp cannot describe: one harness
-  // answered a moment ago and two are hours old, and a snapshot is only as fresh
-  // as the stalest thing inside it.
+test('the decision separates inventory age from the snapshot assembly time', async () => {
+  // The assembly time stays current while the cached inventory keeps its old measurement time.
   const old = new Date(Date.now() - 3600_000).toISOString();
   seedCache({
     claude: { ...entry('available', null, {
@@ -924,30 +945,29 @@ test('the decision is aged from the oldest entry, not from the freshest one', as
     codex: entry('unavailable', 'not_authenticated'),
   });
   const out = sink();
-  await models(WS, { strategy: 'balanced', role: 'worker', json: true, output: out });
+  await models(WS, { strategy: 'balanced', role: 'worker', noProbe: true, json: true, output: out });
   const decision = JSON.parse(out.text);
-  assert.equal(decision.snapshot.takenAt, old, 'the stamp is the oldest entry own checkedAt');
-  assert.ok(decision.snapshot.ageSec >= 3600, `expected an hour of age, got ${decision.snapshot.ageSec}`);
+  assert.ok(decision.snapshot.ageSec < 60);
+  const claude = decision.snapshot.harnesses.find((h) => h.harness === 'claude');
+  assert.ok(claude.inventory.ageSec >= 3600);
+  assert.equal(claude.inventory.checkedAt, old);
 });
 
-test('a cold cache says "never checked" in words, and the document still carries the epoch', async () => {
-  // The decision is aged from the oldest entry, and a cache that never held a
-  // harness gives that entry the epoch — so the whole line is ageless. As a
-  // number it reads "1788614269 s old", which is true and useless. The text
-  // says it in words; the document is not touched, because a machine reader
-  // wants the literal stamp and the literal age.
+test('a cold cache marks each harness never checked without ageing the assembly time', async () => {
+  // A missing cache marks each harness with the epoch without ageing the assembly time.
   rmSync(CACHE, { force: true });
   try {
     const text = sink();
-    await models(WS, { strategy: 'balanced', role: 'worker', adapterFor: probeSet(counter()), output: text });
-    assert.match(text.text, /^snapshot: never checked · source cache$/m);
-    assert.equal(/ s old/.test(text.text), false, 'a never-checked snapshot has no age to print');
+    await models(WS, { strategy: 'balanced', role: 'worker', noProbe: true,
+      adapterFor: probeSet(counter()), output: text });
+    assert.match(text.text, /availability \d+ s old · source cache · checked 1970-01-01/);
 
     const json = sink();
-    await models(WS, { strategy: 'balanced', role: 'worker', json: true, adapterFor: probeSet(counter()), output: json });
+    await models(WS, { strategy: 'balanced', role: 'worker', noProbe: true,
+      json: true, adapterFor: probeSet(counter()), output: json });
     const decision = JSON.parse(json.text);
-    assert.equal(decision.snapshot.takenAt, '1970-01-01T00:00:00.000Z');
-    assert.ok(decision.snapshot.ageSec > 0, 'the document keeps the literal age it computed');
+    assert.ok(decision.snapshot.ageSec < 60);
+    assert.ok(decision.snapshot.harnesses.every((h) => h.availability.checkedAt === '1970-01-01T00:00:00.000Z'));
   } finally {
     seedCache(HEALTHY());
   }
@@ -1238,7 +1258,8 @@ async function reviewerDecision(codexUsed, { now = Date.now(), ...fixture } = {}
   seedCache(nearlySpent(codexUsed, fixture));
   const out = sink();
   await models(WS, {
-    strategy: 'quality', role: 'reviewer', json: true, adapterFor: probeSet(counter()), output: out, now,
+    strategy: 'quality', role: 'reviewer', noProbe: true, json: true,
+    adapterFor: probeSet(counter()), output: out, now,
   });
   return JSON.parse(out.text);
 }
@@ -1300,23 +1321,38 @@ test('--harness codex spends the nearly spent window with a warning, and --model
   for (const row of codexRows(spent)) assert.equal(row.excluded?.code, 'constraint-mismatch', row.tupleId);
 });
 
-test('windows the cache let expire read as expired, not as no limit source, and still cost the penalty', async () => {
+test('expired cache windows remain in the resolver with their age and source', async () => {
   const t0 = Date.now();
   seedCache(nearlySpent(40, { codexCheckedAt: new Date(t0 - 150_000).toISOString() }));
   const out = sink();
   await models(WS, {
-    strategy: 'quality', role: 'reviewer', json: true, adapterFor: probeSet(counter()), output: out, now: t0,
+    strategy: 'quality', role: 'reviewer', noProbe: true, json: true,
+    adapterFor: probeSet(counter()), output: out, now: t0,
   });
   const decision = JSON.parse(out.text);
-  const unknown = decision.warnings.filter((w) => w.code === 'unknown-remaining');
-  assert.deepEqual(unknown.map((w) => w.message.split(' ')[0]), ['codex'], JSON.stringify(unknown));
-  assert.match(unknown[0].message, /^codex window entries expired 90 s ago; refresh with --refresh — /);
-  assert.equal(/exposes no limit source/.test(unknown[0].message), false);
+  const codex = decision.snapshot.harnesses.find((h) => h.harness === 'codex');
+  assert.equal(codex.windows[0].ageSec, 150);
+  assert.equal(codex.windows[0].source, 'cache');
+  assert.equal(decision.warnings.some((w) => w.code === 'unknown-remaining' && w.message.startsWith('codex ')), false);
   for (const row of codexRows(decision).filter((c) => c.score)) {
-    assert.deepEqual(row.score.adjustments.find((a) => a.code === 'unknown-availability'),
-      { code: 'unknown-availability', points: -10 }, row.tupleId);
+    assert.equal(row.score.components.remaining, 9);
+    assert.equal(row.score.adjustments.some((a) => a.code === 'unknown-availability'), false, row.tupleId);
   }
   assert.ok(codexRows(decision).some((c) => c.score), 'a codex tuple must be scored for the penalty to be read');
+});
+
+test('a failed replacement probe leaves expired windows available to the resolver', async () => {
+  const old = new Date(Date.now() - 120_000).toISOString();
+  seedCache(nearlySpent(40, { codexCheckedAt: old }));
+  const normal = probeSet(counter());
+  const ctx = await routingContext(WS, { strategy: 'quality', role: 'reviewer',
+    adapterFor: (h) => h === 'codex' ? throwingStub() : normal(h) });
+  const decision = ctx.decide();
+  const codex = decision.snapshot.harnesses.find((h) => h.harness === 'codex');
+  assert.equal(ctx.snapshot.harnesses.codex.reason, 'probe_failed');
+  assert.ok(codex.windows[0].ageSec >= 120);
+  assert.equal(codex.windows[0].source, 'cache');
+  assert.ok(codexRows(decision).some((c) => c.score?.components.remaining === 9));
 });
 
 test('the lift line names the nearly spent window once, by harness and percentage', async () => {

@@ -44,6 +44,9 @@ export interface ProbeWindow {
   usedPercent: number;
   lengthSec?: number;
   resetAt?: string | null;
+  /** A window may be measured separately from the harness verdict. */
+  checkedAt?: string;
+  source?: AvailabilitySource;
 }
 
 /** What an adapter is asked. */

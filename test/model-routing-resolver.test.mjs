@@ -144,7 +144,8 @@ const overlay = (fields) => ({ schemaVersion: 2, ...fields });
  * reproduce one pair of files and a second description of the projection is
  * exactly how they would stop agreeing.
  */
-const golden = (over = {}) => ({ ...decide(over), harnesses: availabilityOf(fixture('snapshot.json')) });
+const golden = (over = {}) => ({ ...decide({ snapshot: { ...SNAPSHOT, takenAt: new Date(NOW).toISOString() }, ...over }),
+  harnesses: availabilityOf(fixture('snapshot.json')) });
 
 test('the golden decision is reproduced from the golden inputs', () => {
   const decision = golden();
@@ -377,8 +378,9 @@ test('a stale entry and a timed-out probe each say so in the warnings', () => {
 });
 
 test('the snapshot block carries the age from the clock and the source from the entries', () => {
-  assert.deepEqual(decide().snapshot,
-    { takenAt: '2026-09-05T09:00:00.000Z', ageSec: 12, source: 'cache' });
+  assert.deepEqual({ ...decide().snapshot, harnesses: undefined },
+    { takenAt: '2026-09-05T09:00:00.000Z', ageSec: 12, source: 'cache', harnesses: undefined });
+  assert.equal(decide().snapshot.harnesses.find((h) => h.harness === 'example').availability.ageSec, 12);
   const mixed = clone(SNAPSHOT);
   mixed.harnesses.other.source = 'probe';
   assert.equal(decide({ snapshot: mixed }).snapshot.source, 'mixed');
@@ -1859,14 +1861,12 @@ test('the lift line names the pool that left selection, not the whole harness', 
   assert.match(routingLine(meta), /warnings: window-nearly-spent cursor api 72 %$/);
 });
 
-test('an unknown harness is penalised, not excluded, however spent its window reads', () => {
-  // The same reading as `remaining`: an `unknown` state has no level to measure.
+test('an unknown harness keeps its measured window for exclusion', () => {
   const snapshot = clone(BALANCE_SNAPSHOT);
   Object.assign(snapshot.harnesses.codex, { state: 'unknown', reason: 'quota_unknown' });
   snapshot.harnesses.codex.windows.find((w) => w.id === 'secondary').usedPercent = 99;
   const decision = paced({ snapshot });
-  assert.equal(excludedOf(decision, 'codex-sol'), null);
-  assert.deepEqual(byId(decision, 'codex-sol').score.adjustments, [{ code: 'unknown-availability', points: -10 }]);
+  assert.equal(excludedOf(decision, 'codex-sol')?.code, 'window-nearly-spent');
 });
 
 test('the lift line names each near-limit harness once, with its percentage', () => {

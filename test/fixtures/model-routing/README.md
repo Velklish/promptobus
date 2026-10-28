@@ -49,11 +49,11 @@ Codex leads by more than the band of 5, and it is chosen.
 ## The run these outputs come from
 
 ```text
-promptobus models --strategy balanced --role worker            → models.txt
-promptobus models --strategy balanced --role worker --json     → decision.json
+promptobus models --strategy balanced --role worker --no-probe            → models.txt
+promptobus models --strategy balanced --role worker --no-probe --json     → decision.json
 ```
 
-with `catalog.json` as the catalog, `snapshot.json` as the cache, **no overlay file present at either layer**, no live participant on any harness, no explicit `--harness`, `--model` or `--effort`, and `--allow-payg` absent. The clock is frozen at `2026-09-05T09:00:12.000Z` — twelve seconds after the snapshot's `takenAt`, which is where `ageSec: 12` comes from.
+with `catalog.json` as the catalog, `snapshot.json` as the cache, **no overlay file present at either layer**, no live participant on any harness, no explicit `--harness`, `--model` or `--effort`, and `--allow-payg` absent. The clock is frozen at `2026-09-05T09:00:12.000Z`: the snapshot assembly age is zero and each cached reading is twelve seconds old.
 
 ## The goldens are regenerated, not hand-edited
 
@@ -70,7 +70,7 @@ Two kinds of field cannot be compared raw, and both are normalised before the di
 1. **Paths.** The overlay paths in `decision.json` are written as `~/.promptobus/model-routing.json` and `<workspaceRoot>/.promptobus/model-routing.json`. The comparison replaces the home directory with `~` and the workspace root with `<workspaceRoot>`, longest prefix first, then compares. The placeholders stay in the fixture: a fixture holding one machine's home directory is a fixture only that machine can read.
 
    Two checks do that replacement, and the paths they replace differ because what they run differs. The command check (`test/model-routing.test.mjs`) runs the real command and substitutes the run's real `os.homedir()` and workspace root — that is the end-to-end claim, and only the real paths test it. The resolver check (`test/model-routing-resolver.test.mjs`) calls a pure function and hands it synthetic paths no machine has, then substitutes those: with the host mocked out there is no real home in the document to find, and driving the substitution with paths the machine does not own is what keeps the check from passing by accident on a machine whose home happens to be absent from the output.
-2. **Clock.** `takenAt` and every `checkedAt` come from `snapshot.json` and travel through the run unchanged, so they compare as they are. `ageSec` is the only value the clock produces, and the run that reproduces these files freezes the clock at the timestamp above.
+2. **Clock.** Each reading's `checkedAt` comes from `snapshot.json` unchanged. `takenAt` is the frozen assembly moment. The command computes `ageSec` for the snapshot and for availability, inventory and windows at that moment.
 
 Nothing else is normalised. Scores, order, exclusion reasons, warnings, the runtime rows and every character of `models.txt` are compared exactly.
 

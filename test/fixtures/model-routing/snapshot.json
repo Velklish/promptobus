@@ -10,11 +10,26 @@
       "source": "cache",
       "resetAt": null,
       "version": "0.0.0",
-      "tier": { "name": "example-plan", "source": "credentials" },
+      "tier": {
+        "name": "example-plan",
+        "source": "credentials"
+      },
       "models": [
-        { "model": "example-deep", "rated": true },
-        { "model": "example-quick", "rated": true },
-        { "model": "example-runtime-only", "rated": false, "flags": ["no-zdr"] }
+        {
+          "model": "example-deep",
+          "rated": true
+        },
+        {
+          "model": "example-quick",
+          "rated": true
+        },
+        {
+          "model": "example-runtime-only",
+          "rated": false,
+          "flags": [
+            "no-zdr"
+          ]
+        }
       ],
       "windows": [
         {
@@ -23,7 +38,9 @@
           "lengthSec": 18000,
           "usedPercent": 40,
           "resetAt": "2026-09-05T13:00:00.000Z",
-          "scope": null
+          "scope": null,
+          "checkedAt": "2026-09-05T09:00:00.000Z",
+          "source": "cache"
         },
         {
           "id": "7d-deep",
@@ -31,9 +48,18 @@
           "lengthSec": 604800,
           "usedPercent": 12,
           "resetAt": "2026-09-08T13:00:00.000Z",
-          "scope": { "model": "Example Deep", "models": ["example-deep"] }
+          "scope": {
+            "model": "Example Deep",
+            "models": [
+              "example-deep"
+            ]
+          },
+          "checkedAt": "2026-09-05T09:00:00.000Z",
+          "source": "cache"
         }
-      ]
+      ],
+      "inventoryCheckedAt": "2026-09-05T09:00:00.000Z",
+      "inventorySource": "cache"
     },
     "other": {
       "state": "unknown",
@@ -44,9 +70,17 @@
       "resetAt": null,
       "tier": null,
       "models": [
-        { "model": "other-steady", "rated": true },
-        { "model": "other-metered", "rated": true }
-      ]
+        {
+          "model": "other-steady",
+          "rated": true
+        },
+        {
+          "model": "other-metered",
+          "rated": true
+        }
+      ],
+      "inventoryCheckedAt": "2026-09-05T09:00:00.000Z",
+      "inventorySource": "cache"
     }
   }
 }

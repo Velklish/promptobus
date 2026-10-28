@@ -552,7 +552,7 @@ test('a value the adapter garbled is dropped, and only that value', () => {
     },
     { id: 'unresolved', kind: 'weekly', lengthSec: 604800, usedPercent: 3, scope: { model: 'Mystery' } },
     { id: 'unreadable-reset', kind: 'session', lengthSec: 18000, usedPercent: 5, resetAt: null, scope: null },
-  ]);
+  ].map((w) => ({ ...w, checkedAt: projected.checkedAt, source: 'probe' })));
   assert.equal(projected.message, 'still a usable answer', 'the verdict itself survives');
   assert.equal(validates({ schemaVersion: 2, takenAt: isoStamp(), harnesses: { h: projected } }), true);
 });
@@ -688,7 +688,8 @@ test('the projection is field-by-field: an undeclared field cannot reach the sna
   });
   assert.equal(JSON.stringify(projected).includes(FAKE_TOKEN), false);
   assert.deepEqual(Object.keys(projected.models[0]).sort(), ['flags', 'model', 'rated']);
-  assert.deepEqual(Object.keys(projected.windows[0]).sort(), ['id', 'kind', 'lengthSec', 'scope', 'usedPercent']);
+  assert.deepEqual(Object.keys(projected.windows[0]).sort(),
+    ['checkedAt', 'id', 'kind', 'lengthSec', 'scope', 'source', 'usedPercent']);
   assert.deepEqual(Object.keys(projected.tier).sort(), ['name', 'source']);
 });
 
@@ -1068,6 +1069,86 @@ test('a dry run without --refresh asks nothing and reports stale_cache on a cold
   assert.notEqual(snapshot.harnesses.stale.checkedAt, NEVER_CHECKED);
   assert.notEqual(snapshot.harnesses.stale.checkedAt, snapshot.harnesses.absent.checkedAt);
   assert.equal(validates(snapshot), true);
+});
+
+test('an expired cache keeps each window and its age when the replacement probe fails', async () => {
+  const host = sandboxHost();
+  const old = isoStamp(Date.now() - 120_000);
+  seed(host, { metered: entry({
+    checkedAt: old,
+    models: [{ model: 'stub-deep', rated: true }],
+    windows: [{ id: 'session', kind: 'session', usedPercent: 37, lengthSec: 18000,
+      resetAt: isoStamp(Date.now() + 60_000), scope: null }],
+  }) });
+  const snapshot = await preflight({ host, harnesses: ['metered'],
+    adapterFor: adapterMap({ metered: throwingStub() }), budgetMs: 500 });
+  const metered = snapshot.harnesses.metered;
+  assert.equal(metered.reason, 'probe_failed');
+  assert.equal(metered.windows[0].usedPercent, 37);
+  assert.equal(metered.windows[0].checkedAt, old);
+  assert.equal(metered.windows[0].source, 'cache');
+  assert.equal(metered.inventoryCheckedAt, old);
+  assert.equal(metered.inventorySource, 'cache');
+  assert.equal(readSnapshot(host).harnesses.metered.windows[0].checkedAt, old);
+  assert.equal(validates(snapshot), true);
+});
+
+test('a failed recheck cannot clear held timed exhaustion or erase its windows', async () => {
+  const host = sandboxHost();
+  const old = isoStamp(Date.now() - 120_000);
+  seed(host, { metered: entry({ checkedAt: old,
+    windows: [{ id: 'weekly', kind: 'weekly', usedPercent: 60, lengthSec: 604800,
+      resetAt: isoStamp(Date.now() + 120_000), scope: null }] }) });
+  markExhausted(host, 'metered', { resetAt: isoStamp(Date.now() + 60_000) });
+  const snapshot = await preflight({ host, harnesses: ['metered'], recheckTimedExhaustion: true,
+    adapterFor: adapterMap({ metered: throwingStub() }), budgetMs: 500 });
+  assert.equal(snapshot.harnesses.metered.state, 'exhausted');
+  assert.equal(snapshot.harnesses.metered.windows[0].checkedAt, old);
+  assert.equal(snapshot.harnesses.metered.windows[0].source, 'cache');
+});
+
+test('a routed dry run keeps live timed exhaustion without probing', async () => {
+  const host = sandboxHost();
+  const resetAt = isoStamp(Date.now() + 60_000);
+  markExhausted(host, 'metered', { resetAt });
+  const before = readFileSync(host.cacheFile, 'utf8');
+  const count = counter();
+  const snapshot = await preflight({ host, harnesses: ['metered'],
+    recheckTimedExhaustion: true, dryRun: true,
+    adapterFor: adapterMap({ metered: availableStub(count) }), budgetMs: 500 });
+  assert.equal(count.probes, 0);
+  assert.equal(snapshot.harnesses.metered.state, 'exhausted');
+  assert.equal(snapshot.harnesses.metered.resetAt, resetAt);
+  assert.equal(snapshot.harnesses.metered.source, 'cache');
+  assert.equal(readFileSync(host.cacheFile, 'utf8'), before);
+});
+
+test('marking a legacy v2 cache exhausted preserves the old window reading time', () => {
+  const host = sandboxHost();
+  const old = isoStamp(Date.now() - 120_000);
+  seed(host, { metered: entry({ checkedAt: old,
+    windows: [{ id: 'session', kind: 'session', usedPercent: 83, lengthSec: 18000,
+      scope: null }] }) });
+  const legacy = readSnapshot(host);
+  delete legacy.harnesses.metered.windows[0].checkedAt;
+  delete legacy.harnesses.metered.windows[0].source;
+  writeFileSync(host.cacheFile, JSON.stringify(legacy));
+  const marked = markExhausted(host, 'metered', { resetAt: isoStamp(Date.now() + 60_000) });
+  assert.equal(marked.windows[0].checkedAt, old);
+  assert.equal(marked.windows[0].source, 'cache');
+  assert.equal(readSnapshot(host).harnesses.metered.windows[0].checkedAt, old);
+});
+
+test('an unknown probe with a new window keeps that reading over the old cache', async () => {
+  const host = sandboxHost();
+  seed(host, { metered: entry({ checkedAt: isoStamp(Date.now() - 120_000),
+    windows: [{ id: 'session', kind: 'session', usedPercent: 80, lengthSec: 18000, scope: null }] }) });
+  const fresh = entry({ state: 'unknown', reason: 'quota_unknown',
+    windows: [{ id: 'session', kind: 'session', usedPercent: 35, lengthSec: 18000, scope: null }] });
+  const snapshot = await preflight({ host, harnesses: ['metered'],
+    adapterFor: adapterMap({ metered: answeringStub(fresh) }), budgetMs: 500 });
+  assert.equal(snapshot.harnesses.metered.windows[0].usedPercent, 35);
+  assert.equal(snapshot.harnesses.metered.windows[0].source, 'probe');
 });
 
 test('a dry run writes nothing — in either mode', async () => {

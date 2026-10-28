@@ -424,7 +424,7 @@ A hook file that is not a JSON object, an unknown Cursor hook event and a skill 
 
 ### `routingDiagnosis`: routing readiness without probes
 
-The report reads the routing stack the host declares and the availability cache for the worker step, the same reading `promptobus models` makes without `--refresh`: a declared set that leaves no candidate is reported, not refused. It runs no availability probe and writes no cache.
+The report reads the routing stack the host declares and the availability cache for the worker step, the same reading `promptobus models --no-probe` makes: a declared set that leaves no candidate is reported, not refused. It runs no availability probe and writes no cache.
 
 | Field | Value |
 |---|---|

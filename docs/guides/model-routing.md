@@ -503,6 +503,10 @@ a repository path, a worktree, a session ref, a branch name and every message
 body of the run. None of them is a field below, and a record carrying one
 stops validating.
 
+An end-of-run window delta needs a fresh window reading. A failed or timed-out
+probe can leave old windows visible for routing, but telemetry does not treat
+those retained percentages as a new end measurement.
+
 The Codex rollout is not a throughput-sidecar producer. At close, telemetry reads usage only from the exact recorded session log: Codex cumulative `event_msg.token_count.info.total_token_usage`, or Claude's distinct `assistant.message.usage` records. A Codex teamlead's root address uses its child orchestrator's registry entry after reciprocal journal and exact session ownership checks. Same-harness relifts preserve distinct session identities in private telemetry history, including both linked teamlead records; a reviewer rebind freezes that history on its own generation. Missing identities, logs or boundaries leave counts null with a sanitized reason. See [Participant telemetry](../reference/03-cli.md#participant-telemetry) for the token fields and `stats` report.
 
 The normalized Codex usage records are fixtures of [0.146.0](../../test/fixtures/codex-app-server/0.146.0/TokenUsage-0.146.0-2026-09-12.json) and [0.156.1](../../test/fixtures/codex-app-server/0.156.1/TokenUsage-0.156.1-2026-09-25.json). On codex-cli 0.156.1, `token_usage_record` also carries output tokens and `task_complete` carries `duration_ms` and `time_to_first_token_ms`. A fresh one-response turn on 2026-09-25 had 10 output tokens, 4717 ms duration and 4329 ms to first token. A second fresh turn had 39 output tokens, 12142 ms duration and 3850 ms to first token; the 8292 ms difference included a measured 2881 ms wait for a `sleep 3` command and a later model response. Neither the full duration nor the difference is model-active generation time, so usage logs remain excluded as throughput evidence. Claude's usage records have the same gap; Cursor supplies output tokens without a generation duration. A rate computed from turn wall time is not a model-active throughput observation. No stable bus-facing observation supplies model-active time or a direct rate.
@@ -728,10 +732,14 @@ when the budget does. A harness that has not answered by then is `unknown` /
 once for the slowest harness, never three times in a row.
 
 **The cache is consulted before the adapters, not after.** A live entry means no
-probe at all; `--refresh` drops the live entries and probes again. What
-`--refresh` cannot drop is a sticky exhaustion ([cache.js](../../lib/model-routing/cache.js)).
+probe at all unless `--refresh` is set. A routed lift rechecks a held exhaustion
+with a known reset time, so a plan upgrade can restore availability before that
+time. A failed recheck keeps the exhaustion. A reset-less exhaustion is sticky
+([cache.js](../../lib/model-routing/cache.js)).
 
-**`--dry-run` without `--refresh` never probes.** A dry run is how a person asks
+**`--dry-run` without `--refresh` never probes.** It keeps a live timed
+exhaustion from the cache even when a routed lift would recheck that exhaustion.
+A dry run is how a person asks
 a question, and a question that starts three harness binaries and waits fifteen
 seconds is not one. A harness with no live entry then reports `unknown` /
 `stale_cache` — reported, never silently taken as available.
@@ -923,10 +931,9 @@ never reaches the file.
 
 Source: `lib/models.js`, the `models` command.
 
-The command asks nothing of any harness unless `--refresh` says so: it is the
-question a person types, and a question that starts three harness binaries
-and waits out the preflight budget is not one. `--refresh` is therefore also
-the only thing that writes a cache entry here.
+The command probes every declared harness except a sticky exhaustion by default and writes the answers to
+the cache. `--no-probe` reads cached facts without probing or writing; `--refresh`
+is an explicit spelling of the default probe and cannot be combined with it.
 
 ### `availabilityOf` — the decision with the availability facts it was made on attached
 
@@ -1338,25 +1345,25 @@ most spent of the others, and a session reset does not hide a weekly window at
 expired, and the sixty-second TTL is what repairs it — a pace computed from a
 window that has already reset would be a number about a period that is over.
 
-### `agedSnapshot` — where the decision takes the moment its snapshot was assembled
+### `readingAges` — availability, inventory and windows
 
-Source: `lib/models.js`, `agedSnapshot`.
+Source: `lib/model-routing/resolver.js`, `readingAges`.
 
-`preflight` stamps its answer with the moment it ran, which is right only for
-a run in which every entry came back from a probe. It is wrong for one that
-asked nothing — the facts are as old as the cache is — and wrong again for a
-mixed run, where one harness was probed and two were reused: the fresh stamp
-would report the age of the freshest fact over the oldest one.
+The snapshot stamp names assembly time. Each harness has separate availability
+and inventory readings, and each window has its own reading. Their `checkedAt`,
+`ageSec` and `source` travel in the decision and participant metadata. Preflight
+retains old windows when an entry expires or a probe fails, preserving the
+window timestamp even when the availability verdict is fresh. Marking a harness
+exhausted also preserves the entry time of a window from an older cache that
+does not yet carry a per-window timestamp. The resolver
+scores the retained percentage and reports its age; it does not substitute a
+neutral remaining value merely because the status probe failed.
 
-So the stamp is the OLDEST entry's own `checkedAt`. A snapshot is only as
-fresh as the stalest thing inside it, which is the same rule the cache TTL
-cascade applies to a single entry, and it needs no second read of the file.
-An entry the cache never held carries the epoch, so a first run reports its
-facts as ageless rather than as freshly measured — the loud reading is the
-true one, and the harness rows carry `stale_cache` beside it.
+The near-limit exclusion follows that reading:
 
-`source` is how the entries themselves came back, and it stays the resolver's
-to compute; this only chooses which stamp the age is measured from.
+<!-- quote:../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md -->
+A retained window can exclude an `unknown` harness by this rule.
+<!-- /quote -->
 
 ### `events` — which pool a model is billed to, and why the bucket list is not the only source
 
