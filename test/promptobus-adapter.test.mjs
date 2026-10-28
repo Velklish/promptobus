@@ -551,6 +551,10 @@ const handoverDoc = (probeOver = {}) => ({
       applied: true,
       verdicts: { baseTotal: 26, passed: 25, unaccounted: 0 },
       reddened: ['the bound check'],
+      coverage: {
+        establishes: 'Link consistency of the mutated check.',
+        doesNotEstablish: 'Recipe semantics of the accompanying edit.',
+      },
       ...probeOver,
     },
     treeState: { beforeProbe: '', afterRestore: '' },
@@ -707,6 +711,37 @@ check('PB-234.4: a probe declared not run has no counts to compare and lands as 
   notRunSend.artifact.filename === 'handover-probe-not-run.json'
   && readFileSync(path.join(store.filesDir(home, task.id), 'handover-probe-not-run.json'), 'utf8') === JSON.stringify(notRunDoc),
   notRunSend.artifact?.filename);
+
+const repeated = path.join(SB, 'handover-coverage-repeated.json');
+const repeatedClaim = 'Link consistency of the mutated check.';
+const repeatedDoc = handoverDoc({
+  coverage: { establishes: repeatedClaim, doesNotEstablish: ` ${repeatedClaim} ` },
+});
+writeFileSync(repeated, JSON.stringify(repeatedDoc));
+const repeatedRefusal = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'handover record', artifactPath: repeated,
+}));
+check('PB-234.5: a coverage boundary that repeats one claim is refused',
+  repeatedRefusal.threw
+  && /contradicts itself/.test(repeatedRefusal.msg)
+  && /same claim/.test(repeatedRefusal.msg)
+  && /names no exclusion/.test(repeatedRefusal.msg),
+  repeatedRefusal.msg);
+check('PB-234.5: the repeated-coverage refusal left nothing of that record in the task',
+  !existsSync(path.join(store.filesDir(home, task.id), 'handover-coverage-repeated.json')),
+  readdirSync(store.filesDir(home, task.id)).join(', '));
+
+const bareCoverage = handoverDoc();
+delete bareCoverage.checks.mutationProbe.coverage;
+const barePath = path.join(SB, 'handover-coverage-missing.json');
+writeFileSync(barePath, JSON.stringify(bareCoverage));
+const bareRefusal = thrown(() => store.sendMessage(home, task.id, {
+  from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'handover record', artifactPath: barePath,
+}));
+check('PB-234.5: a performed probe with no coverage is refused as a missing required field',
+  bareRefusal.threw
+  && /\/checks\/mutationProbe\/coverage: required field is missing/.test(bareRefusal.msg),
+  bareRefusal.msg);
 
 // The probe sha and the tree being handed over. Equal is nothing to say; a difference
 // with no reason is a refusal that names both; the same record with the reason passes unchanged.

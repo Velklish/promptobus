@@ -1885,6 +1885,13 @@ check('PB-234.3: from the release that ships it, an earlier probe sha needs tree
   && /neither the mutated file nor the tests whose verdicts are in `reddened`/.test(handoff)
   && /Before that release the running bus refuses the field/.test(handoff),
   handoff.slice(-2200));
+check('PB-234.5: from the release that ships it, a performed probe carries coverage',
+  /From the release that ships `coverage`/.test(handoff)
+  && /checks\.mutationProbe\.coverage\.establishes/.test(handoff)
+  && /checks\.mutationProbe\.coverage\.doesNotEstablish/.test(handoff)
+  && /it is not `notRun` and not an empty `reddened`/.test(handoff)
+  && /Before that release the running bus refuses the field, so omit it/.test(handoff),
+  handoff.slice(-2200));
 check('PB-213: a check left out is not a check passed, and an impossible one is declared',
   /A check you leave out is not a check you passed/.test(handoff)
   && /`notRun`/.test(handoff)
@@ -2007,6 +2014,10 @@ const handoverRecordText = JSON.stringify({
       applied: true,
       verdicts: { baseTotal: 26, passed: 25, unaccounted: 0 },
       reddened: ['one verdict'],
+      coverage: {
+        establishes: 'Link consistency of the mutated check.',
+        doesNotEstablish: 'Recipe semantics of the accompanying edit.',
+      },
     },
     treeState: { beforeProbe: '', afterRestore: '' },
     environmentalRed: { claims: [] },

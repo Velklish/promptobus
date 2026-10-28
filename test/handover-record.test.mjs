@@ -32,6 +32,10 @@ const probe = (over = {}) => ({
   // 26 − 25 − 1 = 0: one name in `reddened`. A copied fixture is what `send` accepts.
   verdicts: { baseTotal: 26, passed: 25, unaccounted: 0 },
   reddened: ['PB-201: the bound the schema publishes is the bound lib/handoff.js hands the preambles'],
+  coverage: {
+    establishes: 'Link consistency of the mutated check.',
+    doesNotEstablish: 'Recipe semantics of the accompanying edit.',
+  },
   ...over,
 });
 
@@ -148,6 +152,42 @@ check('PB-234.3: the probe may say why its sha is not the tree being handed over
   && refuses(doc({ checks: checks({ mutationProbe: probe({ treeLag: '' }) }) }))
   && refuses(doc({ checks: checks({ mutationProbe: probe({ treeLag: true }) }) })),
   'a reason for another tree was refused, or a reason that is not a reason was accepted');
+
+const NARROW = {
+  establishes: 'Link consistency of the mutated check.',
+  doesNotEstablish: 'Recipe semantics of the accompanying edit.',
+};
+const withoutCoverage = () => {
+  const one = probe();
+  delete one.coverage;
+  return one;
+};
+
+check('PB-234.5: a performed probe carries what it establishes and what it does not',
+  accepts(doc({ checks: checks({ mutationProbe: probe({ coverage: NARROW }) }) }))
+  && refuses(doc({ checks: checks({ mutationProbe: withoutCoverage() }) }))
+  && refuses(doc({ checks: checks({ mutationProbe: probe({
+    coverage: { establishes: NARROW.establishes },
+  }) }) }))
+  && refuses(doc({ checks: checks({ mutationProbe: probe({
+    coverage: { establishes: NARROW.establishes, doesNotEstablish: 'short' },
+  }) }) }))
+  && refuses(doc({ checks: checks({ mutationProbe: probe({
+    scope: 'Covers link consistency, not recipe semantics',
+  }) }) }))
+  && refuses(doc({ checks: checks({ mutationProbe: {
+    notRun: 'this repository has no runner that prints verdict names',
+    coverage: NARROW,
+  } }) }))
+  && refuses(doc({ checks: checks({ mutationProbe: probe({ reddened: [], coverage: NARROW }) }) }))
+  && accepts(doc({ checks: checks({ mutationProbe: { notRun: 'this repository has no runner that prints verdict names' } }) }))
+  && accepts(doc({ checks: checks({ mutationProbe: probe({
+    coverage: {
+      establishes: NARROW.establishes,
+      doesNotEstablish: NARROW.establishes,
+    },
+  }) }) })),
+  'a narrow probe was refused, or a missing boundary, a scope string, coverage on notRun, or an empty reddened list was accepted');
 
 check('PB-213: the probe names a sha and a `file:line`, not a description of either',
   refuses(doc({ checks: checks({ mutationProbe: probe({ tree: 'HEAD' }) }) }))
@@ -283,6 +323,15 @@ const fixtures = [
   doc({ checks: checks({ mutationProbe: probe({ tree: EARLIER, treeLag: LAG }) }) }),
   doc({ checks: checks({ mutationProbe: probe({ tree: EARLIER }) }) }),
   doc({ checks: checks({ mutationProbe: probe({ treeLag: 'short' }) }) }),
+  doc({ checks: checks({ mutationProbe: withoutCoverage() }) }),
+  doc({ checks: checks({ mutationProbe: probe({ scope: 'Covers link consistency, not recipe semantics' }) }) }),
+  doc({ checks: checks({ mutationProbe: {
+    notRun: 'this repository has no runner that prints verdict names',
+    coverage: NARROW,
+  } }) }),
+  doc({ checks: checks({ mutationProbe: probe({
+    coverage: { establishes: NARROW.establishes, doesNotEstablish: NARROW.establishes },
+  }) }) }),
   doc({ checks: checks({ treeState: { beforeProbe: ' M lib/handoff.js', afterRestore: '' } }) }),
   doc({ checks: checks({ treeState: { beforeProbe: '' } }) }),
   doc({ checks: checks({ verdictNames: { removed: [{ name: 'a stale case', reason: 'the contract it asserted was removed' }] } }) }),

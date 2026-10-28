@@ -1313,7 +1313,10 @@ custom, nested and concatenated scopes retain authoritative raw with explicit
 Their inventory's optional `raw` scope retains distinct original base output;
 ordered parts and bytes/hashes are validated even without name certification.
 Opaque handover details and upload acceptance do not certify truth or native
-schemas. The admission, original-part transport and retained failure replay have
+schemas. A complete mutation probe still carries `coverage`: `establishes` and
+`doesNotEstablish`. The validator requires both and does not treat `reddened`
+as proof of the excluded claim. The worker skill requires both and does not
+tell the author to omit them. The admission, original-part transport and retained failure replay have
 SDK fixture coverage; the changed live provider workflow is `notMeasured`.
 Current control guards existing Promptobus entry points. Native commands outside
 those points, physical Stop of running calls and provider permission enforcement

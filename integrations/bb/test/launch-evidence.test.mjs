@@ -73,6 +73,58 @@ test('original manifest is complete before the first review and not-run checks s
   assert.equal(admitted.commands[0].exit, 0);
 });
 
+test('a complete probe carries coverage and a narrow boundary is not recipe proof', async t => {
+  const f = await fixture(t);
+  const detail = {
+    tree: f.manifest.source,
+    mutated: 'lib/handoff.js:14',
+    applied: true,
+    mutatedRunExit: 1,
+    verdicts: { baseTotal: 2, passed: 1, unaccounted: 0 },
+    expected: ['link consistency'],
+    reddened: ['link consistency'],
+    coverage: {
+      establishes: 'Link consistency of the mutated check.',
+      doesNotEstablish: 'Recipe semantics of the accompanying edit.',
+    },
+  };
+  const apply = (probe) => {
+    f.manifest.checks.mutationProbe = probe;
+    const ref = f.manifest.artifacts.find(a => a.kind === 'handover');
+    const record = f.records.get(ref.id);
+    const handover = JSON.parse(record.content);
+    handover.checks = f.manifest.checks;
+    record.content = JSON.stringify(handover);
+    record.size = ref.bytes = Buffer.byteLength(record.content);
+    record.sha256 = ref.sha256 = sha256(record.content);
+  };
+  apply({ status: 'complete', detail });
+  const admitted = await f.validate();
+  assert.equal(admitted.checks.mutationProbe.detail.coverage.doesNotEstablish, detail.coverage.doesNotEstablish);
+  assert.deepEqual(admitted.checks.mutationProbe.detail.expected, ['link consistency']);
+  assert.deepEqual(admitted.checks.mutationProbe.detail.reddened, ['link consistency']);
+  const drop = structuredClone(detail);
+  delete drop.coverage;
+  apply({ status: 'complete', detail: drop });
+  await assert.rejects(f.validate(), /coverage/);
+  apply({ status: 'complete', detail: { ...detail, scope: 'Covers link consistency, not recipe semantics' } });
+  await assert.rejects(f.validate(), /scope/);
+  const same = structuredClone(detail);
+  same.coverage.doesNotEstablish = same.coverage.establishes;
+  apply({ status: 'complete', detail: same });
+  await assert.rejects(f.validate(), /names no exclusion/);
+  apply({ status: 'complete', detail: { ...detail, reddened: [] } });
+  await assert.rejects(f.validate(), /reddened/);
+  const noExpected = structuredClone(detail);
+  delete noExpected.expected;
+  apply({ status: 'complete', detail: noExpected });
+  await assert.rejects(f.validate(), /expected/);
+  apply({ status: 'notRun', reason: 'Fictional transport fixture; no real gate or probe was run.', coverage: detail.coverage });
+  await assert.rejects(f.validate(), /coverage|unrecognized|Unrecognized/i);
+  apply({ status: 'notRun', reason: 'Fictional transport fixture; no real gate or probe was run.' });
+  assert.equal((await f.validate()).checks.mutationProbe.status, 'notRun');
+});
+
 test('wrong IDs, source/base, hashes, producer, missing parts and cropped raw refuse mechanically', async t => {
   const f = await fixture(t);
   for (const [change, error] of [

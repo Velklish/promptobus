@@ -99,7 +99,14 @@ export async function validateReviewEvidence(input: unknown, expected: { source:
     const detail = z.object({ tree: sha, treeLag: text.optional(), mutated: text.regex(/^[^\n:]+:[0-9]+$/), applied: z.literal(true),
       mutatedRunExit: z.number().int().min(1).max(127), verdicts: z.object({ baseTotal: z.number().int().positive(),
         passed: z.number().int().nonnegative(), unaccounted: z.literal(0) }).strict(),
-      expected: z.array(text).min(1), reddened: z.array(text).min(1) }).strict().parse(probe.detail);
+      expected: z.array(text).min(1), reddened: z.array(text).min(1),
+      coverage: z.object({
+        establishes: z.string().min(8).max(512),
+        doesNotEstablish: z.string().min(8).max(512),
+      }).strict() }).strict().parse(probe.detail);
+    if (detail.coverage.establishes.trim() === detail.coverage.doesNotEstablish.trim()) {
+      throw new Error('review evidence manifest: mutation probe coverage names no exclusion');
+    }
     const remaining = [...detail.reddened];
     for (const name of detail.expected) {
       const at = remaining.indexOf(name);

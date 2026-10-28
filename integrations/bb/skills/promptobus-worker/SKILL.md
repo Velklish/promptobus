@@ -77,7 +77,7 @@ Attach gate evidence before the result, with one entry per command actually run:
 The handover evidence carries the full branch and base shas and all five pre-handover checks:
 
 1. The difference of verdict NAMES against the base: every removed name with its reason, or the explicit empty list.
-2. The committed mutation probe: sha, file:line, mutation applied, mutated run exit, base total, passed and unreached counts, expected names written before the run and actual reddened names. A cut-off run or one that reddens none of the expected names is not a successful probe. If the probe sha differs, explain why later changes reach neither the mutated code nor its tests.
+2. The committed mutation probe: sha, file:line, mutation applied, mutated run exit, base total, passed and unreached counts, expected names written before the run and actual reddened names. A cut-off run or one that reddens none of the expected names is not a successful probe. If the probe sha differs, explain why later changes reach neither the mutated code nor its tests. A performed probe carries `coverage.establishes` and `coverage.doesNotEstablish`: what the reddened verdicts establish and what they do not. That boundary is still a probe, not `notRun` and not an empty reddened list.
 3. `git status --porcelain` before the probe and after restoration. Dirty state is disclosed, never described as clean.
 4. Every red called environmental, flaky or pre-existing, with its full assertion, same test on base and the failure-set difference. Red here and green on base belongs to this change.
 5. Every gate not run, with its reason.

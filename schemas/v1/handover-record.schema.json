@@ -40,7 +40,7 @@
           "oneOf": [{ "$ref": "#/$defs/verdictNames" }, { "$ref": "#/$defs/notRun" }]
         },
         "mutationProbe": {
-          "description": "The mutation probe made after the commit: break the code, watch a verdict turn red, restore. A probe that turns nothing red is a hole in the tests, not caution, and a probe that turned the WRONG thing red is the same hole with a green look — which is what `expected` is here to tell apart.",
+          "description": "The mutation probe made after the commit: break the code, watch a verdict turn red, restore. A probe that turns nothing red is a hole in the tests, not caution, and a probe that turned the WRONG thing red is the same hole with a green look — which is what `expected` is here to tell apart. A performed probe also carries `coverage`: what those verdicts establish and what they do not.",
           "oneOf": [{ "$ref": "#/$defs/mutationProbe" }, { "$ref": "#/$defs/notRun" }]
         },
         "treeState": {
@@ -108,7 +108,7 @@
     "mutationProbe": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["tree", "mutated", "mutatedRunExit", "applied", "verdicts", "reddened"],
+      "required": ["tree", "mutated", "mutatedRunExit", "applied", "verdicts", "reddened", "coverage"],
       "properties": {
         "tree": {
           "description": "The sha the probe ran on. The probe comes after the commit: on an uncommitted tree the restore would take the fix with the mutation.",
@@ -168,6 +168,22 @@
           "minItems": 1,
           "maxItems": 256,
           "items": { "$ref": "#/$defs/verdictName" }
+        },
+        "coverage": {
+          "description": "What this probe establishes and what it does not. Both reasons are required on a performed probe. A notRun probe does not carry this object. Empty reddened and applied other than true stay refused, and expected is still compared with reddened. The running bus validates the installed package's schema, so this field can first be sent in the release after the one that adds it.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["establishes", "doesNotEstablish"],
+          "properties": {
+            "establishes": {
+              "description": "What the reddened verdicts establish. A reason, naming that guarantee rather than the whole edit.",
+              "$ref": "#/$defs/reason"
+            },
+            "doesNotEstablish": {
+              "description": "What the reddened verdicts do not establish. A reason, and not the same claim as establishes.",
+              "$ref": "#/$defs/reason"
+            }
+          }
         }
       }
     },

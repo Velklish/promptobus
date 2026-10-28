@@ -3052,6 +3052,14 @@ check('PB-234.3: a present treeLag is named with both shas and is not a probe of
   && /Hand the orchestrator the command `git log --oneline <probe\.tree>\.\.<tree> -- <mutated file> <files of the tests in reddened>`/.test(gatePlan.prompt)
   && /whose empty output is what supports the reason/.test(gatePlan.prompt),
   gatePlan.prompt.split('\n').find((l) => /treeLag/.test(l)) ?? gatePlan.prompt);
+check('PB-234.5: a performed probe without coverage is named, and reddened is not the excluded claim',
+  /A performed `mutationProbe` carries `coverage`/.test(gatePlan.prompt)
+  && /`establishes` and `doesNotEstablish`/.test(gatePlan.prompt)
+  && /Name a performed probe that has neither/.test(gatePlan.prompt)
+  && /do not read `reddened` as proof of what `doesNotEstablish` names/.test(gatePlan.prompt)
+  && /`notRun` is not that boundary/.test(gatePlan.prompt)
+  && /a mutation that reddens nothing is not saved by writing one/.test(gatePlan.prompt),
+  gatePlan.prompt.split('\n').find((l) => /coverage/.test(l)) ?? gatePlan.prompt);
 
 // PB-233: a session BOUND to task A lifts a review that opens task B. One binding stays, so B
 // gets none — and the contact point used to be written only by the first bus call FOR THAT TASK,

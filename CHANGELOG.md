@@ -31,6 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A performed handover mutation probe carries `coverage`: `establishes` and
+  `doesNotEstablish`, what the reddened verdicts establish and what they do not.
+  A missing boundary, an unknown sibling, and the same claim in both reasons are
+  refused. A `notRun` probe does not carry the object, and an empty `reddened`
+  list stays refused. The field can first be sent in the release after the one
+  that adds it; until then the running bus refuses it. The BB worker instruction
+  requires both reasons on a performed probe and does not tell the author to
+  omit them. That omit window stays on the native worker preamble.
+
 - `abandon [<address>]` lets the mailbox owner retire a participant whose own
   harness reports the session dead and who has no Stop receipt. The owner may
   be any harness that names this session, and the participant may be on any
