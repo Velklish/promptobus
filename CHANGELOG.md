@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The orchestration skill words every message to the person once. A question, a status report and a reporter's answer stand alone, name a task by its number and its title, and put a plain description of the work beside a participant address or a review code. The split, the shape choice and the strategy envelope link to that rule. The reporter lift prompt carries the same rule, because a Claude reporter cannot open the skill.
+- Rechecked Codex teamlead hook isolation, isolated-home skill loading and the applied `dangerFullAccess` sandbox on installed codex-cli 0.164.0 in trusted disposable stands. A control thread ran both project hooks; the teamlead override ran neither, and its turn used the proof skill.
 - `sweep` removes a participant's worktree and branch only. Artifact records,
   `files/` entries and blobs stay with the task journal until retention.
 - `done --older-than <days>` previews journal retention at that age and deletes

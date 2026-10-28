@@ -652,7 +652,7 @@ loaded, and the bypass does not enable them. Remove or move the file, or lift
 the participant on another harness. The end-of-turn channel is
 `turn/completed` only. `exec --json` is a smoke check.
 
-**Codex teamlead at the install root.** `spawn --teamlead --harness codex` uses the Codex driver. It writes no `.codex` project file under the install root: skills copy into the isolated `CODEX_HOME/skills`, beside its bus MCP entries and copied authentication. The child-task entry keeps `PROMPTOBUS_ROLE=orchestrator`; a separate `promptobus-root` entry names the root task and `teamlead:<slug>` with a root-scoped session pointer in the private home. Root and sibling mail to `teamlead:<slug>` land in the root slot, both MCP entries read the one participant mailbox, and the root entry still sends as `teamlead:<slug>` ([04-protocol § Addresses](04-protocol.md#addresses)). A worker or reviewer keeps its existing project hooks and prelaunch binding. `--permission-mode full-access` is accepted only for a Codex teamlead and maps to `danger-full-access` in its launch plan; the live proof did not retain a direct record of the applied sandbox mode.
+**Codex teamlead at the install root.** `spawn --teamlead --harness codex` uses the Codex driver. It writes no `.codex` project file under the install root: skills copy into the isolated `CODEX_HOME/skills`, beside its bus MCP entries and copied authentication. The child-task entry keeps `PROMPTOBUS_ROLE=orchestrator`; a separate `promptobus-root` entry names the root task and `teamlead:<slug>` with a root-scoped session pointer in the private home. Root and sibling mail to `teamlead:<slug>` land in the root slot, both MCP entries read the one participant mailbox, and the root entry still sends as `teamlead:<slug>` ([04-protocol § Addresses](04-protocol.md#addresses)). A worker or reviewer keeps its existing project hooks and prelaunch binding. `--permission-mode full-access` is accepted only for a Codex teamlead and maps to `danger-full-access` in its launch plan. The 2026-09-27 lift proof did not retain the applied sandbox; a later direct teamlead thread did.
 
 The teamlead home config sets `[features] hooks = false`, and `thread/start` sets `features.hooks = false` in the session-flags layer for that role only. The home setting alone did not protect a live teamlead: measured 2026-09-27 on codex-cli 0.156.1, the install root's `.codex/config.toml` enabled hooks over the private home. Codex-cli 0.156.1 [converts request config into CLI overrides](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/app-server/src/config_manager.rs#L355-L382), and its [loader places session flags after project config](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/config/src/loader/mod.rs#L395-L416). The [hook registry](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/hooks/src/registry.rs#L304-L309) skips discovery when hooks are off. A following run that day showed no foreign hook marker, root mailbox access and a holder wake, but stopped before its second lift. Another run stopped on a proof-repository layout outside the install root; another completed a Cursor worker result and three review dry-runs but handled them in one holder turn. The corrected run completed two lifts with byte-identical install-root snapshots, root status and wake, a Cursor worker lift and result, and three `review --dry-run` calls from the Codex teamlead, each exiting 0 on a clean tracked tree. The worker result woke a second holder turn. No live reviewer session was started in that run. The holder's turn completion and wake route is the teamlead loop guard, without a Stop hook.
 
@@ -723,6 +723,108 @@ stop. The `gone` outcome therefore means a named registry was read and contained
 record; it is never an alias for missing configuration.
 
 Measured 2026-10-01 on codex-cli 0.158.0 in disposable stand `pb-teamlead-parity-gMo2Qj`: a trusted install root enabled project hooks. The control thread ran both SessionStart and Stop hooks (two marker lines), while the teamlead with the driver thread override ran neither (zero marker lines). Both completed a turn using the valid-frontmatter home skill and returned its proof token. `thread/start` reported the applied sandbox `{ "type": "dangerFullAccess" }`. The two model turns completed on `gpt-6-astra`; the command exited 0 and every process and stand was removed. [Protocol evidence](../../test/fixtures/codex-app-server/0.158.0/TeamleadIsolation-0.158.0-2026-10-01.json). This resolves the earlier hook, skill and applied-sandbox limits; it does not extend the participant matrix to narrower permission profiles.
+
+Measured 2026-10-28 on installed codex-cli 0.164.0 in trusted disposable stand `/private/tmp/pb-GVII0y`. The control thread used `threadStartConfig({ role: "worker", effort: "high" })`; the teamlead used the same driver function with `role: "teamlead"`, which added `features.hooks=false`. The control recorded `SessionStart` and `Stop` markers and four `hook/*` notifications; the teamlead recorded neither. Both `thread/start` responses reported applied sandbox `{"type":"dangerFullAccess"}` and loaded `root-proof` from their isolated `CODEX_HOME/skills`; both `thread/read` responses returned the skill token. The inline command below exited 0, both app-server processes confirmed exit code 0 after the stop request, and the stand was removed. This direct-thread measurement does not test a new Promptobus lift or narrower permission profiles.
+
+#### Reproduce the 0.164.0 teamlead comparison
+
+Run this exact command from the package root with the installed Codex binary and an authenticated user home. It creates one disposable stand, runs the control and teamlead threads sequentially, then removes the stand:
+
+```sh
+node --input-type=module <<'NODE'
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawn, execFileSync } from "node:child_process";
+import { CodexRpc } from "./lib/codex-rpc.js";
+import { codexInitParams, threadStartConfig } from "./lib/codex-session.js";
+const stand = fs.mkdtempSync("/private/tmp/pb-");
+const root = path.join(stand, "install");
+const marker = path.join(stand, "hooks.marker");
+const version = execFileSync("codex", ["--version"], { encoding: "utf8" }).trim();
+fs.mkdirSync(path.join(root, ".codex"), { recursive: true });
+execFileSync("git", ["init", "-q", root]);
+fs.writeFileSync(path.join(root, ".codex", "config.toml"), "[features]\nhooks = true\n");
+const hook = event => [{ hooks: [{ type: "command", command: `node -e 'require("fs").appendFileSync("${marker}","${event}\\n")'` }] }];
+fs.writeFileSync(path.join(root, ".codex", "hooks.json"), JSON.stringify({ hooks: { SessionStart: hook("SessionStart"), Stop: hook("Stop") } }));
+const lines = [];
+async function measure(role) {
+  const home = path.join(stand, role);
+  const skill = path.join(home, "skills", "root-proof", "SKILL.md");
+  fs.mkdirSync(path.dirname(skill), { recursive: true });
+  fs.copyFileSync(path.join(os.homedir(), ".codex", "auth.json"), path.join(home, "auth.json"));
+  fs.writeFileSync(path.join(home, "config.toml"), `[projects."${root}"]\ntrust_level = "trusted"\n`);
+  fs.writeFileSync(skill, "---\nname: root-proof\ndescription: Proof of isolated Codex home skill loading.\n---\nReply exactly PARITY-SKILL-CANONICAL-7193 when asked to use this skill.\n");
+  const child = spawn("codex", ["app-server", "--stdio"], { cwd: root, env: { ...process.env, CODEX_HOME: home, TMPDIR: stand }, stdio: ["pipe", "pipe", "ignore"] });
+  const exited = new Promise(resolve => child.once("exit", (code, signal) => resolve([code, signal])));
+  const hooks = [];
+  const rpc = CodexRpc(child, { onLog: (direction, msg) => {
+    if (direction === "in" && msg.method?.startsWith("hook/")) hooks.push(msg.method);
+  } });
+  const before = fs.existsSync(marker) ? fs.readFileSync(marker, "utf8").trim().split("\n").filter(Boolean) : [];
+  let result = { role, pid: child.pid, command: "codex app-server --stdio" };
+  try {
+    const init = await rpc.request("initialize", codexInitParams({}), 15000);
+    if (init.error) throw Error("initialize " + init.error.message);
+    const listed = await rpc.request("skills/list", { cwds: [root], forceReload: true }, 15000);
+    if (listed.error) throw Error("skills/list " + listed.error.message);
+    const config = threadStartConfig({ role, effort: "high" });
+    const started = await rpc.request("thread/start", { cwd: root, sandbox: "danger-full-access", approvalPolicy: "never", model: "gpt-6-sol", config }, 30000);
+    if (started.error) throw Error("thread/start " + started.error.message);
+    const threadId = started.result.thread.id;
+    const doneP = rpc.waitNotification("turn/completed", p => p.threadId === threadId, 120000);
+    const turn = await rpc.request("turn/start", { threadId, effort: "high", input: [{ type: "text", text: "Use the root-proof skill. Reply only with its proof token." }] }, 30000);
+    if (turn.error) throw Error("turn/start " + turn.error.message);
+    const done = await doneP;
+    const read = await rpc.request("thread/read", { threadId, includeTurns: true }, 15000);
+    if (read.error) throw Error("thread/read " + read.error.message);
+    const after = fs.existsSync(marker) ? fs.readFileSync(marker, "utf8").trim().split("\n").filter(Boolean) : [];
+    result = { ...result, threadId, config, sandbox: started.result.sandbox, model: started.result.model,
+      effort: started.result.reasoningEffort, skills: (listed.result?.data ?? []).flatMap(e => e.skills ?? []).filter(s => s.name === "root-proof").map(s => ({ name: s.name, path: s.path })),
+      hooks, markerDelta: after.slice(before.length), turnStatus: done.params?.turn?.status ?? done.params?.status,
+      messages: (read.result?.thread?.turns ?? []).flatMap(t => t.items ?? []).filter(i => i.type === "agentMessage").map(i => i.text) };
+  } finally {
+    rpc.close();
+    result.stopRequestAccepted = child.exitCode === null && child.signalCode === null ? child.kill("SIGTERM") : false;
+    const timeout = setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    }, 3000);
+    const [code, signal] = await exited;
+    clearTimeout(timeout);
+    result.processExit = { code, signal };
+    lines.push(result);
+    console.log(JSON.stringify(result));
+  }
+}
+try {
+  await measure("worker");
+  await measure("teamlead");
+  const [control, lead] = lines;
+  const ok = control.markerDelta.join(",") === "SessionStart,Stop" && lead.markerDelta.length === 0
+    && control.hooks.length === 4 && lead.hooks.length === 0
+    && lead.messages.includes("PARITY-SKILL-CANONICAL-7193")
+    && lines.every(x => x.skills.some(s => s.path.startsWith(path.join(stand, x.role, "skills") + path.sep))
+      && x.sandbox?.type === "dangerFullAccess" && x.turnStatus === "completed" && (x.processExit.code === 0 || x.processExit.signal === "SIGTERM"));
+  console.log(JSON.stringify({ stand, version, measurement: ok ? "PASS" : "FAIL" }));
+  if (!ok) process.exitCode = 2;
+} catch (error) {
+  console.error("measurement error: " + error.message);
+  process.exitCode = 1;
+} finally {
+  fs.rmSync(stand, { recursive: true, force: true });
+  console.log("standRemoved=" + !fs.existsSync(stand));
+}
+NODE
+```
+
+The command exited 0. These are its decisive output lines, followed by `standRemoved=true`:
+
+```json
+{"role":"worker","pid":10534,"command":"codex app-server --stdio","threadId":"01a181b7-d110-7c10-a28e-4cb75eca3df1","config":{"bypass_hook_trust":true,"model_reasoning_effort":"high"},"sandbox":{"type":"dangerFullAccess"},"model":"gpt-6-sol","effort":"high","skills":[{"name":"root-proof","path":"/private/tmp/pb-GVII0y/worker/skills/root-proof/SKILL.md"}],"hooks":["hook/started","hook/completed","hook/started","hook/completed"],"markerDelta":["SessionStart","Stop"],"turnStatus":"completed","messages":["I’m using the root-proof skill.","PARITY-SKILL-CANONICAL-7193"],"stopRequestAccepted":true,"processExit":{"code":0,"signal":null}}
+{"role":"teamlead","pid":10712,"command":"codex app-server --stdio","threadId":"01a181b7-f8cf-71d1-906c-9b65d18bad04","config":{"bypass_hook_trust":true,"features.hooks":false,"model_reasoning_effort":"high"},"sandbox":{"type":"dangerFullAccess"},"model":"gpt-6-sol","effort":"high","skills":[{"name":"root-proof","path":"/private/tmp/pb-GVII0y/teamlead/skills/root-proof/SKILL.md"}],"hooks":[],"markerDelta":[],"turnStatus":"completed","messages":["I’m reading the root-proof skill to get its proof token.","PARITY-SKILL-CANONICAL-7193"],"stopRequestAccepted":true,"processExit":{"code":0,"signal":null}}
+{"stand":"/private/tmp/pb-GVII0y","version":"codex-cli 0.164.0","measurement":"PASS"}
+```
+
 #### The two `mcp_servers` transports, and the field that kills the config load
 
 The workspace MCP set is written into the `[mcp_servers]` tables of the participant home's
