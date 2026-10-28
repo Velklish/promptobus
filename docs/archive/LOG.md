@@ -589,3 +589,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-333"></a>`PB-333-cleanup-two-verbs` · 2026-10-28 · completed · — · Cleanup has two verbs: sweep removes a piece's worktree and branch only, done applies the retention, and prune goes
 - <a id="pb-373.17"></a>`PB-373.17-opencode-participant-never-starts-turn` · 2026-10-28 · completed · — · An OpenCode holder reports a running turn while an external-directory ask has nobody to answer it
 - <a id="pb-285"></a>`PB-285-codex-cli-0157` · 2026-10-28 · completed · — · Move the Codex driver to the installed codex-cli 0.164.0
+- <a id="pb-313"></a>`PB-313-owner-questions-self-contained` · 2026-10-28 · completed · — · The orchestrator's questions to the owner are self-contained, and a task is named with its title

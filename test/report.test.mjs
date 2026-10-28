@@ -80,6 +80,12 @@ check('reporter prompt carries the skill rules and names the two restricted MCP 
     && /promptobus_digest/.test(planned.prompt) && /promptobus_status/.test(planned.prompt)
     && /promptobus_ask/.test(planned.prompt)
     && /Do not forward or filter worker status/.test(planned.prompt));
+check('reporter prompt names a task by its number and its title',
+  planned.prompt.includes('Name a task by its number and its title, never by the number alone: the title goes with the first mention in a message, in every heading and in every table row; later mentions in the same paragraph may use the number alone.'),
+  planned.prompt);
+check('reporter prompt puts a plain description beside a participant address or a review code',
+  planned.prompt.includes('A participant address and a review code never reach the person without a plain description of the work.'),
+  planned.prompt);
 const dry = await capture(() => report(host, { task: TASK, dryRun: true }));
 check('report --dry-run prints the plan and writes neither record nor launch files',
   /dry-run: nothing written to disk, reporter not started/.test(dry)

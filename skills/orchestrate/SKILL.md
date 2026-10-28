@@ -13,7 +13,11 @@ This installed skill carries the workflow and commands needed offline. Its versi
 
 A small change is not an orchestration. Do the work yourself.
 
-Launch workers only after the user says yes to a named split. Silence is not approval.
+Launch workers only after the user says yes to a named split. Silence is not approval. Word that question as [Messages to the person](#messages-to-the-person) says.
+
+## Messages to the person
+
+A message to the person — your question, your status report, or the reporter's answer — is read with the queue, the run and your context closed. A question is answered from its own text: it says what is asked, why, and what each answer changes, so the person decides rather than presses the recommended option. Use no term or abbreviation you introduced yourself (a worker slug, "piece", a review code). A participant address (`worker:<slug>`, and the same shape for a reviewer or an approver) and a review code never reach the person without a plain description of the work. A definition new to the person is used only after they confirm it. Name a task by its number and its title, never by the number alone: the title goes with the first mention in a message, in every heading and in every table row; later mentions in the same paragraph may use the number alone. Each list item counts as a paragraph.
 
 ## Roles
 
@@ -31,7 +35,7 @@ The owner measured 33 task journals on this machine on 2026-09-26. The median ta
 
 - Keep one orchestrator for up to 5 pieces and up to 3 concurrent workers, in one repository group with one acceptance recipe, when the run is expected to take up to 8 hours.
 - Raise a root task with a TGM and child tasks led by teamleads from 8 pieces, from 4 concurrent workers, for two or more repository groups with different acceptance recipes, or whenever a contract between groups needs someone above both to hold it. Any one condition is enough.
-- For 6 or 7 pieces, let the task owner choose the shape. Ask the owner to choose when the expected run exceeds 8 hours without another tree trigger.
+- For 6 or 7 pieces, let the task owner choose the shape. Ask the owner to choose when the expected run exceeds 8 hours without another tree trigger. Word each ask as [Messages to the person](#messages-to-the-person) says.
 
 The TGM holds the whole task and gives each teamlead a brief for its repository group. Each teamlead owns one child task and its workers. The tree has only these two levels. Keep each group's assignments, results and review inside its child task; summarize progress and decisions to the root.
 
@@ -43,7 +47,7 @@ Sibling teamleads under the same root may settle small coordination directly wit
 
 ## Reporter for the person
 
-When a reporter is present on a root task, it reads the whole tree's journals through `promptobus_digest`, live session state through `promptobus_status`, and task metadata through `promptobus_task`. It answers the person in its own window from those records, names the message behind its answer, and never paraphrases a participant's `result` as accepted. If the records do not answer, it calls `promptobus_ask { body, task: <root> }` on the person's behalf as `user`, then reads later answers with `promptobus_ask { answers: true, after: <question id>, task: <root> }` and brings the orchestrator's answer back with its message id. A pending answer stays pending. The terminal `promptobus ask` refuses a participant identity; the reporter uses its restricted MCP tool. It never sends as `reporter`, writes files, runs builds or tests, or forwards or filters worker status for the orchestrator. Claude Code denies Bash as a tool. Codex reviewers disable shell execution tools and read local files through the bounded reviewer_files MCP tools; its reporters keep a read-only filesystem sandbox with native shell reads available. Both roles forbid builds and tests.
+When a reporter is present on a root task, it reads the whole tree's journals through `promptobus_digest`, live session state through `promptobus_status`, and task metadata through `promptobus_task`. It answers the person in its own window from those records, names the message behind its answer, and never paraphrases a participant's `result` as accepted. Word that answer as [Messages to the person](#messages-to-the-person) says. If the records do not answer, it calls `promptobus_ask { body, task: <root> }` on the person's behalf as `user`, then reads later answers with `promptobus_ask { answers: true, after: <question id>, task: <root> }` and brings the orchestrator's answer back with its message id. A pending answer stays pending. The terminal `promptobus ask` refuses a participant identity; the reporter uses its restricted MCP tool. It never sends as `reporter`, writes files, runs builds or tests, or forwards or filters worker status for the orchestrator. Claude Code denies Bash as a tool. Codex reviewers disable shell execution tools and read local files through the bounded reviewer_files MCP tools; its reporters keep a read-only filesystem sandbox with native shell reads available. Both roles forbid builds and tests.
 
 ## Tools
 
@@ -247,13 +251,13 @@ No command writes it: the writable layer is per-workspace, so a tool-written ans
 
 ### The strategy envelope
 
-Agree the envelope with the user before the first spawn, in the same approval as the split. It names three things:
+Agree the envelope with the user before the first spawn, in the same approval as the split. Word that agreement as [Messages to the person](#messages-to-the-person) says. It names three things:
 
 - the strategy of each track;
 - the harnesses the run may use;
 - whether pay-as-you-go is allowed (`--allow-payg`).
 
-A fallback **inside** the envelope needs no second approval: a preflight that excludes the first candidate moves to the next one on an allowed harness, and the user already approved that. **Leaving** the envelope does need one — another harness, pay-as-you-go they did not allow, a strategy other than the one agreed for that track. Ask; do not widen it yourself.
+A fallback **inside** the envelope needs no second approval: a preflight that excludes the first candidate moves to the next one on an allowed harness, and the user already approved that. **Leaving** the envelope does need one — another harness, pay-as-you-go they did not allow, a strategy other than the one agreed for that track. Ask, in the words [Messages to the person](#messages-to-the-person) gives; do not widen it yourself.
 
 `promptobus models [--strategy <s>] [--role <worker|reviewer|approver>]` is how you see what a strategy would pick before spawning. Show it when you propose the envelope. It reads the availability cache; `--refresh` probes the harnesses instead. On `spawn` and `review`, `--dry-run` reads the cache and starts nothing.
 

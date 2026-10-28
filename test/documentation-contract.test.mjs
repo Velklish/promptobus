@@ -352,6 +352,38 @@ check('docs: the README resumes a managed root after its processes exit and name
   && has(readme, 'A second optional package, `integrations/bb-native-observer/`, is a read-only BB dashboard for native Promptobus tasks.'),
   'the README ties managed-root resume to a confirmed Stop or omits the native observer package');
 const soloReviewSkill = read('skills/solo-review/SKILL.md');
+check('skills: one wording rule for messages to the person, and the asks link to it',
+  (orchestrateSkill.match(/^## Messages to the person$/gm) || []).length === 1
+  && has(section(orchestrateSkill, '## Messages to the person'),
+    'A message to the person — your question, your status report, or the reporter\'s answer — is read with the queue, the run and your context closed.')
+  && has(section(orchestrateSkill, '## Messages to the person'),
+    'it says what is asked, why, and what each answer changes')
+  && has(section(orchestrateSkill, '## Messages to the person'),
+    'Use no term or abbreviation you introduced yourself')
+  && has(section(orchestrateSkill, '## Messages to the person'),
+    'never reach the person without a plain description of the work')
+  && has(section(orchestrateSkill, '## Messages to the person'),
+    'A definition new to the person is used only after they confirm it.')
+  && has(section(orchestrateSkill, '## Messages to the person'),
+    'Name a task by its number and its title, never by the number alone: the title goes with the first mention in a message, in every heading and in every table row; later mentions in the same paragraph may use the number alone.')
+  && has(orchestrateSkill, 'Word that question as [Messages to the person](#messages-to-the-person) says.')
+  && has(section(orchestrateSkill, '## Choosing a flat task or a tree'),
+    'Word each ask as [Messages to the person](#messages-to-the-person) says.')
+  && has(section(orchestrateSkill, '### The strategy envelope'),
+    'Word that agreement as [Messages to the person](#messages-to-the-person) says.')
+  && has(section(orchestrateSkill, '### The strategy envelope'),
+    'Ask, in the words [Messages to the person](#messages-to-the-person) gives;')
+  && has(section(orchestrateSkill, '## Reporter for the person'),
+    'Word that answer as [Messages to the person](#messages-to-the-person) says.')
+  && !has(section(orchestrateSkill, '## Choosing a flat task or a tree'), 'what each answer changes')
+  && !has(section(orchestrateSkill, '### The strategy envelope'), 'what each answer changes')
+  && !has(section(orchestrateSkill, '## Reporter for the person'), 'what each answer changes')
+  && has(section(read('docs/reference/03-cli.md'), '## Spawn'),
+    'The same skill words every message to the person once, in [Messages to the person](../../skills/orchestrate/SKILL.md#messages-to-the-person).')
+  && has(read('README.md'), 'one wording rule for a message to the person')
+  && has(section(section(read('CHANGELOG.md'), '## [Unreleased]'), '### Changed'),
+    'The orchestration skill words every message to the person once.'),
+  'the skill must state the wording rule once, and the split, shape, envelope and reporter must link to it');
 check('skills: shipped guidance requires confirmed native Stop before done and a fresh lift after changed owner access',
   has(orchestrateSkill, '`done` refuses while the managed root or another native Codex participant lacks confirmed Stop.')
   && has(orchestrateSkill, 'Before each model input, the holder refuses changed owner access and requires a fresh lift; restoring the old file does not clear the refusal.')
