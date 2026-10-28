@@ -3,24 +3,38 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { proveStandIsolation, STUB_BIN } from '../scripts/live-entry.mjs';
 import { makeSandbox, makeSockPath } from './sandbox.mjs';
-import { harnessSessions, installHarness, planParticipant, stopAll, waitFor } from './harness.mjs';
+import { claudeConfigDir, harnessSessions, installHarness, planParticipant, stopAll, waitFor } from './harness.mjs';
 import { LIVE_RECORD, processTable } from '../scripts/live-run.mjs';
 
 const SB = makeSandbox('promptobus-e2e-live-script-');
 const runs = path.join(SB, 'runs');
 mkdirSync(runs);
-const harness = await installHarness({ binDir: path.join(SB, 'bin'), sock: makeSockPath('a2h-') });
+const binDir = path.join(SB, 'bin');
+const harness = await installHarness({ binDir, sock: makeSockPath('a2h-') });
 planParticipant(harness.home, 'worker:e2e', { turns: [{ detail: 'fixture idle', do: [] }] });
-const env = { ...process.env, TMPDIR: runs, TMP: runs, TEMP: runs };
-for (const key of Object.keys(env)) if (key.startsWith('GIT_')) delete env[key];
+const proved = proveStandIsolation({
+  binDir,
+  names: ['claude'],
+  homes: {
+    PROMPTOBUS_E2E_HARNESS: harness.home,
+    CLAUDE_CONFIG_DIR: claudeConfigDir(harness.home),
+  },
+  env: process.env,
+});
+check('live-e2e stand proves stub claude and isolated homes before launch', proved.ok, proved.reason ?? '');
+const env = proved.ok ? { ...process.env, TMPDIR: runs, TMP: runs, TEMP: runs, [STUB_BIN]: binDir } : null;
+if (env) for (const key of Object.keys(env)) if (key.startsWith('GIT_')) delete env[key];
 const script = fileURLToPath(new URL('../scripts/live-e2e.mjs', import.meta.url));
-const child = spawn(process.execPath, [script], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+const child = env ? spawn(process.execPath, [script], { env, stdio: ['ignore', 'pipe', 'pipe'] }) : null;
 let output = '';
+if (child) {
 child.stdout.on('data', (chunk) => { output += chunk; });
 child.stderr.on('data', (chunk) => { output += chunk; });
+}
 const own = [];
-try {
+if (child) try {
   const launched = await waitFor(() => {
     const sessions = harnessSessions(harness.home);
     const dirs = readdirSync(runs).filter((name) => name.startsWith('promptobus-live-e2e-'));
@@ -56,4 +70,4 @@ try {
   }
   await waitFor(() => !processTable().some((p) => own.some((r) => p.pid === r.pid && p.birth === r.birth)), { timeoutMs: 10_000 });
   harness.restore();
-}
+} else harness.restore();

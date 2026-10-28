@@ -1,7 +1,7 @@
 // Regression probe for the live-script PATH boundary. Run: npm test
 //
-// The live scripts are deliberately not imported: importing either one starts a
-// real run. The probe checks their source after exercising the resolver contract.
+// An import is refused by the entry guard. This file reads source and exercises
+// resolveToolBin: a direct `node scripts/live-*.mjs` remains the live route.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,7 +31,7 @@ try {
   check('live-cursor selection fixture has both editor and native executables',
     resolveToolBin('cursor').version === 'editor-fixture'
     && resolveToolBin('cursor-agent').version === 'native-fixture');
-  const selected = new Function('resolveToolBin', 'cursorDriver', `${selection}\nreturn tool;`)(resolveToolBin, cursorDriver);
+  const selected = new Function('resolveToolBin', 'cursorDriver', 'guarded', `${selection}\nreturn tool;`)(resolveToolBin, cursorDriver, { stub: false });
   check('live-cursor preflight selects the native agent when the editor is also on PATH',
     selected.ok && selected.path === 'cursor-agent' && selected.version === 'native-fixture', JSON.stringify(selected));
 } finally {

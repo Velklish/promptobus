@@ -300,9 +300,8 @@ check(': the runner sweeps sandboxes and sockets at start, with an owner check',
   && /sweepTestSockets\(\s*['"]\/tmp['"]/.test(runSrc),
   `import: ${/from '.\/tmpdir-sweep.mjs'/.test(runSrc)} · sandboxes: ${/sweepTestSandboxes\(/.test(runSrc)} · sockets: ${/sweepTestSockets\(/.test(runSrc)}`);
 
-// Live scripts are not imported: each one starts real harness sessions. Read
-// their source instead, and keep their cleanup checks next to the suite
-// sentinel so a new live prefix cannot hide outside every sweep.
+// Live scripts refuse an import. Read their source, and keep their cleanup
+// checks next to the suite sentinel so a new prefix cannot hide from every sweep.
 const scriptsDir = path.join(here, '..', 'scripts');
 const sourceOf = (name) => readFileSync(path.join(scriptsDir, name), 'utf8');
 const mixedSrc = sourceOf('live-mixed.mjs');

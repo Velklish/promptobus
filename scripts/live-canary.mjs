@@ -37,6 +37,9 @@ import { run } from '../lib/exec.js';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { writeHostConfig } from '../test/sandbox.mjs';
 import { CANARY_PREFIX, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
+import { refuseImportedEntry } from './live-entry.mjs';
+
+refuseImportedEntry(import.meta.url);
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(here, '..');

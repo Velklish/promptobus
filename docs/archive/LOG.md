@@ -585,3 +585,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-325"></a>`PB-325-suite-reds-under-machine-load` · 2026-10-28 · completed · — · Three test files go red under machine load: lead-lifecycle, promptobus-e2e and codex-holder-spawn
 - <a id="pb-286.2"></a>`PB-286.2-out-of-root-repository-path` · 2026-10-28 · completed · — · Resolve out-of-root repository paths consistently
 - <a id="pb-234.5"></a>`PB-234.5-probe-semantic-coverage-boundary` · 2026-10-28 · completed · — · Record the semantic coverage boundary of a mutation probe
+- <a id="pb-373.6"></a>`PB-373.6-live-script-import-starts-native-session` · 2026-10-28 · completed · — · Importing a live entry point accidentally starts a native harness session

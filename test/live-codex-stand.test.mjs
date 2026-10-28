@@ -1,4 +1,3 @@
-import assert from 'node:assert/strict';
 // The canonical live Codex scenario, driven whole on the stub `codex app-server`: a neutral caller
 // of the real script for its task identity and for an abort after the participant is up. Run: npm test
 import { spawn } from 'node:child_process';
@@ -7,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
+import { proveStandIsolation, STUB_BIN } from '../scripts/live-entry.mjs';
 import { makeSandbox } from './sandbox.mjs';
 import { HANG_AFTER_START_VAR, installHarness, parseHomeToml, pidAlive, planParticipant, PROBE_VAR } from './harness-codex.mjs';
 import { waitFor } from './harness.mjs';
@@ -24,12 +24,20 @@ planParticipant(HARNESS, WORKER, { turns: [HELLO_TURN, HELLO_TURN, HELLO_TURN, H
 
 function start(args = [], env = {}) {
   const binDir = path.join(SB, 'bin');
-  assert.equal(process.env.PATH.split(path.delimiter)[0], binDir);
-  assert.ok(readFileSync(path.join(binDir, 'codex.stub.mjs'), 'utf8').includes('harness-codex.mjs'));
-  assert.ok(existsSync(path.join(binDir, 'codex' + (process.platform === 'win32' ? '.cmd' : ''))));
-  assert.equal(process.env.PROMPTOBUS_E2E_CODEX, HARNESS);
-  assert.equal(process.env.PROMPTOBUS_CODEX_HOME, path.join(HARNESS, 'state'));
-  const child = spawn(process.execPath, [SCRIPT, ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env } });
+  const proved = proveStandIsolation({
+    binDir,
+    names: ['codex'],
+    homes: {
+      PROMPTOBUS_E2E_CODEX: HARNESS,
+      PROMPTOBUS_CODEX_HOME: path.join(HARNESS, 'state'),
+    },
+    env: process.env,
+  });
+  if (!proved.ok) throw new Error(`stub isolation refused: ${proved.reason}`);
+  const child = spawn(process.execPath, [SCRIPT, ...args], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, ...env, [STUB_BIN]: binDir },
+  });
   const run = { child, out: '', exit: null };
   child.stdout.on('data', (c) => { run.out += c; });
   child.stderr.on('data', (c) => { run.out += c; });

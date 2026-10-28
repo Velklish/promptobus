@@ -239,6 +239,44 @@ Cursor's stop path re-resolves its binary with the preference `cursor-agent`, th
 
 **The standalone host does not start a binary inside `resolveToolBin`.** That member stays synchronous and returns the name at once. A `spawnSync` there would block every caller — a lift, a review, a stop, a state query — and, if an adapter called it during the race, it would stop the single budget timer that caps the whole probe. The version read is the optional `readToolVersion(name, bin)`, and it does not switch on the name: it runs `<bin> --version` with a 5 s ceiling and returns the raw stdout line, or nothing. The package asks it only for a tool whose driver and adapter declare `readsVersion`. Claude declares it. The preflight asks before the probe race, and a real lift asks once when the resolved bin still has no version, before option validation and provenance reporting. `--dry-run` does not ask. A usable line is remembered for that host; a timeout, a non-zero exit, or an empty answer is not, so the next ask tries again. Cursor and Codex do not declare the read, so their proven-version warnings stay silent under this host — the boundary of the decision that named `claude --version`. A consumer host that fills `version` from its own `resolveToolBin` is not asked.
 
+## Live script entry
+
+The executable scripts under `scripts/live-*.mjs` run only when the file is the process entry point: `node scripts/<script>.mjs`, with the flags in [contributing § Participant live scenarios](../guides/contributing.md#participant-live-scenarios). That command is the live route. It leaves `PROMPTOBUS_STUB_BIN` unset and resolves harness names on `PATH`.
+
+A syntax check is `node --check scripts/<script>.mjs`. It parses the file and runs nothing. Importing the file is a refusal: the module throws `LIVE_SCRIPT_IMPORT` before any harness binary is probed, and no session starts.
+
+<!-- quote:../../scripts/live-entry.mjs -->
+```text
+export function refuseImportedEntry(metaUrl, argv = process.argv) {
+  if (isDirectLiveEntry(metaUrl, argv)) return;
+  const file = fileURLToPath(metaUrl);
+  const error = new Error(
+    `importing ${file} does not start it; node --check ${file} is the syntax check, and node ${file} is the live route`,
+  );
+  error.code = 'LIVE_SCRIPT_IMPORT';
+  throw error;
+}
+```
+<!-- /quote -->
+
+A stand is the approved stub entry. Before it spawns the script it proves each harness name is a stub in one directory and each state home is that stand's directory, outside the user homes `.cursor`, `.codex`, `.claude` and `.promptobus`. The spawn sets `PROMPTOBUS_STUB_BIN` to that directory. The script resolves those names only inside it, probing with that directory alone on `PATH`. A missing stub refuses. The refusal does not consult a later `PATH` entry, so an installed binary is not a fallback.
+
+After that proof succeeds, the script replaces `PATH` with the stub directory before any raise, and sets `PROMPTOBUS_CURSOR_INSTALL_DIRS` empty. A Cursor stand requires `cursor-agent`, `agent`, `cursor` and `tmux` in that directory, because the raise searches those names in that order and then the install directories. Codex and Claude stands require `codex` and `claude`. The suite path seal, when it is set, is the only other `PATH` entry: that directory lists `git` and the other non-harness tools and omits the harness names. No earlier inherited entry remains, so a detector or an installed binary ahead of the stub is not executed.
+
+<!-- quote:../../scripts/live-entry.mjs -->
+```text
+  env.PATH = sealedStubPath(env, binDir);
+  env[INSTALL_DIRS] = '';
+  return { stub: true, ok: true, tools };
+```
+<!-- /quote -->
+
+<!-- quote:../../scripts/live-entry.mjs -->
+```text
+    return { ok: false, reason: `${name}: stub missing in ${root}; refusing to search PATH` };
+```
+<!-- /quote -->
+
 ## Launching a process
 
 Source: `lib/exec.js` — `run`, `runAsync`, `planRun`, `resolveCommand`, `quoteCmdArg`, `buildCmdLine`.

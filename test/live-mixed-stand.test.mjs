@@ -1,10 +1,10 @@
-import assert from 'node:assert/strict';
 // Mixed live script on isolated stubs: catalog refusal, awaited abort and a slow stop.
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
+import { proveStandIsolation, STUB_BIN } from '../scripts/live-entry.mjs';
 import { makeSandbox } from './sandbox.mjs';
 import * as cursorStub from './harness-cursor.mjs';
 import * as codexStub from './harness-codex.mjs';
@@ -25,17 +25,23 @@ const cursorHarness = await cursorStub.installHarness({ binDir });
 const codexHarness = await codexStub.installHarness({ binDir });
 
 function start(args = [], env = {}) {
-  assert.equal(process.env.PATH.split(path.delimiter)[0], binDir);
-  for (const name of ['agent', 'cursor', 'cursor-agent', 'tmux', 'codex']) {
-    assert.ok(readFileSync(path.join(binDir, `${name}.stub.mjs`), 'utf8').includes('harness-'));
-    assert.ok(existsSync(path.join(binDir, name + (process.platform === 'win32' ? '.cmd' : ''))));
-  }
-  assert.equal(process.env[cursorStub.CURSOR_HOME_VAR], cursorHarness.home);
-  assert.equal(process.env.PROMPTOBUS_CURSOR_HOME, cursorHarness.stateHome);
-  assert.equal(process.env.PROMPTOBUS_CURSOR_USER_HOME, cursorHarness.userHome);
-  assert.equal(process.env[codexStub.CODEX_HOME_VAR], codexHarness.home);
-  assert.equal(process.env.PROMPTOBUS_CODEX_HOME, codexHarness.stateHome);
-  const child = spawn(process.execPath, [SCRIPT, ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env } });
+  const proved = proveStandIsolation({
+    binDir,
+    names: ['agent', 'cursor', 'cursor-agent', { name: 'tmux', probe: ['-V'] }, 'codex'],
+    homes: {
+      [cursorStub.CURSOR_HOME_VAR]: cursorHarness.home,
+      PROMPTOBUS_CURSOR_HOME: cursorHarness.stateHome,
+      PROMPTOBUS_CURSOR_USER_HOME: cursorHarness.userHome,
+      [codexStub.CODEX_HOME_VAR]: codexHarness.home,
+      PROMPTOBUS_CODEX_HOME: codexHarness.stateHome,
+    },
+    env: process.env,
+  });
+  if (!proved.ok) throw new Error(`stub isolation refused: ${proved.reason}`);
+  const child = spawn(process.execPath, [SCRIPT, ...args], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, ...env, [STUB_BIN]: binDir },
+  });
   const run = { child, out: '', exit: null };
   child.stdout.on('data', (c) => { run.out += c; });
   child.stderr.on('data', (c) => { run.out += c; });

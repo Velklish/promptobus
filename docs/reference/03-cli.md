@@ -2088,6 +2088,7 @@ the lock directory behind for the next command to wait on.
 ### Participant live checks
 
 The source checkout owns the Cursor, Codex, mixed and Claude E2E live scripts.
+Importing one throws `LIVE_SCRIPT_IMPORT` and starts nothing; `node --check` is the syntax check. A stand sets `PROMPTOBUS_STUB_BIN` only after stub binaries and isolated state homes are proved, and a missing proof refuses to search `PATH`. A proved stand then keeps `PATH` on that stub directory and clears `PROMPTOBUS_CURSOR_INSTALL_DIRS`.
 Their shared scenario uses a fresh canonical task identity and a visible work title
 that distinguishes simultaneous runs. Cursor continues to read the host's declared
 state home. E2E handled aborts await exact session stop and owned-process death;

@@ -6,7 +6,8 @@ import { check } from './check.mjs';
 const source = readFileSync(new URL('../scripts/live-codex.mjs', import.meta.url), 'utf8');
 const executable = source.replace(/^#![^\n]*\n/, '')
   .replace(/^import[\s\S]*?from '[^']+';$/gm, '')
-  .replace(/^const \{[^\n]+\} = await import\([^\n]+\);$/gm, '');
+  .replace(/^const \{[^\n]+\} = await import\([^\n]+\);$/gm, '')
+  .replace(/^refuseImportedEntry\(import\.meta\.url\);\n/m, '');
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 const deferred = () => {
   let resolve;
@@ -46,6 +47,7 @@ async function runCase(boundary) {
       return probe();
     },
     markRunOwner: () => {}, sweepLiveRuns: () => [],
+    guardStubLaunch: () => ({ stub: false }),
     onAbort: (fn) => { abort = fn; }, codexConfigSha: () => { actions.push('config sha'); return 'unchanged'; },
     codexCatalogEntries: () => [], pickCodexModel: () => ({ model: 'stub' }), DEFAULT_MODEL: 'stub',
     readSession: session, pidAlive: () => false,

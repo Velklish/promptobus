@@ -18,6 +18,7 @@ import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { finishLiveArgs, parseLiveArgs } from './live-args.mjs';
+import { guardStubLaunch, refuseImportedEntry } from './live-entry.mjs';
 import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { freshScenarioIdentity, buildWorkspace, cli, MECHANISM_ROOT, store } from '../test/scenario.mjs';
@@ -26,6 +27,8 @@ import { markRunOwner, sweepLiveRuns } from './canary-runs.mjs';
 import { onAbort } from './live-abort.mjs';
 import { codexConfigSha } from './codex-config.mjs';
 import { codexCatalogEntries, pickCodexModel } from './codex-models.mjs';
+
+refuseImportedEntry(import.meta.url);
 
 const LIVE_FLAGS = {
   '--model': { key: 'model', display: '--model <id>', description: 'model of the live Codex session' },
@@ -52,7 +55,15 @@ const RELIED = [
   'turn/interrupt',
 ];
 
-const tool = resolveToolBin('codex');
+const guarded = guardStubLaunch(process.env, {
+  names: ['codex'],
+  homes: ['PROMPTOBUS_E2E_CODEX', 'PROMPTOBUS_CODEX_HOME'],
+});
+if (guarded.stub && !guarded.ok) {
+  console.error(`✖ live run not started: ${guarded.reason}`);
+  process.exit(1);
+}
+const tool = guarded.stub ? guarded.tools.codex : resolveToolBin('codex');
 if (!tool.ok) {
   console.error(`✖ nothing to drive the live run with: ${tool.reason}`);
   process.exit(1);

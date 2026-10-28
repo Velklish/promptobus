@@ -38,6 +38,7 @@ import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { finishLiveArgs, parseLiveArgs } from './live-args.mjs';
+import { guardStubLaunch, refuseImportedEntry } from './live-entry.mjs';
 import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { freshScenarioIdentity, buildWorkspace, cli, MECHANISM_ROOT, PROMPTOBUS_BIN, sentBy, store } from '../test/scenario.mjs';
@@ -47,6 +48,8 @@ import { onAbort } from './live-abort.mjs';
 import { reportMentionsDiff } from './review-events.mjs';
 import { requiredTmuxSessions, tmuxAbsenceVerdict } from './tmux-check.mjs';
 import { addrKey } from '../test/harness-cursor.mjs';
+
+refuseImportedEntry(import.meta.url);
 
 const LIVE_FLAGS = {
   '--model': { key: 'model', display: '--model <id>', description: 'model of the live Cursor sessions' },
@@ -68,7 +71,16 @@ const {
 // check is driven on the one the owner named, and it goes into the report.
 const MODEL = LIVE_ARGS.model ?? 'cursor-grok-4.6-xhigh-fast';
 
-const tool = resolveToolBin(cursorDriver.options.tool);
+const toolName = cursorDriver.options.tool;
+const guarded = guardStubLaunch(process.env, {
+  names: [toolName, 'agent', 'cursor', { name: 'tmux', probe: ['-V'] }],
+  homes: ['PROMPTOBUS_CURSOR_HOME', 'PROMPTOBUS_CURSOR_USER_HOME', 'PROMPTOBUS_E2E_CURSOR'],
+});
+if (guarded.stub && !guarded.ok) {
+  console.error(`✖ live run not started: ${guarded.reason}`);
+  process.exit(1);
+}
+const tool = guarded.stub ? guarded.tools[cursorDriver.options.tool] : resolveToolBin(cursorDriver.options.tool);
 if (!tool.ok) {
   console.error(`✖ nothing to drive the live run with: ${tool.reason}`);
   process.exit(1);

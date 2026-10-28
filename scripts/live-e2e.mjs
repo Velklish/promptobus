@@ -24,6 +24,7 @@
 // listener puts only the "token matched" mark into the trace, not the token itself.
 import { mkdtempSync } from 'node:fs';
 import { finishLiveArgs, parseLiveArgs } from './live-args.mjs';
+import { guardStubLaunch, refuseImportedEntry } from './live-entry.mjs';
 import path from 'node:path';
 import process from 'node:process';
 import os from 'node:os';
@@ -33,6 +34,8 @@ import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { MECHANISM_ROOT, runScenario, STEPS } from '../test/scenario.mjs';
 import { liveRun, onAbort, parseLiveSessions, priorRunIsLive } from './live-run.mjs';
 import { sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
+
+refuseImportedEntry(import.meta.url);
 
 finishLiveArgs(parseLiveArgs(process.argv.slice(2)), {
   usage: 'scripts/live-e2e.mjs',
@@ -46,10 +49,17 @@ finishLiveArgs(parseLiveArgs(process.argv.slice(2)), {
 // would raise sessions with one mechanism and judge them with another.
 const { bgSessions, findSession, resetBgSessionsCache, runClaude, sessionLiveness } = await import(path.join(MECHANISM_ROOT, 'lib', 'liftoff.js'));
 
-// `resolveToolBin` searches PATH only and returns the name it probed. `ok` means
-// `claude` already answers through PATH, so leave PATH unchanged for the session
-// registry and every child command.
-const tool = resolveToolBin('claude');
+// The live route leaves PATH as the caller set it. A proved stub guard replaces
+// PATH in live-entry.mjs before any raise, so this file does not assign PATH.
+const guarded = guardStubLaunch(process.env, {
+  names: ['claude'],
+  homes: ['PROMPTOBUS_E2E_HARNESS', 'CLAUDE_CONFIG_DIR'],
+});
+if (guarded.stub && !guarded.ok) {
+  console.error(`✖ live run not started: ${guarded.reason}`);
+  process.exit(1);
+}
+const tool = guarded.stub ? guarded.tools.claude : resolveToolBin('claude');
 if (!tool.ok) {
   console.error(`✖ nothing to drive the live run with: ${tool.reason}`);
   process.exit(1);

@@ -42,6 +42,7 @@ import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { finishLiveArgs, parseLiveArgs } from './live-args.mjs';
+import { guardStubLaunch, refuseImportedEntry } from './live-entry.mjs';
 import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { freshScenarioIdentity, buildWorkspace, cli, MECHANISM_ROOT, PROMPTOBUS_BIN, sentBy, store } from '../test/scenario.mjs';
@@ -53,6 +54,8 @@ import { codexCatalogEntries, pickCodexModel } from './codex-models.mjs';
 import { messageKey, reportMentionsDiff, unseenResult } from './review-events.mjs';
 import { requiredTmuxSessions, tmuxAbsenceVerdict } from './tmux-check.mjs';
 import { addrKey } from '../test/harness-cursor.mjs';
+
+refuseImportedEntry(import.meta.url);
 
 const LIVE_FLAGS = {
   '--cursor-model': { key: 'cursorModel', display: '--cursor-model <id>', description: 'model of the live Cursor worker' },
@@ -79,7 +82,18 @@ const CURSOR_MODEL = LIVE_ARGS.cursorModel ?? 'cursor-grok-4.6-xhigh-fast';
 // Both binaries are asked BEFORE any layout: a loop of three participants
 // without one of them checks nothing, and a refuse mid-way would leave a live
 // session of the other behind.
-const tools = { cursor: resolveToolBin('cursor'), codex: resolveToolBin('codex') };
+const guarded = guardStubLaunch(process.env, {
+  names: ['cursor-agent', 'agent', 'cursor', { name: 'tmux', probe: ['-V'] }, 'codex'],
+  homes: [
+    'PROMPTOBUS_CURSOR_HOME', 'PROMPTOBUS_CURSOR_USER_HOME', 'PROMPTOBUS_E2E_CURSOR',
+    'PROMPTOBUS_E2E_CODEX', 'PROMPTOBUS_CODEX_HOME',
+  ],
+});
+if (guarded.stub && !guarded.ok) {
+  console.error(`✖ live run not started: ${guarded.reason}`);
+  process.exit(1);
+}
+const tools = guarded.stub ? guarded.tools : { cursor: resolveToolBin('cursor'), codex: resolveToolBin('codex') };
 const missing = Object.entries(tools).filter(([, t]) => !t.ok);
 if (missing.length) {
   for (const [name, t] of missing) console.error(`✖ nothing to drive the live run with: ${name} — ${t.reason}`);
