@@ -132,6 +132,24 @@ const normalise = (decision) => JSON.parse(JSON.stringify(decision)
 
 const overlay = (fields) => ({ schemaVersion: 2, ...fields });
 
+test('equal weekly used percentages prefer the harness with four times the declared capacity', () => {
+  const snapshot = clone(BALANCE_SNAPSHOT);
+  delete snapshot.harnesses.cursor;
+  snapshot.harnesses.claude.windows = [snapshot.harnesses.claude.windows[1]];
+  snapshot.harnesses.codex.windows = [snapshot.harnesses.codex.windows[1]];
+  for (const entry of Object.values(snapshot.harnesses)) {
+    entry.windows[0].usedPercent = 25;
+    entry.windows[0].resetAt = '2026-09-09T13:00:00.000Z';
+  }
+  const decision = decide({ strategy: 'balance', snapshot, catalog: BALANCE_CATALOG,
+    user: overlay({ account: { claude: { capacity: { weekly: 1 } }, codex: { capacity: { weekly: 4 } } } }),
+  });
+  assert.equal(decision.chosen.harness, 'codex');
+  assert.ok(decision.candidates.find((row) => row.harness === 'codex').pace.effective
+    > decision.candidates.find((row) => row.harness === 'claude').pace.effective);
+  validDecision(decision);
+});
+
 // --- the goldens --------------------------------------------------------------
 
 /**
@@ -145,7 +163,7 @@ const overlay = (fields) => ({ schemaVersion: 2, ...fields });
  * exactly how they would stop agreeing.
  */
 const golden = (over = {}) => ({ ...decide({ snapshot: { ...SNAPSHOT, takenAt: new Date(NOW).toISOString() }, ...over }),
-  harnesses: availabilityOf(fixture('snapshot.json')) });
+  harnesses: availabilityOf(fixture('snapshot.json'), policyOf()) });
 
 test('the golden decision is reproduced from the golden inputs', () => {
   const decision = golden();

@@ -1827,6 +1827,13 @@ test('the hand-written grammar agrees with the JSON Schema on the same documents
     { schemaVersion: 1, defaults: { strategy: 'auto' } },
     { schemaVersion: 1, account: { cursor: { plan: 'example-ultra' } } },
     { schemaVersion: 1, account: { cursor: { plan: '' } } },
+    { schemaVersion: 2, account: { codex: { capacity: { weekly: 4 } } } },
+    { schemaVersion: 2, account: { codex: { capacity: { weekly: 1e9 } } } },
+    { schemaVersion: 2, account: { codex: { capacity: { weekly: 1e307 } } } },
+    { schemaVersion: 2, account: { codex: { capacity: { weekly: 0 } } } },
+    { schemaVersion: 2, account: { codex: { capacity: { weekly: -1 } } } },
+    { schemaVersion: 2, account: { codex: { capacity: { yearly: 2 } } } },
+    { schemaVersion: 2, account: { codex: { capacity: {} } } },
     // PB-162's ceiling belongs to the same corpus. Zero is LAWFUL — it is a
     // person saying "never this harness" — and both shapes have to accept it,
     // which a corpus of refusals alone would not prove.

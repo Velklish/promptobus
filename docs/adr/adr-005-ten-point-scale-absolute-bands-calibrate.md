@@ -106,8 +106,8 @@ States: `available`, `exhausted`, `unavailable`, `unknown`. Reason codes: `binar
 **7. `balance` is a choice layer, not a filter.** Filtering steps below run unchanged. Each surviving candidate gains a pace block in percentage points of the binding window — the applicable window with the highest `usedPercent`:
 
 ```text
-underspend    (elapsedShare − usedShare) × 100
-spendPenalty  balance.spendUnit × (quotaCost − 1) / 9
+underspend    (elapsedShare − usedShare) × 100 × capacity
+spendPenalty  balance.spendUnit × (quotaCost − 1) / 9 × capacity
 effective     underspend − spendPenalty
 ```
 
@@ -124,6 +124,8 @@ A named model with an explicit or unambiguous effort overrides the catalog role 
 **10. Near-limit signal.** `models` warns when a binding window is at or past `nearLimit.usedPercent` (default 80) or underspend is below `nearLimit.underspend` (default −15). A harness already `exhausted` is not repeated. `economy` is proposed when every paced harness is short by either test; `balance` otherwise. No line is printed when that strategy is already running. `models strategy --set` writes `defaults.strategy` into the writable layer and warns when a higher layer shadows it. The rubric proposes the switch; the person decides. Nothing changes strategy by itself.
 
 **11. One question the tool cannot answer.** Cursor's plan name lives in the user overlay under `account: { "<harness>": { "plan": "<name>" } }`. No command writes it. The snapshot keeps the measured derived tier; `models` prints the person's answer beside it. A typed string never enters the cache.
+
+An owner may declare `account.<harness>.capacity.<kind>` for `session`, `weekly` or `monthly`. It is a positive relative multiplier for both remaining allowance and pace; an omitted kind has capacity 1 and keeps the previous estimate. The tier names reported by adapters do not justify numeric defaults. `models` shows the effective plan and each capacity with its source.
 
 **12. CLI constraints and dry run.** Explicit `--harness`, `--model` and `--effort` are constraints. A lift whose `--model` no tuple of the merged catalog names is not routed: a model released after this package's catalog runs without a package update. It lifts with the id as typed, on `--harness` or the default harness, as a lift with no strategy does, and the harness binary accepts or refuses the id. With `--harness`, unrated means that no tuple on that harness names the model. The allow and deny lists in force for the step still apply, under the typed id and the one id a driver alias resolves to. The marks for a flag rule come from the availability snapshot row of that model. A lift with no tuple cannot meet `allow.tuples`. Without a snapshot row, it cannot meet `allow.flags` either. A missing row leaves `deny.flags` unchecked, with a warning, as the resolver treats a harness that lists no models. `--allow-payg` admits pay-as-you-go candidates; without it PAYG is excluded. `--dry-run` on a lift reads the cache and nothing else; `--refresh --dry-run` probes but writes neither cache nor task state. `models` probes by default, while `models --no-probe` reads only the cache. A stale or missing snapshot is reported, never taken silently as fact. `--json` is the decision document. No task, worktree or participant is written before a candidate exists. Inside the strategy envelope a preflight exclusion moves to the next candidate without asking again. There is no automatic rollback and retry inside the same command. Routing applies only before liftoff.
 

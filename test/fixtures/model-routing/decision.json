@@ -233,6 +233,12 @@
         "name": "example-plan",
         "source": "credentials"
       },
+      "plan": { "name": "example-plan", "source": "credentials" },
+      "capacity": {
+        "session": { "value": 1, "source": "default" },
+        "weekly": { "value": 1, "source": "default" },
+        "monthly": { "value": 1, "source": "default" }
+      },
       "windows": [
         {
           "id": "5h",
@@ -267,7 +273,13 @@
       "reason": "quota_unknown",
       "checkedAt": "2026-09-05T09:00:00.000Z",
       "source": "cache",
-      "tier": null
+      "tier": null,
+      "plan": null,
+      "capacity": {
+        "session": { "value": 1, "source": "default" },
+        "weekly": { "value": 1, "source": "default" },
+        "monthly": { "value": 1, "source": "default" }
+      }
     }
   ]
 }

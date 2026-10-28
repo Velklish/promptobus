@@ -504,6 +504,40 @@ test('`models` names the one question the tool cannot answer, and no command wri
   }
 });
 
+test('`models` shows the effective adapter plan and declared capacity by window kind', async () => {
+  dropOverlays();
+  seedCache(HEALTHY());
+  writeOverlay(WORKSPACE_OVERLAY(), { schemaVersion: 2,
+    account: { codex: { plan: 'pro', capacity: { weekly: 4 } } } });
+  try {
+    const output = sink();
+    await quiet(() => models(WS, { noProbe: true, output }));
+    assert.match(output.text, /plan pro \(overlay:workspace\)/);
+    assert.match(output.text, /capacity session 1 \(default\), weekly 4 \(overlay:workspace\), monthly 1 \(default\)/);
+    const document = sink();
+    await quiet(() => models(WS, { noProbe: true, json: true, output: document }));
+    const codex = JSON.parse(document.text).harnesses.find((row) => row.harness === 'codex');
+    assert.equal(codex.capacity.weekly.value, 4);
+    assert.equal(codex.capacity.session.value, 1);
+    assert.equal(codex.plan?.name, 'pro');
+  } finally {
+    dropOverlays();
+  }
+});
+
+test('an enormous finite capacity is refused before models can print non-finite score fields', async () => {
+  dropOverlays();
+  seedCache(HEALTHY());
+  writeOverlay(WORKSPACE_OVERLAY(), { schemaVersion: 2,
+    account: { claude: { capacity: { session: 1e307 } } } });
+  try {
+    await assert.rejects(quiet(() => models(WS, { noProbe: true, json: true, output: sink() })),
+      /capacity.*1000000000|maximum/);
+  } finally {
+    dropOverlays();
+  }
+});
+
 // --- `models validate`, `--clear-exhausted` ----------------------------------
 
 test('`models validate` prints the bans in force and who can lift each one', async () => {
@@ -1001,6 +1035,20 @@ test('without --strategy the plan carries no decision and the record gets no rou
   // The values are the driver's own, exactly as they were before routing existed.
   assert.equal(plan.model, plan.driver.options.defaultModel);
   assert.equal(plan.effort, null);
+});
+
+test('a live-participant cap does not refuse an explicitly named unrouted harness', async () => {
+  dropOverlays();
+  writeOverlay(WORKSPACE_OVERLAY(), { schemaVersion: 2, caps: { liveParticipants: { codex: 0 } } });
+  try {
+    const task = freshTask('named-cap-t20260905-090012');
+    const plan = await planSpawn(WS, { repo: 'orders-api', brief: BRIEF, task,
+      worker: 'named-cap', harness: 'codex', dryRun: true });
+    assert.equal(plan.driver.id, 'codex');
+    assert.equal(plan.routing, null);
+  } finally {
+    dropOverlays();
+  }
 });
 
 // --- a routed lift: the decision reaches the record and comes back out of status

@@ -148,7 +148,7 @@
       }
     },
     "account": {
-      "description": "A person's answers to questions no harness method returns — today one, Cursor's plan name. NOTHING WRITES THIS: models prints the key, the value and the path of the layer, and a person or an agent adds the line (ADR-005). The value is display only and enters no score; the snapshot keeps what was measured, and this is printed beside it as the person's answer.",
+      "description": "Owner-declared plan name and relative capacity by window kind. Models prints their effective values and sources. A plan name alone enters no score; capacity scales remaining allowance and balance pace. Missing capacity uses 1 and preserves the previous estimate.",
       "type": "object",
       "additionalProperties": false,
       "minProperties": 1,
@@ -159,7 +159,18 @@
           "additionalProperties": false,
           "minProperties": 1,
           "properties": {
-            "plan": { "type": "string", "minLength": 1 }
+            "plan": { "type": "string", "minLength": 1 },
+            "capacity": {
+              "description": "Owner-declared relative capacity by window kind. A positive multiplier no greater than 1000000000: 4 means four times the allowance represented by 1 at the same used percentage. The bound keeps derived numbers finite. Missing kinds use the existing unscaled estimate. Adapter tier names supply no numeric default without published quota evidence.",
+              "type": "object",
+              "additionalProperties": false,
+              "minProperties": 1,
+              "properties": {
+                "session": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000000000 },
+                "weekly": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000000000 },
+                "monthly": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000000000 }
+              }
+            }
           }
         }
       }

@@ -200,6 +200,24 @@
             { "type": "null" }
           ]
         },
+        "plan": {
+          "description": "Effective plan: overlay answer when declared, otherwise the adapter tier; null when neither is known. A plan name alone has no numeric scoring effect.",
+          "oneOf": [
+            { "type": "null" },
+            { "type": "object", "additionalProperties": false, "required": ["name", "source"],
+              "properties": { "name": { "type": "string", "minLength": 1 }, "source": { "type": "string", "minLength": 1 } } }
+          ]
+        },
+        "capacity": {
+          "description": "Effective relative capacity by window kind; default 1 preserves the previous estimate. Source names the declaring overlay or default.",
+          "type": "object", "additionalProperties": false,
+          "required": ["session", "weekly", "monthly"],
+          "properties": {
+            "session": { "$ref": "#/$defs/capacitySetting" },
+            "weekly": { "$ref": "#/$defs/capacitySetting" },
+            "monthly": { "$ref": "#/$defs/capacitySetting" }
+          }
+        },
         "credits": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/credits" },
         "resetCredits": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/resetCredits" },
         "poolWindowsUnbound": {
@@ -210,6 +228,13 @@
           "type": "array",
           "items": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/window" }
         }
+      }
+    },
+    "capacitySetting": {
+      "type": "object", "additionalProperties": false, "required": ["value", "source"],
+      "properties": {
+        "value": { "type": "number", "exclusiveMinimum": 0 },
+        "source": { "type": "string", "minLength": 1 }
       }
     },
     "tupleRef": {
@@ -324,11 +349,11 @@
           "maximum": 1
         },
         "underspend": {
-          "description": "(elapsedShare − usedShare) × 100 — percentage points of that window. Positive means the account is behind the pace of its own window and has room to spend.",
+          "description": "(elapsedShare − usedShare) × 100 × the declared capacity (default 1) — relative percentage points of that window. Positive means the account is behind the pace of its own window and has room to spend.",
           "type": ["number", "null"]
         },
         "spendPenalty": {
-          "description": "balance.spendUnit × (quotaCost − 1) / 4, in the same points: the tuple that would actually be picked gives up a share of the window proportional to its quotaCost, before harnesses are compared.",
+          "description": "balance.spendUnit × (quotaCost − 1) / 9 × the declared capacity (default 1), in the same points: the tuple that would actually be picked gives up a share of the window proportional to its quotaCost, before harnesses are compared.",
           "type": ["number", "null"]
         },
         "effective": {
@@ -370,7 +395,7 @@
           "type": "number"
         },
         "components": {
-          "description": "Weighted contributions, not raw inputs: each is weight/100 times the value below. quality and speed are (r-1)/9*100 of their 1-10 rating (ADR-005); quotaCost is inverted, (10-r)/9*100; remaining is not a rating at all but a percentage from the availability snapshot, 100 minus the largest usedPercent across the applicable windows OF THIS TUPLE — the account-wide ones plus the scope covering it (ADR-005) — and 50 when none apply or the harness state is unknown; the unknown case also carries the unknown-availability adjustment.",
+          "description": "Weighted contributions, not raw inputs: each is weight/100 times the value below. quality and speed are (r-1)/9*100 of their 1-10 rating (ADR-005); quotaCost is inverted, (10-r)/9*100; remaining is not a rating at all but the minimum of (100 minus usedPercent) times the declared capacity for each applicable window OF THIS TUPLE — the account-wide ones plus the scope covering it (ADR-005) — and 50 when none apply or the harness state is unknown; the unknown case also carries the unknown-availability adjustment.",
           "type": "object",
           "additionalProperties": false,
           "required": ["quality", "speed", "quotaCost", "remaining"],
