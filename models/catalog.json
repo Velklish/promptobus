@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "updated": "2026-09-27T00:00:00.000Z",
+  "updated": "2026-10-29T00:00:00.000Z",
   "tuples": [
     {
       "id": "claude-fable-51-high",
@@ -2787,6 +2787,37 @@
       "evidence": {
         "text": "Interpolated +1 effort step(s) from codex-gpt6-astra-max on the 1–10 scale: quality +1, speed unchanged because throughput belongs to the model and serving stack, quotaCost +1; each result clamps to 1…10. The base row carries the dated anchor pair and source evidence.",
         "interpolatedFrom": "codex-gpt6-astra-max"
+      }
+    },
+    {
+      "id": "opencode-minimax-m3",
+      "harness": "opencode",
+      "model": "opencode-go/minimax-m3",
+      "effort": null,
+      "roles": [
+        "worker"
+      ],
+      "ratings": {
+        "quality": 7,
+        "speed": 5,
+        "quotaCost": 6
+      },
+      "prices": {
+        "inputPerMTok": null,
+        "cachedInputPerMTok": null,
+        "outputPerMTok": null
+      },
+      "billing": "subscription",
+      "priority": 950,
+      "assessedAt": "2026-10-29T00:00:00.000Z",
+      "source": "hypothesis, no published figure cited for this model on OpenCode, 2026-10-29",
+      "evidence": {
+        "text": "No published figure was cited for opencode-go/minimax-m3 on OpenCode, so all three ratings are a hypothesis. quality 7 sits below the catalog's top published bands and above the worker floor. speed 5 is the middle of the scale because no throughput figure was opened. quotaCost 6 is neither the cheap end nor the top spend: the model draws the OpenCode Go allowance, and the free and contributor model ids are not this row. OpenCode takes no separate effort flag, so this is the default-effort row.",
+        "hypothesis": [
+          "quality",
+          "speed",
+          "quotaCost"
+        ]
       }
     }
   ]

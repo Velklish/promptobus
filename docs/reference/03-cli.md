@@ -510,11 +510,11 @@ An adapter that throws is `unknown` / `probe_failed`, and the thrown text is dis
 
 An adapter that answers outside the contract is `probe_failed` too, and the diagnosis names the field. All three closed lists are checked — the state, the reason and the source — plus a `checkedAt` that cannot be read; a reason is required for every state but `available`, which is the only one none of the eight codes accompanies. The written cache promises to validate against its schema, and a misspelt `quota-unknown` would break that promise from inside: the command would report success and leave a document nothing can read back. The offending value is quoted back only when it has the shape of a code, so the message can show a typo without becoming a second route for harness output.
 
-Inside `models` and `windows` the check is by value and it drops the element, not the verdict: a blank model name, a `usedPercent` outside 0…100, a missing or unknown `kind`, a missing `lengthSec` or one of zero, a flag outside the closed list, a scope that is none of the three shapes. An adapter that garbles one row of an inventory still knows whether the account is logged in, and nothing here repairs a value — a number invented by the mechanism would validate while saying what no harness said. A `resetAt` that cannot be read becomes `null`, the schema's own word for unknown.
+Inside `models` and `windows` the check is by value and it drops the element, not the verdict: a blank model name, a `usedPercent` outside 0…100, a missing or unknown `kind`, a missing `lengthSec` or one of zero, a flag outside the closed list, a scope that is none of the three shapes. A window marked `estimate: "local-estimate"` may omit `usedPercent`; every other window still needs one. An adapter that garbles one row of an inventory still knows whether the account is logged in, and nothing here repairs a value — a number invented by the mechanism would validate while saying what no harness said. A `resetAt` that cannot be read becomes `null`, the schema's own word for unknown.
 
 Two of those drops are ADR-005's and are worth their own sentence. A window with no length has no pace — `elapsedShare` cannot be computed from it — so an adapter that cannot state a length reports no window, which is already the rule for a harness that exposes none. And a garbled scope takes its window with it rather than becoming `null`: `null` is the claim "this binds the whole account", and widening a per-model weekly cap into an account-wide one would apply it to every tuple of that harness. The one scope that legitimately arrives incomplete is a model scope with no resolved ids — the adapter could not turn the harness's display name into catalog ids — and that window stays, is printed for a person, and binds nothing.
 
-The tier is dropped to `null` rather than costing the verdict, for the same reason: nothing scores it, so losing it costs a line of output. The flag list is closed (today one mark, `no-zdr`, in the snapshot schema's own enum) because an overlay may deny by a flag, and a name checked against nothing would let a typo ban silently nothing; the price is that a new mark a harness starts printing needs a release rather than a data change.
+The tier is dropped to `null` rather than costing the verdict, for the same reason: nothing scores it, so losing it costs a line of output. The flag list is closed (`no-zdr` and `off-allowance`, in the snapshot schema's own enum) because an overlay may deny by a flag, and a name checked against nothing would let a typo ban silently nothing; the price is that a new mark a harness starts printing needs a release rather than a data change. `off-allowance` is also denied by the resolver when no overlay names it.
 
 **The preflight** (`lib/model-routing/preflight.js`) runs every adapter at once under one total budget of 15 s (`PREFLIGHT_BUDGET_MS`). A harness that has not answered by then is `unknown` / `probe_timeout` and does not hold the command: the person waits once for the slowest harness, never three times in a row. The result is the availability snapshot, valid against `schemas/model-routing/snapshot.schema.json`.
 
@@ -573,7 +573,7 @@ Three library entry points, all in `lib/model-routing/`:
 
 Policy-block merges ignore a JSON `__proto__` key instead of assigning it to the merged object. This keeps the `weights`, `penalties`, `bonuses`, `qualityFloor`, `balance`, `nearLimit`, `caps` and `payg` blocks on `Object.prototype` and prevents an overlay from adding inherited policy fields; the same guard applies to the other policy blocks that merge keys individually.
 
-`account.<harness>.capacity.<kind>` is a positive relative multiplier no greater than 1,000,000,000 for `session`, `weekly` or `monthly`. The bound keeps derived score and pace numbers finite. Remaining allowance and balance pace use it; a missing kind uses 1 and retains the prior estimate. The adapter tier names alone provide no numeric default. `models` shows the effective plan and capacity in text and JSON.
+`account.<harness>.capacity.<kind>` is a positive relative multiplier no greater than 1,000,000,000 for `session`, `weekly` or `monthly`. The bound keeps derived score and pace numbers finite. Remaining allowance and balance pace use it; a missing kind uses 1 and retains the prior estimate. The adapter tier names alone provide no numeric default. `models` shows the effective plan and capacity in text and JSON. `account.opencode.allowance.monthlyTokens` is a separate absolute allowance in tokens, with no default. It is not a capacity weight. OpenCode windows use 20 percent of it for the 5-hour window and 50 percent for the week. Until it is set, those windows show no used percentage.
 
 `caps` merges harness by harness like `account` does: the highest layer that names a harness wins for that harness and leaves the others where they were. A harness it names that this CLI does not drive is an error rather than a warning, for the reason a misspelt `account` key is one — a ceiling on a name nothing recognises bounds nothing, and a person who wrote one believes their run is held to two participants when it is not.
 
@@ -595,7 +595,7 @@ Neither list can be cleared: the overlay schema refuses `deny: {}` and `deny: { 
 
 | Selector | What it names | Where it is applied |
 |---|---|---|
-| `flags` | a mark the availability snapshot carries on a model row — today one, `no-zdr`. It is the one selector whose names are in no catalog, so they are checked against a closed list (`MODEL_FLAGS`, mirrored into the overlay schema's own enum and into the snapshot's). A new mark a harness starts printing needs a release rather than a data change | after the inventory step of the resolver, because that is where the model row it reads arrives |
+| `flags` | a mark the availability snapshot carries on a model row — `no-zdr` and `off-allowance`. It is the one selector whose names are in no catalog, so they are checked against a closed list (`MODEL_FLAGS`, mirrored into the overlay schema's own enum and into the snapshot's). A new mark a harness starts printing needs a release rather than a data change. `off-allowance` is denied even when the overlay does not name it | after the inventory step of the resolver, because that is where the model row it reads arrives |
 | `pools` | a Cursor billing pool, `cursor:auto` or `cursor:api`. `deny.pools: ["cursor:api"]` holds api models out of automatic selection; `--model` may explicitly name one and prints `pool-denied-named`. When no pool membership can be read, any pool deny holds out every Cursor candidate until a probe or retained membership supplies it | after the snapshot identifies the pool, before scoring |
 | `byRole` | a nested rule block scoped to a catalog role or declared step — `deny: { byRole: { security: { harnesses: ["cursor"] } } }`. Routing `security` of kind `reads-diff` applies unscoped, `byRole.reviewer` and `byRole.security` rules together: denies union, allows intersect. `validate` refuses a name outside the host's declaration and the three catalog roles | wherever the rule it wraps is applied |
 
@@ -918,6 +918,29 @@ A listing that refused, or one nothing in it parses, is `probe_failed` rather th
 Nothing the binary printed reaches `message`. `status` prints the account address on the one line the adapter reads, and the adapter counts and classifies instead of quoting.
 
 **Late-start classification is not implemented for Cursor, and the gap is deliberate.** The other harnesses hand `markExhausted` a limit their start path named; Cursor's start path names nothing. The only text `spawn` gets back from a failed lift is a string the package itself composes, and the driver says so in its own words next to the `failed` stall route — *a wrong model id and an expired Cursor login look the same*. Hooking a mark to it would fire a sticky `manual_exhaustion` — which only `--clear-exhausted` lifts — on a typo in `--model`. So a Cursor limit hit at start is not marked in the cache today. The two routes that would supply harness text are a `capture-pane` in `liftSession` (`lib/cursor-persist.js`) before the launch pane is killed, and a short `cursor-agent -p` probe on the failure path; neither is hooked, and the generic composed failure stays a plain refusal.
+
+### OpenCode: what its adapter asks
+
+The adapter is `lib/model-routing/adapter-opencode.js`. A successful `opencode --version` still means the binary answered; auth stays with the lift. After that the probe lists `opencode models` and reads two stat calls. The text table truncates model ids, so the probe asks for JSON:
+
+<!-- quote:../../lib/model-routing/adapter-opencode.js -->
+```js
+export const OPENCODE_WINDOW_SHARES = Object.freeze({ session: 0.2, weekly: 0.5 });
+```
+<!-- /quote -->
+
+<!-- quote:../../lib/model-routing/adapter-opencode.js -->
+```js
+  session: Object.freeze(['stats', '--days', '0', '--models', '--json']),
+  weekly: Object.freeze(['stats', '--days', '7', '--models', '--json']),
+```
+<!-- /quote -->
+
+`--days 0` is the binary's today bucket, used as the local stand-in for the 5-hour window because stats has no 5-hour flag. `--days 7` is the week. Token totals are input plus output plus reasoning plus cache read and cache write, which is the tokens column of the text table. A named row whose token parts are missing or not numbers fails the parse; zero is only a model the document does not name. Each model id gets two windows, `5h:<model>` (`session`, 18000 seconds) and `7d:<model>` (`weekly`, 604800 seconds), scoped to that id. Both carry `estimate: "local-estimate"` and `resetAt: null`. These windows are `no-pace`. Under `balance` the tuple can be excluded by a spent window but does not win on pace. With `account.opencode.allowance.monthlyTokens` set, used percent is the period's tokens divided by 20 percent or 50 percent of that monthly number, clamped at 100. That percentage scales `remaining` under the weighted strategies, excludes the tuple when the window is spent, takes no part in pace, and does not raise `near-limit`, because a `no-pace` window is not a pace representative. Without the allowance, `usedPercent` is omitted, the row says `percentage unset`, and remaining stays unknown. The harness stays `available` when one model is spent; the spent model leaves selection on its own window.
+
+Model ids ending in `-free` or `-contributor` get `flags: ["off-allowance"]`. The resolver denies that flag even when no overlay names it, so those models are never chosen automatically, including by an explicit `--model` that reaches the flag check. `account.opencode.denySuffixes` unions extra suffixes onto that list. The shipped catalog tuple is `opencode-minimax-m3`: harness `opencode`, model `opencode-go/minimax-m3`, effort `null`, role `worker`. Its three ratings are a hypothesis at quality 7, below the reviewer floor of 9, so the row does not name reviewer or approver.
+
+A stats call that times out, exits non-zero, or does not parse is `unknown` / `probe_failed`. An `opencode models` call that times out, errors, exits non-zero, or parses to an empty list is the same verdict. The preflight then keeps the previous windows, so a later miss does not drop the last used percentage. The probe does not start a session.
 
 ### Resolver
 

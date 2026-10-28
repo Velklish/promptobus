@@ -343,19 +343,29 @@ const timeout = await probeWith(async () => ({ launched: true, timedOut: true, s
 check(': a hanging version call is a timeout, and the harness is not blamed',
   timeout.state === 'unknown' && timeout.reason === 'probe_timeout', JSON.stringify(timeout));
 
-const old = await probeWith(async () => ({ launched: true, timedOut: false, status: 0, signal: null, stdout: 'opencode v1.9.0\n' }))(
+const versionCapture = (stdout) => async (_bin, argv = []) => {
+  const key = argv.join(' ');
+  if (key === 'models') {
+    return { launched: true, timedOut: false, status: 0, signal: null, stdout: 'opencode-go/minimax-m3\n' };
+  }
+  if (key.startsWith('stats ')) {
+    return { launched: true, timedOut: false, status: 0, signal: null, stdout: '{"models":[]}\n' };
+  }
+  return { launched: true, timedOut: false, status: 0, signal: null, stdout };
+};
+const old = await probeWith(versionCapture('opencode v1.9.0\n'))(
   { toolBin: { ok: true, bin: 'opencode' }, timeoutMs: 1000 });
 check(': an old OpenCode label retains successful binary response telemetry',
   old.state === 'available' && old.version === '1.9.0' && old.reason === null, JSON.stringify(old));
 for (const label of ['future-build', 'opencode v99.1.0', '']) {
-  const value = await probeWith(async () => ({ status: 0, stdout: label }))({ toolBin: { ok: true, bin: 'opencode' }, timeoutMs: 1000 });
+  const value = await probeWith(versionCapture(label))({ toolBin: { ok: true, bin: 'opencode' }, timeoutMs: 1000 });
   check(`OpenCode successful label ${JSON.stringify(label)} does not refuse availability`,
     value.state === 'available' && value.reason === null && /auth is checked by the lift/.test(value.message), JSON.stringify(value));
 }
 const failedVersion = await probeWith(async () => ({ status: 1, stderr: 'fixture command failure' }))({ toolBin: { ok: true, bin: 'opencode' }, timeoutMs: 1000 });
 check('OpenCode actual version command failure remains probe_failed', failedVersion.state === 'unknown' && failedVersion.reason === 'probe_failed');
 
-const good = await probeWith(async () => ({ launched: true, timedOut: false, status: 0, signal: null, stdout: 'opencode v2.0.20\n' }))(
+const good = await probeWith(versionCapture('opencode v2.0.20\n'))(
   { toolBin: { ok: true, bin: 'opencode' }, timeoutMs: 1000 });
 check(': a responding binary is available with its version on the verdict',
   good.state === 'available' && good.version === '2.0.20', JSON.stringify(good));

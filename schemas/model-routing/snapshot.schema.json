@@ -170,10 +170,10 @@
           "type": "boolean"
         },
         "flags": {
-          "description": "Marks the harness prints next to the model. Carried, not judged: a policy that cares denies the flag or the model in an overlay. The list is CLOSED (ADR-005), because an overlay may select by a flag and a name checked against nothing would let a person's typo ban silently nothing — the cost is that a new mark a harness starts printing needs a release rather than a data change.",
+          "description": "Marks the harness prints next to the model. no-zdr is carried, not judged: a policy that cares denies it in an overlay. off-allowance is denied by the resolver with no overlay rule. The list is CLOSED (ADR-005), because an overlay may select by a flag and a name checked against nothing would let a person's typo ban silently nothing — the cost is that a new mark a harness starts printing needs a release rather than a data change.",
           "type": "array",
           "uniqueItems": true,
-          "items": { "enum": ["no-zdr"] }
+          "items": { "enum": ["no-zdr", "off-allowance"] }
         }
       }
     },
@@ -181,12 +181,16 @@
       "description": "One limit period of the account. ADR-005 makes kind and lengthSec required and scope explicit: kind is a NAME and lengthSec is the number, and neither is derived from the other — a billing cycle is monthly and is not thirty days. An adapter that cannot state a length reports no window at all.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "kind", "lengthSec", "usedPercent", "scope"],
+      "required": ["id", "kind", "lengthSec", "scope"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "kind": { "enum": ["session", "weekly", "monthly"] },
         "lengthSec": { "type": "integer", "minimum": 1 },
         "usedPercent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "estimate": {
+          "description": "local-estimate — the percentage comes from local opencode stats against an owner-declared monthly token allowance, not from a server quota. The percentage may be absent until that allowance is set.",
+          "const": "local-estimate"
+        },
         "checkedAt": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
         "source": { "enum": ["probe", "cache", "manual"] },
         "resetAt": {
@@ -204,7 +208,18 @@
             { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/apiPoolScope" }
           ]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "not": {
+              "properties": { "estimate": { "const": "local-estimate" } },
+              "required": ["estimate"]
+            }
+          },
+          "then": { "required": ["usedPercent"] }
+        }
+      ]
     },
     "modelScope": {
       "description": "One model family, as the harness named it. `model` is the harness's own display name; `models` is that name resolved to catalog-comparable ids by the adapter holding the driver's dictionary. A display name the adapter cannot resolve arrives WITHOUT `models`: the window stays in the snapshot, is printed for a person, and binds nothing.",

@@ -1190,6 +1190,7 @@ measurement covers 0.159.2; it is not a new native Git measurement on 0.158.0.
 ### `OPENCODE` — opencode harness driver — the fourth production bus driver
 
 Source: `lib/driver-opencode.js`, `OPENCODE`. Availability: `lib/model-routing/adapter-opencode.js`.
+The probe reads `opencode --version`, `opencode models`, and `opencode stats` for a local-estimate quota. A model list that is not read is `unknown`, and the previous windows stay. It does not start a session. The quota contract is [03-cli § OpenCode](03-cli.md#opencode-what-its-adapter-asks).
 Registry: the harness session registry (`harnessStateHome('opencode')`), ref → record path.
 An opencode session carries no CLI owner identity (`identityVar: null`).
 
