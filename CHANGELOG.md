@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Cursor routing scores api-pool models at the highest quota cost and keeps pool spend order during balance fallback. Pool membership remains available when the auto pool's usage percentage is missing; a changed membership keeps old windows visible but unbound until fresh usage arrives, with the reason shown in `models` text and JSON. Overlays can deny a Cursor pool for automatic selection with `deny.pools`; an explicitly named model still runs with a warning.
+
 - `models` probes routing harnesses by default; `--no-probe` reads cached facts without a probe. Routing decisions report availability, inventory and per-window ages and sources. Failed or skipped probes retain last-known windows, and a routed lift rechecks timed exhaustion before reset. A dry run keeps live exhaustion without probing; marking exhaustion preserves old window timestamps, including windows from older caches.
 
 - The orchestration skill words every message to the person once. A question, a status report and a reporter's answer stand alone, name a task by its number and its title, and put a plain description of the work beside a participant address or a review code. The split, the shape choice and the strategy envelope link to that rule. The reporter lift prompt carries the same rule, because a Claude reporter cannot open the skill.

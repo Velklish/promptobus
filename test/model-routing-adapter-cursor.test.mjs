@@ -35,7 +35,12 @@ import {
 } from '../lib/model-routing/adapter-cursor.js';
 import { CURSOR, CURSOR_TOOL, cursorDriver } from '../lib/driver-cursor.js';
 import { adapterOf } from '../lib/drivers.js';
+import { mergeRouting } from '../lib/model-routing/catalog.js';
+import { readSnapshot } from '../lib/model-routing/cache.js';
 import { preflight } from '../lib/model-routing/preflight.js';
+import { render } from '../lib/model-routing/render.js';
+import { applicableWindows, poolOf, resolve } from '../lib/model-routing/resolver.js';
+import { availabilityOf } from '../lib/models.js';
 import { stubCommand } from './sandbox.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -44,6 +49,15 @@ const SNAPSHOT_SCHEMA = path.join(ROOT, 'schemas', 'model-routing', 'snapshot.sc
 
 const ajv = new Ajv2020({ strict: false, allErrors: true });
 const validSnapshot = ajv.compile(JSON.parse(readFileSync(SNAPSHOT_SCHEMA, 'utf8')));
+ajv.addSchema(JSON.parse(readFileSync(
+  path.join(ROOT, 'schemas', 'model-routing', 'catalog.schema.json'), 'utf8',
+)));
+ajv.addSchema(JSON.parse(readFileSync(
+  path.join(ROOT, 'schemas', 'model-routing', 'overlay.schema.json'), 'utf8',
+)));
+const validDecision = ajv.compile(JSON.parse(readFileSync(
+  path.join(ROOT, 'schemas', 'model-routing', 'decision.schema.json'), 'utf8',
+)));
 
 /** The account line the real `status` prints. Handed to the stub, expected nowhere else. */
 const STUB_ACCOUNT = 'probe-account@example.invalid';
@@ -784,6 +798,112 @@ test('the snapshot paces a grok-4.6 tuple against the auto pool the aggregation 
   const written = snapshot.harnesses[CURSOR].windows.find((w) => w.id === 'monthly-auto');
   assert.deepEqual(written.scope.models, ['cursor-grok-4.6-xhigh-fast']);
   assert.equal(validSnapshot(snapshot) ? true : ajv.errorsText(validSnapshot.errors), true);
+});
+
+test('partial Cursor usage keeps pool membership through the adapter, cache and resolver', async () => {
+  const host = machine();
+  const usage = { ...PERIOD_USAGE,
+    planUsage: { ...PERIOD_USAGE.planUsage, autoPercentUsed: null } };
+  const wired = account({ replies: { [USAGE_CALL]: ok(usage), [EVENTS_CALL]: ok(AGGREGATED) } });
+  const snapshot = await preflight({
+    host, harnesses: [CURSOR], adapterFor: () => stubAdapter(wired.deps), rated: () => true,
+  });
+  const entry = snapshot.harnesses[CURSOR];
+  assert.deepEqual(entry.windows.map((w) => w.id), ['monthly-api']);
+  assert.deepEqual(entry.autoPoolModels, ['cursor-grok-4.6-xhigh-fast']);
+  assert.deepEqual(readSnapshot(host).harnesses[CURSOR].autoPoolModels, entry.autoPoolModels);
+  assert.equal(validSnapshot(snapshot) ? true : ajv.errorsText(validSnapshot.errors), true);
+
+  const catalog = fixture('balance-catalog.json');
+  catalog.tuples = catalog.tuples.filter((tuple) => tuple.harness === CURSOR);
+  catalog.tuples[0].model = 'cursor-grok-4.6-xhigh-fast';
+  catalog.tuples[1].model = 'claude-opus-5-thinking-max';
+  catalog.tuples[1].ratings.quotaCost = 1;
+  const policy = mergeRouting({
+    canonical: catalog,
+    overlays: [{ id: 'workspace', path: '/workspace/model-routing.json', present: true,
+      data: { schemaVersion: 2, deny: { pools: ['cursor:api'] } } }],
+    now: Date.parse('2026-09-05T09:00:12.000Z'),
+  });
+  const choose = (constraints = {}) => resolve({
+    role: 'worker', strategy: 'balanced', policy, snapshot, constraints,
+    strategyCommands: { economy: 'promptobus models strategy --set economy',
+      balance: 'promptobus models strategy --set balance' },
+    now: Date.parse('2026-09-05T09:00:12.000Z'),
+  });
+  const automatic = choose();
+  assert.equal(automatic.chosen.model, 'cursor-grok-4.6-xhigh-fast');
+  assert.equal(automatic.candidates.find((c) => c.model === 'cursor-grok-4.6-xhigh-fast').excluded, null);
+  assert.match(automatic.candidates.find((c) => c.model === 'claude-opus-5-thinking-max').excluded.detail,
+    /deny\.pools/);
+  const named = choose({ model: 'claude-opus-5-thinking-max' });
+  assert.equal(named.chosen.model, 'claude-opus-5-thinking-max');
+  assert.equal(named.candidates.find((c) => c.model === 'claude-opus-5-thinking-max')
+    .score.components.quotaCost, 0);
+  assert.ok(named.warnings.some((w) => w.code === 'pool-denied-named'));
+});
+
+test('a changed Cursor auto list retains old windows without binding their old percentages', async () => {
+  const host = machine();
+  const first = account({ replies: { [USAGE_CALL]: ok(PERIOD_USAGE), [EVENTS_CALL]: ok(AGGREGATED) } });
+  const old = await preflight({
+    host, harnesses: [CURSOR], adapterFor: () => stubAdapter(first.deps), rated: () => true,
+  });
+  const oldEntry = old.harnesses[CURSOR];
+  assert.deepEqual(oldEntry.windows.map((w) => w.id), ['monthly-auto', 'monthly-api']);
+
+  const usage = { ...PERIOD_USAGE, billingCycleStart: 'unreadable',
+    autoBucketModels: ['claude-opus-5-thinking-max'] };
+  const second = account({ replies: { [USAGE_CALL]: ok(usage) } });
+  const refreshed = await preflight({
+    host, harnesses: [CURSOR], adapterFor: () => stubAdapter(second.deps),
+    rated: () => true, refresh: true,
+  });
+  const entry = refreshed.harnesses[CURSOR];
+  assert.equal(entry.state, 'unknown');
+  assert.deepEqual(entry.autoPoolModels, ['claude-opus-5-thinking-max']);
+  assert.deepEqual(entry.windows.map((w) => w.id), ['monthly-auto', 'monthly-api']);
+  assert.deepEqual(entry.windows.map((w) => w.checkedAt), oldEntry.windows.map((w) => w.checkedAt));
+  assert.deepEqual(entry.windows.map((w) => w.source), ['cache', 'cache']);
+  assert.equal(entry.poolWindowsUnbound, true);
+  assert.deepEqual(applicableWindows(entry, 'cursor-grok-4.6-xhigh-fast'), []);
+  assert.deepEqual(applicableWindows(entry, 'claude-opus-5-thinking-max'), []);
+  assert.equal(poolOf(entry, 'cursor-grok-4.6-xhigh-fast', CURSOR), 'api');
+  assert.equal(poolOf(entry, 'claude-opus-5-thinking-max', CURSOR), 'auto');
+  assert.equal(validSnapshot(refreshed) ? true : ajv.errorsText(validSnapshot.errors), true);
+
+  const catalog = fixture('balance-catalog.json');
+  catalog.tuples = catalog.tuples.filter((tuple) => tuple.harness === CURSOR);
+  catalog.tuples[0].model = 'cursor-grok-4.6-xhigh-fast';
+  catalog.tuples[1].model = 'claude-opus-5-thinking-max';
+  const now = Date.now();
+  const policy = mergeRouting({ canonical: catalog, overlays: [], now });
+  const decision = resolve({
+    role: 'worker', strategy: 'balanced', policy, snapshot: refreshed, now,
+    strategyCommands: { economy: 'promptobus models strategy --set economy',
+      balance: 'promptobus models strategy --set balance' },
+  });
+  const document = { ...decision, harnesses: availabilityOf(refreshed) };
+  assert.equal(validDecision(document) ? true : ajv.errorsText(validDecision.errors), true);
+  assert.equal(document.harnesses[0].poolWindowsUnbound, true);
+  assert.match(document.warnings.find((w) => w.code === 'unknown-remaining').message,
+    /retained pool windows.*prior model membership/);
+  const output = render(document);
+  assert.match(output, /monthly-auto[^\n]*pool auto[^\n]*unbound: membership changed/);
+  assert.match(output, /monthly-api[^\n]*pool api[^\n]*unbound: membership changed/);
+
+  const recoveredUsage = { ...PERIOD_USAGE, autoBucketModels: ['claude-opus-5-thinking-max'] };
+  const third = account({ replies: { [USAGE_CALL]: ok(recoveredUsage) } });
+  const recovered = await preflight({
+    host, harnesses: [CURSOR], adapterFor: () => stubAdapter(third.deps),
+    rated: () => true, refresh: true,
+  });
+  const current = recovered.harnesses[CURSOR];
+  assert.equal(current.poolWindowsUnbound, undefined);
+  assert.deepEqual(applicableWindows(current, 'claude-opus-5-thinking-max').map((w) => w.id),
+    ['monthly-auto']);
+  assert.deepEqual(applicableWindows(current, 'cursor-grok-4.6-xhigh-fast').map((w) => w.id),
+    ['monthly-api']);
 });
 
 test('the aggregation call is optional: a refusal costs the second pool route and nothing else', async () => {

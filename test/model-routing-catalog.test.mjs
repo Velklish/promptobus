@@ -722,6 +722,7 @@ test('a rule scoped to one role does not contradict an allow scoped to the other
 test('validate refuses a flag, a role and a floor the vocabulary does not have', () => {
   const cases = [
     ['flag typo', { schemaVersion: 1, deny: { flags: ['no-zdrr'] } }, /unknown flag/],
+    ['pool typo', { schemaVersion: 1, deny: { pools: ['cursor:ap1'] } }, /unknown pool/],
     ['unknown role in byRole', { schemaVersion: 1, deny: { byRole: { architect: { harnesses: ['codex'] } } } }, /unknown role/],
     ['unknown role in qualityFloor', { schemaVersion: 2, qualityFloor: { architect: 3 } }, /unknown role/],
     ['floor out of range', { schemaVersion: 2, qualityFloor: { worker: 11 } }, /integer from 1 to 10/],
@@ -734,6 +735,17 @@ test('validate refuses a flag, a role and a floor the vocabulary does not have',
     assert.equal(verdict.errors[0].layer, 'user', name);
     assert.match(verdict.errors.map((e) => e.message).join(' | '), pattern, name);
   }
+});
+
+test('the pool selector vocabulary is closed in both overlay validators', () => {
+  const schema = readJson(path.join(SCHEMAS, 'overlay.schema.json'));
+  assert.deepEqual(schema.$defs.poolList.items.enum, catalogRouting.ROUTING_POOLS);
+  const valid = { schemaVersion: 1, deny: { pools: ['cursor:api'] } };
+  assert.equal(ajvOverlay(valid), true);
+  assert.deepEqual(checkOverlayShape(valid), []);
+  const invalid = { schemaVersion: 1, deny: { pools: ['cursor:ap1'] } };
+  assert.equal(ajvOverlay(invalid), false);
+  assert.match(checkOverlayShape(invalid)[0].note, /unknown pool/);
 });
 
 test('a byRole block is checked against the catalog like an unscoped rule', () => {

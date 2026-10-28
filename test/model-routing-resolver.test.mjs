@@ -1533,6 +1533,65 @@ test('remaining is per tuple for every strategy, not per harness', () => {
   }
 });
 
+test('Cursor api pool cost follows billing even when its public model rating is cheap', () => {
+  const catalog = clone(BALANCE_CATALOG);
+  catalog.tuples.find((t) => t.id === 'cursor-api').ratings.quotaCost = 1;
+  const decision = decide({ catalog, snapshot: BALANCE_SNAPSHOT, strategy: 'balanced' });
+  assert.equal(byId(decision, 'cursor-api').score.components.quotaCost, 0);
+  assert.equal(byId(decision, 'cursor-composer').score.components.quotaCost, 15.56);
+});
+
+test('balance fallback keeps the less-spent Cursor pool when windows cannot be paced', () => {
+  const catalog = clone(BALANCE_CATALOG);
+  catalog.tuples = catalog.tuples.filter((t) => t.harness === 'cursor');
+  catalog.tuples.find((t) => t.id === 'cursor-composer').ratings.speed = 1;
+  const api = catalog.tuples.find((t) => t.id === 'cursor-api');
+  api.ratings.speed = 10;
+  api.ratings.quality = 10;
+  api.ratings.quotaCost = 1;
+  const snapshot = clone(BALANCE_SNAPSHOT);
+  snapshot.harnesses = { cursor: snapshot.harnesses.cursor };
+  snapshot.harnesses.cursor.windows[0].usedPercent = 18;
+  snapshot.harnesses.cursor.windows[1].usedPercent = 68;
+  for (const window of snapshot.harnesses.cursor.windows) window.resetAt = '2026-09-01T00:00:00.000Z';
+  const decision = decide({ catalog, snapshot, strategy: 'balance' });
+  assert.equal(decision.chosen.tupleId, 'cursor-composer');
+  assert.ok(decision.warnings.some((w) => w.code === 'balance-fallback'));
+});
+
+test('deny.pools excludes automatic Cursor api routing and named model waives it with warning', () => {
+  const rule = overlay({ deny: { pools: ['cursor:api'] } });
+  const automatic = paced({ strategy: 'balanced', workspace: rule });
+  assert.match(excludedOf(automatic, 'cursor-api').detail, /deny\.pools of overlay "workspace"/);
+  assert.equal(excludedOf(automatic, 'cursor-composer'), null);
+  const named = paced({ strategy: 'balanced', workspace: rule,
+    constraints: { model: 'gpt-5.6-via-cursor' } });
+  assert.equal(named.chosen.tupleId, 'cursor-api');
+  assert.ok(named.warnings.some((w) => w.code === 'pool-denied-named'));
+  validDecision(named);
+});
+
+test('an api pool deny holds out Cursor when no membership can be read', () => {
+  const snapshot = clone(BALANCE_SNAPSHOT);
+  delete snapshot.harnesses.cursor.windows;
+  const rule = overlay({ deny: { pools: ['cursor:api'] } });
+  const automatic = paced({ snapshot, workspace: rule });
+  assert.match(excludedOf(automatic, 'cursor-composer').detail, /deny\.pools/);
+  assert.match(excludedOf(automatic, 'cursor-api').detail, /deny\.pools/);
+  const named = paced({ snapshot, workspace: rule, constraints: { model: 'gpt-5.6-via-cursor' } });
+  assert.equal(named.chosen.tupleId, 'cursor-api');
+  assert.match(named.warnings.find((w) => w.code === 'pool-denied-named').message, /no known Cursor pool/);
+  const apiWindowOnly = clone(BALANCE_SNAPSHOT);
+  apiWindowOnly.harnesses.cursor.windows = apiWindowOnly.harnesses.cursor.windows
+    .filter((window) => window.scope.pool === 'api');
+  const partial = paced({ snapshot: apiWindowOnly, workspace: rule });
+  assert.match(excludedOf(partial, 'cursor-composer').detail, /deny\.pools/);
+  assert.match(excludedOf(partial, 'cursor-api').detail, /deny\.pools/);
+  const withoutRule = paced({ snapshot: apiWindowOnly });
+  assert.equal(byId(withoutRule, 'cursor-composer').score.components.remaining, 7.5);
+  assert.equal(byId(withoutRule, 'cursor-api').score.components.remaining, 7.5);
+});
+
 test('a lift records the applicable windows of the tuple it chose', () => {
   // The starting value a later reader needs to say what this run SPENT: the
   // delta of these windows between the lift and the finish (PB-36). The set is

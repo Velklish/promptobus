@@ -103,6 +103,17 @@
           "type": "array",
           "items": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/model" }
         },
+        "autoPoolModels": {
+          "description": "Cursor inventory ids known to be billed to the auto pool. Kept independently of the auto window, because pool membership may be known when its used percentage is not.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "poolWindowsUnbound": {
+          "description": "The retained Cursor pool windows were measured for a different model membership than autoPoolModels. They remain visible with their measurement ages but bind no tuple until fresh matching percentages arrive.",
+          "type": "boolean"
+        },
         "windows": {
           "description": "Normalised subscription windows. Absent when the harness exposes none; the resolver then treats remaining as unknown.",
           "type": "array",

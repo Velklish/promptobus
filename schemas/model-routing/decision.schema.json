@@ -202,6 +202,10 @@
         },
         "credits": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/credits" },
         "resetCredits": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/resetCredits" },
+        "poolWindowsUnbound": {
+          "description": "Retained Cursor pool windows remain visible but do not bind current models because auto-pool membership changed without new usable percentages.",
+          "type": "boolean"
+        },
         "windows": {
           "type": "array",
           "items": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/window" }
@@ -428,7 +432,8 @@
         "near-limit",
         "live-participant-cap",
         "window-nearly-spent-named",
-        "role-not-rated-named"
+        "role-not-rated-named",
+        "pool-denied-named"
       ]
     }
   }

@@ -225,6 +225,7 @@
         "efforts": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
         "tuples": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
         "flags": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/flagList" },
+        "pools": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/poolList" },
         "byRole": {
           "description": "The same rule block scoped to a catalog role or a step declared by the host. The schema checks step-name shape; models validate checks names against the declaration. When routing a step, unscoped, catalog-role and step rules all apply: denies union and allows intersect.",
           "type": "object",
@@ -249,7 +250,8 @@
         "models": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
         "efforts": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
         "tuples": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
-        "flags": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/flagList" }
+        "flags": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/flagList" },
+        "pools": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/poolList" }
       }
     },
     "flagList": {
@@ -258,6 +260,12 @@
       "minItems": 1,
       "uniqueItems": true,
       "items": { "enum": ["no-zdr"] }
+    },
+    "poolList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["cursor:auto", "cursor:api"] }
     },
     "nameList": {
       "type": "array",

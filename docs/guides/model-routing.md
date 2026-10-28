@@ -16,7 +16,7 @@ The model-routing JSON schemas remain static artifacts. The parity test in [test
 A named model with an explicit or unambiguous effort overrides the catalog role filter with `role-not-rated-named`, which names the requested role and the rated roles. Unambiguous means one catalog effort for that model on the named harness, or across harnesses when none is named, counted before policy and availability filtering.
 <!-- /quote -->
 
-Unnamed routing keeps the role filter. Overlays cannot widen or patch tuple `roles`; the schema and validator still refuse those fields, and catalog assessment requirements remain unchanged. All allow and deny layers, native inventory, availability, subscription exhaustion and PAYG safeguards still apply.
+Unnamed routing keeps the role filter. Overlays cannot widen or patch tuple `roles`; the schema and validator still refuse those fields, and catalog assessment requirements remain unchanged. Allow and deny layers apply to named routing except `deny.pools`, which an explicit `--model` can waive with a warning. Native inventory, availability, subscription exhaustion and PAYG safeguards still apply.
 
 ## The layers
 
@@ -60,14 +60,17 @@ Three combining rules, and they differ on purpose.
 // merged: deny.models = ["a", "b"]
 ```
 
-For a consumer policy layer that is the intended behaviour: its bans hold whatever a person writes. For a person who wants to try a model their consumer forbids, it is a wall, and the way through it is to change the layer that wrote the ban — `promptobus models validate` prints every deny rule in force with the layer that wrote it, which is the file to open. No allow list anywhere reaches a ban, because deny is applied after allow. Neither list can be cleared either: the overlay schema has no empty list and no reset — `deny: {}` and `deny: { models: [] }` are both refused — and every denied name must exist.
+For a consumer policy layer that is the intended behaviour: its bans hold whatever a person writes. To try a model forbidden by a model or tuple ban, change the layer that wrote it — `promptobus models validate` prints each deny rule and its layer. An explicit `--model` may waive a pool ban with a warning. No allow list reaches a ban, because deny is applied after allow. Neither list can be cleared: the overlay schema refuses `deny: {}` and `deny: { models: [] }`, and every denied name must exist in its selector vocabulary.
 
 **An allow list can now be unsatisfiable.** Because allow lists intersect, two layers narrowing different ways admit nothing at all, and every tuple is denied by policy from files that both say "allow". `validate` names both layers as `allow-intersection-empty`; without that check the symptom would be an empty candidate list with no explanation.
 
-**Two more selectors**, and they work in `allow` and `deny` alike:
+**Three more selectors**, and they work in `allow` and `deny` alike:
 
 - `flags` names a mark the availability snapshot carries on a model — today one, `no-zdr`. `deny: { flags: ["no-zdr"] }` takes every model the harness marks that way out of automatic selection. It is checked against a closed list, so a typo is refused rather than silently matching nothing. A harness that lists no models has no flag to match, so this rule gives no guarantee on such a harness — a run reports that as the `flag-not-in-inventory` warning;
+- `pools` names `cursor:auto` or `cursor:api`. Put `"deny": { "pools": ["cursor:api"] }` in an overlay to keep automatic routing in the included Cursor pool. A named `--model` can still use a denied pool and raises `pool-denied-named`. If no pool membership is available, a pool deny holds out Cursor until a probe or retained membership identifies its auto models;
 - `byRole` scopes a rule to a catalog role or a declared step. `deny: { byRole: { security: { harnesses: ["cursor"] } } }` applies only to `security`; a `reads-diff` step also takes `byRole.reviewer`. Their denies union and their allows intersect. `models validate` refuses an unknown step name against the host's declaration.
+
+Cursor's `quotaCost` also follows its pool: an `api` model uses band 10 for scoring and the balance spend penalty; an `auto` model uses its catalog band. The adapter's bucket list and billed event rows establish auto membership, stored as `autoPoolModels` separately from percentage windows and retained across a failed refresh. If `autoPercentUsed` is absent, known auto models remain in that pool while the api window binds known api models. When a refresh changes membership without usable new percentages, the old windows retain their ages and appear in the snapshot with `poolWindowsUnbound: true`; routing treats their remaining allowance as unknown until a fresh window is measured. The decision JSON repeats the flag in the Cursor availability row, and `models` labels the old windows `unbound: membership changed` beside their percentages. Its `unknown-remaining` warning names this cause. Without an auto list, pool membership is unknown, the catalog cost band applies, and an api window alone binds no tuple by guess. When no harness has a paceable window, `balance` takes the least-used measured pool within each harness before comparing their representatives by score.
 
 An overlay cannot add or remove a tuple. Rating rows are the maintainers' work and go through the catalog; a person who wants a tuple gone denies it.
 
