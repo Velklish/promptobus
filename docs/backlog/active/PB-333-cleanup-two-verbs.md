@@ -1,10 +1,11 @@
 # PB-333 · Cleanup has two verbs: sweep removes a piece's worktree and branch only, done applies the retention, and prune goes
 
-- **Order:** 100
 - **Scope:** [03. CLI § Status, done, sweep, dismiss, history, prune](../../reference/03-cli.md#status-done-sweep-dismiss-history-prune)
 - **Created:** 2026-10-04
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 100
+- **Taken:** 2026-10-28
 
 ## Context
 
