@@ -1,5 +1,4 @@
-import { createHash } from 'node:crypto';
-import { lstatSync, readFileSync, readdirSync } from 'node:fs';
+import { lstatSync, readFileSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import Ajv from 'ajv';
 import { approvalReply } from '../lib/codex-session.js';
@@ -7,7 +6,7 @@ import { holderParams, protocolThread, protocolThreadResponse, protocolTurn } fr
 
 const formats = Object.fromEntries(['int64', 'uint64', 'uint32', 'uint', 'double', 'int32', 'uint16'].map(n => [n, true]));
 const fail = (where, reason) => { throw new Error(`${where}: ${reason}; regenerate the capture or review the consumed protocol`); };
-const hash = bytes => createHash('sha256').update(bytes).digest('hex');
+const datedEvidence = name => /-\d+\.\d+\.\d+-\d{4}-\d{2}-\d{2}\.json$/.test(name);
 const requests = {
   initialize: 'InitializeParams', 'thread/start': 'ThreadStartParams', 'thread/resume': 'ThreadResumeParams',
   'thread/read': 'ThreadReadParams', 'thread/list': 'ThreadListParams', 'thread/loaded/list': 'ThreadLoadedListParams',
@@ -24,49 +23,108 @@ const approvals = {
   'item/tool/requestUserInput': 'ToolRequestUserInput', 'mcpServer/elicitation/request': 'McpServerElicitationRequest',
 };
 const unhandled = ['account/chatgptAuthTokens/refresh', 'attestation/generate', 'item/tool/call'];
+const responses = ['InitializeResponse', 'ThreadStartResponse', 'ThreadResumeResponse', 'ThreadReadResponse',
+  'ThreadListResponse', 'ThreadLoadedListResponse', 'ThreadSetNameResponse', 'ThreadInjectItemsResponse',
+  'TurnStartResponse', 'ReviewStartResponse', 'TurnSteerResponse', 'TurnInterruptResponse',
+  'SkillsListResponse', 'ModelListResponse', 'GetAccountResponse', 'GetAccountRateLimitsResponse'];
+const notifications = ['TurnStartedNotification', 'TurnCompletedNotification',
+  'ThreadStatusChangedNotification', 'AccountRateLimitsUpdatedNotification'];
+export const consumedSchemaNames = Object.freeze([...new Set([
+  'ClientRequest', 'ServerRequest', 'ServerNotification',
+  ...Object.values(requests).filter(name => name !== 'GetAccountRateLimitsParams').map(name => `${name === 'InitializeParams' ? 'v1' : 'v2'}/${name}`),
+  ...Object.values(approvals).flatMap(name => [`${name}Params`, `${name}Response`]),
+  ...responses.map(name => `${name === 'InitializeResponse' ? 'v1' : 'v2'}/${name}`),
+  ...notifications.map(name => `v2/${name}`),
+])].sort());
 
-export function readCapture(dir, { provenance = false } = {}) {
+export function consumedContract(schemas) {
+  const contract = new Map();
+  for (const name of consumedSchemaNames) {
+    const file = `${name}.json`;
+    const source = schemas.get(file) ?? fail(name, 'required schema missing');
+    const schema = structuredClone(source);
+    if (name === 'ClientRequest') schema.oneOf = schema.oneOf.filter(arm =>
+      arm.properties?.method?.enum?.some(method => Object.hasOwn(requests, method)));
+    if (name === 'ServerNotification') schema.oneOf = schema.oneOf.filter(arm =>
+      ['turn/started', 'turn/completed', 'thread/status/changed', 'account/rateLimits/updated']
+        .some(method => arm.properties?.method?.enum?.includes(method)));
+    const definitions = schema.definitions ?? {};
+    const used = new Set(['ClientRequest', 'v2/ThreadStartParams'].includes(name) ? ['TurnEnvironmentParams']
+      : name === 'CommandExecutionRequestApprovalParams'
+        ? ['NetworkApprovalContext', 'NetworkPolicyAmendment', 'CommandExecutionApprovalKind'] : []);
+    const visit = value => {
+      if (!value || typeof value !== 'object') return;
+      if (typeof value.$ref === 'string' && value.$ref.startsWith('#/definitions/')) {
+        const key = value.$ref.slice('#/definitions/'.length).split('/')[0].replace(/~1/g, '/').replace(/~0/g, '~');
+        if (!Object.hasOwn(definitions, key)) fail(file, `unresolved reference ${value.$ref}`);
+        if (!used.has(key)) { used.add(key); visit(definitions[key]); }
+      }
+      for (const [key, child] of Object.entries(value)) if (key !== 'definitions') visit(child);
+    };
+    for (const key of [...used]) visit(definitions[key]);
+    visit(schema);
+    if (schema.definitions) schema.definitions = Object.fromEntries(Object.entries(definitions).filter(([key]) => used.has(key)));
+    contract.set(file, schema);
+  }
+  return contract;
+}
+
+export function writeConsumedContract(schemas, dir, version) {
+  const contract = consumedContract(schemas);
+  validateConsumedContract(contract);
+  mkdirSync(dir, { recursive: true });
+  for (const [name, schema] of contract) {
+    const file = path.join(dir, name);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, `${JSON.stringify(schema)}\n`);
+  }
+  writeFileSync(path.join(dir, 'contract-provenance.json'), `${JSON.stringify({
+    version, generator: 'codex app-server generate-json-schema --out <directory>',
+    schemas: [...contract.keys()],
+  }, null, 2)}\n`);
+  return contract;
+}
+
+export function readConsumedContract(dir, version) {
+  const files = readdirSync(dir, { recursive: true }).filter(name => {
+    if (!name.endsWith('.json') || name === 'capture-provenance.json'
+      || !lstatSync(path.join(dir, name)).isFile()) return false;
+    if (name === 'contract-provenance.json') return true;
+    const schema = JSON.parse(readFileSync(path.join(dir, name), 'utf8'));
+    return Boolean(schema.$schema) || !datedEvidence(name);
+  }).sort();
+  const expected = [...consumedSchemaNames.map(name => `${name}.json`), 'contract-provenance.json'].sort();
+  if (JSON.stringify(files) !== JSON.stringify(expected)) fail(dir, 'consumed contract file set differs');
+  const provenance = JSON.parse(readFileSync(path.join(dir, 'contract-provenance.json'), 'utf8'));
+  if (provenance.version !== version || provenance.generator !== 'codex app-server generate-json-schema --out <directory>'
+    || JSON.stringify(provenance.schemas) !== JSON.stringify(consumedSchemaNames.map(name => `${name}.json`))) {
+    fail(dir, 'contract provenance differs');
+  }
+  const schemas = readCapture(dir, { allowEvidence: true });
+  const canonical = consumedContract(schemas);
+  for (const [name, schema] of canonical) {
+    if (JSON.stringify(schema) !== JSON.stringify(schemas.get(name))) fail(name, 'contract includes unconsumed schema content');
+  }
+  return schemas;
+}
+
+export function readCapture(dir, { allowEvidence = false } = {}) {
   const entries = readdirSync(dir, { recursive: true }).map(n => n.split(path.sep).join('/'));
   for (const name of entries) if (lstatSync(path.join(dir, name)).isSymbolicLink()) fail(name, 'symlink in capture');
   const files = entries.filter(n => lstatSync(path.join(dir, n)).isFile()).sort();
-  const generated = files.filter(n => !['README.md', 'capture-provenance.json'].includes(n));
+  const generated = files.filter(n => n.endsWith('.json')
+    && !['capture-provenance.json', 'contract-provenance.json'].includes(n));
   const schemas = new Map();
   for (const name of generated) {
     if (!name.endsWith('.json')) fail(name, 'unexpected generated file');
     const bytes = readFileSync(path.join(dir, name));
     let schema;
     try { schema = JSON.parse(bytes); } catch (error) { fail(name, `malformed JSON (${error.message})`); }
-    if (!schema || typeof schema !== 'object' || !schema.$schema) fail(name, 'missing schema document');
+    if (!schema || typeof schema !== 'object' || !schema.$schema) {
+      if (allowEvidence && datedEvidence(name)) continue;
+      fail(name, 'missing schema document');
+    }
     schemas.set(name, schema);
-  }
-  if (provenance) {
-    const raw = readFileSync(path.join(dir, 'capture-provenance.json'), 'utf8');
-    const record = JSON.parse(raw);
-    const names = Object.keys(record.inventory ?? {}).sort();
-    const declared = [...raw.slice(raw.indexOf('"inventory"')).matchAll(/("(?:[^"\\]|\\.)*")\s*:/g)]
-      .map(m => JSON.parse(m[1])).filter(name => name.endsWith('.json'));
-    if (declared.length !== new Set(declared).size) fail('inventory', 'duplicate generated file');
-    if (JSON.stringify(declared.sort()) !== JSON.stringify(names)) fail('inventory', 'generated-entry keys must match parsed inventory');
-    for (const name of names) {
-      if (path.isAbsolute(name) || name.includes('\\') || name.split('/').some(p => p === '..' || p === '.')) fail('inventory', `unsafe path ${name}`);
-    }
-    if (JSON.stringify(names) !== JSON.stringify(generated)) fail('inventory', 'must cover every generated file exactly');
-    for (const name of names) {
-      const bytes = readFileSync(path.join(dir, name));
-      if (record.inventory[name].bytes !== bytes.length || record.inventory[name].sha256 !== hash(bytes)) fail(name, 'inventory bytes/SHA-256 mismatch');
-    }
-    if (!record.version || record.version !== record.build || record.versionCommand?.exitCode !== 0
-      || record.versionCommand?.stdout !== `codex-cli ${record.build}\n` || record.generation?.exitCode !== 0
-      || record.versionCommand?.command !== 'codex --version'
-      || record.generation?.command !== `codex app-server generate-json-schema --out <worktree>/test/fixtures/codex-app-server/${record.version}`
-      || record.versionCommand.signal !== null || record.generation.signal !== null
-      || !/^[a-f0-9]{64}$/.test(record.originalManifestSha256 ?? '')
-      || !/^[a-f0-9]{64}$/.test(record.binary?.sha256 ?? '')
-      || record.binary.sha256Before !== record.binary.sha256 || record.binary.sha256After !== record.binary.sha256
-      || !record.binary.resolvedPath || !record.binary.realPath || !record.source?.head?.match(/^[a-f0-9]{40}$/)
-      || !record.platform || !record.architecture || !Number.isFinite(Date.parse(record.capturedAt))) {
-      fail('capture-provenance.json', 'successful commands, source, platform and stable binary identity required');
-    }
   }
   const ajv = new Ajv({ strict: false, allErrors: true, formats });
   for (const [name, schema] of schemas) {

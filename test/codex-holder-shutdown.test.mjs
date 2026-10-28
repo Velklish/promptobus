@@ -7,7 +7,7 @@ import Ajv from 'ajv';
 import { makeSandbox, stubCommand } from './sandbox.mjs';
 import { waitFor } from './harness.mjs';
 import { dropSession, holderAsk, holderLogFile, pidAlive, readSession, sessionFile, waitReady, writeSession } from '../lib/codex-session.js';
-import { codexDriver, PROVEN_CODEX_VERSION } from '../lib/driver-codex.js';
+import { codexDriver, MIN_CODEX_VERSION, PROVEN_CODEX_VERSION } from '../lib/driver-codex.js';
 import { readStopConfirmation } from '../lib/codex-command-receipts.js';
 import { requireNativeTerminal } from '../lib/native-lifecycle.js';
 
@@ -29,7 +29,7 @@ fs.fsyncSync = fd => {
 };
 syncBuiltinESMExports();
 `);
-const schemaChecks = [...new Set(['0.159.2', '0.160.0', PROVEN_CODEX_VERSION])].map(version => {
+const schemaChecks = [...new Set([MIN_CODEX_VERSION, PROVEN_CODEX_VERSION])].map(version => {
   const ajv = new Ajv();
   return ajv.compile(JSON.parse(readFileSync(path.resolve('test/fixtures/codex-app-server', version, 'v2/TurnInterruptParams.json'))));
 });

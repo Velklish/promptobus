@@ -342,28 +342,32 @@ An inline comment runs at most two lines. The rule is the owner's, and the reaso
 A long block splits three ways: what serves a reader of the documentation moves there, what retells the lines below it or the history of the change goes, and a constraint invisible from the code is cut to two lines. **Losing a fact is not tidying.** A paragraph that was the only carrier of a measurement moves or stays; it does not disappear.
 
 **The Codex protocol gate checks the consumed contract.** `PROVEN_CODEX_VERSION` selects the
-committed capture under `test/fixtures/codex-app-server/<version>/`; it is provenance, not an
-admission floor. `npm run codex-schema` validates complete inventory, bytes, hashes, local
-references and successful stable-binary provenance before asking an installed binary. Only a
+committed contract under `test/fixtures/codex-app-server/<version>/`; it is provenance, not an
+admission floor. The contract contains only the schemas used by the driver and tests, with
+the closure of their local `definitions` and `$ref` targets. `npm run codex-schema` validates
+the committed contract before asking an installed binary. Only a
 missing binary skips the installed comparison, explicitly as `notRun`. A failed generator,
-timeout, malformed schema or missing consumed capability exits 1 with its path or method.
+timeout, malformed schema, missing consumed capability or difference from the committed
+contract exits 1 with its path or method.
 
 The gate invokes only `codex --version` and `codex app-server generate-json-schema --out <temporary>`.
 Generation has a 20-second timeout and a 2 MiB output budget. Version output is telemetry; old,
-future and unreadable labels can pass the same valid contract. Unrelated additive schema changes
-pass, while a changed server-request approval inventory requires security review. The finite
+future and unreadable labels can pass the same valid contract. A changed server-request approval
+inventory requires security review. The finite
 witnesses check holder requests, response fields, notifications and actual approval replies;
 they do not certify arbitrary forwarded RPC. `currentTime/read` remains an extension.
 
-The current binary-only capture is codex-cli 0.164.0 stable: 320 generated schemas,
-with 106 client request and 10 server request variants. Compared with 0.163.0,
-2 schemas were added, none removed, 31 changed and 287 stayed byte-identical.
-The [capture record](../../test/fixtures/codex-app-server/0.164.0/README.md) includes binary hashes
-before/after, all generated-file hashes, exact raw streams, exits, timestamps, source and platform.
-Keep original direct receipts and the full identity manifest, and preserve historical capture
-bytes. Shared holder/mock shape witnesses retain the independent actual-emission tests. Mutation
-probes must independently break inventory integrity, consumed method membership, security checks
-and the compatible/additive control; a reject-all detector must fail that control.
+To raise `PROVEN_CODEX_VERSION`, run `codex app-server generate-json-schema --out <temporary>`
+with the candidate binary, then run
+`node scripts/generate-codex-schema-contract.mjs <temporary> test/fixtures/codex-app-server/<version> <version>`.
+Update the constant, remove the previous proven contract when it is no longer the minimum,
+and run `npm run codex-schema` on that binary. The same generator can derive the minimum
+contract from a historical full capture without installing an older binary: append
+`--historical` to allow its dated non-schema evidence files. Live generator output rejects
+every JSON document without `$schema`. Keep dated live
+evidence at its versioned path; schema captures no longer belong in the working tree.
+Shared holder/mock shape witnesses retain independent actual-emission tests. Mutation probes
+must break a consumed schema and make a named verdict red.
 Native evidence is version-scoped. The [0.164.0 capture record](../../test/fixtures/codex-app-server/0.164.0/README.md)
 also records live worker, reviewer and approver hook events, a named hidden-model turn,
 an MCP child environment probe and the full rate-limit notification payload. Historical

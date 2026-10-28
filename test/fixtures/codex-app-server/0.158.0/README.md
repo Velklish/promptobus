@@ -1,5 +1,7 @@
 # Codex app-server 0.158.0
 
+The full schema capture described here is preserved in Git history; only dated evidence and, for the minimum version, the consumed contract remain in this directory.
+
 The 314 generated JSON schema files were captured without edits on 2026-10-01:
 
 ```sh

@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing; `--yes` applies the preview. The preview's delete line names that closed
   task (`done --task <id> --older-than <days> --yes`). Without the flag, `done` still
   removes journals closed more than 14 days ago. The `prune` command is gone.
-- Capture the installed Codex CLI 0.164.0 stable app-server protocol as the driver baseline: 320 schemas, 106 client requests and 10 server requests. Preserve every older capture and validate the consumed contract against the installed binary.
+- Keep generated consumed Codex schema contracts for the minimum and proven versions. The 0.164.0 contract comes from the installed binary, the 0.158.0 contract from its historical capture. `npm run codex-schema` compares the installed generator's consumed output with the committed contract; dated live evidence keeps its versioned paths.
 - Record live worker, reviewer and approver SessionStart and Stop hooks on that binary, plus a hidden-model turn, MCP child environment and a rate-limit notification carrying a window duration. The request-missing fallback remains unmeasured.
 
 - Refuse a repository path that resolves outside the install root before spawn

@@ -1,5 +1,7 @@
 # Codex app-server 0.162.0-alpha.2
 
+The full schema capture described here is preserved in Git history; only dated evidence and, for the minimum version, the consumed contract remain in this directory.
+
 Captured without edits on 2026-10-08 from the installed Desktop application binary.
 `codex --version` exited 0 with `codex-cli 0.162.0-alpha.2`; binary SHA-256:
 `cb4e4994627e770800a940b42969c77855a3fc09a6e60b02aa6319f670d6b6ab`.

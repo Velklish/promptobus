@@ -888,24 +888,23 @@ must not fall over its own log.
 
 ### Codex protocol versions
 
-The fixture baseline is codex-cli 0.164.0, captured from the installed stable binary
-on 2026-10-28. The complete capture contains 320 generated schemas: compared with
-0.163.0, added 2, removed 0, changed 31, unchanged 287. ClientRequest contains 106
-variants and ServerRequest retains 10. [Capture provenance](../../test/fixtures/codex-app-server/0.164.0/README.md)
-names the binary hash before and after generation, every file hash, command exits,
-raw streams, timestamps, source state and platform. Historical capture bytes are preserved.
+The committed contract covers codex-cli 0.158.0, the minimum, and 0.164.0, the proven
+version. Each version has 52 consumed schemas with the local definition closure.
+The 0.164.0 contract was generated from the installed stable binary on 2026-10-28;
+the minimum was derived from its historical full capture. [Live measurements](../../test/fixtures/codex-app-server/0.164.0/README.md)
+retain the binary version and date. Full historical captures remain in Git history.
 
-Native harness version labels are telemetry. The local schema gate validates committed
-provenance/integrity before any installed-binary skip, then performs bounded no-model schema
-generation and checks the finite consumed contract. It validates 16 request methods and their
+Native harness version labels are telemetry. The local schema gate validates the committed
+contract before any installed-binary skip, then performs bounded no-model schema generation,
+extracts the consumed contract and compares it with the committed version. It validates 16 request methods and their
 params, 16 response shapes and consumed fields, four notification shapes, actual holder approval
 replies, malformed-witness refusals and the explicit server-request security inventory.
-Unrelated additive client methods and schemas pass; missing or incompatible consumed fields and new
-server approval methods require an actionable contract or security review. The generator has a
+Unrelated additive client methods outside the contract do not change that comparison.
+Missing or incompatible consumed fields and new server approval methods require review. The generator has a
 20-second timeout and a 2 MiB output budget. Missing Codex reports installed comparison `notRun`;
 command failure, timeout and malformed output fail. A new label alone does not demand a recapture.
 
-`PROVEN_CODEX_VERSION` selects capture provenance, not a native admission floor. Generic
+`PROVEN_CODEX_VERSION` selects the committed contract, not a native admission floor. Generic
 caller-supplied holder RPC remains untyped; `currentTime/read` is a documented extension absent
 from ServerRequest. Native evidence is version-scoped.
 [Live 0.164.0 measurements](../../test/fixtures/codex-app-server/0.164.0/README.md)

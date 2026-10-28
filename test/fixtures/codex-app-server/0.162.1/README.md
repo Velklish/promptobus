@@ -1,5 +1,7 @@
 # Codex app-server 0.162.1
 
+The full schema capture described here is preserved in Git history; only dated evidence and, for the minimum version, the consumed contract remain in this directory.
+
 Captured without schema edits on 2026-10-15 from the installed `codex-cli 0.162.1`.
 The binary SHA-256 is `74c6a6d263f40d65f99c27a815275f5b4ed0bcc2baecc396b4cf3255498bdfc0`.
 

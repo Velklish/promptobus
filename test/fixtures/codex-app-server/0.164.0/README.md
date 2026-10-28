@@ -1,7 +1,7 @@
 # Codex app-server 0.164.0 capture
 
-Complete no-model schema generation from the installed codex-cli 0.164.0 on macOS arm64.
-The version command and `codex app-server generate-json-schema --out <worktree>/test/fixtures/codex-app-server/0.164.0` both exited 0 using the same executable. `capture-provenance.json` records its resolved path and binary hash before and after generation, raw command streams and exit codes, timestamps, every generated file hash, and the comparison with 0.163.0. Historical capture bytes are preserved.
+No-model schema generation from the installed codex-cli 0.164.0 on macOS arm64.
+The version command and `codex app-server generate-json-schema --out <worktree>/test/fixtures/codex-app-server/0.164.0` both exited 0 using the same executable. `capture-provenance.json` preserves the historical full-capture inventory; the generated files it inventories remain in Git history. `contract-provenance.json` names the current consumed contract and generator command.
 
 Native evidence is version-scoped. This capture establishes the generated protocol; holder turns and hook events require separate live measurements on this binary. Finite consumed-contract witnesses do not certify arbitrary caller-forwarded RPC; `currentTime/read` remains a separately documented extension.
 

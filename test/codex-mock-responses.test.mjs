@@ -6,12 +6,12 @@ import Ajv from 'ajv';
 import { makeSandbox } from './sandbox.mjs';
 import { waitFor } from './harness.mjs';
 import { CodexRpc } from '../lib/codex-rpc.js';
-import { PROVEN_CODEX_VERSION } from '../lib/driver-codex.js';
+import { MIN_CODEX_VERSION, PROVEN_CODEX_VERSION } from '../lib/driver-codex.js';
 import { HANG_AFTER_START_VAR, PROBE_VAR, installHarness } from './harness-codex.mjs';
 
 const root = makeSandbox('promptobus-codex-');
 const harness = await installHarness({ binDir: path.join(root, 'bin') });
-const schemas = [...new Set(['0.159.2', '0.160.0', '0.162.1', '0.163.0', PROVEN_CODEX_VERSION])].map(version => {
+const schemas = [MIN_CODEX_VERSION, PROVEN_CODEX_VERSION].map(version => {
   const ajv = new Ajv({ strict: false, allErrors: true, formats: {
     int64: true, uint64: true, uint32: true, uint: true, double: true, int32: true, uint16: true,
   } });
@@ -95,7 +95,7 @@ await run('hidden', async ({ rpc, request, events }) => {
   await request('review/start idle', 'review/start', {
     threadId, target: { type: 'uncommittedChanges' }, delivery: 'inline',
   }, 'v2/ReviewStartResponse');
-  check('actual mock response inventory covers 22 positive branch outputs against both captures', count === 22, `got ${count}`);
+  check('actual mock response inventory covers 22 positive branch outputs against both contracts', count === 22, `got ${count}`);
   await request('thread/list', 'thread/list', {}, 'v2/ThreadListResponse');
   await request('thread/loaded/list', 'thread/loaded/list', {}, 'v2/ThreadLoadedListResponse');
 });
