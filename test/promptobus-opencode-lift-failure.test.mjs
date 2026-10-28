@@ -44,6 +44,7 @@ try {
       result = await opencodeDriver.spawn({
         argv: ['-e', 'console.log("server listening on http://127.0.0.1:12345"); setInterval(() => {}, 1000);'],
         cwd: SB, env: { PATH: process.env.PATH }, prompt: 'fixture', holder: { password: 'fixture' },
+        permissionPollMs: 0,
       }, {
         tool: { bin: process.execPath }, home, task, address, ref,
         persist: () => { if (mode === 'persist-reject') throw failure; },

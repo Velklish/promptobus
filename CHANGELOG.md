@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An OpenCode holder grants `external_directory` for the session directory and each
+  `addDirs` entry (`<root>/*` and `<root>/**`). A filesystem root is not granted and
+  is not answered. It still replies `once` when an ask for those roots is pending,
+  and any other pending ask fails the lift. `viewOf`
+  reports that ask as `permission ask pending`. A busy session with an empty
+  permission list stays a running turn.
 - Importing a live script starts nothing. `node --check` is the syntax check. A stand that cannot prove stub binaries and isolated state homes refuses instead of using an installed harness binary. `node scripts/live-*.mjs` remains the live route.
 - A proved stand replaces `PATH` with its stub directory and clears `PROMPTOBUS_CURSOR_INSTALL_DIRS` before a raise, so `cursor-agent`, `agent`, `cursor`, `tmux`, `codex` and `claude` are not taken from an inherited `PATH` entry or a Cursor install directory.
 - The pause between a mailbox fetch and the following send waits for the

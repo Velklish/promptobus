@@ -1116,11 +1116,12 @@ port off the holder log, waits for an answered session list, creates a session b
 posts the first turn. The measured holder API (basic auth `opencode:<password>`):
 `GET /api/session`, `POST /api/session` (`{"title"}`), `POST /api/session/:id/prompt`
 (`{"text"}` — the turn runs async), `GET /api/session/:id/message?limit=N` (a trailing `idle`
-outcome ends the wait), `DELETE /api/session/:id`. The prompt names no model — the turn runs
+outcome ends the wait), `GET /api/session/:id/permission`, `POST /api/session/:id/permission/:id/reply`
+(`{"decision":"once"}`), `DELETE /api/session/:id`. The prompt names no model — the turn runs
 on the config `model` default, which the plan writes. Auth failures fail the lift loudly; no
 login verdict is probed. The record lands before the first holder call (pid first, then url,
-then session id), so a crash past lift keeps a handle `stop` reaps by; a failed lift reaps the
-holder exactly once and removes record, log and registry entry, preserving the original
+then session id and the declared roots), so a crash past lift keeps a handle `stop` reaps by; a failed lift
+reaps the holder exactly once and removes record, log and registry entry, preserving the original
 failure even when session creation or the first prompt rejects its HTTP request. The next
 attempt opens a fresh log. The deterministic stub-holder check is
 `node test/promptobus-opencode-lift-failure.test.mjs`. The bound lift
@@ -1138,13 +1139,30 @@ emptied workers dir and registry. A reviewer lift could not write (no file creat
 follow-up prompt on its idle session was taken. A teamlead lift ([proof](../../test/fixtures/opencode-teamlead-proof.json))
 sent status and result by the clean bus route and handed over its contact point; an idle wake
 goes through the record path. Two holder behaviors were measured on the way: the turn model comes from the config
-`model` default (create/prompt model keys are ignored), and a symlinked cwd stalls the turn on
-an `external_directory` permission ask with nobody to answer it — lifts run in real paths.
+`model` default (create/prompt model keys are ignored). A path outside the session directory,
+including a symlinked cwd, raises `external_directory`; the resource is that directory with `/*`.
+OpenCode 2.0.20 types that key as an action or a pattern-to-action map, so the plan grants the
+declared roots there. The lift still polls `GET /api/session/:id/permission` for 4 seconds after
+the prompt returns 200.
+An ask whose action is `external_directory` and whose every resource is the session cwd, an
+`addDirs` entry, or a directory inside one of them, is answered with `{"decision":"once"}`.
+A filesystem root is not a declared root, so it is neither granted nor answered. A wider
+pattern, a different action, or an ask still listed after the reply fails the lift.
+The failure names the action and the resource. `viewOf` reports that list as
+`permission ask pending`. A busy session with an empty permission list stays `turn running`.
+`inspect` replies for those roots when the warden takes a snapshot, at the start and then
+every `WARDEN_BEAT_SEC` (30 seconds). The one-second supervisor tick reuses that snapshot,
+and a knock re-inspects only the address just knocked. An ask that arrives during the
+4-second lift poll is answered there; a later ask waits for the next beat.
+Lifts still use real paths.
+The stub holder for this route is `node test/promptobus-opencode-permission.test.mjs`.
 
 Config travels by environment, not by worktree writes: the plan emits one opencode.json beside
 the task record (`OPENCODE_CONFIG`) with the MCP set (`url` entries as remote servers, `command`
 entries as local ones), the `model` default and the permission map (bus deny names in opencode
-lowercase spelling), and the skills canon through `OPENCODE_CONFIG_DIR`. `launchDirs` is empty.
+lowercase spelling, plus an `external_directory` allow for the session directory and each
+`addDirs` entry at `<root>/*` and `<root>/**`; a filesystem root is omitted), and the skills canon through
+`OPENCODE_CONFIG_DIR`. `launchDirs` is empty.
 Every driver's parent environment filter drops `PROMPTOBUS_OPENCODE_SESSION`,
 `OPENCODE_SESSION_ID`, `OPENCODE_SERVER_PASSWORD`, `OPENCODE_CONFIG` and `OPENCODE_CONFIG_DIR`.
 The OpenCode launch plan then sets its own contact record, holder password and config paths;
