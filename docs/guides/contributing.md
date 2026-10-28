@@ -355,16 +355,18 @@ pass, while a changed server-request approval inventory requires security review
 witnesses check holder requests, response fields, notifications and actual approval replies;
 they do not certify arbitrary forwarded RPC. `currentTime/read` remains an extension.
 
-The current binary-only capture is codex-cli 0.163.0: 318 generated schemas,
-with 105 client request and 10 server request variants. Compared with 0.162.1,
-1 schema was added, none removed, 10 changed and 307 stayed byte-identical.
-The [capture record](../../test/fixtures/codex-app-server/0.163.0/README.md) includes binary hashes
+The current binary-only capture is codex-cli 0.164.0 stable: 320 generated schemas,
+with 106 client request and 10 server request variants. Compared with 0.163.0,
+2 schemas were added, none removed, 31 changed and 287 stayed byte-identical.
+The [capture record](../../test/fixtures/codex-app-server/0.164.0/README.md) includes binary hashes
 before/after, all generated-file hashes, exact raw streams, exits, timestamps, source and platform.
 Keep original direct receipts and the full identity manifest, and preserve historical capture
 bytes. Shared holder/mock shape witnesses retain the independent actual-emission tests. Mutation
 probes must independently break inventory integrity, consumed method membership, security checks
 and the compatible/additive control; a reject-all detector must fail that control.
-Native model turns and hook behavior were not remeasured on 0.163.0. Historical
+Native evidence is version-scoped. The [0.164.0 capture record](../../test/fixtures/codex-app-server/0.164.0/README.md)
+also records live worker, reviewer and approver hook events, a named hidden-model turn,
+an MCP child environment probe and the full rate-limit notification payload. Historical
 live evidence keeps the binary version on which it was measured.
 
 **Moving a block changes the base of every relative link in it, and that is the likeliest way to lose content in this work.** A comment in `lib/model-routing/cache.js` writes `](catalog.js)` and `](../store.js)`; the same text in `docs/guides/` must say `](../../lib/model-routing/catalog.js)` and `](../../lib/store.js)`. Resolve each link against the source file's directory and re-relativize against the destination's — pattern matching on the prefix misses the bare forms. Measured 2026-09-12: six links of the shape `](model-routing/cache.js)` survived a prefix-based rewrite and turned both `backslop lint` and `npm run audit` red. Both gates check links, so the failure is loud — but only after the fact, and only because those gates exist.

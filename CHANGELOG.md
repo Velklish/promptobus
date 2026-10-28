@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing; `--yes` applies the preview. The preview's delete line names that closed
   task (`done --task <id> --older-than <days> --yes`). Without the flag, `done` still
   removes journals closed more than 14 days ago. The `prune` command is gone.
+- Capture the installed Codex CLI 0.164.0 stable app-server protocol as the driver baseline: 320 schemas, 106 client requests and 10 server requests. Preserve every older capture and validate the consumed contract against the installed binary.
+- Record live worker, reviewer and approver SessionStart and Stop hooks on that binary, plus a hidden-model turn, MCP child environment and a rate-limit notification carrying a window duration. The request-missing fallback remains unmeasured.
+
 - Refuse a repository path that resolves outside the install root before spawn
   turns it into a namespace path. The comparison uses the canonical paths, so a
   symlink spelling of an in-root clone is that clone, and a directory whose

@@ -786,10 +786,10 @@ must not fall over its own log.
 
 ### Codex protocol versions
 
-The fixture baseline is codex-cli 0.163.0, captured from the installed binary
-on 2026-10-18. The complete capture contains 318 generated schemas: compared with
-0.162.1, added 1, removed 0, changed 10, unchanged 307. ClientRequest contains 105
-variants and ServerRequest retains 10. [Capture provenance](../../test/fixtures/codex-app-server/0.163.0/README.md)
+The fixture baseline is codex-cli 0.164.0, captured from the installed stable binary
+on 2026-10-28. The complete capture contains 320 generated schemas: compared with
+0.163.0, added 2, removed 0, changed 31, unchanged 287. ClientRequest contains 106
+variants and ServerRequest retains 10. [Capture provenance](../../test/fixtures/codex-app-server/0.164.0/README.md)
 names the binary hash before and after generation, every file hash, command exits,
 raw streams, timestamps, source state and platform. Historical capture bytes are preserved.
 
@@ -805,7 +805,17 @@ command failure, timeout and malformed output fail. A new label alone does not d
 
 `PROVEN_CODEX_VERSION` selects capture provenance, not a native admission floor. Generic
 caller-supplied holder RPC remains untyped; `currentTime/read` is a documented extension absent
-from ServerRequest. Native model turns and hook behavior were not remeasured on 0.163.0.
+from ServerRequest. Native evidence is version-scoped.
+[Live 0.164.0 measurements](../../test/fixtures/codex-app-server/0.164.0/README.md)
+record completed worker, reviewer and approver turns on `gpt-6-sol`: each holder journal
+named successful SessionStart and Stop hooks from the intended file before `turn/completed`.
+The approver was lifted in its own worktree after a reviewer result, then stopped; this
+measures lift and hook delivery, not an acceptance commit. A no-model MCP child probe
+received only generic environment names and one explicitly configured marker, without
+the five tested parent identity variables. A separate `gpt-reserve` turn completed after
+the model appeared only under `model/list` with `includeHidden: true`. The notification
+payload included `rateLimits.primary.windowDurationMins`; the missing-method fallback
+was not exercised on this binary.
 [Native 0.159.2 evidence](../../test/fixtures/codex-app-server/0.159.2/README.md)
 retains its own measured version, including the trusted-root hook control, canonical
 worker/reviewer skills, and reporter MCP reads. The unrouted default `gpt-6-astra`
@@ -818,7 +828,7 @@ The mock app-server emits complete native response shapes for initialize, model/
 skills/list, thread/start, thread/resume, thread/read, turn/start, turn/steer and
 review/start. Its internal thread store remains a test fixture; emitted threads have
 tagged status, native required metadata, and turns with item IDs. The response test
-validates 38 actual positive outputs against the complete 0.159.2, 0.160.0, 0.162.1 and 0.163.0
+validates 38 actual positive outputs against the complete 0.159.2, 0.160.0, 0.162.1, 0.163.0 and 0.164.0
 captures, including default, credits, flat and spend-control quota responses. Omitted
 or null thread/start cwd defaults once to the mock process working directory and
 persists through thread/read, thread/resume and thread/list responses. Reset-credit

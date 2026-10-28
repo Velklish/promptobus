@@ -36,7 +36,7 @@ check('PB-242: the harness names the directory off the constant',
     && !/'codex-app-server', '\d/.test(harnessSource),
   'harness-codex.mjs still spells a version literal');
 
-for (const version of new Set([MIN_CODEX_VERSION, '0.159.2', '0.160.0', '0.162.1', PROVEN_CODEX_VERSION])) {
+for (const version of new Set([MIN_CODEX_VERSION, '0.159.2', '0.160.0', '0.162.1', '0.163.0', PROVEN_CODEX_VERSION])) {
   const base = path.join(here, 'fixtures', 'codex-app-server', version);
   check(`Codex ${version} has a full client/server protocol capture`,
     existsSync(path.join(base, 'ClientRequest.json')) && existsSync(path.join(base, 'ServerRequest.json')));
@@ -50,7 +50,7 @@ for (const version of new Set([MIN_CODEX_VERSION, '0.159.2', '0.160.0', '0.162.1
 
 const provenance = JSON.parse(readFileSync(path.join(dir, 'capture-provenance.json'), 'utf8'));
 check('installed Codex schema baseline is bound to its measured capture',
-  PROVEN_CODEX_VERSION === provenance.version && provenance.build === '0.163.0'
+  PROVEN_CODEX_VERSION === provenance.version && provenance.build === '0.164.0'
   && provenance.versionCommand.stdout === `codex-cli ${provenance.build}\n`
   && provenance.generation.exitCode === 0 && /^[a-f0-9]{64}$/.test(provenance.binary.sha256));
 const generated = Object.keys(provenance.inventory);
@@ -58,7 +58,7 @@ const captureDir = path.join(here, 'fixtures/codex-app-server', provenance.versi
 const actual = readdirSync(captureDir, { recursive: true }).filter(name => name.endsWith('.json')
   && JSON.parse(readFileSync(path.join(captureDir, name), 'utf8')).$schema).sort();
 check('captured schema inventory is complete and matches its recorded hashes',
-  generated.length === 318 && JSON.stringify(actual) === JSON.stringify(generated)
+  generated.length === 320 && JSON.stringify(actual) === JSON.stringify(generated)
   && generated.every(name => {
     const data = readFileSync(path.join(captureDir, name));
     return provenance.inventory[name].bytes === data.length
@@ -67,7 +67,7 @@ check('captured schema inventory is complete and matches its recorded hashes',
 const previousDir = path.join(here, 'fixtures/codex-app-server/0.160.0');
 const previous = JSON.parse(readFileSync(path.join(previousDir, 'capture-provenance.json'), 'utf8'));
 const oldNames = Object.keys(previous.inventory);
-const priorDir = path.join(here, 'fixtures/codex-app-server/0.162.1');
+const priorDir = path.join(here, 'fixtures/codex-app-server/0.163.0');
 const prior = JSON.parse(readFileSync(path.join(priorDir, 'capture-provenance.json'), 'utf8'));
 const priorNames = Object.keys(prior.inventory);
 const added = generated.filter(name => !priorNames.includes(name));
@@ -75,16 +75,27 @@ const removed = priorNames.filter(name => !generated.includes(name));
 const changed = generated.filter(name => priorNames.includes(name)
   && !readFileSync(path.join(captureDir, name)).equals(readFileSync(path.join(priorDir, name))));
 check('current capture retains the measured delta from the full historical capture',
-  added.length === 1 && removed.length === 0 && changed.length === 10
-  && provenance.comparison.previousVersion === '0.162.1'
+  added.length === 2 && removed.length === 0 && changed.length === 31
+  && provenance.comparison.previousVersion === '0.163.0'
   && JSON.stringify([added, removed, changed]) === JSON.stringify([
     provenance.comparison.added, provenance.comparison.removed, provenance.comparison.changed]));
-check('historical 0.162.1 capture retains its original inventory and hashes',
-  priorNames.length === 317 && priorNames.every(name => {
-    const data = readFileSync(path.join(priorDir, name));
-    return prior.inventory[name].bytes === data.length
-      && prior.inventory[name].sha256 === createHash('sha256').update(data).digest('hex');
-  }));
+function historicalCaptureUnchanged(version, expectedCount) {
+  const historicalDir = path.join(here, 'fixtures/codex-app-server', version);
+  const historical = JSON.parse(readFileSync(path.join(historicalDir, 'capture-provenance.json'), 'utf8'));
+  const names = Object.keys(historical.inventory);
+  const actualNames = readdirSync(historicalDir, { recursive: true }).filter(name => name.endsWith('.json')
+    && JSON.parse(readFileSync(path.join(historicalDir, name), 'utf8')).$schema).sort();
+  return names.length === expectedCount && JSON.stringify(actualNames) === JSON.stringify(names)
+    && names.every(name => {
+      const data = readFileSync(path.join(historicalDir, name));
+      return historical.inventory[name].bytes === data.length
+        && historical.inventory[name].sha256 === createHash('sha256').update(data).digest('hex');
+    });
+}
+for (const [version, expectedCount] of [['0.162.1', 317], ['0.163.0', 318]]) {
+  check(`historical ${version} capture retains its original inventory and hashes`,
+    historicalCaptureUnchanged(version, expectedCount));
+}
 check('historical 0.160.0 capture and its byte-identical 0.159.2 comparison remain unchanged',
   oldNames.length === 314 && oldNames.every(name => {
     const data = readFileSync(path.join(previousDir, name));
@@ -94,14 +105,14 @@ check('historical 0.160.0 capture and its byte-identical 0.159.2 comparison rema
   }));
 for (const name of ['ClientRequest', 'ServerRequest']) {
   const schema = JSON.parse(readFileSync(path.join(captureDir, `${name}.json`), 'utf8'));
-  check(`captured ${name} retains its complete method inventory`, schema.oneOf.length === (name === 'ClientRequest' ? 105 : 10));
+  check(`captured ${name} retains its complete method inventory`, schema.oneOf.length === (name === 'ClientRequest' ? 106 : 10));
 }
 const approvals = { execCommandApproval: 'ExecCommandApproval', applyPatchApproval: 'ApplyPatchApproval',
   'item/commandExecution/requestApproval': 'CommandExecutionRequestApproval',
   'item/fileChange/requestApproval': 'FileChangeRequestApproval',
   'item/permissions/requestApproval': 'PermissionsRequestApproval',
   'item/tool/requestUserInput': 'ToolRequestUserInput', 'mcpServer/elicitation/request': 'McpServerElicitationRequest' };
-for (const version of new Set(['0.159.2', '0.160.0', '0.162.1', PROVEN_CODEX_VERSION])) {
+for (const version of new Set(['0.159.2', '0.160.0', '0.162.1', '0.163.0', PROVEN_CODEX_VERSION])) {
   const ajv = new Ajv({ strict: false, allErrors: true });
   const load = name => ajv.compile(JSON.parse(readFileSync(path.join(here, 'fixtures/codex-app-server', version, `${name}.json`), 'utf8')));
   for (const [method, schema] of Object.entries(approvals)) {
@@ -120,8 +131,13 @@ for (const version of new Set(['0.159.2', '0.160.0', '0.162.1', PROVEN_CODEX_VER
 }
 for (const file of ['docs/reference/05-drivers.md', 'docs/guides/contributing.md', `test/fixtures/codex-app-server/${PROVEN_CODEX_VERSION}/README.md`]) {
   const text = readFileSync(path.join(here, '..', file), 'utf8');
-  check(`${file} names the current capture and its unmeasured native behavior`,
-    text.includes(PROVEN_CODEX_VERSION) && text.replace(/\s+/g, ' ').includes(file.endsWith('README.md')
-      ? `Those were not remeasured on ${PROVEN_CODEX_VERSION}.`
-      : `Native model turns and hook behavior were not remeasured on ${PROVEN_CODEX_VERSION}.`));
+  check(`${file} names the current capture and keeps native evidence version-scoped`,
+    text.includes(PROVEN_CODEX_VERSION) && text.includes('Native evidence is version-scoped.'));
 }
+const availabilityDocs = readFileSync(path.join(here, '../docs/reference/03-cli.md'), 'utf8');
+const routingGuide = readFileSync(path.join(here, '../docs/guides/model-routing.md'), 'utf8');
+check('Codex availability documents the measured notification duration and the remaining fallback limit',
+  availabilityDocs.includes('a live worker turn produced a notification with nested `rateLimits.primary.windowDurationMins: 10080`')
+  && availabilityDocs.includes('the missing-method fallback itself remains unmeasured'));
+check('model routing documents the completed hidden-model turn',
+  routingGuide.includes('a live `gpt-reserve` turn completed'));

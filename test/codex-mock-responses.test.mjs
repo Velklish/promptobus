@@ -11,7 +11,7 @@ import { HANG_AFTER_START_VAR, PROBE_VAR, installHarness } from './harness-codex
 
 const root = makeSandbox('promptobus-codex-');
 const harness = await installHarness({ binDir: path.join(root, 'bin') });
-const schemas = [...new Set(['0.159.2', '0.160.0', '0.162.1', PROVEN_CODEX_VERSION])].map(version => {
+const schemas = [...new Set(['0.159.2', '0.160.0', '0.162.1', '0.163.0', PROVEN_CODEX_VERSION])].map(version => {
   const ajv = new Ajv({ strict: false, allErrors: true, formats: {
     int64: true, uint64: true, uint32: true, uint: true, double: true, int32: true, uint16: true,
   } });

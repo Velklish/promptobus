@@ -20,7 +20,7 @@ mkdirSync(bin);
 stubCommand(bin, 'codex', `
 import { cpSync } from 'node:fs';
 const args = process.argv.slice(2);
-if (args[0] === '--version') process.stdout.write('codex-cli 0.163.0\\n');
+if (args[0] === '--version') process.stdout.write('codex-cli 0.164.0\\n');
 else if (JSON.stringify(args.slice(0, 3)) === JSON.stringify(['app-server', 'generate-json-schema', '--out'])) {
   cpSync(${JSON.stringify(capture)}, args[3], { recursive: true });
 } else process.exit(99);
@@ -56,7 +56,7 @@ function gate(label, generation = null, version = {}) {
 }
 
 test('schema gate treats old future prefixed and unreadable version labels as telemetry', () => {
-  for (const label of ['codex-cli 0.1.0', 'codex-cli 99.1.0', 'v0.163.0', 'future codex build', '']) {
+  for (const label of ['codex-cli 0.1.0', 'codex-cli 99.1.0', 'v0.164.0', 'future codex build', '']) {
     const result = gate(label);
     assert.equal(result.code, 0, result.lines);
     assert.deepEqual(result.calls.map(c => c.args.slice(0, 3)), [['--version'], ['app-server', 'generate-json-schema', '--out']]);

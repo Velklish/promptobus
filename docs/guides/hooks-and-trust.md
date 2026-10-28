@@ -72,6 +72,14 @@ The worker Stop lines are at 21:05:53.154Z and 21:05:53.307Z; the reviewer's are
 and 21:07:23.146Z. This proves the hook fires for these two finished turns;
 it does not measure a turn that the guard returns for follow-up or a Codex approver.
 
+**Remeasured 2026-10-28 on codex-cli 0.164.0.** In a disposable Codex-only task,
+worker, reviewer and approver each completed one turn on `gpt-6-sol`. Their holder
+journals showed completed SessionStart and Stop hooks before `turn/completed`. The
+worker and approver used their own Codex home `hooks.json`; the reviewer used its
+sandbox `.codex/hooks.json`. Each file was read before Stop and named its role in
+the guard command. All three `codexDriver.stop` calls returned `ok: true` and
+`stopped: true`. [Times and commands](../../test/fixtures/codex-app-server/0.164.0/README.md).
+
 ## A project's own hook records
 
 A project may commit agent hooks of its own in `.codex/hooks.json` and `.cursor/hooks.json` — a task tracker or another development tool installs them there — so every participant worktree carries them. A lift keeps the records the repository trusts in its own `promptobus.json` running beside its guard, and refuses or leaves out every other record ([ADR-025](../adr/adr-025-foreign-project-hook-records.md)). The tool that wrote the records needs to know nothing about Promptobus.
