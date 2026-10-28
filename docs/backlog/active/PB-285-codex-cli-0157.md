@@ -1,4 +1,4 @@
-# PB-285 · Move the Codex driver to the installed codex-cli 0.164.0-alpha.11.1
+# PB-285 · Move the Codex driver to the installed codex-cli 0.164.0
 
 - **Scope:** `lib/driver-codex.js`, `test/fixtures/codex-app-server/`, [05-drivers § CODEX](../../reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver)
 - **Created:** 2026-09-27
@@ -8,11 +8,11 @@
 
 ## Context
 
-The card was written for 0.157.1 on 2026-09-26. Since then the driver moved on: `PROVEN_CODEX_VERSION` is `0.163.0` (`lib/driver-codex.js`) and fixtures exist up to `test/fixtures/codex-app-server/0.163.0/`. Evidence: 2026-10-28, `codex --version` on the owner's machine → `codex-cli 0.164.0-alpha.11.1`. The owner decided on 2026-10-28 to retarget this card to that installed binary, an alpha build, and to take its live measurements now that the Codex limit has reset. The observations on 0.163.0 and earlier remain evidence for those versions only.
+The card was written for 0.157.1 on 2026-09-26. Since then the driver moved on: `PROVEN_CODEX_VERSION` is `0.163.0` (`lib/driver-codex.js`) and fixtures exist up to `test/fixtures/codex-app-server/0.163.0/`. Evidence: 2026-10-28, `which -a codex` and `--version` on each: the binary on PATH that the driver resolves is `~/.local/bin/codex` → the Homebrew cask, `codex-cli 0.164.0`; a separate desktop-app bundle answers `0.164.0-alpha.11.1` and is not what participants run. The owner decided on 2026-10-28 to retarget this card to the installed binary and to take its live measurements now that the Codex limit has reset. The observations on 0.163.0 and earlier remain evidence for those versions only.
 
 ## Work to do
 
-- Capture `codex --version` and regenerate the app-server fixtures for 0.164.0-alpha.11.1; raise `PROVEN_CODEX_VERSION` with any version-bound references, and say in 05-drivers that the proven version is an alpha build.
+- Capture `codex --version` and regenerate the app-server fixtures for 0.164.0; raise `PROVEN_CODEX_VERSION` with any version-bound references.
 - Run `npm run codex-schema` against the new binary and the repository gates.
 - Re-measure live `SessionStart` and `Stop` hooks for a worker, reviewer and approver; record each holder journal after `turn/completed` and identify the hooks file on its events.
 - Re-measure the MCP child environment and the Codex approver lift on that binary. Keep commands, exit codes and the observed boundaries with the evidence.
@@ -21,11 +21,11 @@ The card was written for 0.157.1 on 2026-09-26. Since then the driver moved on: 
 ## Out of scope
 
 - Installing or updating the owner's Codex binary in this task.
-- Reinterpreting observations on 0.163.0 or earlier as evidence for 0.164.0-alpha.11.1.
+- Reinterpreting observations on 0.163.0 or earlier as evidence for 0.164.0.
 
 ## Verification
 
-- `codex --version` names 0.164.0-alpha.11.1; regenerated fixtures and `PROVEN_CODEX_VERSION` agree with it; `npm run codex-schema` and the repository gates exit 0.
+- `codex --version` on PATH names 0.164.0; regenerated fixtures and `PROVEN_CODEX_VERSION` agree with it; `npm run codex-schema` and the repository gates exit 0.
 - Live holder journals on that binary show `SessionStart` and `Stop` from the intended worker, reviewer and approver hooks files, including `turn/completed`, or record a measured cause for any absent event.
 - The MCP child environment and approver lift are captured with commands and exit codes on the same installed binary.
 - The named hidden-model turn has a recorded outcome, and the notification payload is captured verbatim with secrets redacted; if the notification does not arrive, record the attempted path and leave PB-24.1's return condition open.
