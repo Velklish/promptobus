@@ -1,10 +1,11 @@
 # PB-403 · The orchestrate skill does not forbid a bespoke verification harness, so runs build receipt packets instead of running the gates
 
-- **Order:** 310
 - **Scope:** [skills/orchestrate](../../../skills/orchestrate/SKILL.md), [Worker protocol](../../../skills/orchestrate/SKILL.md#worker-protocol), the BB participant skills in `integrations/bb/skills/`
 - **Created:** 2026-10-27
 - **Dependencies:** none; a consumer workspace filed the matching change to its own orchestration skill on 2026-10-27
 - **Cost:** major
+- **Previous order:** 310
+- **Taken:** 2026-10-28
 
 ## Context
 
