@@ -264,8 +264,8 @@ check(': with the flag, the stop walk does not start at all',
 // --- : `done` removes journals of LONG-closed tasks ------------------------
 //
 // Owner's measurement 2026-09-02: the workspace journal — 71 tasks, 36 MB, 1243
-// messages, 196 artifacts. A manual `prune` has existed since , but it's called by
-// hand, and the journal grew faster than it was swept. Owner's decision: `done` after
+// messages, 196 artifacts. The journal grew faster than a separate cleanup was called.
+// Owner's decision: `done` after
 // its own work calls the same cleanup at the default threshold — closing a task is
 // exactly the moment when a person tidies up and sees the list. The home here is its
 // own: cleanup counters must not count the tasks of the checks above.
@@ -369,8 +369,8 @@ check(': an all-refused sweep prints the yellow total and claims no removal',
   `${allFailed.out.trim()} · ${allFailed.err.trim()}`);
 
 // A home with no candidates: `done` stays completely silent about cleanup. A line about
-// nothing done on every close would be noise — the list and count stay with the manual
-// `promptobus prune`.
+// nothing done on every close would be noise — the list and count stay with
+// `done --older-than`.
 const QUIET = path.join(SB, 'quiet-ws');
 mkdirSync(path.join(QUIET, '.promptobus'), { recursive: true });
 writeFileSync(path.join(QUIET, 'AGENTS.md'), 'sandbox\n');

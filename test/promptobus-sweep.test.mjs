@@ -1,7 +1,7 @@
 // `promptobus sweep <address>` — one accepted piece, the task left alive. Run: npm test
 //
 // Subject: PB-208. Four things make it a verb and not a narrower `done`. The task and the
-// other participants must survive it; the piece's tree, branch, blobs and files must go on
+// other participants must survive it; the piece's tree and branch must go on
 // a PROVEN squash merge and stay without one; the run's telemetry must survive, checked at
 // the end by closing the task and reading the rows `done` writes; and the right to call it
 // must be PROVEN — the gate refuses everything it cannot prove, identity-less calls first.
@@ -451,23 +451,23 @@ check(': and the line says ancestry did NOT decide it — the commits are still 
   /are not in master/.test(out), out.trim());
 check(': its branch is gone — a proven squash is force-deleted, ancestry cannot confirm it',
   git(REPO, 'rev-parse', '--verify', '--quiet', 'worktree-promptobus-accepted').status !== 0);
-check(': its own files-folder entry and its artifact record are gone',
-  !existsSync(path.join(store.filesDir(HOME, TASK), 'gates-accepted.json'))
-  && !artifactRecords().some((a) => a.filename === 'gates-accepted.json'),
+check(': its own files-folder entry and its artifact record stay with the journal',
+  existsSync(path.join(store.filesDir(HOME, TASK), 'gates-accepted.json'))
+  && artifactRecords().some((a) => a.filename === 'gates-accepted.json')
+  && !/artifacts of /.test(out),
   readdirSync(store.filesDir(HOME, TASK)).join(', '));
-check(': an unreferenced blob leaves during active-task sweep',
-  !existsSync(retiredBlob)
-  && !existsSync(path.join(store.filesDir(HOME, TASK), 'retired.txt'))
-  && !artifactRecords().some((a) => a.filename === 'retired.txt'));
-check(': but the BLOB stays while a second hard link holds it, and the line says so',
-  existsSync(acceptedBlob) && /the payload is still named/.test(out)
-  && /another hard link to it/.test(out), out.trim());
+check(': an unreferenced blob stays through the sweep — retention is not this command',
+  existsSync(retiredBlob)
+  && existsSync(path.join(store.filesDir(HOME, TASK), 'retired.txt'))
+  && artifactRecords().some((a) => a.filename === 'retired.txt'));
+check(': a second hard link is not a reason the sweep removes the blob',
+  existsSync(acceptedBlob) && !/the payload is still named/.test(out), out.trim());
 rmSync(inflight, { force: true });
-check(': the blob the neighbour also sent SURVIVES — a blob leaves only when nothing names it',
-  existsSync(sharedBlob) && sharedRecords().length === 1,
+check(': the blob the neighbour also sent stays, and so does the swept sender\'s record',
+  existsSync(sharedBlob) && sharedRecords().length === 2,
   `${existsSync(sharedBlob)} · ${sharedRecords().map((a) => a.filename).join(', ')}`);
-check(': and of the two files-folder entries of that blob, only the swept one went',
-  !existsSync(path.join(store.filesDir(HOME, TASK), 'shared.txt'))
+check(': both files-folder entries of that blob stay',
+  existsSync(path.join(store.filesDir(HOME, TASK), 'shared.txt'))
   && existsSync(path.join(store.filesDir(HOME, TASK), 'shared-2.txt')),
   readdirSync(store.filesDir(HOME, TASK)).join(', '));
 check(': the mcp-config, the settings file, the contact point and the temporary stand are gone',

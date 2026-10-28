@@ -173,10 +173,19 @@ check('docs: former stores require the pinned upgrade while current malformed re
   && has(upgrade, 'A completed `migrated.json` or preserved `migration-broken/` alone does not block a current store.'),
   'the upgrade route, recognition limit and current-record behavior must remain explicit');
 
+const storeLayout = section(protocol, '## Store layout');
+check('docs: publication holds the blob lock and piece sweep removes the worktree and the branch',
+  has(storeLayout, '`.lock-blobs/` separately guards artifact payload publication and metadata.')
+  && has(storeLayout, 'A piece sweep removes the worktree and the branch.')
+  && !storeLayout.includes('sweep reachability')
+  && !storeLayout.includes('the piece sweep both ask it')
+  && !storeLayout.includes("the only later change to the set is the sweep's own removals"),
+  'publication keeps the blob lock; piece sweep removes the worktree and the branch');
+
 const retention = section(protocol, '### Artifacts: how a file becomes a message attachment');
-check('docs: artifact retention covers active sweep and whole-task prune',
+check('docs: artifact retention leaves records on sweep and removes the journal from done',
   has(retention,
-    "The same payload under two names yields two metadata records and one immutable blob. Retention is separate: `prune` removes a whole task and its blobs, while `sweep` may remove an accepted sender's artifact records and file entries during an active task. Under the publication lock, `blobNamed` keeps the blob if any surviving metadata record or another hard link still names it; otherwise the sweep removes it. See [the CLI cleanup contract](03-cli.md#sweepartifacts--the-removals-of-one-piece-under-the-publication-lock)."),
+    "The same payload under two names yields two metadata records and one immutable blob. Retention is separate: `done` removes a whole closed task and its blobs once that task is older than the age threshold, while `sweep` leaves an accepted sender's artifact records, `files/` entries and blobs on the task journal. `blobNamed` still answers whether any metadata record or other hard link names a payload. See [the CLI cleanup contract](03-cli.md#sweep--clean-up-after-one-accepted-piece)."),
   'the artifact section changed a cleanup boundary or survival condition');
 
 const claim = section(protocol, '## Claim').split('\n### ')[0];
@@ -186,6 +195,20 @@ check('docs: claim distinguishes enforced identity checks from owner liveness',
   'claim must keep the identity gate and caller-side liveness precondition distinct');
 
 const cli = read('docs/reference/03-cli.md');
+const artifactPlan = section(cli, '### `artifactPlan` — the blobs and files of one piece');
+const sweepArtifacts = section(cli, '### `sweepArtifacts` — the removals of one piece, under the publication lock');
+check('docs: sweepArtifacts prints nothing and retention removes the journal directory',
+  has(sweepArtifacts, '`sweep` does not call this. The function prints nothing: it returns counts.')
+  && has(sweepArtifacts, 'Retention removes the whole journal directory once the task is past the age threshold.')
+  && has(artifactPlan, 'An entry whose inode does not match is left in place.')
+  && has(section(cli, '## Status, done, sweep, dismiss, history'),
+    'The dry run names each task, its size and its artifact count, and its delete line is `done --task <id> --older-than <days> --yes`.')
+  && !artifactPlan.includes('named out loud')
+  && !artifactPlan.includes('surface as a line')
+  && !sweepArtifacts.includes('names the two states it left in place')
+  && !sweepArtifacts.includes("journal retention's reading")
+  && !sweepArtifacts.includes('said out loud'),
+  'sweepArtifacts must stay silent, artifactPlan must not announce a mismatch, and retention removes the journal directory');
 const drivers = read('docs/reference/05-drivers.md');
 const driverContract = compact(section(drivers, '### The driver contract'));
 check('docs: the package ships native drivers behind a harness-neutral core contract',

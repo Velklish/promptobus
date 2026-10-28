@@ -226,7 +226,7 @@ they tell a person different things.
 The Cursor side waits for the same reason: the harness command takes the pane down long
 before the processes the turn started are gone, so the operation returns only once the
 harness no longer has the session. That timing, and the reap it earned, are measured in
-[03-cli § Status, done, sweep, dismiss, history, prune](03-cli.md#status-done-sweep-dismiss-history-prune).
+[03-cli § Status, done, sweep, dismiss, history](03-cli.md#status-done-sweep-dismiss-history).
 
 **The Remote Control entry on claude.ai and the desktop app.** A session lifted by Claude Code
 with `--bg` registers a Remote Control session under the user's account by default (`bridgeSessionId`
@@ -280,7 +280,7 @@ command, permission, authentication and holder failures.
 
 `stop` on either is `ok: false` — an unread registry says nothing about whether the session still
 runs, so it is not "nothing to stop". `sweep` and `stop` name which of the two happened
-([03-cli § Status, done, sweep, dismiss, history, prune](03-cli.md#status-done-sweep-dismiss-history-prune)).
+([03-cli § Status, done, sweep, dismiss, history](03-cli.md#status-done-sweep-dismiss-history)).
 One side effect in the warden: with the binary missing, a Claude participant's stall mark is not
 carried through that round, because its state is unknown rather than the whole snapshot being absent
 — the behaviour a Cursor or Codex participant already has when its registry home is not named.

@@ -3,7 +3,7 @@
 // This file assembles the FULL orchestration loop — the one no earlier suite file had:
 // spawn, the first `status`, the orchestrator reply, the warden knock on the participant
 // socket, `result`, a review with remarks, a second `result`, a report of a silent end of
-// turn, `promptobus done` with session teardown and cleanup, `promptobus prune`. The
+// turn, `promptobus done` with session teardown and cleanup, `done --older-than`. The
 // scenario itself and all of its checks live in [scenario.mjs](scenario.mjs) — the same
 // module as the live run ([live-e2e.mjs](../scripts/live-e2e.mjs)); what remains here is
 // exactly the harness substitution.

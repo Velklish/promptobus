@@ -85,12 +85,11 @@ promptobus ask --answers --task <root>
 promptobus spawn --repo <path> --brief <file> [--task <id> | --new-task] [--title <slice>] [--task-title <task>] [--slug <s>] [--worker <name>] [--model <m>] [--effort <e>] [--permission-mode <p>] [--harness <h>] [--strategy <s>] [--allow-payg] [--refresh] [--dry-run]
 promptobus spawn --teamlead --brief <file> --task <root> [--slug <s>] [--strategy <s>] [--model <m>] [--effort <e>] [--harness claude|codex|opencode] [--permission-mode <p>] [--allow-payg] [--refresh] [--dry-run]
 promptobus status [--task <id>]
-promptobus done [--task <id>] [--keep-sessions]
+promptobus done [--task <id>] [--keep-sessions] [--older-than <days>] [--yes]
 promptobus abandon [<address>] [--task <id>]
 promptobus stop <address> [--task <id>]
 promptobus sweep <address> [--task <id>]
 promptobus dismiss <address> [--task <id>]
-promptobus prune [--older-than <days>] [--yes]
 promptobus warden [--task <id>]
 promptobus review <path> [--task <id> | --title <name>] [--base <ref>] [--model <m>] [--effort <e>] [--permission-mode <p>] [--harness <h>] [--strategy <s>] [--allow-payg] [--refresh] [--approver [--brief <file>]] [--dry-run]
 promptobus models [--strategy <s>] [--role <worker|reviewer|approver>] [--refresh] [--json]
@@ -169,9 +168,9 @@ Without `--task`, `spawn` joins the bound task, else the only active one, else c
 
 `status` prints the warden line, `warden: alive` or `NO WARDEN`, and only reads; the next `spawn`, `review`, `send`, bus tool call or turn end starts a missing warden (`lib/status.js`, `lib/warden.js`).
 
-`stop <address>` closes one participant's session and retires the harness's record of it; the task, the participant and its mailbox stay. A Codex stop that cannot confirm terminal command accounting exits 1 and keeps the record and private home. `sweep <address>` removes one accepted piece's worktree, branch and sent artifacts once its session is dead and its merge is proven. `dismiss <address>` only stops watching. The task mailbox owner or an approver of this task in its own recorded session may call these; `done` is the owner's alone ([03-cli § Status, done, sweep](https://github.com/Velklish/promptobus/blob/v0.30.0/docs/reference/03-cli.md#status-done-sweep-dismiss-history-prune)).
+`stop <address>` closes one participant's session and retires the harness's record of it; the task, the participant and its mailbox stay. A Codex stop that cannot confirm terminal command accounting exits 1 and keeps the record and private home. `sweep <address>` removes one accepted piece's worktree and branch once its session is dead and its merge is proven. Artifact records, `files/` entries and blobs stay on the task journal. `dismiss <address>` only stops watching. The task mailbox owner or an approver of this task in its own recorded session may call these; `done` is the owner's alone ([03-cli § Status, done, sweep](https://github.com/Velklish/promptobus/blob/v0.30.0/docs/reference/03-cli.md#status-done-sweep-dismiss-history-prune)).
 
-`done` closes the task, first refusing while any native Codex participant lacks confirmed Stop (`--keep-sessions` included), stops the other sessions the bus started unless `--keep-sessions`, removes the worktree and `worktree-` branch of each closed task whose session is dead and whose work is proven merged, and last removes journals of tasks closed over 14 days ago; `prune` without `--yes` only previews (`lib/done.js`, `lib/native-lifecycle.js`, `lib/prune.js`).
+`done` closes the task, first refusing while any native Codex participant lacks confirmed Stop (`--keep-sessions` included), stops the other sessions the bus started unless `--keep-sessions`, removes the worktree and `worktree-` branch of each closed task whose session is dead and whose work is proven merged, and last removes journals of tasks closed over 14 days ago. `--older-than <days>` previews that removal at a shorter age and deletes nothing; `--yes` applies it (`lib/done.js`, `lib/native-lifecycle.js`, `lib/prune.js`).
 
 `review <path>` without `--task` picks up the single active task that records the path. The diff base is `--base`. Otherwise, in a worker worktree, it is the merge base with the local default branch, except that the recorded branch point is used when the worker branch is already merged or the default branch was rewritten, and the repository default branch when neither exists; in the main clone it is the repository default branch. The command prints it (`lib/review.js`). A repeat `review` sends the new diff to the live reviewer: `--strategy` is ignored, and another `--harness` is refused until `promptobus stop <address>`.
 

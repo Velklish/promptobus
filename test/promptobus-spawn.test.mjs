@@ -508,8 +508,8 @@ check(': the removed wait subcommand — unknown-command refusal, no stack and n
   && !/promptobus wait/.test(goneSub.text),
   `status=${goneSub.status} ${goneSub.text}`);
 
-const badOlderThan = cliRun([ 'prune', '--older-than', '0d']);
-check(': prune --older-than with an invalid age is printed without a stack',
+const badOlderThan = cliRun([ 'done', '--older-than', '0d']);
+check(': done --older-than with an invalid age is printed without a stack',
   noStack(badOlderThan) && /--older-than <days>/.test(badOlderThan.text),
   `status=${badOlderThan.status} ${badOlderThan.text}`);
 

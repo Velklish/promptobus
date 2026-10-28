@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `sweep` removes a participant's worktree and branch only. Artifact records,
+  `files/` entries and blobs stay with the task journal until retention.
+- `done --older-than <days>` previews journal retention at that age and deletes
+  nothing; `--yes` applies the preview. The preview's delete line names that closed
+  task (`done --task <id> --older-than <days> --yes`). Without the flag, `done` still
+  removes journals closed more than 14 days ago. The `prune` command is gone.
 - Refuse a repository path that resolves outside the install root before spawn
   turns it into a namespace path. The comparison uses the canonical paths, so a
   symlink spelling of an in-root clone is that clone, and a directory whose

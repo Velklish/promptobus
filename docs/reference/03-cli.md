@@ -1,6 +1,6 @@
 # CLI
 
-Parser: `lib/cli.js`. Commands: `lead`, `spawn`, `step`, `review`, `report`, `models`, `stats`, `status`, `digest`, `send`, `ask`, `link`, `unlink`, `message-order`, `done`, `abandon`, `stop`, `sweep`, `dismiss`, `history`, `prune`, `guard`, `warden`, `mcp`, `install`, `uninstall`, `lease`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `promptobus/cli` exports it as the frozen `COMMANDS`, and the refusal of an unknown command joins that array, so a host passthrough reads the vocabulary rather than a copy. `test/cli.test.mjs` reads the dispatcher's own `case` labels, holds this Commands list equal to them aside from the aliases, and checks both the command name and its wrapper: it fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them, and on a `formatCommand` or `formatNpx` call whose literal command is one of the package's own labels. It also scans non-comment string literals recursively under `lib/` for `promptobus <known-subcommand>` outside those wrappers; low-level seams receive the formatted command from their host-aware callers, so no allowlist is needed. A hint a host assembles by template is not checked — the package cannot read it.
+Parser: `lib/cli.js`. Commands: `lead`, `spawn`, `step`, `review`, `report`, `models`, `stats`, `status`, `digest`, `send`, `ask`, `link`, `unlink`, `message-order`, `done`, `abandon`, `stop`, `sweep`, `dismiss`, `history`, `guard`, `warden`, `mcp`, `install`, `uninstall`, `lease`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `promptobus/cli` exports it as the frozen `COMMANDS`, and the refusal of an unknown command joins that array, so a host passthrough reads the vocabulary rather than a copy. `test/cli.test.mjs` reads the dispatcher's own `case` labels, holds this Commands list equal to them aside from the aliases, and checks both the command name and its wrapper: it fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them, and on a `formatCommand` or `formatNpx` call whose literal command is one of the package's own labels. It also scans non-comment string literals recursively under `lib/` for `promptobus <known-subcommand>` outside those wrappers; low-level seams receive the formatted command from their host-aware callers, so no allowlist is needed. A hint a host assembles by template is not checked — the package cannot read it.
 
 Help and `--version` do not load the standalone host. Every other command does.
 
@@ -1085,7 +1085,9 @@ The terms this section introduces — participant telemetry, telemetry record, w
 
 **Growth and clearing.** One line per harness generation of a participant, a few hundred bytes each: a run of three participants a day is on the order of a megabyte a decade. `promptobus models` prints the count and the size so the number is visible without opening the file. There is no rotation and no expiry in this version — remove the file with `rm` and the tool starts a new one at the next `done`.
 
-## Status, done, sweep, dismiss, history, prune
+<a id="status-done-sweep-dismiss-history-prune"></a>
+
+## Status, done, sweep, dismiss, history
 
 An active root is followed by its children, indented with their own participant,
 warden and mail lines. Children already done remain visible while the root is
@@ -1142,13 +1144,15 @@ The assignment watermark remains independent. Close winning first forbids
 reservation; reservation winning first blocks close. A stale plan or late callback
 from either harness cannot replace a current native launch or a confirmed Stop.
 A repeated native `done` keeps
-the first close stamps and does not run another Stop, telemetry or cleanup pass.
+the first close stamps and does not run another Stop, telemetry or worktree cleanup.
+`--older-than` on that repeat still previews or applies journal retention and does not
+repeat the rest.
 Other harnesses retain their existing stop-and-sweep behavior. Raw engine
 `closeTask` remains a logical store operation; it has no physical-drain guarantee.
 
 Native reporter recovery uses the same exact-generation terminal guard as worker
 and reviewer recovery. Piece `sweep` also refuses unresolved native work before
-removing artifacts, participant files, worktrees or private homes. Close scans
+removing participant files, worktrees or private homes. Artifact records stay. Close scans
 task-owned native registry records even if no canonical Codex participant remains.
 Piece sweep scans records owned by that task and selected address even if its
 canonical seat was replaced by a legacy writer; other participants stay independent.
@@ -1206,17 +1210,17 @@ For Codex, Stop closes new model dispatch and waits under one bounded deadline f
 
 **Its gate is not the owner gate of `done`, and `dismiss` and `stop` now stand on this side of that line.** Acceptance runs in the approver's session, not the orchestrator's ([ADR-024](../adr/adr-024-approver-acceptance-in-own-worktree.md)), so the command admits the task mailbox owner or a participant of this task with role `approver` whose recorded session is the calling one — proven the same way direct worker↔approver traffic is proven, by the session on the participant record, and read from the one home the three cleanup commands share (`approverHere` in `lib/store.js`). Nobody else. It refuses the orchestrator, which owns the task rather than a piece of it, and an address that is not a participant, naming who is. A session that is not dead refuses too, before anything is touched: `git worktree remove` does not look at processes, and the directory would leave from under a running `cwd`. The refusal names `promptobus stop <address>` as the step before it. A state that could not be read refuses too, on a line of its own that says why: the harness binary was not found or does not start, naming what was looked for — the host's own reason, `claude on this process's PATH`, or the path with its error code; tmux could not be run for a Cursor participant, naming where it was looked for ([05-drivers § Cursor: tmux by absolute path](05-drivers.md#cursor-tmux-by-absolute-path)); the harness registry could not be read (`claude agents --json is unreadable`); the harness's registry home is named by nobody; there is nobody to ask; or the record carries no session reference. All but the last are about the observer, not the session, and the line says to repeat the sweep once `status` reads it. A record with no reference will never read, so that line names the way out instead: close the session from the harness and remove the tree by hand, or lift the participant again so its record carries one. One "session is unknown" used to cover all three, and sent a reader after a dead or mis-addressed participant when `claude` was simply not on a lifted session's `PATH` — which the state query no longer depends on: it runs the binary the host names, the lift's own door ([05-drivers § The harness binary after a lift](05-drivers.md#the-harness-binary-after-a-lift-the-lifts-door-not-path)). `status` prints the same reason on the participant's line.
 
-**What it removes.** The participant's worktree and the `worktree-` branch the mechanism created, on the same measurements `done` uses and no other. The metadata records of the artifacts it sent, the `files/` entry of each, and the blob of each once no surviving record names it — a blob is deduplicated inside the task, which is why it leaves last and only then. Its files in `workers/` — the mcp-config, the settings file, the Claude Code session record and the temporary stands — and its contact point under `wake/`.
+**What it removes.** The participant's worktree and the `worktree-` branch the mechanism created, on the same measurements `done` uses and no other. Its files in `workers/` — the mcp-config, the settings file, the Claude Code session record and the temporary stands — and its contact point under `wake/`. Artifact records, `files/` entries and blobs stay with the task journal until `done` removes that journal.
 
 **What it never removes, and this is a check rather than a comment.** The journal, the canonical messages, the mailboxes, the warden log, `health.json`, `stalls.json` and the `waits/` sidecars. Those are exactly what `recordTelemetry` reads at `done` to write the rows a strategy is built from ([Participant telemetry](#participant-telemetry)), so a sweep that took one of them would blank that piece's telemetry row silently. `keptPaths` names them and `keptBy` refuses a removal aimed inside any of them; the suite runs the guard on both answers and then closes the swept task and reads the row back.
 
-**A piece whose merge is not provable keeps its tree — and its blobs and files with it.** One proof gates all three, because a tree that is not in the base and the artifacts that describe it may each be the only copy of that work. The card asks only for the tree; extending the same gate to the artifacts is safe under either reading of it. The secrets in `workers/` still go: they are gated on the session being dead, not on the merge, exactly as in `done`.
+**A piece whose merge is not provable keeps its tree and its branch.** One proof gates those two. Artifact records, `files/` entries and blobs stay whether or not the merge is proven: they are the journal's, and `done` is what removes the journal. The secrets in `workers/` still go: they are gated on the session being dead, not on the merge, exactly as in `done`.
 
-**The `brief-<slug>.md` and `review-<slug>.diff` of the piece stay.** They are evidence, not product: the brief says what the participant was asked to do and the diff says what the reviewer read, and together they are why the piece was accepted. A sweep that took them would leave the acceptance without its grounds. "Files of the piece" therefore means the blobs the participant sent and their `files/` entries, and it is said here in words rather than left to be inferred from what the code happens to touch.
+**The `brief-<slug>.md` and `review-<slug>.diff` of the piece stay.** They are evidence, not product: the brief says what the participant was asked to do and the diff says what the reviewer read, and together they are why the piece was accepted. A sweep that took them would leave the acceptance without its grounds. Gate and handover records in `files/` stay for the same reason.
 
 `history` prints read mail, oldest first. Default limit 50. `--all` drops the limit. It does not mark mail read. Its unit is an ENTRY, not a message: one message sitting with two people yields two entries, and the limit counts entries, so a page boundary may legally split the entries of one message — the cursor is opaque and carries the full order key.
 
-`prune` previews deletions. `--yes` deletes. `--older-than <days>` changes the age. The threshold is derived from a measurement and from why the journal is kept at all: a live workspace held 54 tasks and 18 MB on 2026-08-30, against 40 tasks and 11 MB on 2026-08-28 — about 3 MB a day of dense orchestration — and people return to a finished run's mail in days, not weeks. The subject is separate from `done` on purpose: `done` ends a LIVE run and sweeps foreign leftovers, `prune` removes the journal of something long closed, and the cost of a mistake differs — `done` runs in every run, `prune` is called by a person by hand. Artifacts leave with their mail rather than on a clock of their own: an artifact arrived with a message, and without the message it is a file with no reason; the dry run names their count separately.
+Journal retention runs at the end of `done`. Tasks closed more than `PRUNE_DEFAULT_DAYS` (14) days ago are removed, together with their attachments and participant mailboxes. Telemetry stays: it is written outside the task journal. `--older-than <days>` previews that removal at the given age and deletes nothing; `--yes` applies the preview. The threshold comes from a measurement and from why the journal is kept at all: a live workspace held 54 tasks and 18 MB on 2026-08-30, against 40 tasks and 11 MB on 2026-08-28 — about 3 MB a day of dense orchestration — and people return to a finished run's mail in days, not weeks. The dry run names each task, its size and its artifact count, and its delete line is `done --task <id> --older-than <days> --yes`. Artifacts leave with the journal, not at `sweep`.
 
 ## Message-order rebuild
 
@@ -1921,7 +1925,7 @@ should see what is leaving rather than what left.
 
 **A closed task is refused, and an explicit `--task` is not a way in.** The command promises
 the task stays active and prints that line at the end; on a closed task the line would be a
-lie, and what is left of one goes with `done` and `prune` instead.
+lie, and what is left of one goes with `done` instead.
 
 The exit code is 0 for every lawful outcome, a kept tree included — "not provably merged"
 is a verdict, not a failure, and the line carrying it is a warning. It is 1 when git refused
@@ -1963,8 +1967,8 @@ from the one home the proof lives in, `approverHere` in `lib/store.js` — this 
 **Two things still part the sweep from the owner gate.** `done` is not lifted with the cleanup
 pair: closing the run is the owner's. And a task with no recorded owner parts them the other way —
 the owner gate lets a session that names itself through such a task (`ownerless`), while the sweep
-refuses it unless an approver proves the session, because what it deletes is a worktree, a branch
-and the blobs of a participant in a task where the others are still working.
+refuses it unless an approver proves the session, because what it deletes is a worktree and a branch
+of a participant in a task where the others are still working.
 
 The approver's proof is the one direct worker↔approver traffic uses (`requireDirectSender`):
 the record must carry a session of its own, and `foreignSessionOf` must not call the caller
@@ -1998,36 +2002,37 @@ digest, so a second send of the same payload is recorded under the numbered name
 actually landed — and identity is then proven by the inode the entry shares with its blob.
 Both halves are needed: the name alone could name a foreign file, and the inode alone
 cannot tell two entries of one deduplicated blob apart. An entry whose inode does not match
-is left in place and named out loud, so a store that stopped hard-linking would surface as
-a line rather than as a sweep that quietly removes nothing.
+is left in place.
 
 ### `sweepArtifacts` — the removals of one piece, under the publication lock
 
 Source: `lib/sweep.js`, `sweepArtifacts`.
 
-The records, `files/` entries and blobs of the piece, removed in that order, with the
-count of each and the names of the two states that were not removed.
+`sweep` does not call this. The function prints nothing: it returns counts. Artifact
+records, `files/` entries and blobs stay with the task journal. Retention removes the
+whole journal directory once the task is past the age threshold. `removeJournals` and
+`engine.prune` delete that directory and do not call `blobNamed`. The function still
+removes those three, in that order, under the publication lock, when a caller invokes it.
 
 **A blob leaves only when nothing names it, and the question has one answer.** That answer
 is `blobNamed` in the package ([04-protocol](04-protocol.md#store-layout)) — a metadata
-record of the task, or a hard link beyond the blob file itself — and `prune`'s own reading
-of orphan payloads is the same function. It used to be two: the sweep computed a set of
-surviving digests and separately read the link count, while the engine asked only the
-records, so one of them could call a payload nobody's while the other still held it.
+record of the task, or a hard link beyond the blob file itself. It used to be two: the
+function computed a set of surviving digests and separately read the link count, while
+the engine asked only the records, so one of them could call a payload nobody's while
+the other still held it.
 
 **The reading happens under the publication lock.** A send that carries an artifact writes
-the payload, names it and writes the record inside that same lock, so a sweep either has
+the payload, names it and writes the record inside that same lock, so this function either has
 not started or sees a finished publication — never the window between a payload and its
 record, where nothing names it at all. The lock is the publication one and not the
 journal's: the journal lock is held here across a worktree removal, and an artifact send
 must not wait on git. The records are read ONCE, and only after the lock is in hand: a set
 read before the wait would miss what landed during it, and re-reading them per blob is
 quadratic in the task's artifacts. Under the lock nothing else can publish, so the only
-later change to that set is this sweep's own removals, tracked as they are made.
+later change to that set is this function's own removals, tracked as they are made.
 
-A blob something still names is left in place and said out loud. An entry whose inode does
-not match its blob is left in place and named too, so a store that stopped hard-linking
-surfaces as a line rather than as a sweep that quietly removes nothing.
+A blob something still names stays in place. An entry whose inode does not match its
+blob stays in place. The function prints neither case.
 
 ### `childOf` — a path built from a record field stays a direct child
 
@@ -2046,10 +2051,11 @@ The worktree directory of one participant and the `worktree-` branch behind it, 
 `inspectWorktree` and `worktreeDisposition` — the same pair `done` uses, so there is no
 second opinion about what "merged" means.
 
-The role registry decides which tree can be taken. An `edits-tree` step may sweep its own worktree; a `writes-main-tree` step may sweep its own accepted worktree but never a path the owner step names, including an alias of the same physical directory. In that case the gate's artifacts and sidecars can still go. A `reads-diff` step and governance participants have no worktree to remove, even if a stale record carries one. Their artifacts and sidecars can still go.
+The role registry decides which tree can be taken. An `edits-tree` step may sweep its own worktree; a `writes-main-tree` step may sweep its own accepted worktree but never a path the owner step names, including an alias of the same physical directory. In that case the gate's session files can still go. A `reads-diff` step and governance participants have no worktree to remove, even if a stale record carries one. Their session files can still go. Artifact records stay on every step.
 
-It answers one of four states, and the artifacts of the piece follow it: `removed` and
-`none` let them go, `kept` and `vanished` hold them.
+It answers one of four states. Artifact records, `files/` entries and blobs stay on
+every state. `removed` and `none` are the states that take the tree when there is one;
+`kept` and `vanished` hold the tree.
 
 **`vanished` is not `none`, and the difference is the whole point of having both.** `none`
 means the record names no worktree at all — a reviewer, say — so there is nothing to prove

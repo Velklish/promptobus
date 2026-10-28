@@ -493,16 +493,17 @@ test('dismiss, stop and sweep accept a declared gate and sweep keeps its owner t
     assert.match(await capture(() => stop(host, { task: task.id, address: 'security:x' },
       { registry: drivers })), /session of participant security:x closed/);
     assert.deepEqual(calls, ['security-session']);
-    assert.match(await capture(() => sweep(host, { task: task.id, address: 'security:x' },
-      { registry: drivers })), /artifacts of security:x removed/);
+    const swept = await capture(() => sweep(host, { task: task.id, address: 'security:x' },
+      { registry: drivers }));
+    assert.doesNotMatch(swept, /artifacts of security:x removed/);
   } finally {
     store.bindSessionIdentity(null);
   }
   assert.ok(existsSync(path.join(ownerTree, 'base.txt')));
   assert.equal(git('show-ref', '--verify', `refs/heads/${ownerBranch}`).status, 0);
   assert.ok(!existsSync(mcp) && !existsSync(settings));
-  assert.ok(!existsSync(path.join(store.artifactsDir(home, task.id), `${artifact.artifact.id}.json`)));
-  assert.equal(readdirSync(store.blobsDir(home, task.id)).filter((name) => !name.startsWith('.')).length, 0);
+  assert.ok(existsSync(path.join(store.artifactsDir(home, task.id), `${artifact.artifact.id}.json`)));
+  assert.ok(readdirSync(store.blobsDir(home, task.id)).filter((name) => !name.startsWith('.')).length > 0);
 });
 
 function gateSweepFixture(label, ownerName) {
@@ -563,8 +564,8 @@ function gateSweepFixture(label, ownerName) {
   };
   const filesGone = ({ artifact, mcp, settings }) => {
     assert.ok(!existsSync(mcp) && !existsSync(settings));
-    assert.ok(!existsSync(path.join(store.artifactsDir(home, task.id), `${artifact.artifact.id}.json`)));
-    assert.equal(readdirSync(store.blobsDir(home, task.id)).filter((name) => !name.startsWith('.')).length, 0);
+    assert.ok(existsSync(path.join(store.artifactsDir(home, task.id), `${artifact.artifact.id}.json`)));
+    assert.ok(readdirSync(store.blobsDir(home, task.id)).filter((name) => !name.startsWith('.')).length > 0);
   };
   return { root, repo, git, home, task, ownerTree, ownerBranch, ownerMcp, addGate, sweepGate, filesGone };
 }
@@ -581,7 +582,7 @@ for (const ownerName of ['worker', 'builder']) {
     const gate = fixture.addGate('merge:x', gateTree);
     const output = await fixture.sweepGate('merge:x');
     assert.match(output, /belongs to the owner step and stays in place/);
-    assert.match(output, /artifacts of merge:x removed/);
+    assert.doesNotMatch(output, /artifacts of merge:x removed/);
     assert.ok(existsSync(path.join(fixture.ownerTree, 'base.txt')));
     assert.equal(fixture.git('show-ref', '--verify', `refs/heads/${fixture.ownerBranch}`).status, 0);
     assert.equal(readFileSync(fixture.ownerMcp, 'utf8'), 'owner config');

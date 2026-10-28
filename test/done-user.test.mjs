@@ -95,8 +95,6 @@ const status = cli(['status', '--task', task]);
 check('status lists the user address', status.status === 0 && result(status).includes('user ·'), result(status));
 const history = cli(['history', '--task', task, '--participant', 'user']);
 check('history reads the user answer', history.status === 0 && result(history).includes('Yes.'), result(history));
-const prune = cli(['prune']);
-check('prune previews a task with user', prune.status === 0, result(prune));
 const stop = cli(['stop', 'worker:after', '--task', task], true);
 check('stop sees a dead participant after user', stop.status === 0
   && result(stop).includes('no live session'), result(stop));
@@ -122,3 +120,47 @@ check('done keeps user and its correspondence in the task journal',
 const warden = cli(['warden', '--task', task]);
 check('warden exits cleanly for the closed task with user', warden.status === 0
   && result(warden).includes('task is closed'), `${warden.status}: ${result(warden)}`);
+const unknown = cli(['prune']);
+check('prune is not a command', unknown.status !== 0 && /unknown command "prune"/.test(result(unknown)),
+  result(unknown));
+function deleteCommand(text) {
+  const line = text.split('\n').map((item) => item.trim()).find((item) => item.includes('To delete:'));
+  const command = line?.split('To delete:').pop()?.trim() ?? '';
+  const argv = command.split(/\s+/);
+  const at = argv.indexOf('done');
+  return { command, args: at < 0 ? [] : argv.slice(at) };
+}
+
+const preview = cli(['done', '--task', task, '--older-than', '0'], true);
+const previewText = result(preview);
+const printed = deleteCommand(previewText);
+check('done --older-than previews the closed journal and deletes nothing',
+  preview.status === 0 && /Nothing deleted/.test(previewText)
+  && existsSync(store.taskDir(home, task)), previewText);
+check('the preview names done --task for the closed journal',
+  printed.command.includes(`done --task ${task} --older-than 0 --yes`)
+  && !printed.command.includes('done --older-than 0 --yes'),
+  previewText);
+const applied = cli(printed.args, true);
+check('the printed command removes the journal when no task is active',
+  applied.status === 0 && !existsSync(store.taskDir(home, task)), result(applied));
+
+const live = 'done-user-live-t20260927-000001';
+const closed = 'done-user-closed-t20260927-000002';
+store.createTask(home, { id: live, title: 'still active beside retention', owner });
+store.createTask(home, { id: closed, title: 'closed beside a live task', owner });
+const beside = cli(['done', '--task', closed, '--older-than', '0'], true);
+const besideText = result(beside);
+const besidePrinted = deleteCommand(besideText);
+const liveStatus = () => (existsSync(store.taskDir(home, live)) ? store.readTask(home, live).status : 'missing');
+check('the preview names the closed task while another task is active',
+  beside.status === 0 && besidePrinted.command.includes(`done --task ${closed} --older-than 0 --yes`)
+  && liveStatus() === 'active'
+  && existsSync(store.taskDir(home, closed)),
+  besideText);
+const besideApplied = cli(besidePrinted.args, true);
+check('the printed command leaves the other active task open and removes the closed journal',
+  besideApplied.status === 0
+  && liveStatus() === 'active'
+  && !existsSync(store.taskDir(home, closed)),
+  result(besideApplied));

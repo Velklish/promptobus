@@ -586,3 +586,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-286.2"></a>`PB-286.2-out-of-root-repository-path` · 2026-10-28 · completed · — · Resolve out-of-root repository paths consistently
 - <a id="pb-234.5"></a>`PB-234.5-probe-semantic-coverage-boundary` · 2026-10-28 · completed · — · Record the semantic coverage boundary of a mutation probe
 - <a id="pb-373.6"></a>`PB-373.6-live-script-import-starts-native-session` · 2026-10-28 · completed · — · Importing a live entry point accidentally starts a native harness session
+- <a id="pb-333"></a>`PB-333-cleanup-two-verbs` · 2026-10-28 · completed · — · Cleanup has two verbs: sweep removes a piece's worktree and branch only, done applies the retention, and prune goes

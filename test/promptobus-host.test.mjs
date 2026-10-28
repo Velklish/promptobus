@@ -154,7 +154,7 @@ const dismissed = store.participantOf(store.readTask(customHome, visible.id), 'w
 check('dismiss writes the store home declared by the host',
   !customDismiss.failed && typeof dismissed === 'string', `${customDismiss.out} · dismissed=${dismissed}`);
 
-const customPrune = expectFail(() => prune(customHost, { olderThan: 0 }));
+const customPrune = expectFail(() => prune(customHost, { olderThan: 0, task: old.id }));
 check('prune reads the store home declared by the host',
   !customPrune.failed && customPrune.out.includes(old.id) && /would be removed/.test(customPrune.out),
   customPrune.out);
@@ -164,10 +164,10 @@ const consumerHost = {
   formatNpx: (args) => ['npx', 'consumer', ...args].join(' '),
   busCommand: (args) => ['consumer', 'promptobus', ...args].join(' '),
 };
-const consumerPrune = expectFail(() => prune(consumerHost, { olderThan: 0 }));
+const consumerPrune = expectFail(() => prune(consumerHost, { olderThan: 0, task: old.id }));
 check('prune dry-run hints use the consumer host bus command',
   !consumerPrune.failed
-  && consumerPrune.out.includes('To delete: consumer promptobus prune --older-than 0 --yes')
+  && consumerPrune.out.includes(`To delete: consumer promptobus done --task ${old.id} --older-than 0 --yes`)
   && !consumerPrune.out.includes('To delete: npx consumer prune'),
   consumerPrune.out);
 

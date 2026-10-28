@@ -21,7 +21,7 @@
 // nowhere: spawn the worker → its first `status` → the orchestrator's `answer` → a
 // warden knock on the participant socket → its `result` → `promptobus review` with a
 // scripted reviewer → notes → a second `result` → a report of a SILENT end of turn →
-// `promptobus done` with session teardown and worktree cleanup → `promptobus prune`. The
+// `promptobus done` with session teardown and worktree cleanup → `done --older-than`. The
 // mechanism in the loop is real throughout: CLI, the `claude` driver, the warden as a
 // process, the bus MCP server, the task store, git. Only the harness binary is
 // substituted, and the substitution sits on its boundary — the driver remains the
@@ -374,7 +374,7 @@ export const STEPS = [
   'fan-out to two participants and artifact deduplication',
   'history, status and mailbox claim',
   'promptobus done: session teardown and cleanup',
-  'promptobus prune and warden exit',
+  'done --older-than and warden exit',
 ];
 
 /**
@@ -1293,18 +1293,18 @@ export async function runScenario({
       `had ${JSON.stringify(secretsBefore)} · left ${JSON.stringify(secretsBefore.filter((f) => existsSync(f)))}`);
     at(STEPS[12], Date.now() - t13);
 
-    // --- step 14: prune and warden exit ---------------------------------------------
+    // --- step 14: done --older-than and warden exit ---------------------------------
     const t14 = Date.now();
     const gone = await waitFor(() => (store.liveWarden(home, TASK) ? null : true), { timeoutMs: step });
     check('step 14: the warden exited on its own — the task is closed, there is nothing to watch',
       gone === true && /warden exited/.test(store.tailWardenLog(home, TASK, 200).join('\n')),
       store.tailWardenLog(home, TASK, 20).join('\n'));
-    const probe = runCli([ 'prune', '--older-than', '0'], { cwd: ws, env: orchEnv });
-    check('step 14: a prune probe names the closed task and deletes nothing',
+    const probe = runCli([ 'done', '--task', TASK, '--older-than', '0'], { cwd: ws, env: orchEnv });
+    check('step 14: done --older-than names the closed task and deletes nothing',
       probe.status === 0 && probe.out.includes(TASK) && /Nothing deleted/.test(probe.out)
       && existsSync(store.taskDir(home, TASK)), tail(probe.out));
-    const pruned = runCli([ 'prune', '--older-than', '0', '--yes'], { cwd: ws, env: orchEnv });
-    check('step 14: prune --yes removed the journal of the closed task',
+    const pruned = runCli([ 'done', '--task', TASK, '--older-than', '0', '--yes'], { cwd: ws, env: orchEnv });
+    check('step 14: done --older-than --yes removed the journal of the closed task',
       pruned.status === 0 && !existsSync(store.taskDir(home, TASK)), tail(pruned.out));
     check('step 14: the bus server wrote nothing stray onto the protocol channel',
       mcp.strays.length === 0, JSON.stringify(mcp.strays.slice(0, 3)));
