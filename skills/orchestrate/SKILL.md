@@ -96,7 +96,7 @@ promptobus sweep <address> [--task <id>]
 promptobus dismiss <address> [--task <id>]
 promptobus warden [--task <id>]
 promptobus review <path> [--task <id> | --title <name>] [--base <ref>] [--model <m>] [--effort <e>] [--permission-mode <p>] [--harness <h>] [--strategy <s>] [--allow-payg] [--refresh] [--approver [--brief <file>]] [--dry-run]
-promptobus models [--strategy <s>] [--role <worker|reviewer|approver>] [--refresh] [--json]
+promptobus models [--strategy <s>] [--role <worker|reviewer|approver>] [--refresh | --no-probe] [--json]
 promptobus lease [--as <address>] [--task <id>] [--wait <seconds>] -- <command…>
 ```
 
@@ -259,7 +259,7 @@ Agree the envelope with the user before the first spawn, in the same approval as
 
 A fallback **inside** the envelope needs no second approval: a preflight that excludes the first candidate moves to the next one on an allowed harness, and the user already approved that. **Leaving** the envelope does need one — another harness, pay-as-you-go they did not allow, a strategy other than the one agreed for that track. Ask, in the words [Messages to the person](#messages-to-the-person) gives; do not widen it yourself.
 
-`promptobus models [--strategy <s>] [--role <worker|reviewer|approver>]` is how you see what a strategy would pick before spawning. Show it when you propose the envelope. It reads the availability cache; `--refresh` probes the harnesses instead. On `spawn` and `review`, `--dry-run` reads the cache and starts nothing.
+`promptobus models [--strategy <s>] [--role <worker|reviewer|approver>]` is how you see what a strategy would pick before spawning. Show it when you propose the envelope. It probes the harnesses by default and updates the availability cache; `--no-probe` reads the cached readings only. On `spawn` and `review`, `--dry-run` reads the cache and starts nothing.
 
 `promptobus status` prints the strategy, tuple, snapshot age and warnings of every routed participant. Audit the envelope there during the run, not only at its start. A lift routed by the recorded default rather than by a flag says so, so a run made under a switch the person agreed to is auditable as one.
 
