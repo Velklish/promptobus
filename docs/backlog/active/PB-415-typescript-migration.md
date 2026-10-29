@@ -11,7 +11,7 @@
 
 The owner requested a migration of maintained Promptobus code to strict TypeScript on 2026-10-30, split into independently accepted tasks. The owner interview selected runtime and CLI first; maintained tests and scripts stay JavaScript in this phase. The runtime currently combines typed source under src/ with unchecked JavaScript under lib/; tsconfig.json includes only src/. The shared MCP and warden change has its own task, PB-416, and must not be hidden inside a language-only migration.
 
-A parallel session owns the ati-agents migration. That consumer imports Promptobus library entry points and supplies a PromptobusHost with callbacks. Its installed dependency remains pinned to 0.31.0 until a complete replacement artifact is ready. Public package specifiers, PromptobusHost signatures, and the emitted paths dist/index.js, dist/host-index.js, lib/cli.js and bin/promptobus.js remain compatible. Production bytes and consumer bundle provenance are updated together only at the final consumer handover.
+A parallel session owns the the private workspace consumer migration. That consumer imports Promptobus library entry points and supplies a PromptobusHost with callbacks. Its installed dependency remains pinned to 0.31.0 until a complete replacement artifact is ready. Public package specifiers, PromptobusHost signatures, and the emitted paths dist/index.js, dist/host-index.js, lib/cli.js and bin/promptobus.js remain compatible. Production bytes and consumer bundle provenance are updated together only at the final consumer handover.
 
 Use the personally installed codebase-design and typescript-advanced-types skills. Repository terminology and contracts take precedence. Prefer ordinary explicit types and narrowing; advanced type machinery needs an actual contract that benefits from it.
 
@@ -30,7 +30,7 @@ Use the personally installed codebase-design and typescript-advanced-types skill
 - Rewriting the runtime in Go, C# or another language.
 - Unrelated architectural refactoring, dependency replacement, or changes to supported harness behavior.
 - Implementing the shared MCP/warden design as an undocumented consequence of the language migration.
-- Editing ati-agents, its dependency pin or its trusted production manifest from this repository.
+- Editing the private workspace consumer, its dependency pin or its trusted production manifest from this repository.
 - Converting the maintained test suite and standalone development scripts to TypeScript in this phase.
 
 ## Verification

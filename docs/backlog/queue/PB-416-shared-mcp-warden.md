@@ -17,7 +17,7 @@ The investigation also found retained processes of closed tasks and temporary te
 ## Work to do
 
 - Use the confirmed per-workspace scope, on-demand lifetime, combined bus/reviewer_files process and coordinated HTTP migration. Obtain approval of the execution plan before production code changes.
-- Define the shared process entry point, concurrent-start ownership, discovery, version compatibility, shutdown and crash recovery. Keep workspace knowledge behind the Host contract rather than copying ATI rules into Promptobus.
+- Define the shared process entry point, concurrent-start ownership, discovery, version compatibility, shutdown and crash recovery. Keep workspace knowledge behind the Host contract rather than copying consumer workspace rules into Promptobus.
 - Serve the bus MCP tools to multiple clients without one long-running bus subprocess per client. Preserve each client's task, address, launch and permission binding; process-global environment identity cannot serve as multi-client authorization.
 - Run the task-specific warden state machines in the shared warden, preserving mailbox routing, aliases, wake delivery, retries, deadlines and ownership checks.
 - Update all supported harness launch configurations and the installation/upgrade path. Treat reviewer file tools and Codex holders as separate responsibilities and make their process ownership explicit.
@@ -30,7 +30,7 @@ The investigation also found retained processes of closed tasks and temporary te
 
 - Running the shared service on a remote host, supporting multiple OS users through one authority, or changing the journal into a network service.
 - Changing models, subscription routing policy, worker/reviewer powers or task ownership semantics.
-- Rewriting consumers such as ati-agents in this repository or silently adopting an unverified MCP protocol version.
+- Rewriting consumers such as the private workspace consumer in this repository or silently adopting an unverified MCP protocol version.
 - Reducing the number of agent harness processes by sharing their model sessions.
 
 ## Verification
