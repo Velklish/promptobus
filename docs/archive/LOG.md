@@ -598,3 +598,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-285.1"></a>`PB-285.1-codex-schema-consumed-contract` · 2026-10-28 · completed · — · Replace the full Codex schema snapshots with a generated consumed contract for the minimum and current versions
 - <a id="pb-406.3"></a>`PB-406.3-routing-plan-capacity` · 2026-10-28 · completed · — · Routing weighs subscription plans and owner-declared capacity
 - <a id="pb-406.5"></a>`PB-406.5-opencode-quota-source` · 2026-10-29 · completed · — · OpenCode gets a quota source and catalog tuples, so routing can see and choose it
+- <a id="pb-406"></a>`PB-406-routing-subscription-aware` · 2026-10-29 · completed · — · Model routing decides on current, plan-aware subscription limits
