@@ -9,15 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- OpenCode availability reads `opencode models` and `opencode stats --days 0` and `--days 7` with `--models --json`, and turns per-model token totals into 5-hour and weekly windows. Each window is a local estimate and `no-pace`: 20 percent and 50 percent of `account.opencode.allowance.monthlyTokens`. That field is an absolute token count with no default. Until it is set, the windows show no used percentage. Once set, that percentage scales `remaining` under the weighted strategies, excludes the tuple when the window is spent, takes no part in pace, and does not raise `near-limit`, because a `no-pace` window is not a pace representative. Under `balance` the tuple can still be excluded by a spent window. A stats call that is not read, or an `opencode models` call that times out, errors, exits non-zero, or parses to an empty list, is `unknown` / `probe_failed`, and the previous percentage is kept. A named stats row with an unreadable token total fails the parse. The catalog rates `opencode-go/minimax-m3` at the harness default effort, as a worker. Model ids ending in `-free` or `-contributor` carry `off-allowance` and are never chosen automatically, including by an explicit model name; `account.opencode.denySuffixes` adds further suffixes.
-
+- OpenCode availability reads `opencode models` and `opencode stats --days 0` and `--days 7` with `--models --json`, and turns per-model token totals into 5-hour and weekly windows. Each window is a local estimate and `no-pace`: 20 percent and 50 percent of `account.opencode.allowance.monthlyTokens`. That field is an absolute token count with no default. Until it is set, the windows show no used percentage.
+- Once `account.opencode.allowance.monthlyTokens` is set, the OpenCode used percentage scales `remaining` under the weighted strategies and excludes the tuple when the window is spent. It takes no part in pace and does not raise `near-limit`, because a `no-pace` window is not a pace representative. Under `balance` the tuple can still be excluded by a spent window.
+- An OpenCode stats call that is not read, or an `opencode models` call that times out, errors, exits non-zero or parses to an empty list, is `unknown` / `probe_failed`, and the previous percentage is kept. A named stats row with an unreadable token total fails the parse.
+- The catalog rates `opencode-go/minimax-m3` at the harness default effort, as a worker. Model ids ending in `-free` or `-contributor` carry `off-allowance` and are never chosen automatically, including by an explicit model name. `account.opencode.denySuffixes` adds further suffixes.
 - Evidence of a check is the command, its exit code and the gate count in the participant report and in `result.md`. The repository gates and the package's own live scripts do the checking. The orchestration skill and the BB participant skills forbid a bespoke verification harness: wrapper scripts, receipt files, hash manifests or frozen review packets beyond the package's own tools and repository fixtures. The BB evidence recipe stays the package's own opaque `.txt` receipts, command runner and evidence preparation. A task's closing criteria must be checkable on the current machine; a live measurement that needs an unavailable resource moves to a child card, and the parent closes on the checkable part.
 - Routing uses owner-declared relative capacity for session, weekly and monthly windows in remaining allowance and balance pace; undeclared kinds retain the previous estimate. Capacity is bounded at 1,000,000,000 so derived numbers stay finite. `models` shows the effective adapter or overlay plan and each capacity with its source.
-
 - Cursor routing scores api-pool models at the highest quota cost and keeps pool spend order during balance fallback. Pool membership remains available when the auto pool's usage percentage is missing; a changed membership keeps old windows visible but unbound until fresh usage arrives, with the reason shown in `models` text and JSON. Overlays can deny a Cursor pool for automatic selection with `deny.pools`; an explicitly named model still runs with a warning.
-
-- `models` probes routing harnesses by default; `--no-probe` reads cached facts without a probe. Routing decisions report availability, inventory and per-window ages and sources. Failed or skipped probes retain last-known windows, and a routed lift rechecks timed exhaustion before reset. A dry run keeps live exhaustion without probing; marking exhaustion preserves old window timestamps, including windows from older caches.
-
+- `models` probes the routing harnesses by default and updates the availability cache. `--no-probe` reads the cached facts without a probe, and `--refresh` stays accepted as an explicit spelling of the default.
+- Routing decisions report availability, inventory and the age and source of each window. A failed or skipped probe keeps the last-known windows. A routed lift rechecks a timed exhaustion before its reset. A dry run keeps a live exhaustion without probing. Marking an exhaustion preserves the old window timestamps, including windows from older caches.
 - The orchestration skill words every message to the person once. A question, a status report and a reporter's answer stand alone, name a task by its number and its title, and put a plain description of the work beside a participant address or a review code. The split, the shape choice and the strategy envelope link to that rule. The reporter lift prompt carries the same rule, because a Claude reporter cannot open the skill.
 - Rechecked Codex teamlead hook isolation, isolated-home skill loading and the applied `dangerFullAccess` sandbox on installed codex-cli 0.164.0 in trusted disposable stands. A control thread ran both project hooks; the teamlead override ran neither, and its turn used the proof skill.
 - `sweep` removes a participant's worktree and branch only. Artifact records,
@@ -28,26 +28,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removes journals closed more than 14 days ago. The `prune` command is gone.
 - Keep generated consumed Codex schema contracts for the minimum and proven versions. The 0.164.0 contract comes from the installed binary, the 0.158.0 contract from its historical capture. `npm run codex-schema` compares the installed generator's consumed output with the committed contract; dated live evidence keeps its versioned paths.
 - Record live worker, reviewer and approver SessionStart and Stop hooks on that binary, plus a hidden-model turn, MCP child environment and a rate-limit notification carrying a window duration. The request-missing fallback remains unmeasured.
-
 - Refuse a repository path that resolves outside the install root before spawn
-  turns it into a namespace path. The comparison uses the canonical paths, so a
-  symlink spelling of an in-root clone is that clone, and a directory whose
-  name starts with `..` stays inside. The refusal names that location and the
-  install root. `resolveRepo`, `inWorkspace` and `cloneOf` share that comparison,
-  so a directory whose name starts with `..` is that clone for spawn and for
-  review. The install root is canonicalized once, when the host is created, so a
-  symlink spelling of that root is the same root for spawn and for review.
-  A repository inside the root resolves to that clone for both.
+  turns it into a namespace path. The refusal names that location and the
+  install root. `resolveRepo`, `inWorkspace` and `cloneOf` share one comparison
+  of canonical paths, so for spawn and for review a symlink spelling of an
+  in-root clone is that clone, and a directory whose name starts with `..`
+  stays inside. The install root is canonicalized once, when the host is
+  created, so a symlink spelling of that root is the same root for both.
 
 ### Fixed
 
 - Codex limit windows now take `session` or `weekly` from their duration rather than their `primary` or `secondary` slot. An explicit `lengthSec` is accepted when `windowDurationMins` is absent.
 - An OpenCode holder grants `external_directory` for the session directory and each
   `addDirs` entry (`<root>/*` and `<root>/**`). A filesystem root is not granted and
-  is not answered. It still replies `once` when an ask for those roots is pending,
-  and any other pending ask fails the lift. `viewOf`
-  reports that ask as `permission ask pending`. A busy session with an empty
-  permission list stays a running turn.
+  is not answered. The holder still replies `once` when an ask for those roots is
+  pending, and any other pending ask fails the lift. `viewOf` reports that ask as
+  `permission ask pending`. A busy session with an empty permission list stays a
+  running turn.
 - Importing a live script starts nothing. `node --check` is the syntax check. A stand that cannot prove stub binaries and isolated state homes refuses instead of using an installed harness binary. `node scripts/live-*.mjs` remains the live route.
 - A proved stand replaces `PATH` with its stub directory and clears `PROMPTOBUS_CURSOR_INSTALL_DIRS` before a raise, so `cursor-agent`, `agent`, `cursor`, `tmux`, `codex` and `claude` are not taken from an inherited `PATH` entry or a Cursor install directory.
 - The pause between a mailbox fetch and the following send waits for the
@@ -68,13 +65,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that adds it; until then the running bus refuses it. The BB worker instruction
   requires both reasons on a performed probe and does not tell the author to
   omit them. That omit window stays on the native worker preamble.
-
 - `abandon [<address>]` lets the mailbox owner retire a participant whose own
   harness reports the session dead and who has no Stop receipt. The owner may
   be any harness that names this session, and the participant may be on any
   harness. The journal records the missing receipt and does not gain a Stop
-  receipt. A live session is refused. `done` then closes the task and still
-  keeps a worktree whose work is not in the default branch.
+  receipt. A live session is refused, and so is a task on the BB lifecycle.
+  `done` then closes the task and still keeps a worktree whose work is not in
+  the default branch.
 
 ## [0.30.0] — 2026-10-27
 
