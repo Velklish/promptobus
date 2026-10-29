@@ -10,7 +10,7 @@ Everything the mechanism cleaned, it cleaned for a whole task. `done` closes the
 
 Measured on disk on 2026-09-12: `artifacts/`, `blobs/` and `files/` of an accepted piece stay until the whole journal is swept; `workers/<stem>.settings.json` was removed by nobody; a task closed on 2026-09-10 still carried three reviewer settings files; seventeen mechanism directories stood in the temporary root.
 
-The owner's boundary: the telemetry a strategy is built from must survive. The worktree and the branch of the accepted participant, the blobs and files of that piece, and the temporary stands may go. `telemetry.jsonl` lives outside the store. `health.json`, `supervisor.log`, `stalls.json`, `messages/` and the `waits/` sidecars leave with the task directory and must survive a piece sweep because `done` reads them to write telemetry.
+The owner's boundary: the telemetry a strategy is built from must survive. The worktree and the branch of the accepted participant and the temporary stands may go; the artifact records, files and blobs of that piece stay with the journal. `telemetry.jsonl` lives outside the store. `health.json`, `supervisor.log`, `stalls.json`, `messages/` and the `waits/` sidecars leave with the task directory and must survive a piece sweep because `done` reads them to write telemetry.
 
 The owner gate had the opposite default. `ownership` answered `gated: false` whenever it had nothing to compare, and `done`, `stop` and `dismiss` read `!gated` as a yes. A shell with no harness identity could close any task in the store. The gate exists against the neighbouring session on the same machine, not against an outsider who already has the store directory.
 

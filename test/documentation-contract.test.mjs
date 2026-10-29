@@ -435,3 +435,12 @@ check('docs: a fetch-then-send pause waits for the delivery mark, and a hold sta
   && has(read('README.md'), 'A pause that holds the turn stays a sleep.')
   && has(section(read('CHANGELOG.md'), '## [Unreleased]'), 'The pause between a mailbox fetch and the following send waits for the warden\'s delivery mark instead of sleeping one tick'),
   'suite isolation still tells every scripted pause to poll, or drops the hold that stays a sleep');
+check('docs: models probes by default in the orchestrate skill, abandon refuses a BB task, and the sweep ADR keeps artifacts',
+  has(orchestrateSkill, '[--refresh | --no-probe] [--json]')
+  && has(orchestrateSkill, 'It probes the harnesses by default and updates the availability cache; `--no-probe` reads the cached readings only.')
+  && !has(orchestrateSkill, 'It reads the availability cache; `--refresh` probes the harnesses instead.')
+  && has(read('docs/reference/03-cli.md'), 'A task on the BB lifecycle is refused.')
+  && has(read('docs/reference/03-cli.md'), '`--yes` applies the preview and is refused without `--older-than`.')
+  && has(adr('017', 'the-owner-gate-is-a-positive-proof'), 'the artifact records, files and blobs of that piece stay with the journal.')
+  && !has(adr('017', 'the-owner-gate-is-a-positive-proof'), 'the blobs and files of that piece, and the temporary stands may go'),
+  'a shipped skill or a reference still says models reads only the cache, or abandon, done --yes and sweep contracts are undocumented');
