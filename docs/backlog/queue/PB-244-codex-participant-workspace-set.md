@@ -3,36 +3,31 @@
 - **Order:** 140
 - **Scope:** [reference/03-cli](../../reference/03-cli.md), [reference/05-drivers](../../reference/05-drivers.md), `lib/driver-codex.js`
 - **Created:** 2026-09-23
-- **Dependencies:** the consumer's measurement of Codex skill and MCP precedence and its workspace plugin change define the canonical Codex skill source and precedence
+- **Dependencies:** none
 - **Cost:** major
 
 ## Context
 
-The owner requires a Codex worker and reviewer to receive the workspace skill and MCP set with workspace entries taking precedence over personal entries of the same name, as in the Claude Code participant contract. Outside-workspace sessions keep their usual personal set. `workspaceSkillsDir` (`lib/driver-codex.js:502`) finds `<workspace>/.codex/skills`; `prepare` (`:588`, `:602`) copies it into the participant directory. `mcpConfig` (`:544-569`) assembles the mechanism MCP set and `makeParticipantHome` (`:407-432`) writes the isolated `CODEX_HOME`, but the lift note (`:1095`) says `~/.agents/skills` remains visible because it follows `HOME`. The copy therefore does not establish precedence for colliding skills.
+The owner requires a Codex worker and reviewer to receive the workspace skill and MCP set with workspace entries taking precedence over personal entries of the same name, as in the Claude Code participant contract. Outside-workspace sessions keep their usual personal set.
+
+The skill half shipped in 0.22.0 (CHANGELOG, "Canonical Codex skills override colliding personal copies per participant thread"). The holder reads `skills/list` before `thread/start`, and `canonicalSkillOverrides` (`lib/codex-session.js:944`) turns the user-scoped copies whose names collide with a canonical skill into exact-path `skills.config` session overrides, set at `lib/codex-session.js:1626-1632`; the contract is in [reference/05-drivers](../../reference/05-drivers.md) (the `~/.agents/skills` paragraph, line 1469) and [reference/03-cli](../../reference/03-cli.md) (line 187). Live evidence of the skill half is the 0.158.0 fixture `test/fixtures/codex-app-server/0.158.0/CanonicalSkills-0.158.0-2026-10-01.json`: worker and read-only reviewer turns used canonical content, with zero colliding personal descriptors and the unrelated personal descriptor kept.
+
+What remains is the part the mechanism does not yet show: a live check on the version the driver now proves (`PROVEN_CODEX_VERSION`, `lib/driver-codex.js:52`), and the MCP side, where a server name from another source can still collide with a mechanism entry.
 
 ## Work to do
 
-- Consume the canonical skill source defined by the consumer's workspace plugin change, without requiring a global plugin enablement or modifying the owner's Codex configuration. Carry the same canonical skill names and content to both worker and reviewer, including their worktrees and reviewer sandbox.
-- Apply the measured Codex mechanism from the consumer's precedence measurement to suppress only colliding personal skill paths in the participant's isolated scope. Keep unrelated personal skills according to the harness contract. If the host cannot express this, expose an explicit blocker rather than report a clean set.
-- Preserve the existing isolated MCP set and reviewer `disabled_tools` boundary. Detect or prevent duplicate server names from another source; show what the participant actually receives.
-- Coordinate the source-path transition with the consumer's workspace plugin change so the removal of `.codex/skills` at the workspace root cannot silently leave participants without skills. Update the driver reference and lift diagnostics.
+- Live verification on a Codex worker and a Codex reviewer at the proven version: record `skills/list` and the model-visible list with colliding and non-colliding personal skills. Each workspace skill appears once with canonical content, and unrelated personal skills keep their visibility.
+- The MCP duplicate-name check: detect or prevent a duplicate server name from another source next to the isolated MCP set, and show what the participant actually receives (`mcpServerStatus/list`). Keep the reviewer `disabled_tools` boundary.
+- Record the exact commands, exit codes, Codex version and test counts, and run the Promptobus gates after any change.
 
 ## Out of scope
 
-- Manual Codex sessions in the workspace; the consumer's workspace plugin change owns those.
+- Manual Codex sessions in the workspace; the consumer's workspace owns those.
 - Replacing `HOME` for the participant: it also changes git and SSH behavior, as discussed in `docs/adr/adr-007-codex-participant-isolated-home.md`.
+- The skill mechanism itself, which shipped.
 
 ## Verification
 
-- In isolated fixtures, lift one worker and one reviewer with colliding and non-colliding personal skills. Record `skills/list` and the model-visible list: each workspace skill appears once with canonical content; unrelated personal skills retain their expected visibility.
+- In isolated fixtures, lift one worker and one reviewer with colliding and non-colliding personal skills, and record the lists named above.
 - Inspect `mcpServerStatus/list`, complete a usable MCP handshake, and verify reviewer write tools remain absent. Run the same fixture outside the workspace to prove its personal set is unchanged.
-- Record exact commands, exit codes, Codex version and test counts; run Promptobus gates after implementation.
-
-## Re-triage, 2026-09-23
-
-Checked on `39316bc2` from the repository root. **Cost `major`**: for a skill name that exists both in the workspace set and under `~/.agents/skills`, nothing establishes which copy a Codex participant uses — and the owner requires the workspace one.
-
-- Line references refreshed 2026-09-27 on `7be4c880`: `workspaceSkillsDir` is `lib/driver-codex.js:502-510`; `prepare` reads and copies it at `:588` and `:602`; `makeParticipantHome` is `:407-432`, `mcpConfig` is `:544-569`, and `:1095` prints that `~/.agents/skills` follows `HOME`. The same statement stands in `docs/reference/05-drivers.md:637-638` and `docs/reference/03-cli.md:65`.
-- The reviewer boundary exists: `disabled_tools` at `lib/driver-codex.js:558`. The ADR the Out of scope names exists: `docs/adr/adr-007-codex-participant-isolated-home.md`.
-- **Blocked outside this repository:** both dependencies are the consumer's work and leave no trace in this tree, so the card cannot start until they land. It is therefore ordered last among the `major` cards, after the ones that can start. The owner's requirement is recorded here without a date.
-- Its Verification lifts a Codex worker and reviewer live and records the Codex version. On this machine that is 0.156.1 while PB-196, deferred, has not re-measured; the measurement belongs with PB-196's.
+- Run Promptobus gates after implementation: `npx --no-install backslop gates`.

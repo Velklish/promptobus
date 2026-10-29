@@ -599,3 +599,13 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-406.3"></a>`PB-406.3-routing-plan-capacity` · 2026-10-28 · completed · — · Routing weighs subscription plans and owner-declared capacity
 - <a id="pb-406.5"></a>`PB-406.5-opencode-quota-source` · 2026-10-29 · completed · — · OpenCode gets a quota source and catalog tuples, so routing can see and choose it
 - <a id="pb-406"></a>`PB-406-routing-subscription-aware` · 2026-10-29 · completed · — · Model routing decides on current, plan-aware subscription limits
+- <a id="pb-16.1"></a>`PB-16.1-cursor-start-path-names-no-limit` · 2026-10-29 · rejected · — · The Cursor start path names no limit, so a late-start exhaustion cannot be classified
+- <a id="pb-24.1"></a>`PB-24.1-codex-notification-window-duration` · 2026-10-29 · rejected · — · The Codex notification fallback names no window duration, so that path now reports no window
+- <a id="pb-57.1"></a>`PB-57.1-harness-throughput-producers-absent` · 2026-10-29 · rejected · — · No harness reports a usable throughput observation yet — Cursor gives output tokens without generation time, Claude and Codex give usage without model-active time — so `calibrate` never proposes `speed`
+- <a id="pb-373.10"></a>`PB-373.10-bb-task-terminal-lifecycle` · 2026-10-29 · merged into PB-373.2 · — · BB needs an owned terminal task close operation
+- <a id="pb-406.7"></a>`PB-406.7-activate-routing-overlay` · 2026-10-29 · rejected · — · Activate routing pool deny and live caps after the installed runtime catches up
+- <a id="pb-408"></a>`PB-408-backlog-triage-2026-10-29` · 2026-10-29 · completed · — · Backlog triage 2026-10-29: close, merge and transfer cards
+- <a id="pb-286.4"></a>`PB-286.4-outside-check-lexical-dotdot` · 2026-10-29 · batch PB-408 · — · Four lib checks still treat a directory whose name starts with .. as outside
+- <a id="pb-370.2"></a>`PB-370.2-bb-reviewer-network-access-claim` · 2026-10-29 · batch PB-408 · — · BB reviewer network access claim exceeds the effective profile guard
+- <a id="pb-370.3"></a>`PB-370.3-bb-bindings-cli-output-limit` · 2026-10-29 · batch PB-408 · — · BB bindings inventory can exceed the plugin CLI output limit
+- <a id="pb-406.9"></a>`PB-406.9-opencode-five-hour-window-from-today-bucket` · 2026-10-29 · batch PB-408 · — · The OpenCode 5-hour window is estimated from the stats bucket for today
