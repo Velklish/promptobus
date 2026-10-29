@@ -409,7 +409,7 @@ test('a binding reads the half of the line its comment adjoins, and no other', (
 test('classify judges a row the WALK built, not one a fixture assembled', () => {
   // The seam, not the predicate: every other `classify` case hands it a row written by hand,
   // where `text`, `under` and `exists` are whatever the fixture says they are.
-  const rel = 'lib/model-routing/catalog.js';
+  const rel = 'lib/model-routing/catalog.ts';
   const anchor = '../../docs/guides/model-routing.md#mergeweights--the-four-merge-rules-and-why-provenance-is-a-list';
   const clsOf = (src) => {
     const rows = pointersIn(rel, src);

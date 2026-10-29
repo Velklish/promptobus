@@ -4,19 +4,33 @@ import { fileURLToPath } from 'node:url';
 
 const PACKAGE_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
 
-function textOrNull(value) {
+interface Provenance {
+  mechanismPath?: string | null;
+  mechanismPathIssue?: string | null;
+  mechanismVersion?: string | null;
+  packagePath?: string | null;
+  packageVersion?: string | null;
+  packageIssue?: string | null;
+  hostVersion?: string | null;
+  binaryPath?: string | null;
+  binaryVersion?: string | null;
+}
+interface ProvenanceHost { binPath?: () => unknown; version?: unknown }
+interface ProvenanceTool { bin?: unknown; version?: unknown }
+
+function textOrNull(value: unknown) {
   const text = String(value ?? '').trim();
   return text || null;
 }
 
-function issueText(error) {
+function issueText(error: unknown) {
   const text = error instanceof Error ? error.message : String(error ?? 'unknown error');
   return text.replace(/\s+/g, ' ').trim() || 'unknown error';
 }
 
 function readOwnPackage() {
   try {
-    const packageJson = JSON.parse(readFileSync(PACKAGE_PATH, 'utf8'));
+    const packageJson: { version?: unknown } = JSON.parse(readFileSync(PACKAGE_PATH, 'utf8'));
     const version = textOrNull(packageJson.version);
     return {
       path: PACKAGE_PATH,
@@ -34,7 +48,7 @@ function readOwnPackage() {
 
 const OWN_PACKAGE = readOwnPackage();
 
-function packageValue(provenance) {
+function packageValue(provenance: Provenance) {
   if (provenance.packagePath && provenance.packageVersion) {
     return `${provenance.packagePath}@${provenance.packageVersion}`;
   }
@@ -46,7 +60,7 @@ function packageValue(provenance) {
 
 // Provenance names the executing location and reported release, not exact code identity.
 // Different revisions at one path and version therefore remain indistinguishable.
-export function launchProvenance(host, tool = {}) {
+export function launchProvenance(host: ProvenanceHost | null | undefined, tool: ProvenanceTool | null = {}): Provenance {
   let mechanismPath = null;
   let mechanismPathIssue = null;
   if (typeof host?.binPath !== 'function') {
@@ -72,7 +86,7 @@ export function launchProvenance(host, tool = {}) {
   };
 }
 
-export function provenanceLine(provenance = {}) {
+export function provenanceLine(provenance: Provenance = {}) {
   const cli = provenance.mechanismPath
     ?? `unresolved (${provenance.mechanismPathIssue ?? 'path not recorded'})`;
   return `promptobus copy: cli=${cli} package=${packageValue(provenance)} `
@@ -83,7 +97,7 @@ export function provenanceLine(provenance = {}) {
 
 // A record that does not name its copy is reported unresolved, never relabelled with the
 // READER's own: the header would then name a copy that did not raise the session.
-export function provenanceFromRecord(record = {}) {
+export function provenanceFromRecord(record: Provenance & { bin?: string | null } = {}): Provenance {
   return {
     mechanismPath: record.mechanismPath,
     mechanismPathIssue: record.mechanismPathIssue,

@@ -1,6 +1,35 @@
 // Rendering a decision for a person.
 // [guides/model-routing.md#rendering-a-decision-for-a-person](../../docs/guides/model-routing.md#rendering-a-decision-for-a-person)
 import { GateError } from '../../dist/index.js';
+import type { AvailabilityTier, AvailabilityWindow, WindowScope } from './cache.js';
+
+interface TupleDescription { harness: string; model: string; effort?: string | null }
+interface Pace {
+  window?: AvailabilityWindow | null; eligible: boolean; representative?: boolean; note?: string;
+  usedShare?: number; elapsedShare?: number; underspend?: number; spendPenalty?: number; effective?: number; atCap?: boolean;
+}
+interface Candidate extends TupleDescription {
+  tupleId: string; chosen: boolean; availability: { state: string };
+  score?: { total: number; adjustments: { points: number; code: string }[] } | null;
+  excluded?: { code: string; detail: string } | null; pace?: Pace | null;
+}
+type PacedCandidate = Candidate & { pace: Pace };
+interface RuntimeModel extends TupleDescription { flags?: string[] }
+interface AgeRecord { ageSec: number; source: string; checkedAt: string }
+interface HarnessAvailability {
+  harness: string; state: string; tier?: AvailabilityTier | null; plan?: AvailabilityTier | null;
+  capacity?: Record<string, { value: number; source: string }>;
+  credits?: { available: boolean; unlimited: boolean }; resetCredits?: { available: number };
+  poolWindowsUnbound?: boolean; windows?: AvailabilityWindow[];
+}
+export interface RoutingDecision {
+  strategy: string; role: string; step?: string; qualityFloor?: number;
+  candidates: Candidate[]; runtime: RuntimeModel[]; warnings: { code: string; message: string }[];
+  overlays: { id: string; applied: boolean }[]; chosen?: (TupleDescription & { tupleId: string }) | null;
+  snapshot: { takenAt: string; ageSec: number; source: string;
+    harnesses?: { harness: string; availability: AgeRecord; inventory?: AgeRecord | null; windows: (AgeRecord & { id: string })[] }[] };
+  balance?: { band: number; spendUnit: number }; harnesses?: HarnessAvailability[];
+}
 
 /** The state column fits the longest word of a closed vocabulary — `unavailable`. */
 const STATE_WIDTH = 11;
@@ -17,21 +46,21 @@ const DESC_MIN = 30;
 /** Marker column: the pick, a scored candidate, an excluded one. */
 const MARKERS = { chosen: '*', scored: ' ', excluded: '-' };
 
-const widest = (values) => values.reduce((a, v) => Math.max(a, v.length), 0);
+const widest = (values: string[]) => values.reduce((a, v) => Math.max(a, v.length), 0);
 
 /** `harness / model effort` — the human name of a tuple, and the second column of every row. */
-const describe = (c) => `${c.harness} / ${c.model}${c.effort ? ` ${c.effort}` : ''}`;
+const describe = (c: TupleDescription) => `${c.harness} / ${c.model}${c.effort ? ` ${c.effort}` : ''}`;
 
 /** Whether nothing in this snapshot was ever checked: `NEVER_CHECKED` is the epoch, and as
  * a number it prints "1788614269 s old". Only the human line changes, the document does not. */
-const neverChecked = (takenAt) => Date.parse(takenAt) === 0;
+const neverChecked = (takenAt: string) => Date.parse(takenAt) === 0;
 
 /** A signed number: an adjustment reads as what it did, so a bonus keeps its plus. */
-const signed = (n) => (n > 0 ? `+${n}` : `${n}`);
+const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 
 /** What a window binds, in one phrase: the scope as the harness named it, and not the ids
  * behind it — those are in `--json`, and a person wants to know which limit it is. */
-function scopeText(scope) {
+function scopeText(scope: WindowScope) {
   if (!scope) return 'account';
   if (scope.pool) return `pool ${scope.pool}`;
   return `model ${scope.model}`;
@@ -39,7 +68,7 @@ function scopeText(scope) {
 
 /** One window of one harness. ADR-005 makes `kind` a NAME and `lengthSec` the number, so
  * neither folds into the other; a window with no reset says so rather than claiming never. */
-function windowRow(w, idWidth, poolWindowsUnbound = false) {
+function windowRow(w: AvailabilityWindow, idWidth: number, poolWindowsUnbound = false) {
   const reset = w.resetAt ? `resets ${w.resetAt}` : 'reset time unknown';
   const unbound = poolWindowsUnbound && w.scope?.pool ? ' · unbound: membership changed' : '';
   const pct = typeof w.usedPercent === 'number' ? `${w.usedPercent.toFixed(1)}% used` : 'percentage unset';
@@ -49,13 +78,13 @@ function windowRow(w, idWidth, poolWindowsUnbound = false) {
 }
 
 /** The tier as a person reads it: the plan and where the value came from, or that the harness names none. */
-function tierText(tier) {
+function tierText(tier: AvailabilityTier | null | undefined) {
   return tier ? `tier ${tier.name} (${tier.source})` : 'tier unknown';
 }
 
 /** The availability block (ADR-005), rendered from the decision document like everything
  * here: a renderer reading the snapshot itself would be a second source. Absent prints nothing. */
-function availabilityLines(harnesses) {
+function availabilityLines(harnesses: HarnessAvailability[] | null | undefined) {
   if (!Array.isArray(harnesses) || !harnesses.length) return [];
   const nameWidth = widest(harnesses.map((h) => h.harness)) + 2;
   const lines = ['', 'availability:'];
@@ -77,32 +106,32 @@ function availabilityLines(harnesses) {
 
 /** A pace number as the terminal shows it. Two decimals, because one prints −0.02 as "-0.0";
  * always a sign, because these are differences and not levels. */
-const points = (n) => `${n >= 0 ? '+' : ''}${n.toFixed(2)}`;
+const points = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(2)}`;
 
 // The pace table, and which lines it must always print.
 // [guides/model-routing.md#pacelines--the-pace-table-and-which-lines-it-must-always-print](../../docs/guides/model-routing.md#pacelines--the-pace-table-and-which-lines-it-must-always-print)
-function paceLines(decision) {
+function paceLines(decision: RoutingDecision) {
   if (decision.strategy !== 'balance') return [];
-  const scored = decision.candidates.filter((c) => c.pace);
+  const scored = decision.candidates.filter((c) => c.pace) as PacedCandidate[];
   if (!scored.length) return [];
   const band = decision.balance?.band;
   const spendUnit = decision.balance?.spendUnit;
   const lines = ['', `pace — percentage points of each binding window${
-    Number.isFinite(band) ? ` · band ${band.toFixed(1)} · spend unit ${spendUnit.toFixed(1)}` : ''}:`];
-  const groups = new Map();
-  const unpaced = new Map();
-  const harnessesWithWindow = new Set();
+    Number.isFinite(band) ? ` · band ${band!.toFixed(1)} · spend unit ${spendUnit!.toFixed(1)}` : ''}:`];
+  const groups = new Map<string, { harness: string; rows: PacedCandidate[] }>();
+  const unpaced = new Map<string, PacedCandidate[]>();
+  const harnessesWithWindow = new Set<string>();
   for (const row of scored) {
     if (!row.pace.window) {
       if (!unpaced.has(row.harness)) unpaced.set(row.harness, []);
-      unpaced.get(row.harness).push(row);
+      unpaced.get(row.harness)!.push(row);
       continue;
     }
     harnessesWithWindow.add(row.harness);
     const pool = row.pace.window?.scope?.pool ?? null;
     const key = `${row.harness}\u0000${pool ?? ''}`;
     if (!groups.has(key)) groups.set(key, { harness: row.harness, rows: [] });
-    groups.get(key).rows.push(row);
+    groups.get(key)!.rows.push(row);
   }
   // Keep one note only for a harness whose scored tuples have no window at all: otherwise a
   // no-pace tuple would contradict another pool of the same harness that has one.
@@ -119,15 +148,15 @@ function paceLines(decision) {
     const poolText = pool ? `pool ${pool} · ` : '';
     if (!pace.eligible) {
       const why = pace.note === 'window-spent'
-        ? `${pace.window.id} is spent — ${(pace.usedShare * 100).toFixed(1)}% used`
+        ? `${pace.window!.id} is spent — ${(pace.usedShare! * 100).toFixed(1)}% used`
         : 'no window that can be paced';
       lines.push(`${head}${poolText}${pace.note}: ${why}`);
       continue;
     }
-    lines.push(`${head}${poolText}${rep.tupleId} · ${pace.window.id} ${pace.window.kind} · `
-      + `${(pace.usedShare * 100).toFixed(1)}% used · ${(pace.elapsedShare * 100).toFixed(1)}% elapsed · `
-      + `underspend ${points(pace.underspend)} · penalty ${points(0 - pace.spendPenalty)} · `
-      + `effective ${points(pace.effective)}`
+    lines.push(`${head}${poolText}${rep.tupleId} · ${pace.window!.id} ${pace.window!.kind} · `
+      + `${(pace.usedShare! * 100).toFixed(1)}% used · ${(pace.elapsedShare! * 100).toFixed(1)}% elapsed · `
+      + `underspend ${points(pace.underspend!)} · penalty ${points(0 - pace.spendPenalty!)} · `
+      + `effective ${points(pace.effective!)}`
       // The number is still printed at the cap: the row says what the account has room for.
       // A row silently missing it would read as an unpaceable window, a different fact.
       + (pace.atCap ? ' · at its live-participant cap' : ''));
@@ -135,7 +164,7 @@ function paceLines(decision) {
   return lines;
 }
 
-function candidateRow(c, { idWidth, descWidth }) {
+function candidateRow(c: Candidate, { idWidth, descWidth }: { idWidth: number; descWidth: number }) {
   const marker = c.chosen ? MARKERS.chosen : (c.score ? MARKERS.scored : MARKERS.excluded);
   const state = c.availability.state.padEnd(STATE_WIDTH);
   const score = (c.score ? c.score.total.toFixed(2) : '--').padStart(SCORE_WIDTH);
@@ -143,7 +172,7 @@ function candidateRow(c, { idWidth, descWidth }) {
     ? (c.score.adjustments.length
       ? `  (${c.score.adjustments.map((a) => `${signed(a.points)} ${a.code}`).join(', ')})`
       : '')
-    : `  ${c.excluded.code}: ${c.excluded.detail}`;
+    : `  ${c.excluded!.code}: ${c.excluded!.detail}`;
   return `  ${marker} ${c.tupleId.padEnd(idWidth)}${describe(c).padEnd(descWidth)}${state}${score}${tail}`;
 }
 
@@ -157,18 +186,18 @@ const NEAR_LIMIT_NOTE = '  near-limit is measured from pace, not from a missing 
 /** Unrated rows the text form prints per harness before it counts the rest. */
 export const RUNTIME_ROWS_PER_HARNESS = 8;
 
-const READS = ['strategy', 'role', 'candidates', 'runtime', 'warnings', 'overlays', 'snapshot'];
+const READS = ['strategy', 'role', 'candidates', 'runtime', 'warnings', 'overlays', 'snapshot'] as const;
 
 /** What is missing from a document that claims to be a decision, or `null`. The whole shape
  * is checked: `render` is exported, and a consumer may pass one read from `models --json`. */
-function missingField(decision) {
+function missingField(decision: RoutingDecision) {
   for (const field of READS) {
     if (decision[field] === undefined || decision[field] === null) return field;
   }
-  for (const field of ['candidates', 'runtime', 'warnings', 'overlays']) {
+  for (const field of ['candidates', 'runtime', 'warnings', 'overlays'] as const) {
     if (!Array.isArray(decision[field])) return `${field} (expected an array)`;
   }
-  for (const field of ['takenAt', 'ageSec', 'source']) {
+  for (const field of ['takenAt', 'ageSec', 'source'] as const) {
     if (decision.snapshot[field] === undefined || decision.snapshot[field] === null) return `snapshot.${field}`;
   }
   return null;
@@ -176,7 +205,7 @@ function missingField(decision) {
 
 /** A decision as the terminal shows it. Blocks that carry nothing are left out: a `warnings:`
  * heading with nothing under it reads as a warning that failed to print. */
-export function render(decision) {
+export function render(decision: RoutingDecision | null | undefined) {
   if (!decision || typeof decision !== 'object') throw new GateError('render: expected a decision document');
   const missing = missingField(decision);
   if (missing) throw new GateError(`render: the decision has no ${missing}`);
@@ -196,14 +225,14 @@ export function render(decision) {
       : 'none'}`,
     decision.chosen
       ? `chosen: ${decision.chosen.tupleId} · ${describe(decision.chosen)} · `
-        + `score ${candidates.find((c) => c.chosen).score.total.toFixed(2)}`
+        + `score ${candidates.find((c) => c.chosen)!.score!.total.toFixed(2)}`
       : 'chosen: none · nothing survived filtering',
     '',
   ];
 
-  const ageLines = [];
+  const ageLines: string[] = [];
   for (const h of decision.snapshot.harnesses ?? []) {
-    const format = (r) => `${r.ageSec} s old · source ${r.source} · checked ${r.checkedAt}`;
+    const format = (r: AgeRecord) => `${r.ageSec} s old · source ${r.source} · checked ${r.checkedAt}`;
     ageLines.push(`  ${h.harness}: availability ${format(h.availability)}`);
     if (h.inventory) ageLines.push(`  ${h.harness}: inventory ${format(h.inventory)}`);
     for (const w of h.windows) ageLines.push(`  ${h.harness}: window ${w.id} ${format(w)}`);
@@ -224,10 +253,10 @@ export function render(decision) {
     lines.push('', 'runtime models — not rated, never chosen automatically:');
     // A FEW unrated rows per harness and a count of the rest: two hundred of them would push
     // the decision and the warnings to opposite ends of a page. `--json` keeps every row.
-    const byHarness = new Map();
+    const byHarness = new Map<string, RuntimeModel[]>();
     for (const r of decision.runtime) {
       if (!byHarness.has(r.harness)) byHarness.set(r.harness, []);
-      byHarness.get(r.harness).push(r);
+      byHarness.get(r.harness)!.push(r);
     }
     for (const [harness, rows] of byHarness) {
       for (const r of rows.slice(0, RUNTIME_ROWS_PER_HARNESS)) {

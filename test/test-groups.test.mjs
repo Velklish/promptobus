@@ -29,14 +29,16 @@ test('one subsystem selects its group and reports omitted groups and files', () 
   assert.equal(plan.omittedFiles.length, 6);
 });
 
-test('a known production dependency selects routing and CLI integration together', () => {
-  const plan = select(['lib/model-routing/calibrate.js']);
-  assert.equal(plan.full, false);
-  assert.deepEqual(plan.selectedGroups, ['integration', 'model-routing']);
-  assert.ok(plan.files.includes('model-routing-calibrate.test.mjs'));
-  assert.ok(plan.files.includes('cli.test.mjs'));
-  assert.ok(plan.files.includes('promptobus-review.test.mjs'));
-});
+for (const rel of ['lib/model-routing/calibrate.js', 'lib/fuzzy.ts', 'lib/model-routing/render.ts']) {
+  test(`known production dependency ${rel} selects routing and CLI integration together`, () => {
+    const plan = select([rel]);
+    assert.equal(plan.full, false);
+    assert.deepEqual(plan.selectedGroups, ['integration', 'model-routing']);
+    assert.ok(plan.files.includes('model-routing-calibrate.test.mjs'));
+    assert.ok(plan.files.includes('cli.test.mjs'));
+    assert.ok(plan.files.includes('promptobus-review.test.mjs'));
+  });
+}
 
 test('shared protocol and transport dependencies require the complete suite', () => {
   for (const rel of ['src/protocol.ts', 'src/v1/model.ts', 'src/mcp/tools.ts', 'lib/exec.js']) {

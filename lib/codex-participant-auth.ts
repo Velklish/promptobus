@@ -2,37 +2,50 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { GateError } from '../dist/index.js';
 
+function property(value: unknown, key: string): unknown {
+  // Keep the native nullish property-access failure.
+  if (value == null) return (value as never)[key];
+  return Reflect.get(Object(value), key);
+}
+function optionalProperty(value: unknown, key: string): unknown {
+  return value == null ? undefined : property(value, key);
+}
+
 /** A participant consumes subscription access credentials but never rotates the owner's refresh
  * token. [05-drivers.md](../docs/reference/05-drivers.md#codex-participant-authentication) */
-export function participantAuthSnapshot(source, ownerHome, now = Date.now()) {
-  const value = JSON.parse(source);
-  if (value.auth_mode !== 'chatgpt' && !value.tokens?.refresh_token) return source;
-  let expires = null;
+export function participantAuthSnapshot(source: string, ownerHome: string, now = Date.now()) {
+  const value: unknown = JSON.parse(source);
+  if (property(value, 'auth_mode') !== 'chatgpt' && !optionalProperty(property(value, 'tokens'), 'refresh_token')) return source;
+  let expires: unknown = null;
   try {
-    expires = JSON.parse(Buffer.from(value.tokens.access_token.split('.')[1], 'base64url')).exp;
+    const accessToken = property(property(value, 'tokens'), 'access_token');
+    if (typeof accessToken !== 'string') throw new TypeError();
+    const payload: unknown = JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64url').toString());
+    expires = property(payload, 'exp');
   } catch {
     expires = null;
   }
-  if (!Number.isFinite(expires) || expires * 1000 <= now + 600_000) {
+  if (typeof expires !== 'number' || !Number.isFinite(expires) || expires * 1000 <= now + 600_000) {
     throw new GateError(`Codex owner's access token has unknown expiry or expires within 10 minutes — `
       + `sign in again in the owner's Codex home ${ownerHome} before lifting a participant; no model turn started`);
   }
-  value.tokens.refresh_token = '';
+  Reflect.set(Object(property(value, 'tokens')), 'refresh_token', '');
   return JSON.stringify(value);
 }
 
-function authSource(home) {
+function authSource(home: string) {
   try {
     return readFileSync(path.join(home, 'auth.json'), 'utf8');
-  } catch (error) {
+  } catch (caught) {
+    const error = caught as NodeJS.ErrnoException;
     if (error.code === 'ENOENT') return null;
     throw new GateError(`Codex auth.json at ${home} could not be read (${error.code}); no model turn started`);
   }
 }
 
-function authValue(source, home) {
+function authValue(source: string, home: string) {
   try {
-    const value = JSON.parse(source);
+    const value: unknown = JSON.parse(source);
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
     return value;
   } catch {
@@ -40,15 +53,15 @@ function authValue(source, home) {
   }
 }
 
-const authMode = value => value.auth_mode ?? (value.tokens ? 'chatgpt' : 'apikey');
-const accountId = value => value.tokens?.account_id ?? value.account_id;
+const authMode = (value: object) => property(value, 'auth_mode') ?? (property(value, 'tokens') ? 'chatgpt' : 'apikey');
+const accountId = (value: object) => optionalProperty(property(value, 'tokens'), 'account_id') ?? property(value, 'account_id');
 
-export function createParticipantAuthGuard({ ownerHome, participantHome }) {
+export function createParticipantAuthGuard({ ownerHome, participantHome }: { ownerHome: string; participantHome: string }) {
   const initialSource = authSource(participantHome);
   const original = initialSource === null ? null : authValue(initialSource, participantHome);
   const loadedSnapshot = JSON.stringify(original);
-  let refused = null;
-  return async function check({ busy = false } = {}) {
+  let refused: GateError | null = null;
+  return async function check({ busy = false }: { busy?: boolean } = {}) {
     if (refused) throw refused;
     try {
       const source = authSource(ownerHome);
@@ -74,7 +87,8 @@ export function createParticipantAuthGuard({ ownerHome, participantHome }) {
       if (JSON.stringify(privateSnapshot) !== loadedSnapshot) {
         throw new GateError('Codex participant access snapshot changed or is missing');
       }
-    } catch (error) {
+    } catch (caught) {
+      const error = caught as Error;
       refused = new GateError(`${error.message}${busy ? ' during an active turn' : ''}; `
         + 'a fresh lift is required from the owner sign-in/access snapshot before another model turn; no model turn started');
       throw refused;

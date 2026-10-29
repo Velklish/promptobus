@@ -4,6 +4,34 @@
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { writeFileAtomic } from '../../dist/fs/atomic.js';
+import type { PromptobusHost } from '../../dist/index.js';
+
+type CacheHost = Pick<PromptobusHost, 'routingPaths'>;
+type UnknownRecord = Record<string, unknown>;
+export type WindowScope = { model: string; models?: string[]; pool?: never }
+  | { pool: 'auto'; models: string[]; model?: never }
+  | { pool: 'api'; models?: never; model?: never } | null;
+export interface InventoryModel { model: string; rated: boolean; hidden?: true; flags?: string[] }
+export interface AvailabilityWindow {
+  id: string; kind: string; lengthSec: number; scope: WindowScope;
+  usedPercent?: number; estimate?: 'local-estimate'; resetAt?: string | null;
+  checkedAt?: string; source?: string;
+}
+export interface AvailabilityTier { name: string; source: string }
+export interface SnapshotEntry {
+  state: string; reason: string | null; message: string; checkedAt: string; source: string; resetAt: string | null;
+  version?: string; tier?: AvailabilityTier | null; spendControlReached?: boolean;
+  credits?: { available: boolean; unlimited: boolean }; resetCredits?: { available: number };
+  models?: InventoryModel[]; autoPoolModels?: string[]; poolWindowsUnbound?: true;
+  inventoryCheckedAt?: string; inventorySource?: string; windows?: AvailabilityWindow[];
+}
+export interface SnapshotEntryInput {
+  state: string; reason?: string | null; message?: unknown; checkedAt?: unknown; source: string; resetAt?: unknown;
+  version?: unknown; tier?: unknown; spendControlReached?: unknown; credits?: unknown; resetCredits?: unknown;
+  models?: unknown; autoPoolModels?: unknown; poolWindowsUnbound?: unknown;
+  inventoryCheckedAt?: unknown; inventorySource?: unknown; windows?: unknown;
+}
+export interface SnapshotDocument { schemaVersion: number; takenAt: string; harnesses: Record<string, SnapshotEntry> }
 
 /** Snapshot document version, pinned by the schema and its golden fixture. A document of any
  * other version is DISCARDED, never migrated (ADR-005 D): this is a cache, not a store. */
@@ -26,12 +54,12 @@ export const TRANSIENT_TTL_MS = 5 * 60 * 1000;
 export const NEVER_CHECKED = '1970-01-01T00:00:00.000Z';
 
 /** Whether a value is a timestamp at all. The form is normalised by `isoStamp`; this only asks if it can be. */
-export function isTimestamp(value) {
+export function isTimestamp(value: unknown): value is string {
   return typeof value === 'string' && Number.isFinite(Date.parse(value));
 }
 
 /** ISO-8601 with milliseconds — the one timestamp form the snapshot schema accepts. */
-export function isoStamp(value = null) {
+export function isoStamp(value: string | number | null | undefined = null) {
   const ms = value === null || value === undefined
     ? Date.now()
     : (typeof value === 'number' ? value : Date.parse(value));
@@ -44,13 +72,13 @@ const LATEST_STAMP_MS = Date.UTC(9999, 11, 31);
 
 /** Epoch milliseconds as the snapshot writes a moment, or `null`. The unit stays with each
  * adapter; the range check lives here once, and it never falls back to "now". */
-export function stampAtMs(ms) {
+export function stampAtMs(ms: number) {
   if (!Number.isFinite(ms) || ms < 0 || ms > LATEST_STAMP_MS) return null;
   return new Date(ms).toISOString();
 }
 
 /** The cache file this host names. Never assembled from a home path here: the host owns the layout. */
-export function cacheFileOf(host) {
+export function cacheFileOf(host: CacheHost) {
   return host.routingPaths().cacheFile;
 }
 
@@ -66,13 +94,13 @@ export const LOCK_WAIT_MS = 2_000;
 export const LOCK_STALE_MS = 15_000;
 
 /** Sleep without yielding to callers: the write is synchronous and there is nothing to await it. */
-function sleepSync(ms) {
+function sleepSync(ms: number) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 /** Run `body` under the cache lock, always releasing it. A lock that cannot be taken is not
  * a refusal: refusing to write would lose the very entries the lock exists to keep. */
-function withCacheLock(file, body) {
+function withCacheLock<T>(file: string, body: (held: boolean) => T): T {
   const lock = `${file}${LOCK_SUFFIX}`;
   let held = false;
   // `body` is told whether the lock was taken: a write that fell through it may lose a
@@ -86,7 +114,7 @@ function withCacheLock(file, body) {
         held = true;
         break;
       } catch (e) {
-        if (e?.code !== 'EEXIST') break;
+        if ((e as NodeJS.ErrnoException | null | undefined)?.code !== 'EEXIST') break;
         let age = Infinity;
         try { age = Date.now() - statSync(lock).mtimeMs; } catch { age = Infinity; }
         if (age > LOCK_STALE_MS) {
@@ -121,15 +149,16 @@ export const HARNESS_RE = /^[a-z][a-z0-9-]{0,31}$/;
 
 /** One model of the inventory, or `null`. A dropped element is not a dropped verdict; `hidden`
  * is written only when true (ADR-005), and the resolver reads the rows without it. */
-function modelOf(raw) {
+function modelOf(value: unknown): InventoryModel | null {
+  const raw = value as UnknownRecord | null | undefined;
   const model = typeof raw?.model === 'string' ? raw.model.trim() : '';
   if (!model) return null;
-  const out = { model, rated: raw.rated === true };
-  if (raw.hidden === true) out.hidden = true;
-  const flags = Array.isArray(raw.flags)
-    ? [...new Set(raw.flags.filter((f) => MODEL_FLAGS.includes(f)))]
+  const out: InventoryModel = { model, rated: raw!.rated === true };
+  if (raw!.hidden === true) out.hidden = true;
+  const flags = Array.isArray(raw!.flags)
+    ? [...new Set(raw!.flags.filter((f) => MODEL_FLAGS.includes(f as string)))]
     : [];
-  if (flags.length) out.flags = flags;
+  if (flags.length) out.flags = flags as string[];
   return out;
 }
 
@@ -138,7 +167,7 @@ export const WINDOW_KINDS = ['session', 'weekly', 'monthly'];
 
 /** A list of model ids, deduplicated, or `null`. Exported for the telemetry record: one
  * function per schema, or the two copies drift and the quieter one stops deduplicating. */
-export function modelList(raw) {
+export function modelList(raw: unknown): string[] | null {
   if (!Array.isArray(raw)) return null;
   const ids = [...new Set(raw.filter((m) => typeof m === 'string' && m.trim()).map((m) => m.trim()))];
   return ids.length ? ids : null;
@@ -146,14 +175,15 @@ export function modelList(raw) {
 
 // What a window binds, projected onto the closed scope shapes, or undefined.
 // [guides/model-routing.md#scopeof--what-a-window-binds-projected-onto-the-closed-scope-shapes-or-undefined](../../docs/guides/model-routing.md#scopeof--what-a-window-binds-projected-onto-the-closed-scope-shapes-or-undefined)
-export function scopeOf(raw) {
+export function scopeOf(value: unknown): WindowScope | undefined {
+  const raw = value as UnknownRecord | null | undefined;
   if (raw === null) return null;
   // ABSENT is not `null`. `null` claims the window binds the whole account; an adapter that
   // never named a scope did not claim it, so absence drops the window.
   if (raw === undefined) return undefined;
   if (typeof raw !== 'object' || Array.isArray(raw)) return undefined;
   if (typeof raw.model === 'string' && raw.model.trim()) {
-    const out = { model: raw.model.trim() };
+    const out: NonNullable<WindowScope> = { model: raw.model.trim() };
     const models = modelList(raw.models);
     if (models) out.models = models;
     else if (raw.models !== undefined) return undefined;
@@ -169,23 +199,24 @@ export function scopeOf(raw) {
 
 /** One limit window, or `null`. A percentage outside 0…100 is dropped. A `local-estimate`
  * window may omit `usedPercent` until an absolute allowance is declared (ADR-005). */
-function windowOf(raw) {
-  const id = typeof raw?.id === 'string' ? raw.id.trim() : '';
+function windowOf(value: unknown): AvailabilityWindow | null {
+  const raw = value as UnknownRecord | null | undefined;
+  const id = typeof raw?.id === 'string' ? raw!.id.trim() : '';
   const estimate = raw?.estimate === 'local-estimate' ? 'local-estimate' : null;
   const hasPercent = typeof raw?.usedPercent === 'number'
-    && Number.isFinite(raw.usedPercent) && raw.usedPercent >= 0 && raw.usedPercent <= 100;
-  if (!id || !WINDOW_KINDS.includes(raw.kind)) return null;
+    && Number.isFinite(raw!.usedPercent) && raw!.usedPercent >= 0 && raw!.usedPercent <= 100;
+  if (!id || !WINDOW_KINDS.includes(raw!.kind as string)) return null;
   if (!hasPercent && !estimate) return null;
-  if (raw.usedPercent != null && !hasPercent) return null;
-  if (!Number.isInteger(raw.lengthSec) || raw.lengthSec < 1) return null;
-  const scope = scopeOf(raw.scope);
+  if (raw!.usedPercent != null && !hasPercent) return null;
+  if (!Number.isInteger(raw!.lengthSec) || (raw!.lengthSec as number) < 1) return null;
+  const scope = scopeOf(raw!.scope);
   if (scope === undefined) return null;
-  const out = { id, kind: raw.kind, lengthSec: raw.lengthSec, scope };
-  if (hasPercent) out.usedPercent = raw.usedPercent;
+  const out: AvailabilityWindow = { id, kind: raw!.kind as string, lengthSec: raw!.lengthSec as number, scope };
+  if (hasPercent) out.usedPercent = raw!.usedPercent as number;
   if (estimate) out.estimate = estimate;
-  if (raw.resetAt !== undefined) out.resetAt = isTimestamp(raw.resetAt) ? isoStamp(raw.resetAt) : null;
-  if (isTimestamp(raw.checkedAt)) out.checkedAt = isoStamp(raw.checkedAt);
-  if (raw.source === 'probe' || raw.source === 'cache' || raw.source === 'manual') out.source = raw.source;
+  if (raw!.resetAt !== undefined) out.resetAt = isTimestamp(raw!.resetAt) ? isoStamp(raw!.resetAt) : null;
+  if (isTimestamp(raw!.checkedAt)) out.checkedAt = isoStamp(raw!.checkedAt);
+  if (raw!.source === 'probe' || raw!.source === 'cache' || raw!.source === 'manual') out.source = raw!.source;
   return out;
 }
 
@@ -198,32 +229,35 @@ export const TIER_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/;
 
 /** The tier, or `null` — the schema's own word for "this harness names no plan". A garbled one
  * becomes that too: losing it costs a line, keeping it puts an unchecked string on disk. */
-function tierOf(raw) {
+function tierOf(value: unknown): AvailabilityTier | null {
+  const raw = value as UnknownRecord | null | undefined;
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const name = typeof raw.name === 'string' ? raw.name.trim() : '';
-  if (!TIER_NAME_RE.test(name) || !TIER_SOURCES.includes(raw.source)) return null;
-  return { name, source: raw.source };
+  if (!TIER_NAME_RE.test(name) || !TIER_SOURCES.includes(raw.source as string)) return null;
+  return { name, source: raw.source as string };
 }
 
 /** Codex's credit flags, or `null`. Booleans only — the amount is deliberately not carried:
  * this file promises to hold no identity, and nothing in the package reads a balance. */
-function creditsOf(raw) {
+function creditsOf(value: unknown): { available: boolean; unlimited: boolean } | null {
+  const raw = value as UnknownRecord | null | undefined;
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   if (typeof raw.available !== 'boolean' || typeof raw.unlimited !== 'boolean') return null;
   return { available: raw.available, unlimited: raw.unlimited };
 }
 
 /** The count of window resets the account may spend. Surfaced, never spent: spending one is a person's decision. */
-function resetCreditsOf(raw) {
+function resetCreditsOf(value: unknown): { available: number } | null {
+  const raw = value as UnknownRecord | null | undefined;
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  if (!Number.isInteger(raw.available) || raw.available < 0) return null;
-  return { available: raw.available };
+  if (!Number.isInteger(raw.available) || (raw.available as number) < 0) return null;
+  return { available: raw.available as number };
 }
 
 // One harness entry, projected onto the closed snapshot shape.
 // [guides/model-routing.md#snapshotentry--one-harness-entry-projected-onto-the-closed-snapshot-shape](../../docs/guides/model-routing.md#snapshotentry--one-harness-entry-projected-onto-the-closed-snapshot-shape)
-export function snapshotEntry(entry) {
-  const out = {
+export function snapshotEntry(entry: SnapshotEntryInput): SnapshotEntry {
+  const out: SnapshotEntry = {
     state: entry.state,
     reason: entry.reason ?? null,
     message: String(entry.message ?? ''),
@@ -238,7 +272,7 @@ export function snapshotEntry(entry) {
   if (credits) out.credits = credits;
   const resetCredits = resetCreditsOf(entry.resetCredits);
   if (resetCredits) out.resetCredits = resetCredits;
-  if (Array.isArray(entry.models)) out.models = entry.models.map(modelOf).filter(Boolean);
+  if (Array.isArray(entry.models)) out.models = entry.models.map(modelOf).filter(Boolean) as InventoryModel[];
   const autoPoolModels = modelList(entry.autoPoolModels);
   if (autoPoolModels) out.autoPoolModels = autoPoolModels;
   if (entry.poolWindowsUnbound === true) out.poolWindowsUnbound = true;
@@ -246,18 +280,18 @@ export function snapshotEntry(entry) {
   if (entry.inventorySource === 'probe' || entry.inventorySource === 'cache' || entry.inventorySource === 'manual') {
     out.inventorySource = entry.inventorySource;
   }
-  if (Array.isArray(entry.windows)) out.windows = entry.windows.map(windowOf).filter(Boolean)
+  if (Array.isArray(entry.windows)) out.windows = (entry.windows.map(windowOf).filter(Boolean) as AvailabilityWindow[])
     .map((w) => ({ ...w, checkedAt: w.checkedAt ?? out.checkedAt, source: w.source ?? out.source }));
   return out;
 }
 
 /** The stored snapshot, or `null`. An unreadable file and a document of another `schemaVersion`
  * are both none; the version is checked HERE because this is the one door into the file. */
-export function readSnapshot(host) {
+export function readSnapshot(host: CacheHost): SnapshotDocument | null {
   const file = cacheFileOf(host);
   if (!existsSync(file)) return null;
   try {
-    const doc = JSON.parse(readFileSync(file, 'utf8'));
+    const doc: SnapshotDocument | null = JSON.parse(readFileSync(file, 'utf8'));
     if (!doc || typeof doc.harnesses !== 'object' || !doc.harnesses) return null;
     return doc.schemaVersion === SNAPSHOT_VERSION ? doc : null;
   } catch {
@@ -267,13 +301,13 @@ export function readSnapshot(host) {
 
 /** The `schemaVersion` at the cache path that this build does NOT read, or `null`. It exists
  * so one word of a diagnosis can tell a first run from an upgrade that discarded everything. */
-export function staleVersionAt(host) {
+export function staleVersionAt(host: CacheHost): number | null {
   const file = cacheFileOf(host);
   if (!existsSync(file)) return null;
   try {
-    const doc = JSON.parse(readFileSync(file, 'utf8'));
+    const doc: { schemaVersion?: number } | null = JSON.parse(readFileSync(file, 'utf8'));
     const version = doc?.schemaVersion;
-    return Number.isInteger(version) && version !== SNAPSHOT_VERSION ? version : null;
+    return Number.isInteger(version) && version !== SNAPSHOT_VERSION ? version! : null;
   } catch {
     return null;
   }
@@ -281,13 +315,13 @@ export function staleVersionAt(host) {
 
 /** Whether an exhaustion is the sticky kind: confirmably spent with no known reset. Neither
  * time nor a later probe clears it — `--clear-exhausted` is the only door. */
-export function stickyExhaustion(entry) {
+export function stickyExhaustion(entry: Pick<SnapshotEntry, 'state' | 'resetAt'> | null | undefined) {
   return entry?.state === 'exhausted' && !entry.resetAt;
 }
 
 /** When an entry stops being usable. The cascade reads top to bottom and the first match wins;
  * the tier needs no line of its own, since it ages with auth and inventory. */
-export function entryExpiry(entry) {
+export function entryExpiry(entry: Pick<SnapshotEntry, 'state' | 'resetAt' | 'checkedAt' | 'reason' | 'windows'>) {
   if (entry.state === 'exhausted') return entry.resetAt ? Date.parse(entry.resetAt) : Infinity;
   const checked = Date.parse(entry.checkedAt);
   if (!Number.isFinite(checked)) return -Infinity;
@@ -297,21 +331,21 @@ export function entryExpiry(entry) {
 }
 
 /** When an entry's limit windows ran out, as a stamp, or `null` when the cascade aged it by another line. */
-export function windowsExpiry(entry) {
+export function windowsExpiry(entry: SnapshotEntry | null | undefined) {
   if (!Array.isArray(entry?.windows) || !entry.windows.length) return null;
   const at = entryExpiry(entry);
   return at === Date.parse(entry.checkedAt) + WINDOW_TTL_MS ? isoStamp(at) : null;
 }
 
 /** Whether the entry may still be used at that moment. */
-export function entryLive(entry, at = Date.now()) {
+export function entryLive(entry: SnapshotEntry, at = Date.now()) {
   return at < entryExpiry(entry);
 }
 
 /** Entries reused without asking the harness. `refresh` drops every live one except a sticky
  * exhaustion; a reused entry says `source: 'cache'` whatever first wrote it. */
-export function heldOf(doc, { refresh = false, recheckTimedExhaustion = false, at = Date.now() } = {}) {
-  const held = {};
+export function heldOf(doc: SnapshotDocument | null | undefined, { refresh = false, recheckTimedExhaustion = false, at = Date.now() } = {}) {
+  const held: Record<string, SnapshotEntry> = {};
   for (const [harness, entry] of Object.entries(doc?.harnesses ?? {})) {
     if (refresh && !stickyExhaustion(entry)) continue;
     if (recheckTimedExhaustion && entry.state === 'exhausted' && entry.resetAt) continue;
@@ -326,7 +360,7 @@ export function heldOf(doc, { refresh = false, recheckTimedExhaustion = false, a
 
 /** Merge entries into the stored snapshot and write it. Merge, not replace: the late-start
  * hook writes ONE harness. `dryRun` makes the whole call a no-op in both modes. */
-export function writeEntries(host, entries, { at = Date.now(), dryRun = false } = {}) {
+export function writeEntries(host: CacheHost, entries: Record<string, SnapshotEntryInput>, { at = Date.now(), dryRun = false } = {}) {
   if (dryRun) return null;
   const file = cacheFileOf(host);
   // The read is inside the lock, not before it. Merging what was on disk a moment
@@ -334,7 +368,7 @@ export function writeEntries(host, entries, { at = Date.now(), dryRun = false } 
   return withCacheLock(file, (locked) => {
     const stored = readSnapshot(host);
     const harnesses = { ...(stored?.harnesses ?? {}) };
-    const dropped = [];
+    const dropped: string[] = [];
     const contended = !locked;
     for (const [harness, entry] of Object.entries(entries)) {
       if (!HARNESS_RE.test(harness)) {
@@ -354,7 +388,7 @@ export function writeEntries(host, entries, { at = Date.now(), dryRun = false } 
 
 /** Drop a sticky exhaustion — the `--clear-exhausted` library half. Only the sticky kind, and
  * the entry is removed rather than rewritten: nothing is known about that harness after. */
-export function clearExhausted(host, harness, { dryRun = false } = {}) {
+export function clearExhausted(host: CacheHost, harness: string, { dryRun = false } = {}) {
   if (dryRun) return stickyExhaustion(readSnapshot(host)?.harnesses?.[harness]);
   const file = cacheFileOf(host);
   // Under the same lock as `writeEntries`: this is a read-modify-write of one document, and a
@@ -363,7 +397,7 @@ export function clearExhausted(host, harness, { dryRun = false } = {}) {
     const stored = readSnapshot(host);
     const entry = stored?.harnesses?.[harness];
     if (!stickyExhaustion(entry)) return false;
-    const harnesses = { ...stored.harnesses };
+    const harnesses = { ...stored!.harnesses };
     delete harnesses[harness];
     if (!Object.keys(harnesses).length) rmSync(file, { force: true });
     else {
@@ -379,9 +413,9 @@ export function clearExhausted(host, harness, { dryRun = false } = {}) {
 
 // Marking a harness exhausted when a lift fails on a spent limit.
 // [guides/model-routing.md#markexhausted--marking-a-harness-exhausted-when-a-lift-fails-on-a-spent-limit](../../docs/guides/model-routing.md#markexhausted--marking-a-harness-exhausted-when-a-lift-fails-on-a-spent-limit)
-export function markExhausted(host, harness, {
+export function markExhausted(host: CacheHost, harness: string, {
   resetAt = null, reason = null, message = null, at = Date.now(), dryRun = false,
-} = {}) {
+}: { resetAt?: string | null; reason?: string | null; message?: string | null; at?: number; dryRun?: boolean } = {}) {
   const previous = readSnapshot(host)?.harnesses?.[harness];
   const known = isTimestamp(resetAt);
   const derived = known ? 'subscription_exhausted' : 'manual_exhaustion';

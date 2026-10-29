@@ -9,6 +9,48 @@ coverage/
 .env.*
 !.env.example
 
+# Runtime outputs beside their maintained TypeScript sources.
+/lib/bb-direct-command.js
+/lib/bb-direct-command.d.ts
+/lib/bb-evidence-verdict-names.js
+/lib/bb-evidence-verdict-names.d.ts
+/lib/codex-participant-auth.js
+/lib/codex-participant-auth.d.ts
+/lib/codex-raw-tool-receipts.js
+/lib/codex-raw-tool-receipts.d.ts
+/lib/codex-rpc.js
+/lib/codex-rpc.d.ts
+/lib/contract.js
+/lib/contract.d.ts
+/lib/exec.js
+/lib/exec.d.ts
+/lib/fuzzy.js
+/lib/fuzzy.d.ts
+/lib/harness-home.js
+/lib/harness-home.d.ts
+/lib/participant-context.js
+/lib/participant-context.d.ts
+/lib/project-hooks.js
+/lib/project-hooks.d.ts
+/lib/provenance.js
+/lib/provenance.d.ts
+/lib/reviewer-files.js
+/lib/reviewer-files.d.ts
+/lib/schema.js
+/lib/schema.d.ts
+/lib/session-env.js
+/lib/session-env.d.ts
+/lib/stalls.js
+/lib/stalls.d.ts
+/lib/model-routing/cache.js
+/lib/model-routing/cache.d.ts
+/lib/model-routing/catalog.js
+/lib/model-routing/catalog.d.ts
+/lib/model-routing/render.js
+/lib/model-routing/render.d.ts
+/lib/prompts/codex.js
+/lib/prompts/codex.d.ts
+
 # Per-run gate records written beside the worktree during a bus task — task artifacts, not source.
 /gates-*-t*-*.json
 

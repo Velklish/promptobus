@@ -30,6 +30,8 @@ cpSync(REPO, COPY_ROOT, {
   filter: (s) => {
     const base = path.basename(s);
     if (base === 'node_modules' || base === '.git' || base === 'dist') return false;
+    if (/^(lib|bin)\//.test(path.relative(REPO, s).split(path.sep).join('/'))
+      && /\.(?:js|d\.ts)$/.test(s) && existsSync(s.replace(/\.(?:js|d\.ts)$/, '.ts'))) return false;
     return true;
   },
 });
@@ -292,8 +294,10 @@ function forbidden(spec, fileAbs) {
   if (isBuiltin(spec)) return null;
   if (!spec.startsWith('.')) return 'external package';
   const target = path.resolve(path.dirname(fileAbs), spec);
-  if (target === SRC || target.startsWith(SRC + path.sep)) return null;
-  return 'path outside src';
+  const roots = fileAbs.startsWith(SRC + path.sep)
+    ? [SRC] : ['lib', 'bin', 'dist'].map((dir) => path.join(REPO, dir));
+  if (roots.some((root) => target === root || target.startsWith(root + path.sep))) return null;
+  return 'path outside package code';
 }
 
 // The scanner's own gate, on files rather than on inline strings: the trap is a file
@@ -316,9 +320,14 @@ const afterTrap = specifiersOf(readFileSync(path.join(TRAPS, 'external-after-tra
 const caught = afterTrap.filter((spec) => forbidden(spec, path.join(SRC, 'stand-in.ts')));
 check('an external import placed after such a string is reported, not passed over',
   caught.length === 1 && caught[0] === 'zod', `saw: ${afterTrap.join(', ')} · reported: ${caught.join(', ')}`);
+check('the runtime import scan rejects external packages and paths outside package code',
+  forbidden('zod', path.join(REPO, 'lib', 'stand-in.ts')) === 'external package'
+    && forbidden('../test/check.mjs', path.join(REPO, 'lib', 'stand-in.ts')) === 'path outside package code'
+    && forbidden('../dist/index.js', path.join(REPO, 'lib', 'stand-in.ts')) === null,
+  'runtime sources may import their own lib/bin/dist files and Node built-ins');
 
 const breaches = [];
-for (const file of tsFiles(SRC)) {
+for (const file of ['src', 'lib', 'bin'].flatMap((dir) => tsFiles(path.join(REPO, dir)))) {
   for (const spec of specifiersOf(readFileSync(file, 'utf8'))) {
     const reason = forbidden(spec, file);
     if (reason) breaches.push(`${path.relative(REPO, file)}: ${spec} — ${reason}`);
@@ -772,7 +781,8 @@ check('package.json declares ./host and ./hooks entry points',
   Boolean(pkg.exports?.['./host']) && Boolean(pkg.exports?.['./hooks']),
   JSON.stringify(pkg.exports ?? {}));
 
-const leaked = files.filter((f) => f.startsWith('src/') || f.startsWith('test/') || f === 'tsconfig.json');
+const leaked = files.filter((f) => f.startsWith('src/') || f.startsWith('test/')
+  || /^tsconfig.*\.json$/.test(f) || (/^(lib|bin)\/.+\.ts$/.test(f) && !f.endsWith('.d.ts')));
 check('tarball does not include source, tests, or tsconfig',
   packed.ok && leaked.length === 0, leaked.join(', '));
 
@@ -1015,3 +1025,24 @@ const typed = installed.status === 0
   : { status: 1, stdout: '', stderr: 'tarball was not installed' };
 check('host integration: TypeScript reads every entry name through its declared types',
   typed.status === 0, why(typed));
+
+const invalidRuntime = path.join(COPY_ROOT, 'lib', 'type-error.ts');
+let invalidBuild = { status: 1, stderr: 'the clean build failed' };
+try {
+  if (built.status === 0) {
+    writeFileSync(invalidRuntime, 'export const invalidRuntime: string = 1;\n'
+      + 'export function untypedRuntime(value) { return value; }\n');
+    invalidBuild = npm(['run', 'build'], COPY_ROOT);
+  }
+  check('runtime type errors fail the build',
+    built.status === 0 && invalidBuild.status !== 0
+      && /type-error\.ts[^\n]*TS2322/.test(`${invalidBuild.stdout}\n${invalidBuild.stderr}`)
+      && /type-error\.ts[^\n]*TS7006/.test(`${invalidBuild.stdout}\n${invalidBuild.stderr}`), why(invalidBuild));
+  check('runtime type errors do not emit JavaScript or declarations',
+    built.status === 0
+      && !existsSync(invalidRuntime.replace(/\.ts$/, '.js'))
+      && !existsSync(invalidRuntime.replace(/\.ts$/, '.d.ts')),
+    'the invalid runtime source must have no emitted counterpart');
+} finally {
+  rmSync(invalidRuntime, { force: true });
+}

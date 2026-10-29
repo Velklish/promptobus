@@ -32,7 +32,7 @@
       "../docs/reference/05-drivers.md#the-holders-record-watch",
       "../docs/reference/05-drivers.md#the-holders-record-watch"
     ],
-    "lib/contract.js": [
+    "lib/contract.ts": [
       "../docs/reference/04-protocol.md#the-bus-contract-constants",
       "../docs/reference/01-overview.md#the-tool-declarations",
       "../docs/reference/03-cli.md#guard-and-warden"
@@ -84,14 +84,14 @@
     "lib/drivers.js": [
       "stalls.js"
     ],
-    "lib/exec.js": [
+    "lib/exec.ts": [
       "../docs/reference/02-host.md#launching-a-process",
       "../docs/reference/02-host.md#launching-a-process"
     ],
     "lib/guard.js": [
       "../docs/reference/03-cli.md"
     ],
-    "lib/harness-home.js": [
+    "lib/harness-home.ts": [
       "../docs/reference/02-host.md#the-harness-session-registry-and-the-refusal-when-nobody-says",
       "../docs/reference/05-drivers.md#the-harness-binary-after-a-lift-the-lifts-door-not-path"
     ],
@@ -139,7 +139,7 @@
       "../../docs/guides/model-routing.md#autotiermodels--the-ids-cursor-billed-to-the-auto-pool-this-cycle-off-getaggregatedusageevents",
       "../../docs/guides/model-routing.md#events--which-pool-a-model-is-billed-to-and-why-the-bucket-list-is-not-the-only-source"
     ],
-    "lib/model-routing/cache.js": [
+    "lib/model-routing/cache.ts": [
       "../../docs/guides/model-routing.md#the-availability-cache-the-first-disk-boundary-of-routing",
       "../../docs/guides/model-routing.md#scopeof--what-a-window-binds-projected-onto-the-closed-scope-shapes-or-undefined",
       "../../docs/guides/model-routing.md#snapshotentry--one-harness-entry-projected-onto-the-closed-snapshot-shape",
@@ -149,7 +149,7 @@
       "../../docs/guides/model-routing.md#calibrate-reading-the-telemetry-back",
       "../../docs/guides/model-routing.md"
     ],
-    "lib/model-routing/catalog.js": [
+    "lib/model-routing/catalog.ts": [
       "../../docs/guides/model-routing.md#loading-the-catalog-and-the-layer-stack",
       "cache.js",
       "../../docs/guides/model-routing.md#the-overlay-to-copy",
@@ -160,7 +160,7 @@
       "../../docs/guides/model-routing.md#resolvebins--resolve-the-binary-of-every-harness-about-to-be-probed-before-any-adapter",
       "../drivers.js"
     ],
-    "lib/model-routing/render.js": [
+    "lib/model-routing/render.ts": [
       "../../docs/guides/model-routing.md#rendering-a-decision-for-a-person",
       "../../docs/guides/model-routing.md#pacelines--the-pace-table-and-which-lines-it-must-always-print"
     ],
@@ -205,7 +205,7 @@
       "drivers.js",
       "review.js"
     ],
-    "lib/stalls.js": [
+    "lib/stalls.ts": [
       "../docs/reference/03-cli.md#stall-parsing"
     ],
     "lib/status.js": [
@@ -347,10 +347,10 @@
       "../../docs/reference/04-protocol.md#validation-of-a-v1-record",
       "../../docs/reference/04-protocol.md"
     ],
-    "lib/reviewer-files.js": [
+    "lib/reviewer-files.ts": [
       "../docs/reference/05-drivers.md#execution-free-codex-review"
     ],
-    "lib/codex-participant-auth.js": [
+    "lib/codex-participant-auth.ts": [
       "../docs/reference/05-drivers.md#codex-participant-authentication"
     ]
   }

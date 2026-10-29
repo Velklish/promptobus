@@ -1,3 +1,25 @@
+export interface SchemaNode {
+  [keyword: string]: unknown;
+  $id?: string;
+  $ref?: string;
+  $defs?: Record<string, SchemaNode>;
+  oneOf?: SchemaNode[];
+  type?: string | string[];
+  required?: string[];
+  properties?: Record<string, SchemaNode>;
+  additionalProperties?: boolean | SchemaNode;
+  propertyNames?: SchemaNode;
+  items?: SchemaNode | SchemaNode[];
+  pattern?: string;
+  minLength?: number;
+  maxLength?: number;
+  minimum?: number;
+  maximum?: number;
+  minItems?: number;
+  maxItems?: number;
+}
+export interface SchemaError { at: string; note: string }
+
 // Checking a published record against its own schema file, with no runtime dependency.
 // Where the numbers come from: docs/reference/04-protocol.md § The gate record.
 
@@ -15,9 +37,9 @@ const KEYWORDS = new Set([
 
 // Shapes the reader implements only in their bare form. `$ref` and `oneOf` answer the whole
 // node and drop its siblings; `items` is read as one schema, so the tuple form is not read.
-function unsupportedShapes(node) {
+function unsupportedShapes(node: Record<string, unknown>) {
   const constraints = Object.keys(node).filter((k) => !ANNOTATIONS.has(k));
-  const out = [];
+  const out: string[] = [];
   for (const word of ['$ref', 'oneOf']) {
     if (Object.hasOwn(node, word) && constraints.length > 1) {
       out.push(`${word} beside ${constraints.filter((k) => k !== word).sort().join(', ')}`);
@@ -28,14 +50,14 @@ function unsupportedShapes(node) {
   return out;
 }
 
-function isObject(v) {
+function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
 // Where a schema holds another schema. `properties` and `$defs` are maps whose KEYS are
 // names, so only their values are schemas; the rest hold one schema or a list of them.
-function subschemas(node) {
-  const out = [];
+function subschemas(node: Record<string, unknown>): unknown[] {
+  const out: unknown[] = [];
   if (isObject(node.properties)) out.push(...Object.values(node.properties));
   if (isObject(node.$defs)) out.push(...Object.values(node.$defs));
   if (isObject(node.additionalProperties)) out.push(node.additionalProperties);
@@ -47,9 +69,9 @@ function subschemas(node) {
 
 /** What of this schema the reader does not implement — a keyword by name, or a shape of one
  * it reads only bare; sorted, and empty when the schema is covered whole. */
-export function unsupportedKeywords(schema) {
-  const unknown = new Set();
-  const queue = [schema];
+export function unsupportedKeywords(schema: unknown) {
+  const unknown = new Set<string>();
+  const queue: unknown[] = [schema];
   while (queue.length) {
     const node = queue.pop();
     if (!isObject(node)) continue;
@@ -60,7 +82,7 @@ export function unsupportedKeywords(schema) {
   return [...unknown].sort();
 }
 
-function typeOk(type, value) {
+function typeOk(type: string, value: unknown) {
   switch (type) {
     case 'object': return isObject(value);
     case 'array': return Array.isArray(value);
@@ -73,14 +95,14 @@ function typeOk(type, value) {
   }
 }
 
-function resolve(ref, root) {
+function resolve(ref: string, root: SchemaNode): SchemaNode {
   const name = ref.startsWith('#/$defs/') ? ref.slice('#/$defs/'.length) : null;
   const target = name ? root.$defs?.[name] : null;
   if (!target) throw new Error(`schema reference ${ref} does not resolve — only #/$defs/<name> is implemented`);
   return target;
 }
 
-function checkNode(node, value, at, root, errors) {
+function checkNode(node: SchemaNode, value: unknown, at: string, root: SchemaNode, errors: SchemaError[]): void {
   if (typeof node.$ref === 'string') {
     checkNode(resolve(node.$ref, root), value, at, root, errors);
     return;
@@ -89,7 +111,7 @@ function checkNode(node, value, at, root, errors) {
     // The branch that came closest is the diagnosis: "matches none of two shapes" alone
     // leaves the author guessing which one they were aiming at.
     const tried = node.oneOf.map((branch) => {
-      const own = [];
+      const own: SchemaError[] = [];
       checkNode(branch, value, at, root, own);
       return own;
     });
@@ -113,10 +135,10 @@ function checkNode(node, value, at, root, errors) {
     if (typeof node.pattern === 'string' && !new RegExp(node.pattern).test(value)) {
       errors.push({ at, note: `does not match grammar ${node.pattern}` });
     }
-    if (Number.isInteger(node.minLength) && value.length < node.minLength) {
+    if (Number.isInteger(node.minLength) && value.length < node.minLength!) {
       errors.push({ at, note: `shorter than ${node.minLength} characters` });
     }
-    if (Number.isInteger(node.maxLength) && value.length > node.maxLength) {
+    if (Number.isInteger(node.maxLength) && value.length > node.maxLength!) {
       errors.push({ at, note: `longer than ${node.maxLength} characters` });
     }
   }
@@ -125,14 +147,14 @@ function checkNode(node, value, at, root, errors) {
     if (typeof node.maximum === 'number' && value > node.maximum) errors.push({ at, note: `above ${node.maximum}` });
   }
   if (Array.isArray(value)) {
-    if (Number.isInteger(node.minItems) && value.length < node.minItems) {
+    if (Number.isInteger(node.minItems) && value.length < node.minItems!) {
       errors.push({ at, note: `fewer than ${node.minItems} entries` });
     }
-    if (Number.isInteger(node.maxItems) && value.length > node.maxItems) {
+    if (Number.isInteger(node.maxItems) && value.length > node.maxItems!) {
       errors.push({ at, note: `more than ${node.maxItems} entries` });
     }
     if (isObject(node.items)) {
-      value.forEach((item, i) => checkNode(node.items, item, `${at}/${i}`, root, errors));
+      value.forEach((item, i) => checkNode(node.items as SchemaNode, item, `${at}/${i}`, root, errors));
     }
   }
   if (isObject(value)) checkObject(node, value, at, root, errors);
@@ -140,7 +162,7 @@ function checkNode(node, value, at, root, errors) {
 
 // A field holding `undefined` is an absent field, as the reference reads it: a parsed
 // document cannot hold one, and a hand-built fixture must not get a second verdict.
-function checkObject(node, value, at, root, errors) {
+function checkObject(node: SchemaNode, value: Record<string, unknown>, at: string, root: SchemaNode, errors: SchemaError[]) {
   for (const key of node.required ?? []) {
     if (value[key] === undefined) errors.push({ at: `${at}/${key}`, note: 'required field is missing' });
   }
@@ -150,7 +172,7 @@ function checkObject(node, value, at, root, errors) {
     // The whole subschema judges the NAME, not its `pattern` alone: a bound or a `$ref`
     // beside it would otherwise be read as no constraint at all.
     if (isObject(node.propertyNames)) {
-      const named = [];
+      const named: SchemaError[] = [];
       checkNode(node.propertyNames, key, where, root, named);
       for (const fault of named) errors.push({ at: fault.at, note: `field name ${fault.note}` });
     }
@@ -169,18 +191,18 @@ function checkObject(node, value, at, root, errors) {
 
 /** Where the document breaks its schema: `{ at, note }` per fault, empty — it is accepted.
  * An unimplemented keyword throws: a partial verdict given as a pass is what this refuses. */
-export function schemaErrors(schema, document) {
+export function schemaErrors(schema: SchemaNode, document: unknown): SchemaError[] {
   const unknown = unsupportedKeywords(schema);
   if (unknown.length) {
     throw new Error(`schema ${schema.$id ?? '(unnamed)'} uses what this reader does not implement: `
       + `${unknown.join('; ')} — the check cannot be given as a verdict`);
   }
-  const errors = [];
+  const errors: SchemaError[] = [];
   checkNode(schema, document, '', schema, errors);
   return errors;
 }
 
 /** The faults as one line, for a refusal a person reads. */
-export function sayErrors(errors) {
+export function sayErrors(errors: SchemaError[]) {
   return errors.map(({ at, note }) => `${at || '(document)'}: ${note}`).join('; ');
 }

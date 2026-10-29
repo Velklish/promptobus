@@ -511,7 +511,7 @@ moved while it worked. The READING half — a finer scale, absolute bands,
 proposes anything.
 
 **This file is the second disk boundary of routing, and it obeys the first
-one's rules** ([cache.js](../../lib/model-routing/cache.js)). It writes into the same account-scoped
+one's rules** ([cache.ts](../../lib/model-routing/cache.ts)). It writes into the same account-scoped
 directory, mode `0600`, and it PROJECTS field by field onto a closed shape
 (`schemas/model-routing/telemetry.schema.json`) rather than spreading anything
 it was handed. That matters more here than in the cache: the source is not an
@@ -615,7 +615,7 @@ pick is published.
 
 The shape it produces is `schemas/model-routing/decision.schema.json`, and the
 shape it consumes is what the two modules next door already answer:
-`loadCatalog` ([catalog.js](../../lib/model-routing/catalog.js)) for the tuples, the merged policy and
+`loadCatalog` ([catalog.ts](../../lib/model-routing/catalog.ts)) for the tuples, the merged policy and
 its layers, `preflight` ([preflight.js](../../lib/model-routing/preflight.js)) for the snapshot. It
 wires nothing: `promptobus models` is the command line.
 
@@ -691,7 +691,7 @@ exactly as `fail` does; what the code adds is on the way past a consumer.
 
 ### `mergeWeights` — the four merge rules, and why provenance is a list
 
-Source: `lib/model-routing/catalog.js`, `mergeWeights`.
+Source: `lib/model-routing/catalog.ts`, `mergeWeights`.
 
 Four different rules live here, and they differ on purpose:
 
@@ -752,7 +752,7 @@ once for the slowest harness, never three times in a row.
 probe at all unless `--refresh` is set. A routed lift rechecks a held exhaustion
 with a known reset time, so a plan upgrade can restore availability before that
 time. A failed recheck keeps the exhaustion. A reset-less exhaustion is sticky
-([cache.js](../../lib/model-routing/cache.js)).
+([cache.ts](../../lib/model-routing/cache.ts)).
 
 **`--dry-run` without `--refresh` never probes.** It keeps a live timed
 exhaustion from the cache even when a routed lift would recheck that exhaustion.
@@ -789,7 +789,7 @@ adapters carry their own `timedOut` flag, set by their own timer and by nothing 
 
 ### The availability cache: the first disk boundary of routing
 
-Source: `lib/model-routing/cache.js`.
+Source: `lib/model-routing/cache.ts`.
 
 Availability cache: the last availability snapshot, kept between commands so
 that a routed `spawn` does not start three harness binaries every time.
@@ -856,7 +856,7 @@ the priority scheme is documented convention rather than schema.
 
 ### Loading the catalog and the layer stack
 
-Source: `lib/model-routing/catalog.js`.
+Source: `lib/model-routing/catalog.ts`.
 
 Model catalog and the overlay merge.
 
@@ -879,7 +879,7 @@ does not promise they exist.
 
 ### Rendering a decision for a person
 
-Source: `lib/model-routing/render.js`.
+Source: `lib/model-routing/render.ts`.
 
 The text half of a decision: what `promptobus models` prints when it is not
 asked for `--json`.
@@ -902,12 +902,12 @@ Source: `lib/models.js`.
 `promptobus models`, and the routing gate `spawn` and `review` stand on.
 
 Everything below the command exists already as a library: the catalog and its
-overlays ([model-routing/catalog.js](../../lib/model-routing/catalog.js)), the checks
+overlays ([model-routing/catalog.ts](../../lib/model-routing/catalog.ts)), the checks
 behind `models validate` ([validate.js](../../lib/model-routing/validate.js)), the
 budgeted preflight and the availability cache
 ([preflight.js](../../lib/model-routing/preflight.js),
-[cache.js](../../lib/model-routing/cache.js)), and the pure resolver and renderer
-([resolver.js](../../lib/model-routing/resolver.js), [render.js](../../lib/model-routing/render.js)).
+[cache.ts](../../lib/model-routing/cache.ts)), and the pure resolver and renderer
+([resolver.js](../../lib/model-routing/resolver.js), [render.ts](../../lib/model-routing/render.ts)).
 This file is the only place they meet, and it is deliberately the ONE place:
 `spawn` and `review` route through the same gate as `models` prints, so the
 decision a person is shown is the decision a lift is made on.
@@ -979,7 +979,7 @@ contract that the schemas and this package's grammars already work to avoid.
 
 ### `markExhausted` — marking a harness exhausted when a lift fails on a spent limit
 
-Source: `lib/model-routing/cache.js`, `markExhausted`.
+Source: `lib/model-routing/cache.ts`, `markExhausted`.
 
 Late-start hook: a driver whose session failed to start on a limit reports it
 here, and the harness is exhausted from that moment.
@@ -1011,7 +1011,7 @@ run must avoid for another reason is the resolver's business.
 
 ### `scopeOf` — what a window binds, projected onto the closed scope shapes, or undefined
 
-Source: `lib/model-routing/cache.js`, `scopeOf`.
+Source: `lib/model-routing/cache.ts`, `scopeOf`.
 
 What a window binds, projected onto the closed scope shapes, or `undefined`
 when the value is present and is none of them.
@@ -1294,7 +1294,7 @@ shared one would let a caller edit the driver's table.
 
 ### `snapshotEntry` — one harness entry, projected onto the closed snapshot shape
 
-Source: `lib/model-routing/cache.js`, `snapshotEntry`.
+Source: `lib/model-routing/cache.ts`, `snapshotEntry`.
 
 Field by field on purpose, never a spread: a spread is exactly how a `token`, a
 `rawOutput` or an `account` field an adapter attached would reach the file. The
@@ -1314,7 +1314,7 @@ which sends the next run back to the adapter.
 
 ### `paceLines` — the pace table, and which lines it must always print
 
-Source: `lib/model-routing/render.js`, `paceLines`.
+Source: `lib/model-routing/render.ts`, `paceLines`.
 
 The pace table: one row per eligible harness/pool representative, under the
 candidates (ADR-005).

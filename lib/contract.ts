@@ -28,5 +28,5 @@ export const KNOCK_TEXT_MAX = 2000;
 // this list, so a change of admission changes both with it.
 export const TEAMLEAD_HARNESSES = ['claude', 'codex', 'opencode'];
 
-const HARNESS_NAMES = { claude: 'Claude Code', codex: 'Codex', cursor: 'Cursor', opencode: 'opencode' };
-export const harnessName = (id) => HARNESS_NAMES[id] ?? id;
+const HARNESS_NAMES: Record<string, string> = { claude: 'Claude Code', codex: 'Codex', cursor: 'Cursor', opencode: 'opencode' };
+export const harnessName = (id: string) => HARNESS_NAMES[id] ?? id;

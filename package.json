@@ -16,7 +16,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.runtime.json",
     "prepare": "npm run build",
     "pretest": "npm run build",
     "test": "node test/run.mjs",

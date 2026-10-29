@@ -2,7 +2,7 @@
   "lib/model-routing/adapter-cursor.js": [
     "b8762a2ab70a"
   ],
-  "lib/model-routing/cache.js": [
+  "lib/model-routing/cache.ts": [
     "f951efa2ad0e"
   ],
   "lib/spawn.js": [

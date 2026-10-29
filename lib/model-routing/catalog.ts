@@ -5,6 +5,40 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { defaultFloor, GateError, registryOf, routedCatalogRoles, SHIPPED_REGISTRY } from '../../dist/index.js';
+import type { PromptobusHost } from '../../dist/index.js';
+
+type SelectorKind = 'harnesses' | 'models' | 'efforts' | 'tuples' | 'flags' | 'pools';
+type SelectorMap = Partial<Record<SelectorKind, string[]>>;
+interface RoleRules { allow: SelectorMap; deny: SelectorMap }
+interface AccountPolicy { capacity?: Record<string, number>; denySuffixes?: string[]; [key: string]: unknown }
+export interface RoutingPolicy {
+  weights: Record<string, Record<string, number>>; penalties: Record<string, number>; bonuses: Record<string, number>;
+  caps: Record<string, Record<string, number>>; qualityFloor: Record<string, number>;
+  balance: Record<string, number>; nearLimit: Record<string, number>; defaults: Record<string, string>;
+  account: Record<string, AccountPolicy>; allow: SelectorMap; deny: SelectorMap; byRole: Record<string, RoleRules>;
+  payg: { allow: boolean };
+}
+interface RuleBlock extends SelectorMap { byRole?: Record<string, SelectorMap> }
+interface RoutingOverlay extends Omit<Partial<RoutingPolicy>, 'allow' | 'deny'> {
+  schemaVersion?: number; allow?: RuleBlock; deny?: RuleBlock; reviewerQualityFloor?: number;
+  ratings?: Record<string, Record<string, number>>; priority?: Record<string, number>;
+}
+export interface CatalogTuple {
+  id: string; harness: string; model: string; effort?: string | null; ratings: Record<string, number>;
+  priority?: number; assessedAt?: string;
+  evidence?: { sources?: { rating?: string; validUntil?: string; figure?: unknown; listFigure?: unknown; listBand?: unknown }[]; [key: string]: unknown };
+  [key: string]: unknown;
+}
+interface CatalogDocument { schemaVersion: number; updated?: string; tuples?: CatalogTuple[] }
+interface RoutingLayerIdentity { kind: string; id: string }
+interface RoutingLayer { id: string; path?: string; present: boolean; data: unknown }
+interface RoutingRule { layer: string; rule: 'allow' | 'deny'; role: string | null; kind: SelectorKind; names: string[] }
+export interface RoutingSources {
+  weights: Record<string, string>; rules: RoutingRule[]; defaults: Record<string, string>; account: Record<string, string>;
+  ratings: Record<string, Record<string, string>>; priority: Record<string, string>; floorAlias: string[];
+}
+interface RoutingConstraints { harness?: string | null; model?: string | null; effort?: string | null; allowPayg?: boolean }
+type RoutingHost = Pick<PromptobusHost, 'routingPaths'>;
 
 // `MODEL_FLAGS` is NOT re-exported here: it lives with the reader that projects a snapshot's
 // model rows ([cache.js](cache.js)). Two paths to one name is how a second copy appears.
@@ -28,17 +62,17 @@ export const ROUTED_ROLES = Object.freeze(routedCatalogRoles(SHIPPED_REGISTRY));
 export const RULE_ROLES = ROUTED_ROLES;
 
 /** Return whether a participant role belongs to the routing contract. */
-export const isRoutedRole = (role) => ROUTED_ROLES.includes(role);
+export const isRoutedRole = (role: string) => ROUTED_ROLES.includes(role as typeof ROUTED_ROLES[number]);
 
-const roleMap = (make) => Object.freeze(Object.fromEntries(
+const roleMap = <T>(make: (role: string) => T) => Object.freeze(Object.fromEntries(
   ROUTED_ROLES.map((role) => [role, make(role)]),
 ));
-const defaultFloorFor = (role) => {
+const defaultFloorFor = (role: string): number => {
   const floor = defaultFloor(SHIPPED_REGISTRY, role);
-  if (!Number.isInteger(floor) || floor < 1 || floor > 10) {
+  if (!Number.isInteger(floor) || floor! < 1 || floor! > 10) {
     throw new TypeError(`routed role "${role}" has no valid default quality floor`);
   }
-  return floor;
+  return floor!;
 };
 const DEFAULT_QUALITY_FLOORS = roleMap(defaultFloorFor);
 const EMPTY_ROLE_RULES = () => Object.freeze({
@@ -53,7 +87,7 @@ export const STALE_RATING_DAYS = 90;
 
 /** Policy defaults, every number from ADR-005. The resolver reads them through the merged policy
  * and never from a literal of its own — that is what lets an overlay change them. */
-export const DEFAULT_POLICY = Object.freeze({
+export const DEFAULT_POLICY: Readonly<RoutingPolicy> = Object.freeze({
   weights: Object.freeze({
     quality: Object.freeze({ quality: 65, speed: 10, quotaCost: 10, remaining: 15 }),
     balanced: Object.freeze({ quality: 40, speed: 25, quotaCost: 20, remaining: 15 }),
@@ -101,7 +135,7 @@ export const BALANCE_ORDERING = 'balanced';
 
 /** The names an allow or a deny rule can select by. Flags and pools read the snapshot;
  * the other selectors read tuple fields. */
-export const SELECTOR_KINDS = ['harnesses', 'models', 'efforts', 'tuples', 'flags', 'pools'];
+export const SELECTOR_KINDS: SelectorKind[] = ['harnesses', 'models', 'efforts', 'tuples', 'flags', 'pools'];
 export const ROUTING_POOLS = ['cursor:auto', 'cursor:api'];
 
 
@@ -109,16 +143,16 @@ export const ROUTING_POOLS = ['cursor:auto', 'cursor:api'];
  * Not a real layer, and it cannot collide with one. */
 export const DEFAULTS = 'defaults';
 
-const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-const clone = (v) => JSON.parse(JSON.stringify(v));
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
-function gateError(message, layer = null) {
-  const error = new GateError(message);
+function gateError(message: string, layer: RoutingLayerIdentity | null = null) {
+  const error: GateError & { routingLayer?: RoutingLayerIdentity } = new GateError(message);
   if (layer) error.routingLayer = layer;
   return error;
 }
-function assertKnownRoleKeys(value, at, layerId, stepNames = []) {
+function assertKnownRoleKeys(value: unknown, at: string, layerId: string, stepNames: string[] = []) {
   if (!isObject(value)) return;
   const allowed = [...new Set([...ROUTED_ROLES, ...stepNames])];
   const unknown = Object.keys(value).filter((role) => role !== '__proto__' && !allowed.includes(role));
@@ -133,24 +167,24 @@ function assertKnownRoleKeys(value, at, layerId, stepNames = []) {
 
 /** One JSON file of the routing stack. Absent is a state, not a failure; present and unreadable
  * IS one — ignoring it would apply a policy the person thinks is in force. */
-export function readLayerFile(file, layer = null) {
+export function readLayerFile(file: string, layer: RoutingLayerIdentity | null = null): { present: boolean; data: unknown } {
   if (!existsSync(file)) return { present: false, data: null };
   let text;
   try {
     text = readFileSync(file, 'utf8');
   } catch (err) {
-    throw gateError(`routing layer ${file} is unreadable: ${err.message}`, layer);
+    throw gateError(`routing layer ${file} is unreadable: ${(err as Error).message}`, layer);
   }
   try {
     return { present: true, data: JSON.parse(text) };
   } catch (err) {
-    throw gateError(`routing layer ${file} is not valid JSON: ${err.message}`, layer);
+    throw gateError(`routing layer ${file} is not valid JSON: ${(err as Error).message}`, layer);
   }
 }
 
 /** Read the canonical catalog and every overlay the host names, in the host's order. Nothing is
  * merged and nothing is checked here. */
-export function readLayers(host, { catalogFile = CATALOG_FILE } = {}) {
+export function readLayers(host: RoutingHost | null | undefined, { catalogFile = CATALOG_FILE } = {}) {
   const catalogLayer = { kind: 'catalog', id: 'catalog' };
   const canonical = readLayerFile(catalogFile, catalogLayer);
   if (!canonical.present) throw gateError(`the shipped catalog is missing: ${catalogFile}`, catalogLayer);
@@ -177,31 +211,31 @@ export function readLayers(host, { catalogFile = CATALOG_FILE } = {}) {
 // --- the merge itself ---------------------------------------------------------
 // The merge: four rules, and provenance as a list of rules rather than one layer id.
 
-function mergeWeights(base, patch, note) {
+function mergeWeights(base: RoutingPolicy['weights'], patch: unknown, note: (name: string) => void) {
   if (!isObject(patch)) return base;
   const out = { ...base };
   for (const name of Object.keys(patch)) {
     if (name === '__proto__') continue;
-    out[name] = { ...patch[name] };
+    out[name] = { ...patch[name] as Record<string, number> };
     note(name);
   }
   return out;
 }
 
-function mergeFlat(base, patch) {
+function mergeFlat<T extends object>(base: T, patch: unknown): T {
   if (!isObject(patch)) return base;
-  const out = { ...base };
+  const out = { ...base } as Record<string, unknown>;
   for (const [k, v] of Object.entries(patch)) {
     if (k === '__proto__') continue;
     out[k] = v;
   }
-  return out;
+  return out as T;
 }
 
 /** One layer's quality floors, with `reviewerQualityFloor` read as an alias (ADR-005). Inside ONE
  * layer the explicit key wins and the pair is recorded; across layers the highest one wins. */
-function floorPatch(overlay, sources, layerId) {
-  const out = {};
+function floorPatch(overlay: RoutingOverlay, sources: RoutingSources, layerId: string) {
+  const out: Record<string, number> = {};
   if (isObject(overlay.qualityFloor)) {
     assertKnownRoleKeys(overlay.qualityFloor, 'qualityFloor', layerId);
     Object.assign(out, overlay.qualityFloor);
@@ -214,12 +248,12 @@ function floorPatch(overlay, sources, layerId) {
 
 /** `defaults`, with the layer of each key recorded. `__proto__` is skipped: these keys come from
  * a person's file, and assigning that name reaches the prototype SETTER instead. */
-function mergeDefaults(base, patch, sources, layerId) {
+function mergeDefaults(base: RoutingPolicy['defaults'], patch: unknown, sources: RoutingSources, layerId: string) {
   if (!isObject(patch)) return base;
   const out = { ...base };
   for (const [key, value] of Object.entries(patch)) {
     if (key === '__proto__') continue;
-    out[key] = value;
+    out[key] = value as string;
     sources.defaults[key] = layerId;
   }
   return out;
@@ -227,7 +261,7 @@ function mergeDefaults(base, patch, sources, layerId) {
 
 /** `caps`, merged harness by harness: the highest layer naming a harness wins for THAT harness.
  * No layer is recorded — nothing prints where a cap came from. */
-function mergeCaps(base, patch) {
+function mergeCaps(base: RoutingPolicy['caps'], patch: unknown) {
   if (!isObject(patch)) return base;
   const out = { ...base };
   for (const [kind, block] of Object.entries(patch)) {
@@ -241,7 +275,7 @@ function mergeCaps(base, patch) {
 
 /** `account`, one block per harness merged key by key, so two layers may answer different
  * questions about one harness. The layer is recorded: `models` prints where an answer came from. */
-function mergeAccount(base, patch, sources, layerId) {
+function mergeAccount(base: RoutingPolicy['account'], patch: unknown, sources: RoutingSources, layerId: string) {
   if (!isObject(patch)) return base;
   const out = { ...base };
   for (const [harness, block] of Object.entries(patch)) {
@@ -255,7 +289,7 @@ function mergeAccount(base, patch, sources, layerId) {
         merged.capacity = mergeFlat(merged.capacity ?? {}, value);
         for (const kind of Object.keys(value)) sources.account[`${harness}.capacity.${kind}`] = layerId;
       } else if (key === 'denySuffixes' && Array.isArray(value)) {
-        merged.denySuffixes = [...new Set([...(merged.denySuffixes ?? []), ...value])];
+        merged.denySuffixes = [...new Set([...(merged.denySuffixes ?? []), ...value as string[]])];
         sources.account[`${harness}.denySuffixes`] = layerId;
       } else {
         merged[key] = value;
@@ -268,7 +302,7 @@ function mergeAccount(base, patch, sources, layerId) {
 }
 
 /** Deny: union per selector kind, order-preserving so a merged list reads as it was written. */
-function mergeDeny(base, patch) {
+function mergeDeny(base: SelectorMap, patch: unknown) {
   if (!isObject(patch)) return base;
   const out = { ...base };
   for (const kind of SELECTOR_KINDS) {
@@ -279,21 +313,21 @@ function mergeDeny(base, patch) {
 }
 
 /** Allow: intersection per selector kind, over the layers that state one. */
-function mergeAllow(base, patch) {
+function mergeAllow(base: SelectorMap, patch: unknown) {
   if (!isObject(patch)) return base;
   const out = { ...base };
   for (const kind of SELECTOR_KINDS) {
     if (!Array.isArray(patch[kind])) continue;
     out[kind] = Array.isArray(out[kind])
-      ? out[kind].filter((name) => patch[kind].includes(name))
+      ? out[kind].filter((name) => (patch[kind] as string[]).includes(name))
       : [...patch[kind]];
   }
   return out;
 }
 
 /** Every allow and deny list one overlay wrote, unscoped ones and `byRole` ones alike. */
-function recordRules(rules, layerId, overlay, stepNames) {
-  for (const rule of ['allow', 'deny']) {
+function recordRules(rules: RoutingRule[], layerId: string, overlay: RoutingOverlay, stepNames: string[]) {
+  for (const rule of ['allow', 'deny'] as const) {
     const block = overlay[rule];
     if (!isObject(block)) continue;
     for (const kind of SELECTOR_KINDS) {
@@ -315,7 +349,7 @@ function recordRules(rules, layerId, overlay, stepNames) {
   }
 }
 
-function applyOverlayToPolicy(policy, overlay, sources, layerId, stepNames) {
+function applyOverlayToPolicy(policy: RoutingPolicy, overlay: RoutingOverlay, sources: RoutingSources, layerId: string, stepNames: string[]): RoutingPolicy {
   const byRole = { ...policy.byRole };
   const scopedNames = [...new Set([
     ...Object.keys(overlay.allow?.byRole ?? {}), ...Object.keys(overlay.deny?.byRole ?? {}),
@@ -354,23 +388,23 @@ function applyOverlayToPolicy(policy, overlay, sources, layerId, stepNames) {
 // --- reading the provenance back ---------------------------------------------
 
 /** How a rule reads in a diagnostic: `deny.models`, or `deny.byRole.reviewer.models`. */
-export const rulePath = (rule) => (rule.role
+export const rulePath = (rule: Pick<RoutingRule, 'role' | 'rule' | 'kind'>) => (rule.role
   ? `${rule.rule}.byRole.${rule.role}.${rule.kind}`
   : `${rule.rule}.${rule.kind}`);
 
 /** A layer as a diagnostic names it. `defaults` is a layer id like any other. */
-export const layerLabel = (id) => (id === DEFAULTS ? 'the defaults' : `overlay "${id}"`);
+export const layerLabel = (id: string) => (id === DEFAULTS ? 'the defaults' : `overlay "${id}"`);
 
 /** `deny.models of overlay "user"`, joined for a merged list several layers wrote. */
-export const rulesLabel = (rules) => (rules.length
+export const rulesLabel = (rules: RoutingRule[]) => (rules.length
   ? rules.map((r) => `${rulePath(r)} of ${layerLabel(r.layer)}`).join(', ')
   : layerLabel(DEFAULTS));
 
 /** The rules of one kind that apply when routing `role`: the unscoped ones and that role's, in
  * layer order. `role: null` asks for the unscoped rules alone. */
-export function rulesFor(sources, {
+export function rulesFor(sources: RoutingSources | null | undefined, {
   rule, kind, role = null, step = role, name = null,
-} = {}) {
+}: { rule?: 'allow' | 'deny'; kind?: SelectorKind; role?: string | null; step?: string | null; name?: string | null } = {}) {
   return (sources?.rules ?? [])
     .filter((r) => r.rule === rule && r.kind === kind)
     .filter((r) => r.role === null || r.role === role || r.role === step)
@@ -379,14 +413,14 @@ export function rulesFor(sources, {
 
 /** The allow and deny lists in force for one role (ADR-005). A kind absent from `allow` means no
  * layer stated one; present and empty means they agreed on nothing — different facts. */
-export function rulesForRole(policy, role, step = role) {
+export function rulesForRole(policy: RoutingPolicy | null | undefined, role: string, step = role) {
   if (!isRoutedRole(role)) {
     throw gateError(`rulesForRole: unknown role "${role}" — allowed: ${ROUTED_ROLES.join(', ')}`);
   }
   const scoped = policy?.byRole?.[role] ?? { allow: {}, deny: {} };
   const ownStep = step === role ? null : policy?.byRole?.[step];
-  const allow = {};
-  const deny = {};
+  const allow: SelectorMap = {};
+  const deny: SelectorMap = {};
   for (const kind of SELECTOR_KINDS) {
     const flat = policy?.allow?.[kind];
     const own = scoped.allow?.[kind];
@@ -402,7 +436,7 @@ export function rulesForRole(policy, role, step = role) {
   return { allow, deny };
 }
 
-function applyOverlayToTuples(tuples, overlay, sources, layerId) {
+function applyOverlayToTuples(tuples: CatalogTuple[], overlay: RoutingOverlay, sources: RoutingSources, layerId: string): CatalogTuple[] {
   const ratings = isObject(overlay.ratings) ? overlay.ratings : {};
   const priority = isObject(overlay.priority) ? overlay.priority : {};
   if (!Object.keys(ratings).length && !Object.keys(priority).length) return tuples;
@@ -433,13 +467,13 @@ function applyOverlayToTuples(tuples, overlay, sources, layerId) {
 
 /** Constraints layer: `--harness`, `--model` and `--effort` pass through untouched, `--allow-payg`
  * is a policy change applied here. Opt-in only — `false` does not force the policy back. */
-function applyConstraints(policy, constraints) {
+function applyConstraints(policy: RoutingPolicy, constraints: RoutingConstraints | null) {
   if (!isObject(constraints)) return policy;
   if (constraints.allowPayg !== true) return policy;
   return { ...policy, payg: { ...policy.payg, allow: true } };
 }
 
-function staleWarnings(tuples, now) {
+function staleWarnings(tuples: CatalogTuple[], now: number) {
   const cutoff = now - STALE_RATING_DAYS * 24 * 60 * 60 * 1000;
   const out = [];
   for (const tuple of tuples) {
@@ -462,7 +496,7 @@ function staleWarnings(tuples, now) {
   return out;
 }
 
-function promotionWarnings(tuples, now) {
+function promotionWarnings(tuples: CatalogTuple[], now: number) {
   const out = [];
   for (const tuple of tuples) {
     for (const source of tuple.evidence?.sources ?? []) {
@@ -487,7 +521,7 @@ function promotionWarnings(tuples, now) {
 
 /** Merge the whole stack. Pure, and the layer ORDER of `overlays` is the precedence order —
  * swapping two entries changes the result, which is the property the merge test pins. */
-export function mergeRouting({ canonical, overlays = [], constraints = null, stepNames = [], now = Date.now() } = {}) {
+export function mergeRouting({ canonical, overlays = [], constraints = null, stepNames = [], now = Date.now() }: { canonical?: CatalogDocument | null; overlays?: RoutingLayer[]; constraints?: RoutingConstraints | null; stepNames?: string[]; now?: number } = {}) {
   if (!isObject(canonical)) {
     throw gateError('mergeRouting: no canonical catalog', { kind: 'catalog', id: 'catalog' });
   }
@@ -499,10 +533,10 @@ export function mergeRouting({ canonical, overlays = [], constraints = null, ste
   }
   let policy = clone(DEFAULT_POLICY);
   let tuples = clone(canonical.tuples ?? []);
-  const applied = [];
+  const applied: string[] = [];
   // Who wrote each key a diagnostic has to name: a weight set has one writer, an allow or deny
   // list as many as stated one. `DEFAULTS` is a layer id like any other.
-  const sources = {
+  const sources: RoutingSources = {
     weights: Object.fromEntries(WEIGHT_STRATEGIES.map((n) => [n, DEFAULTS])),
     rules: [],
     defaults: {},
@@ -519,7 +553,7 @@ export function mergeRouting({ canonical, overlays = [], constraints = null, ste
   for (const layer of overlays) {
     if (!layer?.present || !isObject(layer.data)) continue;
     const scaled = layer.data.schemaVersion === 1
-      ? SCALED_OVERLAY_KEYS.filter((key) => Object.hasOwn(layer.data, key))
+      ? SCALED_OVERLAY_KEYS.filter((key) => Object.hasOwn(layer.data as object, key))
       : [];
     if (scaled.length) {
       throw gateError(`overlay "${layer.id}" uses schemaVersion 1 with ${scaled.join(', ')}; `
@@ -532,8 +566,8 @@ export function mergeRouting({ canonical, overlays = [], constraints = null, ste
         + `is not the supported ${OVERLAY_SCHEMA_VERSION} (${layer.path})`,
       { kind: 'overlay', id: layer.id });
     }
-    policy = applyOverlayToPolicy(policy, layer.data, sources, layer.id, stepNames);
-    tuples = applyOverlayToTuples(tuples, layer.data, sources, layer.id);
+    policy = applyOverlayToPolicy(policy, layer.data as RoutingOverlay, sources, layer.id, stepNames);
+    tuples = applyOverlayToTuples(tuples, layer.data as RoutingOverlay, sources, layer.id);
     applied.push(layer.id);
   }
   policy = applyConstraints(policy, constraints);
@@ -557,10 +591,10 @@ export function mergeRouting({ canonical, overlays = [], constraints = null, ste
 
 /** The whole load in one call. `layers` comes back with the paths and whether each was there:
  * the decision names a layer by `id`, and a person still has to find the file. */
-export function loadCatalog({ host, constraints = null, catalogFile = CATALOG_FILE, now = Date.now() } = {}) {
+export function loadCatalog({ host, constraints = null, catalogFile = CATALOG_FILE, now = Date.now() }: { host?: PromptobusHost | null; constraints?: RoutingConstraints | null; catalogFile?: string; now?: number } = {}) {
   const stepNames = registryOf(host).entries.filter((entry) => entry.layer === 'step').map((entry) => entry.name);
   const { canonical, overlays } = readLayers(host, { catalogFile });
-  const merged = mergeRouting({ canonical: canonical.data, overlays, constraints, stepNames, now });
+  const merged = mergeRouting({ canonical: canonical.data as CatalogDocument | null, overlays, constraints, stepNames, now });
   return {
     ...merged,
     layers: [

@@ -241,7 +241,7 @@ by hand from the session menu on claude.ai or in the desktop app.
 
 ## The harness binary after a lift: the lift's door, not PATH
 
-Source: `lib/harness-home.js` (`bindHarnessBins`, `harnessBin`), `lib/liftoff.js` (`runClaude`,
+Source: `lib/harness-home.ts` (`bindHarnessBins`, `harnessBin`), `lib/liftoff.js` (`runClaude`,
 `readBgSessions`).
 
 A lift finds its binary through the host: `host.resolveToolBin(driver.options.tool)`, which a
@@ -403,7 +403,7 @@ instructions from that skill file during subsequent turns.
 
 ### Cursor: a tracked project hooks file
 
-Source: `lib/driver-cursor.js` (`prepare`), `lib/project-hooks.js`.
+Source: `lib/driver-cursor.js` (`prepare`), `lib/project-hooks.ts`.
 
 Cursor reads `.cursor/hooks.json` at the root of the worktree it runs in. When that
 path is tracked, the plan merges the index content into its hooks file: the guard on
@@ -1400,7 +1400,7 @@ removed, and the registry must not grow a second opinion.
 
 ### Codex: the phrases a participant is addressed by
 
-Source: `lib/driver-codex.js`, `lib/prompts/codex.js`.
+Source: `lib/driver-codex.js`, `lib/prompts/codex.ts`.
 
 Session and tool naming come from `lib/driver-codex.js`. Codex role instructions
 come from `lib/prompts/codex.js` through `driver.phrases`: `promptRulesFor` selects

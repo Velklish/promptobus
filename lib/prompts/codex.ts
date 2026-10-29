@@ -27,7 +27,7 @@ const orchestratorRules = commonRules + identityRules + rootRoutes + executableR
 
 export const codexPrompts = {
   workerOrchestrator: 'a separate Promptobus participant at address orchestrator',
-  rootPreamble: ({ task, root }) => `You are the Codex root orchestrator of task ${task}. Your mailbox address is orchestrator.
+  rootPreamble: ({ task, root }: { task: string; root: string }) => `You are the Codex root orchestrator of task ${task}. Your mailbox address is orchestrator.
 Your working directory is ${root}. You coordinate workers, independent reviewers and approvers through Promptobus. The assignment below defines your authorized scope; follow its approval boundaries.
 Read the workspace rules before doing work, list their paths in your first reply, and use the workspace orchestration skill when splitting implementation into workers.`,
   mcpBoundary: '**Classified MCP write tools are placed in each MCP server\'s `disabled_tools`, and this session has no MCP server but the ones the mechanism gave it — it runs in an isolated Codex home. On codex-cli 0.156.1 a tool named there is absent from the thread\'s tool inventory, measured. Every external MCP write is forbidden by this prompt as well.**',
@@ -38,5 +38,5 @@ Read the workspace rules before doing work, list their paths in your first reply
     gate: 'not run, because a reviewer runs no gates or mechanical checks',
   },
   promptRules: commonRules,
-  promptRulesFor: (role) => ({ [WORKER]: workerRules, [REVIEWER]: reviewerRules, [ORCHESTRATOR]: orchestratorRules })[role] ?? commonRules,
+  promptRulesFor: (role: string) => ({ [WORKER]: workerRules, [REVIEWER]: reviewerRules, [ORCHESTRATOR]: orchestratorRules } as Record<string, string>)[role] ?? commonRules,
 };

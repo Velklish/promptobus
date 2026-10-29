@@ -1,10 +1,20 @@
 // Process launch inside the bus boundary: past `run` it does not go outside.
 
 import { spawnSync } from 'node:child_process';
+import type { SpawnOptions, SpawnSyncOptions, SpawnSyncOptionsWithStringEncoding, SpawnSyncReturns } from 'node:child_process';
 import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+
+interface ProcessEnvironment { platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv }
+interface RunPlan { ok: true; file: string; args: readonly string[]; verbatim: boolean }
+interface RunRefusal { ok: false; code: string; message: string }
+interface AsyncRunOptions extends SpawnOptions { timeoutMs?: number; encoding?: BufferEncoding | 'buffer' | null }
+interface AsyncRunResult<T extends string | Buffer = string | Buffer> {
+  error: Error | null; status: number | null; signal: NodeJS.Signals | null;
+  stdout: T; stderr: T; pid: number | undefined; output: [null, T, T];
+}
 
 // Process-wide output budget; Node's own default is smaller. A lost process result reads
 // as "clean tree" or "state unknown", and the latter decides whether to clean a directory.
@@ -26,7 +36,7 @@ const UNCARRIABLE_BY_CMD = /[\r\n%]/;
 
 // PATHEXT is written uppercase and glued lowercase: the filesystem ignores case, but the
 // path stays predictable in an error message and when compared with .cmd/.bat.
-function pathExtensions(env) {
+function pathExtensions(env: NodeJS.ProcessEnv) {
   return (env.PATHEXT || DEFAULT_PATHEXT)
     .split(';')
     .map((e) => e.trim().toLowerCase())
@@ -35,11 +45,11 @@ function pathExtensions(env) {
 
 // Search PATH only: CreateProcess starts with the current directory, and a `claude.exe`
 // planted in a repository would beat the system one. The `;` separator is a literal.
-export function resolveCommand(cmd, { platform = process.platform, env = process.env } = {}) {
+export function resolveCommand(cmd: string, { platform = process.platform, env = process.env }: ProcessEnvironment = {}): string | null {
   if (platform !== 'win32') return cmd;
   const exts = pathExtensions(env);
-  const hasKnownExt = (p) => exts.some((e) => p.toLowerCase().endsWith(e));
-  const candidates = (base) => (hasKnownExt(base) ? [base] : []).concat(exts.map((e) => base + e));
+  const hasKnownExt = (p: string) => exts.some((e) => p.toLowerCase().endsWith(e));
+  const candidates = (base: string) => (hasKnownExt(base) ? [base] : []).concat(exts.map((e) => base + e));
 
   if (/[\\/]/.test(cmd) || /^[A-Za-z]:/.test(cmd)) return candidates(cmd).find(existsSync) ?? null;
 
@@ -53,7 +63,7 @@ export function resolveCommand(cmd, { platform = process.platform, env = process
 
 // A batch-file argument is parsed twice — cmd.exe, then the CRT of the program `%*` calls.
 // The three rules: [02-host.md § Launching a process](../docs/reference/02-host.md#launching-a-process).
-export function quoteCmdArg(arg) {
+export function quoteCmdArg(arg: unknown) {
   const s = String(arg);
   let out = '"';
   let slashes = 0;
@@ -68,19 +78,19 @@ export function quoteCmdArg(arg) {
 
 // `/v:off` — no delayed expansion (`!VAR!` would expand inside quotes), `/d` — no registry
 // AutoRun, `/s` — strip the outer quote pair, `/c` — run and exit.
-export function buildCmdLine(file, args) {
+export function buildCmdLine(file: string, args: readonly string[]) {
   return `/v:off /d /s /c "${[file, ...args].map(quoteCmdArg).join(' ')}"`;
 }
 
 // ComSpec can be something other than cmd.exe (PowerShell), and the escaping above is
 // about cmd.exe; a space in the path disqualifies too (verbatim).
-function comSpec(env) {
+function comSpec(env: NodeJS.ProcessEnv) {
   const v = env.ComSpec ?? env.COMSPEC ?? '';
   return /\\cmd\.exe$/i.test(v) && !/\s/.test(v) ? v : 'cmd.exe';
 }
 
 // Plan separate from launch: Windows branches can then be unit-tested on any platform.
-export function planRun(cmd, args = [], { platform = process.platform, env = process.env } = {}) {
+export function planRun(cmd: string, args: readonly string[] = [], { platform = process.platform, env = process.env }: ProcessEnvironment = {}): RunPlan | RunRefusal {
   if (platform !== 'win32') return { ok: true, file: cmd, args, verbatim: false };
 
   const file = resolveCommand(cmd, { platform, env });
@@ -103,8 +113,8 @@ export function planRun(cmd, args = [], { platform = process.platform, env = pro
 
 // Refusal in spawnSync form with the same `error.code` Node would have returned:
 // callers parse it the same way.
-function failure({ code, message }) {
-  const error = new Error(message);
+function failure({ code, message }: Pick<RunRefusal, 'code' | 'message'>): AsyncRunResult<string> {
+  const error = new Error(message) as NodeJS.ErrnoException;
   error.code = code;
   return { error, status: null, signal: null, stdout: '', stderr: '', pid: 0, output: [null, '', ''] };
 }
@@ -114,7 +124,7 @@ const TRACE_VAR = 'PROMPTOBUS_EXEC_TRACE';
 
 // Where PATH would find `cmd`, for the trace only — `run` on POSIX hands the bare name to
 // the kernel. The execute bit is REQUIRED here, by the same test the seal builds with.
-function wouldResolve(cmd, env) {
+function wouldResolve(cmd: string, env: NodeJS.ProcessEnv) {
   if (process.platform === 'win32') return resolveCommand(cmd, { platform: process.platform, env });
   if (cmd.includes(path.sep) || path.isAbsolute(cmd)) return cmd;
   for (const dir of String(env.PATH ?? '').split(path.delimiter)) {
@@ -129,7 +139,7 @@ function wouldResolve(cmd, env) {
   return null;
 }
 
-function trace(cmd, options) {
+function trace(cmd: string, options: { env?: NodeJS.ProcessEnv }) {
   const file = process.env[TRACE_VAR];
   if (!file) return;
   const env = options.env ?? process.env;
@@ -140,7 +150,9 @@ function trace(cmd, options) {
   }
 }
 
-export function run(cmd, args = [], options = {}) {
+export function run(cmd: string, args: readonly string[] | undefined, options: SpawnSyncOptionsWithStringEncoding): SpawnSyncReturns<string> | AsyncRunResult<string>;
+export function run(cmd: string, args?: readonly string[], options?: SpawnSyncOptions): SpawnSyncReturns<string | Buffer> | AsyncRunResult<string>;
+export function run(cmd: string, args: readonly string[] = [], options: SpawnSyncOptions = {}) {
   trace(cmd, options);
   const plan = planRun(cmd, args, { env: options.env ?? process.env });
   if (!plan.ok) return failure(plan);
@@ -155,7 +167,9 @@ export function run(cmd, args = [], options = {}) {
 
 // The awaited twin of `run`, refusing Windows batch wrappers whose descendants cannot be
 // cancelled by killing the wrapper. Native binaries keep the plan and output ceiling.
-export function runAsync(cmd, args = [], options = {}) {
+export function runAsync(cmd: string, args: readonly string[] | undefined, options: AsyncRunOptions & { encoding: BufferEncoding }): Promise<AsyncRunResult<string>>;
+export function runAsync(cmd: string, args?: readonly string[], options?: AsyncRunOptions): Promise<AsyncRunResult>;
+export function runAsync(cmd: string, args: readonly string[] = [], options: AsyncRunOptions = {}): Promise<AsyncRunResult> {
   trace(cmd, options);
   const plan = planRun(cmd, args, { env: options.env ?? process.env });
   if (!plan.ok) return Promise.resolve(failure(plan));
@@ -170,14 +184,14 @@ export function runAsync(cmd, args = [], options = {}) {
       shell: false,
       ...(plan.verbatim ? { windowsVerbatimArguments: true } : {}),
     });
-    const out = { stdout: [], stderr: [] };
+    const out: Record<'stdout' | 'stderr', Buffer[]> = { stdout: [], stderr: [] };
     const sizes = { stdout: 0, stderr: 0 };
-    let error = null;
+    let error: Error | null = null;
     let settled = false;
-    for (const name of ['stdout', 'stderr']) {
+    for (const name of ['stdout', 'stderr'] as const) {
       const stream = child[name];
       if (!stream) continue;
-      stream.on('data', (chunk) => {
+      stream.on('data', (chunk: Buffer) => {
         const remaining = Math.max(0, PROC_MAX_OUTPUT - sizes[name]);
         out[name].push(chunk.subarray(0, remaining));
         sizes[name] += chunk.length;
@@ -193,11 +207,11 @@ export function runAsync(cmd, args = [], options = {}) {
       child.stdout?.destroy();
       child.stderr?.destroy();
     }, Math.max(0, timeoutMs));
-    const settle = (status, signal) => {
+    const settle = (status: number | null, signal: NodeJS.Signals | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      const decode = (name) => {
+      const decode = (name: 'stdout' | 'stderr') => {
         const bytes = Buffer.concat(out[name]);
         return rest.encoding && rest.encoding !== 'buffer' ? bytes.toString(rest.encoding) : bytes;
       };

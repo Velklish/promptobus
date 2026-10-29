@@ -1,8 +1,8 @@
-export function extractNodeTestVerdictNames(raw) {
-  const names = [];
-  const incomplete = reason => ({ complete: false, names, reason });
+export function extractNodeTestVerdictNames(raw: unknown) {
+  const names: string[] = [];
+  const incomplete = (reason: string) => ({ complete: false, names, reason });
   if (typeof raw !== 'string' || !raw.trim()) return incomplete('Raw test output is missing.');
-  const counts = {};
+  const counts: Record<string, number> = {};
   let duration = false;
   for (const line of raw.split('\n')) {
     if (line.startsWith('✔ ')) {

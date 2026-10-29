@@ -279,7 +279,7 @@ After that proof succeeds, the script replaces `PATH` with the stub directory be
 
 ## Launching a process
 
-Source: `lib/exec.js` — `run`, `runAsync`, `planRun`, `resolveCommand`, `quoteCmdArg`, `buildCmdLine`.
+Source: `lib/exec.ts` — `run`, `runAsync`, `planRun`, `resolveCommand`, `quoteCmdArg`, `buildCmdLine`.
 
 External processes use the shared process boundary, and argv stays an array everywhere. `shell: true` is not "the same, but through a shell": on Windows Node builds `cmd.exe /d /s /c "<file> <space-joined arguments>"` with `windowsVerbatimArguments` and adds no quotes of its own, so an argument with a space splits in two, a newline cuts the command, and `& | ^ < >` execute. The three routes are therefore POSIX — `spawnSync` or `spawn` with no shell; Windows and `.exe` — the same process API on the resolved path; Windows and `.cmd`/`.bat` — `cmd.exe` with a command line built here, because Node will not launch a batch file directly (EINVAL since CVE-2024-27980). Resolving the path also brings `ENOENT` back to life: under `shell: true` `cmd.exe` always started, and instead of "not found in `PATH`" returned code 1 or 9009 with junk in stderr. `runAsync` is the awaited twin of `run` for a caller whose own budget must bound the child: the plan, the output ceiling and the result shape are the same, but the caller's event loop keeps running, and `timeoutMs` ends the child by a signal instead of blocking on it — a budgeted stop must cut a hung harness command off, not wait it out.
 
@@ -449,7 +449,7 @@ The package test installs the packed tarball and runs a consumer fixture, `test/
 
 ## The harness session registry, and the refusal when nobody says
 
-Source: `lib/harness-home.js`, `harnessStateHome`.
+Source: `lib/harness-home.ts`, `harnessStateHome`.
 
 Where the package keeps its own session registry for one harness, and the refusal
 when nobody says.

@@ -50,7 +50,7 @@ The documentation check compares every such tag with `package.json`. On `main` b
 The `.` entry point exports `Engine` and its public input and result types, including
 `SendInput` and `SendSyncInput`; consumers do not need a deep import to name either send contract.
 
-`src/` is TypeScript. `npm run build` emits `dist/`. `lib/*.js` is the JS runtime and the four harness drivers. `tsconfig.json`'s `include` stays `["src"]` — `lib/` is not type-checked at all, by any gate — but `tsc` runs with `noUnusedLocals`/`noUnusedParameters` for `src/`.
+`npm run build` first compiles `src/` to `dist/`, then compiles maintained runtime TypeScript beside its source in `lib/`. `tsconfig.runtime.json` inherits strict checking, unused-code checks and `noEmitOnError` from `tsconfig.json`. Runtime imports keep their `.js` specifiers, and generated JavaScript and declarations retain the package's existing paths. Remaining JavaScript runtime modules and drivers keep their source paths until converted. Tests and development scripts remain JavaScript. The tarball includes generated runtime outputs and declarations without authored TypeScript.
 
 ## Store home
 

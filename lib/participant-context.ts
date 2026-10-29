@@ -2,44 +2,53 @@ import { realpathSync, statSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
 import { REVIEWER } from '../dist/index.js';
+import type { HostContextRef, HostParticipantContextTask, HostTaskContextDeclaration, PreparedHostParticipantContextSelection, PromptobusHost } from '../dist/index.js';
 
-const record = value => value && typeof value === 'object' && !Array.isArray(value);
-const text = value => typeof value === 'string' && Boolean(value.trim()) && !value.includes('\0');
-const absolute = value => text(value) && path.isAbsolute(value);
-const skillName = value => text(value) && value !== '.' && value !== '..' && !/[\\/]/.test(value);
-const freeze = value => {
+export type ParticipantContextHost = Pick<PromptobusHost, 'selectParticipantContext' | 'resolveRepoModule' | 'reviewSkillDir'>;
+export interface ParticipantContextCeiling {
+  task: HostParticipantContextTask;
+  rules: { path: string; reason: string; requires: string[] }[];
+  skills: { name: string; root: string; sourceRoot?: string; reason: string; requires?: HostContextRef[] }[];
+  resources?: PreparedHostParticipantContextSelection['resources'];
+}
+
+const record = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const text = (value: unknown): value is string => typeof value === 'string' && Boolean(value.trim()) && !value.includes('\0');
+const absolute = (value: unknown): value is string => text(value) && path.isAbsolute(value);
+const skillName = (value: unknown): value is string => text(value) && value !== '.' && value !== '..' && !/[\\/]/.test(value);
+const freeze = <T>(value: T): T => {
   if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); }
   return value;
 };
-function exact(value, keys, label) {
+function exact(value: unknown, keys: string[], label: string): asserts value is Record<string, unknown> {
   if (!record(value) || Object.keys(value).some(key => !keys.includes(key))) throw new Error(`Invalid ${label}`);
 }
-function refs(value, label) {
+function refs(value: unknown, label: string): HostContextRef[] {
   if (!Array.isArray(value)) throw new Error(`${label} requires an array of context references`);
-  return value.map(ref => {
-    if (ref?.kind === 'skill') {
+  return value.map((ref: unknown): HostContextRef => {
+    if (record(ref) && ref.kind === 'skill') {
       exact(ref, ['kind', 'name'], label);
       if (!skillName(ref.name)) throw new Error(`${label} requires a skill directory name`);
       return { kind: 'skill', name: ref.name };
     }
     exact(ref, ['kind', 'path'], label);
-    if (!['rule', 'resource'].includes(ref.kind) || !absolute(ref.path)) throw new Error(`${label} requires an exact absolute rule/resource path`);
+    if ((ref.kind !== 'rule' && ref.kind !== 'resource') || !absolute(ref.path)) throw new Error(`${label} requires an exact absolute rule/resource path`);
     return { kind: ref.kind, path: path.resolve(ref.path) };
   });
 }
 
-export function normalizeContextDeclaration(value) {
+export function normalizeContextDeclaration(value: unknown): HostTaskContextDeclaration {
   exact(value, ['skills', 'resources'], 'task context declaration');
   if (!Array.isArray(value.skills) || !Array.isArray(value.resources)) throw new Error('Task context declaration requires skills and resources arrays');
-  const names = new Set(), paths = new Set();
-  const skills = value.skills.map(skill => {
+  const names = new Set<string>(), paths = new Set<string>();
+  const skills = value.skills.map((skill: unknown) => {
     exact(skill, ['name', 'reason', 'requires'], 'declared skill');
     if (!skillName(skill.name) || !text(skill.reason)) throw new Error('Declared skills require a directory name and reason');
     if (names.has(skill.name)) throw new Error(`Duplicate declared skill: ${skill.name}`);
     names.add(skill.name);
     return { name: skill.name, reason: skill.reason, ...(skill.requires === undefined ? {} : { requires: refs(skill.requires, `Declared skill ${skill.name}`) }) };
   });
-  const resources = value.resources.map(resource => {
+  const resources = value.resources.map((resource: unknown) => {
     exact(resource, ['path', 'reason', 'requires'], 'declared resource');
     if (!absolute(resource.path) || !text(resource.reason)) throw new Error('Declared resources require an exact absolute path and reason');
     const file = path.resolve(resource.path);
@@ -50,7 +59,10 @@ export function normalizeContextDeclaration(value) {
   return freeze({ skills, resources });
 }
 
-export function selectParticipantContext(host, { root, role, task, preparedSelection: prepared }) {
+export function selectParticipantContext(host: ParticipantContextHost, { root, role, task, preparedSelection: prepared }: {
+  root: string; role: string; task?: HostParticipantContextTask;
+  preparedSelection?: ParticipantContextCeiling;
+}): PreparedHostParticipantContextSelection | null {
   const declaration = task?.context === undefined ? undefined : normalizeContextDeclaration(task.context);
   if (typeof host.selectParticipantContext !== 'function') {
     if (prepared) throw new Error('Host context selector disappeared; prepare context again');
@@ -71,27 +83,29 @@ export function selectParticipantContext(host, { root, role, task, preparedSelec
       throw new Error('Selected Host rules require absolute paths, a reason and exact required paths');
     }
   }
-  const requiredBy = file => selected.rules.find(rule => rule.requires?.some(required => path.resolve(required) === path.resolve(file)))?.path;
-  const canonical = (file, parent) => {
+  const requiredBy = (file: string) => selected.rules.find(rule => rule.requires?.some(required => path.resolve(required) === path.resolve(file)))?.path;
+  const canonical = (file: string, parent?: string) => {
     try { return realpathSync(file); } catch (failure) {
       const source = parent ?? requiredBy(file);
-      throw new Error(`${source ? `Required Host context ${source} -> ${file}` : `Selected Host resource ${file}`} unavailable: ${failure.message}`);
+      throw new Error(`${source ? `Required Host context ${source} -> ${file}` : `Selected Host resource ${file}`} unavailable: ${(failure as Error).message}`);
     }
   };
-  const regular = (file, parent) => {
+  const regular = (file: string, parent?: string) => {
     const result = canonical(file, parent);
     if (!statSync(result).isFile()) throw new Error(`Selected Host resource is not a file: ${result}`);
     return result;
   };
-  const ruleMap = new Map(), skillMap = new Map(), resourceMap = new Map();
+  const ruleMap = new Map<string, PreparedHostParticipantContextSelection['rules'][number]>();
+  const skillMap = new Map<string, PreparedHostParticipantContextSelection['skills'][number]>();
+  const resourceMap = new Map<string, PreparedHostParticipantContextSelection['resources'][number]>();
   for (const rule of selected.rules) {
     const file = regular(rule.path), requires = (rule.requires ?? []).map(required => canonical(required, file));
     const prior = ruleMap.get(file);
     if (prior) prior.requires = [...new Set([...prior.requires, ...requires])];
     else ruleMap.set(file, { path: file, reason: rule.reason, requires: [...new Set(requires)] });
   }
-  const canonicalRefs = (value, parent) => refs(value === undefined ? [] : value, parent).map(ref => ref.kind === 'skill' ? ref : { kind: ref.kind, path: canonical(ref.path, parent) });
-  const addSkill = skill => {
+  const canonicalRefs = (value: unknown, parent: string): HostContextRef[] => refs(value === undefined ? [] : value, parent).map(ref => ref.kind === 'skill' ? ref : { kind: ref.kind, path: canonical(ref.path, parent) });
+  const addSkill = (skill: unknown) => {
     if (!record(skill) || !skillName(skill.name) || !absolute(skill.root) || !text(skill.reason)) throw new Error('Selected Host skills require a name, an absolute root and a reason');
     const sourceRoot = path.resolve(skill.root), directory = canonical(sourceRoot);
     if (!statSync(directory).isDirectory()) throw new Error(`Selected Host skill root is not a directory: ${directory}`);
@@ -111,9 +125,9 @@ export function selectParticipantContext(host, { root, role, task, preparedSelec
     if (prior) prior.requires.push(...requires);
     else resourceMap.set(file, { path: file, sourcePath, reason: resource.reason, requires });
   }
-  const notAdmitted = (kind, address) => {
-    const parent = [...skillMap.values(), ...resourceMap.values()].find(node => node.requires.some(ref => ref.kind === kind && (ref.name ?? ref.path) === address));
-    return new Error(`Required Host context ${parent?.name ?? parent?.path ?? `task ${task.id}`} -> ${address} is not admitted by Host policy`);
+  const notAdmitted = (kind: HostContextRef['kind'], address: string) => {
+    const parent = [...skillMap.values(), ...resourceMap.values()].find(node => node.requires.some(ref => ref.kind === kind && (ref.kind === 'skill' ? ref.name : ref.path) === address));
+    return new Error(`Required Host context ${(parent && ('name' in parent ? parent.name : parent.path)) ?? `task ${task.id}`} -> ${address} is not admitted by Host policy`);
   };
   for (const skill of declaration?.skills ?? []) {
     const admitted = skillMap.get(skill.name);
@@ -132,7 +146,7 @@ export function selectParticipantContext(host, { root, role, task, preparedSelec
     node.requires = [...new Map(node.requires.map(ref => [JSON.stringify(ref), ref])).values()];
     for (const ref of node.requires) {
       const present = ref.kind === 'skill' ? skillMap.has(ref.name) : (ref.kind === 'rule' ? ruleMap : resourceMap).has(ref.path);
-      if (!present) throw new Error(`Required Host context ${node.name ?? node.path} -> ${ref.name ?? ref.path} is missing from selected ${ref.kind}s; select the full closure and prepare context again`);
+      if (!present) throw new Error(`Required Host context ${'name' in node ? node.name : node.path} -> ${ref.kind === 'skill' ? ref.name : ref.path} is missing from selected ${ref.kind}s; select the full closure and prepare context again`);
     }
   }
   const selection = { task: selectedTask, rules: [...ruleMap.values()], skills: [...skillMap.values()], resources: [...resourceMap.values()] };

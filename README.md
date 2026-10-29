@@ -289,8 +289,8 @@ For a participant's MCP child whose harness omits its session variable, the driv
 ```bash
 git clone https://github.com/Velklish/promptobus.git
 cd promptobus
-npm ci               # builds dist/ through prepare
-npm run build        # tsc -p tsconfig.json
+npm ci               # builds core and runtime through prepare
+npm run build        # builds dist/ and adjacent lib/ runtime outputs
 npm test             # test/run.mjs runs every test/*.test.mjs
 npm run test:local -- --base <commit>  # local iteration from an explicit Git base
 npm run audit        # publicity audit over tracked files and the packed tarball
@@ -298,9 +298,9 @@ npm run docs-links:external  # http(s) documentation links; not a gate
 npm run schema-skew  # record schemas against the installed package; not a project gate
 ```
 
-`src/` is TypeScript compiled to `dist/`; `lib/` is the JavaScript runtime and the four drivers; `skills/`, `schemas/` and `models/` ship in the tarball.
+`src/` is TypeScript compiled to `dist/`. Maintained TypeScript in `lib/` compiles beside its source to the existing JavaScript and declaration paths; the remaining runtime and drivers are JavaScript. The tarball contains runtime JavaScript and declarations without authored TypeScript. `skills/`, `schemas/` and `models/` ship in the tarball.
 
-The local command reports selected and omitted groups and test files, builds `dist/`,
+The local command reports selected and omitted groups and test files, builds the core and runtime,
 then uses the same isolated runner and propagates its exit code. Add `--list` to
 inspect the selection without building or running. Unknown or shared inputs require
 the full suite; `npm test`, acceptance gates and CI always retain full acceptance

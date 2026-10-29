@@ -5,8 +5,10 @@ const REVIEWER_FILES = ['reviewer-files.test.mjs', 'reviewer-files-race.test.mjs
 const GROUPS = ['integration', 'model-routing', 'reviewer-files', 'store'];
 const PRODUCTION = {
   'lib/fuzzy.js': ['integration', 'model-routing'],
+  'lib/fuzzy.ts': ['integration', 'model-routing'],
   'lib/model-routing/calibrate.js': ['integration', 'model-routing'],
   'lib/model-routing/render.js': ['integration', 'model-routing'],
+  'lib/model-routing/render.ts': ['integration', 'model-routing'],
 };
 
 function groupOf(name) {

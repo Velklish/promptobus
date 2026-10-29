@@ -33,7 +33,7 @@ unclassified skill-read tool or truncating the long contract through dynamic
 configuration. Run the plugin's `npm run skills:render` after refreshing its local
 package when the source changes; `npm run skills:check` detects delivered drift.
 
-`codex.js` supplies Codex worker, reviewer and root-owner operational rules,
+`codex.ts` compiles to `codex.js` and supplies Codex worker, reviewer and root-owner operational rules,
 root preamble and the measured reviewer boundary. `promptRulesFor` distinguishes
 executable roles from the execution-free reviewer; `promptRules` remains the
 common Codex tail for existing consumers. Caller fallbacks preserve drivers that

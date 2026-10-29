@@ -1691,7 +1691,7 @@ That last case is the one this exists for. A cleanup hook reaps a holder only wh
 
 ### Stall parsing
 
-Source: `lib/stalls.js`.
+Source: `lib/stalls.ts`.
 
 Words about a stalled participant — the ones shared by every harness. "Stalled",
 "UNREACHABLE", "LISTED", "GONE", and "DEAF" describe a state, not a tool, and therefore live here;

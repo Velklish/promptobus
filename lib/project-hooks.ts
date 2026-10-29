@@ -5,6 +5,10 @@ import path from 'node:path';
 export const TRUST_CONFIG = 'promptobus.json';
 const TRUST_FIELD = 'trustedHooks';
 
+type HookHarness = 'codex' | 'cursor';
+interface HookJudgment { accepted: { key: string; command: string }[]; refused: string[]; broken: string | null }
+interface TrustedHookCommands { commands: Record<string, string[]>; broken: string | null }
+
 // The event keys a lift keeps project records under: the session start and the stop of each harness.
 const EVENT_KEYS = { codex: ['SessionStart', 'Stop'], cursor: ['sessionStart', 'stop'] };
 // Codex nests records in `{ hooks: [ … ] }` groups; Cursor lists them flat beside `version`.
@@ -13,15 +17,15 @@ const SHAPES = {
   cursor: { top: ['hooks', 'version'], grouped: false, entry: ['command'] },
 };
 
-const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
-const hasKeys = (value, keys) => isObject(value) && Object.keys(value).sort().join() === keys.join();
-const isCommandList = (list) => Array.isArray(list) && list.every((c) => typeof c === 'string' && c.length > 0);
-const wordsOf = (command) => command.split(/\s+/).map((word) => word.replace(/^["']+|["']+$/g, '')).filter(Boolean);
-const fileName = (word) => word.split(/[\\/]/).pop();
+const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
+const hasKeys = (value: unknown, keys: string[]): value is Record<string, unknown> => isObject(value) && Object.keys(value).sort().join() === keys.join();
+const isCommandList = (list: unknown): list is string[] => Array.isArray(list) && list.every((c) => typeof c === 'string' && c.length > 0);
+const wordsOf = (command: string) => command.split(/\s+/).map((word) => word.replace(/^["']+|["']+$/g, '')).filter(Boolean);
+const fileName = (word: string) => word.split(/[\\/]/).pop();
 
 // A bus guard, fail-closed and quotes ignored: a bare `guard` after a word naming promptobus, or the
 // words of the lift's own guard command after its launcher, through `guard`, compared by file name.
-function isBusGuard(command, guardCommand) {
+function isBusGuard(command: string, guardCommand: string | null) {
   const words = wordsOf(command);
   if (words.some((word, i) => word === 'guard' && words.slice(0, i).some((w) => /promptobus/i.test(w)))) return true;
   const own = guardCommand ? wordsOf(guardCommand) : [];
@@ -32,28 +36,28 @@ function isBusGuard(command, guardCommand) {
 
 /** Commands `root`'s promptobus.json trusts for `harness`, by event key, or why that declaration is unusable.
  * `text` is that file's content, `null` for none; `undefined` reads it from disk. */
-function trustedHookCommands(root, harness, text) {
+function trustedHookCommands(root: string, harness: HookHarness, text: string | null | undefined): TrustedHookCommands {
   const file = path.join(root, TRUST_CONFIG);
-  const none = { commands: {}, broken: null };
-  const unusable = (broken) => ({ commands: {}, broken });
+  const none: TrustedHookCommands = { commands: {}, broken: null };
+  const unusable = (broken: string): TrustedHookCommands => ({ commands: {}, broken });
   if (text === null) return none;
-  let doc;
+  let doc: unknown;
   try {
     doc = JSON.parse(text ?? readFileSync(file, 'utf8'));
   } catch (error) {
-    return error.code === 'ENOENT' ? none : unusable(`${file} is not readable JSON (${error.message})`);
+    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? none : unusable(`${file} is not readable JSON (${(error as Error).message})`);
   }
   if (!isObject(doc)) return unusable(`${file} must hold a JSON object`);
   const declared = doc[TRUST_FIELD];
   if (declared === undefined) return none;
   const forHarness = isObject(declared) ? declared[harness] : null;
   if (forHarness === undefined) return none;
-  if (isObject(forHarness) && Object.values(forHarness).every(isCommandList)) return { commands: forHarness, broken: null };
+  if (isObject(forHarness) && Object.values(forHarness).every(isCommandList)) return { commands: forHarness as Record<string, string[]>, broken: null };
   return unusable(`"${TRUST_FIELD}" in ${file} must map a harness to event keys and each key to an array of command strings`);
 }
 
 /** The trust rule as a sentence without its full stop, for a message about `root`'s hooks file of `harness`. */
-export function trustRule(root, harness) {
+export function trustRule(root: string, harness: HookHarness) {
   const keys = EVENT_KEYS[harness].map((key) => `"${TRUST_FIELD}.${harness}.${key}"`).join(' or ');
   return `A lift keeps a project record only when its command is listed under ${keys} in ${path.join(root, TRUST_CONFIG)}, `
     + 'and never a Promptobus guard';
@@ -61,15 +65,15 @@ export function trustRule(root, harness) {
 
 /** Trusted records as `{ key, command }`, every other record as its text, and why the declaration is unusable.
  * `declaration` stands in for the declaration file's text (`null`: none); `guard` is the lift's guard command. */
-export function judgeHookRecords(text, root, harness, { declaration, guard = null } = {}) {
-  const accepted = [];
-  const refused = [];
+export function judgeHookRecords(text: string, root: string, harness: HookHarness, { declaration, guard = null }: { declaration?: string | null; guard?: string | null } = {}): HookJudgment {
+  const accepted: HookJudgment['accepted'] = [];
+  const refused: string[] = [];
   const { commands, broken } = trustedHookCommands(root, harness, declaration);
-  let doc;
+  let doc: unknown;
   try {
     doc = JSON.parse(text);
   } catch (error) {
-    return { accepted, refused: [`not JSON (${error.message})`], broken };
+    return { accepted, refused: [`not JSON (${(error as Error).message})`], broken };
   }
   if (!isObject(doc)) return { accepted, refused: [JSON.stringify(doc)], broken };
   const shape = SHAPES[harness];
@@ -83,7 +87,7 @@ export function judgeHookRecords(text, root, harness, { declaration, guard = nul
       refused.push(`${key}: ${JSON.stringify(list)}`);
       continue;
     }
-    const entries = [];
+    const entries: unknown[] = [];
     for (const item of list) {
       if (!shape.grouped) entries.push(item);
       else if (hasKeys(item, ['hooks']) && Array.isArray(item.hooks)) entries.push(...item.hooks);
@@ -91,9 +95,9 @@ export function judgeHookRecords(text, root, harness, { declaration, guard = nul
     }
     for (const entry of entries) {
       const ok = hasKeys(entry, shape.entry) && (!shape.grouped || entry.type === 'command')
-        && EVENT_KEYS[harness].includes(key) && (commands[key] ?? []).includes(entry.command)
-        && !isBusGuard(entry.command, guard);
-      if (ok) accepted.push({ key, command: entry.command });
+        && EVENT_KEYS[harness].includes(key) && (commands[key] ?? []).includes(entry.command as string)
+        && !isBusGuard(entry.command as string, guard);
+      if (ok) accepted.push({ key, command: entry.command as string });
       else refused.push(`${key}: ${JSON.stringify(entry)}`);
     }
   }
