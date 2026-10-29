@@ -1169,7 +1169,8 @@ and `unknown` containing `stop-receipt`. It does not gain `metadata.nativeStop`.
 `done` then accepts that participant only while a fresh read still says the
 session is dead. A registry record whose holder or app process is alive still
 refuses. Cleanup keeps a worktree whose work is not in the default branch, and
-abandonment does not delete the participant's private home.
+abandonment does not delete the participant's private home. A task on the BB
+lifecycle is refused.
 
 For a native teamlead, Stop retains the child orchestrator's original receipt proof
 and a verified reference for the parent teamlead alias before retiring their shared
@@ -1259,7 +1260,7 @@ For Codex, Stop closes new model dispatch and waits under one bounded deadline f
 
 `history` prints read mail, oldest first. Default limit 50. `--all` drops the limit. It does not mark mail read. Its unit is an ENTRY, not a message: one message sitting with two people yields two entries, and the limit counts entries, so a page boundary may legally split the entries of one message — the cursor is opaque and carries the full order key.
 
-Journal retention runs at the end of `done`. Tasks closed more than `PRUNE_DEFAULT_DAYS` (14) days ago are removed, together with their attachments and participant mailboxes. Telemetry stays: it is written outside the task journal. `--older-than <days>` previews that removal at the given age and deletes nothing; `--yes` applies the preview. The threshold comes from a measurement and from why the journal is kept at all: a live workspace held 54 tasks and 18 MB on 2026-08-30, against 40 tasks and 11 MB on 2026-08-28 — about 3 MB a day of dense orchestration — and people return to a finished run's mail in days, not weeks. The dry run names each task, its size and its artifact count, and its delete line is `done --task <id> --older-than <days> --yes`. Artifacts leave with the journal, not at `sweep`.
+Journal retention runs at the end of `done`. Tasks closed more than `PRUNE_DEFAULT_DAYS` (14) days ago are removed, together with their attachments and participant mailboxes. Telemetry stays: it is written outside the task journal. `--older-than <days>` previews that removal at the given age and deletes nothing; `--yes` applies the preview and is refused without `--older-than`. The threshold comes from a measurement and from why the journal is kept at all: a live workspace held 54 tasks and 18 MB on 2026-08-30, against 40 tasks and 11 MB on 2026-08-28 — about 3 MB a day of dense orchestration — and people return to a finished run's mail in days, not weeks. The dry run names each task, its size and its artifact count, and its delete line is `done --task <id> --older-than <days> --yes`. Artifacts leave with the journal, not at `sweep`.
 
 ## Message-order rebuild
 
@@ -2062,10 +2063,9 @@ removes those three, in that order, under the publication lock, when a caller in
 
 **A blob leaves only when nothing names it, and the question has one answer.** That answer
 is `blobNamed` in the package ([04-protocol](04-protocol.md#store-layout)) — a metadata
-record of the task, or a hard link beyond the blob file itself. It used to be two: the
-function computed a set of surviving digests and separately read the link count, while
-the engine asked only the records, so one of them could call a payload nobody's while
-the other still held it.
+record of the task, or a hard link beyond the blob file itself. Two separate readings
+of the records and the link count could disagree: one could call a payload nobody's
+while the other still held it.
 
 **The reading happens under the publication lock.** A send that carries an artifact writes
 the payload, names it and writes the record inside that same lock, so this function either has
