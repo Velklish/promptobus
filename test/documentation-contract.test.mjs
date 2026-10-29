@@ -406,7 +406,7 @@ check('skills: one wording rule for messages to the person, and the asks link to
   && has(section(read('docs/reference/03-cli.md'), '## Spawn'),
     'The same skill words every message to the person once, in [Messages to the person](../../skills/orchestrate/SKILL.md#messages-to-the-person).')
   && has(read('README.md'), 'one wording rule for a message to the person')
-  && has(section(section(read('CHANGELOG.md'), '## [Unreleased]'), '### Changed'),
+  && has(section(section(read('CHANGELOG.md'), '## [0.31.0] — 2026-10-29'), '### Changed'),
     'The orchestration skill words every message to the person once.'),
   'the skill must state the wording rule once, and the split, shape, envelope and reporter must link to it');
 check('skills: shipped guidance requires confirmed native Stop before done and a fresh lift after changed owner access',
@@ -433,7 +433,7 @@ check('docs: a fetch-then-send pause waits for the delivery mark, and a hold sta
   && has(read('docs/guides/hooks-and-trust.md'), 'A pause that holds the turn stays a sleep for its whole interval.')
   && has(read('README.md'), 'The pause between a mailbox fetch and the following send waits for the warden\'s `deliveredAt` mark instead of sleeping a fixed interval.')
   && has(read('README.md'), 'A pause that holds the turn stays a sleep.')
-  && has(section(read('CHANGELOG.md'), '## [Unreleased]'), 'The pause between a mailbox fetch and the following send waits for the warden\'s delivery mark instead of sleeping one tick'),
+  && has(section(read('CHANGELOG.md'), '## [0.31.0] — 2026-10-29'), 'The pause between a mailbox fetch and the following send waits for the warden\'s delivery mark instead of sleeping one tick'),
   'suite isolation still tells every scripted pause to poll, or drops the hold that stays a sleep');
 check('docs: models probes by default in the orchestrate skill, abandon refuses a BB task, and the sweep ADR keeps artifacts',
   has(orchestrateSkill, '[--refresh | --no-probe] [--json]')

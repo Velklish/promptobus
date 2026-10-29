@@ -172,7 +172,7 @@ Without `--task`, `spawn` joins the bound task, else the only active one, else c
 
 `status` prints the warden line, `warden: alive` or `NO WARDEN`, and only reads; the next `spawn`, `review`, `send`, bus tool call or turn end starts a missing warden (`lib/status.js`, `lib/warden.js`).
 
-`stop <address>` closes one participant's session and retires the harness's record of it; the task, the participant and its mailbox stay. A Codex stop that cannot confirm terminal command accounting exits 1 and keeps the record and private home. `sweep <address>` removes one accepted piece's worktree and branch once its session is dead and its merge is proven. Artifact records, `files/` entries and blobs stay on the task journal. `dismiss <address>` only stops watching. The task mailbox owner or an approver of this task in its own recorded session may call these; `done` is the owner's alone ([03-cli § Status, done, sweep](https://github.com/Velklish/promptobus/blob/v0.30.0/docs/reference/03-cli.md#status-done-sweep-dismiss-history-prune)).
+`stop <address>` closes one participant's session and retires the harness's record of it; the task, the participant and its mailbox stay. A Codex stop that cannot confirm terminal command accounting exits 1 and keeps the record and private home. `sweep <address>` removes one accepted piece's worktree and branch once its session is dead and its merge is proven. Artifact records, `files/` entries and blobs stay on the task journal. `dismiss <address>` only stops watching. The task mailbox owner or an approver of this task in its own recorded session may call these; `done` is the owner's alone ([03-cli § Status, done, sweep](https://github.com/Velklish/promptobus/blob/v0.31.0/docs/reference/03-cli.md#status-done-sweep-dismiss-history-prune)).
 
 `done` closes the task, first refusing while any native Codex participant lacks confirmed Stop (`--keep-sessions` included), stops the other sessions the bus started unless `--keep-sessions`, removes the worktree and `worktree-` branch of each closed task whose session is dead and whose work is proven merged, and last removes journals of tasks closed over 14 days ago. `--older-than <days>` previews that removal at a shorter age and deletes nothing; `--yes` applies it (`lib/done.js`, `lib/native-lifecycle.js`, `lib/prune.js`).
 
@@ -180,7 +180,7 @@ Without `--task`, `spawn` joins the bound task, else the only active one, else c
 
 A `review` that opened a task and failed to start its reviewer leaves an active orphan that no call without `--task` picks up, and prints `promptobus done --task <id>`. A failed `spawn` keeps its task and record for a repeat of the same command (`lib/review.js`, `lib/spawn.js`).
 
-A Codex holder declines an MCP server's own elicitation with `{ action: "decline" }` and accepts Codex's per-call tool approval for a server in the participant's home ([03-cli § The Codex holder](https://github.com/Velklish/promptobus/blob/v0.30.0/docs/reference/03-cli.md#the-codex-holder)).
+A Codex holder declines an MCP server's own elicitation with `{ action: "decline" }` and accepts Codex's per-call tool approval for a server in the participant's home ([03-cli § The Codex holder](https://github.com/Velklish/promptobus/blob/v0.31.0/docs/reference/03-cli.md#the-codex-holder)).
 
 ## Model routing
 
@@ -284,7 +284,7 @@ Re-spawn that track. Name the step-up and its reason in the run's result: a run 
 
 A consumer layers its own policy on top of this rubric — which models it forbids, where its reviewer runs. That belongs in the consumer's own skills, not here.
 
-Flags, reason codes and error codes: [reference/03-cli.md](https://github.com/Velklish/promptobus/blob/v0.30.0/docs/reference/03-cli.md) § Model routing. The catalog and overlays: [guides/model-routing.md](https://github.com/Velklish/promptobus/blob/v0.30.0/docs/guides/model-routing.md).
+Flags, reason codes and error codes: [reference/03-cli.md](https://github.com/Velklish/promptobus/blob/v0.31.0/docs/reference/03-cli.md) § Model routing. The catalog and overlays: [guides/model-routing.md](https://github.com/Velklish/promptobus/blob/v0.31.0/docs/guides/model-routing.md).
 
 ## Mail
 
@@ -310,7 +310,7 @@ The spawn preamble reports repository dependency state. On a fresh worktree, dep
 
 A worker that cannot continue sends `question` and ends the turn. You answer with `answer`. Do not guess for the user.
 
-Before `result` the worker sends the gate record `gates-<slug>.json` and the handover record `handover-<slug>.json` as `artifact` messages; `send` refuses one that fails its schema and names the faults ([04-protocol § The gate record](https://github.com/Velklish/promptobus/blob/v0.30.0/docs/reference/04-protocol.md#the-gate-record)).
+Before `result` the worker sends the gate record `gates-<slug>.json` and the handover record `handover-<slug>.json` as `artifact` messages; `send` refuses one that fails its schema and names the faults ([04-protocol § The gate record](https://github.com/Velklish/promptobus/blob/v0.31.0/docs/reference/04-protocol.md#the-gate-record)).
 
 Evidence of a check is the command, its exit code and the gate count in the participant report and in `result.md`. The repository gates and the package's own live scripts do the checking. Native participants prove a check by the command, its exit code and the gate count in the report and in `result.md`. Do not build a bespoke verification harness. The orchestrator does not add wrapper scripts, receipt files, hash manifests or frozen review packets. Nobody adds their own wrapper scripts, receipt files, hash manifests or frozen review packets beyond what the package's own tools and repository fixtures already define.
 
