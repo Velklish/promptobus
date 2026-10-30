@@ -9,6 +9,14 @@ gets is the workspace's call, and how a task is journalled is the engine's.
 Facts here were measured on the binaries named beside them. Where a harness publishes no
 documentation for what the mechanism uses, that is said rather than implied.
 
+## Driver lookup
+
+`driverFor(registry, harness)` from `promptobus/driver` reads `registry.drivers`
+and preserves that map's element type. A full driver registry returns `Driver`,
+including its phrases and operations. Looking up `DRIVER_DECLARATIONS` from
+`promptobus/integration` returns only `id`, `capabilities` and `options`; it does
+not promise phrases or operations. Missing and unknown harness names still refuse.
+
 ## BB provider selection
 
 The optional BB facade selects an explicit SDK provider and model. It records

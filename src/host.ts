@@ -123,7 +123,7 @@ export interface HostToolBin {
   bin?: string;
   /** The binary's own version string as the host read it, raw.
    * [reference/02-host.md#the-binary-version-a-host-read-and-what-its-absence-means](../docs/reference/02-host.md#the-binary-version-a-host-read-and-what-its-absence-means) */
-  version?: string;
+  version?: string | null;
   note?: string;
   warn?: string;
   reason?: string;

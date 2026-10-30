@@ -225,7 +225,7 @@ const LIVE = { readCredential: liveCredential, getJson: liveGetJson };
 
 /** The probe itself; never throws. The binary arrives already resolved — `resolveToolBin` is
  * synchronous, and an adapter calling it would stop the timer that bounds the preflight. */
-async function probe({ toolBin: tool, timeoutMs }: ProbeRequest, inventoryOf: (version: string | undefined) => string[], deps: WiredDependencies) {
+async function probe({ toolBin: tool, timeoutMs }: ProbeRequest, inventoryOf: (version: string | null | undefined) => string[], deps: WiredDependencies) {
   const deadline = Date.now() + timeoutMs;
   if (!tool) {
     return verdict('unknown', 'probe_failed', 'the host resolved no tool binary, so the harness was never asked');
@@ -369,7 +369,7 @@ async function limitVerdict({ deadline, timeoutMs, deps, carry, listed }: { dead
 
 /** The adapter a driver declares as `availability`.
  * [guides/model-routing.md#claudeavailability--the-adapter-a-driver-declares-as-availability](../../docs/guides/model-routing.md#claudeavailability--the-adapter-a-driver-declares-as-availability) */
-export function claudeAvailability(inventoryOf: (version: string | undefined) => string[], scopeIds?: ScopeTable | null, deps: Partial<ClaudeDependencies> = {}): RoutingAdapter {
+export function claudeAvailability(inventoryOf: (version: string | null | undefined) => string[], scopeIds?: ScopeTable | null, deps: Partial<ClaudeDependencies> = {}): RoutingAdapter {
   const wired = { ...LIVE, ...deps, scopeIds };
   return {
     tool: TOOL,

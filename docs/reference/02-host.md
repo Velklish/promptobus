@@ -55,7 +55,7 @@ The table below is pinned to the current `PromptobusHost` declaration in `src/ho
 | `freshenRepo` | `freshenRepo(repoDir: string): HostFreshness` | The result is required; its nullable freshness fields mean Git could not measure those fields. |
 | `reportFresh` | `reportFresh(result: HostFreshness, label: string): void` | No answer is expected; the host reports or deliberately ignores freshness. |
 | `extraEnv` | `extraEnv(): Record<string, string>` | Never `null`; an empty object means no host environment overrides. |
-| `resolveToolBin` | `resolveToolBin(name: string): HostToolBin` | The result is required; `bin` may be absent when no launch path is available, and `version` absent means unread, not old. |
+| `resolveToolBin` | `resolveToolBin(name: string): HostToolBin` | The result is required; `bin` may be absent when no launch path is available, and `version` absent or `null` means unread, not old. |
 | `readToolVersion` | `readToolVersion?(name: string, bin: string): string \| null` | Optional member, asked only when `resolveToolBin` returned no version for a tool that declares the read; `null` means nothing was read and the version stays unread ([§ Tool binaries](#tool-binaries)). Absent, no version is read. |
 | `substituteVars` | `substituteVars(value: unknown): unknown` | `null` may be a legitimate transformed value, not an absent host answer. |
 | `formatCommand` | `formatCommand(args: string[]): string` | Never absent; it formats a command for a person. |
@@ -260,7 +260,7 @@ When a driver supplies an environment to `run`, that same environment governs co
 
 Cursor's stop path re-resolves its binary with the preference `cursor-agent`, then `agent`, then `cursor`, searching `PATH` and the known install directories (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`). The environment passed to `stop` controls both that resolution and the `persist stop` command, so teardown does not silently resolve against `process.env` while executing with another environment.
 
-`HostToolBin` answers `ok`, `bin`, `version`, `note`, `warn` and `reason`. Only `bin` reaches a process spawn; the rest are read to talk to a person. **`version` is optional and its absence means UNREAD, never "old".** It holds the binary's own version string as the host read it — the raw `--version` line — and a host that does not probe versions returns none. The host suite scans the three drivers, the three availability adapters and `lib/harness-home.js`, and finds seven readers of `HostToolBin`; a changed count means a new reader needs inspection, not a counter adjustment. The lift's own reader (`sayTool` and the refusal in `lib/spawn.js`) is outside that scan.
+`HostToolBin` answers `ok`, `bin`, `version`, `note`, `warn` and `reason`. Only `bin` reaches a process spawn; the rest are read to talk to a person. **`version` is optional, accepts `string | null`, and absent or `null` means UNREAD, never "old".** A string holds the binary's own version as the host read it — the raw `--version` line — and a host that does not probe versions may omit it or return `null`. The host suite scans the three drivers, the three availability adapters and `lib/harness-home.js`, and finds seven readers of `HostToolBin`; a changed count means a new reader needs inspection, not a counter adjustment. The lift's own reader (`sayTool` and the refusal in `lib/spawn.js`) is outside that scan.
 
 **The standalone host does not start a binary inside `resolveToolBin`.** That member stays synchronous and returns the name at once. A `spawnSync` there would block every caller — a lift, a review, a stop, a state query — and, if an adapter called it during the race, it would stop the single budget timer that caps the whole probe. The version read is the optional `readToolVersion(name, bin)`, and it does not switch on the name: it runs `<bin> --version` with a 5 s ceiling and returns the raw stdout line, or nothing. The package asks it only for a tool whose driver and adapter declare `readsVersion`. Claude declares it. The preflight asks before the probe race, and a real lift asks once when the resolved bin still has no version, before option validation and provenance reporting. `--dry-run` does not ask. A usable line is remembered for that host; a timeout, a non-zero exit, or an empty answer is not, so the next ask tries again. Cursor and Codex do not declare the read, so their proven-version warnings stay silent under this host — the boundary of the decision that named `claude --version`. A consumer host that fills `version` from its own `resolveToolBin` is not asked.
 
@@ -641,9 +641,10 @@ they exist.
 Source: `src/host.ts`.
 
 The binary's own version string as the host read it — the raw `--version`
-line, not something normalised. Optional, and its absence means UNREAD: a
-host that does not probe versions returns none, and a consumer may never
-read that as "old".
+line, not something normalised. `HostToolBin.version` is optional and accepts
+`string | null`. Both absence and `null` mean UNREAD: a host that does not
+probe versions may omit it or return `null`, and a consumer may never read
+either as "old". The declaration preserves those values without normalising them.
 
 The shipped standalone host reads a declared binary's `--version` through
 `readToolVersion` (`src/standalone.ts`). Claude's driver and adapter are the

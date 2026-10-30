@@ -507,7 +507,7 @@ export function harnessOf(participant: ParticipantV1 | null | undefined, registr
 }
 
 /** Driver by harness name. Unknown — refusal, and the refusal is BEFORE any store write. */
-export function driverFor(registry: Registry, harness: string | null | undefined): Driver {
+export function driverFor<D>(registry: { readonly drivers: Readonly<Record<string, D>> }, harness: string | null | undefined): D {
   const known = Object.keys(registry.drivers);
   if (!harness) {
     throw new GateError('the participant harness is not named, and the registry declared no fallback — '

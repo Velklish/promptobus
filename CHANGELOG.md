@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve the registry element type in `driverFor`, so public driver declarations expose their options without requiring or promising full driver operations. Accept `null` as an unread `HostToolBin.version` alongside strings and omission. These declaration corrections leave runtime values and lookup behavior unchanged.
 - Serialize shared service lock acquisition and release through the same short core gate, so release cannot erase owner proof during a contender's read. Preserve synchronous release, replacement generations and refusal of genuinely missing or corrupt proof.
 - Make startup verification wait for listener readiness and require durable Stop confirmation before certifying fixture cleanup.
 - Preserve bearer and header environment-variable references in generated Codex HTTP MCP configuration and explicit `oauth:false` in OpenCode remote MCP configuration.
