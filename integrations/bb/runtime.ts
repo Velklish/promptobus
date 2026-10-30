@@ -22,6 +22,7 @@ import { controlOutcomeSchema, controlPublicationSchema } from './control-schema
 import type { CommandGrant } from './control-schema.js';
 import { digest, evidenceManifestSchema, validateReviewEvidence } from './review-evidence.js';
 import type { EvidenceArtifact } from './review-evidence.js';
+import { readBbGitStatus } from './git-reads.js';
 export { REVIEWER_PROVIDER } from './routing.js';
 
 export function registerRuntime(bb: BbPluginApi) {
@@ -84,13 +85,13 @@ export function registerRuntime(bb: BbPluginApi) {
     }
     const source = await bb.sdk.environments.get({ environmentId: review.sourceEnvironmentId, signal });
     if (source.hostId !== b.hostId || !source.path || !underRoots(source.path, b.launchContext!.readRoots)) throw new Error('review evidence manifest: source environment outside declared read roots');
-    const workspace = await bb.sdk.environments.status({ environmentId: source.id, signal });
+    const workspace = await readBbGitStatus(bb, { environmentId: source.id }, signal);
     if (workspace.outcome !== 'available' || !workspace.workspace || !('headSha' in workspace.workspace.checkout)
       || !workspace.workspace.checkout.headSha) throw new Error('review evidence manifest: source SHA is unreadable');
     if (workspace.workspace.workingTree.files.some(file => !['?', '??'].includes(file.status))) throw new Error('review evidence manifest: source tracked files are dirty');
     if (snapshot) {
       const environment = await bb.sdk.environments.get({ environmentId: b.environmentId, signal });
-      const actual = await bb.sdk.environments.status({ environmentId: b.environmentId, signal });
+      const actual = await readBbGitStatus(bb, { environmentId: b.environmentId }, signal);
       if (environment.hostId !== b.hostId || environment.path !== b.environmentPath || !environment.path
         || !underRoots(environment.path, b.launchContext!.readRoots) || actual.outcome !== 'available' || !actual.workspace
         || !('headSha' in actual.workspace.checkout) || actual.workspace.checkout.headSha !== workspace.workspace.checkout.headSha
@@ -346,7 +347,7 @@ export function registerRuntime(bb: BbPluginApi) {
         await prepareContext(b);
         await admit(b);
         if (b.evidenceManifest) {
-          const source = await bb.sdk.environments.status({ environmentId: b.environmentId });
+          const source = await readBbGitStatus(bb, { environmentId: b.environmentId });
           if (source.outcome !== 'available' || !source.workspace || !('headSha' in source.workspace.checkout)
             || source.workspace.checkout.headSha !== b.evidenceManifest.source) throw new Error('review evidence manifest: prepared snapshot source SHA mismatch');
         }

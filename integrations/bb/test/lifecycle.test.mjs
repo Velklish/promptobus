@@ -89,9 +89,11 @@ test('Stop awaits SDK settlement before reading its confirmation snapshot', asyn
 test('existing path workspace recording refuses a different SDK path before changing binding or reading Git', async () => {
   const s = sdk(); s.environment.projectId = 'project';
   let reads = 0;
-  s.bb.sdk.environments.status = async () => { reads++; return { outcome: 'available', workspace: {
+  s.bb.sdk.plugins = { callRpc: async ({ pluginId, method }) => { reads++;
+    assert.equal(pluginId, 'bb--git'); assert.equal(method, 'workspaceStatus'); return { outcome: 'available', workspace: {
     checkout: { kind: 'branch', headSha: 'b'.repeat(40) }, branch: { currentBranch: 'actual-branch' },
-  } }; };
+    mergeBase: null, workingTree: { files: [] },
+  } }; } };
   const b = { ...binding, environmentPath: '/requested/worktree', baseSha: 'a'.repeat(40), branch: 'before' };
   const before = { ...b };
   await assert.rejects(recordBbWorkspace(s.bb, b, undefined, '/requested/worktree'), /path binding mismatch/);

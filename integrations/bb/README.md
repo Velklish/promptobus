@@ -6,7 +6,7 @@ The native Promptobus CLI and harness registry keep their existing entry points.
 
 ## Setup
 
-Use BB 0.47.1 and Plugin SDK 0.6.79 on one local host. The manifest admits
+Use BB 0.48.0 and Plugin SDK 0.6.94 on one local host. The manifest admits
 that exact app/SDK pair; adjacent and future versions require a separate
 compatibility check. Older live profiles below remain historical observations.
 Install Codex CLI
@@ -20,10 +20,20 @@ the exact generation named by the build receipt's `installationDirectory`:
 `bb plugin install ./.runtime/<buildId>`. The source root is a build descriptor,
 not a supported install target.
 BB checks `engines.bb` against the app version and `engines.bbPluginSdk` against
-its SDK compatibility contract. The SDK stays in runtime `dependencies` because
-the Host artifact bundles the public provider bridge from that exact package.
+its SDK compatibility contract. The SDK is pinned in `devDependencies`, as the
+current CLI requires. The build still freezes and fingerprints its exact package
+and bundles the public provider bridge into the self-contained Host artifact.
 Build and type checks establish source compatibility; a live workflow still
 requires the exact installed generation and its original receipts.
+Git reads require the bundled `bb--git` plugin. The adapter calls its public
+`workspaceStatus`, `files` and keyed `patches` RPC through `bb.sdk.plugins.callRpc`.
+Patch keys bind the environment, comparison target, whitespace mode, file path
+and revision returned by `files`; requests contain at most 50 keys. The adapter
+validates consumed response fields, propagates cancellation and refuses missing,
+extra, duplicate, binary, oversized or truncated file/patch results. Preservation
+still requires the recorded base, actual HEAD and two identical capture reads.
+The copied contract follows the [official Git plugin source](https://github.com/get-bb/bb/blob/1a4a1d254c7b1f70d340ef9c800dad77dbeb8e66/plugins/git/contract.ts)
+and `bb plugin rpc inspect bb--git`; no private BB imports are required.
 Select `Codex (Promptobus read-only reviewer)` and an explicit reported model.
 The BB permission mode is `accept-edits`; the provider always requests and verifies
 Codex `readOnly` with approval policy `never`, regardless of that BB label.
@@ -128,8 +138,8 @@ turns do not wake their parent; failures, interruptions, and approval or questio
 blockers retain BB's notifications. Children send final results and questions
 through the canonical bus. Parenting and lifecycle ownership stay unchanged.
 
-The public `bb guide threads` documents this policy for the BB 0.47.1 / Plugin
-SDK 0.6.79 profile. `off` would also suppress attention and is not used. The
+The public `bb guide threads` documents this policy for the BB 0.48.0 / Plugin
+SDK 0.6.94 profile. `off` would also suppress attention and is not used. The
 adapter confirms the spawn response; a child whose policy is not confirmed is
 retained as an orphan and stopped. Existing threads keep their recorded policy;
 this change does not update global settings or retrofit existing children.

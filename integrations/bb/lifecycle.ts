@@ -1,6 +1,7 @@
 import type { BbPluginApi } from '@get-bb/plugin-sdk';
 import type { SessionView } from 'promptobus';
 import type { Binding } from './protocol.js';
+import { readBbGitPatches, readBbGitStatus } from './git-reads.js';
 
 type Thread = Awaited<ReturnType<BbPluginApi['sdk']['threads']['get']>>;
 type Environment = Awaited<ReturnType<BbPluginApi['sdk']['environments']['get']>>;
@@ -47,21 +48,20 @@ export async function stopBbParticipant(bb: BbPluginApi, b: Binding) {
 export async function captureBbWorkspace(bb: BbPluginApi, b: Binding, signal?: AbortSignal, excludeCanonicalStore = false) {
   if (!b.baseSha) throw new Error('No recorded base SHA; leave the environment in place');
   const read = async () => {
-    const status = await bb.sdk.environments.status({ environmentId: b.environmentId, mergeBaseBranch: b.baseSha!, signal });
+    const status = await readBbGitStatus(bb, { environmentId: b.environmentId, mergeBaseBranch: b.baseSha! }, signal);
     if (status.outcome !== 'available' || !status.workspace.mergeBase) throw new Error('Workspace snapshot is unavailable');
     if (status.workspace.mergeBase.baseRef !== b.baseSha || status.workspace.mergeBase.behindCount !== 0) throw new Error('Workspace diverged from the recorded base; leave the environment in place');
     const checkout = status.workspace.checkout;
-    if (checkout.kind !== 'branch' && checkout.kind !== 'detached') throw new Error('Workspace HEAD is unavailable');
+    if ((checkout.kind !== 'branch' && checkout.kind !== 'detached') || !checkout.headSha) throw new Error('Workspace HEAD is unavailable');
     const paths = [...new Set([...status.workspace.mergeBase.files, ...status.workspace.workingTree.files].map(file => file.path))]
       .filter(file => !excludeCanonicalStore || (file !== '.promptobus' && !file.startsWith('.promptobus/'))).sort();
-    const diff = paths.length ? await bb.sdk.environments.diffPatch({ environmentId: b.environmentId, paths,
-      target: { type: 'all', mergeBaseBranch: b.baseSha! }, signal }) : { outcome: 'available' as const, patches: [] };
-    if (diff.outcome !== 'available' || diff.patches.length !== paths.length
-      || diff.patches.some(p => p.truncated || !paths.includes(p.path) || !p.patch.trim()
+    const patches = await readBbGitPatches(bb, b.environmentId, b.baseSha!, paths, signal, excludeCanonicalStore);
+    if (patches.length !== paths.length
+      || patches.some(p => p.truncated || !paths.includes(p.path) || !p.patch.trim()
         || /^Binary files |^[+-]Subproject commit|^Submodule /m.test(p.patch))
-      || new Set(diff.patches.map(p => p.path)).size !== paths.length) throw new Error('Incomplete patch; leave the environment in place');
+      || new Set(patches.map(p => p.path)).size !== paths.length) throw new Error('Incomplete patch; leave the environment in place');
     return { baseSha: b.baseSha, headSha: checkout.headSha, branch: status.workspace.branch.currentBranch,
-      patches: [...diff.patches].sort((a, c) => a.path.localeCompare(c.path)) };
+      patches: patches.sort((a, c) => a.path.localeCompare(c.path)) };
   };
   const first = await read();
   if (JSON.stringify(first) !== JSON.stringify(await read())) throw new Error('Workspace changed during preservation; leave it in place');
@@ -73,7 +73,7 @@ export async function recordBbWorkspace(bb: BbPluginApi, b: Binding, signal?: Ab
   if (environment.id !== b.environmentId || environment.projectId !== b.projectId || environment.hostId !== b.hostId || !environment.path
     || environment.status !== 'ready' || environment.lifecycle.phase !== 'active') throw new Error('BB environment is not ready');
   if (expectedPath && environment.path !== expectedPath) throw new Error('BB environment path binding mismatch');
-  const status = await bb.sdk.environments.status({ environmentId: b.environmentId, signal });
+  const status = await readBbGitStatus(bb, { environmentId: b.environmentId }, signal);
   if (status.outcome !== 'available' || (status.workspace.checkout.kind !== 'branch' && status.workspace.checkout.kind !== 'detached')
     || !status.workspace.checkout.headSha) throw new Error('A Git environment with an actual HEAD is required');
   b.environmentPath = environment.path; b.branch = status.workspace.branch.currentBranch; b.baseSha = status.workspace.checkout.headSha;

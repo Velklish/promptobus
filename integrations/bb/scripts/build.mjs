@@ -22,6 +22,7 @@ function filesIn(root, selected = ['.'], includeDependencies = false) {
   return [...files].sort();
 }
 const contentDigest = (root, files) => sha256(JSON.stringify(files.map(file => [file, sha256(readFileSync(path.join(root, file)))])));
+const buildDependencies = manifest => [...new Set([...Object.keys(manifest.dependencies ?? {}), '@get-bb/plugin-sdk'])];
 
 function packageInput(from, name) {
   const require = createRequire(path.join(from, 'package.json'));
@@ -111,7 +112,7 @@ function inspectInputs(root, builderVersion) {
   const inputs = { ...(compiler.length ? { commandCompiler: compiler } : {}), sourceSha256: contentDigest(root, files), sourceRevision,
     sourceDirty: dirty?.status === 0 ? dirty.stdout.length > 0 : null,
     lockSha256: sha256(readFileSync(path.join(root, 'package-lock.json'))), builderVersion,
-    dependencies: dependencyInputs(root, Object.keys(manifest.dependencies ?? {})), consumerIntegrationSha256, consumerBundleSha256: null };
+    dependencies: dependencyInputs(root, buildDependencies(manifest)), consumerIntegrationSha256, consumerBundleSha256: null };
   return { manifest, files, inputs, integration };
 }
 
@@ -152,19 +153,20 @@ export async function build(root) {
     const rawHost = before.integration ? 'host.mjs' : 'host.ts';
     copyFiles(capturedRoot, path.join(stage, 'source'), before.files.filter(file => !file.includes('/') && (file.endsWith('.ts') || file === rawHost)));
     cpSync(path.join(capturedRoot, 'skills'), path.join(stage, 'skills'), { recursive: true });
-    freezeDependencies(root, stage, Object.keys(manifest.dependencies ?? {}));
+    freezeDependencies(root, stage, buildDependencies(manifest));
     if (before.integration) writeFileSync(path.join(stage, 'consumer-input.mjs'), before.integration.bytes);
     const toolchainRoot = path.join(capturedRoot, 'toolchain');
     const capturedCompiler = commandToolchain(root).map(compiler => ({ ...compiler, directory: path.join(toolchainRoot, 'node_modules', compiler.name) }));
     const captured = { ...before.inputs, ...(capturedCompiler.length ? { commandCompiler: toolchainIdentity(capturedCompiler) } : {}), sourceSha256: contentDigest(capturedRoot, before.files),
       lockSha256: sha256(readFileSync(path.join(capturedRoot, 'package-lock.json'))),
-      dependencies: dependencyInputs(stage, Object.keys(manifest.dependencies ?? {})),
+      dependencies: dependencyInputs(stage, buildDependencies(manifest)),
       consumerIntegrationSha256: before.integration ? sha256(readFileSync(path.join(stage, 'consumer-input.mjs'))) : null };
     const unchanged = inputs => JSON.stringify(inputs) === JSON.stringify(before.inputs);
     if (!unchanged(captured)) throw new Error('Build inputs changed during capture');
     const installManifest = { name: manifest.name, version: manifest.version, type: 'module', engines: manifest.engines,
       bb: { ...manifest.bb, server: './source/server.ts', host: `./source/${rawHost}`, skills: ['skills'] },
-      dependencies: Object.fromEntries(Object.keys(manifest.dependencies ?? {}).map(name => [name, packageInput(stage, name).manifest.version])) };
+      dependencies: Object.fromEntries(Object.keys(manifest.dependencies ?? {}).map(name => [name, packageInput(stage, name).manifest.version])),
+      devDependencies: { '@get-bb/plugin-sdk': packageInput(stage, '@get-bb/plugin-sdk').manifest.version } };
     let consumerBundleSha256 = null;
     if (before.integration) {
       const selected = path.relative(stage, before.integration.file).split(path.sep).join('/');

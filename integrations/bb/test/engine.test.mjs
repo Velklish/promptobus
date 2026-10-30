@@ -81,11 +81,22 @@ async function stand(t, options = {}) {
         const env = environments.get(environmentId);
         if (!options.nameUnconfirmed) env.name = name;
         return env;
-      },
-      status: async ({ environmentId }) => workspace(environmentId), diffPatch: async ({ paths }) => {
-        assert.equal(paths.length > 0, true, 'SDK diffPatch requires at least one path');
-        return { outcome: 'available', patches };
       } },
+    plugins: { callRpc: async ({ pluginId, method, input }) => {
+      assert.equal(pluginId, 'bb--git');
+      if (method === 'workspaceStatus') return workspace(input.environmentId);
+      if (method === 'files') return { outcome: 'available', truncated: false,
+        mergeBaseRef: workspace(input.environmentId).workspace.mergeBase.baseRef,
+        files: patches.map(p => ({ path: p.path, revision: 'fixture-revision', binary: false, loadMode: 'auto' })) };
+      assert.equal(method, 'patches');
+      assert.ok(input.keys.length > 0 && input.keys.length <= 50);
+      return Object.fromEntries(input.keys.map(key => {
+        const [environmentId, target, ignoreWhitespace, file, revision] = JSON.parse(key);
+        assert.ok(environments.has(environmentId)); assert.equal(target.type, 'all');
+        assert.equal(ignoreWhitespace, false); assert.equal(revision, 'fixture-revision');
+        return [key, { outcome: 'available', patch: patches.find(p => p.path === file) }];
+      }));
+    } },
     hosts: { get: async () => ({ id: 'local', status: 'connected', lifecycle: { phase: 'active' } }) },
     threads: {
       storageLocation: async ({ threadId }) => {
@@ -2049,8 +2060,13 @@ test('existing path refuses invalid provisioning identity, Git HEAD and lifecycl
     const s = await stand(t); await s.create(); s.workerEnvironment.managed = false;
     await s.publish(launchFixture(s.task, 'worker-invalid', 'worker', s.workerEnvironment.path, 'actual-bb-branch', 'b'.repeat(40)));
     if (name === 'offline host') s.host.harness.inspection.sdk.stub('hosts.get', async () => ({ id: 'local', status: 'disconnected', lifecycle: { phase: 'active' } }));
-    else s.host.harness.inspection.sdk.stub('environments.status', async () => name === 'not Git'
-      ? { outcome: 'unavailable' } : { outcome: 'available', workspace: { checkout: { kind: 'branch', headSha: null } } });
+    else s.host.harness.inspection.sdk.stub('plugins.callRpc', async ({ pluginId, method }) => {
+      assert.equal(pluginId, 'bb--git'); assert.equal(method, 'workspaceStatus');
+      return name === 'not Git' ? { outcome: 'unavailable' } : { outcome: 'available', workspace: {
+        checkout: { kind: 'branch', headSha: null }, branch: { currentBranch: 'actual-bb-branch' },
+        mergeBase: null, workingTree: { files: [] },
+      } };
+    });
     const result = await s.add('worker-invalid', 'worker', ['--environment-path', s.workerEnvironment.path]);
     assert.equal(result.exitCode, 1); assert.match(result.stderr, /HEAD|unavailable/);
     assert.equal(s.events.includes('assignment'), false);

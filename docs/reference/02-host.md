@@ -680,7 +680,7 @@ remain intact.
 For the orchestrator, the recovery revision counts actionable unread IDs only;
 new progress cannot reset the pending message activation budget.
 
-The BB 0.47.1 / Plugin SDK 0.6.79 profile exposes the public
+The BB 0.48.0 / Plugin SDK 0.6.94 profile exposes the public
 `parentNotifications` lifecycle option on thread spawn. The public
 `bb guide threads` documents `auto` as reporting completed, failed, and interrupted
 turns and blockers; `stuck` skips completed turns while preserving failures,
@@ -690,6 +690,13 @@ the parent, immutable lifecycle owner, independent roles, and predecessor checks
 The lifecycle option owns routine completion suppression. The adapter uses
 typed dispatch initiators for automatic pause admission without matching prompt
 text or changing lifecycle ownership.
+
+The current profile reads Git through the bundled `bb--git` plugin's public
+`workspaceStatus`, `files` and keyed `patches` RPC. Its
+[adapter contract](../../integrations/bb/README.md#setup) validates consumed fields,
+binds each patch to its file revision and preserves the two-read snapshot rule.
+Compilation and SDK fixtures establish source compatibility; they do not measure
+live Stop, parent notifications or native workflow outcomes on this profile.
 
 The role contract states the delivery boundary:
 

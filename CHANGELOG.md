@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Admit the BB 0.48.0 / Plugin SDK 0.6.94 integration profile and read Git through the bundled Git plugin's public RPC, preserving revision-bound patches, cancellation and the two-read snapshot checks. Historical live observations retain their original profiles; current type and fixture checks do not establish live lifecycle behavior.
 - Compile all maintained runtime and CLI source with strict TypeScript after the core build, including executable CLI output from a fresh checkout. Package entry names and emitted JavaScript paths stay the same; the tarball contains runtime JavaScript and declarations without authored TypeScript. Tests and development scripts remain JavaScript.
 - Run CI tests with the job-owned temporary directory, matching the explicit fixture-root conditions used for local acceptance. Product root-alias handling remains a separate compatibility boundary.
 
