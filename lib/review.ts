@@ -8,7 +8,7 @@ import { normalize } from './fuzzy.js';
 import { hostOf } from './host.js';
 import { guardHookCommand } from '../dist/hooks.js';
 import {
-  activeTasks, addressOf, attachmentsOf, bindIfOwner, claimRoute, contactsOf, createTask, currentResult, filesDir,
+  activeTasks, addressOf, attachmentsOf, bindIfOwner, canonicalPath, claimRoute, contactsOf, createTask, currentResult, filesDir,
   foreignTaskLine, GateError, journalMessageBody, newTaskIdentity, numberedName, occupyTaskFile, ownership,
   participantMcpPath, participantOf,
   participantRecord, participantSettingsPath, readTask, sendMessage,
@@ -240,7 +240,7 @@ function reviewerInJournal(host: PromptobusHost, { target, task, stepName = REVI
     if (resolved.refusal) return false;
     const clone = host.cloneOf(resolved.repoDir!);
     if (!clone) return false;
-    const home = host.promptobusHome();
+    const home = canonicalPath(host.promptobusHome());
     const taskId = task ?? claimingTasks(ownerStep, home, resolved.repoDir!, stepName)[0]?.id ?? null;
     if (!taskId || !taskExists(home, taskId)) return false;
     const meta = readTask(home, taskId);
@@ -343,7 +343,7 @@ export function planReview(rootOrHost: unknown, { target, base, task, title, mod
   if (!clone) throw new GateError(host.reviewLayoutError('no-clone', { repoDir })!);
   const nsPath = clone.nsPath;
 
-  const home = host.promptobusHome();
+  const home = canonicalPath(host.promptobusHome());
   if (task && !taskExists(home, task)) throw new GateError(`there is no task ${task}`);
   // A closed task is a legal entry for nobody, and an explicit `--task` is not a bypass. Without the
   // flag, pickup looks at active tasks and will not choose a closed one.

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { readStopConfirmation } from './codex-command-receipts.js';
 import { codexStateHome, pidAlive, sessionFile, sessionKey, sessionsDir, withSessionLaunch } from './codex-session.js';
-import { addressOf, GateError, ORCHESTRATOR, participantOf, readTask, upsertParticipant, withTaskLock } from './store.js';
+import { addressOf, GateError, ORCHESTRATOR, participantOf, readTask, sameStoreHome, upsertParticipant, withTaskLock } from './store.js';
 
 import type { ParticipantV1, TaskV1 } from '../dist/index.js';
 import { libOpenParticipant } from './driver-runtime.js';
@@ -46,7 +46,7 @@ function terminalProof(home: string | undefined, task: string, address: string |
   if (typeof participant.metadata.nativeLaunchId === 'string' && participant.metadata.nativeLaunchId
     && participant.metadata.nativeUnlaunched === participant.metadata.nativeLaunchId) return;
   if (!proof || proof.ref !== ref
-    || proof.home !== home || proof.task !== task || proof.address !== address
+    || !sameStoreHome(proof.home, home) || proof.task !== task || proof.address !== address
     || proof.threadId !== participant.metadata.sessionId
     || proof.launchId !== participant.metadata.nativeLaunchId
     || typeof proof.launchId !== 'string' || !proof.launchId) refuse(participant.id);
@@ -139,7 +139,7 @@ export function requireNativeIdle(home: string, meta: TaskV1, address: string | 
     let record: NativeRecord;
     try { record = JSON.parse(readFileSync(path.join(sessionsDir(), name), 'utf8')); }
     catch { throw new GateError('native registry is unreadable; task close cannot prove owned work idle'); }
-    if (record.home === home && record.task === meta.id
+    if (sameStoreHome(record.home, home) && record.task === meta.id
       && (!address || !record.address || record.address === address)) {
       const covered = typeof record.address === 'string'
         && meta.participants.some((p) => addressOf(p) === record.address

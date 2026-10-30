@@ -1036,6 +1036,15 @@ Native `lead`, `spawn` (including teamleads), `review` (including approvers) and
 purpose. Child participants do not inherit an owner's additional declaration.
 Unsupported Hosts refuse an explicit declaration instead of ignoring it.
 
+Managed preparation normalizes the explicitly trusted Host store and working
+roots before appending owned task, plugin, skill or bootstrap paths. Two spellings
+of one trusted root, including the macOS system temporary-directory alias, name
+the same destination. Missing suffixes remain missing during planning. This does
+not normalize an owned descendant through an existing link: symlinks below the
+trusted boundary still refuse, including during the check before writes. A direct
+driver preparation without an explicit trusted root retains its strict destination
+checks; an arbitrary destination does not establish a new trust boundary.
+
 Selected native delivery builds only the admitted skill/resource set in the
 owned Claude plugin, Cursor/Codex worktree or private review container, OpenCode
 holder, and private Codex home. Reviewer preparation does not add every personal

@@ -5,7 +5,7 @@ import type { LibRegistry } from './driver-runtime.js';
 import { ok, info, warn, fail } from './util.js';
 import { hostOf } from './host.js';
 import {
-  addressesOf, approverHere, ORCHESTRATOR, ownerRoute, ownership, participantOf, readTask,
+  addressesOf, approverHere, canonicalPath, ORCHESTRATOR, ownerRoute, ownership, participantOf, readTask,
   resolveTaskId, sessionIdentity, unprovenApproverLine, unprovenOwnerLine,
 } from './store.js';
 import {
@@ -16,7 +16,7 @@ import { participantSession, unknownWhy } from './status.js';
 
 export async function stop(rootOrHost: unknown, { task, address }: { task?: string | null; address?: string } = {}, { registry = REGISTRY }: { registry?: LibRegistry } = {}) {
   const host = hostOf(rootOrHost);
-  const home = host.promptobusHome();
+  const home = canonicalPath(host.promptobusHome());
   const id = resolveTaskId(home, task, sessionIdentity(), {
     spawnRepo: host.busCommand(['spawn', '--repo', '<name>', '--brief', '<file>']),
     spawnNewTask: host.busCommand(['spawn', '--new-task']),

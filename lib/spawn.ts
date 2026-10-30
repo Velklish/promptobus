@@ -11,7 +11,7 @@ import {
 import { hostOf, HostResolveError } from './host.js';
 import { guardHookCommand } from '../dist/hooks.js';
 import {
-  activeTasks, addressOf, bindIfOwner, boundTaskId, bus, claimRoute, contactsOf, contactText, createTask,
+  activeTasks, addressOf, bindIfOwner, boundTaskId, bus, canonicalPath, claimRoute, contactsOf, contactText, createTask,
   dropStaleWake, ensureRootRecord, filesDir, inboxDir,
   foreignTaskLine, GateError, newTaskIdentity, occupyTaskFile, ORCHESTRATOR, ownership,
   participantFileStem, participantMcpPath,
@@ -787,7 +787,7 @@ export function recoverTeamleadRebind(home: string, rootTask: string, address: s
 
 export async function planTeamlead(rootOrHost: unknown, opts: SpawnOptions): Promise<TeamleadPlan> {
   const host = hostOf(rootOrHost);
-  const home = host.promptobusHome();
+  const home = canonicalPath(host.promptobusHome());
   const rootTask = opts.task;
   if (!rootTask || opts.newTask || opts.repo || opts.worker || opts.title || opts.taskTitle) {
     throw new GateError('--teamlead needs --task <root> and --brief <file>; --repo, --worker, --title, --task-title and --new-task belong to worker spawn');
@@ -835,7 +835,8 @@ export async function planTeamlead(rootOrHost: unknown, opts: SpawnOptions): Pro
     throw new GateError(`--model ${opts.model} has no tuple on ${address}'s harness ${former.harness}`);
   }
   const childTask = former?.metadata?.childTask ?? newTaskIdentity(slug).id;
-  const selectedContext = prepareNativeContext(host, { root: host.workspaceRoot(), role: 'teamlead', taskId: childTask, options: opts, participant: former });
+  const root = canonicalPath(host.workspaceRoot());
+  const selectedContext = prepareNativeContext(host, { root, role: 'teamlead', taskId: childTask, options: opts, participant: former });
   if (requestedHarness) assertNativeContextDriver(selectedContext, liftHarness(host, requestedHarness));
   if (former && !former.metadata?.childTask) {
     throw new GateError(`${address} has no child task in root ${rootTask}; the address cannot be relifted safely`);
@@ -865,7 +866,6 @@ export async function planTeamlead(rootOrHost: unknown, opts: SpawnOptions): Pro
   const permissionMode = driver.id === 'codex' && opts.permissionMode === 'full-access'
     ? 'full-access' : resolvePermissionMode(opts.permissionMode, driver);
   const name = `Teamlead: ${shortTitle(title) || slug} (${rootTask}, ${slug})`;
-  const root = host.workspaceRoot();
   const rules = contextRules(selectedContext, () => host.collectRules(root));
   const ruleDirs = [...new Set(rules.filter((file) => !file.startsWith(root + path.sep)).map(path.dirname))];
   const mcpConfigPath = participantMcpPath(home, rootTask, address);
@@ -926,7 +926,7 @@ function buildPrompt({ taskId, nsPath, brief, rules, branch, worktreePath, ruleD
 // --dry-run and drives the real start — there is nowhere for them to diverge.
 export async function planSpawn(rootOrHost: unknown, opts: SpawnOptions): Promise<SpawnPlan> {
   const host = hostOf(rootOrHost);
-  const root = host.workspaceRoot();
+  const root = canonicalPath(host.workspaceRoot());
   const {
     repo, brief: briefFile, task, newTask = false, title, taskTitle: explicitTaskTitle,
   } = opts;
@@ -934,7 +934,7 @@ export async function planSpawn(rootOrHost: unknown, opts: SpawnOptions): Promis
     throw new GateError('--new-task is incompatible with --task: one flag opens a new task, '
       + 'the other selects an existing one');
   }
-  const home = host.promptobusHome();
+  const home = canonicalPath(host.promptobusHome());
   const brief = readBrief(briefFile);
 
   let resolved;
@@ -952,7 +952,7 @@ export async function planSpawn(rootOrHost: unknown, opts: SpawnOptions): Promis
       + `Name a repository: --repo ${nsPath}/<name>. `
       + `Name one repository of the group (a \`${nsPath}/<name>\` address): a whole group is not a spawn target, and this command does not clone one.`);
   }
-  const repoAbs = host.repoAbsPath(nsPath);
+  const repoAbs = canonicalPath(host.repoAbsPath(nsPath));
   // A clone, not just a directory: `repos/` also holds group directories with no `.git` of
   // their own, and `git` inside one of those would answer about the workspace. Same
   // signal as the resolver and `fresh`.

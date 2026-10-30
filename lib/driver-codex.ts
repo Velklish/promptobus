@@ -11,7 +11,7 @@ import { installSelectedNativeFiles, selectedNativeFiles } from './native-partic
 import { fail, info, warn } from './util.js';
 import { launchProvenance, provenanceLine } from './provenance.js';
 import { PROMPTOBUS_SERVER } from './contract.js';
-import { canonicalPath, filesDir, foreignSession, wakeAddressOf, writeWake } from './store.js';
+import { canonicalPath, filesDir, foreignSession, sameStoreHome, wakeAddressOf, writeWake } from './store.js';
 import { requireNativeTerminal, retainNativeStop, withNativeStopLocks } from './native-lifecycle.js';
 import {
   PARTICIPANT_ARGV, SESSION_ENV_VAR, pidAlive, dropSession, findSessionByAddress, holderAlive, holderAsk, patchSession,
@@ -1433,7 +1433,7 @@ export const codexDriver = {
   prepare,
   resumeState,
   prepareRootLaunch: ({ home, task, env }: Parameters<NonNullable<LibDriver['prepareRootLaunch']>>[0]) => {
-    const retained = registrySessions(env).filter(record => record.home === home && record.task === task
+    const retained = registrySessions(env).filter(record => sameStoreHome(record.home, home) && record.task === task
       && record.address === 'orchestrator');
     retained.sort((a, b) => a.ref.localeCompare(b.ref));
     const cleanup = (index = 0): void => {

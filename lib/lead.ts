@@ -4,7 +4,7 @@ import path from 'node:path';
 import { hostOf } from './host.js';
 import { info, ok } from './util.js';
 import {
-  bus, filesDir, GateError, inboxDir, newTaskIdentity, ORCHESTRATOR,
+  bus, canonicalPath, filesDir, GateError, inboxDir, newTaskIdentity, ORCHESTRATOR,
   participantOf, participantRecord,
   slugify, taskExists, upsertParticipant, withTaskLock,
 } from './store.js';
@@ -41,7 +41,7 @@ export interface LeadPlan {
 }
 
 function resumeOwner(host: PromptobusHost, task: string, driver: CodexDriver, env: NodeJS.ProcessEnv) {
-  const home = host.promptobusHome();
+  const home = canonicalPath(host.promptobusHome());
   const meta = bus(home, { cli: host.version }).readTask(task);
   const owner = participantOf(meta, ORCHESTRATOR) as RootOwner | null;
   const ref = sessionRefOf(owner);
@@ -50,7 +50,7 @@ function resumeOwner(host: PromptobusHost, task: string, driver: CodexDriver, en
     throw new GateError(`task ${task} has no matching active managed Codex root owner to resume`);
   }
   const record = driver.resumeState(ref, {
-    home, cwd: host.workspaceRoot(), task, address: ORCHESTRATOR,
+    home, cwd: canonicalPath(host.workspaceRoot()), task, address: ORCHESTRATOR,
     threadId, launcherPid: owner.metadata?.launcherPid, env,
   });
   return { meta, owner, record };
@@ -77,11 +77,11 @@ export async function planLead(rootOrHost: unknown, opts: LeadOptions = {}): Pro
   const title = resumed?.meta.title ?? opts.title ?? brief.split('\n').map((line) => line.replace(/^#+\s*/, '').trim()).find(Boolean);
   const slug = (resumed?.meta.adapter?.slug as string | undefined) ?? slugify(title!);
   const task = opts.task ?? newTaskIdentity(slug).id;
-  const home = host.promptobusHome();
+  const home = canonicalPath(host.promptobusHome());
   if (!resumed && taskExists(home, task)) {
     throw new GateError(`task ${task} already exists; lead opens a new root and cannot replace its mailbox owner`);
   }
-  const root = host.workspaceRoot();
+  const root = canonicalPath(host.workspaceRoot());
   const selectedContext = prepareNativeContext(host, { root, role: ORCHESTRATOR, taskId: task, options: opts, participant: resumed?.owner });
   assertNativeContextDriver(selectedContext, driver);
   const routed = await routeLift(host, {

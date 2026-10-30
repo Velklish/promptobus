@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Isolate package preparation used by verification from the runtime tree read by parallel MCP subprocesses. npm 10 can run `prepare` during `npm pack --ignore-scripts`; packing in an owned snapshot preserves the original runtime and package manifest.
+- Normalize explicitly trusted Host store and working roots before constructing managed native context paths. A trusted root alias no longer fails the owned-context symlink check; links introduced below that boundary still refuse before writes. Direct driver preparation without a trusted boundary remains strict.
 
 ## [0.31.0] — 2026-10-29
 

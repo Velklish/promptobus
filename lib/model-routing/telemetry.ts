@@ -18,7 +18,7 @@ import {
 import { warn } from '../util.js';
 import { isRoutedRole } from './catalog.js';
 import { sessionKey } from '../harness-registry.js';
-import { participantOf, readTask } from '../store.js';
+import { participantOf, readTask, sameStoreHome } from '../store.js';
 
 import type { MessageV1, ParticipantV1, PromptobusHost, RoleRegistry, TaskV1, TelemetryRecord, TelemetryWindow } from '../../dist/index.js';
 import type { AvailabilityWindow, SnapshotDocument, SnapshotEntry } from './cache.js';
@@ -255,7 +255,7 @@ export function sessionLogOf(host: PromptobusHost, home: string, task: string, p
     const file = path.join(stateHome, 'sessions', `${sessionKey(participant.sessionRef)}.json`);
     const record: { ref?: unknown; threadId?: unknown; home?: unknown; rolloutPath?: unknown; task?: unknown; address?: unknown } = JSON.parse(readFileSync(file, 'utf8'));
     if (record.ref !== participant.sessionRef || record.threadId !== sessionId
-      || record.home !== home
+      || !sameStoreHome(record.home, home)
       || typeof record.rolloutPath !== 'string' || !path.isAbsolute(record.rolloutPath)) return null;
     if (record.task !== task || record.address !== address) {
       if (participant.role !== 'teamlead' || !ownText(metadata.childTask)) return null;

@@ -2,7 +2,7 @@ interface ReporterRpcResult { turn?: { id?: unknown }; thread?: { turns?: { id?:
 import { GateError } from '../dist/index.js';
 import { hostOf } from './host.js';
 import { humanTerminalIdentity } from './send.js';
-import { participantOf, readTask } from './store.js';
+import { canonicalPath, participantOf, readTask, sameStoreHome } from './store.js';
 import { holderAlive, holderAsk, readSession } from './codex-session.js';
 
 const WAIT_MS = 180_000;
@@ -15,7 +15,7 @@ export async function reportQuestion(rootOrHost: unknown, opts: { question?: unk
   const host = hostOf(rootOrHost);
   if (!opts.task) throw new GateError('report --question needs --task <root>');
   humanTerminalIdentity(host, opts.task, context, 'report --question');
-  const home = host.promptobusHome();
+  const home = canonicalPath(host.promptobusHome());
   const meta = readTask(home, opts.task);
   if (meta.parent) throw new GateError('report --question needs a root task');
   if (meta.status !== 'active') throw new GateError(`task ${opts.task} is closed`);
@@ -23,7 +23,8 @@ export async function reportQuestion(rootOrHost: unknown, opts: { question?: unk
   if (participant?.harness !== 'codex') throw new GateError('report --question needs an existing Codex reporter; lift it first with report --task');
   const ref = participant.metadata?.sessionRef;
   const record = ref ? readSession(ref as string) : null;
-  if (!record || record.role !== 'reporter' || record.address !== 'reporter' || record.home !== home
+  if (!record || record.role !== 'reporter' || record.address !== 'reporter'
+    || !sameStoreHome(record.home, home)
     || record.task !== opts.task || record.threadId !== (participant.metadata.sessionId ?? participant.metadata.session)
     || record.state !== 'alive' || !holderAlive(ref as string)) {
     throw new GateError('the reporter session is stale or belongs to another task; lift this task reporter again');

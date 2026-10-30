@@ -8,7 +8,7 @@ import { REGISTRY, REPORTER_DENY } from './drivers.js';
 import { hostOf } from './host.js';
 import { info, ok, fail, shellQuote, warn } from './util.js';
 import {
-  contactsOf, participantMcpPath, participantOf, participantRecord, participantSettingsPath,
+  canonicalPath, contactsOf, participantMcpPath, participantOf, participantRecord, participantSettingsPath,
   pidAlive, readTask, upsertParticipant, withTaskLock,
 } from './store.js';
 import { forgetSessions, snapshotOf } from './drivers.js';
@@ -84,7 +84,7 @@ function reporterPrompt(plan: ReporterPromptPlan) {
 
 export async function planReport(rootOrHost: unknown, opts: ReportOptions = {}): Promise<ReportPlan> {
   const host = hostOf(rootOrHost);
-  const home = host.promptobusHome();
+  const home = canonicalPath(host.promptobusHome());
   const task = opts.task;
   if (!task) throw new GateError('report needs --task <root>');
   const meta = readTask(home, task);
@@ -108,7 +108,7 @@ export async function planReport(rootOrHost: unknown, opts: ReportOptions = {}):
   const sessions = former ? (opts.sessions === undefined ? snapshotOf([former]) : opts.sessions) : null;
   if (former) requireFreeReporter(former, sessions, liftHarness(host, former.harness), task);
   const routingHost: PromptobusHost = Object.create(host);
-  const root = host.workspaceRoot();
+  const root = canonicalPath(host.workspaceRoot());
   const selectedContext = prepareNativeContext(host, { root, role: REPORTER, taskId: task, options: opts, participant: former });
   if (requestedHarness) assertNativeContextDriver(selectedContext, liftHarness(host, requestedHarness));
   routingHost.declaredTools = () => host.declaredTools().filter((harness) => harness !== 'cursor');

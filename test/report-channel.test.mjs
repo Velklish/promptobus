@@ -2,7 +2,7 @@ import './home.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { capture, expectFail } from './console.mjs';
@@ -127,6 +127,33 @@ test('participant role and inherited native identities cannot ask the reporter',
     assert.match(refusal.out, /person at a terminal/);
     assert.equal(calls.length, before, 'participant must be refused before any holder RPC');
   }
+});
+
+test('a Host using a trusted store alias can ask its planned reporter with canonical or legacy record roots', async () => {
+  const directory = path.join(root, 'followup-store'); mkdirSync(directory);
+  const canonical = realpathSync(directory), alias = `${canonical}-alias`;
+  symlinkSync(canonical, alias, 'dir');
+  const scoped = Object.create(host); scoped.promptobusHome = () => path.join(alias, 'store');
+  const id = 'report-alias-t20261030-000001';
+  createTask(scoped.promptobusHome(), { id, title: 'Alias follow-up', owner: 'owner' });
+  const plan = await reporting.planReport(scoped, { task: id, harness: 'codex', dryRun: true });
+  upsertParticipant(plan.home, id, participantRecord('reporter', {
+    harness: 'codex', mode: 'managed', sessionRef: plan.name, sessionId: 'native-thread',
+  }));
+  for (const recordHome of new Set([plan.home, scoped.promptobusHome()])) {
+    writeSession({ ...record, ref: plan.name, home: recordHome, task: id });
+    const before = calls.length;
+    let answer;
+    await capture(async () => { answer = await reporting.reportQuestion(scoped, { task: id, question: 'Same physical store?' }); });
+    assert.equal(answer.text, 'Answer from source message msg-42.');
+    assert.deepEqual(calls.slice(before).map(call => call.method), ['turn/start', 'thread/read']);
+  }
+  const foreign = path.join(canonical, 'foreign'), foreignAlias = `${foreign}-alias`;
+  mkdirSync(foreign); symlinkSync(foreign, foreignAlias, 'dir');
+  writeSession({ ...record, ref: plan.name, home: foreignAlias, task: id });
+  const before = calls.length;
+  await assert.rejects(reporting.reportQuestion(scoped, { task: id, question: 'Foreign store?' }), /stale|another task/);
+  assert.equal(calls.length, before);
 });
 
 test('resolved MCP session identities and contested records cannot ask the reporter', async () => {

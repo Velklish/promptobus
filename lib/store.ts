@@ -1928,6 +1928,12 @@ export function canonicalPath(value: string) {
   }
 }
 
+export function sameStoreHome(left: unknown, right: unknown) {
+  return typeof left === 'string' && path.isAbsolute(left)
+    && typeof right === 'string' && path.isAbsolute(right)
+    && canonicalPath(left) === canonicalPath(right);
+}
+
 // Hook-declared identity outranks the inherited environment.
 // Task bindings are resolved per call; this result holds only home, role and session.
 export function resolveIdentity(env = process.env, cwd = process.cwd(), { declared: said = null, host }: { declared?: DeclaredIdentity | null; host?: PromptobusHost } = {}) {

@@ -6,7 +6,7 @@ import { ok, info, warn, fail, shellQuote } from './util.js';
 import { hostOf } from './host.js';
 import { pipelineOf } from '../dist/pipeline.js';
 import {
-  addrDir, addressesOf, approverHere, artifactsDir, blobsDir, claimRoute, filesDir,
+  addrDir, addressesOf, approverHere, artifactsDir, blobsDir, canonicalPath, claimRoute, filesDir,
   healthFile, messagesDir, ORCHESTRATOR, participantDirs, participantMcpPath, participantOf, participantSessionPath,
   participantSettingsPath, readTask, resolveTaskId, sameOwnerSession,
   sessionIdentity, stallsFile, taskDir, taskOwner, wakeFile, wardenLogFile,
@@ -285,7 +285,7 @@ function liftMark(p: ParticipantV1 | null | undefined) {
  * [reference/03-cli.md#sweep--clean-up-after-one-accepted-piece](../docs/reference/03-cli.md#sweep--clean-up-after-one-accepted-piece) */
 export function sweep(rootOrHost: unknown, { task, address }: { task?: string | null; address?: string } = {}, { registry = REGISTRY }: { registry?: LibRegistry } = {}) {
   const host = hostOf(rootOrHost);
-  const home = host.promptobusHome();
+  const home = canonicalPath(host.promptobusHome());
   const id = resolveTaskId(home, task, sessionIdentity(), {
     spawnRepo: host.busCommand(['spawn', '--repo', '<name>', '--brief', '<file>']),
     spawnNewTask: host.busCommand(['spawn', '--new-task']),

@@ -1456,8 +1456,13 @@ codex-cli 0.146.0 by the consumer, with no paid turn).
 
 Private install-root skill destinations resolve the system temporary-directory base to
 its canonical path before appending the mechanism's home container and participant leaf.
-An OS temporary-directory alias therefore works with selected-context delivery. The
-session's recorded home spelling and cleanup identity stay unchanged. The context writer
+An OS temporary-directory alias therefore works with selected-context delivery. Cleanup
+uses the recorded private home rather than re-resolving the participant leaf. Managed
+store and working roots follow the [trusted-root boundary](02-host.md#explicit-participant-context).
+Follow-up, status and cleanup readers compare absolute store roots by physical identity,
+so a retained record using an OS alias still belongs to the same store. Task, address,
+session, launch and receipt identities remain exact; recorded evidence bytes are unchanged.
+The context writer
 still refuses symlinks in the mechanism's container or participant leaf; it never resolves
 those untrusted components to authorize a write.
 

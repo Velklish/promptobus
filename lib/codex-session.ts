@@ -13,7 +13,7 @@ import { GateError, REVIEWER } from '../dist/index.js';
 import { withDirLock } from '../dist/fs/lock.js';
 import { CodexRpc } from './codex-rpc.js';
 import { createHarnessRegistry } from './harness-registry.js';
-import { foreignSession, logWarden, writeWake } from './store.js';
+import { foreignSession, logWarden, sameStoreHome, writeWake } from './store.js';
 import { provenanceFromRecord, provenanceLine } from './provenance.js';
 import { createParticipantAuthGuard } from './codex-participant-auth.js';
 import { commandReceipts } from './codex-command-receipts.js';
@@ -173,7 +173,7 @@ export const registrySessions = codexRegistry.registrySessions;
 export const pidAlive = codexRegistry.pidAlive;
 
 export function findSessionByAddress(home: string, task: string, address: string, env = process.env) {
-  return registrySessions(env).find((r) => r.home === home && r.task === task && r.address === address) ?? null;
+  return registrySessions(env).find((r) => sameStoreHome(r.home, home) && r.task === task && r.address === address) ?? null;
 }
 
 // Set by the driver at import: the home is the driver's construct, and importing the driver

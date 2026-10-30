@@ -2,7 +2,7 @@ import './home.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import path from 'node:path';
-import { mkdirSync, readFileSync, writeFileSync, existsSync, realpathSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, existsSync, realpathSync, symlinkSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { makeSandbox, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { expectFail, quiet } from './console.mjs';
@@ -11,18 +11,19 @@ import * as store from '../lib/store.js';
 import { REGISTRY } from '../lib/drivers.js';
 import { bindHandshake, claudeDriver, SESSION_RECORD_VAR } from '../lib/driver-claude.js';
 import { codexDriver } from '../lib/driver-codex.js';
-import { reserveNativeParticipant } from '../lib/native-lifecycle.js';
+import { requireNativeIdle, requireNativeTerminal, reserveNativeParticipant } from '../lib/native-lifecycle.js';
 import { bindBeforeLaunch, liftoffParticipant } from '../lib/liftoff.js';
-import { writeSession, sessionFile, sessionKey } from '../lib/codex-session.js';
+import { findSessionByAddress, writeSession, sessionFile, sessionKey } from '../lib/codex-session.js';
 import { commandReceipts } from '../lib/codex-command-receipts.js';
 import { retainNativeStop } from '../lib/native-lifecycle.js';
 import { done } from '../lib/done.js';
 import { spawn as spawnParticipant } from '../lib/spawn.js';
 import { review } from '../lib/review.js';
 import { approverLift } from '../lib/approver.js';
-import { report } from '../lib/report.js';
+import { planReport, report } from '../lib/report.js';
 import { sweep } from '../lib/sweep.js';
 import { createRegistry } from '../dist/index.js';
+import { sessionLogOf } from '../lib/model-routing/telemetry.js';
 
 process.env.CLAUDE_CODE_SESSION_ID = 'closure-owner';
 process.env.PROMPTOBUS_WARDEN = 'off';
@@ -79,6 +80,88 @@ function confirmed(f,address,expected) {
   store.withTaskLock(f.home,f.task,()=>retainNativeStop(stopped,file));
   return stopped;
 }
+
+function aliasHost(f) {
+  const aliasHome = `${f.home}-alias`;
+  symlinkSync(f.home, aliasHome, 'dir');
+  return { ...f, aliasHome, host: { ...f.host, promptobusHome: () => aliasHome } };
+}
+
+test('an alias Host cannot close past an unbound record from its canonical native plan', async () => {
+  const f = aliasHost(fixture());
+  const plan = await planReport(f.host, { task: f.task, harness: 'codex', dryRun: true });
+  writeSession({ ref: plan.name, home: plan.home, task: f.task, address: 'reporter',
+    launchId: 'owned-unbound-root', holderPid: process.pid, state: 'starting' });
+  const before = readFileSync(f.file), retained = readFileSync(sessionFile(plan.name));
+  await assert.rejects(() => close(f), /unresolved/);
+  assert.deepEqual(readFileSync(f.file), before);
+  assert.deepEqual(readFileSync(sessionFile(plan.name)), retained);
+});
+
+test('an alias Host closes after its planned native Stop without rewriting the original receipt', async () => {
+  const f = aliasHost(fixture());
+  const plan = await planReport(f.host, { task: f.task, harness: 'codex', dryRun: true });
+  f.home = plan.home;
+  confirmed(f, 'reporter');
+  const proof = current(f, 'reporter').metadata.nativeStop, bytes = readFileSync(proof.receiptFile);
+  await quiet(() => close(f));
+  assert.equal(store.readTask(f.home, f.task).status, 'done');
+  assert.deepEqual(readFileSync(proof.receiptFile), bytes);
+});
+
+test('legacy alias Stop roots retain exact receipt proof while a foreign physical root is refused', async () => {
+  const f = aliasHost(fixture()), canonical = f.home;
+  f.home = f.aliasHome;
+  confirmed(f, 'worker:legacy');
+  const p = current(f, 'worker:legacy'), proof = p.metadata.nativeStop, bytes = readFileSync(proof.receiptFile);
+  assert.doesNotThrow(() => requireNativeTerminal(canonical, store.readTask(canonical, f.task), p));
+  const foreign = path.join(f.root, 'foreign-store'), foreignAlias = `${foreign}-alias`;
+  mkdirSync(foreign); symlinkSync(foreign, foreignAlias, 'dir');
+  assert.throws(() => requireNativeTerminal(canonical, store.readTask(canonical, f.task), {
+    ...p, metadata: { ...p.metadata, nativeStop: { ...proof, home: foreignAlias } },
+  }), /unresolved/);
+  await quiet(() => close({ ...f, host: { ...f.host, promptobusHome: () => canonical } }));
+  assert.equal(store.readTask(canonical, f.task).status, 'done');
+  assert.deepEqual(readFileSync(proof.receiptFile), bytes);
+});
+
+test('retained registry lookup and root launch compare physical store identity and keep foreign records separate', () => {
+  const f = aliasHost(fixture());
+  const record = { ref: 'legacy-root', home: f.aliasHome, task: f.task, address: 'orchestrator',
+    launchId: 'legacy-generation', holderPid: process.pid, state: 'starting' };
+  writeSession(record);
+  assert.equal(findSessionByAddress(f.home, f.task, 'orchestrator')?.ref, record.ref);
+  assert.throws(() => requireNativeIdle(f.home, store.readTask(f.home, f.task)), /unresolved/);
+  const before = readFileSync(sessionFile(record.ref));
+  assert.throws(() => codexDriver.prepareRootLaunch({ home: f.home, task: f.task, env: process.env }), /live unbound/);
+  assert.deepEqual(readFileSync(sessionFile(record.ref)), before);
+  const foreign = path.join(f.root, 'foreign-root'); mkdirSync(foreign);
+  const foreignAlias = `${foreign}-alias`; symlinkSync(foreign, foreignAlias, 'dir');
+  writeSession({ ...record, home: foreignAlias });
+  assert.equal(findSessionByAddress(f.home, f.task, 'orchestrator'), null);
+  assert.doesNotThrow(() => requireNativeIdle(f.home, store.readTask(f.home, f.task)));
+  assert.doesNotThrow(() => codexDriver.prepareRootLaunch({ home: f.home, task: f.task, env: process.env }));
+  assert.equal(existsSync(sessionFile(record.ref)), true);
+  for (const home of ['', '.', null, 7]) {
+    writeSession({ ...record, home });
+    assert.equal(findSessionByAddress(process.cwd(), f.task, 'orchestrator'), null);
+  }
+});
+
+test('native telemetry accepts legacy store aliases but rejects foreign or malformed roots', () => {
+  const f = aliasHost(fixture()), p = seat('worker:telemetry');
+  const rolloutPath = path.join(f.root, 'rollout.jsonl'); writeFileSync(rolloutPath, '{}\n');
+  const host = { ...f.host, harnessStateHome: harness => harness === 'codex'
+    ? process.env.PROMPTOBUS_CODEX_HOME : f.host.harnessStateHome(harness) };
+  const record = { ref: p.sessionRef, home: f.aliasHome, task: f.task, address: 'worker:telemetry',
+    threadId: p.metadata.sessionId, rolloutPath };
+  writeSession(record);
+  assert.deepEqual(sessionLogOf(host, f.home, f.task, p), { sessionId: p.metadata.sessionId, path: rolloutPath });
+  for (const home of [f.root, '', '.', null, 7]) {
+    writeSession({ ...record, home });
+    assert.equal(sessionLogOf(host, f.home, f.task, p), null);
+  }
+});
 
 test('stale legacy admission cannot erase a current native reservation',()=>{
   const f=fixture(),address='worker:one';

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { ok, info, warn, fail, shellQuote } from './util.js';
 import { hostOf } from './host.js';
 import {
-  addressOf, closeTask, GateError, isAddress, listTasks,
+  addressOf, canonicalPath, closeTask, GateError, isAddress, listTasks,
   ORCHESTRATOR, ownerRoute, ownership, participantDirs, participantMcpPath, participantSessionPath, participantSettingsPath,
   patchTask, readTask, resolveTaskId, sessionIdentity,
   sweepBindings, unprovenOwnerLine, wakeFile, withTaskLock,
@@ -315,7 +315,7 @@ export async function done(rootOrHost: unknown, opts: DoneOptions = {}) {
   // A set seam, as on `status` and `wardenRound`. A function over participants rather than
   // a ready snapshot: every closed task needs its own, since the key is the address.
   const snapshot = typeof opts.snapshot === 'function' ? opts.snapshot : snapshotOf;
-  const home = host.promptobusHome();
+  const home = canonicalPath(host.promptobusHome());
   const id = resolveTaskId(home, task, sessionIdentity(), {
     spawnRepo: host.busCommand(['spawn', '--repo', '<name>', '--brief', '<file>']),
     spawnNewTask: host.busCommand(['spawn', '--new-task']),

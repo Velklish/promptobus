@@ -453,6 +453,122 @@ function withAliasedTemp(name, run) {
   }
 }
 
+test('managed selected contexts canonicalize explicit external store and clone roots before owned descendants', async () => {
+  const storeBase = path.join(sandbox, 'trusted-store-base'), storeAlias = `${storeBase}-alias`;
+  mkdirSync(storeBase); symlinkSync(storeBase, storeAlias, 'dir');
+  const rootAlias = `${root}-trusted-alias`; symlinkSync(root, rootAlias, 'dir');
+  const home = path.join(storeBase, 'store'), aliasedHome = path.join(storeAlias, 'store');
+  const task = createTask(home, { id: 'trusted-roots-t20261020-000001', title: 'Trusted roots' });
+  upsertParticipant(home, task.id, participantRecord('orchestrator', { owner: sessionIdentity() }));
+  const canonicalHost = Object.create(host), aliasedHost = Object.create(host);
+  canonicalHost.promptobusHome = () => home;
+  aliasedHost.promptobusHome = () => aliasedHome;
+  aliasedHost.workspaceRoot = () => rootAlias;
+  aliasedHost.repoAbsPath = () => path.join(rootAlias, 'demo');
+  const selectedFiles = plan => plan.launch.files.filter(file => file.selectedContext || file.copyFileFrom);
+  for (const driver of [claudeDriver, cursorDriver, codexDriver, opencodeDriver]) {
+    const input = { repo, brief, task: task.id, worker: `trusted-${driver.id}`, harness: driver.id, dryRun: true, ...options };
+    const canonicalPlan = await planSpawn(canonicalHost, input);
+    const aliasedPlan = await planSpawn(aliasedHost, input);
+    assert.equal(aliasedPlan.home, home);
+    assert.equal(aliasedPlan.repoAbs, repo);
+    assert.equal(aliasedPlan.settingsPath, canonicalPlan.settingsPath);
+    assert.equal(aliasedPlan.mcpConfigPath, canonicalPlan.mcpConfigPath);
+    assert.deepEqual(selectedFiles(aliasedPlan), selectedFiles(canonicalPlan));
+    assert.equal(existsSync(aliasedPlan.settingsPath), false);
+    assert.equal(existsSync(aliasedPlan.worktreePath), false);
+  }
+  const reviewer = planReview(aliasedHost, { target: repo, task: task.id, dryRun: true, ...options });
+  const reporter = await planReport(aliasedHost, { task: task.id, dryRun: true, ...options });
+  const teamlead = await planTeamlead(aliasedHost, { task: task.id, brief, slug: 'trusted-child', dryRun: true, ...options });
+  const lead = await planLead(aliasedHost, { brief, task: 'trusted-lead-t20261020-000001', permissionMode: 'full-access', dryRun: true, ...options });
+  for (const plan of [reviewer, reporter, teamlead, lead]) {
+    assert.equal(plan.home, home);
+    assert.equal(plan.launch.files.some(file => file.path.startsWith(storeAlias + path.sep)), false);
+  }
+  for (const plan of [reporter, teamlead, lead]) assert.equal(plan.root, root);
+});
+
+test('trusted store normalization keeps missing homes and descendants absent during planning', async () => {
+  const storeBase = path.join(sandbox, 'missing-store-base'), storeAlias = `${storeBase}-alias`;
+  mkdirSync(storeBase); symlinkSync(storeBase, storeAlias, 'dir');
+  const home = path.join(storeBase, 'missing', 'store');
+  const aliasedHost = Object.create(host);
+  aliasedHost.promptobusHome = () => path.join(storeAlias, 'missing', 'store');
+  const plan = await planSpawn(aliasedHost, { repo, brief, newTask: true, worker: 'missing-store', dryRun: true, ...options });
+  assert.equal(plan.home, home);
+  assert.equal(existsSync(path.dirname(home)), false);
+  assert.equal(existsSync(plan.settingsPath), false);
+  assert.equal(existsSync(plan.worktreePath), false);
+});
+
+test('managed trusted-root plans retain symlink refusal below the selected base before preparation or writes', async () => {
+  for (const driver of [claudeDriver, cursorDriver, codexDriver, opencodeDriver]) {
+    for (const kind of ['ancestor', 'parent', 'leaf', 'dangling']) {
+      const name = `${driver.id}-${kind}`;
+      const storeBase = path.join(sandbox, `guarded-store-${name}`), storeAlias = `${storeBase}-alias`;
+      mkdirSync(storeBase); symlinkSync(storeBase, storeAlias, 'dir');
+      const home = path.join(storeBase, 'store'), scoped = Object.create(host);
+      scoped.promptobusHome = () => path.join(storeAlias, 'store');
+      const task = createTask(home, { id: `owned-${name}-t20261020-000001`, title: 'Owned descendants' });
+      const plan = await planSpawn(scoped, { repo, brief, task: task.id, worker: `links-${name}`, harness: driver.id,
+        ...(driver.id === 'codex' ? { permissionMode: 'read-only' } : {}), dryRun: true, ...options });
+      const container = plan.launch.files.find(file => file.clearDirectory).path;
+      const target = kind === 'ancestor' ? path.dirname(path.dirname(container)) : kind === 'parent' ? path.dirname(container) : container;
+      const foreign = path.join(sandbox, `foreign-${name}`), marker = put(path.join(foreign, 'marker.txt'), 'Foreign bytes stay untouched.\n');
+      mkdirSync(path.dirname(target), { recursive: true });
+      symlinkSync(kind === 'dangling' ? path.join(foreign, 'absent') : foreign, target, 'dir');
+      const input = { ref: plan.name, role: 'worker', task: task.id, address: plan.address, home: plan.home,
+        cwd: plan.worktreePath, root, selectedContext: plan.selectedContext, model: plan.model, permissionMode: plan.permissionMode,
+        mcpConfigPath: plan.mcpConfigPath, settingsPath: plan.settingsPath,
+        mcp: { home: plan.home, task: task.id, address: plan.address, servers: {} }, prompt: 'Guarded selected context' };
+      assert.throws(() => driver.prepare(input), /symbolic link/, `${name}: preparation must reject the substituted descendant`);
+      assert.throws(() => writeLaunchFiles(plan.launch.files), /symbolic link/, `${name}: writing must recheck the substituted descendant`);
+      assert.deepEqual(readdirSync(foreign), ['marker.txt']);
+      assert.equal(readFileSync(marker, 'utf8'), 'Foreign bytes stay untouched.\n');
+      assert.equal(existsSync(plan.settingsPath), false);
+      assert.equal(existsSync(plan.mcpConfigPath), false);
+      fs.rmSync(plan.worktreePath, { recursive: true, force: true });
+    }
+  }
+});
+
+test('a selected container that gains foreign content after trusted-root planning refuses before provider files', async () => {
+  const storeBase = path.join(sandbox, 'late-store'), storeAlias = `${storeBase}-alias`;
+  mkdirSync(storeBase); symlinkSync(storeBase, storeAlias, 'dir');
+  const scoped = Object.create(host); scoped.promptobusHome = () => path.join(storeAlias, 'store');
+  const plan = await planSpawn(scoped, { repo, brief, newTask: true, worker: 'late-context', dryRun: true, ...options });
+  const container = plan.launch.files.find(file => file.clearDirectory).path;
+  const foreign = put(path.join(container, 'foreign.txt'), 'Foreign content arrived after planning.\n');
+  assert.throws(() => writeLaunchFiles(plan.launch.files), /pre-existing unowned/);
+  assert.equal(readFileSync(foreign, 'utf8'), 'Foreign content arrived after planning.\n');
+  assert.equal(existsSync(plan.settingsPath), false);
+  assert.equal(existsSync(plan.mcpConfigPath), false);
+});
+
+test('changing the trusted alias after planning cannot redirect provider or selected-context writes', async () => {
+  const storeBase = path.join(sandbox, 'retained-store'), storeAlias = `${storeBase}-alias`;
+  mkdirSync(storeBase); symlinkSync(storeBase, storeAlias, 'dir');
+  const scoped = Object.create(host); scoped.promptobusHome = () => path.join(storeAlias, 'store');
+  const plan = await planSpawn(scoped, { repo, brief, newTask: true, worker: 'retained-context', dryRun: true, ...options });
+  const foreign = path.join(sandbox, 'retained-foreign'), marker = put(path.join(foreign, 'marker.txt'), 'Foreign root stays untouched.\n');
+  unlinkSync(storeAlias); symlinkSync(foreign, storeAlias, 'dir');
+  writeLaunchFiles(plan.launch.files);
+  assert.equal(existsSync(plan.settingsPath), true);
+  assert.equal(existsSync(plan.mcpConfigPath), true);
+  assert.ok(plan.settingsPath.startsWith(storeBase + path.sep));
+  assert.deepEqual(readdirSync(foreign), ['marker.txt']);
+  assert.equal(readFileSync(marker, 'utf8'), 'Foreign root stays untouched.\n');
+});
+
+test('direct preparation without a trusted root keeps aliased context destinations strict', () => {
+  const canonical = path.join(sandbox, 'untrusted-direct'), alias = `${canonical}-alias`;
+  mkdirSync(canonical); symlinkSync(canonical, alias, 'dir');
+  assert.throws(() => claudeDriver.prepare({ ref: 'untrusted-direct', role: 'worker', cwd: repo, selectedContext: selection,
+    settingsPath: path.join(alias, 'settings.json'), mcpConfigPath: path.join(alias, 'mcp.json'), mcp: { servers: {} }, prompt: 'Assignment' }), /symbolic link/);
+  assert.equal(existsSync(path.join(canonical, 'settings.json-context')), false);
+});
+
 const privateSelectedPlan = role => codexDriver.prepare({
   ref: `temp-alias-${role}`, role, task: selection.task.id, address: role, cwd: root, root,
   selectedContext: selection, permissionMode: role === 'reporter' ? 'read-only' : 'full-access',

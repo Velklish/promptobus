@@ -4,7 +4,7 @@ import { ok, info, warn } from './util.js';
 import { hostOf } from './host.js';
 import { pipelineOf, pipelineText } from '../dist/pipeline.js';
 import {
-  addressOf, busService, foreignTaskLine, listTasks, liveWarden, mailboxOf,
+  addressOf, busService, canonicalPath, foreignTaskLine, listTasks, liveWarden, mailboxOf,
   ORCHESTRATOR, ownership, participantOf, participantSlots, readHealth, readTask, readWake, sameOwnerSession, sessionIdentity,
   taskOwner, WARDEN_BEAT_SEC, tailWardenLog,
 } from './store.js';
@@ -299,7 +299,7 @@ function participantsInPipelineOrder(participants: ParticipantV1[] | null | unde
 export function status(rootOrHost: unknown, { task, sessions = undefined }: StatusOptions = {}) {
   const host = hostOf(rootOrHost);
   const pipeline = pipelineOf(host);
-  const home = host.promptobusHome();
+  const home = canonicalPath(host.promptobusHome());
   const all = listTasks(home);
   const selected = task ? [readTask(home, task)] : all.filter((meta) => meta.status === 'active' && !meta.parent);
   const visible = new Set(selected.map((meta) => meta.id));
