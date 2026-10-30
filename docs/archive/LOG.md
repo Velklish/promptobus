@@ -621,3 +621,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-416.2"></a>`PB-416.2-shared-service-http-lifecycle` · 2026-10-30 · completed · — · Own one workspace service process and isolated HTTP MCP clients
 - <a id="pb-416.6"></a>`PB-416.6-legacy-alias-workflows` · 2026-10-30 · completed · — · Resolve remaining legacy alias-sensitive hooks and native workflow fixtures
 - <a id="pb-416.7"></a>`PB-416.7-http-mcp-driver-auth-fields` · 2026-10-30 · completed · — · Preserve authenticated HTTP MCP fields in driver configurations
+- <a id="pb-416.8"></a>`PB-416.8-startup-fixture-listener-readiness` · 2026-10-30 · completed · — · Wait for owned startup listener readiness and confirmed Stop in lifecycle fixtures
