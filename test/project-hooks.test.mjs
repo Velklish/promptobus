@@ -1,6 +1,6 @@
 // The project hook records a lift keeps because the repository's promptobus.json trusts them, and
 // everything it does not ([ADR-025](../docs/adr/adr-025-foreign-project-hook-records.md)). Run: npm test
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
@@ -199,7 +199,7 @@ const rootsFrom = (cwd) => {
   const host = createStandaloneHost({ cwd });
   return { root: host.workspaceRoot(), home: host.promptobusHome(), install: resolveProjectRoot(host, cwd) };
 };
-const atInstallRoot = { root: installRoot, home: path.join(installRoot, '.promptobus'), install: installRoot };
+const atInstallRoot = { root: realpathSync(installRoot), home: path.join(realpathSync(installRoot), '.promptobus'), install: installRoot };
 const repositoryFile = (doc) => writeFileSync(path.join(nested, 'promptobus.json'), json(doc));
 const declarationsOnly = [
   { trustedHooks: { codex: { Stop: [UNRELATED] } } },
@@ -221,7 +221,7 @@ const hostFields = [{ tools: ['codex'], trustedHooks: { codex: { Stop: [UNRELATE
   return { doc, roots: rootsFrom(nested), step: admits(nested, 'security:x') };
 });
 check(': a repository promptobus.json with a host field, or with no field, is the root, the store and the install root',
-  hostFields.every(({ roots, step }) => roots.root === nested && roots.home === path.join(nested, '.promptobus')
+  hostFields.every(({ roots, step }) => roots.root === realpathSync(nested) && roots.home === path.join(realpathSync(nested), '.promptobus')
     && roots.install === nested && !step),
   JSON.stringify(hostFields));
 
@@ -229,7 +229,7 @@ const alone = projectWith('alone', { 'promptobus.json': json({ trustedHooks: { c
 mkdirSync(path.join(alone, 'src'), { recursive: true });
 check(': with no promptobus.json above it, a repository file holding only trustedHooks stays the root from inside the repository',
   JSON.stringify(rootsFrom(path.join(alone, 'src')))
-    === JSON.stringify({ root: alone, home: path.join(alone, '.promptobus'), install: alone }),
+    === JSON.stringify({ root: realpathSync(alone), home: path.join(realpathSync(alone), '.promptobus'), install: alone }),
   JSON.stringify(rootsFrom(path.join(alone, 'src'))));
 
 const committed = { trustedHooks: { codex: { Stop: [UNRELATED] } } };
@@ -247,5 +247,5 @@ check(': from a worktree nested in that repository, both carrying the file, the 
 const aloneWorktree = worktreeOf(alone);
 check(': with no promptobus.json above them, the nearest of two stacked declarations-only files is the root',
   JSON.stringify(rootsFrom(aloneWorktree))
-    === JSON.stringify({ root: aloneWorktree, home: path.join(aloneWorktree, '.promptobus'), install: aloneWorktree }),
+    === JSON.stringify({ root: realpathSync(aloneWorktree), home: path.join(realpathSync(aloneWorktree), '.promptobus'), install: aloneWorktree }),
   JSON.stringify(rootsFrom(aloneWorktree)));

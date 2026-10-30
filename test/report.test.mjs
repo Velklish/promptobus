@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
@@ -50,7 +50,7 @@ for (const harness of ['cursor']) {
 }
 const codexPlan = await planReport(host, { task: TASK, harness: 'codex', dryRun: true });
 check('Codex reporter uses a read-only private home without an install-root project write',
-  codexPlan.launch.cwd === ROOT && codexPlan.launch.files.length === 0
+  codexPlan.launch.cwd === realpathSync(ROOT) && codexPlan.launch.files.length === 0
   && codexPlan.launch.settings.sandbox === 'read-only'
   && codexPlan.launch.trustProject === false && codexPlan.launch.codexHome);
 check('Codex reporter omits bus send from its MCP inventory',

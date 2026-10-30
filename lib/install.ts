@@ -2,7 +2,7 @@
 // [guides/install.md#what-the-installer-knows-and-never-writes](../docs/guides/install.md#what-the-installer-knows-and-never-writes)
 
 import {
-  existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync,
+  accessSync, constants, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { info, ok, warn } from './util.js';
 import { hostOf } from './host.js';
 import { GateError } from './store.js';
+import { resolveCommand } from './exec.js';
 import { HOST_CONFIG } from '../dist/host-index.js';
 import { findHostRoot } from '../dist/standalone.js';
 import {
@@ -41,7 +42,7 @@ type HookStyle = 'nested' | 'flat';
 type HookEvents = Record<string, unknown[]>;
 interface HookContext {
   style: HookStyle; prevIds: Set<string>; oursIds?: Set<string>; busEvent: string; guardEvents: string[];
-  guardCommand: string; scriptNeedle: string; label: string;
+  guardCommand: string; nodePath: string; runnerRoot: string; runnerRel: string; label: string;
 }
 interface HookSpec {
   rel: string; skillsRel: string; style: HookStyle; busEvent: string; guardEvents: string[];
@@ -225,14 +226,43 @@ function isGuardCommand(command: unknown) {
   return GUARD_SIGNATURE.test(String(command));
 }
 
+function legacyExecutable(command: string) {
+  const resolved = resolveCommand(command);
+  if (!resolved) return null;
+  const candidates = path.isAbsolute(resolved) ? [resolved] : resolved === path.basename(resolved)
+    ? String(process.env.PATH ?? '').split(path.delimiter).filter(Boolean).map(dir => path.join(dir, resolved)) : [];
+  for (const file of candidates) {
+    try {
+      accessSync(file, constants.X_OK);
+      const entry = statSync(file);
+      if (entry.isFile()) return entry;
+    } catch { /* An unresolved executable supplies no ownership evidence. */ }
+  }
+  return null;
+}
+
+function isLegacyFeedback(group: unknown, ctx: HookContext) {
+  if (ctx.style === 'nested') {
+    if (!isPlainObject(group) || !Array.isArray(group.hooks) || group.hooks.length !== 1
+      || !isPlainObject(group.hooks[0]) || group.hooks[0].type !== 'command') return false;
+  }
+  const match = /^"([^"]+)" "([^"]+)"$/.exec(groupCommand(group, ctx.style));
+  if (!match || !path.isAbsolute(match[2])
+    || !match[2].endsWith(path.sep + ctx.runnerRel)) return false;
+  const executable = legacyExecutable(match[1]), node = legacyExecutable(ctx.nodePath);
+  if (!executable || !node || executable.dev !== node.dev || executable.ino !== node.ino) return false;
+  const root = match[2].slice(0, -ctx.runnerRel.length);
+  try { return realpathSync(root) === realpathSync(ctx.runnerRoot); }
+  catch { return false; }
+}
+
 function isOwnedGroup(event: string, group: unknown, ctx: HookContext & { oursIds: Set<string> }) {
   const id = hookGroupId(event, group, ctx.style);
   if (ctx.prevIds.has(id) || ctx.oursIds.has(id)) return true;
   const cmd = groupCommand(group, ctx.style);
   if (!cmd) return false;
-  // The feed hook is no longer written, so there is no current command to compare
-  // against: an old entry is known by the runner path it still names.
-  if (event === ctx.busEvent) return !!ctx.scriptNeedle && cmd.includes(ctx.scriptNeedle);
+  // Resolve only the trusted root alias; the legacy runner's owned suffix stays exact.
+  if (event === ctx.busEvent) return isLegacyFeedback(group, ctx);
   if (ctx.guardEvents.includes(event)) {
     return cmd === ctx.guardCommand
       || isGuardCommand(cmd);
@@ -543,7 +573,9 @@ export function planHookInstall(
         busEvent: spec.busEvent,
         guardEvents: spec.guardEvents,
         guardCommand: guardCmd,
-        scriptNeedle: runnerAbs,
+        nodePath: host.nodePath(),
+        runnerRoot: root,
+        runnerRel,
         label: spec.rel,
       });
       const { hooks } = merged;

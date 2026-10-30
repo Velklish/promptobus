@@ -105,7 +105,7 @@ export const SUITE_PREFIXES = [
   // for the sweep's convenience. Each is specific enough not to catch a
   // stranger in a shared `$TMPDIR`; `pb-hooks-` covers `pb-hooks-home-`.
   'pb-home-', 'pb-hooks-', 'pb-install-', 'pb-bb-native-', 'pb-direct-receipt-',
-  'pb-message-order-', 'pb-native-message-order-',
+  'pb-message-order-', 'pb-native-message-order-', 'pb-legacy-feedback-alias-',
   // As `mutation-probe.test.mjs` spells it, for the reason the three above are kept:
   // the sweep does not care about the name, and a rename would be an edit for its convenience.
   'mutation-probe-',

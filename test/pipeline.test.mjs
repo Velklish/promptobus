@@ -108,7 +108,7 @@ test('a declaration with security between reviewer and approver loads, in order,
   const host = hostOf(dir);
   const four = [
     { name: 'worker', kind: 'edits-tree' }, { name: 'reviewer', kind: 'reads-diff' },
-    { name: 'security', kind: 'reads-diff', instructions: path.join(dir, 'security.md') },
+    { name: 'security', kind: 'reads-diff', instructions: path.join(realpathSync(dir), 'security.md') },
     { name: 'approver', kind: 'writes-main-tree' },
   ];
   assert.deepEqual(host.pipeline(), four);
@@ -394,7 +394,7 @@ for (const [label, part, at, why] of REFUSED) {
     const declaration = { owner: { name: 'worker', kind: 'edits-tree' }, ...part };
     const dir = workspace(declaration);
     const host = hostOf(dir);
-    const expected = `pipeline-invalid · ${path.join(dir, 'promptobus.json')} · ${at}: `;
+    const expected = `pipeline-invalid · ${path.join(realpathSync(dir), 'promptobus.json')} · ${at}: `;
     let refusal = null;
     try { host.pipeline(); } catch (e) { refusal = e; }
     assert.ok(refusal instanceof bus.PromptobusError, 'the refusal is a PromptobusError');

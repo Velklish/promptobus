@@ -1,6 +1,6 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { makeSandbox } from './sandbox.mjs';
@@ -49,7 +49,7 @@ test('project selection remains independent across A, B, A', () => {
 });
 
 test('legacy hosts keep workspace selection and explicit null disables layout', () => {
-  assert.equal(participantSkillsRoot(standalone, projects[0]), root);
+  assert.equal(participantSkillsRoot(standalone, projects[0]), realpathSync(root));
   assert.equal(participantSkillsRoot({ ...standalone, participantLayoutRoot: () => null }, projects[0]), null);
   assert.deepEqual(skillSettings({ ...standalone, participantLayoutRoot: () => null }, projects[0]), {});
   const pluginOnly = { ...host, participantLayoutRoot: () => null, workspaceRoot: () => projects[0] };

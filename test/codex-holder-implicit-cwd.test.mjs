@@ -1,6 +1,6 @@
 import { check } from './check.mjs';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { makeSandbox, stubCommand } from './sandbox.mjs';
 import { waitFor } from './harness.mjs';
@@ -8,7 +8,7 @@ import { dropSession, holderAsk, holderLogFile, pidAlive, readSession, sessionFi
 import { rawToolReceipts } from '../lib/codex-raw-tool-receipts.js';
 import { readStopConfirmation } from '../lib/codex-command-receipts.js';
 
-const root = makeSandbox('promptobus-codex-');
+const root = realpathSync(makeSandbox('promptobus-codex-'));
 const bin = path.join(root, 'bin'); mkdirSync(bin);
 stubCommand(bin, 'codex', `
 import { appendFileSync } from 'node:fs';
@@ -20,7 +20,8 @@ for await (const line of readline.createInterface({input:process.stdin})) {
  appendFileSync(process.env.FIXTURE_TRACE, JSON.stringify({method,params})+'\\n');
  if(method==='initialize') emit([{id,result:{userAgent:'fixture'}}]);
  else if(method==='thread/start') emit([{id,result:{thread:{id:'thread'},
-   ...(process.env.FIXTURE_CWD==='missing'?{}:{cwd:process.env.FIXTURE_CWD==='foreign'?'/foreign':process.cwd()}),
+   ...(process.env.FIXTURE_CWD==='missing'?{}:{cwd:process.env.FIXTURE_CWD==='foreign'?'/foreign'
+     :process.env.FIXTURE_CWD==='alias'?process.env.FIXTURE_ALIAS_CWD:process.cwd()}),
    sandbox:{type:'readOnly'},approvalPolicy:'on-request'}}]);
  else if(method==='turn/start'||method==='review/start'||method==='turn/steer') {
   const turnId='turn-'+(++turn),callId='call-'+turn;
@@ -55,6 +56,8 @@ const selectorKeys = ['CODEX_EXEC_SERVER_URL', 'CODEX_EXEC_SERVER_NOISE_REGISTRY
   'CODEX_EXEC_SERVER_NOISE_ENVIRONMENT_ID', 'CODEX_EXEC_SERVER_NOISE_AUTH_TOKEN', 'CODEX_EXEC_SERVER_NOISE_CHATGPT_ACCOUNT_ID'];
 async function scenario(name, mutation, acceptedCwd = 'matching', startup = {}) {
   const dir = path.join(root, name); mkdirSync(dir);
+  const alias = `${dir}-alias`;
+  if (acceptedCwd === 'alias') symlinkSync(dir, alias, 'dir');
   const codexHome = path.join(dir, 'private-home');
   if (startup.home !== 'missing') mkdirSync(codexHome);
   if (startup.environmentFile === 'file') writeFileSync(path.join(codexHome, 'environments.toml'), '# Owned unproved environment configuration.\n');
@@ -63,7 +66,7 @@ async function scenario(name, mutation, acceptedCwd = 'matching', startup = {}) 
   const env = { ...process.env, PROMPTOBUS_CODEX_HOME: dir, PROMPTOBUS_CODEX_RAW_TOOL_RECEIPTS: '1',
     PROMPTOBUS_CODEX_LIMIT_MS: '20',
     CODEX_HOME: startup.home === 'mismatch' ? dir : codexHome,
-    FIXTURE_TRACE: path.join(dir, 'requests.jsonl'), FIXTURE_CWD: acceptedCwd };
+    FIXTURE_TRACE: path.join(dir, 'requests.jsonl'), FIXTURE_CWD: acceptedCwd, FIXTURE_ALIAS_CWD: alias };
   for (const key of selectorKeys) delete env[key];
   Object.assign(env, startup.selectors ?? {});
   if (startup.legacy) delete env.PROMPTOBUS_CODEX_RAW_TOOL_RECEIPTS;
@@ -136,6 +139,7 @@ async function scenario(name, mutation, acceptedCwd = 'matching', startup = {}) 
 await scenario('fixed-two-turns');
 await scenario('missing-accepted-cwd', null, 'missing');
 await scenario('foreign-accepted-cwd', null, 'foreign');
+await scenario('aliased-accepted-cwd', null, 'alias');
 for (const [name, mutation] of [
   ['cwd-override', { method: 'turn/start', params: { cwd: '/foreign' } }],
   ['environments-override', { method: 'turn/start', params: { environments: [] } }],
