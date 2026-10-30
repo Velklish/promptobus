@@ -188,6 +188,8 @@ coverage/
 /lib/service-client.d.ts
 /lib/service.js
 /lib/service.d.ts
+/lib/root-admission.js
+/lib/root-admission.d.ts
 
 # Per-run gate records written beside the worktree during a bus task — task artifacts, not source.
 /gates-*-t*-*.json

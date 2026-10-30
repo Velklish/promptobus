@@ -97,6 +97,75 @@ former product stdio entries report the migration instructions; they do not
 remain permanent fallback processes. Native BB dispatch, pause and epoch
 authority retain their existing delivery path.
 
+### Root profile admission
+
+The private owner module `lib/root-admission.ts` records explicitly approved
+native account/session-store profiles for one canonical workspace/store and
+runtime. Profile IDs are scoped names, never paths or caller authority. Repeating
+approval of the same ID and canonical native store is idempotent; changing the
+runtime or native store requires another explicitly approved ID. Possession of
+a private native store, missing role variables, public origin/parent fields and
+plugin metadata do not approve a profile.
+
+One `root-admission.lock` under the workspace/store service directory serializes
+profile approval, root admission and managed launch publication. The owner must
+call `beginManagedLaunch` with a fresh intent ID and await its persisted result
+**before any provider SDK spawn or preparation dispatch**. This operation admits
+only creation of a new BB thread; it does not authorize adoption of an existing
+thread. After spawn returns one canonical BB thread ID, the owner calls
+`completeManagedLaunch` to publish its permanent exclusion and resolve the intent
+in one transaction. Repeating completion with the same intent and thread is
+idempotent; repeating begin must not spawn again.
+
+`realizeRoot` holds that same lock across a trusted owner lookup and the awaited
+owner realization callback. The lookup receives the approved canonical scope
+and exact native generation. Its positive result must be
+`{ complete: true, eligibility: 'eligible', bbThreadId }`, with one canonical BB
+thread ID. Complete means that authoritative existing BB participant bindings
+and launch intents were read for this scope, including legacy records and every
+preparation, starting, ready, orphan and archived phase. Public native identity
+events establish correspondence, not eligibility. An empty new exclusion table
+or a negative public mapping alone cannot classify a legacy actor as unmanaged.
+An unavailable, incompatible, corrupt or ambiguous owner lookup refuses admission.
+
+The root classification is persisted before the realization callback runs and
+is retained if its outcome is uncertain. No managed publication can occur
+between complete-negative lookup and realization. The same native generation
+cannot change its BB correspondence or approved profile. Existing root adoption
+is unsupported: completion refuses a BB thread with any recorded root
+classification and retains its intent; the module has no operation that claims
+capability revocation or removes this classification.
+
+An unresolved managed intent blocks new root admission across all profiles of
+the workspace/store, even if its launching process died. An SDK exception does
+not establish that no thread or preparation dispatch occurred. The owner must
+reconcile the actual SDK outcome and complete that exact intent with the
+canonical resulting BB thread before the block is resolved. An outcome with no
+recoverable unique thread requires explicit owned inspection; no automatic
+abandon operation removes it. Completed exclusions survive phase changes,
+archival and later native generations of the same BB thread. PID death only
+permits reclaiming a proven dead process lock; it removes no classification.
+
+State is stored below `servicePaths.base`, which existing reviewer grant checks
+exclude for directory, ancestor and exact-file grants. The module uses the same
+private directory/file checks, atomic record writes and process-lock machinery
+as the service. A missing state file in an initialized admission directory,
+malformed state or nonprivate/symlinked records refuse. Darwin process birth is
+the existing `ps lstart` observation at second precision. File modes and nonces
+provide owner coordination, not cryptographic isolation from a same-UID shell.
+
+The later native guard must prove the first canonical SessionMeta, an explicitly
+permitted `cli` or `vscode` source, the exact approved native store, actual
+app-server PID/birth/nonce and singleton native binding before invoking this
+module. Its realization callback must commit the private native capability
+while the admission lock is held. The BB bridge must use the same canonical
+workspace/store and private service base for begin/completion, and include
+existing authoritative state in its complete lookup before activating profiles.
+Those integrations, native proofs, profile activation and SDK wiring are not
+implemented here; current launch paths are not protected by an unused module.
+Process fixtures establish the filesystem transaction only, not native workflow
+or physical Stop behavior.
+
 ## Consequences
 
 - Physical process count scales by workspace/store rather than client/task.
