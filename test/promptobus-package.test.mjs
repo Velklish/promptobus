@@ -1023,7 +1023,7 @@ const typed = installed.status === 0
   ? spawnSync(process.execPath, [path.join(DEPS, 'bin', 'tsc'), '-p', path.join(target, 'tsconfig.json')],
     { cwd: target, encoding: 'utf8', env })
   : { status: 1, stdout: '', stderr: 'tarball was not installed' };
-check('host integration: TypeScript reads every entry name through its declared types',
+check('host integration: TypeScript verifies the exact exported names and their declared types',
   typed.status === 0, why(typed));
 
 const invalidRuntime = path.join(COPY_ROOT, 'lib', 'type-error.ts');

@@ -178,7 +178,7 @@ If you skip trust, spawn still works, but project hooks do not run: each harness
 
 ### The three `self-wake` states
 
-Source: `lib/status.js`, `SELF_WAKE_PROGNOSIS`.
+Source: `lib/status.ts`, `SELF_WAKE_PROGNOSIS`.
 
 The warden falls back to `self-wake` from three branches and records which one in the health mark (`selfWake`, written by the round in `src/supervisor.ts`). They share a label and nothing else, so `promptobus status` prints the prognosis after the reason:
 
@@ -324,7 +324,7 @@ record too broken to read messages from has no right to lift its own report.
 
 ### The warden is a process, not a state machine
 
-Source: `lib/warden.js`.
+Source: `lib/warden.ts`.
 
 Listening on the bus is held by a process, not by model discipline: the warden is
 the only listener of every task mailbox and its only activator. On unread mail it
@@ -486,7 +486,7 @@ A pause that holds the turn stays a sleep for its whole interval.
 
 ### `wardenRound` — one watch round
 
-Source: `lib/warden.js`, `wardenRound`.
+Source: `lib/warden.ts`, `wardenRound`.
 
 A wrapper over the state machine: a session snapshot arrives here,
 the registry leaves from here. `knock` is a suite seam: a stand-in driver for one

@@ -3,12 +3,12 @@
     "fileOnly": 34,
     "citation": 48,
     "crossFile": 6,
-    "fileLevel": 55,
+    "fileLevel": 54,
     "bound": 53,
     "sameFileCitation": 11
   },
   "byFile": {
-    "lib/abandon.js": [
+    "lib/abandon.ts": [
       "../docs/reference/03-cli.md#status-done-sweep-dismiss-history"
     ],
     "lib/answers.ts": [
@@ -46,7 +46,7 @@
     "lib/dismiss.ts": [
       "../docs/reference/03-cli.md#dismiss--stop-watching-a-finished-participant"
     ],
-    "lib/done.js": [
+    "lib/done.ts": [
       "../docs/reference/03-cli.md#status-done-sweep-dismiss-history",
       "../docs/reference/03-cli.md#stopmanaged--stop-managed-sessions-of-a-closed-task",
       "../docs/reference/03-cli.md#recordtelemetry--records-for-eligible-participant-generations",
@@ -101,14 +101,11 @@
     "lib/host.ts": [
       "../docs/reference/02-host.md#the-harness-session-registry-and-the-refusal-when-nobody-says"
     ],
-    "lib/install.js": [
+    "lib/install.ts": [
       "../docs/guides/install.md#what-the-installer-knows-and-never-writes",
       "../docs/guides/install.md#2-workspace-file"
     ],
-    "lib/integration.d.ts": [
-      "../docs/reference/02-host.md#the-host-integration-entry-point"
-    ],
-    "lib/integration.js": [
+    "lib/integration.ts": [
       "../docs/reference/02-host.md#the-host-integration-entry-point"
     ],
     "lib/lease.ts": [
@@ -173,13 +170,13 @@
     "lib/model-routing/telemetry.ts": [
       "../../docs/guides/model-routing.md#participant-telemetry-the-collecting-half"
     ],
-    "lib/model-routing/validate.js": [
+    "lib/model-routing/validate.ts": [
       "../../docs/guides/model-routing.md#validate-what-a-catalog-or-an-overlay-is-refused-for",
       "../../docs/guides/model-routing.md#citationchecks--what-a-rated-row-must-carry-before-validate-accepts-it",
       "../../docs/reference/03-cli.md",
       "../../docs/guides/model-routing.md#canonical-priority"
     ],
-    "lib/models.js": [
+    "lib/models.ts": [
       "../docs/guides/model-routing.md#the-models-command-what-each-subcommand-reads-and-writes",
       "../docs/reference/03-cli.md#an-explicit-model-the-catalog-does-not-rate",
       "../docs/guides/model-routing.md#routingmetadata--the-decision-as-it-is-kept-on-the-participant",
@@ -208,7 +205,7 @@
     "lib/stalls.ts": [
       "../docs/reference/03-cli.md#stall-parsing"
     ],
-    "lib/status.js": [
+    "lib/status.ts": [
       "../src/supervisor.ts",
       "stalls.js",
       "../docs/guides/hooks-and-trust.md#the-three-self-wake-states",
@@ -219,7 +216,7 @@
       "../src/mcp/service.ts",
       "../docs/reference/04-protocol.md#artifacts"
     ],
-    "lib/sweep.js": [
+    "lib/sweep.ts": [
       "../docs/reference/03-cli.md#keptpaths--what-the-piece-sweep-must-never-take",
       "../docs/reference/03-cli.md#childof--a-path-built-from-a-record-field-stays-a-direct-child",
       "../docs/reference/03-cli.md#artifactrecords--every-record-proven-before-a-path-is-built-from-it",
@@ -229,7 +226,7 @@
       "../docs/reference/03-cli.md#sweep--clean-up-after-one-accepted-piece",
       "../docs/reference/03-cli.md#takepiece--the-destructive-stretch-under-the-journal-lock"
     ],
-    "lib/warden.js": [
+    "lib/warden.ts": [
       "../docs/guides/hooks-and-trust.md#the-warden-is-a-process-not-a-state-machine",
       "../docs/guides/hooks-and-trust.md#wardenround--one-watch-round",
       "../docs/guides/hooks-and-trust.md#wardenround--one-watch-round"

@@ -829,7 +829,7 @@ is unchanged: an expired window is still not a measurement.
 
 ### Validate: what a catalog or an overlay is refused for
 
-Source: `lib/model-routing/validate.js`.
+Source: `lib/model-routing/validate.ts`.
 
 `models validate` as a library function: what is wrong with the catalog and
 the overlays, before anything tries to route on them.
@@ -897,13 +897,13 @@ name widens the grid for every row instead of pushing one row out of it.
 
 ### The `models` command: what each subcommand reads and writes
 
-Source: `lib/models.js`.
+Source: `lib/models.ts`.
 
 `promptobus models`, and the routing gate `spawn` and `review` stand on.
 
 Everything below the command exists already as a library: the catalog and its
 overlays ([model-routing/catalog.ts](../../lib/model-routing/catalog.ts)), the checks
-behind `models validate` ([validate.js](../../lib/model-routing/validate.js)), the
+behind `models validate` ([validate.ts](../../lib/model-routing/validate.ts)), the
 budgeted preflight and the availability cache
 ([preflight.ts](../../lib/model-routing/preflight.ts),
 [cache.ts](../../lib/model-routing/cache.ts)), and the pure resolver and renderer
@@ -946,7 +946,7 @@ never reaches the file.
 
 ### `promptobus models` — what the resolver would pick right now
 
-Source: `lib/models.js`, the `models` command.
+Source: `lib/models.ts`, the `models` command.
 
 The command probes every declared harness except a sticky exhaustion by default and writes the answers to
 the cache. `--no-probe` reads cached facts without probing or writing; `--refresh`
@@ -954,7 +954,7 @@ is an explicit spelling of the default probe and cannot be combined with it.
 
 ### `availabilityOf` — the decision with the availability facts it was made on attached
 
-Source: `lib/models.js`, `availabilityOf`.
+Source: `lib/models.ts`, `availabilityOf`.
 
 The block is assembled HERE and not in the resolver, and that is the whole
 reason it exists as a separate step. `resolve` is pure — no disk, no clock of
@@ -1038,7 +1038,7 @@ is a second set of rules about it.
 
 ### `citationChecks` — what a rated row must carry before validate accepts it
 
-Source: `lib/model-routing/validate.js`, `citationChecks`.
+Source: `lib/model-routing/validate.ts`, `citationChecks`.
 
 ADR-005 § Catalog ratings from published results: "`validate` refuses a rated
 row with no source, unless the row is marked interpolated." Applied per
@@ -1210,7 +1210,7 @@ that already filled `version` is not called.
 
 ### `routingMetadata` — the decision as it is kept on the participant
 
-Source: `lib/models.js`, `routingMetadata`.
+Source: `lib/models.ts`, `routingMetadata`.
 
 Compact on purpose: the record travels into `task.json` and is read by a
 person through `promptobus status`, not replayed. What is kept is what the

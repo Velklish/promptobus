@@ -2,7 +2,7 @@
 // [guides/model-routing.md#validate-what-a-catalog-or-an-overlay-is-refused-for](../../docs/guides/model-routing.md#validate-what-a-catalog-or-an-overlay-is-refused-for)
 import { existsSync, readFileSync } from 'node:fs';
 
-import { roleEntry, SHIPPED_REGISTRY, withSteps, WORKER } from '../../dist/index.js';
+import { SHIPPED_REGISTRY, withSteps, WORKER } from '../../dist/index.js';
 import { pipelineVerdict } from '../../dist/pipeline.js';
 import { REGISTRY } from '../drivers.js';
 import { HARNESS_RE, MODEL_FLAGS } from './cache.js';
@@ -13,6 +13,42 @@ import {
   SELECTOR_KINDS, STRATEGIES, WEIGHT_STRATEGIES, mergeRouting, rulePath, rulesFor, rulesForRole, rulesLabel,
 } from './catalog.js';
 import { ratingsFor } from './resolver.js';
+
+import type { DeclaredStep, PromptobusHost } from '../../dist/index.js';
+import type { CatalogTuple, RoutingPolicy, RoutingSources } from './catalog.js';
+
+type ValidationCode = 'catalog-invalid' | 'overlay-invalid' | 'pipeline-invalid';
+type RawObject = Record<string, unknown>;
+type Push = (at: string, note: string) => number;
+type SelectorKind = typeof SELECTOR_KINDS[number];
+type Rule = RoutingSources['rules'][number];
+type MergeOptions = NonNullable<Parameters<typeof mergeRouting>[0]>;
+export interface ValidationFinding { code: ValidationCode; layer: string; at: string; message: string; rule?: string; line?: string }
+export interface ValidationWarning { code: string; message: string; layer?: string; at?: string; [key: string]: unknown }
+interface ShapeFinding { at: string; note: string }
+interface ValidationLayer {
+  id: string; path?: string; present: boolean; data: unknown; writable?: boolean;
+  failure?: { code: ValidationCode; note: string };
+}
+interface ReadValidationLayer extends ValidationLayer { path: string }
+interface ValidationVerdict { ok: boolean; errors: ValidationFinding[]; warnings: ValidationWarning[]; rules?: RoutingSources['rules'] }
+interface StackVerdict extends ValidationVerdict { layers: { id: string; path: string; present: boolean; writable: boolean }[] }
+interface Evidence { sources?: { rating?: string }[]; hypothesis?: string[]; interpolatedFrom?: string }
+interface ValidatedTuple extends Omit<CatalogTuple, 'evidence' | 'priority'> {
+  id: string; harness: string; model: string; effort: string | null; ratings: Record<string, number>;
+  roles: string[]; evidence?: string | Evidence; priority: number;
+}
+interface ValidatedCatalog { tuples: ValidatedTuple[] }
+interface ValidationLayersOptions {
+  canonical?: ValidationLayer; overlays?: ValidationLayer[]; constraints?: MergeOptions['constraints'];
+  steps?: readonly DeclaredStep[]; now?: number;
+}
+export interface ValidationOptions {
+  host?: PromptobusHost | null; constraints?: MergeOptions['constraints']; catalogFile?: string; now?: number;
+}
+interface CatalogFacts { ids: Set<string>; models: Set<string>; harnesses: Set<string>; efforts: Set<string> }
+interface SelectorBlock { tuples?: string[]; harnesses?: string[]; models?: string[]; efforts?: string[]; pools?: string[] }
+interface SelectorDocument extends SelectorBlock { byRole?: Record<string, SelectorBlock> }
 
 const TIMESTAMP_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$/;
 const TUPLE_ID_RE = /^[a-z0-9][a-z0-9.-]{0,63}$/;
@@ -54,9 +90,9 @@ const CITATION_REQUIRED = ['rating', 'basis', 'version', 'agentHarness', 'figure
 const PROMOTION_KEYS = ['validUntil', 'listFigure', 'listBand'];
 const DATE_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 
-const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
-const isRating = (v) => Number.isInteger(v) && v >= 1 && v <= 10;
-const isText = (v) => typeof v === 'string' && v.length > 0;
+const isObject = (v: unknown): v is RawObject => typeof v === 'object' && v !== null && !Array.isArray(v);
+const isRating = (v: unknown) => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 10;
+const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
 
 /** Harnesses this CLI can actually launch. A tuple naming anything else is unroutable by construction. */
 export function knownHarnesses() {
@@ -64,17 +100,17 @@ export function knownHarnesses() {
 }
 
 /** Effort levels of one harness, from that driver's own dictionary. Unknown harness — an empty list. */
-export function effortLevelsOf(harness) {
+export function effortLevelsOf(harness: string) {
   return REGISTRY.drivers[harness]?.options?.effortLevels ?? [];
 }
 
-function extras(value, allowed) {
+function extras(value: object, allowed: readonly string[]) {
   return Object.keys(value).filter((k) => !allowed.includes(k));
 }
 
 // --- grammar -----------------------------------------------------------------
 
-function checkRatings(value, at, push, { partial = false } = {}) {
+function checkRatings(value: unknown, at: string, push: Push, { partial = false } = {}) {
   if (!isObject(value)) return push(at, 'expected an object of ratings');
   const unknown = extras(value, RATING_KEYS);
   if (unknown.length) push(at, `unknown rating ${unknown.join(', ')}`);
@@ -91,14 +127,14 @@ function checkRatings(value, at, push, { partial = false } = {}) {
 
 // One citation, mirroring `citation` in the catalog schema by hand: production reads no JSON
 // Schema, and the parity check in the suite is what keeps the two from drifting.
-function checkCitation(citation, at, push) {
+function checkCitation(citation: unknown, at: string, push: Push) {
   if (!isObject(citation)) return push(at, 'expected an object');
   const unknown = extras(citation, CITATION_KEYS);
   if (unknown.length) push(at, `unknown field ${unknown.join(', ')}`);
   for (const key of CITATION_REQUIRED) {
     if (citation[key] === undefined) push(`${at}.${key}`, 'is required');
   }
-  if (citation.rating !== undefined && !RATING_KEYS.includes(citation.rating)) {
+  if (citation.rating !== undefined && !(RATING_KEYS as readonly unknown[]).includes(citation.rating)) {
     push(`${at}.rating`, `expected one of ${RATING_KEYS.join(', ')}`);
   }
   for (const key of ['basis', 'version', 'agentHarness', 'provenance', 'figure', 'url', 'listFigure']) {
@@ -133,7 +169,7 @@ function checkCitation(citation, at, push) {
 
 // The object form of `evidence` (ADR-005). The string form is the v1 shape and
 // is still lawful; a row that is neither is a shape error here.
-function checkCitedEvidence(evidence, at, push) {
+function checkCitedEvidence(evidence: unknown, at: string, push: Push) {
   if (!isObject(evidence)) return push(at, 'expected a string, or an object of { text, sources, interpolatedFrom, hypothesis }');
   const unknown = extras(evidence, EVIDENCE_KEYS);
   if (unknown.length) push(at, `unknown field ${unknown.join(', ')}`);
@@ -142,7 +178,7 @@ function checkCitedEvidence(evidence, at, push) {
     if (!Array.isArray(evidence.sources) || !evidence.sources.length) {
       push(`${at}.sources`, 'expected a non-empty array — omit it rather than writing an empty one');
     } else {
-      evidence.sources.forEach((citation, i) => checkCitation(citation, `${at}.sources[${i}]`, push));
+      (evidence.sources as unknown[]).forEach((citation, i) => checkCitation(citation, `${at}.sources[${i}]`, push));
     }
   }
   if (evidence.interpolatedFrom !== undefined
@@ -156,8 +192,8 @@ function checkCitedEvidence(evidence, at, push) {
       if (new Set(evidence.hypothesis).size !== evidence.hypothesis.length) {
         push(`${at}.hypothesis`, 'repeats a rating');
       }
-      for (const rating of evidence.hypothesis) {
-        if (!RATING_KEYS.includes(rating)) {
+      for (const rating of evidence.hypothesis as unknown[]) {
+        if (!(RATING_KEYS as readonly unknown[]).includes(rating)) {
           push(`${at}.hypothesis`, `unknown rating "${rating}" — allowed: ${RATING_KEYS.join(', ')}`);
         }
       }
@@ -166,7 +202,7 @@ function checkCitedEvidence(evidence, at, push) {
   return undefined;
 }
 
-function checkTuple(tuple, at, push) {
+function checkTuple(tuple: unknown, at: string, push: Push) {
   if (!isObject(tuple)) return push(at, 'expected an object');
   const unknown = extras(tuple, TUPLE_KEYS);
   if (unknown.length) push(at, `unknown field ${unknown.join(', ')}`);
@@ -187,8 +223,8 @@ function checkTuple(tuple, at, push) {
     if (!Array.isArray(tuple.roles) || !tuple.roles.length) push(`${at}.roles`, 'expected a non-empty array');
     else {
       if (new Set(tuple.roles).size !== tuple.roles.length) push(`${at}.roles`, 'repeats a role');
-      for (const role of tuple.roles) {
-        if (!ROLES.includes(role)) push(`${at}.roles`, `unknown role "${role}" — allowed: ${ROLES.join(', ')}`);
+      for (const role of tuple.roles as unknown[]) {
+        if (!(ROLES as readonly unknown[]).includes(role)) push(`${at}.roles`, `unknown role "${role}" — allowed: ${ROLES.join(', ')}`);
       }
     }
   }
@@ -218,10 +254,10 @@ function checkTuple(tuple, at, push) {
       }
     }
   }
-  if (tuple.billing !== undefined && !BILLING.includes(tuple.billing)) {
+  if (tuple.billing !== undefined && !(BILLING as readonly unknown[]).includes(tuple.billing)) {
     push(`${at}.billing`, `expected one of ${BILLING.join(', ')}`);
   }
-  if (tuple.priority !== undefined && !(Number.isInteger(tuple.priority) && tuple.priority >= 0)) {
+  if (tuple.priority !== undefined && !(Number.isInteger(tuple.priority) && (tuple.priority as number) >= 0)) {
     push(`${at}.priority`, 'expected an integer not below zero');
   }
   if (tuple.assessedAt !== undefined && !(isText(tuple.assessedAt) && TIMESTAMP_RE.test(tuple.assessedAt))) {
@@ -237,9 +273,9 @@ function checkTuple(tuple, at, push) {
 }
 
 /** Grammar of the shipped catalog. Returns a list of `{ at, note }`; empty means the shape holds. */
-export function checkCatalogShape(doc) {
-  const found = [];
-  const push = (at, note) => found.push({ at, note });
+export function checkCatalogShape(doc: unknown) {
+  const found: ShapeFinding[] = [];
+  const push: Push = (at, note) => found.push({ at, note });
   if (!isObject(doc)) {
     push('', 'expected an object');
     return found;
@@ -256,34 +292,34 @@ export function checkCatalogShape(doc) {
     push('tuples', 'expected a non-empty array');
     return found;
   }
-  doc.tuples.forEach((tuple, i) => checkTuple(tuple, `tuples[${i}]`, push));
+  (doc.tuples as unknown[]).forEach((tuple, i) => checkTuple(tuple, `tuples[${i}]`, push));
   return found;
 }
 
 /** `null` when the list is well formed, a marker when it is not — `checkFlagList` reads that. */
-function checkNameList(value, at, push) {
+function checkNameList(value: unknown, at: string, push: Push) {
   if (!Array.isArray(value) || !value.length) {
     push(at, 'expected a non-empty array');
     return 'shape';
   }
   if (new Set(value).size !== value.length) push(at, 'repeats a name');
-  for (const name of value) if (!isText(name)) push(at, 'expected non-empty strings');
+  for (const name of value as unknown[]) if (!isText(name)) push(at, 'expected non-empty strings');
   return undefined;
 }
 
 /** `flags` names a mark the SNAPSHOT carries — the one selector whose names are in no catalog,
  * so a typo has nothing to catch it but the closed `MODEL_FLAGS` (ADR-005). */
-function checkFlagList(value, at, push) {
+function checkFlagList(value: unknown, at: string, push: Push) {
   if (checkNameList(value, at, push) !== undefined) return undefined;
-  for (const name of value) {
-    if (!MODEL_FLAGS.includes(name)) {
+  for (const name of value as unknown[]) {
+    if (!(MODEL_FLAGS as readonly unknown[]).includes(name)) {
       push(at, `unknown flag "${name}" — a snapshot carries ${MODEL_FLAGS.join(', ')}`);
     }
   }
   return undefined;
 }
 
-function checkFlatSelectors(value, at, push, allowed) {
+function checkFlatSelectors(value: unknown, at: string, push: Push, allowed: readonly string[]) {
   if (!isObject(value)) return push(at, 'expected an object');
   if (!Object.keys(value).length) {
     return push(at, 'names no selector — an empty rule is a shape error, not "allow nothing"');
@@ -295,8 +331,8 @@ function checkFlatSelectors(value, at, push, allowed) {
     if (kind === 'flags') checkFlagList(value[kind], `${at}.${kind}`, push);
     else if (kind === 'pools') {
       if (checkNameList(value[kind], `${at}.${kind}`, push) === undefined) {
-        for (const name of value[kind]) {
-          if (!ROUTING_POOLS.includes(name)) push(`${at}.${kind}`, `unknown pool "${name}" — allowed: ${ROUTING_POOLS.join(', ')}`);
+        for (const name of value[kind] as unknown[]) {
+          if (!(ROUTING_POOLS as readonly unknown[]).includes(name)) push(`${at}.${kind}`, `unknown pool "${name}" — allowed: ${ROUTING_POOLS.join(', ')}`);
         }
       }
     } else checkNameList(value[kind], `${at}.${kind}`, push);
@@ -304,28 +340,28 @@ function checkFlatSelectors(value, at, push, allowed) {
   return undefined;
 }
 
-function checkSelectors(value, at, push, stepNames = []) {
+function checkSelectors(value: unknown, at: string, push: Push, stepNames: readonly string[] = []) {
   const done = checkFlatSelectors(value, at, push, [...SELECTOR_KINDS, 'byRole']);
-  if (done !== undefined || value.byRole === undefined) return done;
-  if (!isObject(value.byRole)) return push(`${at}.byRole`, 'expected an object keyed by role');
-  if (!Object.keys(value.byRole).length) {
+  if (done !== undefined || (value as RawObject).byRole === undefined) return done;
+  if (!isObject((value as RawObject).byRole)) return push(`${at}.byRole`, 'expected an object keyed by role');
+  if (!Object.keys((value as { byRole: object }).byRole).length) {
     return push(`${at}.byRole`, 'names no role — an empty block scopes nothing');
   }
   const allowed = [...new Set([...ROUTED_ROLES, ...stepNames])];
-  const unknownRoles = extras(value.byRole, allowed);
+  const unknownRoles = extras((value as { byRole: object }).byRole, allowed);
   for (const name of unknownRoles) {
     push(`${at}.byRole.${name}`, `unknown role or declared step "${name}" — allowed: ${allowed.join(', ')}`);
   }
   for (const role of allowed) {
-    if (!Object.hasOwn(value.byRole, role)) continue;
+    if (!Object.hasOwn((value as { byRole: object }).byRole, role)) continue;
     // No `byRole` inside `byRole`: a rule is scoped to one role or to none, and
     // a second nesting would be a role that is also another role.
-    checkFlatSelectors(value.byRole[role], `${at}.byRole.${role}`, push, SELECTOR_KINDS);
+    checkFlatSelectors((value as { byRole: RawObject }).byRole[role], `${at}.byRole.${role}`, push, SELECTOR_KINDS);
   }
   return undefined;
 }
 
-function checkIdMap(value, at, push, checkValue) {
+function checkIdMap(value: unknown, at: string, push: Push, checkValue: (entry: unknown, at: string) => unknown) {
   if (!isObject(value)) return push(at, 'expected an object keyed by tuple id');
   if (!Object.keys(value).length) return push(at, 'is empty — remove it instead');
   for (const [id, entry] of Object.entries(value)) {
@@ -336,9 +372,9 @@ function checkIdMap(value, at, push, checkValue) {
 }
 
 /** Grammar of one overlay. Every field is optional except `schemaVersion`. */
-export function checkOverlayShape(doc, stepNames = []) {
-  const found = [];
-  const push = (at, note) => found.push({ at, note });
+export function checkOverlayShape(doc: unknown, stepNames: readonly string[] = []) {
+  const found: ShapeFinding[] = [];
+  const push: Push = (at, note) => found.push({ at, note });
   if (!isObject(doc)) {
     push('', 'expected an object');
     return found;
@@ -382,7 +418,7 @@ export function checkOverlayShape(doc, stepNames = []) {
       }
     }
   }
-  for (const [field, keys] of [['penalties', PENALTY_KEYS], ['bonuses', BONUS_KEYS]]) {
+  for (const [field, keys] of [['penalties', PENALTY_KEYS], ['bonuses', BONUS_KEYS]] as const) {
     if (doc[field] === undefined) continue;
     if (!isObject(doc[field])) {
       push(field, 'expected an object');
@@ -453,7 +489,7 @@ export function checkOverlayShape(doc, stepNames = []) {
       if (!Object.keys(doc.defaults).length) push('defaults', 'names no key — an empty block changes nothing');
       const unknownKeys = extras(doc.defaults, DEFAULTS_KEYS);
       if (unknownKeys.length) push('defaults', `unknown key ${unknownKeys.join(', ')}`);
-      if (doc.defaults.strategy !== undefined && !STRATEGIES.includes(doc.defaults.strategy)) {
+      if (doc.defaults.strategy !== undefined && !(STRATEGIES as readonly unknown[]).includes(doc.defaults.strategy)) {
         push('defaults.strategy', `expected one of ${STRATEGIES.join(', ')} — `
           + '"auto" is not one of them: classifying a task into a strategy is the agent\'s decision');
       }
@@ -477,7 +513,7 @@ export function checkOverlayShape(doc, stepNames = []) {
           if (!HARNESS_RE.test(harness)) push(`caps.${kind}.${harness}`, `key does not match ${HARNESS_RE.source}`);
           // Zero is lawful and is why the minimum is zero: it is a person saying "never this
           // harness", and demanding a positive number would refuse the clearest thing said.
-          if (!(Number.isInteger(value) && value >= 0)) {
+          if (!(Number.isInteger(value) && (value as number) >= 0)) {
             push(`caps.${kind}.${harness}`, 'expected an integer not below zero — a count of participants, and 0 means never');
           }
         }
@@ -507,7 +543,7 @@ export function checkOverlayShape(doc, stepNames = []) {
           } else {
             for (const [kind, value] of Object.entries(block.capacity)) {
               if (!WINDOW_KINDS.includes(kind)) push(`${at}.${kind}`, `unknown window kind — allowed: ${WINDOW_KINDS.join(', ')}`);
-              if (!(Number.isFinite(value) && value > 0 && value <= 1e9))
+              if (!(Number.isFinite(value) && (value as number) > 0 && (value as number) <= 1e9))
                 push(`${at}.${kind}`, 'expected a positive finite capacity at most 1000000000');
             }
           }
@@ -518,9 +554,9 @@ export function checkOverlayShape(doc, stepNames = []) {
         if (block.allowance !== undefined) {
           const at = `account.${harness}.allowance`;
           const allowance = block.allowance;
-          const monthly = allowance?.monthlyTokens;
+          const monthly = (allowance as { monthlyTokens?: unknown } | null)?.monthlyTokens;
           if (!isObject(allowance) || extras(allowance, ['monthlyTokens']).length
-            || !Number.isInteger(monthly) || monthly < 1 || monthly > 1e15) {
+            || !Number.isInteger(monthly) || (monthly as number) < 1 || (monthly as number) > 1e15) {
             push(at, 'expected { monthlyTokens }: a positive integer of tokens, at most 1000000000000000');
           }
         }
@@ -543,7 +579,7 @@ export function checkOverlayShape(doc, stepNames = []) {
   }
   if (doc.priority !== undefined) {
     checkIdMap(doc.priority, 'priority', push, (entry, at) => {
-      if (!(Number.isInteger(entry) && entry >= 0)) push(at, 'expected an integer not below zero');
+      if (!(Number.isInteger(entry) && (entry as number) >= 0)) push(at, 'expected an integer not below zero');
     });
   }
   if (doc.payg !== undefined) {
@@ -562,23 +598,23 @@ export function checkOverlayShape(doc, stepNames = []) {
 // --- the verdict -------------------------------------------------------------
 
 function collector() {
-  const errors = [];
-  const warnings = [];
+  const errors: ValidationFinding[] = [];
+  const warnings: ValidationWarning[] = [];
   return {
     errors,
     warnings,
     // `message`, not the internal `note`: the verdict shares a vocabulary with the decision
     // document. `rule` names the CHECK that fired and is not a second error code.
-    error: (code, layer, at, message, rule = null) => errors.push({
+    error: (code: ValidationCode, layer: string, at: string, message: string, rule: string | null = null) => errors.push({
       code, layer, at, message, ...(rule ? { rule } : {}),
     }),
-    warn: (entry) => warnings.push(entry),
+    warn: (entry: ValidationWarning) => warnings.push(entry),
   };
 }
 
-function referenceChecks(out, layer, doc, catalogFacts, stepNames) {
+function referenceChecks(out: ReturnType<typeof collector>, layer: ValidationLayer, doc: RawObject, catalogFacts: CatalogFacts, stepNames: readonly string[]) {
   const { ids, models, harnesses, efforts } = catalogFacts;
-  const bad = (at, note) => out.error('overlay-invalid', layer.id, at, note);
+  const bad = (at: string, note: string) => out.error('overlay-invalid', layer.id, at, note);
   for (const field of ['ratings', 'priority']) {
     if (!isObject(doc[field])) continue;
     for (const id of Object.keys(doc[field])) {
@@ -590,10 +626,10 @@ function referenceChecks(out, layer, doc, catalogFacts, stepNames) {
   for (const rule of ['allow', 'deny']) {
     const selectors = doc[rule];
     if (!isObject(selectors)) continue;
-    const blocks = [[selectors, `${rule}`]];
+    const blocks: [SelectorBlock, string][] = [[selectors as SelectorDocument, `${rule}`]];
     if (isObject(selectors.byRole)) {
       for (const role of [...new Set([...ROUTED_ROLES, ...stepNames])]) {
-        if (isObject(selectors.byRole[role])) blocks.push([selectors.byRole[role], `${rule}.byRole.${role}`]);
+        if (isObject(selectors.byRole[role])) blocks.push([selectors.byRole[role] as SelectorBlock, `${rule}.byRole.${role}`]);
       }
     }
     for (const [block, at] of blocks) {
@@ -614,7 +650,7 @@ function referenceChecks(out, layer, doc, catalogFacts, stepNames) {
         }
       }
       for (const name of block.pools ?? []) {
-        if (!ROUTING_POOLS.includes(name)) {
+        if (!(ROUTING_POOLS as readonly unknown[]).includes(name)) {
           bad(`${at}.pools`, `unknown pool "${name}" — allowed: cursor:auto, cursor:api`);
         }
       }
@@ -624,7 +660,7 @@ function referenceChecks(out, layer, doc, catalogFacts, stepNames) {
 
 /** A name one layer allows and another denies, over rule PAIRS: only a rule that is in a file
  * gives an `at` that exists. `layer` is the DENY half, because deny is applied last. */
-function shadowChecks(out, sources, kind, stepRoles) {
+function shadowChecks(out: ReturnType<typeof collector>, sources: RoutingSources, kind: SelectorKind, stepRoles: Record<string, string | null>) {
   const allowRules = rulesFor(sources, { rule: 'allow', kind, role: null });
   const denyRules = rulesFor(sources, { rule: 'deny', kind, role: null });
   allowRules.push(...(sources.rules ?? []).filter((r) => r.rule === 'allow' && r.kind === kind && r.role !== null));
@@ -668,16 +704,16 @@ function shadowChecks(out, sources, kind, stepRoles) {
 
 /** The two set-level checks, over the lists in force. `at` is the path of the last rule that
  * made up the half being reported, so it names a line that exists. */
-function setChecksForKind(out, policy, sources, kind, role, step = role) {
+function setChecksForKind(out: ReturnType<typeof collector>, policy: RoutingPolicy, sources: RoutingSources, kind: SelectorKind, role: string | null, step = role) {
   const effective = role === null
     ? { allow: policy.allow ?? {}, deny: policy.deny ?? {} }
-    : rulesForRole(policy, role, step);
+    : rulesForRole(policy, role, step!);
   const allow = effective.allow?.[kind];
   const deny = effective.deny?.[kind] ?? [];
   const allowRules = rulesFor(sources, { rule: 'allow', kind, role, step });
   const denyRules = rulesFor(sources, { rule: 'deny', kind, role, step });
   const scope = role === null ? '' : ` when routing the ${step}`;
-  const at = (rules, fallback) => (rules.length ? rulePath(rules[rules.length - 1]) : fallback);
+  const at = (rules: Rule[], fallback: string) => (rules.length ? rulePath(rules[rules.length - 1]) : fallback);
 
   // Two layers narrowing different ways intersect to nothing, and every tuple is then denied
   // by files that both say "allow". Without this the symptom is an unexplained empty set.
@@ -699,7 +735,7 @@ function setChecksForKind(out, policy, sources, kind, role, step = role) {
 
 /** The allow and deny lists of the merged policy under ADR-005's merge: the pairwise check per
  * kind over the rules, the set-level ones over the lists in force, per role where scoped. */
-function contradictionChecks(out, policy, sources, stepRoles) {
+function contradictionChecks(out: ReturnType<typeof collector>, policy: RoutingPolicy, sources: RoutingSources, stepRoles: Record<string, string | null>) {
   const scoped = new Set((sources.rules ?? []).filter((r) => r.role !== null).map((r) => r.kind));
   for (const kind of SELECTOR_KINDS) {
     shadowChecks(out, sources, kind, stepRoles);
@@ -714,7 +750,7 @@ function contradictionChecks(out, policy, sources, stepRoles) {
   }
 }
 
-function weightChecks(out, policy, sources) {
+function weightChecks(out: ReturnType<typeof collector>, policy: RoutingPolicy, sources: RoutingSources) {
   for (const name of WEIGHT_STRATEGIES) {
     const from = sources.weights?.[name] ?? DEFAULTS_LAYER;
     const set = policy.weights?.[name];
@@ -729,7 +765,7 @@ function weightChecks(out, policy, sources) {
   }
 }
 
-function catalogSemantics(out, tuples) {
+function catalogSemantics(out: ReturnType<typeof collector>, tuples: ValidatedTuple[]) {
   const seen = new Set();
   for (const tuple of tuples) {
     if (!isText(tuple?.id)) continue;
@@ -755,18 +791,18 @@ function catalogSemantics(out, tuples) {
 
 // What a rated row must carry before validate accepts it.
 // [guides/model-routing.md#citationchecks--what-a-rated-row-must-carry-before-validate-accepts-it](../../docs/guides/model-routing.md#citationchecks--what-a-rated-row-must-carry-before-validate-accepts-it)
-function citationChecks(out, tuples) {
+function citationChecks(out: ReturnType<typeof collector>, tuples: ValidatedTuple[]) {
   const byId = new Map(tuples.filter((t) => isText(t?.id)).map((t) => [t.id, t]));
   for (const tuple of tuples) {
     // A row with NO `evidence` is the case this check most needs: the field is optional, so
     // "no citation" and "no field" would otherwise be one document with two verdicts.
     const evidence = tuple?.evidence === undefined ? {} : tuple.evidence;
     if (!isObject(evidence)) continue;
-    const cited = new Set((evidence.sources ?? []).map((c) => c?.rating));
-    const supposed = new Set(evidence.hypothesis ?? []);
+    const cited = new Set(((evidence.sources ?? []) as { rating?: string }[]).map((c) => c?.rating));
+    const supposed = new Set((evidence.hypothesis ?? []) as string[]);
     const interpolated = isText(evidence.interpolatedFrom);
     if (interpolated) {
-      const origin = byId.get(evidence.interpolatedFrom);
+      const origin = byId.get(evidence.interpolatedFrom as string);
       if (!origin) {
         out.error('catalog-invalid', 'catalog', `tuples.${tuple.id}.evidence.interpolatedFrom`,
           `no tuple with id "${evidence.interpolatedFrom}" — an interpolated row is exempt from citing `
@@ -802,31 +838,31 @@ function citationChecks(out, tuples) {
 
 // Which layer a merged-catalog warning belongs to: the highest-precedence one
 // among the values that raised it ([03-cli](../../docs/reference/03-cli.md)).
-function provenanceOf(sources, appliedOverlays) {
+function provenanceOf(sources: RoutingSources, appliedOverlays: string[]) {
   const rank = new Map([[CATALOG_LAYER, 0]]);
   appliedOverlays.forEach((id, index) => rank.set(id, index + 1));
-  const top = (ids) => ids.reduce(
+  const top = (ids: string[]) => ids.reduce(
     (best, id) => ((rank.get(id) ?? 0) > (rank.get(best) ?? 0) ? id : best), CATALOG_LAYER,
   );
   // `Object.hasOwn` for the reason the merge writes these maps with it: the
   // tuple-id grammar admits `constructor`.
-  const ofPriority = (id) => (Object.hasOwn(sources?.priority ?? {}, id) ? sources.priority[id] : CATALOG_LAYER);
-  const ofRating = (id, rating) => {
+  const ofPriority = (id: string | null) => (Object.hasOwn(sources?.priority ?? {}, id as PropertyKey) ? sources.priority[id as string] : CATALOG_LAYER);
+  const ofRating = (id: string, rating: string) => {
     const row = Object.hasOwn(sources?.ratings ?? {}, id) ? sources.ratings[id] : null;
     return row && Object.hasOwn(row, rating) ? row[rating] : CATALOG_LAYER;
   };
   return {
-    priority: (...ids) => top(ids.map(ofPriority)),
-    rating: (rating, ...ids) => top(ids.map((id) => ofRating(id, rating))),
-    ratings: (...ids) => top(ids.flatMap((id) => RATING_KEYS.map((rating) => ofRating(id, rating)))),
-    top: (...ids) => top(ids),
+    priority: (...ids: (string | null)[]) => top(ids.map(ofPriority)),
+    rating: (rating: string, ...ids: string[]) => top(ids.map((id) => ofRating(id, rating))),
+    ratings: (...ids: string[]) => top(ids.flatMap((id) => RATING_KEYS.map((rating) => ofRating(id, rating)))),
+    top: (...ids: string[]) => top(ids),
   };
 }
 
 // Canonical priority is a documented convention, not a schema rule, and a catalog that breaks
 // it still routes — [guides/model-routing.md](../../docs/guides/model-routing.md#canonical-priority).
-function priorityChecks(out, tuples, layers) {
-  const byPriority = new Map();
+function priorityChecks(out: ReturnType<typeof collector>, tuples: ValidatedTuple[], layers: ReturnType<typeof provenanceOf>) {
+  const byPriority = new Map<number, string>();
   for (const tuple of tuples) {
     if (!Number.isInteger(tuple?.priority)) continue;
     if (byPriority.has(tuple.priority)) {
@@ -834,7 +870,7 @@ function priorityChecks(out, tuples, layers) {
         code: 'priority-duplicate',
         priority: tuple.priority,
         tupleIds: [byPriority.get(tuple.priority), tuple.id],
-        layer: layers.priority(byPriority.get(tuple.priority), tuple.id),
+        layer: layers.priority(byPriority.get(tuple.priority)!, tuple.id),
         message: `tuples "${byPriority.get(tuple.priority)}" and "${tuple.id}" share canonical priority `
           + `${tuple.priority}, so the tie-break falls through to the tuple id`,
       });
@@ -842,14 +878,14 @@ function priorityChecks(out, tuples, layers) {
   }
 
   const order = knownHarnesses();
-  const groups = new Map();
+  const groups = new Map<string, ValidatedTuple[]>();
   for (const tuple of tuples) {
     if (!isText(tuple?.harness) || !Number.isInteger(tuple?.priority)) continue;
     if (!groups.has(tuple.harness)) groups.set(tuple.harness, []);
-    groups.get(tuple.harness).push(tuple);
+    groups.get(tuple.harness)!.push(tuple);
   }
   let ceiling = -1;
-  let ceilingId = null;
+  let ceilingId: string | null = null;
   for (const harness of order) {
     const group = groups.get(harness);
     if (!group?.length) continue;
@@ -887,23 +923,23 @@ function priorityChecks(out, tuples, layers) {
 
 /** Keep launchable effort rungs even when the 1–10 bands cannot tell them apart, but make the
  * tie visible. `interpolatedFrom` is the ladder identity — Cursor puts effort in the id. */
-function ladderChecks(out, tuples, layers) {
-  const groups = new Map();
+function ladderChecks(out: ReturnType<typeof collector>, tuples: ValidatedTuple[], layers: ReturnType<typeof provenanceOf>) {
+  const groups = new Map<string, ValidatedTuple[]>();
   for (const tuple of tuples) {
-    const root = isText(tuple?.evidence?.interpolatedFrom) ? tuple.evidence.interpolatedFrom : tuple?.id;
+    const root = isText((tuple?.evidence as Evidence | undefined)?.interpolatedFrom) ? (tuple.evidence as Evidence).interpolatedFrom! : tuple?.id;
     if (!isText(root)) continue;
     if (!groups.has(root)) groups.set(root, []);
-    groups.get(root).push(tuple);
+    groups.get(root)!.push(tuple);
   }
   for (const rows of groups.values()) {
-    const seen = new Map();
+    const seen = new Map<string, ValidatedTuple>();
     for (const tuple of rows.sort((a, b) => a.priority - b.priority)) {
       const signature = JSON.stringify([tuple.ratings, [...(tuple.roles ?? [])].sort()]);
       if (!seen.has(signature)) {
         seen.set(signature, tuple);
         continue;
       }
-      const first = seen.get(signature);
+      const first = seen.get(signature)!;
       out.warn({
         code: 'ladder-indistinguishable',
         tupleIds: [first.id, tuple.id],
@@ -918,16 +954,16 @@ function ladderChecks(out, tuples, layers) {
 }
 
 /** Assessed roles are conferred by a qualifying base row, never by upward interpolation. */
-function assessedRoleChecks(out, tuples) {
+function assessedRoleChecks(out: ReturnType<typeof collector>, tuples: ValidatedTuple[]) {
   const byId = new Map(tuples.filter((t) => isText(t?.id)).map((t) => [t.id, t]));
   for (const tuple of tuples) {
     for (const role of ASSESSED_ROLES) {
       if (!tuple?.roles?.includes(role)) continue;
       const floor = DEFAULT_POLICY.qualityFloor[role];
-      const baseId = isText(tuple.evidence?.interpolatedFrom) ? tuple.evidence.interpolatedFrom : tuple.id;
+      const baseId = isText((tuple.evidence as Evidence | undefined)?.interpolatedFrom) ? (tuple.evidence as Evidence).interpolatedFrom! : tuple.id;
       const base = byId.get(baseId);
-      const tupleQuality = ratingsFor(tuple, role).quality ?? 0;
-      const baseQuality = base ? (ratingsFor(base, role).quality ?? 0) : 0;
+      const tupleQuality = ratingsFor(tuple as CatalogTuple, role).quality ?? 0;
+      const baseQuality = base ? (ratingsFor(base as CatalogTuple, role).quality ?? 0) : 0;
       if (baseQuality < floor || tupleQuality < floor) {
         out.error('catalog-invalid', 'catalog', `tuples.${tuple.id}.roles`,
           `${role} requires this tuple (effective quality ${tupleQuality}) and its assessed base row "${baseId}" `
@@ -940,36 +976,36 @@ function assessedRoleChecks(out, tuples) {
 
 /** Validate a stack already in memory. Pure. The grammar gate is deliberate: semantic checks
  * run only on layers whose shape held, or a broken file answers with a stack trace. */
-export function validateLayers({ canonical, overlays = [], constraints = null, steps = [], now = Date.now() } = {}) {
+export function validateLayers({ canonical, overlays = [], constraints = null, steps = [], now = Date.now() }: ValidationLayersOptions = {}): ValidationVerdict {
   const out = collector();
   const registry = withSteps(SHIPPED_REGISTRY, steps);
   const stepNames = registry.entries.filter((entry) => entry.layer === 'step').map((entry) => entry.name);
   const stepRoles = Object.fromEntries(registry.entries.filter((entry) => entry.layer === 'step'
-    && !ROUTED_ROLES.includes(entry.name)).map((entry) => [entry.name, entry.catalogRole]));
+    && !(ROUTED_ROLES as readonly string[]).includes(entry.name)).map((entry) => [entry.name, entry.catalogRole]));
   const catalogShape = checkCatalogShape(canonical?.data);
   for (const { at, note } of catalogShape) {
     out.error('catalog-invalid', 'catalog', at, note);
   }
 
-  const sound = [];
+  const sound: (ValidationLayer & { data: RawObject })[] = [];
   for (const layer of overlays) {
     if (!layer.present) continue;
     const shape = checkOverlayShape(layer.data, stepNames);
     for (const { at, note } of shape) out.error('overlay-invalid', layer.id, at, note);
-    if (!shape.length) sound.push(layer);
+    if (!shape.length) sound.push(layer as ValidationLayer & { data: RawObject });
   }
 
   if (catalogShape.length) return { ok: false, errors: out.errors, warnings: out.warnings };
 
-  catalogSemantics(out, canonical.data.tuples);
-  citationChecks(out, canonical.data.tuples);
-  assessedRoleChecks(out, canonical.data.tuples);
+  catalogSemantics(out, (canonical!.data as ValidatedCatalog).tuples);
+  citationChecks(out, (canonical!.data as ValidatedCatalog).tuples);
+  assessedRoleChecks(out, (canonical!.data as ValidatedCatalog).tuples);
 
   let merged;
   try {
-    merged = mergeRouting({ canonical: canonical.data, overlays: sound, constraints, stepNames, now });
+    merged = mergeRouting({ canonical: canonical!.data as MergeOptions['canonical'], overlays: sound, constraints, stepNames, now });
   } catch (err) {
-    out.error('overlay-invalid', 'merge', '', err.message);
+    out.error('overlay-invalid', 'merge', '', (err as Error).message);
     return { ok: false, errors: out.errors, warnings: out.warnings };
   }
 
@@ -1016,8 +1052,8 @@ export function validateLayers({ canonical, overlays = [], constraints = null, s
   }
   contradictionChecks(out, merged.policy, merged.sources, stepRoles);
   const layers = provenanceOf(merged.sources, merged.appliedOverlays);
-  priorityChecks(out, merged.tuples, layers);
-  ladderChecks(out, merged.tuples, layers);
+  priorityChecks(out, merged.tuples as ValidatedTuple[], layers);
+  ladderChecks(out, merged.tuples as ValidatedTuple[], layers);
   for (const warning of merged.warnings) out.warn(warning);
 
   // `rules` travels with the verdict because `models validate` prints the bans in force and
@@ -1029,7 +1065,7 @@ export function validateLayers({ canonical, overlays = [], constraints = null, s
 
 /** The routing stack and the host's pipeline declaration, each finding in one list; `pipeline` is the
  * steps in order, `null` when the declaration is refused. */
-export function validate(options = {}) {
+export function validate(options: ValidationOptions = {}): StackVerdict & { pipeline: readonly DeclaredStep[] | null } {
   const { steps, findings } = pipelineVerdict(options.host);
   const verdict = validateStack({ ...options, steps: steps ?? [] });
   if (!findings.length) return { ...verdict, pipeline: steps };
@@ -1038,13 +1074,13 @@ export function validate(options = {}) {
 
 /** Read the shipped catalog and every overlay the host names, then validate. Unreadable JSON is
  * a finding, not a throw: this is the command a person runs when a file is broken. */
-function validateStack({ host, constraints = null, catalogFile = CATALOG_FILE, steps = [], now = Date.now() } = {}) {
-  const read = (file, id, code) => {
+function validateStack({ host, constraints = null, catalogFile = CATALOG_FILE, steps = [], now = Date.now() }: ValidationOptions & { steps?: readonly DeclaredStep[] } = {}): StackVerdict {
+  const read = (file: string, id: string, code: ValidationCode): ReadValidationLayer => {
     if (!existsSync(file)) return { id, path: file, present: false, data: null };
     try {
       return { id, path: file, present: true, data: JSON.parse(readFileSync(file, 'utf8')) };
     } catch (err) {
-      return { id, path: file, present: true, data: null, failure: { code, note: err.message } };
+      return { id, path: file, present: true, data: null, failure: { code, note: (err as Error).message } };
     }
   };
 
@@ -1091,7 +1127,7 @@ function validateStack({ host, constraints = null, catalogFile = CATALOG_FILE, s
     return {
       ok: false,
       layers,
-      errors: broken.map((l) => ({ code: l.failure.code, layer: l.id, at: '', message: `not valid JSON: ${l.failure.note}` })),
+      errors: broken.map((l) => ({ code: l.failure!.code, layer: l.id, at: '', message: `not valid JSON: ${l.failure!.note}` })),
       warnings: [],
     };
   }

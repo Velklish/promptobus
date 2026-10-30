@@ -7,6 +7,13 @@ import {
 import type { InstallPlan, InstallPlanHost, RoutingDiagnosis } from 'promptobus/integration';
 import { createStandaloneHost } from 'promptobus/host';
 
+const declaredExports: typeof import('promptobus/integration') = {
+  BRANCH_CHANGED_MARK, DRIVER_DECLARATIONS, INSTALL_TARGETS, KNOCK_TEXT_MAX, MAILBOX_UNREAD_MARK, PACKAGE_VERSION,
+  PROMPTOBUS_TOOLS, PROTOCOL_VERSIONS, PRUNE_DEFAULT_DAYS, SKILL_OWNERSHIP_MARKER, WORKTREE_BRANCH_TEMPLATE,
+  checkWake, npmCiCommand, packageSkills, planHookInstall,
+  routingDiagnosis,
+};
+
 const printed: string[] = [
   PACKAGE_VERSION, MAILBOX_UNREAD_MARK, BRANCH_CHANGED_MARK, WORKTREE_BRANCH_TEMPLATE, SKILL_OWNERSHIP_MARKER,
   npmCiCommand(), ...PROMPTOBUS_TOOLS, ...PROTOCOL_VERSIONS,
@@ -28,4 +35,4 @@ const wake: Promise<boolean> = checkWake('codex', {}).then((probe) => probe.ok &
 const report: Promise<RoutingDiagnosis['skipped']> = routingDiagnosis(createStandaloneHost({}), { now: 0 })
   .then((diagnosis) => diagnosis.skipped);
 
-export { printed, limits, effort, denies, targets, skills, plan, wake, report };
+export { declaredExports, printed, limits, effort, denies, targets, skills, plan, wake, report };

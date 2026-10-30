@@ -13,6 +13,16 @@ import {
 import { driverOrLift, forgetSessions, knockRegistry, REGISTRY, snapshotOf } from './drivers.js';
 import { stallLine } from './status.js';
 
+import { coreRegistry } from './driver-runtime.js';
+import type { FSWatcher } from 'node:fs';
+import type { PromptobusHost, SessionSnapshot } from '../dist/index.js';
+
+type Knock = Parameters<typeof knockRegistry>[0];
+interface RoundOptions { now?: number; knock?: Knock; sessions?: SessionSnapshot }
+interface ReportStallsOptions extends RoundOptions { host?: PromptobusHost | null }
+interface WardenOptions { host?: PromptobusHost | null; task?: string | null }
+interface EnsureWardenOptions { env?: NodeJS.ProcessEnv; launch?: typeof launchWarden; host?: PromptobusHost | null }
+
 // The warden is a process, not a state machine.
 // [guides/hooks-and-trust.md#the-warden-is-a-process-not-a-state-machine](../docs/guides/hooks-and-trust.md#the-warden-is-a-process-not-a-state-machine)
 
@@ -28,39 +38,39 @@ export { beatRound, liveWatched } from '../dist/index.js';
 
 // One watch round.
 // [guides/hooks-and-trust.md#wardenround--one-watch-round](../docs/guides/hooks-and-trust.md#wardenround--one-watch-round)
-export function wardenRound(home, task, { now = Date.now(), knock = null, sessions = null } = {}) {
-  return supervisorRound(home, task, { now, sessions, registry: knockRegistry(knock), mailboxes: participantSlots(home, task) });
+export function wardenRound(home: string, task: string, { now = Date.now(), knock = null, sessions = null }: RoundOptions = {}) {
+  return supervisorRound(home, task, { now, sessions, registry: coreRegistry(knockRegistry(knock)), mailboxes: participantSlots(home, task) });
 }
 
 /** A knocked session is looked at again at once, past the heartbeat's session-list cache, so a refusal
  * naming a reset holds the next knock — 03-cli § Guard and warden. `snapshot` is the suite's seam. */
-export function reinspectKnocked(home, task, sessions, knocked, snapshot = snapshotOf) {
+export function reinspectKnocked(home: string, task: string, sessions: SessionSnapshot, knocked: readonly string[], snapshot = snapshotOf) {
   if (!knocked.length || !sessions) return sessions;
   forgetSessions();
-  const again = snapshot(readTask(home, task).participants.filter((p) => knocked.includes(addressOf(p))));
+  const again = snapshot(readTask(home, task).participants.filter((p) => knocked.includes(addressOf(p)!)));
   return again ? { ...sessions, ...again } : sessions;
 }
 
 /** Participant stalls: fresh ones go to the journal. The one postcard is a named reset's, sent to
  * the orchestrator once per sighting — 03-cli § Guard and warden. */
-export async function reportStalls(home, task, {
+export async function reportStalls(home: string, task: string, {
   sessions = undefined, now = Date.now(), host = null, knock = null,
-} = {}) {
+}: ReportStallsOptions = {}) {
   const mailboxes = participantSlots(home, task);
   const fresh = await stallRound(home, task, {
     now,
     sessions: sessions === undefined ? snapshotOf(readTask(home, task).participants) : sessions,
     mailboxes,
   });
-  const reported = await reportResets(home, task, fresh, { registry: knockRegistry(knock), now, mailboxes });
+  const reported = await reportResets(home, task, fresh, { registry: coreRegistry(knockRegistry(knock)), now, mailboxes });
   return [...fresh.map((s) => stallLine(s, task, host)), ...reported];
 }
 
 // Wake on `fs.watch` on top of polling: the event arrives in milliseconds, and polling
 // backs it up — on network and virtual filesystems `fs.watch` silently drops events.
-function watchInboxes(home, task, addrs) {
-  const watchers = [];
-  let wake = null;
+function watchInboxes(home: string, task: string, addrs: readonly string[]) {
+  const watchers: FSWatcher[] = [];
+  let wake: (() => void) | null = null;
   for (const dir of watchedDirs(home, task, addrs)) {
     try {
       mkdirSync(dir, { recursive: true });
@@ -77,8 +87,8 @@ function watchInboxes(home, task, addrs) {
   }
   return {
     addrs: watchKey(home, task, addrs),
-    next(ms) {
-      return new Promise((resolve) => {
+    next(ms: number) {
+      return new Promise<void>((resolve) => {
         const t = setTimeout(() => {
           wake = null;
           resolve();
@@ -102,25 +112,25 @@ function watchInboxes(home, task, addrs) {
 }
 
 // The inbox directories this warden counts: every slot of each primary address, none of an alias.
-function watchedDirs(home, task, addrs) {
+function watchedDirs(home: string, task: string, addrs: readonly string[]) {
   return [...new Set(addrs.flatMap((addr) => {
     const box = mailboxOf(home, task, addr);
     return box.alias ? [] : box.slots.map((slot) => inboxDir(home, slot.task, slot.address));
   }))];
 }
 
-function watchKey(home, task, addrs) {
+function watchKey(home: string, task: string, addrs: readonly string[]) {
   return watchedDirs(home, task, addrs).sort().join(',');
 }
 
 // Started as a separate detached process without streams: it must outlive the command that
 // started it, up to a Stop hook that lives a fraction of a second.
-function wardenArgv(host, task) {
+function wardenArgv(host: PromptobusHost, task: string) {
   return { node: host.nodePath(), argv: host.busArgv(['warden', '--task', task]) };
 }
 
-function launchWarden(home, task, env, host) {
-  const clean = { ...env, PROMPTOBUS_HOME: home };
+function launchWarden(home: string, task: string, env: NodeJS.ProcessEnv, host: PromptobusHost) {
+  const clean: NodeJS.ProcessEnv = { ...env, PROMPTOBUS_HOME: home };
   delete clean.PROMPTOBUS_ROLE;
   delete clean.PROMPTOBUS_TASK;
   delete clean.CLAUDE_CODE_MESSAGING_SOCKET;
@@ -137,7 +147,7 @@ function launchWarden(home, task, env, host) {
 
 // Auto-start trace for the suite; the warden journal will not do — it sits in the sandbox
 // the test tears down. Written at the decision, not inside the detached process.
-function traceLaunch(env, line) {
+function traceLaunch(env: NodeJS.ProcessEnv | null | undefined, line: string) {
   const file = env?.PROMPTOBUS_WARDEN_TRACE;
   if (!file) return;
   try {
@@ -155,7 +165,7 @@ export function wardenOff(env = process.env) {
 
 // "Is the warden alive? No — start it." Called by commands that already walk the bus;
 // `status` only reads. Silent on any surprise: a safety net may not drop a spawn or a turn.
-export function ensureWarden(home, task, { env = process.env, launch = launchWarden, host } = {}) {
+export function ensureWarden(home: string, task: string, { env = process.env, launch = launchWarden, host }: EnsureWardenOptions = {}) {
   if (host == null) throw new Error('ensureWarden: host is required');
   try {
     if (wardenOff(env)) return null;
@@ -171,12 +181,12 @@ export function ensureWarden(home, task, { env = process.env, launch = launchWar
 
 // This session's contact point to EVERY active task it owns as `orchestrator`: the socket follows
 // the session, not the binding — 03-cli § Guard and warden.
-export function handOverContactPoints(home, { env = process.env, session = sessionIdentity() } = {}) {
+export function handOverContactPoints(home: string, { env = process.env, session = sessionIdentity() } = {}) {
   const taken = [];
   try {
     for (const meta of orchestratedTasks(home, session)) {
       const driver = driverOrLift(participantOf(readTask(home, meta.id), ORCHESTRATOR));
-      if (driver.registerWake(home, meta.id, ORCHESTRATOR, env, session)) taken.push(meta.id);
+      if (driver.registerWake!(home, meta.id, ORCHESTRATOR, env, session)) taken.push(meta.id);
     }
   } catch {
     // A safety net may not drop a command or a turn.
@@ -186,7 +196,7 @@ export function handOverContactPoints(home, { env = process.env, session = sessi
 
 // The process itself. Started as `<commandName> warden --task <id>`; it does not need a
 // workspace root — home and task arrive through the environment and a flag.
-export async function warden(opts = {}, env = process.env, cwd = process.cwd()) {
+export async function warden(opts: WardenOptions = {}, env = process.env, cwd = process.cwd()) {
   const host = opts.host;
   if (host == null) throw new Error('warden: host is required');
   const identity = resolveIdentity(env, cwd, { host });
@@ -208,13 +218,13 @@ export async function warden(opts = {}, env = process.env, cwd = process.cwd()) 
   logWarden(home, task, `warden started · pid ${process.pid} · CLI ${cli}`);
 
   const startedMs = Date.now();
-  const addrsOf = () => (readTask(home, task).participants ?? []).map((p) => addressOf(p)).filter(Boolean);
+  const addrsOf = () => (readTask(home, task).participants ?? []).map((p) => addressOf(p)).filter(Boolean) as string[];
   let watcher = watchInboxes(home, task, addrsOf());
   let lastBeat = Date.now();
   // The snapshot is held between rounds on purpose, and `undefined` means "not taken yet":
   // [hooks-and-trust.md § wardenRound](../docs/guides/hooks-and-trust.md#wardenround--one-watch-round).
-  let sessions;
-  let why = null;
+  let sessions: SessionSnapshot | undefined;
+  let why: string | null = null;
   // The warden has no right to die by exception: its `stdio` is `ignore`, the stack
   // would go nowhere, and the run would simply stop delivering — quietly.
   let failures = 0;
@@ -223,7 +233,7 @@ export async function warden(opts = {}, env = process.env, cwd = process.cwd()) 
       try {
         if (sessions === undefined) sessions = snapshotOf(readTask(home, task).participants);
         const mailboxes = participantSlots(home, task);
-        const tick = await supervisorRound(home, task, { sessions, registry: REGISTRY, mailboxes });
+        const tick = await supervisorRound(home, task, { sessions, registry: coreRegistry(REGISTRY), mailboxes });
         if (tick.stop) {
           why = tick.stop;
           break;
@@ -250,9 +260,9 @@ export async function warden(opts = {}, env = process.env, cwd = process.cwd()) 
         failures = 0;
       } catch (e) {
         failures += 1;
-        logWarden(home, task, `watch round failed (${failures}/${ROUND_FAIL_LIMIT}): ${e.message}`);
+        logWarden(home, task, `watch round failed (${failures}/${ROUND_FAIL_LIMIT}): ${(e as Error).message}`);
         if (failures >= ROUND_FAIL_LIMIT) {
-          why = `watch round failed ${failures} times in a row: ${e.message}`;
+          why = `watch round failed ${failures} times in a row: ${(e as Error).message}`;
           break;
         }
       }

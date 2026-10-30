@@ -16,13 +16,24 @@ import {
 } from './model-routing/telemetry.js';
 import { PREFLIGHT_BUDGET_MS, preflight } from './model-routing/preflight.js';
 import {
-  addressList, driverFor, harnessOf, isManaged, participantFileStem, SHIPPED_REGISTRY, snapshotSessions, stopParticipant,
+  addressList, harnessOf, isManaged, participantFileStem, SHIPPED_REGISTRY, snapshotSessions, stopParticipant,
 } from '../dist/index.js';
 import {
   adapterOf, driverOrLift, forgetSessions, liftDriver, REGISTRY, snapshotOf,
 } from './drivers.js';
 import { participantSession, sessionReportedDead, unknownWhy } from './status.js';
 import { requireNativeIdle } from './native-lifecycle.js';
+
+import { coreRegistry, libDriverFor as driverFor } from './driver-runtime.js';
+import type { LibRegistry } from './driver-runtime.js';
+import type { ParticipantV1, PromptobusHost, SessionSnapshot, TaskV1 } from '../dist/index.js';
+
+type SnapshotReader = (participants: ParticipantV1[]) => SessionSnapshot;
+type AdapterReader = Parameters<typeof preflight>[0]['adapterFor'];
+interface DoneOptions {
+  task?: string | null; yes?: unknown; 'older-than'?: unknown; 'keep-sessions'?: unknown;
+  adapterFor?: AdapterReader; snapshot?: SnapshotReader;
+}
 
 // Close a task and clean up after it — after EVERY closed task, not only this one:
 // [03-cli.md](../docs/reference/03-cli.md#status-done-sweep-dismiss-history).
@@ -32,7 +43,7 @@ import { requireNativeIdle } from './native-lifecycle.js';
 
 // The "the task has been tidied" mark is a read-modify-write under the lock,
 // like `closeTask`.
-function markWorktreesSwept(home, id) {
+function markWorktreesSwept(home: string, id: string) {
   try {
     patchTask(home, id, { adapter: { worktreesSwept: new Date().toISOString() } });
   } catch {
@@ -42,7 +53,7 @@ function markWorktreesSwept(home, id) {
 
 // Stop managed sessions of a closed task.
 // [reference/03-cli.md#stopmanaged--stop-managed-sessions-of-a-closed-task](../docs/reference/03-cli.md#stopmanaged--stop-managed-sessions-of-a-closed-task)
-export async function stopManaged(home, id, { registry = REGISTRY, snapshot = null } = {}) {
+export async function stopManaged(home: string, id: string, { registry = REGISTRY, snapshot = null }: { registry?: LibRegistry; snapshot?: SnapshotReader | null } = {}) {
   let meta;
   try {
     meta = readTask(home, id);
@@ -53,12 +64,12 @@ export async function stopManaged(home, id, { registry = REGISTRY, snapshot = nu
   if (meta.adapter?.bb) return { stopped: 0, idle: 0, failed: 0, unconfirmed: participants.length };
   // The snapshot is built with the SAME registry that stops: a half seam would prop
   // liveness up by swapping the binary and check real `claude`, not the walk.
-  const sessions = snapshot ? snapshot(participants) : snapshotSessions(participants, registry);
+  const sessions = snapshot ? snapshot(participants) : snapshotSessions(participants, coreRegistry(registry));
   // Words about the session come from the SAME registry that stops — a second map would
   // split them. The lift-driver fallback: a refusal here would take the other participants.
-  const driverAt = (p) => {
+  const driverAt = (p: ParticipantV1) => {
     try {
-      return driverFor(registry, harnessOf(p, registry));
+      return driverFor(registry, harnessOf(p, coreRegistry(registry)));
     } catch {
       return liftDriver();
     }
@@ -81,7 +92,7 @@ export async function stopManaged(home, id, { registry = REGISTRY, snapshot = nu
     try {
       // Awaited: a driver may wait until the harness has no session, and cleanup below
       // would otherwise read a state that is not there yet. The walk stays sequential.
-      const r = await stopParticipant(p, registry);
+      const r = await stopParticipant(p, coreRegistry(registry));
       if (!r?.ok) {
         failed += 1;
         warn(`could not close the session of participant ${addressOf(p)}: ${r?.note ?? 'reason unknown'}`
@@ -103,14 +114,14 @@ export async function stopManaged(home, id, { registry = REGISTRY, snapshot = nu
       }
     } catch (e) {
       failed += 1;
-      warn(`could not close the session of participant ${addressOf(p)}: ${e.message}`);
+      warn(`could not close the session of participant ${addressOf(p)}: ${(e as Error).message}`);
     }
   }
   return { stopped, idle, failed, unconfirmed };
 }
 
-async function sweepWorktrees(home, snapshot, host, tasks) {
-  const prune = new Set();
+async function sweepWorktrees(home: string, snapshot: SnapshotReader, host: PromptobusHost, tasks: TaskV1[]) {
+  const prune = new Set<string>();
   for (const meta of tasks) {
     if (meta.status !== 'done') continue;
     if (meta.adapter?.bb) continue;
@@ -130,7 +141,7 @@ async function sweepWorktrees(home, snapshot, host, tasks) {
         try {
           await driverOrLift(p).sweepParticipant?.(p, meta.id);
         } catch (e) {
-          warn(`could not clear the harness state of participant ${addressOf(p)}: ${e.message}`);
+          warn(`could not clear the harness state of participant ${addressOf(p)}: ${(e as Error).message}`);
         }
       } else if (driverOrLift(p).sweepParticipant) {
         left += 1;
@@ -139,7 +150,7 @@ async function sweepWorktrees(home, snapshot, host, tasks) {
       if (!worktree || !repoAbs) continue;
       // The directory is gone — registration in .git/worktrees may have been
       // orphaned. We sweep the repository once, not per participant.
-      if (!existsSync(worktree)) { prune.add(repoAbs); continue; }
+      if (!existsSync(worktree as string)) { prune.add(repoAbs as string); continue; }
       // `git worktree remove` looks at dirt and lock but not at processes. Unknown state is
       // left in place too, the same as re-review in review.js.
       if (state !== 'dead') {
@@ -150,20 +161,20 @@ async function sweepWorktrees(home, snapshot, host, tasks) {
         left += 1;
         continue;
       }
-      const info_ = inspectWorktree(repoAbs, worktree, host.defaultBranch(repoAbs));
+      const info_ = inspectWorktree(repoAbs as string, worktree as string, host.defaultBranch(repoAbs as string));
       const { action, reason } = worktreeDisposition(info_);
       if (action === 'keep') {
         info(`worktree ${worktree} left in place: ${reason}`);
         left += 1;
         continue;
       }
-      const r = removeWorktree(repoAbs, worktree, info_.branch);
+      const r = removeWorktree(repoAbs as string, worktree as string, info_.branch);
       if (r.removed) {
         ok(`worktree ${worktree} removed (${reason})${r.branchDeleted ? `, branch ${info_.branch} deleted` : ''}`);
         if (r.branchKept) info(`branch ${r.branchKept} left in place: spawn did not create it — deleting a foreign branch is not our job`);
         if (r.branchStuck) {
           info(`branch ${r.branchStuck} left in place: force deletion failed.`
-            + ` Delete: git -C ${shellQuote(repoAbs)} branch -D ${shellQuote(r.branchStuck)}`);
+            + ` Delete: git -C ${shellQuote(repoAbs as string)} branch -D ${shellQuote(r.branchStuck)}`);
         }
       } else {
         warn(`could not remove worktree ${worktree}: ${r.error ?? 'git did not explain'}`);
@@ -177,7 +188,7 @@ async function sweepWorktrees(home, snapshot, host, tasks) {
 
 // Two secrets of a closed task: a participant mcp-config with substituted tokens, removed
 // only for a dead session, and the contact point, removed for all — nobody is left to knock.
-function sweepParticipantSecrets(home, snapshot, tasks) {
+function sweepParticipantSecrets(home: string, snapshot: SnapshotReader, tasks: TaskV1[]) {
   for (const meta of tasks) {
     if (meta.status !== 'done') continue;
     if (meta.adapter?.bb) continue;
@@ -233,12 +244,12 @@ function sweepParticipantSecrets(home, snapshot, tasks) {
   }
 }
 
-function missingWindowLine(harness, reason = 'probe_failed', windowId = null) {
+function missingWindowLine(harness: string, reason: string | null = 'probe_failed', windowId: string | null = null) {
   const window = windowId ? `window ${windowId}` : 'window';
   warn(`telemetry: ${harness} ${window} not re-read (${reason}) — end reading absent`);
 }
 
-async function refreshTelemetry(host, meta, adapterFor) {
+async function refreshTelemetry(host: PromptobusHost, meta: TaskV1, adapterFor: AdapterReader) {
   const harnesses = telemetryWindowHarnesses(meta);
   if (!harnesses.length) return null;
   try {
@@ -252,10 +263,10 @@ async function refreshTelemetry(host, meta, adapterFor) {
 
 /** One telemetry record per participant that lifted a session.
  * [reference/03-cli.md#recordtelemetry--records-for-eligible-participant-generations](../docs/reference/03-cli.md#recordtelemetry--records-for-eligible-participant-generations) */
-async function recordTelemetry(host, home, id, adapterFor) {
+async function recordTelemetry(host: PromptobusHost, home: string, id: string, adapterFor: AdapterReader) {
   try {
     const meta = readTask(home, id);
-    const closedAt = Date.parse(meta.adapter?.closed ?? '');
+    const closedAt = Date.parse((meta.adapter?.closed as string | null | undefined) ?? '');
     const at = Number.isFinite(closedAt) ? closedAt : Date.now();
     const snapshot = await refreshTelemetry(host, meta, adapterFor);
     for (const harness of telemetryWindowHarnesses(meta)) {
@@ -270,11 +281,11 @@ async function recordTelemetry(host, home, id, adapterFor) {
     const { file, written } = appendTelemetry(host, home, meta, { at, snapshot, throughput });
     if (written) info(`telemetry: ${written} record(s) appended to ${file}`);
   } catch (e) {
-    warn(`telemetry records were not written (${e.message}) — task ${id} is closed, this does not undo that`);
+    warn(`telemetry records were not written (${(e as Error).message}) — task ${id} is closed, this does not undo that`);
   }
 }
 
-function retainJournals(host, home, id, opts, tasks) {
+function retainJournals(host: PromptobusHost, home: string, id: string, opts: DoneOptions, tasks?: TaskV1[]) {
   try {
     if (opts['older-than'] !== undefined) {
       prune(host, { olderThan: opts['older-than'], yes: Boolean(opts.yes), task: id, ...(tasks ? { tasks } : {}) });
@@ -283,18 +294,18 @@ function retainJournals(host, home, id, opts, tasks) {
     }
   } catch (e) {
     const days = opts['older-than'] !== undefined ? parseOlderThan(opts['older-than']) : PRUNE_DEFAULT_DAYS;
-    warn(`journals of long-closed tasks were not removed (${e.message}) — task ${id} is closed, `
+    warn(`journals of long-closed tasks were not removed (${(e as Error).message}) — task ${id} is closed, `
       + `this does not undo that. Remove by hand: ${retentionCommand(host, id, days)}`);
   }
 }
 
-export async function done(rootOrHost, opts = {}) {
+export async function done(rootOrHost: unknown, opts: DoneOptions = {}) {
   const host = hostOf(rootOrHost);
   if (opts.yes && opts['older-than'] === undefined) {
     throw new GateError('--yes applies --older-than <days>; the 14-day removal needs no flag');
   }
   if (opts['older-than'] !== undefined) parseOlderThan(opts['older-than']);
-  const root = host.workspaceRoot();
+  host.workspaceRoot();
   const task = opts.task;
   // The kebab key is read by its own name: the caller hands the whole `values`
   // object here, and a translation on the seam is not needed.

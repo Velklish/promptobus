@@ -21,11 +21,39 @@ import {
 } from '../dist/hooks.js';
 import { CLAUDE_SKILLS_REL, CURSOR_SKILLS_REL, CODEX_SKILLS_REL } from './drivers.js';
 
-export const INSTALL_HARNESSES = ['claude', 'cursor', 'codex'];
+import type { PromptobusHost } from '../dist/index.js';
+
+export type InstallHarness = 'claude' | 'cursor' | 'codex';
+export interface InstallTarget { readonly hooksRel: string; readonly skillsRel: string }
+export interface PackageSkillFile { rel: string; abs: string; buffer: Uint8Array; text: string }
+export interface PackageSkill { name: string; files: PackageSkillFile[] }
+export type InstallPlanHost = Pick<PromptobusHost, 'nodePath' | 'guardArgv' | 'busHookRel' | 'installManifestRel'>;
+export interface InstallWrite { rel: string; abs: string; text: string | null; buffer?: Uint8Array | null; remove?: true }
+interface PlannedWrite extends InstallWrite { foreign?: boolean }
+export interface InstallPlan {
+  writes: InstallWrite[]; owned: Record<InstallHarness, string[]>;
+  ownedSkills: Record<InstallHarness, string[]>; unproven: string[];
+}
+interface InstallOptions {
+  env?: NodeJS.ProcessEnv; cwd?: string; harnesses?: unknown; check?: boolean; dryRun?: boolean; skillsDir?: string;
+}
+type HookStyle = 'nested' | 'flat';
+type HookEvents = Record<string, unknown[]>;
+interface HookContext {
+  style: HookStyle; prevIds: Set<string>; oursIds?: Set<string>; busEvent: string; guardEvents: string[];
+  guardCommand: string; scriptNeedle: string; label: string;
+}
+interface HookSpec {
+  rel: string; skillsRel: string; style: HookStyle; busEvent: string; guardEvents: string[];
+  events: (guardCmd: string) => HookEvents;
+  wrap: (doc: Record<string, unknown>, hooks: HookEvents) => Record<string, unknown>;
+}
+
+export const INSTALL_HARNESSES: InstallHarness[] = ['claude', 'cursor', 'codex'];
 export const HOME_HOOK_DIRS = ['.claude', '.cursor', '.codex'];
 export const HARNESSES_FIELD = 'harnesses';
 export const MANIFEST_KIND = 'promptobus-hooks';
-export const SKILL_OWNERSHIP_MARKER = '<!-- promptobus:owned -->';
+export const SKILL_OWNERSHIP_MARKER: string = '<!-- promptobus:owned -->';
 const GITIGNORE_BUFFER = Buffer.from('*\n');
 
 // The same names as driver-cursor `KNOWN_HOOK_EVENTS`, held equal by the suite rather than
@@ -46,26 +74,26 @@ export const CURSOR_HOOK_EVENTS_SOURCE_VERSION = '2026.09.10-fd3934a';
 const TRUST_NOTE = 'Review: Codex requires /hooks; project hooks also depend on workspace trust.';
 // `harnesses` records where hooks went; `tools` is the spawn allow-list and install never
 // writes it. Said here because the next command otherwise refuses ([guides/install.md#2-workspace-file](../docs/guides/install.md#2-workspace-file)).
-const declareNote = (missing) =>
+const declareNote = (missing: readonly string[]) =>
   `Spawn allow-list: "tools" in ${HOST_CONFIG} does not list ${missing.join(', ')}, and install does not write it`
   + ` — "harnesses" only records where hooks went. spawn and review refuse an undeclared harness;`
   + ` add ${missing.map((name) => `"${name}"`).join(', ')} to the "tools" array by hand.`;
 const CURSOR_NOTE = 'Cursor: the stop guard only, with no SessionStart. Bus text reaches a Cursor participant by driver injection.';
 
 // Names the gate lets through on the inventory of ONE build, with no spike behind them.
-export function cursorUnprovenHookEvents(hooks) {
+export function cursorUnprovenHookEvents(hooks: unknown) {
   return Object.keys(hooks ?? {}).filter((event) => CURSOR_HOOK_EVENTS.includes(event)
     && !CURSOR_PROVEN_HOOK_EVENTS.includes(event));
 }
 
 // A warning and never a refusal: the name is legal on the build the inventory was read from, and
 // refusing it would refuse a hooks file that works today.
-const unprovenNote = (names) =>
+const unprovenNote = (names: readonly string[]) =>
   `Cursor: ${names.map((event) => `"${event}"`).join(', ')} in .cursor/hooks.json — known from the`
   + ` ${CURSOR_HOOK_EVENTS_SOURCE_VERSION} bundle inventory and never seen firing here. The gate reads that one`
   + ' build: on a build that does not know the name, every hook in the file is disabled in silence.';
 
-export function assertCursorHookEvents(hooks) {
+export function assertCursorHookEvents(hooks: unknown) {
   const unknown = Object.keys(hooks ?? {}).filter((event) => !CURSOR_HOOK_EVENTS.includes(event));
   if (unknown.length) {
     throw new GateError(
@@ -74,11 +102,11 @@ export function assertCursorHookEvents(hooks) {
   }
 }
 
-function isPlainObject(value) {
+function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-function jsonText(doc) {
+function jsonText(doc: unknown) {
   return `${JSON.stringify(doc, null, 2)}\n`;
 }
 
@@ -86,14 +114,14 @@ function platformOf() {
   return process.platform === 'win32' ? 'win32' : 'posix';
 }
 
-function under(abs, root) {
+function under(abs: string, root: string) {
   const resolved = path.resolve(abs);
   const base = path.resolve(root);
   return resolved === base || resolved.startsWith(base + path.sep);
 }
 
 export function homeHookRoots(env = process.env) {
-  const homes = new Set([env?.HOME, env?.USERPROFILE, os.homedir()].filter(Boolean));
+  const homes = new Set([env?.HOME, env?.USERPROFILE, os.homedir()].filter(Boolean) as string[]);
   const roots = [];
   for (const home of homes) {
     for (const name of HOME_HOOK_DIRS) roots.push(path.resolve(home, name));
@@ -101,15 +129,15 @@ export function homeHookRoots(env = process.env) {
   return roots;
 }
 
-export function parseHarnessList(raw) {
+export function parseHarnessList(raw: unknown) {
   if (raw === undefined || raw === null || raw === '') {
     throw new GateError('install: --harnesses is empty');
   }
-  const parts = (Array.isArray(raw) ? raw : String(raw).split(','))
+  const parts = (Array.isArray(raw) ? raw as unknown[] : String(raw).split(','))
     .map((part) => String(part).trim())
     .filter(Boolean);
   if (!parts.length) throw new GateError('install: --harnesses is empty');
-  const unknown = [...new Set(parts)].filter((name) => !INSTALL_HARNESSES.includes(name));
+  const unknown = [...new Set(parts)].filter((name) => !(INSTALL_HARNESSES as readonly string[]).includes(name));
   if (unknown.length) {
     throw new GateError(
       `install: unknown harness ${unknown.map((name) => `"${name}"`).join(', ')} — known: ${INSTALL_HARNESSES.join(', ')}`,
@@ -118,7 +146,7 @@ export function parseHarnessList(raw) {
   return INSTALL_HARNESSES.filter((name) => parts.includes(name));
 }
 
-export function resolveProjectRoot(host, cwd) {
+export function resolveProjectRoot(host: Pick<PromptobusHost, 'workspaceRoot'>, cwd?: string) {
   const start = path.resolve(cwd ?? host.workspaceRoot());
   const found = findHostRoot(start);
   if (found) return found;
@@ -134,16 +162,16 @@ export function resolveProjectRoot(host, cwd) {
   return path.resolve(host.workspaceRoot());
 }
 
-function readJsonObject(abs, label) {
+function readJsonObject(abs: string, label: string): { missing: boolean; doc: Record<string, unknown>; text: string | null } {
   if (!existsSync(abs)) return { missing: true, doc: {}, text: null };
   let raw;
   try {
     raw = readFileSync(abs, 'utf8');
   } catch (e) {
-    throw new GateError(`install: cannot read ${label}: ${e.message}`);
+    throw new GateError(`install: cannot read ${label}: ${(e as Error).message}`);
   }
   if (!String(raw).trim()) return { missing: false, doc: {}, text: raw };
-  let parsed;
+  let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
@@ -155,28 +183,30 @@ function readJsonObject(abs, label) {
   return { missing: false, doc: parsed, text: raw };
 }
 
-function hookHostOf(host, root) {
+function hookHostOf(host: InstallPlanHost, root: string) {
   return {
-    commandName: host.commandName,
-    syncHint: () => host.syncHint(),
+    commandName: (host as Partial<Pick<PromptobusHost, 'commandName'>>).commandName,
+    syncHint: () => (host as Partial<Pick<PromptobusHost, 'syncHint'>>).syncHint!(),
     nodePath: () => host.nodePath(),
-    guardArgv: (args) => host.guardArgv(args),
+    guardArgv: (args: string[]) => host.guardArgv(args),
     workspaceRoot: () => root,
     busHookRel: () => host.busHookRel(),  // the path an old feed hook is recognised by
   };
 }
 
-function groupCommand(group, style) {
+function groupCommand(raw: unknown, style: HookStyle) {
+  const group = raw as { command?: unknown; hooks?: { command?: unknown }[] } | null;
   if (style === 'flat') return typeof group?.command === 'string' ? group.command : '';
   return typeof group?.hooks?.[0]?.command === 'string' ? group.hooks[0].command : '';
 }
 
-function hookGroupId(event, group, style) {
+function hookGroupId(event: string, raw: unknown, style: HookStyle) {
+  const group = raw as { matcher?: unknown } | null;
   const matcher = typeof group?.matcher === 'string' ? group.matcher : '';
   return matcher ? `${event}:${matcher}` : `${event}::${groupCommand(group, style)}`;
 }
 
-function ownedIds(events, style) {
+function ownedIds(events: HookEvents, style: HookStyle) {
   const ids = [];
   for (const [event, groups] of Object.entries(events)) {
     for (const group of groups) ids.push(hookGroupId(event, group, style));
@@ -191,11 +221,11 @@ const GUARD_SIGNATURE = new RegExp(
   String.raw`^"[^"-][^"]*" "[^"-][^"]*"(?: [^\s"'-][^\s"']*)* guard(?: --role (?:${GUARD_VALUE}) --task (?:${GUARD_VALUE}) --home (?:${GUARD_VALUE}))?$`,
 );
 
-function isGuardCommand(command) {
+function isGuardCommand(command: unknown) {
   return GUARD_SIGNATURE.test(String(command));
 }
 
-function isOwnedGroup(event, group, ctx) {
+function isOwnedGroup(event: string, group: unknown, ctx: HookContext & { oursIds: Set<string> }) {
   const id = hookGroupId(event, group, ctx.style);
   if (ctx.prevIds.has(id) || ctx.oursIds.has(id)) return true;
   const cmd = groupCommand(group, ctx.style);
@@ -210,15 +240,15 @@ function isOwnedGroup(event, group, ctx) {
   return false;
 }
 
-function mergeHookEvents(existingHooks, ourEvents, ctx) {
+function mergeHookEvents(existingHooks: unknown, ourEvents: HookEvents, ctx: HookContext) {
   if (existingHooks != null && !isPlainObject(existingHooks)) {
     throw new GateError(`install: ${ctx.label} hooks value is not an object — fix it and retry`);
   }
-  const oursIds = new Set();
+  const oursIds = new Set<string>();
   for (const [event, groups] of Object.entries(ourEvents)) {
     for (const group of groups) oursIds.add(hookGroupId(event, group, ctx.style));
   }
-  const rest = {};
+  const rest: HookEvents = {};
   let removed = false;
   for (const [event, groups] of Object.entries(existingHooks ?? {})) {
     if (!Array.isArray(groups)) {
@@ -234,19 +264,19 @@ function mergeHookEvents(existingHooks, ourEvents, ctx) {
   return { hooks: rest, removed };
 }
 
-function nestedGroup(command, matcher) {
+function nestedGroup(command: string, matcher?: string) {
   const hooks = [{ type: 'command', command }];
   return matcher ? { matcher, hooks } : { hooks };
 }
 
-function claudeEvents(guardCmd) {
+function claudeEvents(guardCmd: string) {
   return {
     [GUARD_HOOK_EVENT]: [nestedGroup(guardCmd)],
     [GUARD_START_EVENT]: [nestedGroup(guardCmd)],
   };
 }
 
-function cursorEvents(guardCmd) {
+function cursorEvents(guardCmd: string) {
   return { stop: [{ command: guardCmd }] };
 }
 
@@ -257,11 +287,11 @@ export function packageSkills(skillsDir = PACKAGE_SKILLS_DIR) {
   if (!existsSync(skillsDir)) {
     throw new GateError('install: package skills directory is missing');
   }
-  let entries;
+  let entries: import('node:fs').Dirent[];
   try {
     entries = readdirSync(skillsDir, { withFileTypes: true });
   } catch (e) {
-    throw new GateError(`install: cannot read package skills directory: ${e.message}`);
+    throw new GateError(`install: cannot read package skills directory: ${(e as Error).message}`);
   }
   for (const entry of entries) {
     if (entry.isSymbolicLink()) {
@@ -272,12 +302,12 @@ export function packageSkills(skillsDir = PACKAGE_SKILLS_DIR) {
   if (!skillDirs.length) {
     throw new GateError('install: package skills directory has no skills');
   }
-  const skills = [];
+  const skills: PackageSkill[] = [];
   for (const entry of skillDirs) {
     const skillName = entry.name;
     const skillBase = path.join(skillsDir, skillName);
-    const files = [];
-    const walk = (dir, rel = '') => {
+    const files: PackageSkillFile[] = [];
+    const walk = (dir: string, rel = ''): void => {
       for (const item of readdirSync(dir, { withFileTypes: true })) {
         const itemRel = rel ? path.join(rel, item.name) : item.name;
         const itemAbs = path.join(dir, item.name);
@@ -300,7 +330,7 @@ export function packageSkills(skillsDir = PACKAGE_SKILLS_DIR) {
   return skills.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-const SPECS = {
+const SPECS: Record<InstallHarness, HookSpec> = {
   claude: {
     rel: path.join('.claude', 'settings.json'),
     skillsRel: CLAUDE_SKILLS_REL,
@@ -309,7 +339,7 @@ const SPECS = {
     guardEvents: [GUARD_HOOK_EVENT, GUARD_START_EVENT],
     events: claudeEvents,
     wrap(doc, hooks) {
-      const next = { ...doc };
+      const next: Record<string, unknown> = { ...doc };
       if (Object.keys(hooks).length) next.hooks = hooks;
       else delete next.hooks;
       return next;
@@ -325,7 +355,7 @@ const SPECS = {
     guardEvents: ['stop'],
     events: cursorEvents,
     wrap(doc, hooks) {
-      const next = { ...doc };
+      const next: Record<string, unknown> = { ...doc };
       if (next.version === undefined) next.version = 1;
       next.hooks = hooks;
       return next;
@@ -339,7 +369,7 @@ const SPECS = {
     guardEvents: [GUARD_HOOK_EVENT, GUARD_START_EVENT],
     events: claudeEvents,
     wrap(doc, hooks) {
-      const next = { ...doc };
+      const next: Record<string, unknown> = { ...doc };
       next.hooks = hooks;
       return next;
     },
@@ -349,15 +379,15 @@ const SPECS = {
 // Where each harness's hook file and package skills land, relative to the project root.
 export const INSTALL_TARGETS = Object.freeze(Object.fromEntries(INSTALL_HARNESSES.map((name) => [
   name, Object.freeze({ hooksRel: SPECS[name].rel, skillsRel: SPECS[name].skillsRel }),
-])));
+]))) as Readonly<Record<InstallHarness, InstallTarget>>;
 
 // Read, never written here: the two keys stay two, and writing a hook file must not imply
 // permission to spawn.
-function declaredTools(doc) {
+function declaredTools(doc: Record<string, unknown> | null | undefined) {
   return Array.isArray(doc?.tools) ? doc.tools.map(String) : [];
 }
 
-function savedHarnesses(doc) {
+function savedHarnesses(doc: Record<string, unknown> | null | undefined) {
   if (!doc || !Object.hasOwn(doc, HARNESSES_FIELD)) return null;
   if (!Array.isArray(doc[HARNESSES_FIELD])) {
     throw new GateError(`install: ${HOST_CONFIG} ${HARNESSES_FIELD} must be an array`);
@@ -366,24 +396,24 @@ function savedHarnesses(doc) {
   return parseHarnessList(doc[HARNESSES_FIELD]);
 }
 
-function readOwned(root, host) {
+function readOwned(root: string, host: Pick<PromptobusHost, 'installManifestRel'>) {
   const rel = host.installManifestRel();
   const abs = path.join(root, rel);
   const got = readJsonObject(abs, rel);
   const raw = isPlainObject(got.doc.owned) ? got.doc.owned : {};
-  const owned = {};
+  const owned = {} as Record<InstallHarness, string[]>;
   for (const name of INSTALL_HARNESSES) {
     owned[name] = Array.isArray(raw[name]) ? raw[name].map(String) : [];
   }
   const rawSkills = isPlainObject(got.doc.ownedSkills) ? got.doc.ownedSkills : {};
-  const ownedSkills = {};
+  const ownedSkills = {} as Record<InstallHarness, string[]>;
   for (const name of INSTALL_HARNESSES) {
     ownedSkills[name] = Array.isArray(rawSkills[name]) ? rawSkills[name].map(String) : [];
   }
   return { abs, rel, doc: got.doc, missing: got.missing, owned, ownedSkills };
 }
 
-function pruneEmptyDirs(dir, stopDir) {
+function pruneEmptyDirs(dir: string, stopDir: string) {
   let current = path.resolve(dir);
   const stop = path.resolve(stopDir);
   while (current && current !== stop && current.startsWith(stop + path.sep)) {
@@ -405,7 +435,7 @@ function pruneEmptyDirs(dir, stopDir) {
   }
 }
 
-function assertNotHomeWrites(writes, env) {
+function assertNotHomeWrites(writes: readonly PlannedWrite[], env: NodeJS.ProcessEnv) {
   const banned = homeHookRoots(env);
   for (const write of writes) {
     for (const root of banned) {
@@ -416,8 +446,8 @@ function assertNotHomeWrites(writes, env) {
   }
 }
 
-function applyWrites(writes) {
-  const staged = [];
+function applyWrites(writes: readonly PlannedWrite[]) {
+  const staged: { tmp: string; abs: string }[] = [];
   try {
     for (const write of writes) {
       mkdirSync(path.dirname(write.abs), { recursive: true });
@@ -428,7 +458,7 @@ function applyWrites(writes) {
       if (write.buffer) {
         writeFileSync(tmp, write.buffer);
       } else {
-        writeFileSync(tmp, write.text);
+        writeFileSync(tmp, write.text!);
       }
       staged.push({ tmp, abs: write.abs });
     }
@@ -441,7 +471,7 @@ function applyWrites(writes) {
   }
 }
 
-function pendingWrites(writes) {
+function pendingWrites(writes: readonly PlannedWrite[]) {
   return writes.filter((write) => {
     if (write.remove) return existsSync(write.abs);
     if (!existsSync(write.abs)) return true;
@@ -459,7 +489,7 @@ function pendingWrites(writes) {
   });
 }
 
-function isSkillFileOwned(abs, rel, prevOwnedSet) {
+function isSkillFileOwned(abs: string, rel: string, prevOwnedSet: Set<string>) {
   if (prevOwnedSet.has(rel)) return true;
   if (!existsSync(abs)) return true;
   if (path.basename(abs) === '.gitignore') {
@@ -480,18 +510,18 @@ function isSkillFileOwned(abs, rel, prevOwnedSet) {
 }
 
 export function planHookInstall(
-  host, root, wanted, { check = false, dryRun = false, skillsDir = PACKAGE_SKILLS_DIR } = {},
+  host: InstallPlanHost, root: string, wanted: readonly InstallHarness[], { check = false, dryRun = false, skillsDir = PACKAGE_SKILLS_DIR } = {},
 ) {
-  const unproven = [];
+  const unproven: string[] = [];
   const hookHost = hookHostOf(host, root);
   const platform = platformOf();
   const runnerRel = host.busHookRel();
   const runnerAbs = path.join(root, runnerRel);
   const guardCmd = guardHookCommand(hookHost, null, platform);
   const prev = readOwned(root, host);
-  const writes = [];
-  const owned = {};
-  const ownedSkills = {};
+  const writes: PlannedWrite[] = [];
+  const owned = {} as Record<InstallHarness, string[]>;
+  const ownedSkills = {} as Record<InstallHarness, string[]>;
   const pSkills = wanted.length ? packageSkills(skillsDir) : [];
 
   // Nothing writes the runner any more; an install that finds one deletes it.
@@ -527,7 +557,7 @@ export function planHookInstall(
       }
     }
 
-    const currentOwnedSkills = [];
+    const currentOwnedSkills: string[] = [];
     if (selected) {
       if (!spec.skillsRel) {
         throw new GateError(`install: harness ${name} has no declared skills location`);
@@ -569,8 +599,8 @@ export function planHookInstall(
   return { writes, owned, ownedSkills, prev, hookHost, runnerAbs, runnerRel, unproven };
 }
 
-function configWrite(root, doc, wanted) {
-  const next = { ...doc };
+function configWrite(root: string, doc: Record<string, unknown>, wanted: readonly InstallHarness[]) {
+  const next: Record<string, unknown> = { ...doc };
   if (wanted.length) next[HARNESSES_FIELD] = wanted;
   else delete next[HARNESSES_FIELD];
   return {
@@ -580,7 +610,7 @@ function configWrite(root, doc, wanted) {
   };
 }
 
-function manifestWrite(root, host, prev, wanted, owned, ownedSkills) {
+function manifestWrite(root: string, host: InstallPlanHost, prev: ReturnType<typeof readOwned>, wanted: readonly InstallHarness[], owned: InstallPlan['owned'], ownedSkills: InstallPlan['ownedSkills']) {
   const next = {
     ...prev.doc,
     version: 1,
@@ -596,7 +626,7 @@ function manifestWrite(root, host, prev, wanted, owned, ownedSkills) {
   };
 }
 
-function driftOf(pending, wanted, saved) {
+function driftOf(pending: readonly PlannedWrite[], wanted: readonly InstallHarness[], saved: readonly InstallHarness[] | null) {
   const drifts = [];
   const savedList = saved ?? [];
   if (savedList.join(',') !== wanted.join(',')) drifts.push(`${HOST_CONFIG} ${HARNESSES_FIELD}`);
@@ -614,12 +644,12 @@ function driftOf(pending, wanted, saved) {
   return [...new Set(drifts)];
 }
 
-function resolveWanted(host, opts, cfg) {
+function resolveWanted(_host: PromptobusHost, opts: InstallOptions, cfg: ReturnType<typeof readJsonObject>) {
   if (opts.harnesses !== undefined) return parseHarnessList(opts.harnesses);
   return savedHarnesses(cfg.doc);
 }
 
-function runPlan(host, opts, { wanted, uninstalling }) {
+function runPlan(host: PromptobusHost, opts: InstallOptions, { wanted, uninstalling }: { wanted?: readonly InstallHarness[]; uninstalling: boolean }) {
   const env = opts.env ?? process.env;
   const cwd = opts.cwd ?? host.workspaceRoot();
   const root = resolveProjectRoot(host, cwd);
@@ -651,7 +681,7 @@ function runPlan(host, opts, { wanted, uninstalling }) {
   if (plan.unproven.length) warn(unprovenNote(plan.unproven));
   const cfgWrite = configWrite(root, cfg.doc, selected);
   const manWrite = manifestWrite(root, host, plan.prev, selected, plan.owned, plan.ownedSkills);
-  const diskWrites = [...plan.writes, cfgWrite, manWrite];
+  const diskWrites: PlannedWrite[] = [...plan.writes, cfgWrite, manWrite];
   assertNotHomeWrites(diskWrites.filter((w) => !w.remove), env);
   // The manifest joins the same content delta: this catches an absent or field-changed
   // manifest, not foreign keys inside an existing one, which manifestWrite spreads from prev.doc.
@@ -679,7 +709,7 @@ function runPlan(host, opts, { wanted, uninstalling }) {
   }
 
   const removals = [];
-  const writes = [];
+  const writes: PlannedWrite[] = [];
   for (const write of pending) {
     if (write.remove) {
       removals.push(write);
@@ -703,11 +733,11 @@ function runPlan(host, opts, { wanted, uninstalling }) {
   return 0;
 }
 
-export function install(rootOrHost, opts = {}) {
+export function install(rootOrHost: unknown, opts: InstallOptions = {}) {
   return runPlan(hostOf(rootOrHost), opts, { uninstalling: false });
 }
 
-export function uninstall(rootOrHost, opts = {}) {
+export function uninstall(rootOrHost: unknown, opts: InstallOptions = {}) {
   const host = hostOf(rootOrHost);
   const cwd = opts.cwd ?? host.workspaceRoot();
   const root = resolveProjectRoot(host, cwd);

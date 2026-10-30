@@ -24,7 +24,7 @@ export const WORKTREE_DIR_REL = path.join('.claude', 'worktrees');
 
 // Full template of the service branch name, as prose cites it (`<!-- contract:worktree-branch -->`).
 // Built FROM the prefix: otherwise a rename would leave the template and the citations behind.
-export const WORKTREE_BRANCH_TEMPLATE = `${WORKTREE_BRANCH_PREFIX}promptobus-<task-slug>-<worker-slug>-t<date>-<time>`;
+export const WORKTREE_BRANCH_TEMPLATE: string = `${WORKTREE_BRANCH_PREFIX}promptobus-<task-slug>-<worker-slug>-t<date>-<time>`;
 
 const git = (dir: string, ...args: string[]) => gitIn(dir, args);
 const out = (r: SpawnSyncReturns<string>) => (r.status === 0 ? (r.stdout ?? '').trim() : null);
@@ -52,7 +52,7 @@ export function worktreeBranch(worktreePath: string | null | undefined) {
 
 // Header of journal-vs-git divergence, cited verbatim by prose, so it lives as a constant:
 // the contract-quote gate checks the citation against it.
-export const BRANCH_CHANGED_MARK = 'WORKER CHANGED BRANCH';
+export const BRANCH_CHANGED_MARK: string = 'WORKER CHANGED BRANCH';
 
 // Line about a participant's branch: journal versus git. They diverged — loud: the
 // result must be taken from the branch git named.
@@ -134,7 +134,7 @@ const PATCH_PATHS_MAX = 2000;
 
 /** Did a base commit since the fork name the branch head in its `Squash-of` trailer?
  * [reference/03-cli.md#namedbysquash--did-an-acceptance-commit-name-the-branch-head](../docs/reference/03-cli.md#namedbysquash--did-an-acceptance-commit-name-the-branch-head) */
-function namedBySquash(repoAbs: string, base: string, branch: string) {
+function namedBySquash(repoAbs: string, base: string, branch: string): string | false | null {
   const fork = out(git(repoAbs, 'merge-base', base, branch));
   const head = out(git(repoAbs, 'rev-parse', '--verify', '--quiet', `${branch}^{commit}`));
   if (!fork || !head) return null;

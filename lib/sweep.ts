@@ -14,16 +14,23 @@ import {
 } from './store.js';
 import { inspectWorktree, pruneWorktrees, removeWorktree, worktreeDisposition } from './worktree.js';
 import {
-  blobNamed, driverFor, EDITS_TREE, harnessOf, listArtifacts, registryOf, roleEntry,
+  blobNamed, EDITS_TREE, harnessOf, listArtifacts, registryOf, roleEntry,
   sessionRefOf, snapshotSessions, validate, withBlobLock, WRITES_MAIN_TREE,
 } from '../dist/index.js';
 import { REGISTRY, driverOrLift } from './drivers.js';
 import { participantSession, sessionReportedDead, unknownWhy } from './status.js';
 import { requireNativeIdle } from './native-lifecycle.js';
 
+import { coreRegistry, libDriverFor as driverFor } from './driver-runtime.js';
+import type { LibRegistry } from './driver-runtime.js';
+import type { ArtifactV1, ParticipantV1, PromptobusHost, StepKind, TaskV1 } from '../dist/index.js';
+
+interface ArtifactRemoval extends ArtifactV1 { file: string; blob: string; link: string }
+interface ArtifactPlan { broken: string[]; going: ArtifactRemoval[] }
+
 /** What the piece sweep must never take — the run's telemetry and its mailboxes.
  * [reference/03-cli.md#keptpaths--what-the-piece-sweep-must-never-take](../docs/reference/03-cli.md#keptpaths--what-the-piece-sweep-must-never-take) */
-export function keptPaths(home, id) {
+export function keptPaths(home: string, id: string) {
   const dir = taskDir(home, id);
   return [
     path.join(dir, 'task.json'),
@@ -37,19 +44,19 @@ export function keptPaths(home, id) {
   ];
 }
 
-function inside(target, root) {
+function inside(target: string, root: string) {
   const rel = path.relative(root, target);
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
 /** The kept path a removal would land inside, or `null` — this is the check itself. */
-export function keptBy(target, kept) {
+export function keptBy(target: string, kept: readonly string[]) {
   return kept.find((k) => inside(target, k)) ?? null;
 }
 
 /** A direct child of the named directory, or `null` — a record field that walked out.
  * [reference/03-cli.md#childof--a-path-built-from-a-record-field-stays-a-direct-child](../docs/reference/03-cli.md#childof--a-path-built-from-a-record-field-stays-a-direct-child) */
-export function childOf(dir, name) {
+export function childOf(dir: string, name: unknown) {
   if (typeof name !== 'string' || !name) return null;
   const target = path.join(dir, name);
   const rel = path.relative(dir, target);
@@ -58,7 +65,7 @@ export function childOf(dir, name) {
 }
 
 // The keep-list as a check and not a comment: a removal aimed inside it throws.
-function takeAway(target, kept) {
+function takeAway(target: string, kept: readonly string[]) {
   const held = keptBy(target, kept);
   if (held) {
     throw new Error(`sweep refused to remove ${target}: it lies inside ${held}, `
@@ -69,9 +76,9 @@ function takeAway(target, kept) {
 
 // Artifact ids this participant SENT. The sender lives on the message, not on the
 // artifact record, so the canonical messages are the only place binding the two.
-function sentArtifacts(home, id, participantId) {
+function sentArtifacts(home: string, id: string, participantId: string) {
   const dir = messagesDir(home, id);
-  const ids = new Set();
+  const ids = new Set<string>();
   let names;
   try {
     names = readdirSync(dir);
@@ -80,35 +87,35 @@ function sentArtifacts(home, id, participantId) {
   }
   for (const name of names) {
     if (!name.endsWith('.json')) continue;
-    let msg;
+    let msg: unknown;
     try {
       msg = JSON.parse(readFileSync(path.join(dir, name), 'utf8'));
     } catch {
       continue;
     }
-    if (msg?.sender === participantId && typeof msg.artifact === 'string') ids.add(msg.artifact);
+    if ((msg as Record<string, unknown> | null | undefined)?.sender === participantId && typeof (msg as Record<string, unknown>).artifact === 'string') ids.add((msg as { artifact: string }).artifact);
   }
   return ids;
 }
 
 /** Every artifact record of the task, each proven before a path is built from it.
  * [reference/03-cli.md#artifactrecords--every-record-proven-before-a-path-is-built-from-it](../docs/reference/03-cli.md#artifactrecords--every-record-proven-before-a-path-is-built-from-it) */
-function artifactRecords(home, id) {
+function artifactRecords(home: string, id: string) {
   let names;
   try {
     names = readdirSync(artifactsDir(home, id));
   } catch {
     return { records: [], broken: [] };
   }
-  const records = [];
-  const broken = [];
+  const records: ArtifactRemoval[] = [];
+  const broken: string[] = [];
   for (const name of names.filter((n) => n.endsWith('.json') && !n.startsWith('.')).sort()) {
     const file = path.join(artifactsDir(home, id), name);
-    let rec;
+    let rec: unknown;
     try {
       rec = JSON.parse(readFileSync(file, 'utf8'));
     } catch (e) {
-      broken.push(`${name}: ${e.message}`);
+      broken.push(`${name}: ${(e as Error).message}`);
       continue;
     }
     const verdict = validate('artifact', rec);
@@ -116,27 +123,27 @@ function artifactRecords(home, id) {
       broken.push(`${name}: ${verdict.at ? `${verdict.at} — ` : ''}${verdict.note}`);
       continue;
     }
-    const blob = childOf(blobsDir(home, id), rec.sha256);
-    const link = childOf(filesDir(home, id), rec.filename);
+    const blob = childOf(blobsDir(home, id), (rec as ArtifactV1).sha256);
+    const link = childOf(filesDir(home, id), (rec as ArtifactV1).filename);
     if (!blob || !link) {
       broken.push(`${name}: sha256 or filename leaves the task directory`);
       continue;
     }
-    records.push({ ...rec, file, blob, link });
+    records.push({ ...(rec as ArtifactV1), file, blob, link });
   }
   return { records, broken };
 }
 
 /** The blobs and files of one piece, resolved before a single removal.
  * [reference/03-cli.md#artifactplan--the-blobs-and-files-of-one-piece](../docs/reference/03-cli.md#artifactplan--the-blobs-and-files-of-one-piece) */
-function artifactPlan(home, id, participantId) {
+function artifactPlan(home: string, id: string, participantId: string): ArtifactPlan {
   const { records, broken } = artifactRecords(home, id);
   if (broken.length) return { broken, going: [] };
   const mine = sentArtifacts(home, id, participantId);
   return { broken, going: records.filter((a) => mine.has(a.id)) };
 }
 
-function inodeOf(file) {
+function inodeOf(file: string) {
   try {
     const st = statSync(file);
     return `${st.dev}:${st.ino}`;
@@ -147,9 +154,9 @@ function inodeOf(file) {
 
 /** The removals of one piece, under the publication lock.
  * [reference/03-cli.md#sweepartifacts--the-removals-of-one-piece-under-the-publication-lock](../docs/reference/03-cli.md#sweepartifacts--the-removals-of-one-piece-under-the-publication-lock) */
-export function sweepArtifacts(home, id, plan, kept) {
+export function sweepArtifacts(home: string, id: string, plan: ArtifactPlan, kept: readonly string[]) {
   return withBlobLock(home, id, () => {
-    const swept = { records: 0, blobs: 0, files: 0, unlinked: [], busy: [] };
+    const swept: { records: number; blobs: number; files: number; unlinked: string[]; busy: string[] } = { records: 0, blobs: 0, files: 0, unlinked: [], busy: [] };
     const inodes = new Map(plan.going.map((rec) => [rec.sha256, inodeOf(rec.blob)]));
     // Read ONCE, and only after the lock is in hand: no publication can land while it is
     // held, so a record that arrived during the wait is here and the only later change is ours.
@@ -177,7 +184,7 @@ export function sweepArtifacts(home, id, plan, kept) {
 
 // Participant files in `workers/` and the contact point. Only of a dead session: a live
 // one still knocks through its wake file and still reads its own mcp-config.
-function sweepParticipantFiles(home, id, address, kept) {
+function sweepParticipantFiles(home: string, id: string, address: string, kept: readonly string[]) {
   const gone = [];
   for (const at of [
     wakeFile(home, id, address),
@@ -193,13 +200,13 @@ function sweepParticipantFiles(home, id, address, kept) {
   return gone;
 }
 
-function treePath(worktree) {
-  try { return realpathSync(worktree); } catch { return path.resolve(worktree); }
+function treePath(worktree: unknown) {
+  try { return realpathSync(worktree as string); } catch { return path.resolve(worktree as string); }
 }
 
 /** The tree and branch of one piece, on the SAME content measurements `done` uses.
  * [reference/03-cli.md#sweeptree--the-tree-and-branch-of-one-piece](../docs/reference/03-cli.md#sweeptree--the-tree-and-branch-of-one-piece) */
-function sweepTree(p, host, address, kind, ownerTrees) {
+function sweepTree(p: ParticipantV1, host: PromptobusHost, address: string, kind: StepKind | null | undefined, ownerTrees: unknown[]) {
   if (kind !== EDITS_TREE && kind !== WRITES_MAIN_TREE) return { state: 'none', code: 0 };
   const { worktree, repoAbs } = p.metadata ?? {};
   if (!worktree || !repoAbs) return { state: 'none', code: 0 };
@@ -209,21 +216,21 @@ function sweepTree(p, host, address, kind, ownerTrees) {
   }
   // The directory the journal names is not on disk, so neither measurement can run. That
   // is not the state "there was no tree": the branch may hold work nobody proved was taken.
-  if (!existsSync(worktree)) {
-    pruneWorktrees(repoAbs);
+  if (!existsSync(worktree as string)) {
+    pruneWorktrees(repoAbs as string);
     warn(`worktree ${worktree} is named by the journal and is not on disk: neither merge `
       + 'measurement can run, so nothing of this piece is judged taken');
     info(`orphaned registration pruned in ${repoAbs}; the blobs and files of ${address} stay`);
     return { state: 'vanished', code: 0 };
   }
-  const found = inspectWorktree(repoAbs, worktree, host.defaultBranch(repoAbs));
+  const found = inspectWorktree(repoAbs as string, worktree as string, host.defaultBranch(repoAbs as string));
   const { action, reason } = worktreeDisposition(found);
   if (action === 'keep') {
     warn(`worktree ${worktree} left in place: ${reason}`);
     info(`the piece of ${address} keeps its tree — it may be the only copy of work that is not in the base`);
     return { state: 'kept', code: 0 };
   }
-  const r = removeWorktree(repoAbs, worktree, found.branch);
+  const r = removeWorktree(repoAbs as string, worktree as string, found.branch);
   if (!r.removed) {
     warn(`could not remove worktree ${worktree}: ${r.error ?? 'git did not explain'}`);
     return { state: 'kept', code: 1 };
@@ -232,16 +239,16 @@ function sweepTree(p, host, address, kind, ownerTrees) {
   if (r.branchKept) info(`branch ${r.branchKept} left in place: spawn did not create it — deleting a foreign branch is not our job`);
   if (r.branchStuck) {
     info(`branch ${r.branchStuck} left in place: force deletion failed.`
-      + ` Delete: git -C ${shellQuote(repoAbs)} branch -D ${shellQuote(r.branchStuck)}`);
+      + ` Delete: git -C ${shellQuote(repoAbs as string)} branch -D ${shellQuote(r.branchStuck)}`);
   }
   return { state: 'removed', code: 0 };
 }
 
 // The driver of this record, taken from the SAME registry the liveness snapshot used: a
 // half seam would ask a stand-in who is alive and a live harness what to clear.
-function driverAt(p, registry) {
+function driverAt(p: ParticipantV1, registry: LibRegistry) {
   try {
-    return driverFor(registry, harnessOf(p, registry));
+    return driverFor(registry, harnessOf(p, coreRegistry(registry)));
   } catch {
     return driverOrLift(p);
   }
@@ -249,7 +256,7 @@ function driverAt(p, registry) {
 
 /** Who may sweep a piece — a positive proof, never the absence of one.
  * [reference/03-cli.md#requiresweeper--who-may-sweep-a-piece](../docs/reference/03-cli.md#requiresweeper--who-may-sweep-a-piece) */
-function requireSweeper(host, home, meta, session) {
+function requireSweeper(host: PromptobusHost, home: string, meta: TaskV1, session: string | null) {
   const owner = taskOwner(home, meta.id);
   if (session && owner && sameOwnerSession(owner, session)) return;
   if (approverHere(meta, session)) return;
@@ -269,14 +276,14 @@ function requireSweeper(host, home, meta, session) {
 
 // What a re-lift of this address would change. Read before the lock and again under it:
 // `spawn` replaces the record through that same lock, so a changed field is a new session.
-function liftMark(p) {
+function liftMark(p: ParticipantV1 | null | undefined) {
   return JSON.stringify([p?.sessionRef ?? null, p?.metadata?.worktree ?? null,
     p?.metadata?.repoAbs ?? null, p?.metadata?.started ?? null]);
 }
 
 /** Clean up after one accepted piece; the task stays active.
  * [reference/03-cli.md#sweep--clean-up-after-one-accepted-piece](../docs/reference/03-cli.md#sweep--clean-up-after-one-accepted-piece) */
-export function sweep(rootOrHost, { task, address } = {}, { registry = REGISTRY } = {}) {
+export function sweep(rootOrHost: unknown, { task, address }: { task?: string | null; address?: string } = {}, { registry = REGISTRY }: { registry?: LibRegistry } = {}) {
   const host = hostOf(rootOrHost);
   const home = host.promptobusHome();
   const id = resolveTaskId(home, task, sessionIdentity(), {
@@ -299,16 +306,16 @@ export function sweep(rootOrHost, { task, address } = {}, { registry = REGISTRY 
     fail(`${ORCHESTRATOR} has no piece to sweep — it owns the task, and the task is closed by `
       + `${host.busCommand(['done'])}. Sweep a task participant. ${route}`);
   }
-  const p = participantOf(meta, address);
+  const p = participantOf(meta, address!);
   if (!p) fail(`task ${id} has no participant "${address}" — nothing to sweep. ${route}`);
-  const sessions = snapshotSessions([p], registry);
+  const sessions = snapshotSessions([p!], coreRegistry(registry));
   const state = participantSession(p, sessions);
   if (state === 'unknown') {
-    const why = unknownWhy(p, sessions, driverAt(p, registry));
+    const why = unknownWhy(p, sessions, driverAt(p!, registry));
     // No reference is not a read that may succeed later: only a new lift writes one.
     const next = sessionRefOf(p)
       ? `Repeat it once ${host.busCommand(['status'])} reads the session`
-      : `Repeating will not help: close its session from ${driverAt(p, registry).phrases.sessions} and remove `
+      : `Repeating will not help: close its session from ${driverAt(p!, registry).phrases.sessions} and remove `
         + 'its tree by hand, or lift the participant again so its record carries a reference';
     fail(`participant ${address}: its session state could not be read — ${why}. `
       + `Nothing was removed: a sweep takes a worktree only from a session known to be dead. ${next}`);
@@ -316,14 +323,14 @@ export function sweep(rootOrHost, { task, address } = {}, { registry = REGISTRY 
   if (state !== 'dead') {
     fail(`participant ${address} session is still alive — a sweep would `
       + 'take its worktree from under a running session and its mcp-config from under a live bus. Close it '
-      + `first: ${host.busCommand(['stop', address, `--task ${id}`])}, or from ${driverAt(p, registry).phrases.sessions}`);
+      + `first: ${host.busCommand(['stop', address!, `--task ${id}`])}, or from ${driverAt(p!, registry).phrases.sessions}`);
   }
   // Named before the first removal, as `done` and `stop` name theirs: the sweep is
   // irreversible, and a person must read what is going now rather than what went.
   info(`sweeping the accepted piece of ${address} in task ${id} — the task stays active and the `
     + 'other participants are untouched');
   // The destructive stretch runs under the journal lock — `takePiece` says what for.
-  return withTaskLockAsync(home, id, () => takePiece(host, home, id, address, liftMark(p), registry)).then((outcome) => {
+  return withTaskLockAsync(home, id, () => takePiece(host, home, id, address!, liftMark(p), registry)).then((outcome) => {
     if (outcome.refused) fail(outcome.refused);
     ok(`task ${id} stays active; ${host.busCommand(['status'])} shows who is still in it`);
     info('telemetry, canonical messages, the warden log, health and the wait sidecars of the run are kept '
@@ -334,9 +341,9 @@ export function sweep(rootOrHost, { task, address } = {}, { registry = REGISTRY 
 
 /** The destructive stretch, under the journal lock.
  * [reference/03-cli.md#takepiece--the-destructive-stretch-under-the-journal-lock](../docs/reference/03-cli.md#takepiece--the-destructive-stretch-under-the-journal-lock) */
-async function takePiece(host, home, id, address, mark, registry) {
+async function takePiece(host: PromptobusHost, home: string, id: string, address: string, mark: string, registry: LibRegistry) {
   const meta = readTask(home, id);
-  const p = participantOf(meta, address);
+  const p = participantOf(meta, address!);
   if (!p || liftMark(p) !== mark) {
     return {
       code: 1,
@@ -345,11 +352,11 @@ async function takePiece(host, home, id, address, mark, registry) {
         + `${host.busCommand(['sweep', address, `--task ${id}`])}`,
     };
   }
-  if (participantSession(p, snapshotSessions([p], registry)) !== 'dead') {
+  if (participantSession(p, snapshotSessions([p!], coreRegistry(registry))) !== 'dead') {
     return {
       code: 1,
       refused: `participant ${address} has a session again — nothing was removed. Close it first: `
-        + `${host.busCommand(['stop', address, `--task ${id}`])}`,
+        + `${host.busCommand(['stop', address!, `--task ${id}`])}`,
     };
   }
   requireNativeIdle(home, meta, address, { taskLocked: true, sessionDead: sessionReportedDead });
@@ -374,9 +381,9 @@ async function takePiece(host, home, id, address, mark, registry) {
   // Harness state can live OUTSIDE the worktree: a Codex reviewer has no worktree at all and
   // still has an isolated home holding a copy of the owner's credentials.
   try {
-    await driverAt(p, registry).sweepParticipant?.(p, id);
+    await driverAt(p!, registry).sweepParticipant?.(p, id);
   } catch (e) {
-    warn(`could not clear the harness state of participant ${address}: ${e.message}`);
+    warn(`could not clear the harness state of participant ${address}: ${(e as Error).message}`);
   }
   for (const at of sweepParticipantFiles(home, id, address, kept)) {
     info(`${address}: ${at} removed — the session is dead, and the file is the lift's, not the repository's`);

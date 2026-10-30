@@ -1,3 +1,4 @@
+import type { ParticipantV1 } from '../dist/index.js';
 // Retire a participant whose harness reports the session dead and who has no Stop receipt.
 // [reference/03-cli.md#status-done-sweep-dismiss-history](../docs/reference/03-cli.md#status-done-sweep-dismiss-history)
 import { ok, info, fail } from './util.js';
@@ -10,18 +11,18 @@ import { driverOrLift, snapshotOf } from './drivers.js';
 import { participantSession, sessionReportedDead, unknownWhy } from './status.js';
 import { abandonmentAllowsClose } from './native-lifecycle.js';
 
-function whyUnknown(participant) {
+function whyUnknown(participant: ParticipantV1) {
   const sessions = snapshotOf([participant]);
   return unknownWhy(participant, sessions, driverOrLift(participant));
 }
 
-function reasonOf(participant) {
+function reasonOf(participant: ParticipantV1) {
   const sessions = snapshotOf([participant]);
-  const view = sessions?.[addressOf(participant)];
+  const view = sessions?.[addressOf(participant)!];
   return view?.stall?.reason || view?.note || 'the harness reports the session dead';
 }
 
-export function abandon(rootOrHost, { task, address } = {}) {
+export function abandon(rootOrHost: unknown, { task, address }: { task?: string | null; address?: string } = {}) {
   const host = hostOf(rootOrHost);
   const home = host.promptobusHome();
   const session = sessionIdentity();
@@ -43,12 +44,12 @@ export function abandon(rootOrHost, { task, address } = {}) {
   const route = `${host.busCommand(['abandon', '[<address>]', `--task ${id}`])}. Task participants: ${known.join(', ')}`;
   const named = address ? participantOf(meta, address) : null;
   if (address && !named) fail(`task ${id} has no participant "${address}" — nobody to abandon. ${route}`);
-  const targets = address ? [named] : meta.participants;
+  const targets = address ? [named!] : meta.participants;
   const retired = [];
   const skipped = [];
   const alive = [];
   for (const participant of targets) {
-    const addr = addressOf(participant);
+    const addr = addressOf(participant)!;
     if (abandonmentAllowsClose(participant, sessionReportedDead(participant))) {
       if (address) {
         ok(`${address} was already abandoned — journal untouched`);

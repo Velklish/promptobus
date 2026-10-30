@@ -137,6 +137,27 @@ coverage/
 /lib/driver-runtime.js
 /lib/driver-runtime.d.ts
 
+/lib/install.js
+/lib/install.d.ts
+/lib/models.js
+/lib/models.d.ts
+/lib/status.js
+/lib/status.d.ts
+/lib/abandon.js
+/lib/abandon.d.ts
+/lib/done.js
+/lib/done.d.ts
+/lib/integration.js
+/lib/integration.d.ts
+/lib/stop.js
+/lib/stop.d.ts
+/lib/sweep.js
+/lib/sweep.d.ts
+/lib/warden.js
+/lib/warden.d.ts
+/lib/model-routing/validate.js
+/lib/model-routing/validate.d.ts
+
 # Per-run gate records written beside the worktree during a bus task — task artifacts, not source.
 /gates-*-t*-*.json
 

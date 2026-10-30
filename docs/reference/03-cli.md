@@ -1773,7 +1773,7 @@ one is such a commit. Those keep the directory and branch, for the reason
 
 ### `recordTelemetry` — records for eligible participant generations
 
-Source: `lib/done.js`, `recordTelemetry`.
+Source: `lib/done.ts`, `recordTelemetry`.
 
 Records for harness generations of participants with a model, plus teamleads and
 the root orchestrator with a recorded session identity or model
@@ -1919,7 +1919,7 @@ and is done mid-run, on every slice acceptance.
 What dismiss does and does not do:
 
 - **stops future warden reports** about this address — one filter, in
-  `blockedParticipants` ([status.js](../../lib/status.js)), and all three channels go through it:
+  `blockedParticipants` ([status.ts](../../lib/status.ts)), and all three channels go through it:
   the warden postcard and the line in tool replies. Postcards already sent are not
   recalled;
 - **does not touch the mailbox.** Writing to a dismissed address is legal: the address
@@ -1931,7 +1931,7 @@ What dismiss does and does not do:
 
 ### `stopManaged` — stop managed sessions of a closed task
 
-Source: `lib/done.js`, `stopManaged`.
+Source: `lib/done.ts`, `stopManaged`.
 
 Stop managed sessions of a closed task. A session the mechanism started, it
 also closes: before this task a person stopped it by hand (`claude stop <id>`
@@ -1952,7 +1952,7 @@ it the snapshot is built with the same `registry`.
 
 ### `sweep` — clean up after one accepted piece
 
-Source: `lib/sweep.js`, `sweep`.
+Source: `lib/sweep.ts`, `sweep`.
 
 Clean up after one accepted piece; the task stays active. The order is fixed and every step
 before the lock is a refusal point, in this order: resolve the task, refuse a closed one,
@@ -1980,7 +1980,7 @@ a removal the disposition had already approved, and 1 for every refusal.
 
 ### `keptPaths` — what the piece sweep must never take
 
-Source: `lib/sweep.js`, `keptPaths`.
+Source: `lib/sweep.ts`, `keptPaths`.
 
 The run's telemetry and its mailboxes, as absolute paths: `task.json`, `messages/`,
 `waits/`, `inbox/`, `history/`, `health.json`, `supervisor.log` and `stalls.json`.
@@ -1996,7 +1996,7 @@ remover throws on a non-null answer instead of running.
 
 ### `requireSweeper` — who may sweep a piece
 
-Source: `lib/sweep.js`, `requireSweeper`.
+Source: `lib/sweep.ts`, `requireSweeper`.
 
 The task mailbox owner, or a participant of this task with role `approver` whose recorded
 session is the calling one. Nobody else, and the right is a positive proof: the caller
@@ -2023,7 +2023,7 @@ foreign to it. A record with no session proves nothing and is not a way in.
 
 ### `artifactRecords` — every record proven before a path is built from it
 
-Source: `lib/sweep.js`, `artifactRecords`.
+Source: `lib/sweep.ts`, `artifactRecords`.
 
 Every artifact record of the task, each parsed, validated against the `artifact` schema, and
 turned into two absolute paths — the blob and the `files/` entry — only if both stay direct
@@ -2038,7 +2038,7 @@ rest of the task holds.
 
 ### `artifactPlan` — the blobs and files of one piece
 
-Source: `lib/sweep.js`, `artifactPlan`.
+Source: `lib/sweep.ts`, `artifactPlan`.
 
 The records of the artifacts one participant sent.
 
@@ -2053,7 +2053,7 @@ is left in place.
 
 ### `sweepArtifacts` — the removals of one piece, under the publication lock
 
-Source: `lib/sweep.js`, `sweepArtifacts`.
+Source: `lib/sweep.ts`, `sweepArtifacts`.
 
 `sweep` does not call this. The function prints nothing: it returns counts. Artifact
 records, `files/` entries and blobs stay with the task journal. Retention removes the
@@ -2082,7 +2082,7 @@ blob stays in place. The function prints neither case.
 
 ### `childOf` — a path built from a record field stays a direct child
 
-Source: `lib/sweep.js`, `childOf`.
+Source: `lib/sweep.ts`, `childOf`.
 
 The path under `dir` for `name`, or `null` when `name` is empty, absolute, or walks out of
 `dir` — including through a separator of its own. The schema already refuses those shapes on
@@ -2091,7 +2091,7 @@ future record shape cannot widen a removal by widening a pattern.
 
 ### `sweepTree` — the tree and branch of one piece
 
-Source: `lib/sweep.js`, `sweepTree`.
+Source: `lib/sweep.ts`, `sweepTree`.
 
 The worktree directory of one participant and the `worktree-` branch behind it, decided by
 `inspectWorktree` and `worktreeDisposition` — the same pair `done` uses, so there is no
@@ -2112,7 +2112,7 @@ and files stay with the branch that may still be the only copy. The orphaned reg
 
 ### `takePiece` — the destructive stretch, under the journal lock
 
-Source: `lib/sweep.js`, `takePiece`.
+Source: `lib/sweep.ts`, `takePiece`.
 
 Everything that removes anything runs inside `withTaskLockAsync`, which uses the existing
 asynchronous directory lock. The journal lock and both registered journal-cache suspensions
@@ -2164,7 +2164,7 @@ costs one launch at any participant count, and the warden resets the cache itsel
 before the heartbeat snapshot — it has no inter-beat memory at all. The cost would
 appear for a reader that takes state more often than the heartbeat and without a
 reset: 60 snapshots in a row — 1 launch on a parsed reply versus 60 on an unparsed
-one. There is no such reader, and one must not be added (see [warden.js](../../lib/warden.js)).
+one. There is no such reader, and one must not be added (see [warden.ts](../../lib/warden.ts)).
 The suite after spawn/stop calls `resetBgSessionsCache` (sandbox.mjs); `awaitSession`
 and the warden reset themselves, otherwise they would see the list from before the
 change. This read measures 0.34–0.41 s (driver-claude.js); the shared minute is a

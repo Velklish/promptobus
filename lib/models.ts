@@ -26,6 +26,44 @@ import { calibrate, renderCalibration } from './model-routing/calibrate.js';
 import { applicableWindows, poolOf, resolve, unratedExclusion } from './model-routing/resolver.js';
 import { validate } from './model-routing/validate.js';
 
+import type { CatalogTuple } from './model-routing/catalog.js';
+import type { SnapshotDocument, SnapshotEntry } from './model-routing/cache.js';
+import type { PromptobusHost, TaskV1, RoleRegistry } from '../dist/index.js';
+import type { LibDriver } from './driver-runtime.js';
+
+type MergedCatalog = ReturnType<typeof loadCatalog>;
+type Constraints = { harness?: string | null; model?: string | null; effort?: string | null; allowPayg?: boolean };
+type ResolverRequest = NonNullable<Parameters<typeof resolve>[0]>;
+type ModelDecision = Omit<ReturnType<typeof resolve>, 'strategy' | 'role' | 'warnings'> & {
+  strategy: string; role: string; strategySource?: string;
+  warnings: (ReturnType<typeof resolve>['warnings'][number] & { harness?: string; usedPercent?: number })[];
+};
+interface RoutingOptions extends Constraints {
+  strategy?: string | null; role?: string; refresh?: boolean; dryRun?: boolean;
+  recheckTimedExhaustion?: boolean; strategySource?: string | null; catalogFile?: string;
+  adapterFor?: Parameters<typeof preflight>[0]['adapterFor']; now?: number;
+  permitEmptyCandidates?: boolean; liftUnrated?: boolean;
+}
+type RoutingContext = NonNullable<Awaited<ReturnType<typeof routingContext>>>;
+interface LiftOptions extends RoutingOptions { taskMeta?: TaskV1 | null; address?: string | null }
+interface CommandOutput { write: (text: string) => unknown }
+interface ModelsOptions extends RoutingOptions {
+  noProbe?: boolean; json?: boolean; clearExhausted?: string | null; subcommand?: string | null;
+  set?: string | null; clear?: boolean; write?: boolean; yes?: boolean;
+  ask?: (question: string) => unknown | Promise<unknown>; stdin?: { isTTY?: boolean } | null;
+  output?: CommandOutput;
+}
+type OverlayLayer = ReturnType<PromptobusHost['routingPaths']>['overlays'][number];
+type ProposedRatings = ReturnType<typeof calibrate>['ratings'];
+interface WritableOverlay extends Record<string, unknown> {
+  defaults?: Record<string, unknown>; ratings?: Record<string, Record<string, unknown>>;
+}
+interface AvailabilityRow extends Pick<SnapshotEntry, 'state' | 'reason' | 'checkedAt' | 'source'>,
+  Partial<Pick<SnapshotEntry, 'tier' | 'spendControlReached' | 'credits' | 'resetCredits' | 'poolWindowsUnbound' | 'windows'>> {
+  harness: string; plan?: { name: unknown; source: string } | null;
+  capacity?: Record<string, { value: number; source: string }>;
+}
+
 /** Strategy of a `models` call that names none: `balanced`, ADR-005's middle weight set — the
  * answer with no thumb on any scale. `spawn` and `review` have no default and route nothing. */
 export const DEFAULT_STRATEGY = 'balanced';
@@ -35,7 +73,7 @@ export const DEFAULT_ROLE = WORKER;
 
 /** Ask one yes/no question on the terminal. `node:readline` is imported where it is used: a module
  * that opened stdin at load would attach a reader to every `models` call, warden ones included. */
-async function defaultAsk(question) {
+async function defaultAsk(question: string) {
   const { createInterface } = await import('node:readline/promises');
   const rl = createInterface({ input: process.stdin, output: process.stderr });
   try {
@@ -46,18 +84,18 @@ async function defaultAsk(question) {
 }
 
 /** Write one already-terminated block to the command's output stream. */
-function emit(output, text) {
+function emit(output: CommandOutput | undefined, text: string) {
   const chunk = text.endsWith('\n') ? text : `${text}\n`;
   if (output && typeof output.write === 'function') output.write(chunk);
   else process.stdout.write(chunk);
 }
 
 /** Values of a constraint kind the merged catalog knows, sorted, for a refusal that lists them. */
-function known(tuples, field) {
+function known(tuples: CatalogTuple[], field: 'harness' | 'model' | 'effort') {
   return [...new Set(tuples.map((t) => t[field]).filter((v) => typeof v === 'string' && v))].sort();
 }
 
-function checkHarness(declared, harness) {
+function checkHarness(declared: readonly string[], harness: string | null | undefined) {
   if (harness && !declared.includes(harness)) {
     throw new PromptobusError('harness-unknown',
       `--harness ${harness}: this workspace declares no such harness `
@@ -68,10 +106,10 @@ function checkHarness(declared, harness) {
 
 /** Explicit constraints against the merged catalog and the workspace declaration, each value
  * checked on its own. A COMBINATION matching nothing is not this refusal — the decision explains it. */
-function checkConstraints(policy, declared, { harness, model, effort }) {
+function checkConstraints(policy: MergedCatalog, declared: readonly string[], { harness, model, effort }: Constraints) {
   checkHarness(declared, harness);
   const tuples = policy.tuples ?? [];
-  const pairs = [['harness', harness], ['model', model], ['effort', effort]];
+  const pairs: ['harness' | 'model' | 'effort', string | null | undefined][] = [['harness', harness], ['model', model], ['effort', effort]];
   for (const [field, value] of pairs) {
     if (!value) continue;
     if (tuples.some((t) => (t[field] ?? null) === value)) continue;
@@ -85,9 +123,9 @@ function checkConstraints(policy, declared, { harness, model, effort }) {
 
 /** A lift whose `--model` no tuple names routes nothing, once the policy lists admit it.
  * [reference/03-cli.md#an-explicit-model-the-catalog-does-not-rate](../docs/reference/03-cli.md#an-explicit-model-the-catalog-does-not-rate) */
-async function unratedLift(host, policy, declared, eligible, constraints, {
+async function unratedLift(host: PromptobusHost, policy: MergedCatalog, declared: readonly string[], eligible: readonly string[], constraints: Constraints & { model: string }, {
   catalogRole, step, strategy, adapterFor, refresh, dryRun,
-}) {
+}: { catalogRole: string; step: string; strategy: string; adapterFor: NonNullable<RoutingOptions['adapterFor']>; refresh: boolean; dryRun: boolean }) {
   const { harness, model, effort } = constraints;
   checkHarness(declared, harness);
   if (harness && !eligible.includes(harness)) {
@@ -100,8 +138,8 @@ async function unratedLift(host, policy, declared, eligible, constraints, {
   const rules = rulesForRole(policy.policy, catalogRole, step);
   const flagRule = Boolean(rules.allow.flags || rules.deny.flags);
   const poolRule = lifted === 'cursor' && Boolean(rules.allow.pools || rules.deny.pools);
-  let row = null;
-  let entry = null;
+  let row: NonNullable<SnapshotEntry['models']>[number] | null = null;
+  let entry: SnapshotEntry | null = null;
   if ((flagRule || poolRule) && declared.includes(lifted)) {
     const snapshot = await preflight({
       host, harnesses: [lifted], adapterFor, refresh, dryRun,
@@ -137,8 +175,8 @@ async function unratedLift(host, policy, declared, eligible, constraints, {
 
 /** The merged catalog, refusing on a layer it cannot read or a `schemaVersion` it does not know.
  * The full `models validate` sweep is a command a person types, not a toll on every lift. */
-function routingLayerOf(error, host, catalogFile) {
-  const layer = error.routingLayer ?? null;
+function routingLayerOf(error: GateError, host: PromptobusHost, catalogFile: string) {
+  const layer = (error as GateError & { routingLayer?: { kind: string; id: string } }).routingLayer ?? null;
   const path = layer?.kind === 'catalog'
     ? catalogFile
     : layer?.kind === 'overlay'
@@ -147,12 +185,12 @@ function routingLayerOf(error, host, catalogFile) {
   const subject = layer?.kind === 'host'
     ? 'the host routing declaration'
     : layer
-      ? `routing layer "${layer.id}"${path ? ` (${path})` : ''}`
+      ? `routing layer "${layer!.id}"${path ? ` (${path})` : ''}`
       : 'routing policy';
   return { kind: layer?.kind ?? null, id: layer?.id ?? null, path, subject };
 }
 
-function mergedCatalog({ host, constraints, catalogFile, now }) {
+function mergedCatalog({ host, constraints, catalogFile, now }: NonNullable<Parameters<typeof loadCatalog>[0]> & { host: PromptobusHost; catalogFile: string }) {
   try {
     return loadCatalog({ host, constraints, catalogFile, now });
   } catch (e) {
@@ -168,7 +206,7 @@ function mergedCatalog({ host, constraints, catalogFile, now }) {
 
 /** Everything a routed call needs, with the harnesses already asked, or `null` for an unrated lift. The
  * resolver is a FUNCTION: the participants are known only inside a plan, where nothing awaits. */
-export async function routingContext(rootOrHost, {
+export async function routingContext(rootOrHost: unknown, {
   strategy,
   role = DEFAULT_ROLE,
   harness = null,
@@ -184,9 +222,9 @@ export async function routingContext(rootOrHost, {
   now = Date.now(),
   permitEmptyCandidates = false,
   liftUnrated = false,
-} = {}) {
+}: RoutingOptions = {}) {
   const host = hostOf(rootOrHost);
-  if (!STRATEGIES.includes(strategy)) {
+  if (!STRATEGIES.includes(strategy!)) {
     throw new PromptobusError('strategy-unknown',
       `--strategy: unknown value "${strategy ?? ''}" — allowed: ${STRATEGIES.join(', ')}. `
       + '"auto" is not one of them: classifying a task into a strategy is the orchestrating '
@@ -206,10 +244,10 @@ export async function routingContext(rootOrHost, {
   const declared = host.declaredTools();
   const eligible = eligibleHarnessesForRole(host, catalogRole);
   const policy = mergedCatalog({ host, constraints, catalogFile, now });
-  const rates = (t) => t.model === constraints.model && (!constraints.harness || t.harness === constraints.harness);
+  const rates = (t: CatalogTuple) => t.model === constraints.model && (!constraints.harness || t.harness === constraints.harness);
   if (liftUnrated && constraints.model && !(policy.tuples ?? []).some(rates)) {
-    return unratedLift(host, policy, declared, eligible, constraints, {
-      catalogRole, step: role, strategy, adapterFor, refresh, dryRun,
+    return unratedLift(host, policy, declared, eligible, constraints as Constraints & { model: string }, {
+      catalogRole, step: role, strategy: strategy!, adapterFor, refresh, dryRun,
     });
   }
   checkConstraints(policy, declared, constraints);
@@ -228,7 +266,7 @@ export async function routingContext(rootOrHost, {
     }
   }
 
-  const rated = (h, m) => (policy.tuples ?? []).some((t) => t.harness === h && t.model === m);
+  const rated = (h: string, m: string) => (policy.tuples ?? []).some((t) => t.harness === h && t.model === m);
   const snapshot = await preflight({
     host, harnesses: eligible, adapterFor, refresh, dryRun, rated, recheckTimedExhaustion,
   });
@@ -250,11 +288,11 @@ export async function routingContext(rootOrHost, {
     snapshot,
     constraints,
     strategyCommands,
-    decide: (liveParticipants = []) => {
+    decide: (liveParticipants: ResolverRequest['liveParticipants'] = []) => {
       const decision = resolve({
         role: catalogRole, step: role, qualityFloor,
-        strategy, constraints, policy, snapshot, liveParticipants, strategyCommands, expiredWindows, now,
-      });
+        strategy: strategy!, constraints, policy, snapshot, liveParticipants, strategyCommands, expiredWindows, now,
+      }) as ModelDecision;
       // Only when the strategy was NOT named on the command line: a flag always wins, and the
       // absence of the field is what says the value came from the person.
       return strategySource ? { ...decision, strategySource } : decision;
@@ -264,7 +302,7 @@ export async function routingContext(rootOrHost, {
 
 /** The refusal a decision with no pick becomes. The rendered decision travels INSIDE the message:
  * a plan prints nothing, and the diagnostics a person needs are the lines `models` shows. */
-export function noCandidate(decision) {
+export function noCandidate(decision: ModelDecision) {
   // Read off the VALUES, not the exclusion codes: a tuple dropped for a reason reached first —
   // an overlay deny — never carries `constraint-mismatch`, and the codes let neighbours in.
   const { harness, model, effort } = decision.constraints;
@@ -285,11 +323,11 @@ export function noCandidate(decision) {
 
 /** The decision as it is kept on the participant — compact on purpose.
  * [guides/model-routing.md#routingmetadata--the-decision-as-it-is-kept-on-the-participant](../docs/guides/model-routing.md#routingmetadata--the-decision-as-it-is-kept-on-the-participant) */
-export function routingMetadata(decision, snapshot = null) {
+export function routingMetadata(decision: ModelDecision, snapshot: SnapshotDocument | null = null) {
   const chosen = decision.candidates.find((c) => c.chosen) ?? null;
-  const entry = snapshot?.harnesses?.[decision.chosen.harness] ?? null;
+  const entry = snapshot?.harnesses?.[decision.chosen!.harness] ?? null;
   const windows = entry
-    ? applicableWindows(entry, decision.chosen.model)
+    ? applicableWindows(entry, decision.chosen!.model)
       .filter((w) => typeof w.usedPercent === 'number')
       .map((w) => ({
         id: w.id, kind: w.kind, scope: w.scope ?? null, usedPercent: w.usedPercent,
@@ -299,24 +337,24 @@ export function routingMetadata(decision, snapshot = null) {
     .filter((w) => w.code === 'near-limit' && w.harness)
     .map((w) => ({ harness: w.harness, usedPercent: w.usedPercent }));
   // One entry per harness — or pool, where the excluded window names one — that left selection.
-  const spentBy = new Map();
+  const spentBy = new Map<string, { harness: string; pool?: string; usedPercent: number }>();
   for (const c of decision.candidates) {
     if (c.excluded?.code !== 'window-nearly-spent') continue;
     const pool = c.excluded.pool ?? null;
     const key = `${c.harness}\u0000${pool ?? ''}`;
-    const usedPercent = Math.max(spentBy.get(key)?.usedPercent ?? 0, c.excluded.usedPercent);
+    const usedPercent = Math.max(spentBy.get(key)?.usedPercent ?? 0, c.excluded.usedPercent!);
     spentBy.set(key, { harness: c.harness, ...(pool ? { pool } : {}), usedPercent });
   }
-  const nearlySpent = [...spentBy.keys()].sort().map((key) => spentBy.get(key));
+  const nearlySpent = [...spentBy.keys()].sort().map((key) => spentBy.get(key)!);
   return {
     strategy: decision.strategy,
     role: decision.role,
     step: decision.step,
     qualityFloor: decision.qualityFloor,
-    tupleId: decision.chosen.tupleId,
-    harness: decision.chosen.harness,
-    model: decision.chosen.model,
-    effort: decision.chosen.effort,
+    tupleId: decision.chosen!.tupleId,
+    harness: decision.chosen!.harness,
+    model: decision.chosen!.model,
+    effort: decision.chosen!.effort,
     score: chosen?.score?.total ?? null,
     ...(decision.strategySource ? { strategySource: decision.strategySource } : {}),
     snapshot: { ...decision.snapshot },
@@ -330,36 +368,36 @@ export function routingMetadata(decision, snapshot = null) {
 
 /** Participants already up, as the resolver wants them. Three kinds are left out: the orchestrator
  * (no harness of its own), a record with no model, and a dismissed one. `exclude` is the restart. */
-export function liveTuples(taskMeta, { exclude = null, registry = null } = {}) {
+export function liveTuples(taskMeta: TaskV1 | null | undefined, { exclude = null, registry = null }: { exclude?: string | null; registry?: RoleRegistry | null } = {}) {
   return (taskMeta?.participants ?? [])
-    .filter((p) => registry ? roleEntry(registry, p.role)?.routed : ROUTED_ROLES.includes(p.role))
+    .filter((p) => registry ? roleEntry(registry, p.role)?.routed : (ROUTED_ROLES as readonly string[]).includes(p.role))
     .filter((p) => p.metadata?.address !== exclude)
     .filter((p) => !p.metadata?.dismissed)
     .filter((p) => typeof p.metadata?.model === 'string' && p.metadata.model)
     .map((p) => ({
-      harness: p.harness, model: p.metadata.model,
-      role: registry ? roleEntry(registry, p.role).catalogRole : p.role,
+      harness: p.harness, model: p.metadata.model as string,
+      role: registry ? roleEntry(registry, p.role)!.catalogRole! : p.role,
     }));
 }
 
 /** The pick, from a context already built and the task the lift joins. Synchronous on purpose —
  * `planReview` is called as a pure function by the suite and may not await. */
-export function decideLift(ctx, { taskMeta = null, address = null } = {}) {
+export function decideLift(ctx: RoutingContext | null, { taskMeta = null, address = null }: Pick<LiftOptions, 'taskMeta' | 'address'> = {}) {
   if (!ctx) return null;
   const decision = ctx.decide(liveTuples(taskMeta, { exclude: address, registry: ctx.registry }));
   if (!decision.chosen) throw noCandidate(decision);
   return {
     decision,
-    harness: decision.chosen.harness,
-    model: decision.chosen.model,
-    effort: decision.chosen.effort,
+    harness: decision.chosen!.harness,
+    model: decision.chosen!.model,
+    effort: decision.chosen!.effort,
     metadata: routingMetadata(decision, ctx.snapshot),
   };
 }
 
 /** The routing half of a lift in one call, or `null` when it routes nothing — the whole legacy
  * path. The check lives here: two copies would drift, and the drifted one would ask the host. */
-export async function routeLift(rootOrHost, {
+export async function routeLift(rootOrHost: unknown, {
   role,
   strategy = undefined,
   harness = null,
@@ -373,7 +411,7 @@ export async function routeLift(rootOrHost, {
   catalogFile = CATALOG_FILE,
   adapterFor = adapterOf,
   now = Date.now(),
-} = {}) {
+}: LiftOptions = {}) {
   const host = hostOf(rootOrHost);
   // The default is read BEFORE the legacy gate: a call with no `--strategy` and no default
   // anywhere still returns having asked the host nothing but its overlay paths.
@@ -400,7 +438,8 @@ export async function routeLift(rootOrHost, {
 
 /** One line about a routed participant: strategy, tuple, snapshot age, warnings. Each `near-limit` and
  * each harness that left selection is named with its percentage; an older record prints bare codes. */
-export function routingLine(routing) {
+export function routingLine(raw: Record<string, unknown> | ReturnType<typeof routingMetadata> | null | undefined) {
+  const routing = raw as ReturnType<typeof routingMetadata> | null | undefined;
   if (!routing) return null;
   const parts = [`routing: ${routing.strategy}`, routing.tupleId];
   if (routing.step && routing.step !== routing.role) {
@@ -417,11 +456,11 @@ export function routingLine(routing) {
   const near = [...(routing.nearLimit ?? [])];
   const labels = (routing.warnings ?? []).map((code) => {
     if (code !== 'near-limit' || !near.length) return code;
-    const { harness, usedPercent } = near.shift();
-    return `near-limit ${harness} ${Math.round(usedPercent * 100) / 100} %`;
+    const { harness, usedPercent } = near.shift()!;
+    return `near-limit ${harness} ${Math.round(usedPercent! * 100) / 100} %`;
   });
   for (const { harness, pool, usedPercent } of routing.nearlySpent ?? []) {
-    labels.push(`window-nearly-spent ${harness}${pool ? ` ${pool}` : ''} ${Math.round(usedPercent * 100) / 100} %`);
+    labels.push(`window-nearly-spent ${harness}${pool ? ` ${pool}` : ''} ${Math.round(usedPercent! * 100) / 100} %`);
   }
   parts.push(labels.length ? `warnings: ${labels.join(', ')}` : 'no warnings');
   return parts.join(' · ');
@@ -429,13 +468,13 @@ export function routingLine(routing) {
 
 /** The decision inside a `--dry-run` plan, rendered rather than summarised: a dry run is where a
  * person checks the pick before paying for it, and a one-line summary hides the losers. */
-export function sayDecision(decision) {
+export function sayDecision(decision: ModelDecision) {
   info('routing decision:');
   for (const line of render(decision).trimEnd().split('\n')) console.log(`  ${line}`);
 }
 
 /** `models --clear-exhausted <harness>`: drop a reset-less exhaustion, and say whether one was held. */
-function clearCommand(host, harness) {
+function clearCommand(host: PromptobusHost, harness: string) {
   const declared = host.declaredTools();
   if (!declared.includes(harness)) {
     throw new PromptobusError('harness-unknown',
@@ -455,7 +494,7 @@ function clearCommand(host, harness) {
 
 /** The bans in force, and who can lift each one. A deny rule is lifted in the layer that wrote it
  * and nowhere else, so a person reading `denied by policy` is told which file to open. */
-function sayDenyRules(verdict) {
+function sayDenyRules(verdict: ReturnType<typeof validate>) {
   const rules = (verdict.rules ?? []).filter((r) => r.rule === 'deny');
   if (!rules.length) return;
   info('deny rules in force — each is lifted only in the layer that wrote it, and no allow list reaches one:');
@@ -469,7 +508,7 @@ function sayDenyRules(verdict) {
 
 /** The strategy a routed call will use, and where it came from: `--strategy`, then the merged
  * default, then `null` — the legacy path. Reading it costs the overlay files and nothing else. */
-export function effectiveStrategy(host, { strategy, catalogFile = CATALOG_FILE, now = Date.now() } = {}) {
+export function effectiveStrategy(host: PromptobusHost, { strategy, catalogFile = CATALOG_FILE, now = Date.now() }: Pick<RoutingOptions, 'strategy' | 'catalogFile' | 'now'> = {}) {
   if (strategy !== undefined && strategy !== null) return { strategy, source: 'flag' };
   let merged;
   try {
@@ -491,7 +530,7 @@ export function effectiveStrategy(host, { strategy, catalogFile = CATALOG_FILE, 
 }
 
 /** The one layer the host says the tool may write, or a refusal naming why there is none. */
-function writableLayer(host) {
+function writableLayer(host: PromptobusHost) {
   const declared = host.routingPaths?.()?.overlays ?? [];
   const writable = declared.find((layer) => layer.writable === true);
   if (writable) return writable;
@@ -503,23 +542,23 @@ function writableLayer(host) {
         + 'A host that means the tool to write one declares a layer and marks it writable');
 }
 
-const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** Read a writable overlay without turning a non-object JSON value into an object of junk keys. */
-function writableDocument(layer) {
+function writableDocument(layer: OverlayLayer): Record<string, unknown> {
   const file = readLayerFile(layer.path);
   if (file.present && !isObject(file.data)) {
     const found = Array.isArray(file.data) ? 'an array'
       : file.data === null ? 'null'
         : `a ${typeof file.data}`;
-    throw new GateError(`routing layer ${layer.path} is not a JSON object: found ${found}`);
+    throw new GateError(`routing layer ${layer!.path} is not a JSON object: found ${found}`);
   }
-  return file.data ?? { schemaVersion: OVERLAY_SCHEMA_VERSION };
+  return (file.data ?? { schemaVersion: OVERLAY_SCHEMA_VERSION }) as Record<string, unknown>;
 }
 
 /** `models strategy [--set <name> | --clear]`. The write keeps every other key of the file: the
  * layer is a person's file holding one machine-written value. Atomic and `0600`. */
-function strategyCommand(host, { set: setTo, clear, catalogFile, now }) {
+function strategyCommand(host: PromptobusHost, { set: setTo, clear, catalogFile, now }: Pick<ModelsOptions, 'set' | 'clear' | 'catalogFile' | 'now'>) {
   const merged = loadCatalog({ host, catalogFile, now });
   const current = merged.policy?.defaults?.strategy ?? null;
   const from = merged.sources?.defaults?.strategy ?? null;
@@ -544,12 +583,12 @@ function strategyCommand(host, { set: setTo, clear, catalogFile, now }) {
   }
 
   const layer = writableLayer(host);
-  const doc = writableDocument(layer);
+  const doc = writableDocument(layer!) as WritableOverlay;
 
   // Nothing to clear is not a write: creating a file to record the absence of a key would leave
   // an overlay that says nothing, and `--clear` twice would look like it did something.
   if (clear && doc.defaults?.strategy === undefined) {
-    info(`no strategy default is set in overlay "${layer.id}" (${layer.path}) — nothing to clear`
+    info(`no strategy default is set in overlay "${layer!.id}" (${layer!.path}) — nothing to clear`
       + `${current ? `. The effective default of ${current} comes from overlay "${from}"` : ''}`);
     return 0;
   }
@@ -558,29 +597,29 @@ function strategyCommand(host, { set: setTo, clear, catalogFile, now }) {
   // refuse while the file on disk is still the person's. It also catches a mis-marked writable layer.
   const declared = host.routingPaths?.()?.overlays ?? [];
   const above = declared.slice(declared.findIndex((l) => l.id === layer.id) + 1)
-    .filter((l) => readLayerFile(l.path).data?.defaults?.strategy !== undefined);
+    .filter((l) => (readLayerFile(l.path).data as WritableOverlay | null)?.defaults?.strategy !== undefined);
 
   const defaults = { ...(doc.defaults ?? {}) };
   if (setTo) defaults.strategy = setTo;
   else delete defaults.strategy;
-  const next = { ...doc, schemaVersion: doc.schemaVersion ?? OVERLAY_SCHEMA_VERSION, defaults };
-  if (!Object.keys(next.defaults).length) delete next.defaults;
-  writeFileAtomic(layer.path, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+  const next: WritableOverlay = { ...doc, schemaVersion: doc.schemaVersion ?? OVERLAY_SCHEMA_VERSION, defaults };
+  if (!Object.keys(next.defaults!).length) delete next.defaults;
+  writeFileAtomic(layer!.path, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
 
   if (clear) {
-    ok(`strategy default cleared from overlay "${layer.id}" (${layer.path})`);
-  } else ok(`strategy default set to ${setTo} in overlay "${layer.id}" (${layer.path})`);
+    ok(`strategy default cleared from overlay "${layer!.id}" (${layer!.path})`);
+  } else ok(`strategy default set to ${setTo} in overlay "${layer!.id}" (${layer!.path})`);
 
   if (above.length && setTo) {
     warn(`what was just written is shadowed: overlay "${above[above.length - 1].id}" sits above `
-      + `"${layer.id}" and names a strategy default of its own, so that one is what takes effect`);
+      + `"${layer!.id}" and names a strategy default of its own, so that one is what takes effect`);
   }
   return 0;
 }
 
 /** The one question the tool cannot answer, printed rather than written (ADR-005): the writable
  * layer is per-workspace, so a tool-written answer would be given again in every workspace. */
-function sayAccountAnswers(host, merged) {
+function sayAccountAnswers(host: PromptobusHost, merged: MergedCatalog) {
   const declared = host.routingPaths?.()?.overlays ?? [];
   const user = declared.find((l) => l.id === 'user') ?? declared[0] ?? null;
   const answers = merged.policy?.account ?? {};
@@ -599,10 +638,10 @@ function sayAccountAnswers(host, merged) {
 
 /** The alias dictionaries of the declared harnesses, through the registry and never by importing a
  * driver. A driver publishing no aliases contributes nothing, which is the honest answer. */
-function aliasTables(host) {
-  const out = {};
+function aliasTables(host: PromptobusHost) {
+  const out: NonNullable<NonNullable<Parameters<typeof calibrate>[1]>['aliases']> = {};
   for (const harness of host.declaredTools()) {
-    let driver;
+    let driver: LibDriver;
     try {
       driver = driverByHarness(harness);
     } catch {
@@ -618,7 +657,7 @@ function aliasTables(host) {
 
 /** The layer ADR-005 lets `--write` touch: the one whose id is `user`. Named by id and not taken
  * from `writable` — that one is per workspace, and a rating is not a property of one. */
-function userLayer(host) {
+function userLayer(host: PromptobusHost) {
   const declared = host.routingPaths?.()?.overlays ?? [];
   const layer = declared.find((l) => l.id === 'user');
   if (layer) return layer;
@@ -630,18 +669,18 @@ function userLayer(host) {
 }
 
 /** The proposed tuple/rating pairs named by the layers above `user`, with the highest writer kept. */
-function shadowedRatings(host, target, proposed) {
+function shadowedRatings(host: PromptobusHost, target: OverlayLayer, proposed: ProposedRatings) {
   if (!Object.keys(proposed).length) return [];
   const declared = host.routingPaths?.()?.overlays ?? [];
   const index = declared.findIndex((layer) => layer.id === target.id);
   if (index < 0) return [];
-  const byPair = new Map();
+  const byPair = new Map<string, { layer: string; tuple: string; rating: string }>();
   for (const layer of declared.slice(index + 1)) {
     const upper = readLayerFile(layer.path).data;
-    const ratings = upper?.ratings;
+    const ratings = (upper as { ratings?: unknown } | null)?.ratings;
     if (!ratings || typeof ratings !== 'object' || Array.isArray(ratings)) continue;
     for (const [tuple, block] of Object.entries(proposed)) {
-      const upperBlock = Object.hasOwn(ratings, tuple) ? ratings[tuple] : null;
+      const upperBlock = Object.hasOwn(ratings, tuple) ? (ratings as Record<string, unknown>)[tuple] : null;
       if (!upperBlock || typeof upperBlock !== 'object' || Array.isArray(upperBlock)) continue;
       for (const rating of Object.keys(block)) {
         if (Object.hasOwn(upperBlock, rating)) {
@@ -650,7 +689,7 @@ function shadowedRatings(host, target, proposed) {
       }
     }
   }
-  const grouped = [];
+  const grouped: { layer: string; tuple: string; ratings: string[] }[] = [];
   for (const { layer, tuple, rating } of byPair.values()) {
     let entry = grouped.find((item) => item.layer === layer && item.tuple === tuple);
     if (!entry) {
@@ -664,9 +703,9 @@ function shadowedRatings(host, target, proposed) {
 
 /** `models calibrate`. Three steps on purpose — read, ask the pure function, then merge with an
  * agreement in hand. Without a terminal it refuses unless `--yes` (ADR-005 option 5B). */
-async function calibrateCommand(host, {
+async function calibrateCommand(host: PromptobusHost, {
   json, write, yes, catalogFile, now, output, ask, stdin,
-}) {
+}: Required<Pick<ModelsOptions, 'json' | 'write' | 'yes' | 'catalogFile' | 'now' | 'ask'>> & Pick<ModelsOptions, 'output' | 'stdin'>) {
   // `--yes` is the record of an agreement to a WRITE. On its own it agrees to nothing, and
   // ignoring it would let `calibrate --yes` read as "applied" in a script that lost `--write`.
   if (yes && !write) {
@@ -676,7 +715,7 @@ async function calibrateCommand(host, {
 
   // The SHIPPED catalog and the merged stack, separately: comparing against the merged one would
   // make a person's own override the base of the next comparison and walk the rating (ADR-005).
-  const shipped = readLayers(host, { catalogFile }).canonical.data?.tuples ?? [];
+  const shipped = (readLayers(host, { catalogFile }).canonical.data as { tuples?: CatalogTuple[] } | null)?.tuples ?? [];
   const merged = loadCatalog({ host, catalogFile, now });
   const { file, records, skipped } = readTelemetry(host);
   const report = calibrate(records, {
@@ -688,7 +727,7 @@ async function calibrateCommand(host, {
   const moved = Object.keys(report.ratings).length;
 
   const layer = write ? userLayer(host) : null;
-  const shadowedBy = write ? shadowedRatings(host, layer, report.ratings) : [];
+  const shadowedBy = write ? shadowedRatings(host, layer!, report.ratings) : [];
 
   // Text mode shows the complete proposal before asking. `--json` stays one document — its
   // non-TTY refusal is still raised before that document is emitted.
@@ -708,7 +747,7 @@ async function calibrateCommand(host, {
     // The prompt goes to stderr (`defaultAsk`), so it never lands in the
     // document `--json` puts on stdout.
     const answer = await ask(`merge ${moved} rating override(s) `
-      + `into overlay "${layer.id}" (${layer.path})? [y/N] `);
+      + `into overlay "${layer!.id}" (${layer!.path})? [y/N] `);
     agreed = /^y(es)?$/i.test(String(answer ?? '').trim());
   }
 
@@ -716,7 +755,7 @@ async function calibrateCommand(host, {
   // person overrode by hand keeps whatever they did NOT calibrate.
   let applied = false;
   if (write && agreed && moved) {
-    const doc = writableDocument(layer);
+    const doc = writableDocument(layer!) as WritableOverlay;
     const ratings = { ...(doc.ratings ?? {}) };
     for (const [tuple, block] of Object.entries(report.ratings)) {
       ratings[tuple] = { ...(ratings[tuple] ?? {}), ...block };
@@ -724,7 +763,7 @@ async function calibrateCommand(host, {
     // `schemaVersion` 2 is not a courtesy: a v1 overlay carrying a value on the rating scale is
     // refused by load and by validate, so writing the block without it breaks the stack.
     const next = { ...doc, schemaVersion: OVERLAY_SCHEMA_VERSION, ratings };
-    writeFileAtomic(layer.path, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+    writeFileAtomic(layer!.path, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
     applied = true;
   }
 
@@ -739,7 +778,7 @@ async function calibrateCommand(host, {
       .map(({ tuple, ratings }) => `"${tuple}" (${ratings.join(', ')})`)
       .join(', ');
     warn(`what was just written is shadowed: overlay "${highest}" sits above `
-      + `"${layer.id}" and names ratings for ${pairs}, so those values are what take effect`);
+      + `"${layer!.id}" and names ratings for ${pairs}, so those values are what take effect`);
   }
 
   // One document on stdout under `--json` and nothing else: `ok` and `info` go to the console, so
@@ -750,7 +789,7 @@ async function calibrateCommand(host, {
       file,
       skipped,
       write: write
-        ? { layer: layer.id, path: layer.path, tuples: moved, applied, shadowedBy }
+        ? { layer: layer!.id, path: layer!.path, tuples: moved, applied, shadowedBy }
         : null,
     }, null, 2));
     return 0;
@@ -769,12 +808,12 @@ async function calibrateCommand(host, {
     return 0;
   }
   ok(`merged ${moved} rating override(s) into overlay `
-    + `"${layer.id}" (${layer.path}); every other key of that file is unchanged`);
+    + `"${layer!.id}" (${layer!.path}); every other key of that file is unchanged`);
   return 0;
 }
 
 /** `models validate`: the catalog and every overlay, with the layers named. */
-function validateCommand(host, { catalogFile, now }) {
+function validateCommand(host: PromptobusHost, { catalogFile, now }: Pick<ModelsOptions, 'catalogFile' | 'now'>) {
   const verdict = validate({ host, catalogFile, now });
   info(`layers: ${verdict.layers
     .map((l) => `${l.id} ${l.present ? l.path : '(absent)'}${l.writable ? ' [writable]' : ''}`)
@@ -803,12 +842,12 @@ function validateCommand(host, { catalogFile, now }) {
 
 /** What the resolver would pick right now, with the availability facts attached.
  * [guides/model-routing.md#availabilityof--the-decision-with-the-availability-facts-it-was-made-on-attached](../docs/guides/model-routing.md#availabilityof--the-decision-with-the-availability-facts-it-was-made-on-attached) */
-export function availabilityOf(snapshot, policy = null) {
+export function availabilityOf(snapshot: SnapshotDocument | null | undefined, policy: MergedCatalog | null = null) {
   return Object.entries(snapshot?.harnesses ?? {}).map(([harness, entry]) => {
     // Through the snapshot's own projection, not around it: `snapshotEntry` rebuilds every field
     // it declares, so no field of a future version rides along into a second document.
     const e = snapshotEntry(entry);
-    const row = {
+    const row: AvailabilityRow = {
       harness,
       state: e.state,
       reason: e.reason,
@@ -838,12 +877,12 @@ export function availabilityOf(snapshot, policy = null) {
 }
 
 /** The decision with that block attached, or the decision itself when the snapshot carried no harness. */
-function withAvailability(decision, snapshot, policy = null) {
+function withAvailability(decision: ModelDecision, snapshot: SnapshotDocument, policy: MergedCatalog | null = null) {
   const harnesses = availabilityOf(snapshot, policy);
   return harnesses.length ? { ...decision, harnesses } : decision;
 }
 
-export async function models(rootOrHost, {
+export async function models(rootOrHost: unknown, {
   strategy = undefined,
   role = DEFAULT_ROLE,
   refresh = false,
@@ -863,7 +902,7 @@ export async function models(rootOrHost, {
   adapterFor = adapterOf,
   now = Date.now(),
   output = undefined,
-} = {}) {
+}: ModelsOptions = {}) {
   const host = hostOf(rootOrHost);
   if (clearHarness) return clearCommand(host, clearHarness);
   if (refresh && noProbe) throw new GateError('models: --refresh and --no-probe cannot be combined');
@@ -911,12 +950,12 @@ export async function models(rootOrHost, {
     now,
     permitEmptyCandidates: true,
   });
-  const decision = withAvailability(ctx.decide(), ctx.snapshot, ctx.policy);
+  const decision = withAvailability(ctx!.decide(), ctx!.snapshot, ctx!.policy);
   emit(output, json ? `${JSON.stringify(decision, null, 2)}` : render(decision));
   // Two notes travel BESIDE the document and only on the text run: `--json` prints one document a
   // machine parses, and neither the account question nor the telemetry count is a field of it.
   if (!json) {
-    sayAccountAnswers(host, ctx.policy);
+    sayAccountAnswers(host, ctx!.policy);
     info(telemetryLine(host));
   }
   return 0;

@@ -230,7 +230,7 @@ function participantLine(
 
 /** The unread part of a participant line: the participant's total on its primary address, and on an
  * address alias the slot's own count with where it is counted — ADR-028 § The journal, the mailbox reads. */
-export function mailboxPart(service: PromptobusService, home: string, id: string, addr: string): string {
+export function mailboxPart(service: Pick<PromptobusService, 'mailboxOf' | 'countMailbox' | 'countInbox'>, home: string, id: string, addr: string): string {
   const box = service.mailboxOf?.(home, id, addr);
   if (!box?.alias) return `unread ${service.countMailbox?.(home, id, addr) ?? service.countInbox(home, id, addr)}`;
   return `address alias of ${box.primary.address} of task ${box.primary.task} · `

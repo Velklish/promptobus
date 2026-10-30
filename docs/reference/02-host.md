@@ -387,7 +387,7 @@ handshake of its own. `claude agents --json` named the session's own full id in
 
 ## The host integration entry point
 
-Source: `lib/integration.js` and `lib/integration.d.ts`, its types. Specifier: `promptobus/integration`.
+Source: `lib/integration.ts` and `lib/integration.d.ts`, its types. Specifier: `promptobus/integration`.
 
 A host that embeds the bus renders its own install, diagnoses its workspace and quotes lines the package prints. It reads those values and operations here, not from package files. The entry points in `package.json` `exports` are the whole supported surface: an import of `promptobus/lib/…`, of `promptobus/dist/…` or of the package manifest fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`, and a file URL built from the package directory reads a layout that can change in any release.
 
@@ -536,7 +536,7 @@ named `claude --version`. A host that already fills `version` from
 
 ### The layer the tool writes
 
-Source: `src/host.ts` (`HostRoutingOverlay.writable`), `lib/models.js`
+Source: `src/host.ts` (`HostRoutingOverlay.writable`), `lib/models.ts`
 (`strategyCommand`).
 
 The writable flag names the layer that `models strategy --set` and `--clear` write.

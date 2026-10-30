@@ -5,8 +5,8 @@ import type { AvailabilityTier, AvailabilityWindow, WindowScope } from './cache.
 
 interface TupleDescription { harness: string; model: string; effort?: string | null }
 interface Pace {
-  window?: AvailabilityWindow | null; eligible: boolean; representative?: boolean; note?: string;
-  usedShare?: number; elapsedShare?: number; underspend?: number; spendPenalty?: number; effective?: number; atCap?: boolean;
+  window?: Pick<AvailabilityWindow, 'id' | 'kind' | 'scope'> | null; eligible: boolean; representative?: boolean; note?: string | null;
+  usedShare?: number | null; elapsedShare?: number | null; underspend?: number | null; spendPenalty?: number | null; effective?: number | null; atCap?: boolean;
 }
 interface Candidate extends TupleDescription {
   tupleId: string; chosen: boolean; availability: { state: string };
@@ -17,7 +17,7 @@ type PacedCandidate = Candidate & { pace: Pace };
 interface RuntimeModel extends TupleDescription { flags?: string[] }
 interface AgeRecord { ageSec: number; source: string; checkedAt: string }
 interface HarnessAvailability {
-  harness: string; state: string; tier?: AvailabilityTier | null; plan?: AvailabilityTier | null;
+  harness: string; state: string; tier?: AvailabilityTier | null; plan?: { name: unknown; source: string } | null;
   capacity?: Record<string, { value: number; source: string }>;
   credits?: { available: boolean; unlimited: boolean }; resetCredits?: { available: number };
   poolWindowsUnbound?: boolean; windows?: AvailabilityWindow[];
