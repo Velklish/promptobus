@@ -1,6 +1,6 @@
 # CLI
 
-Parser: `lib/cli.js`. Commands: `lead`, `spawn`, `step`, `review`, `report`, `models`, `stats`, `status`, `digest`, `send`, `ask`, `link`, `unlink`, `message-order`, `done`, `abandon`, `stop`, `sweep`, `dismiss`, `history`, `guard`, `warden`, `mcp`, `install`, `uninstall`, `lease`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `promptobus/cli` exports it as the frozen `COMMANDS`, and the refusal of an unknown command joins that array, so a host passthrough reads the vocabulary rather than a copy. `test/cli.test.mjs` reads the dispatcher's own `case` labels, holds this Commands list equal to them aside from the aliases, and checks both the command name and its wrapper: it fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them, and on a `formatCommand` or `formatNpx` call whose literal command is one of the package's own labels. It also scans non-comment string literals recursively under `lib/` for `promptobus <known-subcommand>` outside those wrappers; low-level seams receive the formatted command from their host-aware callers, so no allowlist is needed. A hint a host assembles by template is not checked — the package cannot read it.
+Parser: `lib/cli.js`. Commands: `lead`, `spawn`, `step`, `review`, `report`, `models`, `stats`, `status`, `digest`, `send`, `ask`, `link`, `unlink`, `message-order`, `done`, `abandon`, `stop`, `sweep`, `dismiss`, `history`, `guard`, `warden`, `service`, `mcp`, `install`, `uninstall`, `lease`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `promptobus/cli` exports it as the frozen `COMMANDS`, and the refusal of an unknown command joins that array, so a host passthrough reads the vocabulary rather than a copy. `test/cli.test.mjs` reads the dispatcher's own `case` labels, holds this Commands list equal to them aside from the aliases, and checks both the command name and its wrapper: it fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them, and on a `formatCommand` or `formatNpx` call whose literal command is one of the package's own labels. It also scans non-comment string literals recursively under `lib/` for `promptobus <known-subcommand>` outside those wrappers; low-level seams receive the formatted command from their host-aware callers, so no allowlist is needed. A hint a host assembles by template is not checked — the package cannot read it.
 
 Help and `--version` do not load the standalone host. Every other command does.
 
@@ -1684,6 +1684,39 @@ If the holder process is already gone while the record is still `starting` and h
 **A holder outlives the command that started it. It does not outlive its session.** Its session record is its identity — the file it was handed and reads on every decision — and it watches for that file every five seconds. Gone means there is nothing left to hold: the holder kills its app-server and exits, without writing to its log, because a log write would recreate the directory tree that was just removed. The record disappears in two ways, and both mean the same thing: `promptobus done` and a confirmed driver Stop remove it (Codex Stop first requires terminal command accounting and output closure, so its watch usually has nothing to do), and so does anyone who removes the tree it lives in.
 
 That last case is the one this exists for. A cleanup hook reaps a holder only where a hook can run, and the take-down that leaks reaches none: measured 2026-09-05, a suite file taken down with SIGKILL leaves its holder and app-server alive, while SIGTERM and a clean finish leave nothing — and SIGKILL is what the suite runner itself uses, at the file timeout and on Ctrl-C alike. One 2026-09-04 run left twelve such processes alive into the next day, each holding a session file under a directory that had since been removed. Nothing but the holder itself was in a position to notice.
+
+## Shared service
+
+| Command | Behavior |
+| --- | --- |
+| `service ensure [--json]` | Reuse the compatible workspace owner or start it through the consumer entry point and wait for readiness. |
+| `service status [--json]` | Read discovery and query the existing owner; it does not start a listener. |
+| `service stop [--json]` | Refuse live clients, startup reservations, in-flight requests or attached work; otherwise request shutdown and confirm physical process exit. |
+| `service run` | Internal detached entry, requiring the consumer-owned Host factory in `runPromptobus` options. |
+
+The service key contains the canonical Host workspace and store; the store may
+be outside the workspace. The retained discovery contains root/home, runtime
+identity, version, base URL and PID/birth identity, without credentials. `--json`
+prints one JSON value; the other display is formatted JSON. An incompatible
+runtime owner or foreign listener on the retained port refuses instead of
+creating another owner.
+
+The MCP listener serves `/mcp/bus` and `/mcp/reviewer_files` on loopback in the
+same physical process. Clients retain separate credentials and connection state;
+each logical route enforces its grant and file ceiling.
+Owner control uses a private local socket, so its credentials are never sent to
+an unrelated process that acquired the retained TCP port after a crash. A client
+bearer cannot register or rebind another client. Reviewer grants that contain the
+private credential tree are refused, including a broad ancestor such as `/`.
+
+The default idle interval is 30 seconds without clients, reservations, requests
+or attached work. A live client with no current HTTP request keeps its service;
+optional SSE/DELETE behavior is not the lifetime proof. Unknown managed liveness
+is retained and reported by status. After a listener crash, run `service ensure`
+or repeat consumer preflight before the existing harness reconnects/reinitializes.
+The launcher ensures readiness at launch; it does not continuously supervise the
+process afterward. A successful stop confirms this process's exit, not a native
+participant Stop receipt. See the [service decision](../adr/adr-040-shared-workspace-service.md).
 
 ## MCP
 

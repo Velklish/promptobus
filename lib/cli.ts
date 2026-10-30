@@ -18,15 +18,16 @@ import type { ParseArgsConfig } from 'node:util';
 type ParseArgsOptionsConfig = NonNullable<ParseArgsConfig['options']>;
 import type { PromptobusHost } from '../dist/index.js';
 import type { GuardInput } from './guard.js';
+import type { ServiceHostFactory } from './service.js';
 
 interface CommandOutput { write?(chunk: string): unknown }
 type CliHost = Pick<PromptobusHost, 'kind' | 'commandName' | 'version'>;
-interface RunOptions { host?: CliHost | null; cwd?: string; env?: NodeJS.ProcessEnv; input?: GuardInput; output?: CommandOutput }
+interface RunOptions { host?: CliHost | null; cwd?: string; env?: NodeJS.ProcessEnv; input?: GuardInput; output?: CommandOutput; createHost?: ServiceHostFactory }
 
 // The command vocabulary, exported so a host's passthrough and refusal read it rather than a copy.
 export const COMMANDS = Object.freeze([
   'lead', 'spawn', 'step', 'review', 'report', 'models', 'status', 'digest', 'send', 'ask', 'link', 'unlink',
-  'message-order', 'done', 'abandon', 'stop', 'sweep', 'dismiss', 'history', 'guard', 'warden', 'mcp', 'install', 'uninstall', 'lease', 'stats',
+  'message-order', 'done', 'abandon', 'stop', 'sweep', 'dismiss', 'history', 'guard', 'warden', 'service', 'mcp', 'install', 'uninstall', 'lease', 'stats',
 ]);
 // `send` and `ask` are not store commands on purpose: each resolves its own home and primes the store
 // after the resolve, so priming the host's here would open a second one for nothing.
@@ -234,6 +235,12 @@ Participant launch options: --context-purpose technical|user-facing|author-voice
                               --wait (default ${LEASE_WAIT_SEC} s), then the command is
                               refused unrun; a dead holder is dropped by pid liveness.
                               Exits with the command's own code; status names the holder
+  ${cmd} service ensure|status|stop [--json]
+                              ensure, inspect or stop the shared workspace service;
+                              stop refuses live clients or active work
+  ${cmd} service run
+                              internal shared service entry; the consumer supplies
+                              its Host factory through runPromptobus options
   ${cmd} mcp
                               stdio MCP server for the bus
   ${cmd} install [--harnesses claude,cursor,codex] [--check] [--dry-run]
@@ -266,7 +273,7 @@ function writeLine(stream: CommandOutput, text: string) {
   else console.log(text);
 }
 
-export async function runPromptobus(argv: readonly string[] | null | undefined, { host: suppliedHost, cwd, env, input, output }: RunOptions = {}) {
+export async function runPromptobus(argv: readonly string[] | null | undefined, { host: suppliedHost, cwd, env, input, output, createHost }: RunOptions = {}) {
   const host = suppliedHost as PromptobusHost | null | undefined;
   if (!host || typeof host.commandName !== 'string') {
     throw new TypeError('runPromptobus: host is required');
@@ -304,6 +311,21 @@ export async function runPromptobus(argv: readonly string[] | null | undefined, 
       case 'mcp': {
         parse(at('mcp'), rest);
         await (await import('./server.js')).serve({ host, env, cwd, input, output: output as { write(chunk: string): unknown } });
+        return 0;
+      }
+      case 'service': {
+        const [operation, ...flags] = rest;
+        if (!['ensure', 'run', 'status', 'stop'].includes(operation ?? '')) throw new GateError('service requires ensure, run, status or stop');
+        const { values } = parse(at(`service ${operation}`), flags, { options: { json: { type: 'boolean' } } });
+        if (operation === 'run') {
+          if (!createHost) throw new GateError('Shared service requires the consumer-owned createHost({cwd, env}) option');
+          await (await import('./service.js')).runWorkspaceService({ host, createHost, env });
+          return 0;
+        }
+        const client = await import('./service-client.js');
+        const result = operation === 'ensure' ? await client.ensureWorkspaceService(host, { cwd, env })
+          : operation === 'status' ? await client.workspaceServiceStatus(host, { env }) : await client.stopWorkspaceService(host, { env });
+        writeLine(output, values.json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
         return 0;
       }
       case 'lead': {

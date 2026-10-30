@@ -91,7 +91,7 @@ export interface McpOptions {
   errorText: (event: McpEvent) => string;
 }
 
-interface JsonRpcMessage {
+export interface JsonRpcMessage {
   id?: number | string | null;
   method?: string;
   params?: Record<string, unknown>;
@@ -117,6 +117,7 @@ class UnknownToolError extends Error {
 
 export function createMcpServer(options: McpOptions): {
   serve: (streams: { input: McpInput; output: McpOutput }) => Promise<void>;
+  connect: () => { handle: (message: JsonRpcMessage) => object | null };
 } {
   const {
     service, registry = SHIPPED_REGISTRY, protocolVersions, resolveIdentity, serverInfo,
@@ -417,12 +418,20 @@ export function createMcpServer(options: McpOptions): {
   // order. Start an async one — it will freeze the whole channel for its
   // duration: `ping` and neighbouring calls of the same session will wait for
   // it to finish. Detach that kind from this queue.
-  async function serve({ input, output }: { input: McpInput; output: McpOutput }): Promise<void> {
+  function connect() {
     const initialIdentity = resolveIdentity();
     // Tasks this CONNECTION has already entered. The mark lives on the
     // connection, not on the factory: the server is lifted by the session
     // process, and enter is a property of the conversation, not of the module.
     const joined = new Set<string>();
+    return {
+      handle: (message: JsonRpcMessage) => handle(message,
+        message.method === 'tools/call' ? resolveIdentity() : initialIdentity, joined),
+    };
+  }
+
+  async function serve({ input, output }: { input: McpInput; output: McpOutput }): Promise<void> {
+    const connection = connect();
     const write = (obj: object): unknown => output.write(JSON.stringify(obj) + '\n');
     input.setEncoding('utf8');
     let buf = '';
@@ -441,12 +450,11 @@ export function createMcpServer(options: McpOptions): {
           write({ jsonrpc: '2.0', id: null, error: { code: -32700, message: errorText({ kind: 'parse' }) } });
           continue;
         }
-        const identity = msg.method === 'tools/call' ? resolveIdentity() : initialIdentity;
-        const answer = handle(msg, identity, joined);
+        const answer = connection.handle(msg);
         if (answer) write(answer);
       }
     }
   }
 
-  return { serve };
+  return { serve, connect };
 }

@@ -182,6 +182,12 @@ coverage/
 /lib/review.d.ts
 /bin/promptobus.js
 /bin/promptobus.d.ts
+/lib/service-state.js
+/lib/service-state.d.ts
+/lib/service-client.js
+/lib/service-client.d.ts
+/lib/service.js
+/lib/service.d.ts
 
 # Per-run gate records written beside the worktree during a bus task — task artifacts, not source.
 /gates-*-t*-*.json

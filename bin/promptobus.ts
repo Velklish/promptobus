@@ -22,10 +22,10 @@ function isHelpish(args: readonly string[]) {
     || first === '--version' || first === '-v';
 }
 
-async function loadHost() {
+async function loadHost(cwd = process.cwd()) {
   const { createStandaloneHost } = await import('../dist/host-index.js');
   return createStandaloneHost({
-    cwd: process.cwd(),
+    cwd,
     commandName: 'promptobus',
     version: pkg.version,
     binPath,
@@ -40,5 +40,6 @@ const code = await runPromptobus(argv, {
   env: process.env,
   input: process.stdin,
   output: process.stdout,
+  createHost: ({ cwd }) => loadHost(cwd),
 });
 if (typeof code === 'number' && code !== 0) process.exitCode = code;

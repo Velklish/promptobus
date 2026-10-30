@@ -5,6 +5,7 @@ import {
 } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { once } from 'node:events';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -55,13 +56,91 @@ const measure = (name) => ['node', '-e',
 
 // A holder that sits until killed, writing its own pid so the orphan can be cleaned up.
 const sitter = (pidFile) => ['node', '-e',
-  `require('fs').writeFileSync(${JSON.stringify(pidFile)},String(process.pid));setTimeout(()=>{},60000)`];
+  `require('fs').writeFileSync(${JSON.stringify(pidFile)},String(process.pid)+'\\n');setTimeout(()=>{},60000)`];
 const orphans = [];
+function readPid(file) {
+  let raw;
+  try { raw = readFileSync(file, 'utf8'); } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    return { raw: null, pid: null };
+  }
+  const pid = Number(raw);
+  return { raw, pid: Number.isSafeInteger(pid) && pid > 0 && raw === `${pid}\n` ? pid : null };
+}
+const pidPublished = (file) => readPid(file).pid !== null;
+async function waitForPid(file) {
+  if (!await until(() => pidPublished(file))) {
+    throw new Error(`PID publication did not complete: ${JSON.stringify({ file, ...readPid(file) })}`);
+  }
+  return readPid(file);
+}
+function killPositivePid(pid, signal) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return;
+  process.kill(pid, signal);
+}
 // The orphan holds this file's stdio pipes open, so it is killed as soon as its check is done.
-const reap = (f) => {
-  try { process.kill(Number(readFileSync(f, 'utf8')), 'SIGKILL'); } catch { /* already gone */ }
+const reap = (file, kill = killPositivePid) => {
+  try {
+    const { pid } = readPid(file);
+    if (pid === null) return;
+    kill(pid, 'SIGKILL');
+  } catch { /* already gone */ }
 };
 process.on('exit', () => { for (const f of orphans) reap(f); });
+
+{
+  const file = path.join(SB, 'pid-publication.pid');
+  const producer = spawn(process.execPath, ['-e', `
+    const fs = require('fs'), pid = String(process.pid);
+    const fd = fs.openSync(${JSON.stringify(file)}, 'w');
+    process.on('message', (phase) => {
+      if (phase === 'partial') {
+        fs.writeSync(fd, pid[0]);
+        process.send('partial');
+      } else if (phase === 'complete') {
+        fs.writeSync(fd, pid.slice(1) + '\\n');
+        fs.closeSync(fd);
+        process.send('complete');
+        process.disconnect();
+      }
+    });
+    process.send('opened');
+  `], { stdio: ['ignore', 'ignore', 'inherit', 'ipc'] });
+  const exited = once(producer, 'exit');
+  const [opened] = await once(producer, 'message');
+  check('PID readiness waits while an owned producer has opened an empty file',
+    opened === 'opened' && !pidPublished(file) && readPid(file).raw === '', JSON.stringify(readPid(file)));
+  const partial = once(producer, 'message');
+  producer.send('partial');
+  const [part] = await partial;
+  check('PID readiness refuses partial positive digits without the publication newline',
+    part === 'partial' && !pidPublished(file) && Number(readPid(file).raw) > 0, JSON.stringify(readPid(file)));
+  const completed = once(producer, 'message');
+  producer.send('complete');
+  const [complete] = await completed;
+  const [code] = await exited;
+  check('PID readiness accepts the complete newline-terminated producer PID',
+    complete === 'complete' && code === 0 && pidPublished(file) && readPid(file).pid === producer.pid,
+    JSON.stringify({ code, expected: producer.pid, ...readPid(file) }));
+}
+
+{
+  const file = path.join(SB, 'pid-cleanup.pid');
+  const invalid = ['', '\n', '0\n', '-1\n', '1', '12x\n', '1.5\n', '9007199254740992\n', '12\nextra', '12\n\n', '0012\n'];
+  const calls = [];
+  const kill = (...args) => { calls.push(args); };
+  reap(path.join(SB, 'pid-cleanup-missing.pid'), kill);
+  for (const raw of invalid) {
+    writeFileSync(file, raw);
+    reap(file, kill);
+  }
+  check('PID cleanup skips missing, incomplete and invalid records without signalling',
+    calls.length === 0, JSON.stringify({ invalid, calls }));
+  writeFileSync(file, '123\n');
+  reap(file, kill);
+  check('PID cleanup signals only a complete positive safe PID',
+    JSON.stringify(calls) === JSON.stringify([[123, 'SIGKILL']]), JSON.stringify(calls));
+}
 
 // Two participants of one task, both measuring, started in the same tick.
 {
@@ -199,12 +278,11 @@ process.on('exit', () => { for (const f of orphans) reap(f); });
   orphans.push(pidFile);
   const survivor = ['node', '-e', `
     const fs = require('fs');
-    fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+    fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid) + '\\n');
     const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)})) clearInterval(timer); }, 20);
   `];
   const holder = run(['--as', 'approver:killed-wrapper', '--key', repo, '--wait', '10', '--', ...survivor]);
-  await until(() => existsSync(pidFile));
-  const commandPid = Number(readFileSync(pidFile, 'utf8'));
+  const { pid: commandPid, raw: rawPidBytes } = await waitForPid(pidFile);
   holder.child.kill('SIGKILL');
   await holder.done;
   const held = lease.readLease(ROOT, repo).holder;
@@ -213,7 +291,7 @@ process.on('exit', () => { for (const f of orphans) reap(f); });
   await until(() => waiter.err().includes('waiting') || existsSync(ran), 5000);
   check('a keyed lease stays held by the surviving child after its wrapper is killed',
     held?.alive && held.childPid === commandPid && waiter.err().includes('waiting') && !existsSync(ran),
-    JSON.stringify({ held, wait: waiter.err(), ran: existsSync(ran) }));
+    JSON.stringify({ held, commandPid, rawPidBytes, wait: waiter.err(), ran: existsSync(ran) }));
   writeFileSync(release, 'go');
   const next = await waiter.done;
   check('the next keyed publisher runs after the surviving child exits',
@@ -242,7 +320,7 @@ process.on('exit', () => { for (const f of orphans) reap(f); });
   const pidFile = path.join(SB, 'killed-child.pid');
   orphans.push(pidFile);
   const holder = run(['--as', 'worker:dies', '--task', 'lease-t1', '--wait', '30', '--', ...sitter(pidFile)]);
-  await until(() => existsSync(pidFile));
+  await waitForPid(pidFile);
   const ran = path.join(SB, 'after-kill.ran');
   const waiter = run(['--as', 'worker:next', '--task', 'lease-t1', '--wait', '30', '--',
     'node', '-e', `require('fs').writeFileSync(${JSON.stringify(ran)},'1')`], { waitFor: 'waiting' });
@@ -269,7 +347,7 @@ process.on('exit', () => { for (const f of orphans) reap(f); });
   const pidFile = path.join(SB, 'bound-child.pid');
   orphans.push(pidFile);
   const holder = run(['--as', 'worker:long', '--task', 'lease-t2', '--wait', '30', '--', ...sitter(pidFile)]);
-  await until(() => existsSync(pidFile));
+  await waitForPid(pidFile);
   const ran = path.join(SB, 'bound.ran');
   const r = await run(['--as', 'worker:short', '--wait', '1', '--',
     'node', '-e', `require('fs').writeFileSync(${JSON.stringify(ran)},'1')`]).done;
@@ -299,8 +377,8 @@ process.on('exit', () => { for (const f of orphans) reap(f); });
   const pidFile = path.join(SB, 'early-holder.pid');
   orphans.push(pidFile);
   const sleeper = spawn(process.execPath, ['-e',
-    `require('fs').writeFileSync(${JSON.stringify(pidFile)},String(process.pid));setTimeout(()=>{},60000)`], { stdio: 'ignore' });
-  await until(() => existsSync(pidFile));
+    `require('fs').writeFileSync(${JSON.stringify(pidFile)},String(process.pid)+'\\n');setTimeout(()=>{},60000)`], { stdio: 'ignore' });
+  await waitForPid(pidFile);
   const lock = path.join(root, 'machine.lock');
   mkdirSync(lock, { recursive: true });
   writeFileSync(path.join(lock, 'owner'),

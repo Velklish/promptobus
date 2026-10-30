@@ -5,6 +5,7 @@ import type { GuardInput } from './guard.js';
 import {
   addrDir, bus, busService, contactsLine, journalMessageBody, ORCHESTRATOR, participantOf, participantRecord,
   readTask, resolveIdentity, sendMessage, strictTaskFacts, upsertParticipant,
+  withIdentityEnvironment,
 } from './store.js';
 import { addressList, admitsAddress, createMcpServer, registryOf } from '../dist/index.js';
 import { buildDigest } from './digest.js';
@@ -64,7 +65,7 @@ export function stallNote(home: string, task: string, addr: string, host: Prompt
 
 // A participant hands over their contact point and starts a listener if there is none.
 // Only a proven right may: a foreign or no-identity socket would land in another run's wake file.
-function joinBus({ home, task, address, mayRegister, host }: McpJoin & { host: PromptobusHost }) {
+function joinBus({ home, task, address, mayRegister, host, env }: McpJoin & { host: PromptobusHost; env: NodeJS.ProcessEnv }) {
   if (host == null) throw new Error('joinBus: host is required');
   // The contact point is handed over by this participant's own driver; the fallback to the
   // lift driver is deliberate — a refusal here would leave the session without the bus.
@@ -72,10 +73,10 @@ function joinBus({ home, task, address, mayRegister, host }: McpJoin & { host: P
   // `false` is a gate refusal, which `join` retries; `null` is nothing to hand over.
   let handed: unknown = null;
   if (mayRegister) {
-    driver.bindHandshake?.(home, task, address);
-    handed = driver.registerWake!(home, task, address);
+    driver.bindHandshake?.(home, task, address, env);
+    handed = driver.registerWake!(home, task, address, env);
   }
-  ensureWarden(home, task, { host });
+  ensureWarden(home, task, { host, env });
   return handed;
 }
 
@@ -96,7 +97,7 @@ function errorText(event: McpEvent) {
   }
 }
 
-export function serviceFor(host: PromptobusHost): PromptobusService {
+export function serviceFor(host: PromptobusHost, env: NodeJS.ProcessEnv = process.env): PromptobusService {
   const registry = registryOf(host);
   const scopedHost = (home: string): PromptobusHost => Object.assign(Object.create(host), { promptobusHome: () => home });
   const hints = {
@@ -131,7 +132,7 @@ export function serviceFor(host: PromptobusHost): PromptobusService {
       const sent = sendMessage(home, task, {
         from: 'user', to: ORCHESTRATOR, type: 'question', body, session: null,
       }, hints);
-      ensureWarden(home, task, { host });
+      ensureWarden(home, task, { host, env });
       return `asked orchestrator · from user · task ${task} · id ${sent.message.id}`;
     },
     reporterAnswers: (home, task, after) => {
@@ -154,17 +155,17 @@ export function serviceFor(host: PromptobusHost): PromptobusService {
         throw new Error(`unknown recipient address "${outgoing.to}" — ${addressList(registry)}`);
       }
       const sent = busService.send(home, task, outgoing, hints);
-      if (sent.deliveredTask) ensureWarden(home, sent.deliveredTask, { host });
-      if (sent.mailboxTask) ensureWarden(home, sent.mailboxTask, { host });
+      if (sent.deliveredTask) ensureWarden(home, sent.deliveredTask, { host, env });
+      if (sent.mailboxTask) ensureWarden(home, sent.mailboxTask, { host, env });
       return sent;
     },
   };
 }
 
-export async function serve({ host, env = process.env, cwd = process.cwd(), input = process.stdin, output = process.stdout }: { host?: PromptobusHost | null; env?: NodeJS.ProcessEnv; cwd?: string; input?: GuardInput; output?: McpOutput } = {}) {
+function busServer(host: PromptobusHost, env: NodeJS.ProcessEnv, cwd: string) {
   if (host == null) throw new Error('serve: host is required');
-  const server = createMcpServer({
-    service: serviceFor(host),
+  return createMcpServer({
+    service: serviceFor(host, env),
     registry: registryOf(host),
     // The list's home is `contract.js` — `lint` checks the reference citation against it,
     // and the value has no second home.
@@ -179,11 +180,21 @@ export async function serve({ host, env = process.env, cwd = process.cwd(), inpu
     // The name comes from its home (`contract.js`): the same name is used for the server
     // entry in configs.
     serverInfo: () => ({ name: PROMPTOBUS_SERVER, version: host.version }),
-    onJoin: (ctx) => joinBus({ ...ctx, host }),
+    onJoin: (ctx) => joinBus({ ...ctx, host, env }),
     decorateParticipant,
     pipeline: () => pipelineOf(host),
     stalls: ({ home, task, address }) => stallNote(home, task, address, host),
     errorText,
   });
-  await server.serve({ input: input as McpInput, output });
+}
+
+export function busConnection(host: PromptobusHost, env: NodeJS.ProcessEnv, cwd: string) {
+  const connection = withIdentityEnvironment(env, () => busServer(host, env, cwd).connect());
+  return { handle: (message: Parameters<typeof connection.handle>[0]) =>
+    withIdentityEnvironment(env, () => connection.handle(message)) };
+}
+
+export async function serve({ host, env = process.env, cwd = process.cwd(), input = process.stdin, output = process.stdout }: { host?: PromptobusHost | null; env?: NodeJS.ProcessEnv; cwd?: string; input?: GuardInput; output?: McpOutput } = {}) {
+  if (host == null) throw new Error('serve: host is required');
+  await withIdentityEnvironment(env, () => busServer(host, env, cwd).serve({ input: input as McpInput, output }));
 }

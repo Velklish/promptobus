@@ -618,3 +618,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-139.1"></a>`PB-139.1-lib-ts-check-net-fictitious` · 2026-10-30 · batch PB-415 · — · lib/ has no type net: @ts-check on the dist boundary needs its own tsconfig and a gate
 - <a id="pb-415.10"></a>`PB-415.10-npm10-pack-prepare-isolation` · 2026-10-30 · completed · — · Isolate npm pack preparation from runtime files used by parallel verification
 - <a id="pb-416.1"></a>`PB-416.1-trusted-root-alias-context` · 2026-10-30 · completed · — · Preserve trusted root aliases without admitting symlinks in owned context trees
+- <a id="pb-416.2"></a>`PB-416.2-shared-service-http-lifecycle` · 2026-10-30 · completed · — · Own one workspace service process and isolated HTTP MCP clients

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `service ensure`, `service status` and `service stop` for a shared workspace HTTP owner, with separate bus and reviewer-file connections, scoped client credentials, retained endpoint recovery and idle shutdown. Consumer CLI entries provide `createHost({ cwd, env })` when routing the internal `service run` command. Managed harness configuration and task warden migration follow separately.
+
 ### Changed
 
 - Compile all maintained runtime and CLI source with strict TypeScript after the core build, including executable CLI output from a fresh checkout. Package entry names and emitted JavaScript paths stay the same; the tarball contains runtime JavaScript and declarations without authored TypeScript. Tests and development scripts remain JavaScript.

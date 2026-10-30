@@ -227,6 +227,31 @@ Registry reads propagate that `GateError` rather than answer empty, as do direct
 
 The host is bound for the process by `runPromptobus` (and by `hostOf` for the package's own helper), because the registry helpers are called from places with no host in reach — `inspect(ref)` takes a ref and nothing else. Two hosts in one process share that binding and the first one wins — a host bound later cannot move the registries out from under a run already going. The same two doors make a second binding of the same kind, the host's `resolveToolBin` for the calls a driver makes after a lift ([05-drivers § The harness binary after a lift](05-drivers.md#the-harness-binary-after-a-lift-the-lifts-door-not-path)), and the first host wins there too. Those two are the exception to "no process-wide singleton", and they are written at the top of `runPromptobus` in `lib/cli.js`.
 
+### Shared-service Host factory
+
+`runPromptobus(argv, options)` accepts the additive option
+`createHost({ cwd, env }): PromptobusHost | Promise<PromptobusHost>`.
+`service run` requires it; the standalone binary supplies its own factory. An
+embedding consumer supplies the same consumer-owned construction used by its
+normal entry point, using the requested client directory and environment. Host
+callbacks are constructed locally rather than serialized into a credential.
+The environment argument is a frozen `Readonly<NodeJS.ProcessEnv>` snapshot;
+construct a separate environment object when the consumer needs derived values.
+Existing commands and minimal help/version Hosts keep their inputs.
+
+Each client retains its Host, canonical cwd, environment, fixed authority
+coordinates and read ceiling. A request cannot select another Host or expand
+its grant through headers. The service checks common harness homes/executables
+when admitting a client instead of silently moving process bindings. Consumers
+keep a consistent polling/account environment; common paths alone do not prove
+all account state interchangeable. Identity and wake operations use the client's
+explicit context and lexical identity scope without switching process globals.
+The synchronous task cache is never held across an asynchronous request.
+
+Lifecycle commands and preflight-first crash recovery are described under
+[Shared service](03-cli.md#shared-service). Package specifiers, PromptobusHost
+method signatures and the emitted CLI paths are unchanged.
+
 ## Tool binaries
 
 `resolveToolBin(name)` receives the name a driver DECLARES, and that is the name of the binary, not of the harness. For Cursor those differ: the harness is `cursor`, the binary is `cursor-agent`. It said `cursor` until 2026-09-05, and the standalone host — which hands a name back without searching — sent that through `PATH` into an operator's own `~/.local/bin/cursor`. A host that switches on the name meets `cursor-agent` at the release that closes the routing series; `--harness cursor` and the `tools` list are unchanged.

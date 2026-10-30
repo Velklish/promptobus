@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { artifactClaimsInResult, recordRefusal } from './handoff.js';
 import { warn } from './util.js';
 import {
@@ -113,6 +114,12 @@ export function promptobusHome(root: string, host: PromptobusHost | null | undef
 // cannot reach them, and 02-host.md § Session identity carries the measurement that says so.
 let readIdentity: IdentityReader | null = null;
 let saidUnbound = false;
+const identityEnvironments = new AsyncLocalStorage<NodeJS.ProcessEnv>();
+const identityEnvironment = () => identityEnvironments.getStore() ?? process.env;
+
+export function withIdentityEnvironment<T>(env: NodeJS.ProcessEnv, fn: () => T): T {
+  return identityEnvironments.run(env, fn);
+}
 
 export function bindSessionIdentity(fn: IdentityReader | null) {
   readIdentity = typeof fn === 'function' ? fn : null;
@@ -122,7 +129,7 @@ export function bindSessionIdentity(fn: IdentityReader | null) {
  * `null` is an answer here, never a silence. Unbound, the core says so once instead of
  * falling back to one harness's variable — the fallback IS the defect (ADR-019).
  */
-export function sessionIdentity(env = process.env, scope: IdentityScope | null = null) {
+export function sessionIdentity(env = identityEnvironment(), scope: IdentityScope | null = null) {
   if (!readIdentity) {
     if (!saidUnbound) {
       saidUnbound = true;
@@ -149,7 +156,7 @@ export function contestedIdentity(answer: IdentityAnswer | null | undefined): an
  * The resolver's whole answer, for a caller whose refusal must SAY why there is no identity.
  * `sessionIdentity` drops everything but the id, and "none" and "contested" then look alike.
  */
-export function sessionIdentityReport(env = process.env, scope: IdentityScope | null = null) {
+export function sessionIdentityReport(env = identityEnvironment(), scope: IdentityScope | null = null) {
   const answer = readIdentity ? readIdentity(env, scope) : null;
   return answer ?? { id: null, reason: 'none', why: 'no driver registry is bound to this process', candidates: [] };
 }
@@ -980,7 +987,7 @@ export function orchestratedTasks(home: string, session = sessionIdentity()) {
 // does — 03-cli § The owner gate — so the two cannot grow a second wording.
 function identitySaid(home: string, meta: TaskV1, own: Ownership) {
   if (own.right !== 'no-identity') return null;
-  return sessionIdentityReport(process.env, { home, task: meta.id, address: ORCHESTRATOR });
+  return sessionIdentityReport(identityEnvironment(), { home, task: meta.id, address: ORCHESTRATOR });
 }
 
 // An answer this gate never gave carries `owner: null` because nobody looked, so nothing
@@ -1593,7 +1600,7 @@ function requireDirectSender(home: string, meta: TaskV1, sender: ParticipantV1, 
   if (!session) {
     // Two variables are not zero variables: the repair is to remove the extra one, and a
     // refusal that asks for a missing one sends the reader looking the wrong way.
-    const said = sessionIdentityReport(process.env, { home, task: meta.id, address });
+    const said = sessionIdentityReport(identityEnvironment(), { home, task: meta.id, address });
     if (contestedIdentity(said)) {
       throw new GateError(`task ${meta.id} direct participant traffic cannot prove participant "${address}": `
         + `${said.why}`);
@@ -1936,7 +1943,7 @@ export function sameStoreHome(left: unknown, right: unknown) {
 
 // Hook-declared identity outranks the inherited environment.
 // Task bindings are resolved per call; this result holds only home, role and session.
-export function resolveIdentity(env = process.env, cwd = process.cwd(), { declared: said = null, host }: { declared?: DeclaredIdentity | null; host?: PromptobusHost } = {}) {
+export function resolveIdentity(env = identityEnvironment(), cwd = process.cwd(), { declared: said = null, host }: { declared?: DeclaredIdentity | null; host?: PromptobusHost } = {}) {
   if (host == null) {
     throw new Error('resolveIdentity: host is required');
   }

@@ -4,6 +4,9 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { GateError } from '../dist/index.js';
 import type { PromptobusHost } from '../dist/index.js';
+import { isDeepStrictEqual } from 'node:util';
+import { canonicalPath } from './store.js';
+import type { LibRegistry } from './driver-runtime.js';
 
 type HarnessHomeHost = Partial<Pick<PromptobusHost, 'harnessStateHome'>>;
 type HarnessBinHost = Partial<Pick<PromptobusHost, 'resolveToolBin'>>;
@@ -59,4 +62,37 @@ export function harnessBin(tool: string) {
   const said = boundBins ? boundBins.resolveToolBin(tool) : { ok: true, bin: tool };
   if (said?.bin) return { bin: String(said.bin), reason: null };
   return { bin: null, reason: said?.reason ?? `the host named no binary for ${tool}` };
+}
+
+export interface HarnessContext { homes: Record<string, string | null>; bins: Record<string, string | null>; searchPath: string | null }
+type HarnessContextHost = Pick<PromptobusHost, 'declaredTools' | 'harnessStateHome' | 'resolveToolBin'>;
+
+export function serviceHarnessContext(host: HarnessContextHost, env: NodeJS.ProcessEnv, registry: Pick<LibRegistry, 'drivers'>): HarnessContext {
+  const homes: HarnessContext['homes'] = {}, bins: HarnessContext['bins'] = {};
+  for (const harness of Object.keys(registry.drivers)) {
+    const home = env[harnessHomeVar(harness)]?.trim() || host.harnessStateHome(harness);
+    homes[harness] = home ? canonicalPath(home) : null;
+  }
+  for (const tool of [...new Set([...host.declaredTools(), ...Object.values(registry.drivers).map(driver => driver.options.tool)])].sort()) {
+    const bin = host.resolveToolBin(tool).bin || null;
+    bins[tool] = bin && path.isAbsolute(bin) ? canonicalPath(bin) : bin;
+  }
+  return { homes, bins, searchPath: Object.values(bins).some(bin => bin && !path.isAbsolute(bin)) ? env.PATH ?? null : null };
+}
+
+export function requireServiceHarnessContext(expected: HarnessContext, host: HarnessContextHost, env: NodeJS.ProcessEnv, registry: Pick<LibRegistry, 'drivers'>) {
+  if (!isDeepStrictEqual(expected, serviceHarnessContext(host, env, registry))) {
+    throw new GateError('Shared service client has different harness state homes or binaries; reconnect through the same workspace runtime');
+  }
+}
+
+export function bindServiceHarnessContext(host: PromptobusHost, env: NodeJS.ProcessEnv, registry: Pick<LibRegistry, 'drivers'>) {
+  const expected = serviceHarnessContext(host, env, registry);
+  bindHarnessHomes(host); bindHarnessBins(host);
+  requireServiceHarnessContext(expected, {
+    declaredTools: () => host.declaredTools(),
+    harnessStateHome: harness => bound?.harnessStateHome(harness) ?? null,
+    resolveToolBin: tool => boundBins?.resolveToolBin(tool) ?? { ok: true, bin: tool },
+  }, process.env, registry);
+  return expected;
 }
