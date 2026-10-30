@@ -35,13 +35,34 @@ import { codexPrompts } from './prompts/codex.js';
 import { readStopConfirmation } from './codex-command-receipts.js';
 export { participantAuthSnapshot } from './codex-participant-auth.js';
 
+import type { DriverPhrases, HostMcpTool, LaunchFile, Notification, NotificationMessage, SessionView, WakeProbe, ActivationTarget, ActivateResult, ParticipantV1 } from '../dist/index.js';
+import type { CodexSessionRecord, CodexPendingRequest } from './codex-session.js';
+import type { LibDriver, LibLaunchPlan, LibPrepareContext, LibSpawnContext, LibSpawnResult, LibStall, LibMcpConfig, LibMcpServer, LibToolBin } from './driver-runtime.js';
+
+interface CodexPrepareContext extends Omit<LibPrepareContext, 'task' | 'address' | 'mcpConfigPath' | 'settingsPath' | 'guardCommand'> {
+  task?: string | null; address?: string | null; mcpConfigPath?: string; settingsPath?: string | null; guardCommand?: string | null;
+}
+interface CodexLaunchPlan extends LibLaunchPlan {
+  mcpConfig: LibMcpConfig;
+  settings: { sandbox?: string; approvalPolicy?: string; model?: string; effort?: string | null; addDirs?: string[] };
+  prompt: string;
+  rootSessionRecord?: string | null; codexHome?: string; privateHomeSkills?: string | null;
+  privateHomeFiles?: LaunchFile[]; canonicalSkillsDir?: string | null; homeHooks?: string | null;
+  bindBeforeFirstTurn?: boolean; trustProject?: boolean; resumeThreadId?: string; launchId?: string;
+  retainFailedSession?: boolean;
+}
+interface CodexParticipant extends Omit<ParticipantV1, 'metadata'> {
+  address?: string;
+  metadata: ParticipantV1['metadata'] & { nativeStop?: { alias?: unknown; home?: string }; address?: string };
+}
+interface CodexDriver extends LibDriver { participantCodexHome: typeof participantCodexHome }
+
 // Codex harness driver — the third production bus driver.
 // [reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver](../docs/reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver)
 
 export const CODEX = 'codex';
 export const CODEX_TEAMLEAD_ROOT_SERVER = `${PROMPTOBUS_SERVER}-root`;
 
-const CODEX_INSTALL = 'brew install --cask codex';
 
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 export const PERMISSION_MODES = ['read-only', 'workspace-write'];
@@ -58,8 +79,8 @@ const CODEX_DRY_RUN_COMMAND = `${CODEX} ${PARTICIPANT_ARGV.join(' ')} (prompt vi
 
 // The tool name a Codex session calls an MCP server's tool by: the CONFIG key stays raw, only the
 // name is sanitised — [02-host.md](../docs/reference/02-host.md#consumer-identity-inside-a-harness).
-export const codexToolSegment = (s) => String(s ?? '').replace(/[^A-Za-z0-9_]/g, '_');
-const mcpToolName = (server, name, prefix) => `mcp__${codexToolSegment(codexMcpName(server, prefix))}__${codexToolSegment(name)}`;
+export const codexToolSegment = (s: unknown) => String(s ?? '').replace(/[^A-Za-z0-9_]/g, '_');
+const mcpToolName = (server: string, name: string, prefix: string) => `mcp__${codexToolSegment(codexMcpName(server, prefix))}__${codexToolSegment(name)}`;
 
 const CODEX_SESSIONS_SOURCE = 'participant threads — the registry the host names for `codex`'
   + ' (`PROMPTOBUS_CODEX_HOME` overrides it)';
@@ -75,7 +96,7 @@ function sessionsPhrase() {
 
 /** The Codex home of the thread with this id, for a phrase an operator opens. A thread with no
  * readable record is named by what its home IS: a guessed path sends them to the owner's home. */
-function sessionHomePhrase(id) {
+function sessionHomePhrase(id: string | null) {
   try {
     return registrySessions().find((r) => r.threadId === id)?.codexHome ?? "the participant's own CODEX_HOME";
   } catch {
@@ -89,14 +110,14 @@ export const PHRASES = {
   get sessions() { return sessionsPhrase(); },
   unreadable: 'the mechanism thread registry is unreadable',
   naming: 'the thread id is chosen by app-server itself and printed on lift',
-  enter: (id) => `codex resume ${id}`,
-  stop: (id) => `stop the thread through the mechanism's stop of its one participant — `
+  enter: (id: string | null) => `codex resume ${id}`,
+  stop: (id: string | null) => `stop the thread through the mechanism's stop of its one participant — `
     + `Codex has no single-thread kill command, the app-server process holds the session; id ${id}`,
-  logs: (id) => `thread ${id} rollout is written by Codex itself in ${sessionHomePhrase(id)}/sessions`
+  logs: (id: string | null) => `thread ${id} rollout is written by Codex itself in ${sessionHomePhrase(id)}/sessions`
     + ' — it carries token usage, but the mechanism refuses it as throughput input because model-active time is absent; that home goes away with the session on done',
-  tool: (server, name, host) => mcpToolName(server, name, codexMcpPrefix(host)),
+  tool: (server: string, name: string, host: Parameters<typeof codexMcpPrefix>[0]) => mcpToolName(server, name, codexMcpPrefix(host)),
   ...codexPrompts,
-};
+} satisfies DriverPhrases;
 
 /** Directory inside a project that Codex reads its project layer from. */
 const CODEX_DIR = '.codex';
@@ -107,18 +128,18 @@ const CODEX_HOOKS_REL = path.join(CODEX_DIR, 'hooks.json');
 
 // Hooks are a PROJECT file, and the only project this participant trusts is its own
 // working directory — the workspace root where `install` writes is neither.
-function codexHooksFile(command) {
+function codexHooksFile(command: string) {
   const group = () => [{ hooks: [{ type: 'command', command }] }];
   return { hooks: { [GUARD_HOOK_EVENT]: group(), [GUARD_START_EVENT]: group() } };
 }
 
 /** The hooks document this lift writes into a path it owns. A file already at the
  * discovery path is judged by its records, not by these bytes. */
-export function hooksDocument(command) {
+export function hooksDocument(command: string) {
   return `${JSON.stringify(codexHooksFile(command), null, 2)}\n`;
 }
 
-function canonicalHooksFile(file) {
+function canonicalHooksFile(file: string) {
   const dir = path.dirname(file);
   try {
     return path.join(realpathSync(dir), path.basename(file));
@@ -127,32 +148,32 @@ function canonicalHooksFile(file) {
   }
 }
 
-function foreignProjectFile(lookupDir, writtenDir, name) {
+function foreignProjectFile(lookupDir: string, writtenDir: string, name: string) {
   const discovered = path.join(projectHooksDir(lookupDir), name);
   const written = path.join(writtenDir, CODEX_DIR, name);
   if (canonicalHooksFile(discovered) === canonicalHooksFile(written)) return null;
   try {
     lstatSync(discovered);
   } catch (error) {
-    if (error.code === 'ENOENT') return null;
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
   }
   return discovered;
 }
 
-function judgedProjectHooks(file, guard) {
+function judgedProjectHooks(file: string, guard: string | null) {
   try {
     if (!lstatSync(file).isFile()) return { refused: ['not a regular file'], broken: null };
     return judgeHookRecords(readFileSync(file, 'utf8'), path.dirname(path.dirname(file)), CODEX, { guard });
   } catch (error) {
-    return { refused: [`unreadable (${error.code ?? error.message})`], broken: null };
+    return { refused: [`unreadable (${(error as NodeJS.ErrnoException).code ?? (error as Error).message})`], broken: null };
   }
 }
 
 /** Refuse foreign hooks, then validate clone-root config with the selected binary at lift. */
-export function refuseForeignProjectLayer(lookupDir, writtenDir, tool = null, guardCommand = null) {
+export function refuseForeignProjectLayer(lookupDir: string, writtenDir: string, tool: LibToolBin | null = null, guardCommand: string | null = null) {
   const hooks = foreignProjectFile(lookupDir, writtenDir, 'hooks.json');
-  const judged = hooks ? judgedProjectHooks(hooks, guardCommand) : { refused: [] };
-  if (judged.refused.length) throw new GateError(foreignHooksMessage(hooks, judged));
+  const judged: { refused: string[]; broken?: string | null } = hooks ? judgedProjectHooks(hooks, guardCommand) : { refused: [] };
+  if (judged.refused.length) throw new GateError(foreignHooksMessage(hooks!, judged));
   if (!tool?.bin) return;
   const config = foreignProjectFile(lookupDir, writtenDir, 'config.toml');
   if (!config) return;
@@ -160,7 +181,7 @@ export function refuseForeignProjectLayer(lookupDir, writtenDir, tool = null, gu
   try {
     let source;
     try { source = readFileSync(config); } catch (error) {
-      warn(`Codex could not read clone-root project config ${config} for a syntax preflight (${error.message}); the lift will let Codex load it`);
+      warn(`Codex could not read clone-root project config ${config} for a syntax preflight (${(error as Error).message}); the lift will let Codex load it`);
       return;
     }
     writeFileSync(path.join(probeHome, 'config.toml'), source, { mode: 0o600 });
@@ -182,7 +203,7 @@ export function refuseForeignProjectLayer(lookupDir, writtenDir, tool = null, gu
   }
 }
 
-function foreignHooksMessage(file, { refused, broken }) {
+function foreignHooksMessage(file: string, { refused, broken }: { refused: string[]; broken?: string | null }) {
   return `Codex would run ${file} with hook trust bypassed, and it holds records this lift does not trust: `
     + `${refused.join('; ')}. ${trustRule(path.dirname(path.dirname(file)), CODEX)}`
     + `${broken ? `; ${broken}` : ''}. `
@@ -204,13 +225,13 @@ export function participantHomesRoot() {
 }
 
 // Suffix shape, and why an older name is skipped: 05-drivers § sweepParticipantHomes.
-function registryHomesKey(env) {
+function registryHomesKey(env: NodeJS.ProcessEnv) {
   return `_${createHash('sha1').update(path.resolve(harnessStateHome(CODEX, env))).digest('hex')}`;
 }
 
 /** The home of ONE participant. Deterministic rather than `mkdtemp`, so `--dry-run` can print the
  * path a real lift will use; the hash carries task and address, and the suffix the registry. */
-export function participantCodexHome({ task, address }, env = process.env) {
+export function participantCodexHome({ task, address }: { task?: string | null; address?: string | null }, env = process.env) {
   const head = `${task ?? ''}-${address ?? ''}`
     .replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48).toLowerCase();
   const hash = createHash('sha1').update(`${task ?? ''}\0${address ?? ''}`).digest('hex').slice(0, 12);
@@ -221,13 +242,13 @@ export function participantCodexHome({ task, address }, env = process.env) {
 // A narrow TOML writer: strings, string arrays, one level of string-valued table — the whole
 // vocabulary of `[mcp_servers]` and `[projects]`. Keys are quoted unless they are TOML-bare.
 const TOML_BARE = /^[A-Za-z0-9_-]+$/;
-const tomlString = (v) => JSON.stringify(String(v));
-const tomlKey = (k) => (TOML_BARE.test(k) ? k : tomlString(k));
-const tomlHeader = (...parts) => `[${parts.map(tomlKey).join('.')}]`;
+const tomlString = (v: unknown) => JSON.stringify(String(v));
+const tomlKey = (k: string) => (TOML_BARE.test(k) ? k : tomlString(k));
+const tomlHeader = (...parts: string[]) => `[${parts.map(tomlKey).join('.')}]`;
 
-function tomlTable(header, entry) {
+function tomlTable(header: string[], entry: Record<string, unknown> | null | undefined) {
   const lines = [tomlHeader(...header)];
-  const nested = [];
+  const nested: [string, object][] = [];
   for (const [key, value] of Object.entries(entry ?? {})) {
     if (Array.isArray(value)) {
       lines.push(`${tomlKey(key)} = [${value.map(tomlString).join(', ')}]`);
@@ -252,7 +273,7 @@ const APPS_OFF = '[features]\napps = false';
 
 /** `config.toml` of a participant home. There is no trust COMMAND on codex-cli 0.156.1, and the
  * `[projects]` key is the project's REALPATH — the unresolved spelling is not recognised. */
-export function codexHomeConfig({ servers = {}, trusted = [], hooksEnabled = true, rawToolReceipts = false } = {}) {
+export function codexHomeConfig({ servers = {}, trusted = [], hooksEnabled = true, rawToolReceipts = false }: { servers?: Record<string, LibMcpServer>; trusted?: string[]; hooksEnabled?: boolean; rawToolReceipts?: boolean } = {}) {
   const blocks = [
     `${APPS_OFF}${hooksEnabled ? '' : '\nhooks = false'}`,
     ...(rawToolReceipts ? ['[features.code_mode]\ndirect_only_tool_namespaces = ["functions"]'] : []),
@@ -264,7 +285,7 @@ export function codexHomeConfig({ servers = {}, trusted = [], hooksEnabled = tru
 
 /** The spelling Codex compares a `[projects]` key against. Exported because the difference from
  * `path.resolve` is invisible except through a symlink, so the check lives on this function. */
-export function trustPath(dir) {
+export function trustPath(dir: string) {
   try {
     return realpathSync(dir);
   } catch {
@@ -274,7 +295,7 @@ export function trustPath(dir) {
   }
 }
 
-function resolvedDir(dir) {
+function resolvedDir(dir: string) {
   try {
     return realpathSync(dir);
   } catch {
@@ -282,7 +303,7 @@ function resolvedDir(dir) {
   }
 }
 
-function gitCheckoutMarker(dotGit) {
+function gitCheckoutMarker(dotGit: string) {
   let st;
   try {
     st = lstatSync(dotGit);
@@ -300,7 +321,7 @@ function gitCheckoutMarker(dotGit) {
   return st.isFile();
 }
 
-function gitCheckoutRoot(start) {
+function gitCheckoutRoot(start: string) {
   let dir;
   try {
     dir = lstatSync(start).isDirectory() ? start : path.dirname(start);
@@ -315,7 +336,7 @@ function gitCheckoutRoot(start) {
   }
 }
 
-function readGitdirTarget(file) {
+function readGitdirTarget(file: string) {
   let text;
   try {
     text = readFileSync(file, 'utf8');
@@ -328,7 +349,7 @@ function readGitdirTarget(file) {
   return target ? path.resolve(path.dirname(file), target) : null;
 }
 
-function mainCheckout(cwd) {
+function mainCheckout(cwd: string) {
   const checkout = gitCheckoutRoot(cwd);
   if (!checkout) return null;
   const dotGit = path.join(checkout, '.git');
@@ -366,7 +387,7 @@ function mainCheckout(cwd) {
 
 /** Where Codex reads this directory's project `hooks.json`. A linked worktree is the main
  * checkout's `.codex`; every other directory is its own. [hooks-and-trust](../docs/guides/hooks-and-trust.md). */
-export function projectHooksDir(cwd) {
+export function projectHooksDir(cwd: string) {
   const resolved = resolvedDir(cwd);
   const own = path.join(resolved, CODEX_DIR);
   const checkout = gitCheckoutRoot(resolved);
@@ -386,13 +407,13 @@ export function projectHooksDir(cwd) {
   return path.join(mainReal, rel, CODEX_DIR);
 }
 
-function linkedWorktree(dir) {
+function linkedWorktree(dir: string) {
   return projectHooksDir(dir) !== path.join(resolvedDir(dir), CODEX_DIR);
 }
 
 /** The home hooks file is written here, after the home exists. A launch-file write
  * would go through a path the home guard has not checked. */
-export function writeRedirectedHooks(plan, workdir, codexHome) {
+export function writeRedirectedHooks(plan: Pick<CodexLaunchPlan, 'homeHooks'>, workdir: string, codexHome: string) {
   if (!plan.homeHooks || !linkedWorktree(workdir)) return null;
   const dest = path.join(codexHome, 'hooks.json');
   writeFileSync(dest, plan.homeHooks);
@@ -401,13 +422,13 @@ export function writeRedirectedHooks(plan, workdir, codexHome) {
 
 /** Refuse a path that is not already OUR plain directory: `mkdirSync` with `recursive` follows an
  * existing symlink without a word, and one aimed at `~/.codex` would overwrite the owner's config. */
-function ownDirectory(dir) {
+function ownDirectory(dir: string) {
   let stat;
   try {
     stat = lstatSync(dir);
   } catch (error) {
-    if (error.code === 'ENOENT') return;
-    throw new GateError(`Codex participant home ${dir} cannot be read (${error.code ?? error.message}) — the lift does not write through it`);
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw new GateError(`Codex participant home ${dir} cannot be read (${(error as NodeJS.ErrnoException).code ?? (error as Error).message}) — the lift does not write through it`);
   }
   if (!stat.isDirectory()) {
     throw new GateError(`Codex participant home ${dir} is not a directory (${stat.isSymbolicLink() ? 'symbolic link' : 'other file type'})`
@@ -421,7 +442,7 @@ function ownDirectory(dir) {
 
 /** Build the home. Not a wipe: a repeat spawn writes over the config of a home whose app-server may
  * still hold a thread. A missing `auth.json` is reported, not refused — an API key travels anyway. */
-export function makeParticipantHome({ dir, config = '', env = process.env, ownerHome = ownerCodexHome(env) }) {
+export function makeParticipantHome({ dir, config = '', env = process.env, ownerHome = ownerCodexHome(env) }: { dir: string; config?: string; env?: NodeJS.ProcessEnv; ownerHome?: string }) {
   const abs = path.resolve(String(dir));
   const key = registryHomesKey(env);
   if (path.dirname(abs) !== participantHomesRoot() || !path.basename(abs).endsWith(key)) {
@@ -456,7 +477,7 @@ export function makeParticipantHome({ dir, config = '', env = process.env, owner
 
 /** Remove one participant home. The guard is the point: this runs on `done` and on a failed lift
  * with a path off a record, so only a direct child of the homes root is ever removed. */
-export function removeParticipantHome(dir) {
+export function removeParticipantHome(dir: unknown) {
   if (!dir) return false;
   const abs = path.resolve(String(dir));
   if (path.dirname(abs) !== participantHomesRoot()) return false;
@@ -492,7 +513,7 @@ export function sweepParticipantHomes(env = process.env) {
     // would look orphaned. Sweeping on that reading would remove live sessions' homes.
     return [];
   }
-  const swept = [];
+  const swept: string[] = [];
   for (const name of names) {
     if (!name.endsWith(key)) continue;
     const dir = path.join(root, name);
@@ -504,7 +525,7 @@ export function sweepParticipantHomes(env = process.env) {
 
 /** The harness state of one closed participant that lives outside its worktree — a reviewer has
  * none and its home holds the same credentials copy. Rebuilt from task and address when needed. */
-export function sweepParticipant(participant, taskId, env = process.env) {
+export function sweepParticipant(participant: CodexParticipant, taskId: string, env = process.env) {
   if (participant?.metadata?.nativeStop?.alias) return false;
   // Abandonment is not a Stop receipt, so it does not license deleting the private home.
   if (participant?.metadata?.abandoned) return false;
@@ -527,7 +548,7 @@ export function sweepParticipant(participant, taskId, env = process.env) {
 
 /** The Codex skills canon at the workspace root — the only source, since a person's copies under
  * `~/.codex` are not addressed to the participant. No directory means `null`. */
-export function workspaceSkillsDir(root) {
+export function workspaceSkillsDir(root: string | null | undefined) {
   if (!root) return null;
   const src = path.join(root, CODEX_SKILLS_REL);
   try {
@@ -538,7 +559,7 @@ export function workspaceSkillsDir(root) {
   return null;
 }
 
-function skillsCount(dir) {
+function skillsCount(dir: string) {
   let entries;
   try {
     entries = readdirSync(dir, { withFileTypes: true });
@@ -548,7 +569,7 @@ function skillsCount(dir) {
   return entries.filter((e) => e.isDirectory() && existsSync(path.join(dir, e.name, SKILL_FILE))).length;
 }
 
-function copyPrivateSkills(src, dest) {
+function copyPrivateSkills(src: string, dest: string) {
   rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
   for (const entry of readdirSync(src, { withFileTypes: true })) {
@@ -566,13 +587,13 @@ function copyPrivateSkills(src, dest) {
   }
 }
 
-export function installPrivateHomeLayer(plan, codexHome) {
+export function installPrivateHomeLayer(plan: Pick<CodexLaunchPlan, 'privateHomeFiles' | 'privateHomeSkills'>, codexHome: string) {
   if (plan.privateHomeFiles) { installSelectedNativeFiles(plan.privateHomeFiles); return; }
   if (plan.privateHomeSkills) copyPrivateSkills(plan.privateHomeSkills, path.join(codexHome, 'skills'));
 }
 
 /** The lift line about workspace skills names the destination each role actually reads. */
-export function skillsNoteOf({ src, dest, count }) {
+export function skillsNoteOf({ src, dest, count }: { src: string | null; dest: string; count: number }) {
   if (!src) {
     return 'not attached — the workspace root has no .codex/skills (Codex sync render did not lay it out)';
   }
@@ -581,19 +602,19 @@ export function skillsNoteOf({ src, dest, count }) {
 
 /** Reviewer working directory: the mechanism's own, not the tree under review.
  * [reference/05-drivers.md#reviewsandbox--reviewer-working-directory-the-mechanisms-own-not-the-tree-under-review](../docs/reference/05-drivers.md#reviewsandbox--reviewer-working-directory-the-mechanisms-own-not-the-tree-under-review) */
-export function reviewSandbox(settingsPath) {
+export function reviewSandbox(settingsPath: unknown) {
   return `${String(settingsPath).replace(/\.settings\.json$/, '')}.codex-sandbox`;
 }
 
 // Codex's deny syntax is attached to each mechanism-supplied server entry; the tool name is attached
 // only when the matching server is present. In an isolated home there is no personal set beside them.
-export function mcpDenyTools(tools) {
+export function mcpDenyTools(tools: readonly HostMcpTool[]) {
   return tools.map(({ server, tool }) => ({ server, tool }));
 }
 
-function mcpConfig({ servers }, ref, denyTools = [], env = process.env) {
-  const mcpServers = { ...servers };
-  const disabled = new Map();
+function mcpConfig({ servers }: LibPrepareContext['mcp'], ref: string | null, denyTools: LibPrepareContext['denyTools'] = [], env = process.env): LibMcpConfig {
+  const mcpServers = { ...servers } as Record<string, LibMcpServer>;
+  const disabled = new Map<string, string[]>();
   for (const rule of denyTools ?? []) {
     if (!rule || typeof rule !== 'object') continue;
     if (typeof rule.server !== 'string' || typeof rule.tool !== 'string'
@@ -609,7 +630,7 @@ function mcpConfig({ servers }, ref, denyTools = [], env = process.env) {
   }
   const bus = mcpServers[PROMPTOBUS_SERVER];
   if (bus && ref) {
-    const extra = { [SESSION_ENV_VAR]: sessionFile(ref, env) };
+    const extra: NodeJS.ProcessEnv = { [SESSION_ENV_VAR]: sessionFile(ref, env) };
     if (env.PROMPTOBUS_CODEX_HOME) extra.PROMPTOBUS_CODEX_HOME = env.PROMPTOBUS_CODEX_HOME;
     for (const name of WARDEN_ENV_VARS) {
       if (process.env[name]) extra[name] = process.env[name];
@@ -620,9 +641,9 @@ function mcpConfig({ servers }, ref, denyTools = [], env = process.env) {
 }
 
 function personalReviewSkillDirs() {
-  const found = new Set();
-  const visited = new Set();
-  const visit = (dir) => {
+  const found = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (dir: string): void => {
     if (!existsSync(dir)) return;
     const real = realpathSync(dir);
     if (visited.has(real) || !statSync(real).isDirectory()) return;
@@ -642,7 +663,7 @@ function prepare({
   ref, role = WORKER, task = null, address = null, root = null, skillsRoot = root, selectedContext = null, settingsPath = null,
   executionKind = roleEntry(registryOf(null), role)?.kind,
   rootTask = null, rootAddress = null, guardCommand = null, env = process.env,
-}) {
+}: CodexPrepareContext): CodexLaunchPlan {
   const privateHome = ['teamlead', 'reporter', 'orchestrator'].includes(role);
   const readOnly = role === REVIEWER || role === 'reporter' || permissionMode === 'read-only';
   const sandbox = privateHome && permissionMode === 'full-access'
@@ -662,8 +683,8 @@ function prepare({
       ...bus,
       env: {
         ...bus.env,
-        PROMPTOBUS_TASK: rootTask,
-        PROMPTOBUS_ROLE: rootAddress,
+        PROMPTOBUS_TASK: rootTask!,
+        PROMPTOBUS_ROLE: rootAddress!,
         [SESSION_ENV_VAR]: rootSessionRecord,
       },
     };
@@ -675,7 +696,7 @@ function prepare({
   const dirs = [...new Set([cwd, ...addDirs])];
   // Workspace-write protects Git metadata unless it is an explicit root. Resolve
   // the actual linked-worktree/common directories only after the checkout exists.
-  if (!readOnly && [EDITS_TREE, WRITES_MAIN_TREE].includes(executionKind) && gitCheckoutRoot(cwd)) {
+  if (!readOnly && [EDITS_TREE, WRITES_MAIN_TREE].includes(executionKind!) && gitCheckoutRoot(cwd)) {
     const gitEnv = { ...env };
     for (const key of ['GIT_DIR', 'GIT_COMMON_DIR', 'GIT_WORK_TREE']) delete gitEnv[key];
     const metadata = spawnSync('git', [
@@ -715,7 +736,7 @@ function prepare({
         PROMPTOBUS_REVIEW_CANONICAL_FILES: JSON.stringify(canonicalFiles) },
     };
   }
-  const files = privateHome ? [] : [
+  const files: LaunchFile[] = privateHome ? [] : [
     { path: path.join(fileRoot, CODEX_DIR, '.gitignore'), text: '*\n', secret: false },
   ];
   if (!privateHome) refuseForeignProjectLayer(sessionDir, fileRoot, null, guardCommand);
@@ -760,7 +781,7 @@ function prepare({
 }
 
 const filteredSessionEnv = sessionEnvFor(SESSION_ENV_DROP);
-const sessionEnv = (base = process.env, extra = {}) => filteredSessionEnv(base, {
+const sessionEnv = (base = process.env, extra: NodeJS.ProcessEnv = {}) => filteredSessionEnv(base, {
   PROMPTOBUS_CODEX_OWNER_HOME: ownerCodexHome(base), ...extra,
 });
 
@@ -777,10 +798,10 @@ function shadowedUserServers() {
 const sayForeignWrite = commonSayForeignWrite;
 export { sayForeignWrite };
 
-export function registerWake(home, task, addr, env = process.env, session = null) {
+export function registerWake(home: string, task: string, addr: string, env = process.env, session: string | null = null) {
   try {
     const file = String(env?.[SESSION_ENV_VAR] ?? '').trim();
-    const record = (file ? readRecordAt(file) : null)
+    const record = (file ? readRecordAt<CodexSessionRecord>(file) : null)
       ?? findSessionByAddress(home, task, addr, env);
     if (!record?.rpcSocket) return null;
     const id = session ?? record.threadId;
@@ -802,10 +823,10 @@ export function registerWake(home, task, addr, env = process.env, session = null
   }
 }
 
-export function checkWake(env = process.env) {
+export function checkWake(env = process.env): WakeProbe {
   const file = String(env?.[SESSION_ENV_VAR] ?? '').trim();
   if (!file) return { endpoint: null, ok: false, error: `${SESSION_ENV_VAR} is empty — this session is not a Codex participant` };
-  const record = readRecordAt(file);
+  const record = readRecordAt<CodexSessionRecord>(file);
   if (!record) return { endpoint: file, ok: false, error: 'no session record at this path' };
   if (!record.threadId) return { endpoint: file, ok: false, error: 'the thread is not named yet — lift is not confirmed' };
   const live = holderAlive(record.ref, env);
@@ -816,7 +837,7 @@ export function checkWake(env = process.env) {
   };
 }
 
-export function orderBody(task, addr, unread, msgs = [], prefix = null) {
+export function orderBody(task: string, addr: string, unread: number, msgs: NotificationMessage[] = [], prefix: string | null = null) {
   const mailbox = prefix
     ? `\`${mcpToolName(PROMPTOBUS_SERVER, 'promptobus_mailbox', prefix)}\``
     : `this session's ${PROMPTOBUS_SERVER} mailbox tool`;
@@ -827,12 +848,12 @@ export function orderBody(task, addr, unread, msgs = [], prefix = null) {
 
 /** Wake text for one participant. The tool namespace comes off the SESSION RECORD, since neither
  * this function nor a `Notification` carries a host; `activate` holds the record and never comes here. */
-export function renderNotification(n) {
+export function renderNotification(n: Notification) {
   return orderBody(n.task, n.address, n.unread, n.messages ?? [], sessionPrefix(n.task, n.address));
 }
 
 /** The override key prefix of a live participant, or `null` — nothing holds one. */
-function sessionPrefix(task, address, env = process.env) {
+function sessionPrefix(task: string, address: string, env = process.env) {
   try {
     return registrySessions(env).find((r) => r.task === task && r.address === address)?.mcpPrefix ?? null;
   } catch {
@@ -841,7 +862,7 @@ function sessionPrefix(task, address, env = process.env) {
   }
 }
 
-export async function activate(target, notification) {
+export async function activate(target: ActivationTarget, notification: Notification): Promise<ActivateResult> {
   const ref = target?.ref;
   if (!ref) return { ok: false, error: 'the participant record has no session reference — nothing to wake' };
   const record = readSession(ref);
@@ -864,7 +885,7 @@ export async function activate(target, notification) {
   try {
     st = await holderAsk(ref, 'status');
   } catch (err) {
-    return { ok: false, error: err.message };
+    return { ok: false, error: (err as Error).message };
   }
   if (rateLimitReached(st.rateLimits)) {
     return { ok: false, error: `Codex account limit: ${rateLimitNote(st.rateLimits) ?? 'window exhausted'} — a new turn is not started` };
@@ -886,23 +907,23 @@ export async function activate(target, notification) {
     }, undefined, turnWaitMs() + 1_000);
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err.message };
+    return { ok: false, error: (err as Error).message };
   }
 }
 
-function eventAgeMs(iso) {
+function eventAgeMs(iso: string | null | undefined) {
   const t = Date.parse(iso ?? '');
   return Number.isFinite(t) ? Date.now() - t : null;
 }
 
-function pendingRequestReason(pending) {
+function pendingRequestReason(pending: CodexPendingRequest | null | undefined) {
   const method = pending?.method ?? 'server request';
   const server = pending?.server ? ` from ${pending.server}` : '';
   const since = pending?.at ? ` since ${pending.at}` : '';
   return `waiting on ${method}${server}${since}`;
 }
 
-function inspect(ref) {
+function inspect(ref: string): SessionView {
   const record = readSession(ref);
   if (!record) {
     return {
@@ -976,7 +997,7 @@ function inspect(ref) {
   // fails the same way, and "the turn is running" would read unreachable as busy.
   const reset = turnFailed(record.lastTurn?.status) ? namedReset(record.lastTurn?.error) : null;
   if (reset && resetAhead(reset)) {
-    const why = `the last turn was refused: ${record.lastTurn.error}`;
+    const why = `the last turn was refused: ${record.lastTurn!.error}`;
     return {
       state: 'alive',
       busy: record.state === 'starting' || record.busy === true,
@@ -1030,7 +1051,7 @@ function inspect(ref) {
     return { state: 'alive', busy: true, stall: null, id, note: extra || `the turn is running${agePart}` };
   }
   if (turnFailed(record.lastTurn?.status)) {
-    const err = record.lastTurn?.error ? `: ${record.lastTurn.error}` : '';
+    const err = record.lastTurn?.error ? `: ${record.lastTurn!.error}` : '';
     const why = `the last turn ended failed${err}`;
     return {
       state: 'alive',
@@ -1044,16 +1065,16 @@ function inspect(ref) {
     state: 'alive',
     busy: false,
     stall: record.lastUnknownApproval
-      ? { kind: 'unknown-approval', reason: unknown }
+      ? { kind: 'unknown-approval', reason: unknown! }
       : (rateLimitReached(record.rateLimits)
-        ? { kind: 'limit', reason: limit }
+        ? { kind: 'limit', reason: limit! }
         : { kind: 'unknown', reason: 'the turn ended' }),
     id,
     note: extra || (record.nameSet === false ? 'thread name did not apply (unobserved outcome)' : 'the thread is idle'),
   };
 }
 
-export function stallRoute({ kind, address, repoAbs, task, reviewCommand, doneCommand, statusCommand, reset }, id) {
+export function stallRoute({ kind, address, repoAbs, task: _task, reviewCommand, doneCommand, statusCommand, reset }: LibStall, id: string | null) {
   const where = repoAbs ? `cd ${repoAbs} && ` : '';
   const review = reviewCommand;
   const done = doneCommand;
@@ -1072,7 +1093,7 @@ export function stallRoute({ kind, address, repoAbs, task, reviewCommand, doneCo
       + `The thread on disk is intact, but the mechanism does not resume it by itself. ${relift()}`;
   }
   if (kind === 'limit' && resetAhead(reset)) {
-    const probe = reset.at === null ? ` and probes it every ${KNOCK_RETRY_SEC} s, since that time does not parse` : '';
+    const probe = reset!.at === null ? ` and probes it every ${KNOCK_RETRY_SEC} s, since that time does not parse` : '';
     return `no human is needed for the limit to lift: the warden holds its knocks until the time named here${probe}. `
       + `If the run cannot wait that long, ${relift()}`;
   }
@@ -1104,7 +1125,7 @@ export function stallRoute({ kind, address, repoAbs, task, reviewCommand, doneCo
     + `Look in yourself: ${id ? PHRASES.enter(id) : relift()}`;
 }
 
-function resumeState(ref, { home, cwd, task, address, threadId, launcherPid, env = process.env }) {
+function resumeState(ref: string, { home, cwd, task, address, threadId, launcherPid, env = process.env }: Parameters<NonNullable<LibDriver['resumeState']>>[1]) {
   const record = readSession(ref, env);
   const expectedHome = participantCodexHome({ task, address }, env);
   if (!record || record.threadId !== threadId || record.task !== task
@@ -1121,12 +1142,14 @@ function resumeState(ref, { home, cwd, task, address, threadId, launcherPid, env
   return record;
 }
 
-async function spawn(plan, {
+async function spawn(input: LibLaunchPlan, {
   tool, ref, role, cwd, env, host, home: runtimeHome, task: runtimeTask, address: runtimeAddress,
   launchFailNote = '', deadNote = '', persist,
-}) {
+}: LibSpawnContext): Promise<LibSpawnResult<CodexSessionRecord>> {
+  // The registry pairs this driver with the launch plan its own prepare returned.
+  const plan = input as CodexLaunchPlan;
   const registry = registryOf(host);
-  const who = (liftWords(registry, role) ?? liftWords(registry, WORKER)).acc;
+  const who = (liftWords(registry, role) ?? liftWords(registry, WORKER))!.acc;
   // The working directory is taken from the plan, not the caller's cwd: for a reviewer that is its
   // own sandbox. Both are on disk by this point, and app-server is handed the path as the thread cwd.
   const workdir = plan.cwd ?? cwd;
@@ -1247,7 +1270,7 @@ async function spawn(plan, {
     discardLaunch();
     throw error;
   }
-  if (Number.isInteger(holder.pid) && holder.pid > 0) {
+  if (Number.isInteger(holder.pid) && holder.pid! > 0) {
     withSessionLaunch(ref, env, () => {
       if (!ownsLaunch()) throw new GateError(`Codex session ${ref} changed launch ownership before holder publication`);
       patchSession(ref, { holderPid: holder.pid }, env);
@@ -1259,7 +1282,7 @@ async function spawn(plan, {
     binding = await waitReady(ref, env, readyMs(env), 'binding');
     if (binding.ok) {
       try {
-        persist(binding.record.threadId, 'alive', binding.record.threadId);
+        persist(binding.record!.threadId!, 'alive', binding.record!.threadId!);
         boundToBus = true;
         await holderAsk(ref, 'bound', {}, env);
       } catch (error) {
@@ -1283,30 +1306,31 @@ async function spawn(plan, {
     fail(`${tool.bin}: Codex thread did not lift (${lifted.error}) — nothing to lift ${who} with.`
       + `${launchFailNote}${deadNote}${log ? `\n${log}` : ''}`);
   }
-  const rec = lifted.record;
-  if (!plan.bindBeforeFirstTurn) persist(rec.threadId, 'alive', rec.threadId);
+  const rec = lifted.record!;
+  if (!plan.bindBeforeFirstTurn) persist(rec.threadId!, 'alive', rec.threadId!);
   writeParticipantWake(rec, env);
   registerWake(runtimeHome, runtimeTask, runtimeAddress, env, rec.threadId);
   return {
     output: `thread ${rec.threadId}`,
-    session: rec.threadId,
+    session: rec.threadId!,
     seen: rec,
   };
 }
 
-function saidLiftoff({ output, seen }) {
+function saidLiftoff({ output, seen: receipt }: LibSpawnResult) {
+  const seen = receipt as Pick<CodexSessionRecord, 'codexHome' | 'role'> | null;
   if (output) info(output);
   info(`Codex home: ${seen?.codexHome ?? 'unnamed on the record'} — the mechanism MCP set only, the owner's auth copied in, `
     + 'removed on done; the owner ~/.codex is not written');
   info('personal ~/.agents/skills remain visible; only copies colliding with loaded canonical names are disabled in this thread');
   info('each bus tool call costs a turn of the Codex auto-reviewer (~3.4 s and ~19 thousand input tokens)');
-  if (['teamlead', 'reporter', 'orchestrator'].includes(seen?.role)) info('Codex project hooks are disabled for this install-root role; the holder drives turns and wake');
+  if (['teamlead', 'reporter', 'orchestrator'].includes(seen?.role!)) info('Codex project hooks are disabled for this install-root role; the holder drives turns and wake');
   else info('hook trust for this thread is bypass_hook_trust on thread/start; a linked worktree also has that hooks file in its Codex home');
 }
 
 /** Stop confirms terminal command accounting before retiring the matching launch.
  * Unresolved stops retain their record, participant home and selected lifecycle receipts. */
-async function stop(ref, { timeoutMs = STOP_TIMEOUT_MS } = {}) {
+async function stop(ref: string, { timeoutMs = STOP_TIMEOUT_MS } = {}) {
   const record = readSession(ref);
   if (!record) {
     return {
@@ -1316,7 +1340,7 @@ async function stop(ref, { timeoutMs = STOP_TIMEOUT_MS } = {}) {
     };
   }
   const id = record.threadId ?? ref;
-  const unresolved = note => ({ ok: false, attempted: true, stopped: false,
+  const unresolved = (note: string) => ({ ok: false, attempted: true, stopped: false,
     note: `thread ${id}: ${note}; record/home retained; command receipts ${record.commandReceiptFile ?? 'not established'}` });
   if (!Number.isFinite(timeoutMs) || timeoutMs < 0) return unresolved('invalid Stop timeout; no shutdown issued');
   const deadline = Date.now() + Math.min(STOP_TIMEOUT_MS, timeoutMs);
@@ -1328,7 +1352,7 @@ async function stop(ref, { timeoutMs = STOP_TIMEOUT_MS } = {}) {
       if (Date.now() >= deadline) return unresolved('Stop deadline elapsed before shutdown');
       answer = await holderAsk(ref, 'shutdown', { launchId: record.launchId, deadlineAt: deadline }, process.env,
         Math.max(1, deadline - Date.now()));
-    } catch (error) { return unresolved(`shutdown outcome unresolved: ${error.message}`); }
+    } catch (error) { return unresolved(`shutdown outcome unresolved: ${(error as Error).message}`); }
     if (!answer.ok || !answer.stopped || answer.launchId !== record.launchId)
       return unresolved(answer.note ?? 'holder did not confirm terminal command accounting');
   }
@@ -1352,7 +1376,7 @@ async function stop(ref, { timeoutMs = STOP_TIMEOUT_MS } = {}) {
       return true;
     };
     retired = withNativeStopLocks(record, retire, { deadlineAt: deadline });
-  } catch (error) { return unresolved(`record retirement unresolved: ${error.message}`); }
+  } catch (error) { return unresolved(`record retirement unresolved: ${(error as Error).message}`); }
   if (!retired) return unresolved('launch ownership or finalization changed before record retirement');
   return {
     ok: true,
@@ -1400,7 +1424,7 @@ export const codexDriver = {
   // no participant yet, and its `auth.json` is what every participant home will copy.
   availability: {
     tool: CODEX,
-    probe: (request) => probeCodex(request, {
+    probe: (request: Parameters<typeof probeCodex>[0]) => probeCodex(request, {
       tool: CODEX,
       env: sessionEnv(process.env, { CODEX_HOME: ownerCodexHome() }),
     }),
@@ -1408,14 +1432,14 @@ export const codexDriver = {
   phrases: PHRASES,
   prepare,
   resumeState,
-  prepareRootLaunch: ({ home, task, env }) => {
+  prepareRootLaunch: ({ home, task, env }: Parameters<NonNullable<LibDriver['prepareRootLaunch']>>[0]) => {
     const retained = registrySessions(env).filter(record => record.home === home && record.task === task
       && record.address === 'orchestrator');
     retained.sort((a, b) => a.ref.localeCompare(b.ref));
-    const cleanup = (index = 0) => {
+    const cleanup = (index = 0): void => {
       if (index < retained.length) return withSessionLaunch(retained[index].ref, env, () => cleanup(index + 1));
       const current = retained.map(record => ({ before: record, now: readSession(record.ref, env) }))
-        .filter(pair => pair.now);
+        .filter((pair): pair is { before: CodexSessionRecord; now: CodexSessionRecord } => Boolean(pair.now));
       const live = current.find(({ before, now }) => now.launchId !== before.launchId
         || holderAlive(now.ref, env) || pidAlive(now.appPid));
       if (live) throw new GateError(`task ${task} retains a live unbound Codex root ${live.now.ref}; no session files were touched`);
@@ -1440,4 +1464,4 @@ export const codexDriver = {
   sessionEnv,
   optionRefusal,
   shadowedUserServers,
-};
+} satisfies CodexDriver;

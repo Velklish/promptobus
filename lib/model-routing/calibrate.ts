@@ -3,6 +3,31 @@
 
 import { throughputRate } from './telemetry.js';
 
+import type { CatalogTuple } from './catalog.js';
+
+type AliasDictionary = Record<string, Record<string, readonly string[]> | null | undefined>;
+type CalibrationRecord = Record<string, unknown>;
+interface ModelKey { harness: string; model: string }
+interface EffortKey extends ModelKey { effort: string | null }
+interface RecordGroup extends EffortKey { aliases: Set<string>; records: CalibrationRecord[] }
+interface Ratings { quality: number; speed: number; quotaCost: number }
+interface RatingProposal { band: number | null; why: string | null; move?: number; ratio?: number; implied?: number; surprise?: number; pivot?: boolean }
+interface KeyProposal { pivot: boolean; speed: RatingProposal | null; speedPivot: boolean; quotaCost: RatingProposal | null }
+interface CalibrationKey extends EffortKey {
+  aliasesSeen: string[]; tuple: string | null; runs: number;
+  steps: { step: string; role: string; runs: number; acceptedPieces: number }[];
+  acceptedPieces: number; dismissed: number; withoutWindows: number; durationSec: number | null;
+  durationSamples: number; throughput: number | null; throughputSamples: number;
+  turns: number | null; reviewRounds: number | null; windowDelta: number | null; windowSamples: number;
+  catalog: Ratings | null; override: Partial<Ratings> | null; overrideSources: Partial<Record<keyof Ratings, string>> | null;
+  eligible: boolean; note: string | null; proposal: KeyProposal | null;
+}
+interface SpeedModel extends ModelKey { runs: number; throughput: number | null; throughputSamples: number; catalogSpeed: number | null }
+interface CalibrationOptions {
+  tuples?: CatalogTuple[]; overlayTuples?: CatalogTuple[] | null;
+  overlaySources?: Record<string, Record<string, string>> | null; aliases?: AliasDictionary | null; threshold?: number;
+}
+
 /** Runs per key before anything is proposed. A constant of ADR-005, deliberately not an
  * overlay key: an evidence threshold a person could lower stops being evidence. */
 export const EVIDENCE_THRESHOLD = 5;
@@ -24,12 +49,12 @@ export const MAX_MOVE = 2;
 const MIN_BAND = 1;
 const MAX_BAND = 10;
 
-const clampBand = (n) => Math.min(MAX_BAND, Math.max(MIN_BAND, n));
+const clampBand = (n: number) => Math.min(MAX_BAND, Math.max(MIN_BAND, n));
 
 /** Median of a sample, `null` when there is none. The even case takes the mean of the two
  * middle values; a `.5` in a count is read as what it is — a sample of two that disagrees. */
-export function median(values) {
-  const xs = values.filter((v) => typeof v === 'number' && Number.isFinite(v)).sort((a, b) => a - b);
+export function median(values: readonly unknown[]) {
+  const xs = values.filter((v): v is number => typeof v === 'number' && Number.isFinite(v)).sort((a, b) => a - b);
   if (!xs.length) return null;
   const mid = xs.length >> 1;
   return xs.length % 2 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2;
@@ -37,9 +62,9 @@ export function median(values) {
 
 /** A record's one window number: the LARGEST delta among the windows that applied, not their
  * sum — the resolver scores on the same set. An absent end reading or a negative delta drops. */
-export function windowDelta(record) {
+export function windowDelta(record: unknown) {
   const deltas = [];
-  for (const w of Array.isArray(record?.windows) ? record.windows : []) {
+  for (const w of Array.isArray((record as CalibrationRecord | null | undefined)?.windows) ? (record as CalibrationRecord).windows as (Record<string, unknown> | null | undefined)[] : []) {
     if (typeof w?.usedPercentAtEnd !== 'number' || typeof w?.usedPercentAtSpawn !== 'number') continue;
     const d = w.usedPercentAtEnd - w.usedPercentAtSpawn;
     if (d < 0) continue;
@@ -50,40 +75,40 @@ export function windowDelta(record) {
 
 /** An ACCEPTED PIECE (ADR-005): not dismissed before `done`, and at least one result sent.
  * Only these enter duration, turn and review-round medians; throughput uses every record. */
-export function acceptedPiece(record) {
-  return record?.dismissedBeforeDone !== true && (record?.resultCount ?? 0) >= 1;
+export function acceptedPiece(record: unknown) {
+  return (record as CalibrationRecord | null | undefined)?.dismissedBeforeDone !== true && (((record as CalibrationRecord | null | undefined)?.resultCount ?? 0) as number) >= 1;
 }
 
 /** The model id a key is on, through the DRIVER's alias dictionary and keyed BY HARNESS: a
  * name is an alias only where it is published ([guides/model-routing.md](../../docs/guides/model-routing.md)). */
-export function resolveModel(harness, model, aliases = {}) {
-  const table = Object.hasOwn(aliases ?? {}, harness) ? aliases[harness] : null;
+export function resolveModel(harness: string, model: string, aliases: AliasDictionary | null = {}) {
+  const table = Object.hasOwn(aliases ?? {}, harness) ? aliases![harness] : null;
   const ids = table && Object.hasOwn(table, model) ? table[model] : null;
   if (!Array.isArray(ids) || ids.length !== 1) return { model, alias: null };
   return { model: ids[0], alias: model };
 }
 
 /** The catalog row for one key, or `null`. Effort is compared as written, including `null`. */
-function rowFor(tuples, harness, model, effort) {
+function rowFor(tuples: CatalogTuple[], harness: string, model: string, effort: string | null) {
   return tuples.find((t) => t.harness === harness && t.model === model
     && (t.effort ?? null) === (effort ?? null)) ?? null;
 }
 
 /** Stable order of the keys, and the tie-break ADR-005 names for the pivot. */
-function keyOrder(a, b) {
+function keyOrder(a: EffortKey, b: EffortKey) {
   return a.harness.localeCompare(b.harness)
     || a.model.localeCompare(b.model)
     || String(a.effort ?? '').localeCompare(String(b.effort ?? ''));
 }
 
 /** Stable order for the model-level speed groups and their pivot tie-break. */
-function modelOrder(a, b) {
+function modelOrder(a: ModelKey, b: ModelKey) {
   return a.harness.localeCompare(b.harness) || a.model.localeCompare(b.model);
 }
 
 /** How many bands a measured ratio moves a rating, before clamping. `surprise` is 1 when the
  * catalog already said this; the scale is symmetric multiplicatively, since neutral is one. */
-export function moveFor(surprise) {
+export function moveFor(surprise: number) {
   if (!Number.isFinite(surprise) || surprise <= 0) return 0;
   if (surprise >= SURPRISE_TWO) return MAX_MOVE;
   if (surprise >= SURPRISE_ONE) return 1;
@@ -96,7 +121,7 @@ export function moveFor(surprise) {
  * with their rating: a bigger window delta is more quota, more tokens/s is more throughput. */
 function proposeRating({
   observed, pivotObserved, band, pivotBand, missing,
-}) {
+}: { observed: number | null; pivotObserved: number | null; band: number; pivotBand: number; missing: string }): RatingProposal {
   if (observed === null || pivotObserved === null) return { band: null, why: missing };
   if (pivotObserved === 0) {
     return { band: null, why: 'the pivot median is zero, so there is no ratio to compare against' };
@@ -130,11 +155,11 @@ function proposeRating({
 
 /** Group the records, compare them with the catalog, and propose. Pure: nothing is read from
  * disk and nothing written — `--write` is the command's, and it acts on `ratings` alone. */
-export function calibrate(records = [], {
+export function calibrate(records: unknown = [], {
   tuples = [], overlayTuples = null, overlaySources = null, aliases = {}, threshold = EVIDENCE_THRESHOLD,
-} = {}) {
-  const groups = new Map();
-  for (const r of Array.isArray(records) ? records : []) {
+}: CalibrationOptions = {}) {
+  const groups = new Map<string, RecordGroup>();
+  for (const r of (Array.isArray(records) ? records : []) as CalibrationRecord[]) {
     if (typeof r?.harness !== 'string' || typeof r?.model !== 'string') continue;
     const { model, alias } = resolveModel(r.harness, r.model, aliases);
     const effort = typeof r.effort === 'string' && r.effort ? r.effort : null;
@@ -144,31 +169,31 @@ export function calibrate(records = [], {
         harness: r.harness, model, effort, aliases: new Set(), records: [],
       });
     }
-    const g = groups.get(id);
+    const g = groups.get(id)!;
     if (alias) g.aliases.add(alias);
     g.records.push(r);
   }
 
   // Speed is a model property, so its evidence pools across the effort ladder. The original
   // key groups stay: duration and quotaCost remain per-rung evidence.
-  const speedGroups = new Map();
+  const speedGroups = new Map<string, ModelKey & { records: CalibrationRecord[] }>();
   for (const g of groups.values()) {
     const id = JSON.stringify([g.harness, g.model]);
     if (!speedGroups.has(id)) {
       speedGroups.set(id, { harness: g.harness, model: g.model, records: [] });
     }
-    speedGroups.get(id).records.push(...g.records);
+    speedGroups.get(id)!.records.push(...g.records);
   }
 
-  const keys = [...groups.values()].map((g) => {
+  const keys = [...groups.values()].map((g): CalibrationKey => {
     const accepted = g.records.filter(acceptedPiece);
-    const steps = new Map();
+    const steps = new Map<string, CalibrationKey['steps'][number]>();
     for (const record of g.records) {
       const step = typeof record.step === 'string' && record.step ? record.step : record.role;
       if (typeof step !== 'string' || !step || typeof record.role !== 'string' || !record.role) continue;
       const key = JSON.stringify([step, record.role]);
       if (!steps.has(key)) steps.set(key, { step, role: record.role, runs: 0, acceptedPieces: 0 });
-      const value = steps.get(key);
+      const value = steps.get(key)!;
       value.runs += 1;
       if (acceptedPiece(record)) value.acceptedPieces += 1;
     }
@@ -178,10 +203,10 @@ export function calibrate(records = [], {
     // The same row after the overlays. Only ratings that differ are kept: an overlay repeating
     // the catalog band is not an override a reader needs to be told about.
     const merged = overlayTuples ? rowFor(overlayTuples, g.harness, g.model, g.effort) : null;
-    const override = {};
-    const overrideSources = {};
+    const override: Partial<Ratings> = {};
+    const overrideSources: Partial<Record<keyof Ratings, string>> = {};
     if (row && merged) {
-      for (const name of ['quality', 'speed', 'quotaCost']) {
+      for (const name of ['quality', 'speed', 'quotaCost'] as const) {
         if (merged.ratings[name] !== row.ratings[name]) {
           override[name] = merged.ratings[name];
           const source = overlaySources?.[row.id]?.[name];
@@ -221,7 +246,7 @@ export function calibrate(records = [], {
     };
   }).sort(keyOrder);
 
-  const speedModels = [...speedGroups.values()].map((g) => {
+  const speedModels = [...speedGroups.values()].map((g): SpeedModel => {
     const throughputValues = g.records.map(throughputRate).filter((rate) => rate !== null);
     const ratedTuples = tuples.filter((tuple) => tuple.harness === g.harness && tuple.model === g.model
       && typeof tuple.ratings?.speed === 'number');
@@ -249,18 +274,18 @@ export function calibrate(records = [], {
   // The pivot: most runs among the eligible keys, ties settled by the key order. `keys` is
   // already in that order, so a stable max by run count IS the tie-break.
   const eligible = keys.filter((k) => k.eligible);
-  const pivot = eligible.reduce((best, k) => (best === null || k.runs > best.runs ? k : best), null);
+  const pivot = eligible.reduce<CalibrationKey | null>((best, k) => (best === null || k.runs > best.runs ? k : best), null);
 
   // Speed's anchor is the most-observed model with a usable throughput median,
   // independently of the per-rung quotaCost pivot.
   const speedEligible = speedModels.filter((m) => m.throughputSamples >= threshold
     && m.catalogSpeed !== null);
-  const speedPivot = speedEligible.reduce((best, m) => (
+  const speedPivot = speedEligible.reduce<SpeedModel | null>((best, m) => (
     best === null || m.throughputSamples > best.throughputSamples ? m : best
   ), null);
   const speedByModel = new Map(speedModels.map((m) => [JSON.stringify([m.harness, m.model]), m]));
 
-  const speedProposalForModel = (model) => {
+  const speedProposalForModel = (model: SpeedModel | null | undefined): RatingProposal | null => {
     if (!model) return null;
     if (model.catalogSpeed === null) return { band: null, why: 'catalog has no speed band for this model' };
     // A rung below the run threshold has no per-rung proposal without pooled throughput
@@ -276,16 +301,16 @@ export function calibrate(records = [], {
     }
     return proposeRating({
       observed: model.throughput,
-      pivotObserved: speedPivot.throughput,
+      pivotObserved: speedPivot!.throughput,
       band: model.catalogSpeed,
-      pivotBand: speedPivot.catalogSpeed,
+      pivotBand: speedPivot!.catalogSpeed!,
       missing,
     });
   };
   const speedProposals = new Map(speedModels.map((model) => [
     JSON.stringify([model.harness, model.model]), speedProposalForModel(model),
   ]));
-  const speedProposal = (k) => {
+  const speedProposal = (k: CalibrationKey) => {
     const model = speedByModel.get(JSON.stringify([k.harness, k.model]));
     if (!model || !k.catalog) return null;
     // A rung below the threshold has no proposal unless its model has enough
@@ -296,15 +321,15 @@ export function calibrate(records = [], {
 
   for (const k of keys) {
     const speed = speedProposal(k);
-    let quotaCost = null;
+    let quotaCost: RatingProposal | null = null;
     if (k.eligible) {
       quotaCost = k === pivot
-        ? { band: k.catalog.quotaCost, move: 0, why: null, pivot: true }
+        ? { band: k.catalog!.quotaCost, move: 0, why: null, pivot: true }
         : proposeRating({
           observed: k.windowDelta,
-          pivotObserved: pivot.windowDelta,
-          band: k.catalog.quotaCost,
-          pivotBand: pivot.catalog.quotaCost,
+          pivotObserved: pivot!.windowDelta,
+          band: k.catalog!.quotaCost,
+          pivotBand: pivot!.catalog!.quotaCost,
           missing: 'no usable window delta on this key or on the pivot',
         });
     }
@@ -320,14 +345,14 @@ export function calibrate(records = [], {
 
   // The merge payload of `--write`: only ratings that MOVED. Writing an unmoved one would
   // leave an override that says nothing and keeps saying it after the next catalog update.
-  const ratings = {};
+  const ratings: Record<string, Partial<Ratings>> = {};
   for (const k of keys) {
     if (!k.proposal || !k.tuple) continue;
-    const block = {};
-    for (const name of ['speed', 'quotaCost']) {
+    const block: Partial<Ratings> = {};
+    for (const name of ['speed', 'quotaCost'] as const) {
       const p = k.proposal[name];
       if (p?.band === null || p?.band === undefined) continue;
-      if (p.band === k.catalog[name]) continue;
+      if (p.band === k.catalog![name]) continue;
       block[name] = p.band;
     }
     if (Object.keys(block).length) ratings[k.tuple] = block;
@@ -361,16 +386,16 @@ export function calibrate(records = [], {
   };
 }
 
-const n1 = (x) => (x === null || x === undefined ? '—' : Math.round(x * 10) / 10);
-const n2 = (x) => (x === null || x === undefined ? '—' : Math.round(x * 100) / 100);
+const n1 = (x: number | null | undefined) => (x === null || x === undefined ? '—' : Math.round(x * 10) / 10);
+const n2 = (x: number | null | undefined) => (x === null || x === undefined ? '—' : Math.round(x * 100) / 100);
 
 /** The key as a person reads it: harness, model, effort, and the aliases that landed on it. */
-function keyLabel(k) {
+function keyLabel(k: CalibrationKey) {
   const base = `${k.harness} · ${k.model}${k.effort ? ` · ${k.effort}` : ''}`;
   return k.aliasesSeen.length ? `${base} (alias ${k.aliasesSeen.join(', ')})` : base;
 }
 
-function ratingLine(name, p, current, override, overrideSource) {
+function ratingLine(name: string, p: Partial<RatingProposal>, current: number, override: number | null | undefined, overrideSource: string | null | undefined) {
   const base = override === null || override === undefined
     ? `catalog ${current}`
     : overrideSource
@@ -387,7 +412,7 @@ function ratingLine(name, p, current, override, overrideSource) {
 
 /** The text `models calibrate` prints. The overlay lines come last and together, because that
  * is the shape a person pastes — and the same lines are what `--write` merges. */
-export function renderCalibration(report) {
+export function renderCalibration(report: ReturnType<typeof calibrate>) {
   const out = [];
   out.push(`telemetry: ${report.records} record(s) over ${report.keys.length} key(s); `
     + `evidence threshold ${report.threshold} throughput observation(s) for speed, `
@@ -434,12 +459,12 @@ export function renderCalibration(report) {
       if (!k.proposal) continue;
     }
     out.push('    proposed:');
-    const speed = k.proposal.speed;
-    const quotaCost = k.proposal.quotaCost ?? { band: null, why: k.note ?? 'insufficient data' };
-    out.push(ratingLine('speed', { ...speed, pivot: k.proposal.speedPivot },
-      k.catalog.speed, k.override?.speed, k.overrideSources?.speed));
-    out.push(ratingLine('quotaCost', { ...quotaCost, pivot: k.proposal.pivot },
-      k.catalog.quotaCost, k.override?.quotaCost, k.overrideSources?.quotaCost));
+    const speed = k.proposal!.speed;
+    const quotaCost = k.proposal!.quotaCost ?? { band: null, why: k.note ?? 'insufficient data' };
+    out.push(ratingLine('speed', { ...speed, pivot: k.proposal!.speedPivot },
+      k.catalog!.speed, k.override?.speed, k.overrideSources?.speed));
+    out.push(ratingLine('quotaCost', { ...quotaCost, pivot: k.proposal!.pivot },
+      k.catalog!.quotaCost, k.override?.quotaCost, k.overrideSources?.quotaCost));
   }
   out.push('');
   const moved = Object.keys(report.ratings);

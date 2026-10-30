@@ -330,7 +330,7 @@ The manually registered orchestrator MCP entry in [Install § MCP server](../gui
 
 **The two nulls are different states and carry different names.** `reason` is `resolved` when there is an id, `none` when nothing in the environment names a session, `contested` when more than one variable does, and `contested-records` when more than one MCP session record does. Nothing and too much take opposite repairs, A caller used to have only `why` prose to tell them apart: the direct `worker` ↔ `approver` route refused two variables with the words “the calling harness supplied no session identity”, and its reader went looking for a variable that was there twice over. Both contested reasons now name the variables found and say to clear the environment down to one of them — what is missing is nothing, what is extra is a variable. The `none` wording is unchanged: there, identity really is absent.
 
-**The resolver is injected, not imported, and the registry injects itself.** `lib/drivers.js` binds it with `bindSessionIdentity` at import — the shape a driver already uses to bind participant-home removal into the session store — so whoever loads the registry can answer. `lib/cli.js` binds it explicitly too, beside `bindHarnessHomes`: its command modules are imported dynamically and not all of them load the registry. Every driver imports `lib/store.js`, so the back edge is a real cycle — with a direct import the package loads when `store.js` is the entry module and dies with `ReferenceError: Cannot access 'CLAUDE' before initialization` when a driver module is. Unbound, the core answers `null` and says once that no registry is bound; it never falls back to reading a variable itself.
+**The resolver is injected, not imported, and the registry injects itself.** `lib/drivers.ts` binds it with `bindSessionIdentity` at import — the shape a driver already uses to bind participant-home removal into the session store — so whoever loads the registry can answer. `lib/cli.js` binds it explicitly too, beside `bindHarnessHomes`: its command modules are imported dynamically and not all of them load the registry. Every driver imports `lib/store.js`, so the back edge is a real cycle — with a direct import the package loads when `store.js` is the entry module and dies with `ReferenceError: Cannot access 'CLAUDE' before initialization` when a driver module is. Unbound, the core answers `null` and says once that no registry is bound; it never falls back to reading a variable itself.
 
 **The MCP path has a separate, record-backed member.** `DriverOptions.mcpIdentity`
 declares the environment variable carrying an absolute session-record path and the field
@@ -1138,7 +1138,7 @@ declared required dependency still refuses Host preparation.
 
 The canonical role preface states the delivery boundary:
 
-<!-- quote:../../lib/prompts/bb.js -->
+<!-- quote:../../lib/prompts/bb.ts -->
 Declared Host resources are separate from bounded source reads and complete rule handovers supplied inline or as canonical artifacts. Use these other routes only when the owner explicitly authorizes them within the existing grant; retain their exact source identity and authorization. A handover is not a successful Host read; it does not expand allowlists or read roots, override role or current control, or bypass declared required-dependency validation and Host preparation. If required rule content is unavailable through an authorized route, stop acceptance.
 <!-- /quote -->
 

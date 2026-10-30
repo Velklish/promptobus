@@ -7,14 +7,33 @@ import { harnessBin } from './harness-home.js';
 import { dropStaleWake, participantOf, readTask, upsertParticipant, withTaskLock } from './store.js';
 import { requireCurrentNativeLaunch } from './native-lifecycle.js';
 
-export function bindBeforeLaunch(home, task, address, binding = {}, expected = null) {
+import type { HostToolBin, RoleRegistry } from '../dist/index.js';
+
+export interface BgSession {
+  id?: string; sessionId?: string; name?: string; pid?: number;
+  waitingFor?: string | null; state?: string | null; status?: string | null;
+}
+export type RawBgSession = Partial<Record<keyof BgSession, unknown>>;
+export interface AwaitSeen { state: 'alive' | 'dead' | 'unknown'; session: RawBgSession | null; ghost?: RawBgSession | null }
+export interface LaunchResult { output: string; session: string | null; seen: AwaitSeen }
+export interface AwaitSessionOptions { tries?: number; delayMs?: number; sessions?: () => unknown[] | null; launchId?: string | null }
+interface LiftoffInput {
+  tool: Pick<HostToolBin, 'bin'>; argv: readonly string[]; cwd: string; env: NodeJS.ProcessEnv; name: string; role: string;
+  registry?: RoleRegistry; launchFailNote?: string; deadNote?: string; unboundNote?: string;
+  persist: (session: string | null, state: AwaitSeen['state'], full: string | null) => unknown;
+  awaitOptions?: AwaitSessionOptions; sayLimit?: ((output: string) => string | null) | null;
+  home?: string | null; task?: string | null; address?: string | null; preboundSessionId?: string | null;
+  preboundSessionRecord?: string | null; noun?: string | null; requireFullSession?: boolean; requireLaunchMatch?: boolean;
+}
+
+export function bindBeforeLaunch(home: string | null, task: string | null, address: string | null, binding: Record<string, unknown> = {}, expected: Parameters<typeof requireCurrentNativeLaunch>[1] = null) {
   if (!home || !task || !address || !Object.keys(binding).length) return () => {};
   const record = withTaskLock(home, task, () => {
     const found = participantOf(readTask(home, task), address);
     if (!found) return null;
     requireCurrentNativeLaunch(found, expected);
     upsertParticipant(home, task, { ...found, metadata: { ...found.metadata, ...binding } });
-    dropStaleWake(home, task, address, binding.sessionId);
+    dropStaleWake(home, task, address, binding.sessionId as string | null);
     return found;
   });
   if (!record) fail(`participant ${address} of task ${task} disappeared before its session launch`);
@@ -25,9 +44,9 @@ export function bindBeforeLaunch(home, task, address, binding = {}, expected = n
     catch { return; }
     const metadata = { ...current.metadata };
     for (const [key, value] of Object.entries(binding)) {
-      if (metadata[key] === value || metadata[key] === record.metadata?.[key]) delete metadata[key];
+      if (metadata[key] === value || metadata[key] === record!.metadata?.[key]) delete metadata[key];
     }
-    upsertParticipant(home, task, { ...current, metadata });
+    upsertParticipant(home!, task!, { ...current, metadata });
   });
 }
 
@@ -40,19 +59,19 @@ export async function liftoffParticipant({
   tool, argv, cwd, env, name, role, registry = SHIPPED_REGISTRY, launchFailNote = '', deadNote = '', unboundNote = '', persist,
   awaitOptions, sayLimit = null, home = null, task = null, address = null, preboundSessionId = null,
   preboundSessionRecord = null, noun = null, requireFullSession = false, requireLaunchMatch = false,
-}) {
-  const who = noun ? { nom: noun, acc: `the ${noun}` } : liftWords(registry, role) ?? liftWords(registry, WORKER);
+}: LiftoffInput): Promise<LaunchResult> {
+  const who = noun ? { nom: noun, acc: `the ${noun}` } : liftWords(registry, role) ?? liftWords(registry, WORKER)!;
   const pointer = preboundSessionId && home && task && address ? preboundSessionRecord : null;
   const undo = preboundSessionId && home && task && address
     ? bindBeforeLaunch(home, task, address, {
       sessionId: preboundSessionId, ...(pointer ? { sessionRecord: pointer } : {}),
     }) : () => {};
-  const refuse = (message) => { undo(); fail(message); };
+  const refuse = (message: string) => { undo(); fail(message); };
   let succeeded = false;
   try {
     // The shared minute bounds this `--bg` registration call, not the session's
     // lifetime; session appearance is retried separately by awaitSession below.
-    const r = run(tool.bin, argv, {
+    const r = run(tool.bin!, argv, {
       cwd,
       env,
       encoding: 'utf8',
@@ -60,7 +79,7 @@ export async function liftoffParticipant({
     });
     // The same words on three refusal branches: the route is one and is held by the record
     // written before launch.
-    if (r.error?.code === 'ENOENT') refuse(`${tool.bin}: the binary vanished between the check and launch — nothing to start ${who.acc} with.${launchFailNote}`);
+    if ((r.error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') refuse(`${tool.bin}: the binary vanished between the check and launch — nothing to start ${who.acc} with.${launchFailNote}`);
     if (r.error) refuse(`claude --bg: ${r.error.message}.${launchFailNote}`);
     const output = `${r.stdout ?? ''}\n${r.stderr ?? ''}`.trim();
     if (r.status !== 0) {
@@ -77,7 +96,8 @@ export async function liftoffParticipant({
       refuse(`session "${name}" started, but claude --bg did not name its id, so this lift cannot identify its own session.${unboundNote}`);
     }
     const seen = await awaitSession(name, { ...awaitOptions, launchId: requireLaunchMatch ? launchId : null });
-    const session = spawnedSessionId(seen, output) ?? (seen.state === 'dead' ? null : preboundSessionId);
+    // Session binding retains the harness protocol's string-id assumption, without validation.
+    const session = (spawnedSessionId(seen, output) as string | null) ?? (seen.state === 'dead' ? null : preboundSessionId);
     const named = sessionIdFull(seen);
     const full = named ?? (seen.state === 'dead' ? null : preboundSessionId);
     const unbound = seen.state !== 'dead' && ((!session && !full) || (requireFullSession && !full));
@@ -85,14 +105,14 @@ export async function liftoffParticipant({
     // A handshake binding stands; only the id the harness itself names can contradict it.
     let disagreement = null;
     if (pointer && state !== 'dead') {
-      disagreement = withTaskLock(home, task, () => {
-        requireCurrentNativeLaunch(participantOf(readTask(home, task), address), null);
+      disagreement = withTaskLock(home!, task!, () => {
+        requireCurrentNativeLaunch(participantOf(readTask(home!, task!), address), null);
         const bound = handshakeBinding(pointer);
         if (bound && named && bound !== named) {
           // The handshake's id goes back to the prelaunch one, so the refusal's undo clears it.
-          const current = participantOf(readTask(home, task), address);
+          const current = participantOf(readTask(home!, task!), address);
           if (current?.metadata?.sessionId === bound) {
-            upsertParticipant(home, task, { ...current, metadata: { ...current.metadata, sessionId: preboundSessionId } });
+            upsertParticipant(home!, task!, { ...current, metadata: { ...current.metadata, sessionId: preboundSessionId } });
           }
           return bound;
         }
@@ -130,9 +150,10 @@ export async function liftoffParticipant({
 }
 
 // The id a session's own handshake bound into its session record, or null.
-function handshakeBinding(file) {
+function handshakeBinding(file: string) {
   try {
-    const id = JSON.parse(readFileSync(file, 'utf8'))?.sessionId;
+    const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
+    const id = (parsed as { sessionId?: unknown } | null)?.sessionId;
     return typeof id === 'string' && id.trim() ? id.trim() : null;
   } catch {
     return null;
@@ -141,8 +162,8 @@ function handshakeBinding(file) {
 
 // What is said after a successful lift, the same for every role: an unconfirmed check and
 // an unparsed id are not a refusal — the participant is up and can be found by name.
-export function sayLiftoff({ name, seen, session, output }) {
-  if (seen.state === 'unknown') {
+export function sayLiftoff({ name, seen, session, output }: { name: string; output: string; session: string | null; seen: object }) {
+  if ((seen as { state?: unknown }).state === 'unknown') {
     warn(`lift of session "${name}" is not confirmed: claude agents --json was not parsed.`
       + ' Check yourself — a missing participant is as silent as a working one.');
   }
@@ -152,7 +173,7 @@ export function sayLiftoff({ name, seen, session, output }) {
 
 // Background-session identifier from `claude --bg` output. Output format is not a
 // contract: if we did not parse it — that is not a refusal.
-export function parseSessionId(output) {
+export function parseSessionId(output: unknown) {
   const text = String(output ?? '');
   const uuid = text.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i);
   if (uuid) return uuid[0];
@@ -170,21 +191,21 @@ const SESSION_ID_SHAPE = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0
 
 // Where the session id comes from after a spawn; the order matters and is tested. Why this
 // name: [03-cli.md § The session id after a lift](../docs/reference/03-cli.md#the-session-id-after-a-lift).
-export function spawnedSessionId(seen, output) {
+export function spawnedSessionId(seen: AwaitSeen | null | undefined, output: unknown) {
   const parsed = parseSessionId(output);
   return seen?.session?.id ?? (SESSION_ID_SHAPE.test(parsed ?? '') ? parsed : null);
 }
 
 // The full session identifier — the one the session calls itself — and only from the
 // harness record: [03-cli.md § The session id after a lift](../docs/reference/03-cli.md#the-session-id-after-a-lift).
-export function sessionIdFull(seen) {
+export function sessionIdFull(seen: AwaitSeen | null | undefined) {
   const full = seen?.session?.sessionId;
   return typeof full === 'string' && full.trim() ? full.trim() : null;
 }
 
 // Wait for the session to appear. Outcomes: `alive` — found, `dead` — not found in all
 // attempts, `unknown` — `claude agents --json` output was not parsed, which is not death.
-export async function awaitSession(name, { tries = 6, delayMs = 500, sessions = bgSessions, launchId = null } = {}) {
+export async function awaitSession(name: string, { tries = 6, delayMs = 500, sessions = bgSessions, launchId = null }: AwaitSessionOptions = {}): Promise<AwaitSeen> {
   let ghost = null;
   for (let i = 0; i < tries; i += 1) {
     // The list changes after `--bg`: without a reset the cache of the first empty probe
@@ -204,7 +225,7 @@ export async function awaitSession(name, { tries = 6, delayMs = 500, sessions = 
 
 // Live background sessions by the names we set at spawn.
 // [reference/03-cli.md#bgsessionscache--live-background-sessions-by-the-names-we-set-at-spawn](../docs/reference/03-cli.md#bgsessionscache--live-background-sessions-by-the-names-we-set-at-spawn)
-let bgSessionsCache = undefined;
+let bgSessionsCache: unknown[] | null | undefined = undefined;
 
 export function resetBgSessionsCache() {
   bgSessionsCache = undefined;
@@ -216,13 +237,14 @@ export function bgSessions({ fresh = false } = {}) {
 
 // The same read, saying WHY there is no list: `missing` — the harness binary was not found or does
 // not start, in words that name it; `null` beside a `null` list — it ran and did not parse.
-export function readBgSessions({ fresh = false } = {}) {
+export function readBgSessions({ fresh = false } = {}): { list: unknown[] | null; missing: string | null } {
   if (!fresh && bgSessionsCache !== undefined) return { list: bgSessionsCache, missing: null };
   const { r, missing } = runClaude(['agents', '--json']);
   if (missing) return { list: null, missing };
-  if (r.error || r.status !== 0) return { list: null, missing: null };
+  if (r!.error || r!.status !== 0) return { list: null, missing: null };
   try {
-    const parsed = JSON.parse(r.stdout);
+    const raw: unknown = JSON.parse(r!.stdout);
+    const parsed = raw as unknown[] | { agents?: unknown; sessions?: unknown };
     const list = Array.isArray(parsed) ? parsed : parsed.agents ?? parsed.sessions ?? [];
     if (!Array.isArray(list)) return { list: null, missing: null };
     bgSessionsCache = list;
@@ -234,11 +256,11 @@ export function readBgSessions({ fresh = false } = {}) {
 
 // `claude <args>` through the binary the host names — the lift's door, not this process's PATH:
 // [05-drivers.md § The harness binary after a lift](../docs/reference/05-drivers.md#the-harness-binary-after-a-lift-the-lifts-door-not-path).
-export function runClaude(args) {
+export function runClaude(args: readonly string[]) {
   const tool = harnessBin('claude');
   if (!tool.bin) return { r: null, missing: `the harness binary was not found: ${tool.reason}` };
   const r = run(tool.bin, args, { encoding: 'utf8' });
-  const code = r.error?.code;
+  const code = (r.error as NodeJS.ErrnoException | undefined)?.code;
   if (code === 'EACCES' || code === 'ENOEXEC') {
     return { r: null, missing: `the harness binary does not start: ${tool.bin} (${code})` };
   }
@@ -250,9 +272,12 @@ export function runClaude(args) {
 
 // By the record's `name` field and in full: a substring over the whole record would match a
 // session whose `cwd` holds another name. No `kind` filter — a vanished field kills all.
-export function findSession(sessions, name, launchId = null) {
-  const hits = (sessions ?? []).filter((s) => s?.name === name && (!launchId || [s.id, s.sessionId]
-    .some((id) => typeof id === 'string' && (id === launchId || (launchId.length >= 6 && id.startsWith(launchId))))));
+export function findSession(sessions: readonly unknown[] | null | undefined, name: string, launchId: string | null = null): RawBgSession | null {
+  const hits = (sessions ?? []).filter((raw): raw is RawBgSession => {
+    const s = raw as RawBgSession | null;
+    return s?.name === name && (!launchId || [s.id, s.sessionId]
+      .some((id) => typeof id === 'string' && (id === launchId || (launchId.length >= 6 && id.startsWith(launchId)))));
+  });
   if (!hits.length) return null;
   if (launchId) {
     const liveIds = new Set(hits.filter((s) => sessionLiveness(s, sessions) === 'alive')
@@ -265,9 +290,12 @@ export function findSession(sessions, name, launchId = null) {
 
 // A record is not liveness — it outlives its daemon, and `pid` separates them. The signal
 // is self-calibrating: a missing `pid` means "listed" only where this claude prints one.
-export function sessionLiveness(session, sessions = null) {
+export function sessionLiveness(session: unknown, sessions: readonly unknown[] | null = null) {
   if (!session) return 'dead';
-  const hasPid = (s) => typeof s?.pid === 'number' && s.pid > 0;
+  const hasPid = (raw: unknown) => {
+    const s = raw as { pid?: unknown } | null;
+    return typeof s?.pid === 'number' && s.pid > 0;
+  };
   if (hasPid(session)) return 'alive';
   return (sessions ?? []).some(hasPid) ? 'stale' : 'alive';
 }

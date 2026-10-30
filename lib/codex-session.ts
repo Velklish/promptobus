@@ -18,6 +18,72 @@ import { provenanceFromRecord, provenanceLine } from './provenance.js';
 import { createParticipantAuthGuard } from './codex-participant-auth.js';
 import { commandReceipts } from './codex-command-receipts.js';
 
+import type { HarnessSessionRecord } from './harness-registry.js';
+import type { LibMcpServer } from './driver-runtime.js';
+import type { PromptobusHost } from '../dist/index.js';
+
+export interface CodexRateLimits {
+  rateLimitReachedType?: string | null; primary?: CodexRateLimits | null; secondary?: CodexRateLimits | null;
+  usedPercent?: unknown; resetsAt?: unknown; planType?: unknown; windowDurationMins?: unknown; lengthSec?: unknown;
+  credits?: { balance?: unknown; hasCredits?: unknown; unlimited?: unknown } | null; spendControlReached?: unknown;
+  [key: string]: unknown;
+}
+export interface CodexPendingRequest { id?: unknown; method?: string; at?: string; server?: string | null; mode?: string | null; kind?: string | null }
+interface CodexError { code?: unknown; message?: string }
+interface CodexTurn { id?: string; status?: string; error?: string | CodexError | null; items?: CodexItem[] }
+interface CodexItem {
+  type?: string; id?: string; name?: string; input?: string | null; arguments?: string; output?: unknown;
+  call_id?: unknown; command?: string; cwd?: string; processId?: string | null; exitCode?: number | null;
+  aggregatedOutput?: string | null; status?: string; error?: unknown; server?: string; tool?: string;
+  content?: { type?: string; text?: string }[];
+}
+export interface CodexParams extends CodexRateLimits {
+  id?: string; threadId?: string; turn?: CodexTurn; type?: string; status?: string; error?: string | CodexError | null;
+  item?: CodexItem; run?: { eventName?: unknown; status?: unknown; sourcePath?: unknown }; requestId?: unknown;
+  questions?: { id: string }[]; networkApprovalContext?: { host?: unknown; protocol?: unknown } | null;
+  proposedNetworkPolicyAmendments?: { host?: unknown }[]; permissions?: { fileSystem?: unknown; network?: { enabled?: unknown } } | null;
+  sandbox?: unknown; approvalPolicy?: unknown; cwd?: unknown; fileChanges?: unknown;
+  requestedSchema?: { type?: unknown; properties?: unknown } | null; _meta?: Record<string, unknown> | null;
+  serverName?: unknown; server?: unknown; mode?: unknown; grantRoot?: unknown;
+}
+interface CodexResult {
+  id?: string; turn?: CodexTurn; thread?: { id?: string; path?: string; turns?: CodexTurn[] };
+  model?: string | null; reasoningEffort?: string | null; sandbox?: { type?: string; networkAccess?: boolean };
+  approvalPolicy?: string | null; cwd?: string; [key: string]: unknown;
+}
+interface CodexRpcMessage { id?: unknown; method: string; params?: CodexParams; result?: CodexResult; error?: CodexError }
+export interface CodexSessionRecord extends HarnessSessionRecord {
+  ref: string; bin?: string; cwd?: string; role?: string; prompt?: string; name?: string;
+  home?: string | null; task?: string | null; address?: string | null; hostName?: unknown;
+  codexHome?: string; authOwnerHome?: string; rpcSocket?: string | null; launchId?: string | null; threadId?: string | null;
+  sandbox?: string; approvalPolicy?: string; model?: string | null; effort?: string | null; addDirs?: string[];
+  holderPid?: number | null; appPid?: number | null; state?: string; busy?: boolean; error?: string | null;
+  turns?: number; stopping?: boolean; stopConfirmed?: boolean; stopError?: string | null;
+  rawToolReceipts?: boolean; commandReceiptFile?: string; canonicalSkillsDir?: string | null; resumeThreadId?: string | null;
+  startedAt?: string; mcpPrefix?: string; initialPrompt?: string; initialAssignmentInjected?: boolean; bindBeforeFirstTurn?: boolean; rolloutPath?: string | null;
+  firstTurnStartedAt?: string; firstTurnEndedAt?: string; pendingRequests?: CodexPendingRequest[];
+  pendingRequest?: CodexPendingRequest | null; lastUnknownApproval?: { method: string; at: string; why?: string } | null;
+  rateLimits?: CodexRateLimits | null; nameSet?: boolean | null; methodsCalled?: string[];
+  lastEvent?: string | null; lastEventAt?: string | null; currentTurnId?: string | null;
+  lastTurn?: { id?: string | null; status?: string | null; at?: string; error?: string };
+}
+export interface CodexHolderResult extends Partial<CodexSessionRecord> {
+  ok?: boolean; stopped?: boolean; attempted?: boolean; note?: string | null; receiptFile?: string;
+  threadStatus?: string | { type?: string } | null; turnStarted?: boolean; activeTurns?: (string | null | undefined)[];
+  appClosed?: boolean; holderExitRequested?: boolean; commandReceiptError?: string | null;
+}
+interface HolderEnvelope { id?: unknown; error?: string | CodexError; result?: CodexHolderResult }
+interface HolderRequest { id?: unknown; op?: string; method: string; params?: CodexParams; timeoutMs?: number; launchId?: string; deadlineAt?: number }
+interface HolderState {
+  threadId: string | null | undefined; busy: boolean; activeTurns: Set<string | null | undefined>; turnStarted: boolean;
+  currentTurnId: string | null | undefined; threadStatus: string | CodexParams | null; rateLimits: CodexRateLimits | null;
+  lastUnknownApproval: CodexSessionRecord['lastUnknownApproval']; nameSet: boolean | null; turns: number;
+  methodsCalled: string[]; lastEvent: string | null; lastEventAt: string | null; lastTurn?: CodexParams;
+  pendingRequests: CodexPendingRequest[]; pendingRequest: CodexPendingRequest | null;
+}
+type ConfiguredServers = { ok: false; why: string; names?: never } | { ok: true; names: Set<string>; why?: never };
+interface ApprovalDecision { allow: boolean; why?: string; unknown?: boolean }
+
 // Codex participant thread registry and app-server holder; the driver and reporter channel
 // use its public operations. [03-cli.md § The Codex holder](../docs/reference/03-cli.md#the-codex-holder)
 
@@ -32,7 +98,7 @@ const HOLD_JS = path.join(here, 'codex-hold.js');
 
 function packageIdentity() {
   try {
-    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    const pkg: { name?: unknown; version?: unknown } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
     return {
       name: String(pkg.name ?? 'promptobus') || 'promptobus',
       version: String(pkg.version ?? '0.0.0') || '0.0.0',
@@ -42,14 +108,14 @@ function packageIdentity() {
   }
 }
 
-function hostClientInfo(record, env = process.env) {
+function hostClientInfo(record: CodexSessionRecord | null | undefined, env = process.env) {
   const named = String(record?.hostName ?? env.PROMPTOBUS_HOST_NAME ?? '').trim();
   const ver = String(record?.hostVersion ?? env.PROMPTOBUS_HOST_VERSION ?? '').trim();
   const pkg = packageIdentity();
   return { name: named || pkg.name, version: ver || pkg.version };
 }
 
-export function codexInitParams(record, env = process.env) {
+export function codexInitParams(record: CodexSessionRecord | null | undefined, env = process.env) {
   return {
     clientInfo: hostClientInfo(record, env),
     capabilities: {
@@ -64,15 +130,15 @@ const CODEX_HARNESS = 'codex';
 
 /** Registry of OUR threads and holders. `PROMPTOBUS_CODEX_HOME`, else the host, else a
  * refusal — never a guess under the real home ([harness-home.js](harness-home.js)). */
-let dropParticipantHome = () => false;
+let dropParticipantHome: (home: string) => unknown = () => false;
 
 const SOCK_MAX = 103;
 
-function lockFile(ref, env = process.env) {
+function lockFile(ref: string, env = process.env): string {
   return path.join(sessionsDir(env), sessionKey(ref) + '.lock');
 }
 
-export function socketPath(ref, env = process.env) {
+export function socketPath(ref: string, env = process.env): string {
   const refText = String(ref ?? '');
   const name = createHash('sha1').update(refText).digest('hex').slice(0, 12) + '.sock';
   const nested = path.join(sessionsDir(env), name);
@@ -83,11 +149,11 @@ export function socketPath(ref, env = process.env) {
   return path.join(tmpdir(), 'pb-cdx-' + fallback);
 }
 
-export function holderLogFile(ref, env = process.env) {
+export function holderLogFile(ref: string, env = process.env) {
   return path.join(sessionsDir(env), sessionKey(ref) + '.log');
 }
 
-const codexRegistry = createHarnessRegistry({
+const codexRegistry: ReturnType<typeof createHarnessRegistry<CodexSessionRecord>> = createHarnessRegistry<CodexSessionRecord>({
   harness: CODEX_HARNESS,
   sidecars: (ref, env) => [socketPath(ref, env), lockFile(ref, env), holderLogFile(ref, env)],
   onDrop: (record) => {
@@ -106,13 +172,13 @@ export const dropSession = codexRegistry.dropSession;
 export const registrySessions = codexRegistry.registrySessions;
 export const pidAlive = codexRegistry.pidAlive;
 
-export function findSessionByAddress(home, task, address, env = process.env) {
+export function findSessionByAddress(home: string, task: string, address: string, env = process.env) {
   return registrySessions(env).find((r) => r.home === home && r.task === task && r.address === address) ?? null;
 }
 
 // Set by the driver at import: the home is the driver's construct, and importing the driver
 // here would close the one-way adapter boundary the gate stands on.
-export function bindParticipantHomeRemoval(fn) {
+export function bindParticipantHomeRemoval(fn: ((home: string) => unknown) | null) {
   dropParticipantHome = typeof fn === 'function' ? fn : (() => false);
 }
 
@@ -153,7 +219,7 @@ export function turnIdleMs(env = process.env) {
 }
 
 /** Error text app-server put on turn/completed. Message only — never a params blob. */
-export function turnErrorText(params) {
+export function turnErrorText(params: CodexParams | null | undefined) {
   const err = params?.error ?? params?.turn?.error;
   if (err == null || err === '') return null;
   if (typeof err === 'string') return err.slice(0, 400);
@@ -163,33 +229,33 @@ export function turnErrorText(params) {
   return null;
 }
 
-export function turnFailed(status) {
+export function turnFailed(status: unknown) {
   return status === 'failed' || status === 'error';
 }
 
 /** Drop only the matching server-request id. Number `1` and string `"1"` stay distinct. */
-export function outstandingAfterResolved(pendingRequests, requestId) {
-  const list = Array.isArray(pendingRequests) ? pendingRequests : [];
+export function outstandingAfterResolved(pendingRequests: readonly CodexPendingRequest[] | null | undefined, requestId: unknown) {
+  const list: CodexPendingRequest[] = Array.isArray(pendingRequests) ? pendingRequests : [];
   if (requestId === undefined || requestId === null) return list;
   return list.filter((r) => r?.id !== requestId);
 }
 
-export function oldestPending(pendingRequests) {
-  const list = Array.isArray(pendingRequests) ? pendingRequests : [];
+export function oldestPending(pendingRequests: readonly CodexPendingRequest[] | null | undefined) {
+  const list: CodexPendingRequest[] = Array.isArray(pendingRequests) ? pendingRequests : [];
   return list[0] ?? null;
 }
 
 export const STOP_TIMEOUT_MS = 10_000;
 export const STOP_STEP_MS = 100;
 
-export function rateLimitReached(snap) {
+export function rateLimitReached(snap: CodexRateLimits | null | undefined) {
   if (!snap || typeof snap !== 'object') return false;
   if (snap.rateLimitReachedType) return true;
   const windows = [snap.primary, snap.secondary, snap].filter(Boolean);
-  return windows.some((w) => Number(w.usedPercent) >= 100);
+  return windows.some((w) => Number(w!.usedPercent) >= 100);
 }
 
-export function rateLimitNote(snap) {
+export function rateLimitNote(snap: CodexRateLimits | null | undefined) {
   if (!snap) return null;
   const pct = snap.primary?.usedPercent ?? snap.usedPercent;
   const resets = snap.primary?.resetsAt ?? snap.resetsAt;
@@ -204,17 +270,18 @@ export function rateLimitNote(snap) {
 
 /** `model/list` rows as names, with the mark app-server puts on hidden ones. Filtering is
  * the caller's: a hidden model a person named is still a model they named (ADR-005). */
-export function listedModels(result) {
-  const rows = result?.data ?? result?.models ?? result ?? [];
+export function listedModels(result: unknown): { model: unknown; hidden: boolean }[] {
+  const payload = result as { data?: unknown; models?: unknown } | null | undefined;
+  const rows = payload?.data ?? payload?.models ?? result ?? [];
   if (!Array.isArray(rows)) return [];
-  return rows.map((row) => (typeof row === 'string'
+  return rows.map((raw) => { const row = raw as string | { id?: unknown; model?: unknown; hidden?: unknown } | null; return (typeof row === 'string'
     ? { model: row, hidden: false }
-    : { model: row?.id ?? row?.model ?? '', hidden: row?.hidden === true }));
+    : { model: row?.id ?? row?.model ?? '', hidden: row?.hidden === true }); });
 }
 
 // --- lock of one holder on a thread ------------------------------------------------
 
-export function withSessionLaunch(ref, env, fn, { waitMs } = {}) {
+export function withSessionLaunch<T>(ref: string, env: NodeJS.ProcessEnv | undefined, fn: () => T, { waitMs }: { waitMs?: number } = {}): T {
   const dir = sessionsDir(env);
   if (!existsSync(dir)) return fn();
   return withDirLock(path.join(dir, `${sessionKey(ref)}.transition`), fn, {
@@ -225,7 +292,7 @@ export function withSessionLaunch(ref, env, fn, { waitMs } = {}) {
   });
 }
 
-export function takeHolderLock(ref, env = process.env) {
+export function takeHolderLock(ref: string, env = process.env) {
   return withSessionLaunch(ref, env, () => {
     const file = lockFile(ref, env);
     mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -233,7 +300,7 @@ export function takeHolderLock(ref, env = process.env) {
       writeFileSync(file, `${JSON.stringify({ pid: process.pid, at: new Date().toISOString() })}\n`, { flag: 'wx', mode: 0o600 });
       return { ok: true, file };
     } catch {
-      let held = null;
+      let held: { pid?: unknown } | null = null;
       try {
         held = JSON.parse(readFileSync(file, 'utf8'));
       } catch {
@@ -253,7 +320,7 @@ export function takeHolderLock(ref, env = process.env) {
   });
 }
 
-export function dropHolderLock(ref, env = process.env) {
+export function dropHolderLock(ref: string, env = process.env) {
   return withSessionLaunch(ref, env, () => {
     if (holderLockPid(ref, env) === process.pid) rmSync(lockFile(ref, env), { force: true });
   });
@@ -261,8 +328,8 @@ export function dropHolderLock(ref, env = process.env) {
 
 // --- holder client -------------------------------------------------------------
 
-function sendHolder(sock, obj, timeoutMs = 30_000) {
-  return new Promise((resolve, reject) => {
+function sendHolder(sock: string, obj: unknown, timeoutMs = 30_000) {
+  return new Promise<HolderEnvelope>((resolve, reject) => {
     const client = net.connect(sock);
     let buf = '';
     const timer = setTimeout(() => {
@@ -281,7 +348,8 @@ function sendHolder(sock, obj, timeoutMs = 30_000) {
       clearTimeout(timer);
       try {
         resolve(JSON.parse(buf.slice(0, nl)));
-      } catch (err) {
+      } catch (caught) {
+      const err = caught as NodeJS.ErrnoException;
         reject(err);
       }
       client.end();
@@ -292,27 +360,27 @@ function sendHolder(sock, obj, timeoutMs = 30_000) {
   });
 }
 
-export async function holderAsk(ref, op, extra = {}, env = process.env, timeoutMs = 30_000) {
+export async function holderAsk<T = CodexHolderResult>(ref: string, op: string, extra: Record<string, unknown> = {}, env = process.env, timeoutMs = 30_000): Promise<T> {
   const rec = readSession(ref, env);
   const sock = rec?.rpcSocket;
   if (!sock) throw new Error('the session has no holder socket');
   const id = `${process.pid}-${Date.now()}`;
   const ans = await sendHolder(sock, { id, op, ...extra }, timeoutMs);
   if (ans?.error) throw new Error(typeof ans.error === 'string' ? ans.error : ans.error.message ?? JSON.stringify(ans.error));
-  return ans?.result ?? ans;
+  return (ans?.result ?? ans) as T;
 }
 
-export function holderAlive(ref, env = process.env) {
+export function holderAlive(ref: string, env = process.env) {
   const rec = readSession(ref, env);
   return !!(rec?.holderPid && pidAlive(rec.holderPid)) || pidAlive(holderLockPid(ref, env));
 }
 
-function holderLockPid(ref, env) {
-  try { return Number(JSON.parse(readFileSync(lockFile(ref, env), 'utf8')).pid); }
+function holderLockPid(ref: string, env: NodeJS.ProcessEnv) {
+  try { return Number((JSON.parse(readFileSync(lockFile(ref, env), 'utf8')) as { pid?: unknown }).pid); }
   catch { return null; }
 }
 
-export function startHolder(ref, env = process.env) {
+export function startHolder(ref: string, env = process.env) {
   const file = sessionFile(ref, env);
   const expectedLaunch = readSession(ref, env)?.launchId;
   const child = spawn(process.execPath, [HOLD_JS, file, ...(expectedLaunch ? [expectedLaunch] : [])], {
@@ -331,7 +399,7 @@ const RECORD_WATCH_MS = 5_000;
 
 // Holder-start trace for the suite, read at the TAIL of a run: a holder may live during one,
 // what is forbidden is one alive after it. Pid AND session file — a pid alone is reused.
-function traceHolder(env, line) {
+function traceHolder(env: NodeJS.ProcessEnv, line: string) {
   const file = env?.PROMPTOBUS_HOLDER_TRACE;
   if (!file) return;
   try {
@@ -341,7 +409,7 @@ function traceHolder(env, line) {
   }
 }
 
-export async function waitReady(ref, env = process.env, timeoutMs = readyMs(env), readyState = 'alive') {
+export async function waitReady(ref: string, env = process.env, timeoutMs = readyMs(env), readyState = 'alive') {
   const t0 = Date.now();
   while (Date.now() - t0 < timeoutMs) {
     const rec = readSession(ref, env);
@@ -358,7 +426,7 @@ export async function waitReady(ref, env = process.env, timeoutMs = readyMs(env)
   };
 }
 
-export function tailLog(ref, env = process.env, n = 20) {
+export function tailLog(ref: string, env = process.env, n = 20) {
   try {
     return readFileSync(holderLogFile(ref, env), 'utf8').trim().split('\n').slice(-n).join('\n');
   } catch {
@@ -366,17 +434,17 @@ export function tailLog(ref, env = process.env, n = 20) {
   }
 }
 
-function killRecordPids(record) {
+function killRecordPids(record: CodexSessionRecord | null | undefined) {
   for (const pid of [record?.holderPid, record?.appPid]) {
-    if (!Number.isInteger(pid) || pid <= 0) continue;
-    try { process.kill(-pid, 'SIGKILL'); } catch { /* no group or no permission */ }
-    try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
+    if (!Number.isInteger(pid) || pid! <= 0) continue;
+    try { process.kill(-pid!, 'SIGKILL'); } catch { /* no group or no permission */ }
+    try { process.kill(pid!, 'SIGKILL'); } catch { /* already gone */ }
   }
 }
 
 /** Stop the holder of `ref`: ask `shutdown` (bounded by `timeoutMs`, the ask also at most 5 s),
  *  wait out its death on the same budget, and fall back to killing its pids. */
-export async function reapHolder(ref, env = process.env, timeoutMs = STOP_TIMEOUT_MS) {
+export async function reapHolder(ref: string, env = process.env, timeoutMs = STOP_TIMEOUT_MS) {
   const record = readSession(ref, env);
   if (!record) return;
   if (!record.holderPid) record.holderPid = holderLockPid(ref, env);
@@ -392,7 +460,7 @@ export async function reapHolder(ref, env = process.env, timeoutMs = STOP_TIMEOU
   killRecordPids(record);
 }
 
-export async function waitStopped(ref, env = process.env, timeoutMs = STOP_TIMEOUT_MS) {
+export async function waitStopped(ref: string, env = process.env, timeoutMs = STOP_TIMEOUT_MS) {
   const t0 = Date.now();
   while (Date.now() - t0 < timeoutMs) {
     if (!holderAlive(ref, env)) return true;
@@ -403,7 +471,7 @@ export async function waitStopped(ref, env = process.env, timeoutMs = STOP_TIMEO
 
 // --- contact point ----------------------------------------------------------------
 
-export function writeParticipantWake(record, env = process.env) {
+export function writeParticipantWake(record: Partial<CodexSessionRecord>, _env = process.env) {
   if (!record?.home || !record?.task || !record?.address || !record?.rpcSocket) return null;
   const session = record.threadId ?? null;
   if (session) {
@@ -420,7 +488,7 @@ export function writeParticipantWake(record, env = process.env) {
 
 // --- holder --------------------------------------------------------------------
 
-const APPROVE = {
+const APPROVE: Record<string, { ok: object; no: object }> = {
   execCommandApproval: {
     ok: { decision: 'approved' }, no: { decision: { denied: { rejection: 'approval denied' } } },
   },
@@ -434,7 +502,7 @@ const APPROVE = {
   'item/tool/requestUserInput': { ok: { answers: {} }, no: { answers: {} } },
 };
 
-export function approvalReply(method, allow, params = {}) {
+export function approvalReply(method: string, allow: boolean, params: CodexParams = {}) {
   const row = APPROVE[method];
   if (method === 'item/tool/requestUserInput' && allow) {
     const questions = Array.isArray(params?.questions) ? params.questions : [];
@@ -447,7 +515,7 @@ export function approvalReply(method, allow, params = {}) {
 // `currentTime/read` has no static APPROVE row: its response is computed per request, so
 // `decideApproval` recognises it before this table.
 
-function looksLikeConfigRead(method) {
+function looksLikeConfigRead(method: string) {
   return method === 'config/read';
 }
 
@@ -467,7 +535,7 @@ const COMMAND_APPROVALS = new Set([
 
 /** Why a command approval is a network escalation, or `null`. A participant does not leave
  * its sandbox on request, and the plain `decline` applies no amendment either way. */
-function networkEscalationWhy(params) {
+function networkEscalationWhy(params: CodexParams | null | undefined) {
   const context = params?.networkApprovalContext;
   if (context && typeof context === 'object') {
     const host = context.host == null || context.host === '' ? 'an unnamed host' : String(context.host).slice(0, 200);
@@ -505,7 +573,7 @@ const DANGEROUS_PERMISSION_VALUES = new Set([
   'dangerously-bypass-approvals-and-sandbox',
 ]);
 
-function permissionValues(value) {
+function permissionValues(value: unknown): string[] {
   if (typeof value === 'string') return [value];
   if (Array.isArray(value)) return value.flatMap(permissionValues);
   if (value && typeof value === 'object') {
@@ -514,9 +582,9 @@ function permissionValues(value) {
   return [];
 }
 
-function permissionRequestWhy(params) {
+function permissionRequestWhy(params: CodexParams | null | undefined) {
   const permissions = params?.permissions;
-  const bounded = (value) => {
+  const bounded = (value: unknown) => {
     const serialized = String(JSON.stringify(value));
     return serialized.length > 400 ? `${serialized.slice(0, 397)}...` : serialized;
   };
@@ -529,7 +597,7 @@ function permissionRequestWhy(params) {
   return `permission request denied: permissions.fileSystem=${bounded(fileSystem)}; permissions.network.enabled=${bounded(network)}`;
 }
 
-function asksForEscalatedPermission(params, record) {
+function asksForEscalatedPermission(params: CodexParams | null | undefined, record: CodexSessionRecord) {
   // Keep this slot list explicit: scanning params wholesale would reopen blob matching.
   const slots = [
     { value: params?.sandbox, denied: DANGEROUS_SANDBOX_VALUES, running: record?.sandbox },
@@ -546,9 +614,9 @@ function asksForEscalatedPermission(params, record) {
   }));
 }
 
-function pathsOfApproval(params) {
-  const out = [];
-  const add = (p) => {
+function pathsOfApproval(params: CodexParams | null | undefined) {
+  const out: string[] = [];
+  const add = (p: unknown) => {
     if (p != null && p !== '') out.push(String(p));
   };
   add(params?.cwd);
@@ -559,7 +627,7 @@ function pathsOfApproval(params) {
   return out;
 }
 
-function resolveTarget(raw, cwd) {
+function resolveTarget(raw: unknown, cwd: unknown) {
   const s = String(raw ?? '');
   if (!s) return null;
   if (path.isAbsolute(s)) return s;
@@ -568,7 +636,7 @@ function resolveTarget(raw, cwd) {
   return `${base}${base.endsWith('/') || base.endsWith('\\') ? '' : path.sep}${s}`;
 }
 
-function absolutePath(value) {
+function absolutePath(value: unknown) {
   const s = String(value ?? '');
   if (!s) return null;
   if (path.isAbsolute(s)) return s;
@@ -578,16 +646,16 @@ function absolutePath(value) {
 
 // Not store.js's canonicalPath: that falls back to abs on failure, this gate returns null and
 // denies. `realpathSync` keeps the caller's case — measured on macOS APFS with Node 25.2.1.
-function containmentPath(value) {
+function containmentPath(value: unknown) {
   const abs = absolutePath(value);
   if (!abs) return null;
   const parsed = path.parse(abs);
   let resolved = parsed.root;
   const pending = abs.slice(parsed.root.length).split(/[\\/]+/).filter(Boolean);
-  const missing = [];
+  const missing: string[] = [];
   let linkCount = 0;
   while (pending.length) {
-    const segment = pending.shift();
+    const segment = pending.shift()!;
     if (missing.length) {
       if (segment === '.') continue;
       if (segment === '..') {
@@ -606,7 +674,8 @@ function containmentPath(value) {
     let stat;
     try {
       stat = lstatSync(candidate);
-    } catch (error) {
+    } catch (caught) {
+      const error = caught as NodeJS.ErrnoException;
       if (error.code !== 'ENOENT') return null;
       missing.push(segment);
       continue;
@@ -640,7 +709,7 @@ function containmentPath(value) {
   }
 }
 
-function insideRoots(abs, roots) {
+function insideRoots(abs: string | null, roots: readonly (string | null)[]) {
   if (!abs) return false;
   // This is an approval-time check; the holder does not perform the write, so TOCTOU remains.
   return roots.some((root) => root && (abs === root || abs.startsWith(`${root}${path.sep}`)));
@@ -653,7 +722,7 @@ const MCP_TOOL_CALL_KIND = 'mcp_tool_call';
 
 /** `is_message_only_schema` of `mcp_server_elicitation.rs` at tag `rust-v0.146.0`, mirrored
  * field for field. An ABSENT `requestedSchema` is not an explicit `null` and is refused. */
-function messageOnlySchema(params) {
+function messageOnlySchema(params: CodexParams) {
   if (!Object.hasOwn(params, 'requestedSchema')) return false;
   const schema = params.requestedSchema;
   if (schema === null) return true;
@@ -665,7 +734,7 @@ function messageOnlySchema(params) {
 
 /** The ONE request the holder answers for a person. A WHITELIST, not a chain of filters —
  * an unseen shape declines itself. [03-cli.md § The Codex holder](../docs/reference/03-cli.md#the-codex-holder) */
-function isToolCallApproval(params) {
+function isToolCallApproval(params: CodexParams | null | undefined) {
   if (!params || typeof params !== 'object' || Array.isArray(params)) return false;
   if (approvalKind(params) !== MCP_TOOL_CALL_KIND) return false;
   // Upstream applies the schema test inside the Form arm; a URL elicitation is a different
@@ -678,8 +747,8 @@ function isToolCallApproval(params) {
 // The writer quotes a key the way `JSON.stringify` does. 05-drivers § codex_apps.
 const MCP_SERVER_HEADER = /^\[mcp_servers\.([A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*")\]$/;
 
-function mcpServerNamesFromHomeConfig(text) {
-  const names = new Set();
+function mcpServerNamesFromHomeConfig(text: unknown) {
+  const names = new Set<string>();
   for (const line of String(text ?? '').split('\n')) {
     const match = MCP_SERVER_HEADER.exec(line);
     if (!match) continue;
@@ -689,7 +758,7 @@ function mcpServerNamesFromHomeConfig(text) {
       continue;
     }
     try {
-      const name = JSON.parse(raw);
+      const name: unknown = JSON.parse(raw);
       if (typeof name === 'string' && name) names.add(name);
     } catch {
       // A header this writer did not emit names no server.
@@ -700,7 +769,7 @@ function mcpServerNamesFromHomeConfig(text) {
 
 /** The `[mcp_servers]` keys the lift wrote, read once at holder start. A later write to the
  * home does not widen this set. [05-drivers § codex_apps](../docs/reference/05-drivers.md#the-built-in-codex_apps-server-stays-off-in-the-participant-home) */
-export function configuredMcpServers(record) {
+export function configuredMcpServers(record: CodexSessionRecord | null | undefined): ConfiguredServers {
   const home = record && typeof record.codexHome === 'string' ? record.codexHome : '';
   if (!home) {
     return { ok: false, why: 'the session record names no Codex home, so no MCP server is approved' };
@@ -714,7 +783,7 @@ export function configuredMcpServers(record) {
   return { ok: true, names: mcpServerNamesFromHomeConfig(text) };
 }
 
-function toolCallServerRefusal(params, configured) {
+function toolCallServerRefusal(params: CodexParams | null | undefined, configured: ConfiguredServers | null | undefined) {
   if (!configured || configured.ok !== true) {
     return {
       allow: false,
@@ -731,7 +800,7 @@ function toolCallServerRefusal(params, configured) {
 }
 
 /** The `_meta` marker, or null when the request is a server's own elicitation. */
-function approvalKind(params) {
+function approvalKind(params: CodexParams | null | undefined) {
   const meta = params && typeof params === 'object' ? params._meta : null;
   const kind = meta && typeof meta === 'object' ? meta[CODEX_APPROVAL_KIND] : null;
   // Only a string is a kind. `String(['mcp_tool_call'])` is the allowed discriminator
@@ -741,7 +810,7 @@ function approvalKind(params) {
 
 /** Allowlisted fields of a server-to-client request. Never the prompt, schema, url or params
  * blob; `schema` and `kind` are shape, and name which question was asked. */
-export function serverRequestSummary(method, params) {
+export function serverRequestSummary(method: string, params: CodexParams | null | undefined) {
   const p = params && typeof params === 'object' ? params : {};
   const server = p.serverName ?? p.server ?? null;
   const mode = p.mode ?? null;
@@ -754,7 +823,7 @@ export function serverRequestSummary(method, params) {
   };
 }
 
-export function decideApproval(method, params, record, configuredServers) {
+export function decideApproval(method: string, params: CodexParams | null | undefined, record: CodexSessionRecord, configuredServers?: ConfiguredServers | null): ApprovalDecision {
   if (looksLikeConfigRead(method)) {
     return { allow: false, why: 'config/read returns secrets from the personal config — the mechanism client does not call it and does not approve it' };
   }
@@ -848,11 +917,11 @@ export function decideApproval(method, params, record, configuredServers) {
 
 // Prefix of the `mcp_servers` keys in the participant home's `config.toml`: the tool name the
 // model sees is built from the key — [02-host.md](../docs/reference/02-host.md#consumer-identity-inside-a-harness).
-export function codexMcpPrefix(host) {
+export function codexMcpPrefix(host: Pick<PromptobusHost, 'commandName'>) {
   return `${host.commandName}-`;
 }
 
-export function codexMcpName(name, prefix) {
+export function codexMcpName(name: unknown, prefix: string) {
   const n = String(name ?? '');
   if (!n) return n;
   // No prefix is not "the canonical name": it fails silently in both directions — as a
@@ -863,10 +932,10 @@ export function codexMcpName(name, prefix) {
 
 /** Workspace MCP set into the Codex `mcp_servers` form. The two transports do not share a
  * field, and a foreign one kills the config load: [05-drivers.md](../docs/reference/05-drivers.md#the-two-mcp_servers-transports-and-the-field-that-kills-the-config-load) */
-export function codexMcpServers(servers, prefix) {
-  const out = {};
-  const skipped = [];
-  const copyDisabledTools = (entry, cfg) => {
+export function codexMcpServers(servers: Record<string, LibMcpServer> | null | undefined, prefix: string) {
+  const out: Record<string, LibMcpServer & { http_headers?: unknown }> = {};
+  const skipped: string[] = [];
+  const copyDisabledTools = (entry: LibMcpServer, cfg: LibMcpServer) => {
     const tools = Array.isArray(cfg.disabled_tools)
       ? [...new Set(cfg.disabled_tools.map(String).filter(Boolean))]
       : [];
@@ -884,7 +953,7 @@ export function codexMcpServers(servers, prefix) {
         skipped.push(name);
         continue;
       }
-      const entry = { url: String(cfg.url) };
+      const entry: LibMcpServer & { http_headers?: unknown } = { url: String(cfg.url) };
       const headers = cfg.headers ?? cfg.http_headers;
       if (headers && typeof headers === 'object' && Object.keys(headers).length) {
         entry.http_headers = { ...headers };
@@ -906,7 +975,7 @@ export function codexMcpServers(servers, prefix) {
 
 // The holder log does NOT create its directory, and that is the whole rule — a write with
 // nowhere to go is dropped: [05-drivers.md](../docs/reference/05-drivers.md#the-holders-record-watch).
-function logHold(file, line) {
+function logHold(file: string, line: string) {
   try {
     appendFileSync(file, `${new Date().toISOString()} ${line}\n`);
   } catch {
@@ -914,20 +983,20 @@ function logHold(file, line) {
   }
 }
 
-export function threadStartConfig(record) {
+export function threadStartConfig(record: CodexSessionRecord) {
   return {
     bypass_hook_trust: true,
     ...(record.role === REVIEWER ? { 'features.shell_tool': false, 'features.unified_exec': false } : {}),
-    ...(['teamlead', 'reporter', 'orchestrator'].includes(record.role) ? { 'features.hooks': false } : {}),
+    ...(['teamlead', 'reporter', 'orchestrator'].includes(record.role!) ? { 'features.hooks': false } : {}),
     ...(record.effort ? { model_reasoning_effort: record.effort } : {}),
   };
 }
 
-export function verifyThreadProfile(record, result, log = () => {}) {
-  const sandboxNames = { 'read-only': 'readOnly', 'workspace-write': 'workspaceWrite', 'danger-full-access': 'dangerFullAccess' };
-  const requested = { model: record.model ?? null, effort: record.effort ?? null,
-    sandbox: sandboxNames[record.sandbox] ?? record.sandbox, approvalPolicy: record.approvalPolicy };
-  const effective = { model: result?.model ?? null, effort: result?.reasoningEffort ?? null,
+export function verifyThreadProfile(record: CodexSessionRecord, result: CodexResult | null | undefined, log: (line: string) => void = () => {}) {
+  const sandboxNames: Record<string, string> = { 'read-only': 'readOnly', 'workspace-write': 'workspaceWrite', 'danger-full-access': 'dangerFullAccess' };
+  const requested: Record<string, unknown> = { model: record.model ?? null, effort: record.effort ?? null,
+    sandbox: sandboxNames[record.sandbox!] ?? record.sandbox, approvalPolicy: record.approvalPolicy };
+  const effective: Record<string, unknown> = { model: result?.model ?? null, effort: result?.reasoningEffort ?? null,
     sandbox: result?.sandbox?.type ?? null, approvalPolicy: result?.approvalPolicy ?? null };
   const network = effective.sandbox === 'dangerFullAccess' ? 'unrestricted'
     : result?.sandbox?.networkAccess === true ? 'enabled' : 'restricted';
@@ -941,16 +1010,17 @@ export function verifyThreadProfile(record, result, log = () => {}) {
 
 /** Disable personal duplicates by the paths Codex itself lists. The private canonical copy also
  * has user scope for an install-root role, so its directory is excluded explicitly. */
-export function canonicalSkillOverrides(listed, canonicalDir) {
-  const skills = (listed?.data ?? []).flatMap((entry) => entry.skills ?? []);
+export function canonicalSkillOverrides(listed: unknown, canonicalDir: string) {
+  const payload = listed as { data?: { skills?: { name?: string; path?: string; scope?: string }[] }[] } | null;
+  const skills = (payload?.data ?? []).flatMap((entry) => entry.skills ?? []);
   const dir = path.resolve(canonicalDir) + path.sep;
-  const canonical = (skill) => path.resolve(skill.path ?? '').startsWith(dir);
+  const canonical = (skill: { path?: string }) => path.resolve(skill.path ?? '').startsWith(dir);
   const names = new Set(skills.filter(canonical).map((skill) => skill.name));
   return skills.filter((skill) => skill.scope === 'user' && names.has(skill.name) && !canonical(skill))
     .map((skill) => ({ path: skill.path, enabled: false }));
 }
 
-export function recoveryPrompt(record, history) {
+export function recoveryPrompt(record: CodexSessionRecord, history: CodexResult | null | undefined) {
   if (!record.initialPrompt || record.initialAssignmentInjected) return record.prompt;
   const original = record.initialPrompt;
   const delivered = (history?.thread?.turns ?? []).some((turn) => (turn.items ?? []).some((item) =>
@@ -969,10 +1039,11 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
     process.stderr.write('codex-hold: no session record path\n');
     process.exit(2);
   }
-  let record;
+  let record: CodexSessionRecord;
   try {
     record = JSON.parse(readFileSync(file, 'utf8'));
-  } catch (err) {
+  } catch (caught) {
+      const err = caught as NodeJS.ErrnoException;
     process.stderr.write(`codex-hold: record unreadable: ${err.message}\n`);
     process.exit(2);
   }
@@ -986,11 +1057,11 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
     const current = readSession(ref, env);
     return !!current && current.launchId === record.launchId;
   };
-  const patchHeld = (ref, patch, env) => withSessionLaunch(ref, env, () =>
+  const patchHeld = (ref: string, patch: Partial<CodexSessionRecord>, env: NodeJS.ProcessEnv) => withSessionLaunch(ref, env, () =>
     ownsLaunch() ? patchSession(ref, patch, env) : null);
   const logFile = holderLogFile(ref, env);
-  const log = (line) => { if (ownsLaunch()) logHold(logFile, line); };
-  const lock = withSessionLaunch(ref, env, () => {
+  const log = (line: string) => { if (ownsLaunch()) logHold(logFile, line); };
+  const lock: { ok: boolean; ownershipChanged?: boolean; error?: string; file?: string } = withSessionLaunch(ref, env, () => {
     if (!ownsLaunch()) return { ok: false, ownershipChanged: true };
     return takeHolderLock(ref, env);
   });
@@ -1025,7 +1096,8 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
           'CODEX_EXEC_SERVER_NOISE_ENVIRONMENT_ID', 'CODEX_EXEC_SERVER_NOISE_AUTH_TOKEN',
           'CODEX_EXEC_SERVER_NOISE_CHATGPT_ACCOUNT_ID'].some(key => Object.hasOwn(env, key))) {
         try { lstatSync(path.join(record.codexHome, 'environments.toml')); }
-        catch (error) { localOnly = error.code === 'ENOENT'; }
+        catch (caught) {
+      const error = caught as NodeJS.ErrnoException; localOnly = error.code === 'ENOENT'; }
       }
     } catch { /* An unproved private home cannot establish the executor selection. */ }
     if (!localOnly) {
@@ -1036,7 +1108,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
       process.exit(1);
     }
   }
-  const child = spawn(record.bin, PARTICIPANT_ARGV, {
+  const child = spawn(record.bin!, PARTICIPANT_ARGV, {
     cwd: record.cwd,
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -1053,8 +1125,8 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
     task: record.task ?? null, address: record.address ?? null });
   patchHeld(ref, { commandReceiptFile: receiptFile, rawToolReceipts: env.PROMPTOBUS_CODEX_RAW_TOOL_RECEIPTS === '1' }, env);
   let closingApp = false;
-  let appClose = null;
-  const appClosed = new Promise(resolve => child.once('close', (code, signal) => {
+  let appClose: { code: number | null; signal: NodeJS.Signals | null } | null = null;
+  const appClosed = new Promise<void>(resolve => child.once('close', (code, signal) => {
     appClose = { code, signal };
     receipts.append('app-server/close', appClose);
     resolve();
@@ -1070,13 +1142,14 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
   }, RECORD_WATCH_MS);
   recordWatch.unref();
 
-  const methodsCalled = [];
-  const noteMethod = (m) => {
+  const methodsCalled: string[] = [];
+  const noteMethod = (m: string) => {
     if (!methodsCalled.includes(m)) methodsCalled.push(m);
   };
 
   const rpc = CodexRpc({ stdin: child.stdin, stdout: child.stdout }, {
-    onLog: (dir, obj) => {
+    onLog: (dir, raw) => {
+      const obj = raw as CodexRpcMessage;
       if (dir === 'raw') receipts.fail('app-server output is not a complete JSON-RPC stream');
       if (dir === 'orphan') {
         log(`orphan id=${obj?.id === undefined || obj?.id === null ? '' : String(obj.id)}`);
@@ -1085,7 +1158,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
       if (obj.method) noteMethod(obj.method);
     },
   });
-  child.stdout.on('error', error => receipts.fail(`app-server output failed: ${error.code ?? error.message}`));
+  child.stdout.on('error', error => receipts.fail(`app-server output failed: ${(error as NodeJS.ErrnoException).code ?? error.message}`));
   child.stdout.on('end', () => {
     if (!closingApp) receipts.fail('app-server output closed before confirmed Stop finalization');
     rpc.close();
@@ -1093,7 +1166,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
   child.stderr.setEncoding('utf8');
   child.stderr.on('data', (chunk) => log(`stderr ${String(chunk).slice(0, 400)}`));
 
-  const state = {
+  const state: HolderState = {
     threadId: null,
     busy: false,
     activeTurns: new Set(),
@@ -1112,22 +1185,22 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
   };
   const checkAuth = record.authOwnerHome ? createParticipantAuthGuard({
     ownerHome: record.authOwnerHome,
-    participantHome: record.codexHome,
+    participantHome: record.codexHome!,
   }) : null;
-  let turnRequests = Promise.resolve();
+  let turnRequests: Promise<unknown> = Promise.resolve();
   let stopping = false;
-  let shutdownInFlight = null;
-  let shutdownResult = null;
+  let shutdownInFlight: Promise<CodexHolderResult> | null = null;
+  let shutdownResult: CodexHolderResult | null = null;
   let activeRpcRequests = 0;
-  let unresolvedStart = null;
-  const interruptedTurns = new Map();
-  let requestCompletions = null;
-  const requestTurn = (method, params, timeoutMs) => {
+  let unresolvedStart: string | null = null;
+  const interruptedTurns = new Map<string, string | null>();
+  let requestCompletions: Set<string | null | undefined> | null = null;
+  const requestTurn = (method: string, params: CodexParams, timeoutMs: number) => {
     if (stopping) return Promise.reject(new Error('Codex holder is stopping'));
     const next = turnRequests.then(async () => {
       if (!ownsLaunch()) throw new Error('Codex launch ownership changed before model input');
       if (stopping) throw new Error('Codex holder is stopping');
-      if (receipts.snapshot().error) throw new Error(receipts.snapshot().error);
+      if (receipts.snapshot().error) throw new Error(receipts.snapshot().error!);
       if (checkAuth) await checkAuth({ busy: state.busy });
       if (stopping) throw new Error('Codex holder is stopping');
       const request = withSessionLaunch(ref, env, () => {
@@ -1136,7 +1209,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
         if (method !== 'turn/start' || params.threadId !== state.threadId
           || Object.keys(params).some(key => !['threadId', 'input', 'effort'].includes(key)))
           receipts.context('invalidated', { launchId: record.launchId, threadId: state.threadId });
-        return rpc.request(method, params, timeoutMs);
+        return rpc.request(method, params, timeoutMs) as Promise<CodexRpcMessage>;
       });
       requestCompletions = new Set();
       try {
@@ -1153,7 +1226,8 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
         if (!response.error && method !== 'turn/steer' && (typeof turnId !== 'string' || !turnId.trim()))
           unresolvedStart = `${method} returned no terminally accountable turn id`;
         return response;
-      } catch (error) {
+      } catch (caught) {
+      const error = caught as NodeJS.ErrnoException;
         unresolvedStart = `${method} outcome unknown: ${error.message}`;
         throw error;
       } finally {
@@ -1163,8 +1237,8 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
     turnRequests = next.catch(() => {});
     return next;
   };
-  const waiters = new Set();
-  const wakeWaiters = (pred) => {
+  const waiters = new Set<{ pred: () => boolean; resolve: () => void }>();
+  const wakeWaiters = (_pred: () => boolean) => {
     for (const w of [...waiters]) {
       if (w.pred()) {
         waiters.delete(w);
@@ -1173,11 +1247,12 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
     }
   };
 
-  rpc.onNotification((msg) => {
+  rpc.onNotification((raw) => {
+    const msg = raw as CodexRpcMessage;
     if (!ownsLaunch()) return;
     const p = msg.params ?? {};
     if (state.threadId && p.threadId && p.threadId !== state.threadId) return;
-    receipts.observe(msg, state.threadId);
+    receipts.observe(msg, state.threadId!);
     const lastEventAt = new Date().toISOString();
     state.lastEvent = msg.method;
     state.lastEventAt = lastEventAt;
@@ -1195,7 +1270,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
     } else {
       log(`event ${msg.method}`);
     }
-    const activity = { lastEvent: msg.method, lastEventAt };
+    const activity: Partial<CodexSessionRecord> = { lastEvent: msg.method, lastEventAt };
     if (msg.method === 'serverRequest/resolved') {
       state.pendingRequests = outstandingAfterResolved(state.pendingRequests, p.requestId);
       state.pendingRequest = oldestPending(state.pendingRequests);
@@ -1273,7 +1348,8 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
     }
   });
 
-  rpc.onServerRequest((msg) => {
+  rpc.onServerRequest((raw) => {
+    const msg = raw as CodexRpcMessage;
     if (!ownsLaunch()) return approvalReply(msg.method, false);
     if (stopping) return approvalReply(msg.method, false);
     noteMethod(`srv:${msg.method}`);
@@ -1336,12 +1412,12 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
     return approvalReply(msg.method, true, msg.params);
   });
 
-  let server = null;
-  let releaseFirstTurn = null;
+  let server: net.Server | null = null;
+  let releaseFirstTurn: (() => void) | null = null;
   const firstTurnBinding = record.bindBeforeFirstTurn
-    ? new Promise((resolve) => { releaseFirstTurn = resolve; }) : null;
+    ? new Promise<void>((resolve) => { releaseFirstTurn = resolve; }) : null;
 
-  const failHold = (error) => {
+  const failHold = (error: string) => {
     patchHeld(ref, { error, state: 'failed', methodsCalled }, env);
     log(`refusal: ${error}`);
     try {
@@ -1372,10 +1448,11 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
       buf += chunk;
       const nl = buf.indexOf('\n');
       if (nl < 0) return;
-      let req;
+      let req: HolderRequest;
       try {
         req = JSON.parse(buf.slice(0, nl));
-      } catch (err) {
+      } catch (caught) {
+      const err = caught as NodeJS.ErrnoException;
         conn.write(`${JSON.stringify({ id: null, error: err.message })}\n`);
         conn.end();
         return;
@@ -1384,14 +1461,15 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
       try {
         const result = await handleOp(req);
         conn.write(`${JSON.stringify({ id: req.id, result })}\n`);
-      } catch (err) {
+      } catch (caught) {
+      const err = caught as NodeJS.ErrnoException;
         conn.write(`${JSON.stringify({ id: req.id, error: err.message })}\n`);
       }
       conn.end();
     });
   });
 
-  async function handleOp(req) {
+  async function handleOp(req: HolderRequest) {
     if (req.op === 'bound' && releaseFirstTurn) {
       releaseFirstTurn();
       releaseFirstTurn = null;
@@ -1427,7 +1505,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
       const request = ['turn/start', 'turn/steer', 'review/start'].includes(req.method) ? requestTurn : rpc.request;
       activeRpcRequests += 1;
       try {
-        const ans = await request(req.method, req.params ?? {}, req.timeoutMs ?? 60_000);
+        const ans = await request(req.method, req.params ?? {}, req.timeoutMs ?? 60_000) as CodexRpcMessage;
         if (ans.error) throw new Error(ans.error.message ?? JSON.stringify(ans.error));
         return ans.result ?? {};
       } finally { activeRpcRequests -= 1; }
@@ -1440,7 +1518,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
       stopping = true;
       patchHeld(ref, { stopping: true }, env);
       const requestedDeadline = Number.isFinite(req.deadlineAt) ? req.deadlineAt : Date.now() + 5_000;
-      const deadline = Math.min(requestedDeadline, Date.now() + STOP_TIMEOUT_MS);
+      const deadline = Math.min(requestedDeadline!, Date.now() + STOP_TIMEOUT_MS);
       shutdownInFlight = finalizeStop(deadline).then(result => {
         if (result.ok) shutdownResult = result;
         return result;
@@ -1450,12 +1528,12 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
     throw new Error(`unknown holder operation «${req.op}»`);
   }
 
-  async function finalizeStop(deadline) {
-    const waitUntil = async predicate => {
+  async function finalizeStop(deadline: number): Promise<CodexHolderResult> {
+    const waitUntil = async (predicate: () => boolean) => {
       while (!predicate() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
       return predicate();
     };
-    const unresolved = note => {
+    const unresolved = (note: string | null | undefined) => {
       const snapshot = receipts.snapshot();
       receipts.append('stop/unresolved', { note, activeTurns: [...state.activeTurns], commands: snapshot.commands });
       const why = receipts.snapshot().error ?? note;
@@ -1480,14 +1558,14 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
           && new Set(envelopes.map(envelope => envelope.callId)).size === envelopes.length
           && envelopes.every(envelope => envelope.threadId === state.threadId && envelope.turnId === lastTurn.id
             && typeof envelope.callId === 'string' && !!envelope.callId.trim()
-            && !current.rawTools.calls.some(call => call.callId === envelope.callId));
+            && !current.rawTools!.calls.some(call => call.callId === envelope.callId));
         return current.envelopeOnlyFailure === true && boundEnvelopes && requestsSettled && !unresolvedStart && activeRpcRequests === 0
           && state.busy === false && state.turnStarted === false && state.activeTurns.size === 0
           && typeof lastTurn.id === 'string' && !!lastTurn.id.trim() && state.currentTurnId === lastTurn.id
-          && ['completed', 'interrupted', 'failed'].includes(lastTurn.status)
+          && ['completed', 'interrupted', 'failed'].includes(lastTurn.status!)
           && (state.lastTurn?.turn?.id ?? state.lastTurn?.id) === lastTurn.id
           && (state.lastTurn?.turn?.status ?? state.lastTurn?.status) === lastTurn.status
-          && (state.threadStatus === 'idle' || state.threadStatus?.type === 'idle')
+          && (state.threadStatus === 'idle' || (state.threadStatus as { type?: string } | null)?.type === 'idle')
           && state.pendingRequests.length === 0 && state.pendingRequest === null
           && current.pending.length === 0 && Array.isArray(current.rawTools?.pending) && current.rawTools.pending.length === 0;
       };
@@ -1501,7 +1579,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
         requestedAt: new Date().toISOString(), appClosed: false, holderExitRequested: false,
         terminal: { lastTurn, busy: state.busy, activeTurns: [...state.activeTurns],
           pendingRequests: state.pendingRequests, commands: snapshot.commands, rawTools: snapshot.rawTools } };
-      const persist = value => withSessionLaunch(ref, env, () => {
+      const persist = (value: unknown) => withSessionLaunch(ref, env, () => {
         if (!ownsLaunch()) return false;
         patchSession(ref, { state: 'failed', stopConfirmed: false, stopError: auditError, failedStopCleanup: value }, env);
         const fd = openSync(file, 'r+');
@@ -1517,7 +1595,8 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
         if (!idle() || !ownsLaunch() || Date.now() >= deadline) return unresolved(auditError);
         if (!persist({ ...cleanup, appClosed: true, appClose, closedAt: new Date().toISOString(), holderExitRequested: true })
           || Date.now() >= deadline) return unresolved(auditError);
-      } catch (error) {
+      } catch (caught) {
+      const error = caught as NodeJS.ErrnoException;
         receipts.fail(`failed Stop resource cleanup failed: ${error.message}`);
         log(`failed Stop resource cleanup retained holder: ${error.message}`);
         return unresolved(auditError);
@@ -1534,21 +1613,22 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
       if (receipts.snapshot().error) return unresolved(receipts.snapshot().error);
     }
     if (receipts.snapshot().rawTools?.pending.length) {
-      receipts.append('stop/waiting-original-tools', { callIds: receipts.snapshot().rawTools.pending });
-      if (!await waitUntil(() => !!receipts.snapshot().error || !receipts.snapshot().rawTools.pending.length))
+      receipts.append('stop/waiting-original-tools', { callIds: receipts.snapshot().rawTools!.pending });
+      if (!await waitUntil(() => !!receipts.snapshot().error || !receipts.snapshot().rawTools!.pending.length))
         return unresolved('original selected tool receipts were not confirmed before the Stop deadline; no interrupt issued');
       if (receipts.snapshot().error) return unresolved(receipts.snapshot().error);
     }
     if (Date.now() >= deadline) return unresolved('Stop deadline elapsed before interrupt');
-    const turnIds = [...state.activeTurns].filter(id => typeof id === 'string' && id.trim());
+    const turnIds = [...state.activeTurns].filter((id): id is string => typeof id === 'string' && Boolean(id.trim()));
     await Promise.all(turnIds.map(async turnId => {
       if (interruptedTurns.has(turnId)) return;
       interruptedTurns.set(turnId, 'interrupt outcome pending');
       try {
-        const answer = await rpc.request('turn/interrupt', { threadId: state.threadId, turnId }, Math.max(1, deadline - Date.now()));
+        const answer = await rpc.request('turn/interrupt', { threadId: state.threadId, turnId }, Math.max(1, deadline - Date.now())) as CodexRpcMessage;
         interruptedTurns.set(turnId, answer.error ? answer.error.message ?? 'interrupt refused' : null);
         receipts.append('stop/interrupt', { turnId, error: interruptedTurns.get(turnId) });
-      } catch (error) {
+      } catch (caught) {
+      const error = caught as NodeJS.ErrnoException;
         interruptedTurns.set(turnId, error.message);
         receipts.append('stop/interrupt', { turnId, error: error.message });
       }
@@ -1567,7 +1647,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
     await appClosed;
     if (Date.now() >= deadline) return unresolved('Stop deadline elapsed before durable confirmation');
     const snapshot = receipts.snapshot();
-    if (snapshot.error || snapshot.pending.length || snapshot.rawTools?.pending.length || state.activeTurns.size || appClose.code !== 0)
+    if (snapshot.error || snapshot.pending.length || snapshot.rawTools?.pending.length || state.activeTurns.size || appClose!.code !== 0)
       return unresolved(snapshot.error ?? 'app-server closure did not preserve terminal command accounting');
     if (!ownsLaunch()) return unresolved('Codex launch ownership changed before Stop confirmation');
     if (!receipts.append('stop/confirmed', { threadId: state.threadId, launchId: record.launchId ?? null,
@@ -1581,9 +1661,9 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
     return { ok: true, attempted: true, stopped: true, launchId: record.launchId ?? null, receiptFile };
   }
 
-  const listenHolder = () => new Promise((resolve, reject) => {
-    server.on('error', reject);
-    server.listen(sock, () => {
+  const listenHolder = () => new Promise<void>((resolve, reject) => {
+    server!.on('error', reject);
+    server!.listen(sock, () => {
       try { chmodSync(sock, 0o600); } catch { /* platform without chmod on a socket */ }
       log(`listen ${sock}`);
       resolve();
@@ -1591,12 +1671,12 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
   });
 
   try {
-    const init = await rpc.request('initialize', codexInitParams(record, env), INIT_TIMEOUT_MS);
+    const init = await rpc.request('initialize', codexInitParams(record, env), INIT_TIMEOUT_MS) as CodexRpcMessage;
     if (init.error) throw new Error(init.error.message ?? JSON.stringify(init.error));
     log('initialize ok');
 
     try {
-      const lim = await rpc.waitNotification('account/rateLimits/updated', () => true, limitWaitMs(env));
+      const lim = await rpc.waitNotification('account/rateLimits/updated', () => true, limitWaitMs(env)) as CodexRpcMessage;
       state.rateLimits = lim.params ?? null;
     } catch {
       log('rateLimits: no notification — not a refusal');
@@ -1609,28 +1689,29 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
 
     if (record.model) {
       try {
-        const listed = await rpc.request('model/list', { includeHidden: true }, MODEL_LIST_TIMEOUT_MS);
+        const listed = await rpc.request('model/list', { includeHidden: true }, MODEL_LIST_TIMEOUT_MS) as CodexRpcMessage;
         const ids = listedModels(listed.result).map((m) => m.model);
         if (ids.length && !ids.includes(record.model)) {
           failHold(`model «${record.model}» is unknown to app-server (model/list)`);
           return;
         }
-      } catch (err) {
+      } catch (caught) {
+      const err = caught as NodeJS.ErrnoException;
         log(`model/list: ${err.message} — check skipped`);
       }
     }
 
     // No `config.mcp_servers` override: the isolated home removed the merge it existed for.
     // `bypass_hook_trust` is this request's override — the CLI flag does not reach app-server.
-    const config = threadStartConfig(record);
+    const config: Record<string, unknown> = threadStartConfig(record);
     if (record.canonicalSkillsDir) {
-      const skills = await rpc.request('skills/list', { cwds: [record.cwd], forceReload: true }, NAME_SET_TIMEOUT_MS);
+      const skills = await rpc.request('skills/list', { cwds: [record.cwd], forceReload: true }, NAME_SET_TIMEOUT_MS) as CodexRpcMessage;
       if (skills.error) throw new Error(`cannot establish canonical skills: ${skills.error.message ?? 'skills/list refused'}`);
       const suppressed = canonicalSkillOverrides(skills.result, record.canonicalSkillsDir);
       if (suppressed.length) config['skills.config'] = suppressed;
       log(`canonical skills: ${record.canonicalSkillsDir}; personal duplicates suppressed=${suppressed.length}`);
     }
-    const startParams = {
+    const startParams: Record<string, unknown> = {
       cwd: record.cwd,
       sandbox: record.sandbox,
       approvalPolicy: record.approvalPolicy,
@@ -1647,7 +1728,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
       startParams.threadId = record.resumeThreadId;
       startParams.excludeTurns = !record.initialPrompt;
     } else if (record.addDirs?.length) startParams.runtimeWorkspaceRoots = record.addDirs;
-    const started = await rpc.request(startMethod, startParams, THREAD_START_TIMEOUT_MS);
+    const started = await rpc.request(startMethod, startParams, THREAD_START_TIMEOUT_MS) as CodexRpcMessage;
     if (started.error) throw new Error(started.error.message ?? JSON.stringify(started.error));
     state.threadId = started.result?.thread?.id ?? started.result?.id;
     if (!state.threadId) throw new Error(`${startMethod} did not return a thread id`);
@@ -1655,10 +1736,10 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
       throw new Error('thread/resume returned a different thread; refusing to replace the owner');
     }
     verifyThreadProfile(record, started.result, log);
-    if (startMethod === 'thread/start' && started.result?.cwd === record.cwd && path.isAbsolute(record.cwd)
+    if (startMethod === 'thread/start' && started.result?.cwd === record.cwd && path.isAbsolute(record.cwd!)
       && rawLocalStartup)
       receipts.context('thread/accepted', { launchId: record.launchId, threadId: state.threadId,
-        cwd: started.result.cwd, profile: 'fixed-single-local' });
+        cwd: started.result!.cwd, profile: 'fixed-single-local' });
     const echoedEffort = started.result?.reasoningEffort;
     log(echoedEffort
       ? `${startMethod} ${state.threadId} reasoningEffort=${echoedEffort}`
@@ -1666,10 +1747,11 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
 
     const threadName = record.name || `promptobus:${record.task}:${record.address}`;
     try {
-      const named = await rpc.request('thread/name/set', { threadId: state.threadId, name: threadName }, NAME_SET_TIMEOUT_MS);
+      const named = await rpc.request('thread/name/set', { threadId: state.threadId, name: threadName }, NAME_SET_TIMEOUT_MS) as CodexRpcMessage;
       state.nameSet = !named.error;
       if (named.error) log(`thread/name/set: ${named.error.message ?? 'refused'} — name layer unobserved`);
-    } catch (err) {
+    } catch (caught) {
+      const err = caught as NodeJS.ErrnoException;
       state.nameSet = false;
       log(`thread/name/set: ${err.message} — name layer unobserved`);
     }
@@ -1678,7 +1760,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
       const injected = await rpc.request('thread/inject_items', {
         threadId: state.threadId,
         items: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: record.initialPrompt ?? record.prompt }] }],
-      }, THREAD_START_TIMEOUT_MS);
+      }, THREAD_START_TIMEOUT_MS) as CodexRpcMessage;
       if (injected.error) throw new Error(`cannot preserve original assignment: ${injected.error.message ?? 'thread/inject_items refused'}`);
       record.initialAssignmentInjected = true;
     }
@@ -1721,7 +1803,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
     state.busy = true;
 
     const turnStartedRemaining = Math.max(1, TURN_STARTED_TIMEOUT_MS - (Date.now() - firstRequestAt));
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const waiter = {
         pred: () => state.turnStarted,
         resolve: () => { clearTimeout(timer); resolve(); },
@@ -1753,7 +1835,8 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
       error: null,
     }, env);
     log('alive');
-  } catch (err) {
+  } catch (caught) {
+      const err = caught as NodeJS.ErrnoException;
     failHold(err.message);
   }
 }

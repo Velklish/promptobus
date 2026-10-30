@@ -11,7 +11,7 @@
     "lib/abandon.js": [
       "../docs/reference/03-cli.md#status-done-sweep-dismiss-history"
     ],
-    "lib/answers.js": [
+    "lib/answers.ts": [
       "../docs/reference/04-protocol.md",
       "../docs/reference/03-cli.md#guard-and-warden"
     ],
@@ -19,11 +19,11 @@
       "../docs/reference/02-host.md#the-harness-session-registry-and-the-refusal-when-nobody-says",
       "harness-home.js"
     ],
-    "lib/codex-hold.js": [
+    "lib/codex-hold.ts": [
       "codex-session.js",
       "../docs/reference/03-cli.md#the-codex-holder"
     ],
-    "lib/codex-session.js": [
+    "lib/codex-session.ts": [
       "../docs/reference/03-cli.md#the-codex-holder",
       "harness-home.js",
       "../docs/reference/03-cli.md#the-codex-holder",
@@ -43,7 +43,7 @@
       "../docs/reference/05-drivers.md#injecttext--deliver-text-into-a-live-session",
       "../docs/reference/05-drivers.md#worktreetouchedms--the-third-liveness-signal-and-what-the-first-two-miss"
     ],
-    "lib/dismiss.js": [
+    "lib/dismiss.ts": [
       "../docs/reference/03-cli.md#dismiss--stop-watching-a-finished-participant"
     ],
     "lib/done.js": [
@@ -52,7 +52,7 @@
       "../docs/reference/03-cli.md#recordtelemetry--records-for-eligible-participant-generations",
       "../docs/reference/03-cli.md#status-done-sweep-dismiss-history"
     ],
-    "lib/driver-claude.js": [
+    "lib/driver-claude.ts": [
       "drivers.js",
       "../docs/reference/05-drivers.md#a-lift-that-fails-on-a-spent-limit",
       "../docs/reference/05-drivers.md#awaitsuser--whether-a-claude-transcript-holds-an-open-question",
@@ -61,7 +61,7 @@
       "liftoff.js",
       "../docs/reference/05-drivers.md#a-stop-returns-after-the-record-is-gone-not-after-the-command-returns"
     ],
-    "lib/driver-codex.js": [
+    "lib/driver-codex.ts": [
       "../docs/reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver",
       "../docs/reference/02-host.md#consumer-identity-inside-a-harness",
       "../docs/reference/05-drivers.md#the-built-in-codex_apps-server-stays-off-in-the-participant-home",
@@ -72,16 +72,16 @@
       "../docs/adr/adr-008-codex-reviewer-working-directory.md",
       "../docs/guides/hooks-and-trust.md"
     ],
-    "lib/driver-cursor.js": [
+    "lib/driver-cursor.ts": [
       "cursor-persist.js",
       "../docs/reference/02-host.md#tool-binaries",
       "../docs/reference/05-drivers.md#cursor-the-persist-session",
       "../docs/reference/05-drivers.md#cursor-project-skills-location"
     ],
-    "lib/driver-opencode.js": [
+    "lib/driver-opencode.ts": [
       "drivers.js"
     ],
-    "lib/drivers.js": [
+    "lib/drivers.ts": [
       "stalls.js"
     ],
     "lib/exec.ts": [
@@ -95,7 +95,7 @@
       "../docs/reference/02-host.md#the-harness-session-registry-and-the-refusal-when-nobody-says",
       "../docs/reference/05-drivers.md#the-harness-binary-after-a-lift-the-lifts-door-not-path"
     ],
-    "lib/history.js": [
+    "lib/history.ts": [
       "../docs/reference/03-cli.md#status-done-sweep-dismiss-history"
     ],
     "lib/host.ts": [
@@ -114,7 +114,7 @@
     "lib/lease.ts": [
       "../docs/reference/01-overview.md#machine-lease"
     ],
-    "lib/liftoff.js": [
+    "lib/liftoff.ts": [
       "../docs/guides/model-routing.md#limit-hit-at-start-when-a-lift-fails-on-a-limit-spent-since-the-preflight",
       "../docs/reference/03-cli.md#the-session-id-after-a-lift",
       "../docs/reference/03-cli.md#the-session-id-after-a-lift",
@@ -128,7 +128,7 @@
       "../../docs/guides/model-routing.md#spentwindow--the-account-wide-row-that-is-spent-or-none",
       "../../docs/guides/model-routing.md#claudeavailability--the-adapter-a-driver-declares-as-availability"
     ],
-    "lib/model-routing/adapter-codex.js": [
+    "lib/model-routing/adapter-codex.ts": [
       "../../docs/guides/model-routing.md#codex-adapter-what-the-probe-reads",
       "../../docs/guides/model-routing.md#window_kind_by_id--the-subscription-windows-of-a-snapshot-normalised",
       "../../docs/guides/model-routing.md#killing-a-probes-child-why-three-lines-and-not-one"
@@ -145,7 +145,7 @@
       "../../docs/guides/model-routing.md#snapshotentry--one-harness-entry-projected-onto-the-closed-snapshot-shape",
       "../../docs/guides/model-routing.md#markexhausted--marking-a-harness-exhausted-when-a-lift-fails-on-a-spent-limit"
     ],
-    "lib/model-routing/calibrate.js": [
+    "lib/model-routing/calibrate.ts": [
       "../../docs/guides/model-routing.md#calibrate-reading-the-telemetry-back",
       "../../docs/guides/model-routing.md"
     ],
@@ -170,7 +170,7 @@
       "../../docs/guides/model-routing.md#paceof--the-pace-block-of-one-candidate-how-much-of-its-binding-window-is-spent",
       "../../docs/guides/model-routing.md#readingages--availability-inventory-and-windows"
     ],
-    "lib/model-routing/telemetry.js": [
+    "lib/model-routing/telemetry.ts": [
       "../../docs/guides/model-routing.md#participant-telemetry-the-collecting-half"
     ],
     "lib/model-routing/validate.js": [
@@ -185,7 +185,7 @@
       "../docs/guides/model-routing.md#routingmetadata--the-decision-as-it-is-kept-on-the-participant",
       "../docs/guides/model-routing.md#availabilityof--the-decision-with-the-availability-facts-it-was-made-on-attached"
     ],
-    "lib/prune.js": [
+    "lib/prune.ts": [
       "../docs/reference/03-cli.md#status-done-sweep-dismiss-history"
     ],
     "lib/review.js": [

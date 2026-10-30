@@ -149,7 +149,7 @@ registers one ([ADR-019](../adr/adr-019-session-address-per-task-lands.md)).
 
 `task`, `status`, `question`, `answer`, `artifact`, `result`, `review` (`MESSAGE_TYPES`). The exported `MESSAGE_TYPES` and `MESSAGE_TYPES_V1` names are the same frozen readonly list: consumers can enumerate or copy it, but cannot add, remove, or replace a type and thereby change validation for the process.
 
-**Whether a type asks its recipient for an answer is part of the protocol, not a habit.** The ordinary type rows come from `ANSWER_EXPECTED` in `lib/answers.js`; its two readers are the loop guard and `promptobus status`. The `user` row is the orchestrator's narrow exception, read by `unansweredUserQuestions` in the same module.
+**Whether a type asks its recipient for an answer is part of the protocol, not a habit.** The ordinary type rows come from `ANSWER_EXPECTED` in `lib/answers.ts`; its two readers are the loop guard and `promptobus status`. The `user` row is the orchestrator's narrow exception, read by `unansweredUserQuestions` in the same module.
 
 | type | answer expected | what the answer is |
 |---|---|---|
@@ -754,7 +754,7 @@ behind the MCP join and every command (`resolveIdentity`), `promptobus send`, th
 the selector for `participantDenyToolsByKind` or legacy `participantDenyTools`
 (`lib/review.js`, `lib/approver.js`), the reserved step names (`refuseParticipantPrefix`), the participant records the lifts write, the lift
 words — a step is announced with its kind's words, `the reviewer` for a `reads-diff` step —
-(`lib/liftoff.js` and the Cursor and Codex drivers), the `models --role` help, and the doors
+(`lib/liftoff.ts` and the Cursor and Codex drivers), the `models --role` help, and the doors
 above with their address lists. The MCP `promptobus_send` description and its `to` schema are built from that same host registry when the server is constructed. The shipped one, for what no declaration changes: `ROUTED_ROLES`,
 the default floors and `DEFAULT_ROLE`, the grammar, and the address list of a refusal that has no host. `HostDenyRole` in `src/host.ts` is its type.
 
@@ -769,7 +769,7 @@ the single owner and single `writes-main-tree` gate form its only direct step pa
 the approver lookups over the task record (`approverHere`, `unprovenApproverLine`, and the
 approver seat in `lib/review.js`), `readableName` (it drops a shipped step's prefix and
 prints any other address whole), the guard's participant prefixes (`lib/guard.js`), the Codex
-holder's approval split (`lib/codex-session.js`), the resolver's live workers and reviewer bonus,
+holder's approval split (`lib/codex-session.ts`), the resolver's live workers and reviewer bonus,
 the drivers' re-lift routes and parts of `status`'s recovery hints.
 `titleFromLines` takes the active `edits-tree` owner from the registry value when assembling
 the task title from track titles.
@@ -786,7 +786,7 @@ orchestration skill. The server-name literal lives in the compiled package contr
 and is re-exported here; the remaining adapter constants have their only home here.
 
 **Only harness-neutral lives here**. Effort levels, permission modes, binary versions,
-and the list of tools to deny moved to the driver ([driver-claude.js](../../lib/driver-claude.js)):
+and the list of tools to deny moved to the driver ([driver-claude.ts](../../lib/driver-claude.ts)):
 that is ONE harness's dictionary, and the second driver has its own — a shared home
 would mean the bus knows Claude Code values by heart. Contract citations in the docs
 still stand on them: `lint` takes the value from the new home, and the

@@ -5,14 +5,29 @@ import {
   renderReviewerInstructions, renderReviewProcedure, renderTeamleadInstructions, renderWorkerInstructions,
 } from './roles.js';
 
-export const BB_ROLE_SKILLS = Object.freeze({
+import type { ParticipantTools } from './roles.js';
+
+export type BbInstructionRole = typeof WORKER | typeof REVIEWER | typeof APPROVER | typeof ORCHESTRATOR | 'teamlead' | 'reporter';
+interface BbInstructionContext {
+  taskId: string; address: string; environmentId: string; workspace: string; assignment: string;
+  tools: Readonly<Record<string, string>>; workerAddress?: string | null; allowDirectWorkerMessages?: boolean;
+  snapshot?: { head: string; base: string; dirty: boolean; diffPath: string };
+  gateRecords?: readonly string[]; launchContext?: unknown;
+  commandAdmission?: { format: 'promptobus-bb-command-admission-v1'; role: BbInstructionRole };
+  evidenceManifest?: unknown; bridgeCheck?: string;
+}
+interface BbInstructionDelivery {
+  configuration: { tools: string[]; skills: string[]; instructions: string }; initialPrompt: string;
+}
+
+export const BB_ROLE_SKILLS: Readonly<Record<BbInstructionRole, string>> = Object.freeze({
   [WORKER]: 'promptobus-worker', [REVIEWER]: 'promptobus-reviewer', [APPROVER]: 'promptobus-approver',
   teamlead: 'promptobus-teamlead', reporter: 'promptobus-reporter', [ORCHESTRATOR]: 'promptobus-orchestrator',
 });
 
 const tools = Object.freeze(Object.fromEntries([
   'promptobus_send', 'promptobus_mailbox', 'promptobus_task', 'promptobus_digest', 'promptobus_status', 'promptobus_ask',
-].map(name => [name, `[${name} binding from initial context]`])));
+].map(name => [name, `[${name} binding from initial context]`]))) as Readonly<ParticipantTools & { promptobus_digest: string; promptobus_status: string; promptobus_ask: string }>;
 const common = {
   tools,
   memory: 'Use only the memory reads explicitly supplied by the runtime; do not publish facts from this role.',
@@ -115,7 +130,7 @@ A task's closing criteria must be checkable on the current machine. A live measu
 
 `;
 
-export function renderBbInstructionSkill(role) {
+export function renderBbInstructionSkill(role: BbInstructionRole): string {
   if (!Object.hasOwn(BB_ROLE_SKILLS, role)) throw new TypeError(`Unknown instruction role: ${role}`);
   let body;
   switch (role) {
@@ -136,7 +151,7 @@ export function renderBbInstructionSkill(role) {
       body = renderReviewerInstructions({ taskId: '[task id]', nsPath: '[repository]', repoDir: '[declared review root]',
         address: '[review participant address]', stepName: '[review step]', rules,
         reviewSubject: '[immutable diff, snapshot HEAD/base, tree state, attachments and gate/handover records supplied in initial context or a declared artifact]',
-        instructionsSection: 'Use pb_review_read_file, pb_review_read_files, pb_review_list_files and pb_review_search_text for TASK.md, AGENTS.md and source files within the supplied owned review workspace. Use promptobus_host_context only for selected Host rules, skills and exact declared resources. Read required file content completely through bounded ranges. Shell execution and edits remain forbidden.\n\n', procedureText: renderReviewProcedure(null, {}),
+        instructionsSection: 'Use pb_review_read_file, pb_review_read_files, pb_review_list_files and pb_review_search_text for TASK.md, AGENTS.md and source files within the supplied owned review workspace. Use promptobus_host_context only for selected Host rules, skills and exact declared resources. Read required file content completely through bounded ranges. Shell execution and edits remain forbidden.\n\n', procedureText: renderReviewProcedure(null, {} as Parameters<typeof renderReviewProcedure>[1]),
         bindings: { ...common, mcpBoundary: 'Only declared bounded read tools are available.',
           externalReads: 'Canonical external tools remain unavailable until the runtime explicitly classifies and delivers them. Read only the declared review roots and evidence.',
           reviewerCommands: { isolation: 'Shell execution and edits are forbidden. Use declared bounded file reads.',
@@ -189,14 +204,14 @@ export function renderBbInstructionSkill(role) {
       } });
       break;
   }
-  if ([WORKER, APPROVER, ORCHESTRATOR].includes(role)) {
+  if (([WORKER, APPROVER, ORCHESTRATOR] as BbInstructionRole[]).includes(role)) {
     body += `\n\n${commandGrant}\n\n${executionResources}\n\n${evidencePreparation}\n\n${role === ORCHESTRATOR ? orchestratorCommands : participantCommands}`;
   }
   if (role === ORCHESTRATOR) body += `\n\n${minimalWorkflow}\n\n${receiveReviewerReport}`;
   return preface + body;
 }
 
-export function createBbInstructionDelivery(role, context) {
+export function createBbInstructionDelivery(role: BbInstructionRole, context: BbInstructionContext): BbInstructionDelivery {
   const skill = BB_ROLE_SKILLS[role];
   if (!Object.hasOwn(BB_ROLE_SKILLS, role)) throw new TypeError(`Unknown instruction role: ${role}`);
   return {

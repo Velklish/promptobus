@@ -1,3 +1,4 @@
+import type { MessageV1, ParticipantV1 } from '../dist/index.js';
 import {
   addrDir, historyHeaders, lastSentAt, lastTurnAt, ORCHESTRATOR, outboundMessages, startedOf,
 } from './store.js';
@@ -9,15 +10,15 @@ export const ANSWER_EXPECTED = Object.freeze(['task', 'question', 'review', 'res
 // The word for a turn that ended owing an answer; `SILENT` is an unread mailbox.
 export const UNANSWERED_MARK = 'UNANSWERED';
 
-export function expectsAnswer(type) {
+export function expectsAnswer(type: string) {
   return ANSWER_EXPECTED.includes(type);
 }
 
-function sentBefore(a, b) {
+function sentBefore(a: Pick<MessageV1, 'id'>, b: Pick<MessageV1, 'id'>) {
   return String(a.id) < String(b.id);
 }
 
-export function unansweredUserQuestions(home, task) {
+export function unansweredUserQuestions(home: string, task: string) {
   const user = addrDir('user');
   const orchestrator = addrDir(ORCHESTRATOR);
   const lastAnswer = outboundMessages(home, task, orchestrator)
@@ -30,8 +31,8 @@ export function unansweredUserQuestions(home, task) {
 }
 
 // Newest of the given stamps, as it was written; unparsable ones are not stamps.
-function newest(values) {
-  let best = null;
+function newest(values: readonly unknown[]) {
+  let best: { at: number; said: string } | null = null;
   for (const value of values) {
     const at = Date.parse(String(value ?? ''));
     if (!Number.isFinite(at)) continue;
@@ -42,7 +43,7 @@ function newest(values) {
 
 // The last READ message to this participant that asks for an answer: the walk goes back,
 // because an ordinary message after a question does not repay it. Unread has its own branch.
-function lastInbound(home, task, addr) {
+function lastInbound(home: string, task: string, addr: string) {
   try {
     const page = historyHeaders(home, task, addr);
     return page.findLast((message) => expectsAnswer(message.type))?.ts ?? null;
@@ -54,7 +55,7 @@ function lastInbound(home, task, addr) {
 
 /** Since when this address owes an answer, or `null` when the debt is even.
  * [03-cli.md § Guard and warden](../docs/reference/03-cli.md#guard-and-warden) */
-export function answerOwedSince(home, task, addr, participant) {
+export function answerOwedSince(home: string, task: string, addr: string, participant: ParticipantV1 | null | undefined) {
   if (addr === 'reporter') return null;
   if (addr === ORCHESTRATOR) return unansweredUserQuestions(home, task).at(-1)?.ts ?? null;
   const anchor = newest([startedOf(participant), lastInbound(home, task, addr)]);
@@ -65,7 +66,7 @@ export function answerOwedSince(home, task, addr, participant) {
 
 /** The `UNANSWERED` state: a debt stands AND a turn has ended since it began — a reply
  * still being composed, and a death mid-turn, are not this. */
-export function unansweredSince(home, task, addr, participant) {
+export function unansweredSince(home: string, task: string, addr: string, participant: ParticipantV1 | null | undefined) {
   const owed = answerOwedSince(home, task, addr, participant);
   if (!owed) return null;
   const turn = lastTurnAt(home, task, addr);

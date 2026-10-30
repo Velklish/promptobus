@@ -1,3 +1,8 @@
+import type { PromptobusHost, TaskV1 } from '../dist/index.js';
+
+interface DeadTask { meta: TaskV1; closed: number; size: number; arts: number }
+interface PruneCandidates { dead: DeadTask[]; young: number; active: number; undated: number; held: { meta: TaskV1; held: string[] }[]; bb: number }
+interface SweepOptions { remove?: typeof rmSync; tasks?: TaskV1[] }
 import { existsSync, readdirSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { ok, info, warn } from './util.js';
@@ -15,7 +20,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Task weight — a walk of its directory: without a number a dry run says "twelve tasks"
 // and a person asks how much space that is. An unreadable subtree counts as zero.
-function dirSize(dir) {
+function dirSize(dir: string): number {
   let sum = 0;
   let entries;
   try {
@@ -31,7 +36,7 @@ function dirSize(dir) {
   return sum;
 }
 
-function humanSize(bytes) {
+function humanSize(bytes: number) {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${bytes} B`;
@@ -39,21 +44,21 @@ function humanSize(bytes) {
 
 // A worktree directory named by the journal is never dead at any age: the journal is the
 // only record of where this work sits, and removing it leaves an unnamed orphan.
-function heldWorktrees(meta) {
+function heldWorktrees(meta: TaskV1) {
   return (meta.participants ?? [])
     .map((p) => p?.metadata?.worktree)
-    .filter((w) => w && existsSync(w));
+    .filter((w) => w && existsSync(w as string)) as string[];
 }
 
 // Dead means CLOSED and closed long ago. With no close mark (a former CLI journal, a hand
 // edit) the task is left alone: age is unknown, and "unknown" on deletion means "no".
-function pruneCandidates(home, days, tasks = listTasks(home)) {
+function pruneCandidates(home: string, days: number, tasks = listTasks(home)) {
   const edge = Date.now() - days * DAY_MS;
-  const out = { dead: [], young: 0, active: 0, undated: 0, held: [], bb: 0 };
+  const out: PruneCandidates = { dead: [], young: 0, active: 0, undated: 0, held: [], bb: 0 };
   for (const meta of tasks) {
     if (meta.adapter?.bb) { out.bb += 1; continue; }
     if (meta.status !== 'done') { out.active += 1; continue; }
-    const closed = Date.parse(meta.adapter.closed ?? '');
+    const closed = Date.parse((meta.adapter.closed as string | null | undefined) ?? '');
     if (Number.isNaN(closed)) { out.undated += 1; continue; }
     if (closed > edge) { out.young += 1; continue; }
     const held = heldWorktrees(meta);
@@ -70,7 +75,7 @@ function pruneCandidates(home, days, tasks = listTasks(home)) {
 
 // Cleanup list — the same lines for dry-run, `--yes`, and `promptobus done`: whichever
 // path cleanup took, a person reads the same about what is being removed.
-function sayCandidates(dead) {
+function sayCandidates(dead: DeadTask[]) {
   for (const { meta, closed, size, arts } of dead) {
     info(`${meta.id} "${meta.title ?? ''}" — closed ${new Date(closed).toISOString().slice(0, 10)}, `
       + `${humanSize(size)}${arts ? `, artifacts ${arts}` : ''}`);
@@ -79,7 +84,7 @@ function sayCandidates(dead) {
 
 // A refusal on one task does not stop the walk, and only what was removed is counted —
 // nothing removed is yellow. `remove` is a seam: an undeletable directory is not portable.
-function removeJournals(home, dead, { days, young, remove = rmSync }) {
+function removeJournals(home: string, dead: DeadTask[], { days, young, remove = rmSync }: { days: number; young: number; remove?: typeof rmSync }) {
   let gone = 0;
   let failed = 0;
   for (const { meta, size } of dead) {
@@ -88,7 +93,7 @@ function removeJournals(home, dead, { days, young, remove = rmSync }) {
       gone += size;
     } catch (e) {
       failed += 1;
-      warn(`task ${meta.id} not removed: ${e.message}`);
+      warn(`task ${meta.id} not removed: ${(e as Error).message}`);
     }
   }
   const count = dead.length - failed;
@@ -102,7 +107,7 @@ function removeJournals(home, dead, { days, young, remove = rmSync }) {
 
 /** Cleanup at the default threshold, called by `done` after its own work. It prints what
  * was removed and is otherwise silent: `done` without `--older-than` is not a report. */
-export function sweepJournals(home, days = PRUNE_DEFAULT_DAYS, { remove, tasks } = {}) {
+export function sweepJournals(home: string, days = PRUNE_DEFAULT_DAYS, { remove, tasks }: SweepOptions = {}) {
   const { dead, young } = pruneCandidates(home, days, tasks);
   if (!dead.length) return { count: 0, gone: 0, failed: 0 };
   sayCandidates(dead);
@@ -111,7 +116,7 @@ export function sweepJournals(home, days = PRUNE_DEFAULT_DAYS, { remove, tasks }
 
 // An empty value (`--older-than=`) is invalid, not "zero days": `Number('')` is 0 and
 // would wipe every closed task that has a mark. Threshold `0` stays legal, as a digit.
-export function parseOlderThan(olderThan) {
+export function parseOlderThan(olderThan: unknown) {
   const raw = olderThan === undefined ? null : String(olderThan).trim();
   const days = raw === null ? PRUNE_DEFAULT_DAYS : Number(raw);
   if (raw === '' || !Number.isFinite(days) || days < 0) {
@@ -122,13 +127,13 @@ export function parseOlderThan(olderThan) {
 
 // The follow-up names the task this `done` already closed. Without `--task`, resolution
 // sees only an active task: none refuses, and one other active task is closed instead.
-export function retentionCommand(host, id, days) {
+export function retentionCommand(host: Pick<PromptobusHost, 'busCommand'>, id: string, days: number) {
   return host.busCommand(['done', `--task ${id}`, `--older-than ${days}`, '--yes']);
 }
 
 // Dry run by default, delete on an explicit `--yes`: an agent calls this through `done`,
 // and there is no undo — the journal sits outside git.
-export function prune(rootOrHost, { olderThan, yes, tasks, task } = {}) {
+export function prune(rootOrHost: unknown, { olderThan, yes, tasks, task }: SweepOptions & { olderThan?: unknown; yes?: boolean; task?: string } = {}) {
   const host = hostOf(rootOrHost);
   const home = host.promptobusHome();
   const days = parseOlderThan(olderThan);

@@ -2,7 +2,7 @@ import { ok } from './util.js';
 import { hostOf } from './host.js';
 import { bus, changePeerLink, GateError, resolveIdentity } from './store.js';
 
-export function link(rootOrHost, aId, bId, { unlink = false, env = process.env, cwd = process.cwd() } = {}) {
+export function link(rootOrHost: unknown, aId: string, bId: string, { unlink = false, env = process.env, cwd = process.cwd() } = {}) {
   const host = hostOf(rootOrHost);
   if (!aId || !bId) throw new GateError(`${unlink ? 'unlink' : 'link'} needs two task ids`);
   const identity = resolveIdentity(env, cwd, { host });

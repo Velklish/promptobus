@@ -339,7 +339,7 @@ the harness. What remains here is exactly what belongs to the harness and the
 workspace: a detached process, `fs.watch` watchers, a session snapshot through the
 driver registry, human diagnostics, and the loop. The delivery channel is the
 driver, and it is taken from the registry
-([drivers.js](../../lib/drivers.js)).
+([drivers.ts](../../lib/drivers.ts)).
 
 Delivery is best-effort: the "delivered" mark is one, the mailbox is claimed. An
 activation refusal does not kill the process: the participant is marked with the
@@ -506,7 +506,7 @@ heartbeat — 1, both on a parsed reply and on an unparsed one.
 The cost of an "improvement" is there too, but it is counterfactual: if the round
 took state itself and WITHOUT a cache reset, sixty snapshots (a minute) would cost
 1 launch on a parsed reply and 60 on an unparsed one — a parse refusal is not
-cached on purpose ([liftoff.js](../../lib/liftoff.js)).
+cached on purpose ([liftoff.ts](../../lib/liftoff.ts)).
 Nobody pays that cost today: the snapshot dies on the FIRST `null`, and the loop
 resets the cache itself before the heartbeat snapshot.
 

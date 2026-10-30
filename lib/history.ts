@@ -1,3 +1,4 @@
+import type { MessageV1, TaskV1 } from '../dist/index.js';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fail, info, ok } from './util.js';
@@ -19,7 +20,7 @@ const BODY_MAX = 120;
 
 // Body preview — first non-empty line, trimmed at a word boundary. A `result` body can
 // be thousands of characters, and a journal line must stay one line.
-function say(body) {
+function say(body: unknown) {
   const line = String(body ?? '').split('\n').map((s) => s.trim()).find(Boolean) ?? '';
   if (line.length <= BODY_MAX) return line;
   const cut = line.slice(0, BODY_MAX);
@@ -29,9 +30,9 @@ function say(body) {
 
 // Reverse map of a v1 participant id back to a bus address: the forward map is unique, the
 // reverse is not (a slug may itself contain a hyphen), so it is built from the task journal.
-function addressMap(home, task) {
-  const map = new Map();
-  let meta = null;
+function addressMap(home: string, task: string) {
+  const map = new Map<string, string>();
+  let meta: TaskV1 | null = null;
   try {
     meta = readTask(home, task);
   } catch {
@@ -40,7 +41,7 @@ function addressMap(home, task) {
   }
   for (const p of meta?.participants ?? []) {
     try {
-      map.set(addrDir(addressOf(p)), addressOf(p));
+      map.set(addrDir(addressOf(p)!), addressOf(p)!);
     } catch {
       // A bad address in a former CLI journal: skip the entry, not the whole task.
     }
@@ -50,7 +51,7 @@ function addressMap(home, task) {
 
 // One message the address has already read — the body `promptobus_mailbox` returns by id. A history
 // file is named by its message id, so the one record is read; an id that is not a bare name is no file.
-export function historyMessage(home, task, addr, id) {
+export function historyMessage(home: string, task: string, addr: string, id: string) {
   if (path.basename(id) !== id || id.includes('\0')) return null;
   for (const slot of mailboxOf(home, task, addr).slots) {
     const found = slotHistoryMessage(home, slot.task, slot.address, id);
@@ -59,22 +60,22 @@ export function historyMessage(home, task, addr, id) {
   return null;
 }
 
-function slotHistoryMessage(home, task, addr, id) {
-  let record;
+function slotHistoryMessage(home: string, task: string, addr: string, id: string) {
+  let record: unknown;
   try {
     record = JSON.parse(readFileSync(path.join(historyDir(home, task, addr), `${id}.json`), 'utf8'));
   } catch (e) {
-    if (e.code === 'ENOENT') return null;
-    throw new GateError(`history record ${id} of ${addr} does not read: ${e.code ?? 'unparsable JSON'}`);
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw new GateError(`history record ${id} of ${addr} does not read: ${(e as NodeJS.ErrnoException).code ?? 'unparsable JSON'}`);
   }
   const verdict = validate('message', record);
   if (!verdict.ok) {
     throw new GateError(`history record ${id} of ${addr} does not read: invalid record at ${verdict.at || 'its root'}`);
   }
-  return record.id === id ? record : null;
+  return (record as MessageV1).id === id ? record as MessageV1 : null;
 }
 
-export function history(rootOrHost, { task, participant, limit, all } = {}) {
+export function history(rootOrHost: unknown, { task, participant, limit, all }: { task?: string; participant?: string; limit?: unknown; all?: boolean } = {}) {
   const host = hostOf(rootOrHost);
   const cmd = host.commandName;
   if (all && limit !== undefined) {
@@ -113,11 +114,11 @@ export function history(rootOrHost, { task, participant, limit, all } = {}) {
     ok('history is empty — no read mail matches these filters');
     return;
   }
-  const names = new Map();
+  const names = new Map<string, Map<string, string>>();
   ok(`${page.entries.length} entries${page.cursor ? ' (older ones exist — drop the limit with --all)' : ''}`);
   for (const e of page.entries) {
     if (!names.has(e.task)) names.set(e.task, addressMap(home, e.task));
-    const addr = names.get(e.task);
+    const addr = names.get(e.task)!;
     const from = addr.get(e.message.sender) ?? e.message.sender;
     const to = addr.get(e.participant) ?? e.participant;
     const said = say(e.message.body);

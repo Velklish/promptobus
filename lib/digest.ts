@@ -1,3 +1,7 @@
+import type { HostPipelineStep, MessageV1, ParticipantV1, TaskV1 } from '../dist/index.js';
+
+type MessageHeader = Omit<MessageV1, 'body' | 'protocolVersion'> & { firstLine?: string };
+interface Piece { slug: string; step: string | null }
 import { pipelineOf } from '../dist/pipeline.js';
 import { readStalls } from '../dist/index.js';
 import { hostOf } from './host.js';
@@ -8,12 +12,12 @@ import {
 } from './store.js';
 import { fail, info, ok } from './util.js';
 
-function ageSeconds(at, now) {
+function ageSeconds(at: string, now: number) {
   const time = Date.parse(at);
   return Number.isFinite(time) ? Math.max(0, Math.floor((now - time) / 1000)) : null;
 }
 
-function ageText(seconds) {
+function ageText(seconds: number | null) {
   if (seconds === null) return 'unknown age';
   if (seconds < 60) return `${seconds}s ago`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
@@ -21,7 +25,7 @@ function ageText(seconds) {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
-function selectedTasks(home, task, all) {
+function selectedTasks(home: string, task: string | undefined, all: TaskV1[]) {
   if (task && !all.some((meta) => meta.id === task)) {
     fail(`digest: task "${task}" is not in the journal${all.length ? `. Known: ${all.map((t) => t.id).join(', ')}` : ''}`);
   }
@@ -37,16 +41,16 @@ function selectedTasks(home, task, all) {
       .map((meta) => ({ meta, depth: 1 }))]);
 }
 
-function questionsOf(home, meta, messages, now, allTasks) {
+function questionsOf(home: string, meta: TaskV1, messages: MessageHeader[], now: number, allTasks: TaskV1[]) {
   const answers = messages.filter((message) => message.type === 'answer');
-  const peerHeaders = new Map();
-  const peerAnswerState = (message, recipient) => {
+  const peerHeaders = new Map<string, MessageHeader[]>();
+  const peerAnswerState = (message: MessageHeader, recipient: string) => {
     if (recipient !== addrDir(ORCHESTRATOR) || !message.sender.startsWith('peer-')) return 'open';
     const originTask = message.originTask;
     if (!originTask || !allTasks.some((other) => other.id === originTask)) return 'unresolved-provenance';
     if (!peerHeaders.has(originTask)) peerHeaders.set(originTask, strictTaskFacts(home, originTask).messages);
     const replySender = addrDir(`peer:${meta.adapter.slug}`);
-    const replies = peerHeaders.get(originTask).filter((reply) => reply.task === originTask
+    const replies = peerHeaders.get(originTask)!.filter((reply) => reply.task === originTask
       && reply.type === 'answer' && reply.id > message.id && reply.sender === replySender
       && reply.recipients.includes(addrDir(ORCHESTRATOR)));
     if (replies.some((reply) => reply.originTask === meta.id)) return 'answered';
@@ -54,7 +58,7 @@ function questionsOf(home, meta, messages, now, allTasks) {
   };
   // Root mail an earlier version wrote into the child as `root:<slug>` has its pair in the root,
   // where the teamlead writes as `teamlead:<slug>`: the question and its answer sit in two journals.
-  const treeAnswered = (message, recipient) => {
+  const treeAnswered = (message: MessageHeader, recipient: string) => {
     const sender = meta.participants.find((participant) => participant.id === message.sender);
     if (recipient !== addrDir(ORCHESTRATOR) || !sender) return false;
     const otherId = sender.role === 'teamlead' ? sender.metadata?.childTask
@@ -65,7 +69,7 @@ function questionsOf(home, meta, messages, now, allTasks) {
       : other.participants.find((p) => p.role === 'teamlead' && p.metadata?.childTask === meta.id);
     if (!replier) return false;
     if (!peerHeaders.has(other.id)) peerHeaders.set(other.id, strictTaskFacts(home, other.id).messages);
-    return peerHeaders.get(other.id).some((reply) => reply.type === 'answer' && reply.id > message.id
+    return peerHeaders.get(other.id)!.some((reply) => reply.type === 'answer' && reply.id > message.id
       && reply.sender === replier.id && reply.recipients.includes(addrDir(ORCHESTRATOR)));
   };
   const questions = [];
@@ -93,19 +97,19 @@ function questionsOf(home, meta, messages, now, allTasks) {
     || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
-function piecesOf(meta, messages, pipeline) {
-  const bySlug = new Map();
+function piecesOf(meta: TaskV1, messages: MessageHeader[], pipeline: readonly HostPipelineStep[]) {
+  const bySlug = new Map<string, Map<string, ParticipantV1>>();
   for (const participant of meta.participants) {
-    const address = addressOf(participant);
+    const address = addressOf(participant)!;
     const colon = address.indexOf(':');
     if (colon < 0 || !pipeline.some((step) => step.name === address.slice(0, colon))) continue;
     const slug = address.slice(colon + 1);
     if (!bySlug.has(slug)) bySlug.set(slug, new Map());
-    bySlug.get(slug).set(address.slice(0, colon), participant);
+    bySlug.get(slug)!.set(address.slice(0, colon), participant);
   }
-  const pieces = [];
+  const pieces: Piece[] = [];
   for (const [slug, participants] of bySlug) {
-    let holder = null;
+    let holder: string | null = null;
     const firstStep = pipeline.findIndex((step) => participants.has(step.name));
     for (const step of pipeline.slice(firstStep)) {
       holder = step.name;
@@ -117,13 +121,13 @@ function piecesOf(meta, messages, pipeline) {
     pieces.push({ slug, step: holder });
   }
   return pieces.sort((a, b) => {
-    const order = (piece) => piece.step === null ? pipeline.length
+    const order = (piece: Piece) => piece.step === null ? pipeline.length
       : pipeline.findIndex((step) => step.name === piece.step);
     return order(a) - order(b) || a.slug.localeCompare(b.slug);
   });
 }
 
-export function buildDigest(rootOrHost, { task, now = Date.now() } = {}) {
+export function buildDigest(rootOrHost: unknown, { task, now = Date.now() }: { task?: string; now?: number } = {}) {
   const host = hostOf(rootOrHost);
   const home = host.promptobusHome();
   const pipeline = pipelineOf(host);
@@ -136,13 +140,13 @@ export function buildDigest(rootOrHost, { task, now = Date.now() } = {}) {
     const health = readHealth(home, meta.id);
     const stalls = readStalls(home, meta.id);
     const participants = meta.participants.map((participant) => {
-      const address = addressOf(participant);
+      const address = addressOf(participant)!;
       const last = messages.findLast((message) => message.type === 'status'
         && message.sender === participant.id);
       // A primary address counts its whole participant mailbox; an address alias, its own slot.
       const unread = mailboxOf(home, meta.id, address).alias ? countInbox(home, meta.id, address)
         : countMailbox(home, meta.id, address);
-      const mark = health[address] ?? {};
+      const mark = (health[address] ?? {}) as { since?: unknown; escalatedAt?: unknown };
       const debt = address === ORCHESTRATOR
         ? answerOwedSince(home, meta.id, address, participant)
         : unread === 0 ? unansweredSince(home, meta.id, address, participant) : null;
@@ -166,7 +170,7 @@ export function buildDigest(rootOrHost, { task, now = Date.now() } = {}) {
   return { schemaVersion: 1, generatedAt: new Date(now).toISOString(), tasks };
 }
 
-export function digest(rootOrHost, { task, json = false, now = Date.now() } = {}) {
+export function digest(rootOrHost: unknown, { task, json = false, now = Date.now() }: { task?: string; json?: boolean; now?: number } = {}) {
   const page = buildDigest(rootOrHost, { task, now });
   if (json) {
     console.log(JSON.stringify(page, null, 2));

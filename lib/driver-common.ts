@@ -2,13 +2,13 @@ import { readFileSync } from 'node:fs';
 import process from 'node:process';
 import { logWarden } from './store.js';
 
-export function parseVersion(value) {
+export function parseVersion(value: unknown) {
   const raw = String(value ?? '');
   const match = /(?:^|[^A-Za-z0-9])v?(\d+(?:\.\d+)*)(?![\d.])/.exec(raw);
   return match ? match[1].split('.').map(Number) : null;
 }
 
-export function versionLess(a, b) {
+export function versionLess(a: unknown, b: unknown) {
   const pa = parseVersion(a);
   const pb = parseVersion(b);
   if (!pa || !pb) return false;
@@ -20,31 +20,32 @@ export function versionLess(a, b) {
   return false;
 }
 
-export function versionParseRefusal(name, value) {
+export function versionParseRefusal(name: string, value: unknown) {
   return `${name} binary version could not be parsed: ${String(value)}`;
 }
 
-export function sessionEnv(dropList, base = process.env, extra = {}) {
+export function sessionEnv(dropList: readonly string[] | null | undefined, base = process.env, extra: NodeJS.ProcessEnv = {}) {
   const env = { ...base };
   for (const name of dropList ?? []) delete env[name];
   return { ...env, ...extra };
 }
 
-export function sessionEnvFor(dropList) {
-  return (base = process.env, extra = {}) => sessionEnv(dropList, base, extra);
+export function sessionEnvFor(dropList: readonly string[] | null | undefined) {
+  return (base = process.env, extra: NodeJS.ProcessEnv = {}) => sessionEnv(dropList, base, extra);
 }
 
-export function readRecordAt(file) {
+export function readRecordAt<T = Record<string, unknown>>(file: string): T | null {
   try {
-    return JSON.parse(readFileSync(file, 'utf8'));
+    const record: unknown = JSON.parse(readFileSync(file, 'utf8'));
+    return record as T;
   } catch {
     return null;
   }
 }
 
-const foreignWrites = new Set();
+const foreignWrites = new Set<string>();
 
-export function sayForeignWrite(home, task, addr, held, session, what) {
+export function sayForeignWrite(home: string, task: string, addr: string, held: string, session: string | null, what: string) {
   const key = [home, task, addr, held, session, what].join('\u0000');
   if (foreignWrites.has(key)) return;
   foreignWrites.add(key);

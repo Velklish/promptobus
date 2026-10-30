@@ -241,7 +241,7 @@ by hand from the session menu on claude.ai or in the desktop app.
 
 ## The harness binary after a lift: the lift's door, not PATH
 
-Source: `lib/harness-home.ts` (`bindHarnessBins`, `harnessBin`), `lib/liftoff.js` (`runClaude`,
+Source: `lib/harness-home.ts` (`bindHarnessBins`, `harnessBin`), `lib/liftoff.ts` (`runClaude`,
 `readBgSessions`).
 
 A lift finds its binary through the host: `host.resolveToolBin(driver.options.tool)`, which a
@@ -292,7 +292,7 @@ path ([Cursor: tmux by absolute path](#cursor-tmux-by-absolute-path)).
 
 ## Cursor: reviewer deny layer
 
-Source: `lib/driver-cursor.js` (`REVIEWER_DENY`, `cliConfig`, `approveOwnServer`)
+Source: `lib/driver-cursor.ts` (`REVIEWER_DENY`, `cliConfig`, `approveOwnServer`)
 and `lib/review.js` (`reviewerDenyTools`).
 
 A Cursor reviewer gets `Write(**)` and `Shell(**)` in its sandbox's
@@ -312,7 +312,7 @@ showed a connected tool being denied, so no mechanical MCP rule is claimed.
 
 A Cursor reviewer also sees MCP servers named in the person's own
 `~/.cursor/mcp.json`: Cursor merges the project and home MCP files, the nearer entry
-winning a shared name (`lib/driver-cursor.js`). Measured on 2026-09-27 with a live `cursor-agent`
+winning a shared name (`lib/driver-cursor.ts`). Measured on 2026-09-27 with a live `cursor-agent`
 2026.09.26-dd393fe reviewer on a disposable stand: the generated MCP plan named only
 the fixture server and the bus, yet each fixture-tool refusal listed four more
 servers, and a read-only comparison of keys with `~/.cursor/mcp.json` found those
@@ -329,7 +329,7 @@ not measured.
 Source: `lib/cursor-persist.ts`.
 
 Persist-session machinery of Cursor — the inside of the Cursor driver
-([driver-cursor.js](../../lib/driver-cursor.js)), one floor below it, as [liftoff.js](../../lib/liftoff.js)
+([driver-cursor.ts](../../lib/driver-cursor.ts)), one floor below it, as [liftoff.ts](../../lib/liftoff.ts)
 is for Claude. Nobody outside imports this file: the adapter-boundary gate
 ([promptobus-adapter.test.mjs](../../test/promptobus-adapter.test.mjs)) holds it too.
 
@@ -393,7 +393,7 @@ Old, new and unparseable Cursor labels do not refuse; the tmux minimum remains 3
 
 ### Cursor: project skills location
 
-Source: `lib/driver-cursor.js` (`CURSOR_SKILLS_REL`).
+Source: `lib/driver-cursor.ts` (`CURSOR_SKILLS_REL`).
 
 Cursor reads project-level skills from `.cursor/skills/<name>/SKILL.md`. Measured 2026-09-26 on
 `cursor-agent` 2026.09.26-dd393fe: a session started with
@@ -403,7 +403,7 @@ instructions from that skill file during subsequent turns.
 
 ### Cursor: a tracked project hooks file
 
-Source: `lib/driver-cursor.js` (`prepare`), `lib/project-hooks.ts`.
+Source: `lib/driver-cursor.ts` (`prepare`), `lib/project-hooks.ts`.
 
 Cursor reads `.cursor/hooks.json` at the root of the worktree it runs in. When that
 path is tracked, the plan merges the index content into its hooks file: the guard on
@@ -464,9 +464,10 @@ Driver contract and driver registry, entry point "./driver".
 
 Driver — adapter of one harness: it launches a participant session, recognises its
 state, wakes it, and can stop it. The core contract in `src/driver.ts` is
-harness-neutral. The package ships native drivers in `lib/driver-claude.js`,
-`lib/driver-cursor.js`, `lib/driver-codex.js` and `lib/driver-opencode.js`;
-`lib/drivers.js` constructs their registry. The Host selects binary lookup through
+harness-neutral. The package ships native drivers as JavaScript under `lib/`,
+with `lib/drivers.js` constructing their registry. Maintained native-driver sources are `lib/driver-claude.ts`,
+`lib/driver-cursor.ts`, `lib/driver-codex.ts` and `lib/driver-opencode.ts`;
+`lib/drivers.ts` is the maintained registry source. The Host selects binary lookup through
 [`resolveToolBin`](02-host.md#tool-binaries), including any Host-specific overrides.
 The [standalone Host](02-host.md#the-standalone-host) returns the declared tool name
 for resolution through `PATH`; it does not define a shared set of override variables.
@@ -476,6 +477,17 @@ the store: a refusal after writing the participant would leave in the task journ
 a participant with nothing to wake it by.
 
 No harness name belongs in `src/driver.ts`; the package set gate watches that boundary.
+
+The shipped runtime's launch types live privately in `lib/driver-runtime.ts`.
+They preserve its existing prepare context, synchronous or asynchronous wake
+checks, availability windows and harness-specific launch results. These differ
+from optional operations in the public `Driver` declaration; that declaration
+remains compatible. Core receives a checked view of the required data fields
+and the operations it invokes: `inspect`, `stop`, `activate` and `awaitsUser`.
+The view passes the original driver objects, so operation-presence checks still
+see `spawn` and `attach`. Private types are restored only where core retains
+those same registry references. This view must be revisited if core starts
+invoking another optional operation.
 
 `normalizeTool?(tool, context)` is an optional pre-launch hook. Core calls it after
 `resolveToolBin` and before refusal, launch and provenance recording; a driver may use it to
@@ -574,12 +586,12 @@ was merged from — is not named in that warning. After writing it, the caller s
 
 ### `CODEX` — codex harness driver — the third production bus driver
 
-Source: `lib/driver-codex.js`, `CODEX`.
+Source: `lib/driver-codex.ts`, `CODEX`.
 
 Codex harness driver — the third production bus driver.
 Everything the mechanism knows about Codex lives here: option vocabulary, command
 words, turning a plan into `thread/start` params, and approval replies. The thread
-registry and the process holder are in [codex-session.js](../../lib/codex-session.js).
+registry and the process holder are in [codex-session.ts](../../lib/codex-session.ts).
 
 **What Codex does differently.** A session is a thread in its own
 `codex app-server --stdio` process, and that process runs in a `CODEX_HOME` of its
@@ -1189,7 +1201,7 @@ measurement covers 0.159.2; it is not a new native Git measurement on 0.158.0.
 
 ### `OPENCODE` — opencode harness driver — the fourth production bus driver
 
-Source: `lib/driver-opencode.js`, `OPENCODE`. Availability: `lib/model-routing/adapter-opencode.ts`.
+Source: `lib/driver-opencode.ts`, `OPENCODE`. Availability: `lib/model-routing/adapter-opencode.ts`.
 The probe reads `opencode --version`, `opencode models`, and `opencode stats` for a local-estimate quota. A model list that is not read is `unknown`, and the previous windows stay. It does not start a session. The quota contract is [03-cli § OpenCode](03-cli.md#opencode-what-its-adapter-asks).
 Registry: the harness session registry (`harnessStateHome('opencode')`), ref → record path.
 An opencode session carries no CLI owner identity (`identityVar: null`).
@@ -1332,7 +1344,7 @@ to separate participant homes cannot provide shared refresh coordination.
 
 ### `reviewSandbox` — reviewer working directory: the mechanism's own, not the tree under review
 
-Source: `lib/driver-codex.js`, `reviewSandbox`.
+Source: `lib/driver-codex.ts`, `reviewSandbox`.
 
 A Codex reviewer used to sit in the reviewed clone, and two things followed. It got no
 workspace skills — the review procedure arrives as a module skill, and copying a canon
@@ -1351,7 +1363,7 @@ driver.
 
 ### `sweepParticipantHomes` — remove every home of this registry that no session record names
 
-Source: `lib/driver-codex.js`, `sweepParticipantHomes`.
+Source: `lib/driver-codex.ts`, `sweepParticipantHomes`.
 
 The homes root is one directory, `$TMPDIR/promptobus-codex-homes`. A home is a direct child of it.
 `removeParticipantHome` still refuses anything that is not: the owner's `~/.codex`, a nested path,
@@ -1400,9 +1412,9 @@ removed, and the registry must not grow a second opinion.
 
 ### Codex: the phrases a participant is addressed by
 
-Source: `lib/driver-codex.js`, `lib/prompts/codex.ts`.
+Source: `lib/driver-codex.ts`, `lib/prompts/codex.ts`.
 
-Session and tool naming come from `lib/driver-codex.js`. Codex role instructions
+Session and tool naming come from `lib/driver-codex.ts`. Codex role instructions
 come from `lib/prompts/codex.js` through `driver.phrases`: `promptRulesFor` selects
 worker, reviewer or orchestrator rules, `rootPreamble` names the managed root,
 and `workerOrchestrator` identifies the task owner without assuming its harness.
@@ -1520,7 +1532,7 @@ measured.
 
 ## `sessionStall` — sessionStall answers null for no stall, otherwise { kind, reason }. kind is permission
 
-Source: `lib/driver-claude.js`, `sessionStall`.
+Source: `lib/driver-claude.ts`, `sessionStall`.
 
 
 `sessionStall` answers `null` for no stall, otherwise `{ kind, reason }`. `kind` is `permission`
@@ -1562,8 +1574,8 @@ participant settings file; and the route printed for a person names all three an
 
 ## A refusal that names a reset
 
-Source: `src/driver.ts`, `namedReset`, `resetAhead`, `resetText`; `lib/driver-codex.js`, `inspect`;
-`lib/driver-claude.js`, `sessionStall`, `sessionDetailAt`.
+Source: `src/driver.ts`, `namedReset`, `resetAhead`, `resetText`; `lib/driver-codex.ts`, `inspect`;
+`lib/driver-claude.ts`, `sessionStall`, `sessionDetailAt`.
 
 A stall may carry `reset: { said, at }`: the harness refused a turn and named a time to retry
 after. `said` is the harness's words for that time; `at` is the ISO instant they parse to, or
@@ -1614,7 +1626,7 @@ window below 100 %, or a limit the snapshot does not carry — is not known.
 
 ## A lift that fails on a spent limit
 
-Source: `lib/driver-claude.js`, `markLimitAtStart`.
+Source: `lib/driver-claude.ts`, `markLimitAtStart`.
 
 A lift refused because the limit was spent marks the harness exhausted in the availability cache
 and returns the line the refusal appends — empty when there was nothing to mark.
@@ -1646,7 +1658,7 @@ with it.
 
 ## `awaitsUser` — whether a Claude transcript holds an open question
 
-Source: `lib/driver-claude.js`, `awaitsUser`.
+Source: `lib/driver-claude.ts`, `awaitsUser`.
 
 The warden asks this before it retries a knock on unchanged mail
 ([hooks-and-trust § `awaitingUser`](../guides/hooks-and-trust.md#awaitinguser--whether-the-turn-waits-on-its-user)).

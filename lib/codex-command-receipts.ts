@@ -9,8 +9,8 @@ interface CommandItem {
   [key: string]: unknown;
 }
 interface ReceiptIdentity {
-  ref: string; launchId?: string; task?: string; address?: string; threadId?: string | null; cwd?: string;
-  rawToolReceipts?: boolean; holderPid?: number; appPid?: number;
+  ref: string; launchId?: string | null; task?: string | null; address?: string | null; threadId?: string | null; cwd?: string;
+  rawToolReceipts?: boolean; holderPid?: number | null; appPid?: number | null;
   [key: string]: unknown;
 }
 interface CommandNotification {
@@ -21,8 +21,8 @@ interface CommandNotification {
   };
 }
 interface ReceiptRow extends CommandItem {
-  sequence: number; at: string; kind: string; format?: number; ref?: string; task?: string; address?: string;
-  launchId?: string; threadId?: string | null; deadlineAt: number; holderPid?: number; appPid?: number;
+  sequence: number; at: string; kind: string; format?: number; ref?: string; task?: string | null; address?: string | null;
+  launchId?: string | null; threadId?: string | null; deadlineAt: number; holderPid?: number | null; appPid?: number | null;
   rawToolReceipts?: boolean; appClose?: { code?: number | null; signal?: string | null };
   code?: number | null; signal?: string | null; notification: Parameters<ReturnType<typeof rawToolReceipts>['observe']>[0];
   rawTools?: unknown; originalToolReceipt?: unknown; commands?: unknown;

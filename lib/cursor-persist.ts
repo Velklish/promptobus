@@ -14,7 +14,7 @@ import { PROMPTOBUS_SERVER } from './contract.js';
 import type { HarnessSessionRecord } from './harness-registry.js';
 
 interface CursorSessionRecord extends HarnessSessionRecord {
-  sessionName?: string; tmuxServer?: string; cwd?: string; chatId?: string; transcript?: string;
+  sessionName?: string | null; tmuxServer?: string; cwd?: string; chatId?: string | null; transcript?: string;
   injectedAt?: string; panePid?: number | null;
 }
 interface TmuxSession {

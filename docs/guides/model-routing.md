@@ -80,7 +80,7 @@ The top layer is the command line. `--harness`, `--model` and `--effort` are car
 
 `models/catalog.json`, shipped through `files` in `package.json`, valid against [catalog.schema.json](../../schemas/model-routing/catalog.schema.json). One row per thing that can actually be launched: `role + harness + model + effort`.
 
-**Cursor carries effort inside the model id.** `lib/driver-cursor.js` appends `-<level>` to `--model` when it is given an effort, and the level is a flat suffix of the id — `claude-opus-5-thinking-max`, `gpt-5.6-sol-high`. So a Cursor tuple's `model` is the full id and its `effort` is `null`; the resolver must not add an effort for it, or the run would lift `…-max-max`. Claude and Codex take the level as a separate flag, and their tuples name it.
+**Cursor carries effort inside the model id.** `lib/driver-cursor.ts` appends `-<level>` to `--model` when it is given an effort, and the level is a flat suffix of the id — `claude-opus-5-thinking-max`, `gpt-5.6-sol-high`. So a Cursor tuple's `model` is the full id and its `effort` is `null`; the resolver must not add an effort for it, or the run would lift `…-max-max`. Claude and Codex take the level as a separate flag, and their tuples name it.
 
 Read the id, never the display name: `cursor-agent models` prints `claude-opus-5-thinking-high` under the name "Claude Opus 5 1M Thinking", with no level word in it, while `gpt-5.6-sol-high` is printed as "GPT-5.6 Sol 1M High". Nothing checks a Cursor id before liftoff — a wrong one dies in about two seconds with empty stdout and reads as a harness fault — so the listing is captured in [test/fixtures/model-catalog/](../../test/fixtures/model-catalog/README.md) and every Cursor row is pinned against it.
 
@@ -103,7 +103,7 @@ The Mythos refusal is account-dependent: that message is the only evidence separ
 
 **Neither Fable id was run.** Both were read out of the binary instead — `claude-fable-5` off 2.1.251, `claude-fable-5-1` off 2.1.263 — and that was judged sufficient because the read answers a strictly stronger question than the turn does. A successful turn proves the binary accepted the string; the binary's own baked model catalog is where that acceptance comes FROM. On 2.1.263 it names both ids as first-party rows of `family:"fable"` and lists both in its array of accepted ids, and `alias_migration` is empty. A turn could not have distinguished either id from a near neighbour the binary also takes; the catalog read names the exact strings. It also costs nothing against the plan, which matters more for the top-tier family than for the other two.
 
-That is the check to repeat when a row is added — the offline read first, and a minimal turn only where the binary's own table cannot answer — with the method recorded in the row's `evidence`. A name the binary does not take fails at liftoff instead, where it reads as a harness fault. The set of ids the driver accepts and reports as its inventory is `MODEL_IDS` in `lib/driver-claude.js`, and the suite pins every Claude row against it. The static dictionary is independent of the binary's version label. It is not a live model listing or a guarantee that every build accepts each id; actual CLI/API unavailable-model errors remain authoritative. Version discovery remains telemetry and does not remove model ids ([03-cli](../reference/03-cli.md#claude-code-what-its-adapter-asks)).
+That is the check to repeat when a row is added — the offline read first, and a minimal turn only where the binary's own table cannot answer — with the method recorded in the row's `evidence`. A name the binary does not take fails at liftoff instead, where it reads as a harness fault. The set of ids the driver accepts and reports as its inventory is `MODEL_IDS` in `lib/driver-claude.ts`, and the suite pins every Claude row against it. The static dictionary is independent of the binary's version label. It is not a live model listing or a guarantee that every build accepts each id; actual CLI/API unavailable-model errors remain authoritative. Version discovery remains telemetry and does not remove model ids ([03-cli](../reference/03-cli.md#claude-code-what-its-adapter-asks)).
 
 The lift is untouched: `--model opus` is as lawful as it ever was, and the driver's own default model is still the alias. What changed is what a *rating* may be keyed on. Cursor's hazard is the opposite shape — its ids carry the level, so a row must not also name an effort — and Codex's ids come from a listing the binary answers.
 
@@ -161,7 +161,7 @@ records why that work rejects 6 without buying the independent defect discovery 
 
 `priority` is the resolver's last tie-break but one, and the catalog assigns it by a convention rather than by a schema rule:
 
-- tuples are grouped by harness, and the groups run in the order the driver registry lists them (`REGISTRY` in `lib/drivers.js`: `claude`, `cursor`, `codex`). The groups do not interleave;
+- tuples are grouped by harness, and the groups run in the order the driver registry lists them (`REGISTRY` in `lib/drivers.ts`: `claude`, `cursor`, `codex`). The groups do not interleave;
 - inside a group the tuples run from the highest quality down;
 - initial numbers go in steps of ten; a rung added later takes an unused gap between two tens, preserving existing priorities and their relative order.
 
@@ -363,7 +363,7 @@ promises to hold no email and no open account id.
 Source: `lib/model-routing/adapter-cursor.ts`.
 
 Cursor availability adapter: what the locally logged-in Cursor account can do
-right now. The driver ([driver-cursor.js](../../lib/driver-cursor.js)) declares it as
+right now. The driver ([driver-cursor.ts](../../lib/driver-cursor.ts)) declares it as
 `availability`, the preflight ([preflight.ts](../../lib/model-routing/preflight.ts)) runs it, and the
 verdict it answers is one harness entry of the availability snapshot.
 
@@ -431,13 +431,13 @@ The verdict `message` is the only free-text field that reaches the cache file.
 
 ### Codex adapter: what the probe reads
 
-Source: `lib/model-routing/adapter-codex.js`.
+Source: `lib/model-routing/adapter-codex.ts`.
 
 Codex availability adapter: what the account can do with `codex` right now,
 answered from a fresh `codex app-server --stdio` that is closed again without a
 thread and without a turn.
 
-**Why a second gate at all.** The start path in [codex-session.js](../../lib/codex-session.js)
+**Why a second gate at all.** The start path in [codex-session.ts](../../lib/codex-session.ts)
 already refuses a lift on a spent limit, but it refuses INSIDE the lift, after
 the holder process, the socket and the thread are being set up. The resolver
 needs the same fact BEFORE it picks a harness, and it must be able to ask about
@@ -489,7 +489,7 @@ all: what is not connected cannot be misread.
 
 ### Participant telemetry: the collecting half
 
-Source: `lib/model-routing/telemetry.js`.
+Source: `lib/model-routing/telemetry.ts`.
 
 <!-- quote:../../README.md -->
 `promptobus done` writes one local telemetry record per recorded harness generation of a participant with a model, plus teamleads and the root orchestrator with a recorded session identity or model.
@@ -556,12 +556,12 @@ nothing.
 
 ### Calibrate: reading the telemetry back
 
-Source: `lib/model-routing/calibrate.js`.
+Source: `lib/model-routing/calibrate.ts`.
 
 Reading the telemetry back: local runs against the shipped catalog, as a
 PROPOSAL for the user overlay and never as a write of its own.
 
-[telemetry.js](../../lib/model-routing/telemetry.js) is the collecting half and says so in its own
+[telemetry.ts](../../lib/model-routing/telemetry.ts) is the collecting half and says so in its own
 header. This is the reading half, and
 it is the same shape of file: pure, no disk, no clock, no host. Records in, a
 report out. `lib/models.js` reads the file, hands the rows over, prints what
@@ -645,7 +645,7 @@ for it either.
 
 ### `limit-hit-at-start`: when a lift fails on a limit spent since the preflight
 
-Source: `lib/liftoff.js`, `liftoffParticipant`.
+Source: `lib/liftoff.ts`, `liftoffParticipant`.
 
 `persist(session, state, sessionId)` — write the participant into the journal. Called
 on ANY check outcome, including a dead spawn: a repeat lift at the same address is a
@@ -1100,7 +1100,7 @@ rather than a limit to report.
 
 ### `WINDOW_KIND_BY_ID` — the subscription windows of a snapshot, normalised
 
-Source: `lib/model-routing/adapter-codex.js`, `WINDOW_KIND_BY_ID`, `rateLimitWindows` and `windowKind`.
+Source: `lib/model-routing/adapter-codex.ts`, `WINDOW_KIND_BY_ID`, `rateLimitWindows` and `windowKind`.
 
 `id` is the name the payload gives the window — `primary` and `secondary` — and
 nothing here renames them into hours and days. The adapter reads the length from

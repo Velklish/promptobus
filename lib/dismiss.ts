@@ -7,7 +7,7 @@ import {
 
 // Stop watching a finished participant.
 // [reference/03-cli.md#dismiss--stop-watching-a-finished-participant](../docs/reference/03-cli.md#dismiss--stop-watching-a-finished-participant)
-export function dismiss(rootOrHost, { task, address } = {}) {
+export function dismiss(rootOrHost: unknown, { task, address }: { task?: string | null; address?: string } = {}) {
   const host = hostOf(rootOrHost);
   const home = host.promptobusHome();
   const id = resolveTaskId(home, task, sessionIdentity(), {
@@ -38,7 +38,7 @@ export function dismiss(rootOrHost, { task, address } = {}) {
   }
   // A foreign address is refused by the record's own reply, not by a pre-check: under
   // the lock the answer is precise — the journal can change between read and write.
-  const { found, was } = dismissParticipant(home, id, address);
+  const { found, was } = dismissParticipant(home, id, address!);
   if (!found) fail(`task ${id} has no participant "${address}" — nobody to dismiss. ${route}`);
   if (was) {
     ok(`${address} was already dismissed from watch ${was} — journal untouched`);

@@ -25,6 +25,19 @@ import {
   readRecordAt, sayForeignWrite as commonSayForeignWrite, sessionEnvFor,
 } from './driver-common.js';
 
+import type { Socket } from 'node:net';
+import type { DriverPhrases, HostMcpTool, Notification, NotificationMessage, SessionView, SessionStall, WakeProbe, ActivateResult, ActivationTarget, PromptobusHost } from '../dist/index.js';
+import type { RawBgSession } from './liftoff.js';
+import type { LibDriver, LibLaunchPlan, LibPrepareContext, LibSpawnContext, LibStall, LibMcpConfig, LibMcpServer } from './driver-runtime.js';
+
+interface ClaudePrepareContext extends Omit<LibPrepareContext, 'role'> {
+  role?: string | null;
+}
+interface ClaudeBindingRecord {
+  home?: string; task?: string; address?: string; sessionId?: string | null; refused?: { session?: string }[];
+}
+interface TranscriptBlock { type?: unknown; name?: unknown; id?: unknown; tool_use_id?: unknown }
+
 // Claude Code harness driver: EVERYTHING that knows about Claude lives here, and nothing outside
 // imports this file — the engine reaches it through the registry ([drivers.js](drivers.js)).
 
@@ -34,11 +47,10 @@ export const CLAUDE = 'claude';
 /** Project skills directory relative to project root: `.claude/skills` (https://docs.claude.com/en/docs/claude-code/skills). */
 export const CLAUDE_SKILLS_REL = path.join('.claude', 'skills');
 
-const CLAUDE_INSTALL = 'npm install -g @anthropic-ai/claude-code (or https://docs.claude.com/en/docs/claude-code/setup)';
 
-function claudeUserMcp(canonServerNames) {
+function claudeUserMcp(canonServerNames: string[]) {
   const file = path.join(homedir(), '.claude.json');
-  let names = [];
+  let names: string[] = [];
   if (existsSync(file)) {
     try {
       names = Object.keys(JSON.parse(readFileSync(file, 'utf8'))?.mcpServers ?? {}).sort();
@@ -47,8 +59,8 @@ function claudeUserMcp(canonServerNames) {
     }
   }
   const canon = new Set(canonServerNames);
-  const extras = [];
-  const shadowed = [];
+  const extras: string[] = [];
+  const shadowed: string[] = [];
   for (const name of names) (canon.has(name) ? shadowed : extras).push(name);
   return { extras, shadowed };
 }
@@ -70,7 +82,7 @@ export const DEFAULT_PERMISSION_MODE = 'auto';
 export const PROMPT_BYPASS_MODES = ['bypassPermissions'];
 
 /** Whether a lift in this mode would have the session hold an unattested peer message. */
-export const bypassesPrompts = (mode) => PROMPT_BYPASS_MODES.includes(mode);
+export const bypassesPrompts = (mode: string | null | undefined) => PROMPT_BYPASS_MODES.includes(mode!);
 
 // Participant model without a `--model` flag: harness dictionary, not a lift-command value. The
 // engine names the model itself, because a person's session default may be more expensive.
@@ -109,7 +121,7 @@ export const MODEL_ALIAS_IDS = {
 const PROBE_MODELS = [...new Set([...MODEL_IDS, ...MODEL_ALIASES, DEFAULT_MODEL])];
 
 // Static driver dictionary; actual model availability is decided by the CLI/API.
-export const inventoryFor = (_version) => [...PROBE_MODELS];
+export const inventoryFor = (_version: unknown) => [...PROBE_MODELS];
 
 // Tools taken from the reviewer: it reads and writes a report on the bus, and does not edit or go
 // outside. Pinned by test/promptobus-review.test.mjs (three checks).
@@ -132,14 +144,14 @@ export const SESSION_RECORD_VAR = 'PROMPTOBUS_CLAUDE_SESSION';
 export const PHRASES = {
   sessions: 'claude agents',
   unreadable: 'claude agents --json is unreadable',
-  enter: (id) => `claude attach ${id}`,
+  enter: (id: string | null) => `claude attach ${id}`,
   // Without an identifier — the bare command name: a vanished record names it as the REASON, not
   // as a line to copy, and there is no id to take there.
-  stop: (id) => (id ? `claude stop ${id}` : 'claude stop'),
-  logs: (id) => `claude logs ${id}`,
+  stop: (id: string | null) => (id ? `claude stop ${id}` : 'claude stop'),
+  logs: (id: string | null) => `claude logs ${id}`,
   // MCP tool name as the Claude Code session calls it: the client namespaces it itself, and the
   // short name is enough. A second harness writes it differently, so this is a driver word.
-  tool: (_server, name) => name,
+  tool: (_server: string, name: string) => name,
   mcpBoundary: '**Host-classified MCP write tools are mechanically denied by the harness; the remaining external MCP surface is read-only under this prompt, the second layer.**',
   reviewerCommands: {
     isolation: 'File edits and command starts are disabled for you by the mechanism.',
@@ -150,7 +162,7 @@ export const PHRASES = {
   // Claude Code appends no rules of its own: its background-session habits are described by the
   // prompt itself and the workspace rules.
   promptRules: '',
-};
+} satisfies DriverPhrases;
 
 // How long we wait on the socket: waiting forever on a dead socket would halt
 // delivery to the others.
@@ -171,7 +183,7 @@ function claudeHome(env = process.env) {
 // land in `detail` — so it is flattened to one line and cut by length here.
 const DETAIL_MAX = 160;
 
-function oneLine(text) {
+function oneLine(text: unknown) {
   const flat = String(text).replace(/\s+/g, ' ').trim();
   if (!flat) return '';
   return flat.length > DETAIL_MAX ? `${flat.slice(0, DETAIL_MAX - 1)}…` : flat;
@@ -179,10 +191,10 @@ function oneLine(text) {
 
 // `detail` line of a background session by its short id (the same one `claude
 // attach` and `claude logs` take). Throws nothing: anything missing — null.
-export function sessionDetail(id, home = claudeHome()) {
+export function sessionDetail(id: unknown, home = claudeHome()) {
   if (!id) return null;
   try {
-    const raw = JSON.parse(readFileSync(path.join(home, 'jobs', String(id), 'state.json'), 'utf8'));
+    const raw: { detail?: unknown } | null = JSON.parse(readFileSync(path.join(home, 'jobs', String(id), 'state.json'), 'utf8'));
     return (typeof raw?.detail === 'string' ? oneLine(raw.detail) : '') || null;
   } catch {
     return null;
@@ -191,7 +203,7 @@ export function sessionDetail(id, home = claudeHome()) {
 
 // When the daemon last wrote this `detail` line: the `at` of its latest `timeline.jsonl` entry, read
 // from the file's tail. It anchors a wall-time reset; anything missing — null, and the time stays unread.
-export function sessionDetailAt(id, detail, home = claudeHome()) {
+export function sessionDetailAt(id: unknown, detail: string | null | undefined, home = claudeHome()) {
   if (!id || !detail) return null;
   const TAIL = 64 * 1024;
   let text;
@@ -208,7 +220,7 @@ export function sessionDetailAt(id, detail, home = claudeHome()) {
     if (fd !== undefined) closeSync(fd);
   }
   for (const line of text.split('\n').reverse()) {
-    let row;
+    let row: { detail?: unknown; at?: unknown } | null; 
     try {
       row = JSON.parse(line);
     } catch {
@@ -224,11 +236,11 @@ export function sessionDetailAt(id, detail, home = claudeHome()) {
 
 const ASK_TOOL = 'AskUserQuestion';
 export const TRANSCRIPT_TAIL = 1024 * 1024;
-const askSeen = new Map();
+const askSeen = new Map<string, { size: number; mtimeMs: number; open: boolean }>();
 
 // The transcript shape was measured on Claude Code 2.1.280; it is not a contract, so every doubt
 // reads "not open". [05-drivers.md](../docs/reference/05-drivers.md#awaitsuser--whether-a-claude-transcript-holds-an-open-question)
-export function awaitsUser(file) {
+export function awaitsUser(file: unknown) {
   if (typeof file !== 'string' || !file) return false;
   let fd;
   try {
@@ -249,10 +261,10 @@ export function awaitsUser(file) {
 }
 
 // From the end: a tool_result is remembered, the newest question decides, a human prompt ends the search.
-function openQuestion(lines) {
-  const answered = new Set();
+function openQuestion(lines: string[]) {
+  const answered = new Set<unknown>();
   for (const line of lines.reverse()) {
-    let row;
+    let row: { type?: unknown; message?: { content?: unknown } } | null;
     try {
       row = JSON.parse(line);
     } catch {
@@ -261,11 +273,11 @@ function openQuestion(lines) {
     const content = row?.message?.content;
     if (row?.type === 'user') {
       if (!Array.isArray(content)) return false;
-      const results = content.filter((b) => b?.type === 'tool_result');
+      const results = (content as (TranscriptBlock | null)[]).filter((b): b is TranscriptBlock => b?.type === 'tool_result');
       if (!results.length) return false;
       for (const b of results) answered.add(b.tool_use_id);
     } else if (row?.type === 'assistant' && Array.isArray(content)) {
-      const ask = content.find((b) => b?.type === 'tool_use' && b.name === ASK_TOOL && typeof b.id === 'string');
+      const ask = (content as (TranscriptBlock | null)[]).find((b) => b?.type === 'tool_use' && b.name === ASK_TOOL && typeof b.id === 'string');
       if (ask) return !answered.has(ask.id);
     }
   }
@@ -279,15 +291,15 @@ const LIMIT_DETAIL = new RegExp(`\\bhit your\\b[^\\n]*\\blimit\\b|${LIMIT_RESETS
 
 // A lift refused on a spent limit marks the harness exhausted and returns the line the
 // refusal appends. Which code, why resetAt stays null: [reference/05-drivers.md#a-lift-that-fails-on-a-spent-limit](../docs/reference/05-drivers.md#a-lift-that-fails-on-a-spent-limit).
-export function markLimitAtStart(host, output) {
+export function markLimitAtStart(host: Pick<PromptobusHost, 'routingPaths' | 'busCommand'> | null | undefined, output: unknown) {
   const said = String(output ?? '');
   const hit = host ? LIMIT_DETAIL.test(said) : false;
   if (!hit) return '';
   const named = LIMIT_RESETS.test(said);
   try {
-    const { cacheFile } = host.routingPaths();
-    const clearCommand = host.busCommand(['models', '--clear-exhausted', CLAUDE]);
-    markExhausted(host, CLAUDE, {
+    const { cacheFile } = host!.routingPaths();
+    const clearCommand = host!.busCommand(['models', '--clear-exhausted', CLAUDE]);
+    markExhausted(host!, CLAUDE, {
       reason: named ? 'subscription_exhausted' : 'manual_exhaustion',
       message: named
         ? 'limit hit at start; the harness said the limit resets but named no time to parse'
@@ -303,7 +315,7 @@ export function markLimitAtStart(host, output) {
 
 // Stall of a session: null, or { kind, reason }. Where the reason's halves come from:
 // [05-drivers.md § sessionStall](../docs/reference/05-drivers.md#sessionstall--sessionstall-answers-null-for-no-stall-otherwise--kind-reason--kind-is-permission).
-export function sessionStall(session, detail = undefined, seen = undefined) {
+export function sessionStall(session: RawBgSession | null | undefined, detail: unknown = undefined, seen: number | null | undefined = undefined): SessionStall | null {
   if (!session) return null;
   // The dialog mark is checked first and the file is not read for it: the warden polls state every
   // heartbeat, and `waitingFor` is issued only to a session standing at a dialog.
@@ -322,7 +334,7 @@ export function sessionStall(session, detail = undefined, seen = undefined) {
 
 // What to do with this stall — one line for every consumer. The routes are Claude-specific, so they
 // live on the driver, and the commands come from `PHRASES`: a second home would drift.
-export function stallRoute({ kind, address, repoAbs, task, reviewCommand, reset }, id, name) {
+export function stallRoute({ kind, address, repoAbs: _repoAbs, task: _task, reviewCommand, reset }: LibStall, id: string | null, name: string | null) {
   const review = reviewCommand;
   // A reviewer has a package command; an approver is lifted with review --approver.
   const relift = () => (address?.startsWith(`${REVIEWER}:`)
@@ -361,7 +373,7 @@ export function stallRoute({ kind, address, repoAbs, task, reviewCommand, reset 
       + `permission rule decided outside it changes anything. Read ${PHRASES.logs(id)} before calling a person`;
   }
   if (kind === 'limit' && resetAhead(reset)) {
-    const probe = reset.at === null ? ` and probes it every ${KNOCK_RETRY_SEC} s, since that time does not parse` : '';
+    const probe = reset!.at === null ? ` and probes it every ${KNOCK_RETRY_SEC} s, since that time does not parse` : '';
     return `no person needed: the limit resets on its own, and the warden holds its knocks until the time named here${probe}; `
       + `after it you can wake the session with a message (in Claude Code — SendMessage to session «${name}»). `
       + `If the run cannot wait that long, ${relift()}`;
@@ -378,7 +390,7 @@ export function stallRoute({ kind, address, repoAbs, task, reviewCommand, reset 
 
 // Inter-session message frame. Both its properties were proven live: it rests on the bus protocol
 // rather than a person's authority, and it refuses to escalate permissions — silence reads as suspicious.
-export function orderBody(task, addr, unread, msgs = []) {
+export function orderBody(task: string, addr: string, unread: number, msgs: NotificationMessage[] = []) {
   return commonOrderBody(task, addr, unread, msgs, {
     header: 'Promptobus service notification',
     fetchLine: 'Fetch the mailbox: only mailbox marks messages read; ',
@@ -386,7 +398,7 @@ export function orderBody(task, addr, unread, msgs = []) {
   });
 }
 
-export function renderNotification(n) {
+export function renderNotification(n: Notification) {
   return orderBody(n.task, n.address, n.unread, n.messages ?? []);
 }
 
@@ -394,24 +406,24 @@ export function renderNotification(n) {
 
 // Knock on the participant's messaging socket: one connection, two lines of line-delimited JSON.
 // The auth line is always sent — macOS does not check it, and code without it is not portable.
-function dial(socketPath, lines, timeoutMs) {
-  return new Promise((resolve) => {
+function dial(socketPath: string, lines: string[], timeoutMs: number): Promise<ActivateResult> {
+  return new Promise<ActivateResult>((resolve) => {
     let done = false;
-    const finish = (r) => {
+    const finish = (r: ActivateResult) => {
       if (done) return;
       done = true;
       resolve(r);
     };
-    let sock;
+    let sock: Socket;
     try {
       sock = connect(socketPath);
     } catch (e) {
-      finish({ ok: false, error: e.code ?? e.message });
+      finish({ ok: false, error: (e as NodeJS.ErrnoException).code ?? (e as Error).message });
       return;
     }
     sock.setTimeout(timeoutMs);
     sock.on('error', (e) => {
-      finish({ ok: false, error: e.code ?? e.message });
+      finish({ ok: false, error: (e as NodeJS.ErrnoException).code ?? (e as Error).message });
       sock.destroy();
     });
     sock.on('timeout', () => {
@@ -429,13 +441,13 @@ function dial(socketPath, lines, timeoutMs) {
   });
 }
 
-function authLine(token) {
+function authLine(token: unknown) {
   return JSON.stringify({ type: 'auth', token: token ?? '' });
 }
 
-export function knockSocket(endpoint, body, { timeoutMs = KNOCK_TIMEOUT_MS } = {}) {
-  return dial(endpoint.socket, [
-    authLine(endpoint.token),
+export function knockSocket(endpoint: ActivationTarget['endpoint'], body: string, { timeoutMs = KNOCK_TIMEOUT_MS } = {}) {
+  return dial(endpoint!.socket!, [
+    authLine(endpoint!.token),
     JSON.stringify({
       msgV: 1,
       msg_id: randomUUID(),
@@ -449,13 +461,13 @@ export function knockSocket(endpoint, body, { timeoutMs = KNOCK_TIMEOUT_MS } = {
 
 // Channel smoke for `doctor`: a connection and one auth line, no message. A connection without a
 // second line is harmless to the listener.
-export function probeWake(socketPath, token, { timeoutMs = KNOCK_TIMEOUT_MS } = {}) {
+export function probeWake(socketPath: string, token: unknown, { timeoutMs = KNOCK_TIMEOUT_MS } = {}) {
   return dial(socketPath, [authLine(token)], timeoutMs);
 }
 
 /** Wake channel of THIS session — the diagnostics entry. `doctor` asks for the outcome, not the
  * variables, and the smoke sends no real message: that would cost a record in a person's feed. */
-export async function checkWake(env = process.env) {
+export async function checkWake(env = process.env): Promise<WakeProbe> {
   const socket = env.CLAUDE_CODE_MESSAGING_SOCKET?.trim();
   if (!socket) return { endpoint: null, ok: false, error: 'CLAUDE_CODE_MESSAGING_SOCKET is empty' };
   const r = await probeWake(socket, env.CLAUDE_CODE_MESSAGING_TOKEN);
@@ -464,7 +476,7 @@ export async function checkWake(env = process.env) {
 
 // Hand off this session's contact point. **A write for a foreign address is refused**, here rather
 // than on the two callers; the session arrives as an ARGUMENT, since a Stop hook may lack the variable.
-export function registerWake(home, task, addr, env = process.env, session = null) {
+export function registerWake(home: string, task: string, addr: string, env = process.env, session: string | null = null) {
   try {
     const who = session ?? env.CLAUDE_CODE_SESSION_ID?.trim() ?? null;
     const held = foreignSession(home, task, addr, who);
@@ -486,13 +498,13 @@ export function registerWake(home, task, addr, env = process.env, session = null
 
 // The handshake binds the session's own id once through the lift's pointer; a later id is refused
 // and kept in the session record. `bound`, `refused` or `null`: 02-host § Session identity.
-export function bindHandshake(home, task, addr, env = process.env, session = null) {
+export function bindHandshake(home: string, task: string, addr: string, env = process.env, session: string | null = null) {
   try {
     const file = String(env?.[SESSION_RECORD_VAR] ?? '').trim();
     const who = session ?? env?.CLAUDE_CODE_SESSION_ID?.trim() ?? null;
     if (!file || !path.isAbsolute(file) || !who) return null;
     return withTaskLock(home, task, () => {
-      const record = readRecordAt(file);
+      const record = readRecordAt<ClaudeBindingRecord>(file);
       if (typeof record?.home !== 'string' || canonicalPath(record.home) !== canonicalPath(home)
         || record.task !== task || record.address !== addr) return null;
       const participant = participantOf(readTask(home, task), addr);
@@ -525,28 +537,28 @@ export { sayForeignWrite };
 
 // Participant MCP config: a harness-neutral server list into the form the binary reads. Which
 // servers is the lift's decision; how they sit in the file is this driver's.
-function mcpConfig({ servers }, pointer = null) {
-  const bus = pointer ? servers[PROMPTOBUS_SERVER] : null;
-  if (!bus) return { mcpServers: { ...servers } };
-  return { mcpServers: { ...servers, [PROMPTOBUS_SERVER]: { ...bus, env: { ...bus.env, [SESSION_RECORD_VAR]: pointer } } } };
+function mcpConfig({ servers }: LibPrepareContext['mcp'], pointer: string | null = null): LibMcpConfig {
+  const bus = pointer ? servers[PROMPTOBUS_SERVER] as LibMcpServer : null;
+  if (!bus) return { mcpServers: { ...servers } as Record<string, LibMcpServer> };
+  return { mcpServers: { ...servers, [PROMPTOBUS_SERVER]: { ...bus, env: { ...bus.env, [SESSION_RECORD_VAR]: pointer! } } } };
 }
 
 // A lift that binds before launch points its bus entry at a fresh session record; a teamlead gets none.
-function sessionRecordFor(role, { home, task, address, servers } = {}) {
+function sessionRecordFor(role: string | null | undefined, { home, task, address, servers }: Partial<LibPrepareContext['mcp']> = {}) {
   if (role === 'teamlead' || !home || !task || !address || !servers?.[PROMPTOBUS_SERVER]) return null;
   return participantSessionPath(home, task, address);
 }
 
 // Pre-approve delivered servers: the reviewer is lifted without `--permission-mode` and would
 // stall on the first non-bus server. The bus first, the rest alphabetically — the order is stable.
-function mcpAllowedTools(mcpCfg) {
+function mcpAllowedTools(mcpCfg: LibMcpConfig) {
   const names = Object.keys(mcpCfg.mcpServers ?? {});
   return [PROMPTOBUS_SERVER, ...names.filter((n) => n !== PROMPTOBUS_SERVER).sort()].map((n) => `mcp__${n}`);
 }
 
 // Host MCP identities are canonical pairs; this permissions file takes the namespaced spelling.
 // Deliberately separate from `PHRASES.tool`, which is the short name a participant types.
-export function mcpDenyTools(tools) {
+export function mcpDenyTools(tools: readonly HostMcpTool[]) {
   return tools.map(({ server, tool }) => `mcp__${server}__${tool}`);
 }
 
@@ -555,7 +567,7 @@ export function mcpDenyTools(tools) {
 function spawnArgv({
   ref, mcpConfigPath, mcpConfig: cfg, addDirs = [], pluginDir = null, settingsPath,
   model, effort = null, permissionMode = null, prompt, sessionId,
-}) {
+}: Pick<ClaudePrepareContext, 'ref' | 'mcpConfigPath' | 'addDirs' | 'pluginDir' | 'settingsPath' | 'model' | 'effort' | 'permissionMode' | 'prompt'> & { mcpConfig: LibMcpConfig; sessionId: string }) {
   return [
     '--bg',
     '--name', ref,
@@ -580,8 +592,8 @@ function spawnArgv({
 /** Participant settings file; every key of it and why, including the server-choice dialog a
  * background session cannot answer: [03-cli.md § Spawn](../docs/reference/03-cli.md#spawn). */
 function settingsFile({
-  role = null, denyTools, guardCommand, permissionMode = null, extraSettings,
-}) {
+  role: _role = null, denyTools, guardCommand, permissionMode = null, extraSettings,
+}: Pick<ClaudePrepareContext, 'role' | 'denyTools' | 'guardCommand' | 'permissionMode' | 'extraSettings'>) {
   return {
     ...(denyTools?.length ? { permissions: { deny: denyTools } } : {}),
     enableAllProjectMcpServers: true,
@@ -599,7 +611,7 @@ function prepare({
   ref, role = null, mcp, prompt, model, effort = null, permissionMode = null,
   addDirs = [], pluginDir = null, selectedContext = null, mcpConfigPath, settingsPath,
   guardCommand, denyTools = null, extraSettings = {}, sessionId = randomUUID(),
-}) {
+}: ClaudePrepareContext): LibLaunchPlan {
   const pointer = sessionRecordFor(role, mcp);
   const cfg = mcpConfig(mcp, pointer);
   const settings = settingsFile({
@@ -608,9 +620,9 @@ function prepare({
   const record = pointer ? { home: mcp.home, task: mcp.task, address: mcp.address, sessionId: null } : null;
   const selectedPlugin = selectedContext ? path.join(path.dirname(settingsPath), `${path.basename(settingsPath)}-context`) : null;
   const manifestText = `${JSON.stringify({ name: 'participant-context', version: '1.0.0' })}\n`;
-  if (selectedPlugin) assertNativePluginManifest(selectedPlugin, selectedContext, manifestText);
-  const selectedFiles = selectedContext ? selectedNativeFiles(selectedContext, path.join(selectedPlugin, 'skills')) : [];
-  const bootstrap = selectedNativePrompt(selectedContext, prompt, selectedPlugin ? path.join(selectedPlugin, 'bootstrap') : null);
+  if (selectedPlugin) assertNativePluginManifest(selectedPlugin, selectedContext!, manifestText);
+  const selectedFiles = selectedContext ? selectedNativeFiles(selectedContext, path.join(selectedPlugin!, 'skills')) : [];
+  const bootstrap = selectedNativePrompt(selectedContext, prompt, selectedPlugin ? path.join(selectedPlugin, 'bootstrap') : null!);
   return {
     argv: spawnArgv({
       ref, mcpConfigPath, mcpConfig: cfg, addDirs: [...new Set([...addDirs, ...bootstrap.addDirs])], pluginDir: selectedPlugin ?? pluginDir, settingsPath,
@@ -626,11 +638,11 @@ function prepare({
     // placing it at `0600` is the caller's job, and the harness need not know about `chmod`.
     files: [
       ...selectedFiles,
-      ...(selectedPlugin ? [{ path: path.join(selectedPlugin, '.claude-plugin', 'plugin.json'), text: manifestText, selectedContext, secret: false }] : []),
+      ...(selectedPlugin ? [{ path: path.join(selectedPlugin, '.claude-plugin', 'plugin.json'), text: manifestText, selectedContext: selectedContext!, secret: false }] : []),
       ...bootstrap.files,
       { path: mcpConfigPath, text: `${JSON.stringify(cfg, null, 2)}\n`, secret: true },
       { path: settingsPath, text: `${JSON.stringify(settings, null, 2)}\n`, secret: false },
-      ...(record ? [{ path: pointer, text: `${JSON.stringify(record, null, 2)}\n`, secret: true }] : []),
+      ...(record ? [{ path: pointer!, text: `${JSON.stringify(record, null, 2)}\n`, secret: true }] : []),
     ],
   };
 }
@@ -643,7 +655,7 @@ function optionRefusal() {
 
 // Canonical-server names shadowed by a person's personal records. The personal config is a harness
 // property: a second driver keeps it elsewhere and in another format.
-function shadowedUserServers(names) {
+function shadowedUserServers(names: string[]) {
   return claudeUserMcp(names).shadowed;
 }
 
@@ -651,7 +663,7 @@ function shadowedUserServers(names) {
 
 // State of one session for a snapshot, off the registry cache — without it each participant would
 // cost a `claude agents --json` run. An unreadable list is `null`: unknown is not death.
-function inspect(ref, sessions = undefined) {
+function inspect(ref: string, sessions: unknown[] | null | undefined = undefined): SessionView | null {
   let list = sessions;
   if (list === undefined) {
     // A binary nobody could start is a refusal with its reason, not an unparsed list: the
@@ -682,15 +694,15 @@ function inspect(ref, sessions = undefined) {
     // A record that outlived its daemon also has `blocked`, but there is no stall
     // to parse: nobody to wake, and that is a separate outcome with its own words.
     stall: live === 'stale' ? { kind: 'stale', reason: 'the record outlived its daemon' } : sessionStall(hit),
-    id: hit.id ?? null,
-    note: hit.status ?? hit.state ?? 'running',
+    id: (hit.id as string | null | undefined) ?? null,
+    note: (hit.status ?? hit.state ?? 'running') as string,
   };
 }
 
 // Lift a background session from its plan. Start and the lifted check are shared with the reviewer
 // role ([liftoff.js](liftoff.js)); argv comes from the plan, because the plan is what runs.
-async function spawn(plan, { tool, ref, role, cwd, env, home, task, address, launchFailNote, deadNote, unboundNote,
-  persist, awaitOptions, host, noun, requireFullSession, requireLaunchMatch }) {
+async function spawn(plan: LibLaunchPlan, { tool, ref, role, cwd, env, home, task, address, launchFailNote, deadNote, unboundNote,
+  persist, awaitOptions, host, noun, requireFullSession, requireLaunchMatch }: LibSpawnContext) {
   return liftoffParticipant({
     tool, argv: plan.argv, cwd, env, name: ref, role, registry: registryOf(host), launchFailNote, deadNote, unboundNote, persist,
     awaitOptions, home, task, address,
@@ -710,7 +722,7 @@ const STOP_GONE_STEP_MS = 100;
 
 // Wait until the session record is gone. A tristate — `gone`, `timeout`, `unreadable` — because
 // saying "closed" on an unreadable registry asserts the unchecked. The list is taken fresh each probe.
-async function awaitSessionGone(ref, { timeoutMs = STOP_GONE_TIMEOUT_MS, stepMs = STOP_GONE_STEP_MS } = {}) {
+async function awaitSessionGone(ref: string, { timeoutMs = STOP_GONE_TIMEOUT_MS, stepMs = STOP_GONE_STEP_MS } = {}) {
   const edge = Date.now() + timeoutMs;
   for (;;) {
     const list = bgSessions({ fresh: true });
@@ -725,7 +737,7 @@ async function awaitSessionGone(ref, { timeoutMs = STOP_GONE_TIMEOUT_MS, stepMs 
 
 // Stop a background session. **Idempotent, and that is not a relaxation** — "nothing to stop" is an
 // outcome with its own words. It returns after the RECORD is gone, not after the command returns.
-async function stop(ref, waitOptions = undefined) {
+async function stop(ref: string, waitOptions: { timeoutMs?: number; stepMs?: number } | undefined = undefined) {
   const read = readBgSessions();
   if (read.missing) return { ok: false, stopped: false, note: read.missing };
   const { list } = read;
@@ -737,12 +749,12 @@ async function stop(ref, waitOptions = undefined) {
   // What stands behind a record without an identifier is not visible from here, and there is
   // nothing to assert about its process: said is exactly what is known.
   if (!id) return { ok: true, stopped: false, note: `record «${ref}» has no identifier — nothing to stop with` };
-  const { r, missing } = runClaude(['stop', id]);
+  const { r, missing } = runClaude(['stop', id as string]);
   if (missing) return { ok: false, stopped: false, note: `claude stop ${id}: ${missing}` };
-  if (r.error) return { ok: false, stopped: false, note: `claude stop ${id}: ${r.error.message}` };
-  if (r.status !== 0) {
-    const said = `${r.stdout ?? ''}\n${r.stderr ?? ''}`.trim().split('\n')[0] ?? '';
-    return { ok: false, stopped: false, note: `claude stop ${id} exited with code ${r.status}${said ? `: ${said}` : ''}` };
+  if (r!.error) return { ok: false, stopped: false, note: `claude stop ${id}: ${r!.error.message}` };
+  if (r!.status !== 0) {
+    const said = `${r!.stdout ?? ''}\n${r!.stderr ?? ''}`.trim().split('\n')[0] ?? '';
+    return { ok: false, stopped: false, note: `claude stop ${id} exited with code ${r!.status}${said ? `: ${said}` : ''}` };
   }
   // The list changes after `stop` — without a reset the next reader would see a
   // closed session as alive.
@@ -823,7 +835,7 @@ export const claudeDriver = {
   inspect,
   forgetSessions: resetBgSessionsCache,
   stop,
-  activate: (target, notification) => knockSocket(target.endpoint, renderNotification(notification)),
+  activate: (target: ActivationTarget, notification: Notification) => knockSocket(target.endpoint, renderNotification(notification)),
   renderNotification,
   stallRoute,
   registerWake,
@@ -834,4 +846,4 @@ export const claudeDriver = {
   sessionEnv,
   optionRefusal,
   shadowedUserServers,
-};
+} satisfies LibDriver;

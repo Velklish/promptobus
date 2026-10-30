@@ -7,6 +7,7 @@ const PRODUCTION = {
   'lib/fuzzy.js': ['integration', 'model-routing'],
   'lib/fuzzy.ts': ['integration', 'model-routing'],
   'lib/model-routing/calibrate.js': ['integration', 'model-routing'],
+  'lib/model-routing/calibrate.ts': ['integration', 'model-routing'],
   'lib/model-routing/render.js': ['integration', 'model-routing'],
   'lib/model-routing/render.ts': ['integration', 'model-routing'],
 };

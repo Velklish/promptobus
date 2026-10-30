@@ -1,8 +1,8 @@
 import type { MessageV1 } from '../dist/index.js';
 import { KNOCK_TEXT_MAX } from './contract.js';
 
-export interface PreviewMessage extends Partial<Pick<MessageV1, 'type' | 'ts' | 'body' | 'artifact'>> {
-  from?: string; bus?: boolean;
+export interface PreviewMessage extends Partial<Pick<MessageV1, 'type' | 'ts' | 'body'>> {
+  from?: string; bus?: boolean; artifact?: string | null;
 }
 
 // Shared preview arithmetic for driver-specific notification frames.

@@ -22,6 +22,13 @@ import { readRecordAt, sayForeignWrite as commonSayForeignWrite, sessionEnvFor, 
 import { bindBeforeLaunch } from './liftoff.js';
 import { judgeHookRecords, TRUST_CONFIG, trustRule } from './project-hooks.js';
 
+import type { DriverPhrases, DriverDenyTool, LaunchFile, Notification, NotificationMessage, SessionView, WakeProbe, ActivationTarget, ActivateResult } from '../dist/index.js';
+import type { LibDriver, LibLaunchPlan, LibPrepareContext, LibSpawnContext, LibSpawnResult, LibStall, LibMcpConfig, LibMcpServer, LibToolBin } from './driver-runtime.js';
+
+type CursorSessionRecord = NonNullable<ReturnType<typeof readSession>>;
+type CursorPrepareContext = LibPrepareContext;
+interface UtilityResult { ok: boolean; reason?: string; version?: string | null }
+
 // Cursor harness driver: everything the mechanism knows about Cursor. The registry and the tmux
 // talk sit one floor below ([cursor-persist.js](cursor-persist.js)); every number below was measured.
 
@@ -35,12 +42,11 @@ export const CURSOR_TOOL = 'cursor-agent';
 /** Project skills directory relative to project root: `.cursor/skills` —
  * [05-drivers.md § Cursor](../docs/reference/05-drivers.md#cursor-project-skills-location). */
 export const CURSOR_SKILLS_REL = path.join('.cursor', 'skills');
-const CURSOR_INSTALL = "curl https://cursor.com/install -fsS | bash (Windows: irm 'https://cursor.com/install?win32=true' | iex)";
 const CURSOR_BINS = ['cursor-agent', 'agent', 'cursor'];
 const SKILL_FILE = 'SKILL.md';
 const TMUX_MIN_VERSION = '3.0';
 
-function skillDirs(dir) {
+function skillDirs(dir: string) {
   let entries;
   try {
     entries = readdirSync(dir, { withFileTypes: true });
@@ -53,7 +59,7 @@ function skillDirs(dir) {
   });
 }
 
-function cursorMcpDuplicates(canonServerNames) {
+function cursorMcpDuplicates(canonServerNames: string[]) {
   const file = path.join(homedir(), '.cursor', 'mcp.json');
   if (!existsSync(file)) return [];
   let mine;
@@ -77,7 +83,7 @@ export function findCursorBin({ env = process.env, home = homedir() } = {}) {
   return null;
 }
 
-function cursorVersion(bin, env) {
+function cursorVersion(bin: string, env: NodeJS.ProcessEnv) {
   const result = run(bin, ['--version'], {
     encoding: 'utf8',
     env,
@@ -88,7 +94,7 @@ function cursorVersion(bin, env) {
   return output.trim() || null;
 }
 
-export function normalizeTool(tool, { env = process.env } = {}) {
+export function normalizeTool(tool: LibToolBin, { env = process.env } = {}) {
   if (!tool?.bin || tool.ok === false) return tool;
   let bin = null;
   try {
@@ -167,13 +173,13 @@ const CURSOR_PROMPT_TAIL = `
 export const PHRASES = {
   sessions: 'agent persist list',
   unreadable: 'tmux persist-session list is unreadable',
-  enter: (id) => `agent persist attach ${id}`,
-  stop: (id) => `agent persist stop ${id}`,
-  logs: (id) => `session tape — on its screen: agent persist attach ${id}`
+  enter: (id: string | null) => `agent persist attach ${id}`,
+  stop: (id: string | null) => `agent persist stop ${id}`,
+  logs: (id: string | null) => `session tape — on its screen: agent persist attach ${id}`
     + ` (the chat transcript lives in ~/.cursor/projects/<participant-directory-slug>/agent-transcripts/)`,
   // Cursor MCP tool names are namespaced with a HYPHEN — `promptobus-promptobus_send`. Taken from a
   // live run, and the participant prompt must name them that way or it looks for a tool it lacks.
-  tool: (server, name) => `${server}-${name}`,
+  tool: (server: string, name: string) => `${server}-${name}`,
   mcpBoundary: '**MCP tools of external systems are read-only under a prompt-only guard; this harness does not mechanically deny MCP writes.**',
   reviewerCommands: {
     isolation: 'File edits and command starts are disabled for you by the mechanism.',
@@ -186,7 +192,7 @@ export const PHRASES = {
   // say so, or a person waits in its output for a name that will never be there.
   naming: 'the persist session name is chosen by agent itself — cursor-<directory-slug>-<path-hash>-<number>-<rand6>; '
     + 'the mechanism learns it after start, together with the chat id, and prints it on lift',
-};
+} satisfies DriverPhrases;
 
 // --- harness-neutral context into configs and argv --------------------------------
 // Argv and config assembly are halves of ONE `prepare`; the caller does not build it in pieces.
@@ -199,7 +205,7 @@ const CURSOR_DIR = '.cursor';
 
 /** The Cursor skills canon at the workspace root — the only source, not `~/.cursor`: a person's
  * personal copies are not addressed to the participant. No directory means `null`. */
-export function workspaceSkillsDir(root) {
+export function workspaceSkillsDir(root: string | null | undefined) {
   if (!root) return null;
   const src = path.join(root, CURSOR_SKILLS_REL);
   try {
@@ -210,11 +216,11 @@ export function workspaceSkillsDir(root) {
   return null;
 }
 
-function skillsCount(dir) {
+function skillsCount(dir: string) {
   return skillDirs(dir).filter((s) => s.isSkill).length;
 }
 
-export function skillsNoteOf({ src, dest, count }) {
+export function skillsNoteOf({ src, dest, count }: { src: string | null; dest: string; count: number }) {
   if (!src) {
     return 'not attached — the workspace root has no .cursor/skills (Cursor sync render did not lay it out)';
   }
@@ -223,18 +229,18 @@ export function skillsNoteOf({ src, dest, count }) {
 
 /** Reviewer sandbox: Cursor reads permissions, MCP and hooks from the WORKING directory, so a
  * reviewer in the clone would write three files into a foreign tree. Deterministic, not `mkdtemp`. */
-export function reviewSandbox(settingsPath) {
+export function reviewSandbox(settingsPath: unknown) {
   return `${String(settingsPath).replace(/\.settings\.json$/, '')}.cursor-sandbox`;
 }
 
 // Participant MCP config. The form matches Claude Code byte for byte; the PLACE differs — Cursor
 // reads `.cursor/mcp.json` only inside a git repository, which `git init` of the sandbox supplies.
-function mcpConfig({ servers }, ref, env = process.env) {
-  const mcpServers = { ...servers };
+function mcpConfig({ servers }: LibPrepareContext['mcp'], ref: string | null, env = process.env): LibMcpConfig {
+  const mcpServers = { ...servers } as Record<string, LibMcpServer>;
   const bus = mcpServers[PROMPTOBUS_SERVER];
   // Cursor replaces this child's environment, so the session-record pointer and
   // warden controls travel explicitly rather than relying on launch inheritance.
-  const extra = ref ? { [SESSION_ENV_VAR]: sessionFile(ref, env) } : {};
+  const extra: NodeJS.ProcessEnv = ref ? { [SESSION_ENV_VAR]: sessionFile(ref, env) } : {};
   for (const name of WARDEN_ENV_VARS) if (process.env[name]) extra[name] = process.env[name];
   if (bus && Object.keys(extra).length) {
     mcpServers[PROMPTOBUS_SERVER] = { ...bus, env: { ...bus.env, ...extra } };
@@ -244,7 +250,7 @@ function mcpConfig({ servers }, ref, env = process.env) {
 
 // Participant permissions, written ALWAYS — Cursor searches this file up the tree, and without its
 // own a participant would inherit a foreign directory's. `allow` is required by the schema.
-function cliConfig(denyTools) {
+function cliConfig(denyTools: readonly DriverDenyTool[] | null | undefined) {
   return { permissions: { allow: [], deny: [...(denyTools ?? [])] } };
 }
 
@@ -273,14 +279,14 @@ const GUARD_HOOK_EVENT = 'stop';
 // Hooks file format version — the one that stands in the live spike configs.
 const HOOKS_VERSION = 1;
 
-function hooksFile(guardCommand, accepted = []) {
-  const hooks = { [GUARD_HOOK_EVENT]: [{ command: guardCommand }] };
+function hooksFile(guardCommand: string | undefined, accepted: { key: string; command: string }[] = []) {
+  const hooks: Record<string, { command: string | undefined }[]> = { [GUARD_HOOK_EVENT]: [{ command: guardCommand }] };
   for (const { key, command } of accepted) (hooks[key] ??= []).push({ command });
   return { version: HOOKS_VERSION, hooks };
 }
 
 // The project's version of a tracked file, from the index: a relift reads past its own earlier write.
-function trackedText(dir, rel) {
+function trackedText(dir: string, rel: string) {
   const shown = run('git', ['-C', dir, 'show', `:./${rel.split(path.sep).join('/')}`], {
     encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
   });
@@ -291,7 +297,7 @@ function trackedText(dir, rel) {
  * overrides cwd and the chat hash; `--approve-mcps` never — it approves every server up the tree. */
 function spawnArgv({
   cwd, model, effort = null, permissionMode = null, addDirs = [], prompt,
-}) {
+}: Pick<CursorPrepareContext, 'cwd' | 'model' | 'effort' | 'permissionMode' | 'addDirs' | 'prompt'>) {
   const mode = permissionMode === 'plan' || permissionMode === 'ask' ? permissionMode : null;
   return [
     'persist',
@@ -312,7 +318,7 @@ function spawnArgv({
 function prepare({
   mcp, prompt, model, effort = null, permissionMode = null, addDirs = [], settingsPath,
   cwd, guardCommand, denyTools = null, root = null, skillsRoot = root, selectedContext = null, ref = null, role = WORKER, env = process.env,
-}) {
+}: Omit<CursorPrepareContext, 'ref'> & { ref?: string | null }): LibLaunchPlan {
   const readOnly = role === REVIEWER || (role !== APPROVER && !!denyTools?.length);
   const isolated = readOnly;
   const configDir = isolated ? reviewSandbox(settingsPath) : cwd;
@@ -321,7 +327,7 @@ function prepare({
   const settings = cliConfig(denyTools);
   const hooksPath = path.join(configDir, CURSOR_DIR, 'hooks.json');
   const tracked = isolated ? null : trackedText(configDir, path.join(CURSOR_DIR, 'hooks.json'));
-  const project = tracked === null ? { accepted: [], refused: [] } : judgeHookRecords(tracked, configDir, CURSOR, {
+  const project: Omit<ReturnType<typeof judgeHookRecords>, 'broken'> & { broken?: string | null } = tracked === null ? { accepted: [], refused: [] } : judgeHookRecords(tracked, configDir, CURSOR, {
     declaration: trackedText(configDir, TRUST_CONFIG), guard: guardCommand,
   });
   if (project.refused.length) {
@@ -330,7 +336,7 @@ function prepare({
   }
   const hooks = hooksFile(guardCommand, project.accepted);
   const dirs = isolated ? [...new Set([cwd, ...addDirs])] : [...addDirs];
-  const files = [
+  const files: LaunchFile[] = [
     { path: path.join(configDir, CURSOR_DIR, 'mcp.json'), text: `${JSON.stringify(cfg, null, 2)}\n`, secret: true },
     { path: path.join(configDir, CURSOR_DIR, 'cli.json'), text: `${JSON.stringify(settings, null, 2)}\n`, secret: false },
     {
@@ -364,7 +370,7 @@ function prepare({
 const sessionEnv = sessionEnvFor(SESSION_ENV_DROP);
 
 /** Refuse without the utility needed by a [persist session](../docs/reference/05-drivers.md#cursor-the-persist-session). */
-function optionRefusal(_options, _tool, { util = resolveTmux } = {}) {
+function optionRefusal(_options: unknown, _tool: unknown, { util = resolveTmux }: { util?: () => UtilityResult } = {}) {
   const tmux = util();
   if (!tmux.ok) return `${tmux.reason} Without it a Cursor participant does not lift at all: the session is a tmux pane.`;
   return null;
@@ -375,7 +381,7 @@ const TMUX_UTIL = 'tmux';
 
 // Names of delivered servers shadowed by a person's PERSONAL `~/.cursor/mcp.json`. Nothing can
 // extinguish same-named entries there: project and home merge, the nearer wins, neighbours remain.
-function shadowedUserServers(names) {
+function shadowedUserServers(names: string[]) {
   return cursorMcpDuplicates(names);
 }
 
@@ -383,14 +389,14 @@ function shadowedUserServers(names) {
 
 /** Contact point of a Cursor participant: not a socket but "the session is alive and took a turn",
  * handed off by the HOOK at turn end. `socket` carries the ended-turn count, and this call owns it. */
-export function registerWake(home, task, addr, env = process.env, session = null) {
+export function registerWake(home: string, task: string, addr: string, env = process.env, session: string | null = null) {
   try {
     // The caller names the session: without it this is not the end of a turn. The participant bus
     // server calls the same operation at the START of a turn and has nothing to hand off.
     if (!session) return null;
     const file = String(env?.[SESSION_ENV_VAR] ?? '').trim();
     if (!file) return null;
-    const record = readRecordAt(file);
+    const record = readRecordAt<CursorSessionRecord>(file);
     if (!record?.ref) return null;
     // Address-ownership gate: the address is bound to a session, and a foreign one
     // writes nothing for it.
@@ -414,17 +420,17 @@ export { sayForeignWrite };
 
 /** Channel smoke for `doctor`. The channel is a live persist session, handed off by the PARTICIPANT
  * session; the smoke does no real injection — that would cost a turn in somebody's chat. */
-export function checkWake(env = process.env) {
+export function checkWake(env = process.env): WakeProbe {
   const file = String(env?.[SESSION_ENV_VAR] ?? '').trim();
   if (!file) return { endpoint: null, ok: false, error: `${SESSION_ENV_VAR} is empty — this session is not a Cursor participant` };
-  const record = readRecordAt(file);
+  const record = readRecordAt<CursorSessionRecord>(file);
   if (!record) return { endpoint: file, ok: false, error: 'no session record at this path' };
   if (!record.sessionName) return { endpoint: file, ok: false, error: 'persist session is not named yet — lift is not confirmed' };
   let live;
   try {
     live = findSession(record.sessionName, { server: record.tmuxServer || CURSOR_TMUX_SERVER, env });
   } catch (e) {
-    return { endpoint: file, ok: false, error: e.message };
+    return { endpoint: file, ok: false, error: (e as Error).message };
   }
   return {
     endpoint: file,
@@ -438,20 +444,20 @@ export function checkWake(env = process.env) {
 
 // Message frame — one for both notifications. The text rides in as a separate user message, so it
 // is self-contained: it names the task, the address, and what to do.
-export function orderBody(task, addr, unread, msgs = []) {
+export function orderBody(task: string, addr: string, unread: number, msgs: NotificationMessage[] = []) {
   const mailbox = PHRASES.tool(PROMPTOBUS_SERVER, 'promptobus_mailbox');
   return commonOrderBody(task, addr, unread, msgs, {
     fetchLine: `Fetch the mailbox with \`${mailbox}\`: only that tool marks messages read. `,
   });
 }
 
-export function renderNotification(n) {
+export function renderNotification(n: Notification) {
   return orderBody(n.task, n.address, n.unread, n.messages ?? []);
 }
 
 /** Wake a participant by injection into its live session. Three refusals, all honest outcomes. There
  * is no "turn is running" refusal: an injection queues in the TUI, and delivery to a queue is delivery. */
-export async function activate(target, notification) {
+export async function activate(target: ActivationTarget, notification: Notification): Promise<ActivateResult> {
   const ref = target?.ref;
   if (!ref) return { ok: false, error: 'the participant record has no session reference — nothing to wake' };
   const record = readSession(ref);
@@ -477,7 +483,7 @@ export async function activate(target, notification) {
 
 /** State of one session for a snapshot. **The `stale` state appeared in Cursor**: a record with no
  * session on the server is lawful — stopped from outside, or a reboot, since state lives in `/tmp`. */
-function inspect(ref) {
+function inspect(ref: string): SessionView {
   const record = readSession(ref);
   if (!record) {
     return {
@@ -582,7 +588,7 @@ function inspect(ref) {
 
 /** What a person should do with this stall, in Cursor commands; the shared line text stays with the
  * adapter. Attach is real here, and its cost is named: tmux shrinks to the narrowest client. */
-export function stallRoute({ kind, address, repoAbs, task, reviewCommand, doneCommand }, id) {
+export function stallRoute({ kind, address, repoAbs, task: _task, reviewCommand, doneCommand }: LibStall, id: string | null) {
   const where = repoAbs ? `cd ${repoAbs} && ` : '';
   const review = reviewCommand;
   const done = doneCommand;
@@ -627,12 +633,12 @@ export function stallRoute({ kind, address, repoAbs, task, reviewCommand, doneCo
 
 /** Participant lift: a registry record and a live persist session. The binary arrives as a resolved
  * path; the session name is learned AFTER start, and ours is found by hash, chat id and creation time. */
-async function spawn(plan, {
+async function spawn(plan: LibLaunchPlan, {
   tool, ref, role, cwd, env, host, home: runtimeHome, task: runtimeTask, address: runtimeAddress,
   launchFailNote = '', deadNote = '', persist, awaitOptions,
-}) {
+}: LibSpawnContext): Promise<LibSpawnResult<Awaited<ReturnType<typeof liftSession>>>> {
   const registry = registryOf(host);
-  const who = (liftWords(registry, role) ?? liftWords(registry, WORKER)).acc;
+  const who = (liftWords(registry, role) ?? liftWords(registry, WORKER))!.acc;
   const bin = tool.bin;
   const provenance = launchProvenance(host, tool);
   // The working directory is taken from the plan, not the caller's cwd: for a reviewer that is the
@@ -702,7 +708,7 @@ async function spawn(plan, {
     dropSession(ref, env);
     fail(`${bin}: persist session did not lift (${lifted.error}) — nothing to lift ${who} with.${launchFailNote}${deadNote}`);
   }
-  const { name, chatId, panePid } = lifted.session;
+  const { name, chatId, panePid } = lifted.session!;
   patchSession(ref, { sessionName: name, chatId, panePid }, env);
   // The record carries the persist session NAME for a person — `attach` and `stop` use it. The full
   // id is the chat: the turn-end hook brings the same one, and address ownership checks against it.
@@ -712,7 +718,7 @@ async function spawn(plan, {
 
 /** Binary path as of NOW. Lift pins the version by resolving the symlink, but the binary updates
  * itself between turns and the old versioned directory vanishes, so stop resolves afresh. */
-export function liveBin(recorded, { env = process.env } = {}) {
+export function liveBin(recorded: string | null | undefined, { env = process.env } = {}) {
   // Search WITHOUT a version probe: `resolveToolBin` asks `--version` with a 15 s ceiling, and
   // Stopping needs the executable without repeating the launch-time telemetry probe.
   const found = findCursorBin({ env });
@@ -726,20 +732,20 @@ export function liveBin(recorded, { env = process.env } = {}) {
 
 // What is said about lift after success. This is not a refuse: the participant is
 // lifted, and can be found by persist-session name and by chat id.
-function saidLiftoff({ output }) {
+function saidLiftoff({ output }: Pick<LibSpawnResult, 'output'>) {
   if (output) info(output);
 }
 
 // Empty git repository of the sandbox: without it `.cursor/mcp.json` is not read at all, and the
 // reviewer would be left without the bus. No commits — the condition is a repository, not a history.
-function initGit(dir) {
+function initGit(dir: string) {
   if (existsSync(path.join(dir, '.git'))) return;
   run('git', ['init', '-q', dir], { encoding: 'utf8' });
 }
 
 // Pointwise approval of our own server; the record lands under the directory the call is made from,
 // hence the participant directory. A refusal does not fail the lift — the missing bus calls will say.
-function approveOwnServer(bin, dir, env) {
+function approveOwnServer(bin: string, dir: string, env: NodeJS.ProcessEnv) {
   run(bin, ['mcp', 'enable', PROMPTOBUS_SERVER], { cwd: dir, env, encoding: 'utf8' });
 }
 
@@ -747,7 +753,7 @@ function approveOwnServer(bin, dir, env) {
 
 /** Stop a session. **It returns AFTER the harness no longer HAS the session.** Reap covers two kinds
  * of process: tool children of a running turn, and the `worker-server` orphan that outlives a normal end. */
-async function stop(ref, waitOptions = undefined) {
+async function stop(ref: string, waitOptions: Parameters<typeof stopSession>[1] = undefined) {
   const record = readSession(ref);
   if (!record) return { ok: true, stopped: false, note: `no session «${ref}» in the Cursor registry` };
   const id = record.sessionName ?? record.chatId ?? ref;
@@ -840,4 +846,4 @@ export const cursorDriver = {
   sessionEnv,
   optionRefusal,
   shadowedUserServers,
-};
+} satisfies LibDriver;

@@ -29,7 +29,7 @@ test('one subsystem selects its group and reports omitted groups and files', () 
   assert.equal(plan.omittedFiles.length, 6);
 });
 
-for (const rel of ['lib/model-routing/calibrate.js', 'lib/fuzzy.ts', 'lib/model-routing/render.ts']) {
+for (const rel of ['lib/model-routing/calibrate.js', 'lib/model-routing/calibrate.ts', 'lib/fuzzy.ts', 'lib/model-routing/render.ts']) {
   test(`known production dependency ${rel} selects routing and CLI integration together`, () => {
     const plan = select([rel]);
     assert.equal(plan.full, false);

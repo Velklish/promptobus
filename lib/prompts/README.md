@@ -8,7 +8,8 @@ retain state reads, snapshot construction, permission and launch planning. They
 supply task context and concrete tool, environment, continuation and publication
 bindings. `renderReviewProcedure` preserves the common finding-cost definitions.
 
-`bb.js` binds those contracts to BB role skills. Each rendered role states that
+`bb.ts` compiles to `bb.js` and binds those contracts to BB role skills.
+Each rendered role states that
 evidence of a check is the command, its exit code and the gate count, and that
 a bespoke verification harness sits outside the package's own evidence recipe.
 `renderBbInstructionSkill` uses
@@ -38,7 +39,7 @@ root preamble and the measured reviewer boundary. `promptRulesFor` distinguishes
 executable roles from the execution-free reviewer; `promptRules` remains the
 common Codex tail for existing consumers. Caller fallbacks preserve drivers that
 only provide the existing tail. Claude, Cursor and OpenCode instructions remain
-in their own `lib/driver-*.js` files.
+in their own `lib/driver-*.ts` sources.
 
 Codex instructions reuse attached persistent MCP servers, check native identity,
 task and mailbox routes, and retain event-driven continuation. The attached bus

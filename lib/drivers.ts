@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { APPROVER, createRegistry, driverFor, hasFeature, harnessOf, holdsSession, snapshotSessions } from '../dist/index.js';
+import { APPROVER, hasFeature, harnessOf, holdsSession, snapshotSessions } from '../dist/index.js';
 import { bindSessionIdentity, canonicalPath, participantOf, readTask } from './store.js';
 import { readRecordAt } from './driver-common.js';
 import { CLAUDE, CLAUDE_SKILLS_REL, REPORTER_DENY, claudeDriver } from './driver-claude.js';
@@ -7,6 +7,13 @@ import { CURSOR, CURSOR_SKILLS_REL, cursorDriver } from './driver-cursor.js';
 import { CODEX, CODEX_SKILLS_REL, codexDriver } from './driver-codex.js';
 import { OPENCODE, opencodeDriver } from './driver-opencode.js';
 import { verdict } from './model-routing/adapter-common.js';
+import { createLibRegistry as createRegistry, libDriverFor as driverFor, coreDriver, coreRegistry } from './driver-runtime.js';
+import type { LibDriver } from './driver-runtime.js';
+import type { ActivationTarget, ActivateResult, Notification, ParticipantV1, PromptobusHost, StalledParticipant } from '../dist/index.js';
+
+interface IdentityScope { home: string; task: string | null; address: string | null }
+interface IdentityCandidate { harness: string; variable: string | null; id: string; record?: string }
+interface IdentityRecord { home?: unknown; task?: unknown; address?: unknown; [key: string]: unknown }
 
 // Driver registry of this CLI — the `harness → driver` map it passes into the state machine
 // explicitly, and the only door from the mechanism to drivers. Four of them today.
@@ -23,14 +30,14 @@ export { REPORTER_DENY };
 
 /** Availability adapter of a harness — the one door from the routing preflight to drivers.
  * No adapter means `unknown` / `probe_failed`, which the resolver penalises, never blocks. */
-export function adapterOf(harness) {
+export function adapterOf(harness: string | null | undefined) {
   const driver = driverByHarness(harness);
   return driver.availability ?? standInAdapter(driver);
 }
 
 /** The adapter a driver gets when it declares none: `unknown` / `probe_failed`, never a
  * throw. Exported so the suite pins this stand-in rather than whichever driver lacks one. */
-export function standInAdapter(driver) {
+export function standInAdapter(driver: Pick<LibDriver, 'id'>) {
   return {
     probe: () => verdict('unknown', 'probe_failed', `no availability adapter for ${driver.id}`),
   };
@@ -38,26 +45,26 @@ export function standInAdapter(driver) {
 
 /** Snapshot of participant sessions — input to the state machine. Taken once per heartbeat:
  * a driver reply is an external harness poll, and the loop runs once a second. */
-export function snapshotOf(participants) {
-  return snapshotSessions(participants, REGISTRY);
+export function snapshotOf(participants: ParticipantV1[] | null | undefined) {
+  return snapshotSessions(participants, coreRegistry(REGISTRY));
 }
 
 /** Driver of a participant record, by the harness that record declared. A former-CLI record
  * carries no field and gets `fallback`; a non-empty unknown name refuses. */
-export function driverOf(participant) {
-  return driverFor(REGISTRY, harnessOf(participant, REGISTRY));
+export function driverOf(participant: ParticipantV1 | null | undefined) {
+  return driverFor(REGISTRY, harnessOf(participant, coreRegistry(REGISTRY)));
 }
 
 /** Lift driver: the harness a command uses to spawn. No name — the map `fallback`; a name —
  * the one a person gave with `--harness`. An unknown one refuses before any write to disk. */
-export function liftDriver(harness = null) {
+export function liftDriver(harness: string | null = null) {
   const named = String(harness ?? '').trim();
   return driverFor(REGISTRY, named || REGISTRY.fallback);
 }
 
 /** Driver of a record; on a FOREIGN harness — the lift driver. A door for where refusing
  * costs more than imprecision: it gives WORDS, and everything that acts uses `driverOf`. */
-export function driverOrLift(participant) {
+export function driverOrLift(participant: ParticipantV1 | null | undefined) {
   try {
     return driverOf(participant);
   } catch {
@@ -67,24 +74,26 @@ export function driverOrLift(participant) {
 
 /** Driver by the harness name from a stall report. No field means `fallback`: the report is
  * built from a participant record, and a former-CLI record has no harness. */
-export function driverByHarness(harness) {
+export function driverByHarness(harness: typeof CODEX): typeof codexDriver;
+export function driverByHarness(harness: string | null | undefined): LibDriver;
+export function driverByHarness(harness: string | null | undefined): LibDriver {
   return driverFor(REGISTRY, harness || REGISTRY.fallback);
 }
 
 /** Harnesses eligible to route a lift for the role — approver omits harnesses without `approverLift`. */
-export function eligibleHarnessesForRole(host, role) {
+export function eligibleHarnessesForRole(host: Pick<PromptobusHost, 'declaredTools'>, role: string) {
   const declared = host.declaredTools();
   if (role !== APPROVER) return declared;
-  return declared.filter((h) => hasFeature(driverByHarness(h), 'approverLift'));
+  return declared.filter((h) => hasFeature(coreDriver(driverByHarness(h)), 'approverLift'));
 }
 
 /** @deprecated use eligibleHarnessesForRole — name kept for callers that mean the eligible set */
 export const declaredHarnessesForRole = eligibleHarnessesForRole;
 
 /** Refusal when a declared harness cannot lift the role — explicit `--harness` and routing diagnostics. */
-export function roleHarnessRefusal(driver, role) {
+export function roleHarnessRefusal(driver: LibDriver, role: string) {
   if (role !== APPROVER) return null;
-  if (hasFeature(driver, 'approverLift')) return null;
+  if (hasFeature(coreDriver(driver), 'approverLift')) return null;
   return `harness "${driver.id}" cannot lift an approver — this harness does not declare approver lift.`;
 }
 
@@ -96,14 +105,14 @@ export function forgetSessions() {
 
 /** Registry with substituted delivery — a suite seam. Another registry rather than a
  * module variable: the suite runs loops in parallel, and a shared one would mix them. */
-export function knockRegistry(knock) {
+export function knockRegistry(knock: ((endpoint: ActivationTarget['endpoint'], body: string) => ActivateResult | Promise<ActivateResult>) | null | undefined) {
   if (!knock) return REGISTRY;
   const drivers = Object.fromEntries(Object.entries(REGISTRY.drivers).map(([harness, driver]) => [
     harness,
     // Substituted ONLY where delivery is truly a socket: elsewhere `endpoint` points at a
     // turn-registry record. The flag asked is the declared one, not one inferred.
     driver.options.knockChannel === 'socket'
-      ? { ...driver, activate: (target, notification) => knock(target.endpoint, driver.renderNotification(notification)) }
+      ? { ...driver, activate: (target: ActivationTarget, notification: Notification) => knock(target.endpoint, driver.renderNotification!(notification)) }
       : driver,
   ]));
   return { ...REGISTRY, drivers };
@@ -111,14 +120,14 @@ export function knockRegistry(knock) {
 
 /** Stall route — from the driver of the participant whose state was just read; the shared
  * line text stays with [stalls.js](stalls.js), so all three surfaces advise the same thing. */
-export function stallRouteOf(stalled, task) {
+export function stallRouteOf(stalled: StalledParticipant, task: string) {
   const driver = driverByHarness(stalled.harness);
-  return driver.stallRoute({ ...stalled, task }, stalled.id ?? stalled.ref, stalled.ref);
+  return driver.stallRoute!({ ...stalled, task }, stalled.id ?? stalled.ref, stalled.ref);
 }
 
 /** Every declared harness identity the environment carries, with the driver that declared
  * the variable. More than one answer is not a tie to break — 02-host.md § Session identity. */
-export function identityCandidates(env = process.env) {
+export function identityCandidates(env = process.env): IdentityCandidate[] {
   return Object.entries(REGISTRY.drivers ?? {}).flatMap(([harness, driver]) => {
     const variable = driver?.options?.identityVar ?? null;
     const id = variable ? String(env?.[variable] ?? '').trim() : '';
@@ -128,7 +137,7 @@ export function identityCandidates(env = process.env) {
 
 /** Session records named by an MCP child, after the record proves the same bus identity: a
  * readable record is not enough — another task or address is another participant. */
-export function mcpIdentityCandidates(env = process.env, scope = null) {
+export function mcpIdentityCandidates(env = process.env, scope: IdentityScope | null = null): IdentityCandidate[] {
   if (!scope?.home || !scope?.task || !scope?.address) return [];
   const scopeHome = canonicalPath(scope.home);
   return Object.entries(REGISTRY.drivers ?? {}).flatMap(([harness, driver]) => {
@@ -136,7 +145,7 @@ export function mcpIdentityCandidates(env = process.env, scope = null) {
     const variable = proof?.recordVar ?? null;
     const file = variable ? String(env?.[variable] ?? '').trim() : '';
     if (!file || !path.isAbsolute(file)) return [];
-    const record = readRecordAt(file);
+    const record = readRecordAt<IdentityRecord>(file);
     const recordHome = typeof record?.home === 'string' ? record.home : '';
     if (!recordHome
       || canonicalPath(recordHome) !== scopeHome
@@ -145,7 +154,7 @@ export function mcpIdentityCandidates(env = process.env, scope = null) {
     const harnessId = proof?.idField ? String(record?.[proof.idField] ?? '').trim() : '';
     let participant = null;
     try {
-      participant = participantOf(readTask(scope.home, scope.task), scope.address);
+      participant = participantOf(readTask(scope.home, scope.task!), scope.address!);
     } catch {
       // A valid driver record does not itself create a task participant.
     }
@@ -156,22 +165,22 @@ export function mcpIdentityCandidates(env = process.env, scope = null) {
 
 /** What to repair when there is too much rather than too little: the contested reasons name
  * the variables themselves, and the move is to remove, never to add. */
-function namesToDrop(candidates) {
+function namesToDrop(candidates: IdentityCandidate[]) {
   return `clear this environment down to one of ${candidates.map((c) => c.variable).join(', ')} `
     + '— what is missing here is nothing, what is extra is a variable, and only removing it answers';
 }
 
 /** Who the session running this process is. `null` is an answer and not a silence, and
  * `reason` names which one — 02-host.md § Session identity. */
-export function resolveSessionIdentity(env = process.env, scope = null) {
+export function resolveSessionIdentity(env = process.env, scope: IdentityScope | null = null) {
   const candidates = identityCandidates(env);
   if (candidates.length === 1) {
-    return { id: candidates[0].id, ...candidates[0], candidates, reason: 'resolved', why: null };
+    return { id: candidates[0].id, ...candidates[0] as Partial<IdentityCandidate>, candidates, reason: 'resolved', why: null };
   }
   if (!candidates.length) {
     const records = mcpIdentityCandidates(env, scope);
     if (records.length === 1) {
-      return { id: records[0].id, ...records[0], candidates: records, reason: 'resolved', why: null };
+      return { id: records[0].id, ...records[0] as Partial<IdentityCandidate>, candidates: records, reason: 'resolved', why: null };
     }
     if (records.length > 1) {
       return {
