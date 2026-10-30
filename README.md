@@ -298,7 +298,7 @@ npm run docs-links:external  # http(s) documentation links; not a gate
 npm run schema-skew  # record schemas against the installed package; not a project gate
 ```
 
-`src/` is TypeScript compiled to `dist/`. Maintained TypeScript in `lib/` compiles beside its source to the existing JavaScript and declaration paths; the remaining runtime and drivers are JavaScript. The tarball contains runtime JavaScript and declarations without authored TypeScript. `skills/`, `schemas/` and `models/` ship in the tarball.
+Maintained runtime and CLI source is TypeScript: `src/` compiles to `dist/`, while `lib/` and `bin/` compile beside their source to the existing JavaScript and declaration paths. A fresh build restores executable permission on the standalone CLI. The tarball contains runtime JavaScript and declarations without authored TypeScript. `skills/`, `schemas/` and `models/` ship in the tarball.
 
 The local command reports selected and omitted groups and test files, builds the core and runtime,
 then uses the same isolated runner and propagates its exit code. Add `--list` to

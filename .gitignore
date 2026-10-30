@@ -158,6 +158,31 @@ coverage/
 /lib/model-routing/validate.js
 /lib/model-routing/validate.d.ts
 
+/lib/guard.js
+/lib/guard.d.ts
+/lib/send.js
+/lib/send.d.ts
+/lib/server.js
+/lib/server.d.ts
+/lib/spawn.js
+/lib/spawn.d.ts
+/lib/lead.js
+/lib/lead.d.ts
+/lib/report-channel.js
+/lib/report-channel.d.ts
+/lib/approver.js
+/lib/approver.d.ts
+/lib/bb-host.js
+/lib/bb-host.d.ts
+/lib/cli.js
+/lib/cli.d.ts
+/lib/report.js
+/lib/report.d.ts
+/lib/review.js
+/lib/review.d.ts
+/bin/promptobus.js
+/bin/promptobus.d.ts
+
 # Per-run gate records written beside the worktree during a bus task — task artifacts, not source.
 /gates-*-t*-*.json
 

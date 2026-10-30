@@ -3,19 +3,19 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { runPromptobus } from '../lib/cli.js';
 
-const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
+const pkg: { version: string } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const argv = process.argv.slice(2);
 const binPath = fileURLToPath(import.meta.url);
 
 function helpHost() {
   return {
-    kind: 'promptobus-host',
+    kind: 'promptobus-host' as const,
     commandName: 'promptobus',
     version: pkg.version,
   };
 }
 
-function isHelpish(args) {
+function isHelpish(args: readonly string[]) {
   const first = args[0];
   return first === undefined
     || first === 'help' || first === '--help' || first === '-h'

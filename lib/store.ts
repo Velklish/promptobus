@@ -30,7 +30,8 @@ interface IdentityScope { home: string; task: string | null; address: string | n
 interface IdentityAnswer { id: string | null; reason: string; why: string | null; candidates: unknown[] }
 type IdentityReader = (env: NodeJS.ProcessEnv, scope: IdentityScope | null) => IdentityAnswer | null;
 type AdapterRoutingDecision = { allow: true; deny?: never; reason?: never } | { deny: true; reason: string; allow?: never };
-type BindingCheck = (home: string, task: TaskV1, participant: ParticipantV1) => boolean;
+type ContactTask = Pick<TaskV1, 'id' | 'participants'> & Partial<Pick<TaskV1, 'parent' | 'adapter'>>;
+type BindingCheck = (home: string, task: ContactTask, participant: ParticipantV1) => boolean;
 type MessageHeader = Omit<MessageV1, 'body' | 'protocolVersion'> & { firstLine?: string };
 interface HeaderOptions { statusLine?: boolean }
 interface MessageRead { file: string; type: string; purpose: string | null }
@@ -169,7 +170,7 @@ const GOVERNANCE = Object.freeze(Object.fromEntries(
 ));
 const SIBLING_TYPES = Object.freeze(['question', 'answer', 'status', 'artifact']);
 
-function rootTeamlead(home: string, task: TaskV1, participant: ParticipantV1): participant is ParticipantV1 & { metadata: { childTask: string } } {
+function rootTeamlead(home: string, task: ContactTask, participant: ParticipantV1): participant is ParticipantV1 & { metadata: { childTask: string } } {
   if (task.parent !== undefined || participant.role !== GOVERNANCE.teamlead) return false;
   const childId = participant.metadata?.childTask;
   if (typeof childId !== 'string') return false;
@@ -235,16 +236,16 @@ export function ensureRootRecord(home: string, childId: string) {
   return address;
 }
 
-function linkedPeer(home: string, task: TaskV1, peer: ParticipantV1) {
+function linkedPeer(home: string, task: ContactTask, peer: ParticipantV1) {
   const otherId = peer.metadata?.peerTask;
   if (task.parent !== undefined || peer.role !== GOVERNANCE.peer || typeof otherId !== 'string') return false;
   try {
     const other = readTask(home, otherId);
     const mine = ownerOf(participantOf(task, ORCHESTRATOR));
     const theirs = ownerOf(participantOf(other, ORCHESTRATOR));
-    const back = participantOf(other, `${GOVERNANCE.peer}:${task.adapter.slug}`);
+    const back = participantOf(other, `${GOVERNANCE.peer}:${task.adapter!.slug}`);
     return other.parent === undefined && other.id !== task.id
-      && typeof task.adapter.slug === 'string' && typeof other.adapter.slug === 'string'
+      && typeof task.adapter!.slug === 'string' && typeof other.adapter.slug === 'string'
       && addressOf(peer) === `${GOVERNANCE.peer}:${other.adapter.slug}`
       && back?.metadata?.peerTask === task.id
       && mine && theirs && sessionIdOf(peer) === theirs && sessionIdOf(back) === mine;
@@ -253,7 +254,7 @@ function linkedPeer(home: string, task: TaskV1, peer: ParticipantV1) {
   }
 }
 
-function routingPolicy(home: string, sender: ParticipantV1, recipient: ParticipantV1, task: TaskV1, type: string, registry?: RoleRegistry, bound: BindingCheck = rootTeamlead): AdapterRoutingDecision {
+function routingPolicy(home: string, sender: ParticipantV1, recipient: ParticipantV1, task: ContactTask, type: string, registry?: RoleRegistry, bound: BindingCheck = rootTeamlead): AdapterRoutingDecision {
   const vertical = `route through the root orchestrator of task ${task.parent ?? task.id}`;
   if (sender.role === GOVERNANCE.reporter) {
     return { deny: true, reason: `the reporter reads and sends nothing — ${vertical}` };
@@ -493,7 +494,7 @@ export function participantDirs(home: string, taskId: string, address: string) {
 }
 
 /** Participant of the task by address; `null` — no such record in the journal. */
-export function participantOf(meta: TaskV1 | null | undefined, address: unknown) {
+export function participantOf<T extends { metadata?: Record<string, unknown> | null }>(meta: { participants?: readonly T[] } | null | undefined, address: unknown) {
   return (meta?.participants ?? []).find((p) => addressOf(p) === address) ?? null;
 }
 
@@ -909,7 +910,7 @@ function stampAssignment(home: string, id: string, address: string, afterId: str
 // written — two spawns from one pre-image would give "A · B" and "A · C", and the winner
 // would lose the foreign track. An empty list is not a reason to rename: a former-CLI
 // task has no `title` field.
-export function titleFromLines(meta: TaskV1 | null | undefined, registry: RoleRegistry = SHIPPED_REGISTRY) {
+export function titleFromLines(meta: { participants?: readonly { metadata: Record<string, unknown> }[] } | null | undefined, registry: RoleRegistry = SHIPPED_REGISTRY) {
   const owner = registry.entries.find((entry) => entry.kind === EDITS_TREE
     && (!registry.activeSteps || registry.activeSteps.includes(entry.name)));
   const lines = [...new Set((meta?.participants ?? [])
@@ -1186,7 +1187,7 @@ export function mailboxAddress(home: string, id: string, role: string, session: 
 }
 
 // The participant a recipient address reaches: two routes to one participant share this key.
-function reachedBy(home: string, meta: TaskV1, p: ParticipantV1) {
+function reachedBy(home: string, meta: Pick<TaskV1, 'id'>, p: ParticipantV1) {
   const stands = p.role === GOVERNANCE.root ? p.metadata?.rootTask : p.role === GOVERNANCE.peer ? p.metadata?.peerTask : null;
   if (typeof stands === 'string') return `${stands}/${ORCHESTRATOR}`;
   const { primary } = mailboxOf(home, meta.id, addressOf(p)!);
@@ -1195,7 +1196,7 @@ function reachedBy(home: string, meta: TaskV1, p: ParticipantV1) {
 
 /** Whom a participant may write: per participant reached, its addresses with the types the routing
  * policy allows and their tasks. `seats` state a lift's tasks and records before they are written. */
-export function contactsOf(home: string, id: string, addr: string, { registry = SHIPPED_REGISTRY, seats = null }: { registry?: RoleRegistry; seats?: { meta: TaskV1; sender: ParticipantV1 | null }[] | null } = {}) {
+export function contactsOf(home: string, id: string, addr: string, { registry = SHIPPED_REGISTRY, seats = null }: { registry?: RoleRegistry; seats?: { meta: ContactTask; sender: ParticipantV1 | null }[] | null } = {}) {
   const held = seats ?? mailboxOf(home, id, addr).slots.map((slot) => {
     const meta = readTask(home, slot.task);
     return { meta, sender: participantOf(meta, slot.address) };
@@ -1203,7 +1204,7 @@ export function contactsOf(home: string, id: string, addr: string, { registry = 
   const reached = new Map<string, ContactRoute[]>();
   for (const { meta, sender } of held) {
     if (!sender) continue;
-    const bound = seats ? (h: string, task: TaskV1, p: ParticipantV1) => p === sender || rootTeamlead(h, task, p) : rootTeamlead;
+    const bound = seats ? (h: string, task: ContactTask, p: ParticipantV1) => p === sender || rootTeamlead(h, task, p) : rootTeamlead;
     for (const recipient of meta.participants ?? []) {
       if (recipient.id === sender.id) continue;
       const types = MESSAGE_TYPES.filter((type) => routingPolicy(home, sender, recipient, meta, type, registry, bound).allow);

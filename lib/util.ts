@@ -27,7 +27,7 @@ const err = (code: number, s: string) => paintOn(process.stderr, code, s);
 export function ok(msg: unknown) { console.log(`${out(32, '✔')} ${msg}`); }
 export function info(msg: unknown) { console.log(`  ${msg}`); }
 export function warn(msg: unknown) { console.warn(`${err(33, '⚠')} ${msg}`); }
-export function fail(msg: unknown) { console.error(`${err(31, '✖')} ${msg}`); process.exit(1); }
+export function fail(msg: unknown): never { console.error(`${err(31, '✖')} ${msg}`); process.exit(1); }
 // Same level as fail, but without exit: diagnostics list EVERYTHING found.
 export function bad(msg: unknown) { console.error(`${err(31, '✖')} ${msg}`); }
 

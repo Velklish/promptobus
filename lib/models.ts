@@ -45,7 +45,7 @@ interface RoutingOptions extends Constraints {
   permitEmptyCandidates?: boolean; liftUnrated?: boolean;
 }
 type RoutingContext = NonNullable<Awaited<ReturnType<typeof routingContext>>>;
-interface LiftOptions extends RoutingOptions { taskMeta?: TaskV1 | null; address?: string | null }
+interface LiftOptions extends RoutingOptions { taskMeta?: Pick<TaskV1, 'participants'> | null; address?: string | null }
 interface CommandOutput { write: (text: string) => unknown }
 interface ModelsOptions extends RoutingOptions {
   noProbe?: boolean; json?: boolean; clearExhausted?: string | null; subcommand?: string | null;
@@ -368,7 +368,7 @@ export function routingMetadata(decision: ModelDecision, snapshot: SnapshotDocum
 
 /** Participants already up, as the resolver wants them. Three kinds are left out: the orchestrator
  * (no harness of its own), a record with no model, and a dismissed one. `exclude` is the restart. */
-export function liveTuples(taskMeta: TaskV1 | null | undefined, { exclude = null, registry = null }: { exclude?: string | null; registry?: RoleRegistry | null } = {}) {
+export function liveTuples(taskMeta: Pick<TaskV1, 'participants'> | null | undefined, { exclude = null, registry = null }: { exclude?: string | null; registry?: RoleRegistry | null } = {}) {
   return (taskMeta?.participants ?? [])
     .filter((p) => registry ? roleEntry(registry, p.role)?.routed : (ROUTED_ROLES as readonly string[]).includes(p.role))
     .filter((p) => p.metadata?.address !== exclude)

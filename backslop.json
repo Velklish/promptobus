@@ -12,7 +12,7 @@
   "probe": "npm run probe",
   "writer": {
     "style": [
-      "lib/cli.js"
+      "lib/cli.ts"
     ],
     "currency": [
       "skills/**"

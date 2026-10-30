@@ -43,6 +43,78 @@ import { participantSession } from './status.js';
 import { leaseRule } from './lease.js';
 import { assertNativeContextDriver, assertSelectedNativeFiles, contextRules, nativeContextMetadata, nativeContextPrompt, prepareNativeContext, writeSelectedNativeFile } from './native-participant-context.js';
 
+import type { PromptobusHost, TaskV1, ParticipantV1, RoleRegistry, LaunchFile, HostModuleNote, SessionSnapshot } from '../dist/index.js';
+import type { LibDriver, LibLaunchPlan, LibToolBin } from './driver-runtime.js';
+import type { CodexDriver } from './drivers.js';
+import type { CatalogTuple } from './model-routing/catalog.js';
+import type { ParticipantTools } from './prompts/roles.js';
+
+type Selection = ReturnType<typeof prepareNativeContext>;
+type Routed = NonNullable<Awaited<ReturnType<typeof routeLift>>>;
+type Contacts = ReturnType<typeof contactsOf>;
+type TaskIdentity = Pick<TaskV1, 'id'> & Partial<Pick<TaskV1, 'adapter'>>;
+type TaskName = TaskIdentity & Pick<TaskV1, 'title'>;
+interface SpawnMetadata {
+  childTask?: string; sessionId?: string; owner?: string; model?: string; effort?: string;
+  name?: string; repo?: string; worktreeName?: string; worktree?: string; baseSha?: string;
+  title?: string; nativeLaunchId?: string;
+}
+type SpawnParticipant = Omit<ParticipantV1, 'metadata'> & { metadata: ParticipantV1['metadata'] & SpawnMetadata };
+export interface SpawnOptions extends NonNullable<Parameters<typeof prepareNativeContext>[1]['options']> {
+  repo?: string; brief?: string; task?: string; newTask?: boolean; title?: string; taskTitle?: string;
+  worker?: string; slug?: string; harness?: string; model?: string; effort?: string; permissionMode?: string;
+  strategy?: string; allowPayg?: boolean; refresh?: boolean; dryRun?: boolean; teamlead?: boolean;
+  tool?: LibToolBin; sessions?: SessionSnapshot; adapterFor?: NonNullable<Parameters<typeof routeLift>[1]>['adapterFor'];
+  awaitOptions?: { tries?: number; delayMs?: number }; fault?: ((point: string) => void) | null;
+}
+export interface RepoSkillsState {
+  kind: 'planned' | 'invalid' | 'none' | 'ok' | 'failed' | 'kept'; argv: string[] | null;
+  why?: string | null; ms?: number; code?: number | null; logPath?: string | null;
+  dirt?: string[] | null; missingDeps?: 'refused' | 'absent' | null;
+}
+export interface WorktreeDepsState {
+  ran?: boolean; repeat?: boolean; planned?: boolean; kind?: string; ok?: boolean; ms?: number;
+  why?: string | null; command?: string; logPath?: string; ignored?: boolean | null;
+}
+interface McpConfigView { mcpServers?: Record<string, unknown> }
+interface McpNote { level: string; text: string }
+interface Retitle extends NonNullable<Parameters<typeof retitleTask>[2]> { preview?: string }
+interface NewTask extends Pick<TaskV1, 'id' | 'title' | 'status' | 'adapter' | 'participants'> {}
+export interface TeamleadPlan {
+  host: PromptobusHost; home: string; root: string; rootTask: string; childTask: string; rootMeta: TaskV1;
+  childMeta: TaskV1 | null; address: string; slug: string; title: string; brief: string;
+  former: SpawnParticipant | null; pendingRebind: boolean; selectedContext: Selection;
+  driver: LibDriver; name: string; model: string; effort: string | null; permissionMode: string | null;
+  rules: string[]; ruleDirs: string[]; pluginDir: string | null; env: NodeJS.ProcessEnv;
+  mcpConfigPath: string; settingsPath: string; guardCommand: string; mcpNote: McpNote;
+  launch: LibLaunchPlan; prompt: string; routing: Routed['metadata'] | null; decision: Routed['decision'] | null;
+  routingSkipped: string | null; briefStem: string; taskId: string;
+}
+export interface SpawnPlan {
+  host: PromptobusHost; home: string; taskId: string; createNew: NewTask | null; participant: ParticipantV1 | null;
+  slug: string; address: string; ownerName: string; nsPath: string; repoAbs: string; via: string;
+  brief: string; selectedContext: Selection; name: string; workTitle: string; wtName: string;
+  worktreePath: string; branch: string; base: string; model: string; effort: string | null;
+  permissionMode: string | null; settingsPath: string; guardCommand: string; pluginDir: string | null;
+  mcpConfigPath: string; mcpNote: McpNote; retitle: Retitle | null; titleKept: string | null; driver: LibDriver;
+  routing: Routed['metadata'] | null; decision: Routed['decision'] | null; routingSkipped: string | null;
+  launch: LibLaunchPlan; argv: string[]; mcpConfig: unknown; settings: unknown; rules: string[]; ruleDirs: string[];
+  module: HostModuleNote; prompt: string; env: NodeJS.ProcessEnv; repoSkills: RepoSkillsState;
+  worktreeDeps: WorktreeDepsState;
+  rebuild: (repoSkills: RepoSkillsState, worktreeDeps?: WorktreeDepsState) => { prompt: string; launch: LibLaunchPlan };
+  knownBaseSha: string | null; cwd: string;
+}
+interface NativeTeamleadState {
+  id?: unknown; harness?: unknown; mode?: unknown; sessionRef?: unknown;
+  metadata: { [K in 'sessionId' | 'owner' | 'childTask' | 'nativeLaunchId' | 'nativeStop' | 'nativeUnlaunched' | 'nativePendingLaunchId']?: unknown };
+}
+interface NativeTeamleadReservation { launchId: string; oldRoot: NativeTeamleadState; oldChild: NativeTeamleadState }
+interface TeamleadRebindIntent {
+  id: unknown; rootTask: unknown; address: unknown; childTask: string; sessionId: string;
+  oldRootSession?: unknown; oldChildSession?: unknown; rootParticipant: ParticipantV1; childParticipant: ParticipantV1;
+  native?: NativeTeamleadReservation;
+}
+
 // Spawn a worker: a background harness session in the target repository directory, with
 // Promptobus through its own MCP config. The bus config lives in the task store and
 // travels to the participant with the rest of the lift plan. Shared participant assembly
@@ -54,7 +126,7 @@ import { assertNativeContextDriver, assertSelectedNativeFiles, contextRules, nat
 // settings file in one `prepare`. Session registry and lift live there too, behind the
 // contract.
 
-export function readBrief(file) {
+export function readBrief(file: string | null | undefined) {
   if (!file) throw new GateError('needed --brief <file with the assignment text>');
   const abs = path.resolve(file);
   if (!existsSync(abs)) throw new GateError(`no assignment file: ${abs}`);
@@ -67,19 +139,19 @@ export function readBrief(file) {
 // personal file copies of same-named skills, which themselves travel as the plugin directory.
 export const SKILL_KEYS = ['skillOverrides'];
 
-export function participantSkillsRoot(rootOrHost, repoDir) {
+export function participantSkillsRoot(rootOrHost: unknown, repoDir?: string) {
   const host = hostOf(rootOrHost);
   return host.participantLayoutRoot ? host.participantLayoutRoot(repoDir ?? host.workspaceRoot()) : host.workspaceRoot();
 }
 
-export function skillSettings(rootOrHost, repoDir) {
+export function skillSettings(rootOrHost: unknown, repoDir?: string): Record<string, unknown> {
   const host = hostOf(rootOrHost);
   const layout = participantSkillsRoot(host, repoDir);
   if (layout === null) return {};
   const file = path.join(layout, '.claude', 'settings.json');
   if (!existsSync(file)) return {};
   try {
-    const ws = JSON.parse(readFileSync(file, 'utf8'));
+    const ws = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
     return Object.fromEntries(SKILL_KEYS.filter((k) => ws[k] !== undefined).map((k) => [k, ws[k]]));
   } catch {
     warn(`${file}: workspace settings could not be parsed — personal copies of same-named skills`
@@ -91,7 +163,7 @@ export function skillSettings(rootOrHost, repoDir) {
 // Workspace skills reach the participant as a session flag, not a plugin install:
 // `--plugin-dir` loads the plugin for one session, the namespace is the same, and
 // `installed_plugins.json` gets no entry.
-export function participantPluginDir(rootOrHost, repoDir) {
+export function participantPluginDir(rootOrHost: unknown, repoDir?: string) {
   const host = hostOf(rootOrHost);
   const dir = host.pluginDir(repoDir);
   if (dir === null) return null;
@@ -110,11 +182,11 @@ export { PROMPTOBUS_SERVER } from './contract.js';
 
 // The participant's MCP descriptor: the host's `participantServers()`, then the bus entry, which
 // overrides a same-named one so its `PROMPTOBUS_*` env is the participant's own; the driver writes the file.
-export function participantMcp(rootOrHost, { address, taskId, home, reportTaskId = null, repoDir }, driver) {
+export function participantMcp(rootOrHost: unknown, { address, taskId, home, reportTaskId = null, repoDir }: { address: string; taskId: string; home: string; reportTaskId?: string | null; repoDir?: string }, driver: Required<Pick<LibDriver, 'shadowedUserServers'>>) {
   const host = hostOf(rootOrHost);
   const { servers, external } = host.participantServers(repoDir);
   const mcpServers = {
-    ...host.substituteVars(servers),
+    ...(host.substituteVars(servers) as Record<string, unknown>),
     [PROMPTOBUS_SERVER]: {
       type: 'stdio',
       command: host.nodePath(),
@@ -136,7 +208,7 @@ export function participantMcp(rootOrHost, { address, taskId, home, reportTaskId
 // Mode 0600 on the participant mcp-config: it holds substituted tokens, so spawn output
 // does not print them. `writeFileSync` `mode` applies only on CREATE, hence `chmod`
 // after: a rewrite on a repeat spawn would have left the previous mode.
-export function writeSecret(file, text) {
+export function writeSecret(file: string, text: string) {
   writeFileSync(file, text, { mode: 0o600 });
   chmodSync(file, 0o600);
 }
@@ -147,7 +219,7 @@ export function writeSecret(file, text) {
 // leave incomplete. Skip with a warning, as Writer.copyDir does: a silently left symlink
 // leaves the skill incomplete. The destination is removed before the copy: a repeat lift
 // would otherwise leave a skill that has since vanished.
-function copyLaunchTree(src, dest, { wipe = true } = {}) {
+function copyLaunchTree(src: string, dest: string, { wipe = true } = {}): void {
   if (wipe && existsSync(dest)) rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
   for (const e of readdirSync(src, { withFileTypes: true })) {
@@ -190,11 +262,11 @@ function copyLaunchTree(src, dest, { wipe = true } = {}) {
  * `git ls-files` lists everything tracked under it, which is right: a copy destination is
  * the one path where the whole subtree goes.
  */
-function warnTrackedLaunchDirs(files, launchDirs) {
+function warnTrackedLaunchDirs(files: readonly LaunchFile[], launchDirs?: readonly string[]) {
   // Working directory → the paths, relative to it, that this lift writes into a claimed
   // directory. The copy destination is one of them, so the wipe is noticed on that path
   // alone and does not depend on a sibling file being written beside it.
-  const claims = new Map();
+  const claims = new Map<string, Set<string>>();
   for (const claimed of launchDirs ?? []) {
     const inside = `${path.sep}${claimed}${path.sep}`;
     for (const file of files) {
@@ -232,7 +304,7 @@ function warnTrackedLaunchDirs(files, launchDirs) {
  * than the whole driver, because this function writes files and asks nothing else of the
  * harness.
  */
-export function writeLaunchFiles(files, launchDirs = []) {
+export function writeLaunchFiles(files: LaunchFile[], launchDirs: readonly string[] = []) {
   assertSelectedNativeFiles(files);
   warnTrackedLaunchDirs(files, launchDirs);
   for (const file of files) {
@@ -246,7 +318,7 @@ export function writeLaunchFiles(files, launchDirs = []) {
 }
 
 // A merged launch file over a tracked path stays out of `git status` and out of the worker's commits.
-function hideTrackedLaunchFile(file) {
+function hideTrackedLaunchFile(file: string) {
   const hidden = runProc('git', ['-C', path.dirname(file), 'update-index', '--skip-worktree', '--', path.basename(file)], {
     encoding: 'utf8', timeout: GIT_NET_TIMEOUT_MS, maxBuffer: PROC_MAX_OUTPUT,
   });
@@ -254,14 +326,15 @@ function hideTrackedLaunchFile(file) {
 }
 
 // Delivered-server list for `--dry-run`: name and type, no config with tokens.
-export function mcpServerLines(mcpConfig) {
-  return Object.entries(mcpConfig.mcpServers ?? {}).map(([name, cfg]) => `${name} · ${cfg?.type ?? 'stdio'}`);
+export function mcpServerLines(raw: unknown) {
+  const mcpConfig = raw as McpConfigView;
+  return Object.entries(mcpConfig.mcpServers ?? {}).map(([name, cfg]) => `${name} · ${(cfg as { type?: unknown } | null)?.type ?? 'stdio'}`);
 }
 
 // Participant MCP set as an output line: only the UNUSUAL is named; the full list stays
 // in `--dry-run`. Shadowing is `warn` (counted from the person's ~/.claude.json — the
 // only machine-dependent spawn output line), stripped servers are `info`.
-export function mcpNote(mcp, who) {
+export function mcpNote(mcp: ReturnType<typeof participantMcp>, who: string) {
   const count = Object.keys(mcp.descriptor.servers ?? {}).length;
   const parts = [];
   if (mcp.shadowed.length) {
@@ -278,7 +351,7 @@ export function mcpNote(mcp, who) {
 }
 
 // `--dry-run` gets no hint about `--dry-run`: the full list is already printed above.
-export function sayMcp(plan, { hint = true } = {}) {
+export function sayMcp(plan: { mcpNote: McpNote }, { hint = true } = {}) {
   const n = plan.mcpNote;
   (n.level === 'warn' ? warn : info)(hint ? `${n.text}. Full name list — --dry-run` : n.text);
 }
@@ -300,7 +373,7 @@ export function sayMcp(plan, { hint = true } = {}) {
 // ([hooks](../src/hooks.ts)), and the session environment does not carry it at all —
 // putting a value there that neighbors will inherit is exactly handing out a foreign
 // identity.
-export function sessionEnv(driver, base = process.env, host) {
+export function sessionEnv(driver: Required<Pick<LibDriver, 'sessionEnv'>>, base: NodeJS.ProcessEnv = process.env, host: Pick<PromptobusHost, 'extraEnv'>) {
   return driver.sessionEnv(base, host.extraEnv());
 }
 
@@ -310,18 +383,18 @@ export function sessionEnv(driver, base = process.env, host) {
  * Cursor namespaces with a hyphen (`promptobus-promptobus_send`). A participant given
  * a foreign spelling looks for a tool they do not have.
  */
-export function toolName(driver, server, name, host) {
+export function toolName(driver: Pick<LibDriver, 'phrases'>, server: string, name: string, host: PromptobusHost) {
   return driver.phrases.tool(server, name, host);
 }
 
 // One rule for both prompts: the worker and the reviewer get one rule per tool.
 // A function, not a constant: memory tool names are written by the harness (`toolName`).
-export function memoryRule(driver, host) {
+export function memoryRule(driver: Pick<LibDriver, 'phrases'>, host: PromptobusHost) {
   return host.memorySection((server, name) => toolName(driver, server, name, host)) ?? '';
 }
 
 // Whom a lift says the participant may write, from `contactsOf` over the records it will hold.
-export function contactsSection(contacts, taskTool) {
+export function contactsSection(contacts: Contacts, taskTool: string) {
   const lines = contacts.length ? contacts.map((routes) => `- ${contactText(routes)}`)
     : ['- nobody: the bus refuses every send from your address'];
   return `## Whom you may write
@@ -335,19 +408,19 @@ The bus refuses a send to any other address. Membership grows during the run: a 
 // version bound and the refusal wording belong to the harness. The gate is shared by
 // the worker and the reviewer: if the refusals diverged, the reviewer would silently
 // start on default effort.
-export function optionRefusal(driver, effort, tool, host = null) {
+export function optionRefusal(driver: Required<Pick<LibDriver, 'optionRefusal'>>, effort: string | null, tool: LibToolBin, host: Pick<PromptobusHost, 'busCommand'> | null = null) {
   const statusCommand = host?.busCommand?.(['status']) ?? null;
   return driver.optionRefusal({ effort, statusCommand }, tool);
 }
 
-export function normalizeLaunchTool(driver, tool, env) {
+export function normalizeLaunchTool(driver: Pick<LibDriver, 'id' | 'normalizeTool'>, tool: LibToolBin, env?: NodeJS.ProcessEnv) {
   return typeof driver?.normalizeTool === 'function'
     ? driver.normalizeTool(tool, { env })
     : tool;
 }
 
 // One read per lift, and only when this driver declared it. A filled version is kept.
-export function withToolVersion(driver, host, tool) {
+export function withToolVersion(driver: Pick<LibDriver, 'options'>, host: PromptobusHost, tool: LibToolBin) {
   if (typeof tool?.version === 'string' && tool.version.trim()) return tool;
   if (driver?.options?.readsVersion !== true) return tool;
   if (!tool?.bin || typeof host?.readToolVersion !== 'function') return tool;
@@ -366,7 +439,7 @@ export { titleFromLines } from './store.js';
 // Outcome of a restamp that lost under the lock: the plan promised a rename, and
 // `retitleTask` returned `null`. A separate pure function: the `spawn()` stretch that
 // prints it is unreachable by a test — owner change happens between plan and write.
-export function restampOutcome(current, wanted) {
+export function restampOutcome(current: unknown, wanted: unknown) {
   return current === wanted
     ? { level: 'ok', text: 'title is already that — a neighboring spawn named it, nothing to rename' }
     : {
@@ -399,7 +472,9 @@ export function restampOutcome(current, wanted) {
  * in it is `syncHint()` — the host's own, and one that exists. A consumer whose CLI
  * does have a declaration command says so through its own host.
  */
-export function liftHarness(rootOrHost, harness = null) {
+export function liftHarness(rootOrHost: unknown, harness: 'codex'): CodexDriver;
+export function liftHarness(rootOrHost: unknown, harness?: string | null): LibDriver;
+export function liftHarness(rootOrHost: unknown, harness: string | null = null): LibDriver {
   const lifter = liftDriver(harness);
   if (!harness) return lifter;
   const host = hostOf(rootOrHost);
@@ -414,10 +489,10 @@ export function liftHarness(rootOrHost, harness = null) {
   return lifter;
 }
 
-export function resolveEffort(effort, driver) {
+export function resolveEffort(effort: string | null | undefined, driver: Pick<LibDriver, 'options'>) {
   if (effort === undefined) return null;
   const levels = driver.options.effortLevels;
-  if (!levels.includes(effort)) {
+  if (!(levels as readonly unknown[]).includes(effort)) {
     throw new GateError(`--effort: unknown value "${effort}" — allowed: ${levels.join(', ')}`);
   }
   return effort;
@@ -427,23 +502,23 @@ export function resolveEffort(effort, driver) {
 // list before lift — an unknown mode would otherwise reach `claude` and drop the session
 // with an opaque refusal. Without the flag — `fallback`: `auto` for the worker, the
 // binary's mode for the reviewer (`null`).
-export function resolvePermissionMode(mode, driver, fallback = undefined) {
+export function resolvePermissionMode(mode: string | null | undefined, driver: Pick<LibDriver, 'options'>, fallback: string | null | undefined = undefined) {
   const modes = driver.options.permissionModes;
   if (mode === undefined) return fallback === undefined ? driver.options.defaultPermissionMode : fallback;
-  if (!modes.includes(mode)) {
+  if (!(modes as readonly unknown[]).includes(mode)) {
     throw new GateError(`--permission-mode: unknown value "${mode}" — allowed: ${modes.join(', ')}`);
   }
   return mode;
 }
 
-function titleFromBrief(brief) {
+function titleFromBrief(brief: string) {
   const first = brief.split('\n').map((l) => l.replace(/^#+\s*/, '').trim()).find(Boolean) ?? 'task';
   return first.length > 80 ? `${first.slice(0, 79)}…` : first;
 }
 
 // Declared steps reserve their stems; existing participants keep theirs when a step leaves
 // the current declaration.
-export function refuseParticipantPrefix(slug, route, registry, participants = [], addressFor = workerAddress) {
+export function refuseParticipantPrefix(slug: string, route: string, registry: RoleRegistry, participants: readonly ParticipantV1[] = [], addressFor: (slug: string) => string = workerAddress) {
   const owner = stemOwner(registry, slug);
   if (!owner || (owner.layer === 'step' && registry.activeSteps
     && !registry.activeSteps.includes(owner.name))) {
@@ -451,8 +526,8 @@ export function refuseParticipantPrefix(slug, route, registry, participants = []
     const stem = participantFileStem(address);
     const occupied = participants.find((participant) => {
       const other = addressOf(participant);
-      return other.includes(':') && other !== address
-        && participantFileStem(other) === stem;
+      return other!.includes(':') && other !== address
+        && participantFileStem(other!) === stem;
     });
     if (occupied) {
       throw new GateError(`the owner step name "${slug}" shares workers/${stem}.mcp.json `
@@ -470,9 +545,9 @@ export function refuseParticipantPrefix(slug, route, registry, participants = []
     + `participants' configs would be overwritten in silence. ${route}`);
 }
 
-function workerSlug(home, taskId, nsPath, explicit, registry, ownerName) {
+function workerSlug(home: string, taskId: string, nsPath: string, explicit: string | undefined, registry: RoleRegistry, ownerName: string) {
   const participants = taskExists(home, taskId) ? readTask(home, taskId).participants ?? [] : [];
-  const ownerAddress = (slug) => `${ownerName}:${slug}`;
+  const ownerAddress = (slug: string) => `${ownerName}:${slug}`;
   // Both paths go through `slugify`: the address must fit the grammar
   // `<owner>:[a-z0-9][a-z0-9-]*`; the participant record checks the same invariant again.
   if (explicit) {
@@ -513,7 +588,7 @@ export const NAME_MAX = 100;
 // Task stamp in the READABLE name goes to minutes (`t20260826-021515` → `0826-0215`):
 // a person does not need seconds, and in the machine name they keep directory and branch
 // uniqueness.
-function shortStamp(stamp) {
+function shortStamp(stamp: unknown) {
   const m = /^t\d{4}(\d{2})(\d{2})-(\d{2})(\d{2})\d{2}$/.exec(String(stamp ?? ''));
   return m ? `${m[1]}${m[2]}-${m[3]}${m[4]}` : null;
 }
@@ -521,21 +596,21 @@ function shortStamp(stamp) {
 // Name tail: the task stamp, or for a former-CLI record without one — its id. Slug and
 // stamp are mechanism fields and in the v1 journal they live in `adapter`: the task's own
 // fields there are title, status, owner, and participants.
-function machineTail(task) {
+function machineTail(task: TaskIdentity) {
   return task.adapter?.stamp ?? task.id;
 }
 
-function readableTail(task) {
+function readableTail(task: TaskIdentity) {
   return shortStamp(task.adapter?.stamp) ?? machineTail(task);
 }
 
 // Machine name of the worker: the worktree directory and, with the `worktree-` prefix,
 // the branch name. Only `[a-z0-9-]` — `git check-ref-format` rejects a space. Only the
 // task slug is shortened: the rest of the name is not ours.
-export function machineName(task, { slug } = {}) {
+export function machineName(task: TaskIdentity, { slug }: { slug?: string } = {}) {
   const tail = [slug, machineTail(task)].filter(Boolean).join('-');
   const room = NAME_MAX - `promptobus-${tail}`.length - 1; // −1 for the hyphen after the task slug
-  const head = task.adapter?.slug ? slugify(task.adapter.slug, Math.max(0, room)) : '';
+  const head = task.adapter?.slug ? slugify(task.adapter.slug as string, Math.max(0, room)) : '';
   const name = ['promptobus', head, tail].filter(Boolean).join('-');
   if (name.length > NAME_MAX) {
     throw new Error(`worktree name is longer than ${NAME_MAX} characters (${name.length}): "${name}". `
@@ -558,7 +633,7 @@ const TITLE_MAX = 48;
 // and no diagnosis. Replace with a space, do not drop: glued words read worse.
 const INVISIBLE_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
 
-export function shortTitle(title, max = TITLE_MAX) {
+export function shortTitle(title: unknown, max = TITLE_MAX) {
   const t = String(title ?? '').replace(INVISIBLE_CHARS, ' ').replace(/\s+/g, ' ').trim();
   if (!t || t.length <= max) return t;
   const cut = t.slice(0, max);
@@ -568,7 +643,7 @@ export function shortTitle(title, max = TITLE_MAX) {
 
 // First line of the assembled task title. Sits next to its only consumer: between a
 // foreign comment and its function it would read as a header on someone else's code.
-function firstLine(title) {
+function firstLine(title: string) {
   return String(title ?? '').split(TASK_TITLE_SEP)[0].trim() || title;
 }
 
@@ -576,7 +651,7 @@ function firstLine(title) {
 // titles collide (a live session name cannot be renamed; `--name` applies only at lift).
 // `title` is the title of the work SLICE, otherwise sessions of one task are
 // indistinguishable in `claude agents`; if unset, the task title is used.
-export function sessionName(task, { slug, reviewer = false, approver = false, taken = [], title } = {}) {
+export function sessionName(task: TaskName, { slug, reviewer = false, approver = false, taken = [], title }: { slug?: string; reviewer?: boolean; approver?: boolean; taken?: readonly unknown[]; title?: string | null } = {}) {
   const head = approver ? 'Accept:' : reviewer ? 'Review:' : 'Worker:';
   // The fallback takes the FIRST line of the task title, not the whole thing: the task
   // title lists the run's tracks, and the session name would get a "Review: A · B · C…" trim.
@@ -587,10 +662,10 @@ export function sessionName(task, { slug, reviewer = false, approver = false, ta
   return `${head} ${label} (${stamp}, ${slug})`;
 }
 
-function teamleadPrompt({ host, driver, rootTask, childTask, address, rootAddress, brief, siblings, rules, contacts }) {
-  const bus = (name) => toolName(driver, PROMPTOBUS_SERVER, name, host);
-  return renderTeamleadInstructions({ rootTask, childTask, address, rootAddress, root: host.workspaceRoot(), brief, siblings, rules, bindings: {
-    tools: Object.fromEntries(['promptobus_send', 'promptobus_mailbox', 'promptobus_task'].map(name => [name, bus(name)])), entry: 'MCP', installationNote: 'where promptobus.json lives',
+function teamleadPrompt({ host, driver, rootTask, childTask, address, rootAddress, brief, siblings, rules, contacts }: Pick<TeamleadPlan, 'host' | 'driver' | 'rootTask' | 'childTask' | 'address' | 'brief' | 'rules'> & { rootAddress: string; siblings: (string | null)[]; contacts: Contacts }) {
+  const bus = (name: string) => toolName(driver, PROMPTOBUS_SERVER, name, host);
+  return renderTeamleadInstructions({ rootTask, childTask, address, rootAddress, root: host.workspaceRoot(), brief, siblings: siblings as string[], rules, bindings: {
+    tools: Object.fromEntries(['promptobus_send', 'promptobus_mailbox', 'promptobus_task'].map(name => [name, bus(name)])) as Record<keyof ParticipantTools, string>, entry: 'MCP', installationNote: 'where promptobus.json lives',
     secondaryMailbox: driver.id === 'codex'
       ? ` Your second entry is bound to ${address} in task ${rootTask}; its ${toolName(driver, `${PROMPTOBUS_SERVER}-root`, 'promptobus_mailbox', host)} returns the same mailbox.` : '',
     memory: memoryRule(driver, host), lease: leaseRule({ host, taskId: childTask, address }),
@@ -598,16 +673,16 @@ function teamleadPrompt({ host, driver, rootTask, childTask, address, rootAddres
   } });
 }
 
-function teamleadRebindFile(home, rootTask, address) {
+function teamleadRebindFile(home: string, rootTask: string, address: string) {
   return path.join(path.dirname(taskFile(home, rootTask)), 'rebinds', `${address.slice('teamlead:'.length)}.json`);
 }
 
-const nativeTeamleadState = p => JSON.parse(JSON.stringify({
+const nativeTeamleadState = (p: ParticipantV1 | null | undefined): NativeTeamleadState => JSON.parse(JSON.stringify({
   id: p?.id, harness: p?.harness, mode: p?.mode, sessionRef: p?.sessionRef,
   metadata: Object.fromEntries(['sessionId', 'owner', 'childTask', 'nativeLaunchId', 'nativeStop',
     'nativeUnlaunched', 'nativePendingLaunchId'].map(key => [key, p?.metadata?.[key]])),
 }));
-function clearTeamleadReservation(plan, launchId) {
+function clearTeamleadReservation(plan: TeamleadPlan, launchId: string | null) {
   return withTaskLock(plan.home, plan.rootTask, () => withTaskLock(plan.home, plan.childTask, () => {
     for (const [task, address] of [[plan.rootTask, plan.address], [plan.childTask, ORCHESTRATOR]]) {
       const p = participantOf(readTask(plan.home, task), address);
@@ -619,7 +694,7 @@ function clearTeamleadReservation(plan, launchId) {
     }
   }));
 }
-function reserveTeamleadRelift(plan, launchId) {
+function reserveTeamleadRelift(plan: TeamleadPlan, launchId: string) {
   return withTaskLock(plan.home, plan.rootTask, () => withTaskLock(plan.home, plan.childTask, () => {
     const root = readTask(plan.home, plan.rootTask), child = readTask(plan.home, plan.childTask);
     const lead = participantOf(root, plan.address), owner = participantOf(child, ORCHESTRATOR);
@@ -627,10 +702,10 @@ function reserveTeamleadRelift(plan, launchId) {
       || !isDeepStrictEqual(nativeTeamleadState(lead), nativeTeamleadState(plan.former))
       || !isDeepStrictEqual(nativeTeamleadState(owner), nativeTeamleadState(participantOf(plan.childMeta, ORCHESTRATOR))))
       throw new GateError('native teamlead changed before relift reservation');
-    requireNativeTerminal(plan.home, root, lead);
+    requireNativeTerminal(plan.home, root, lead!);
     try {
-      upsertParticipant(plan.home, plan.rootTask, { ...lead, metadata: { ...lead.metadata, nativePendingLaunchId: launchId } });
-      upsertParticipant(plan.home, plan.childTask, { ...owner, metadata: { ...owner.metadata, nativePendingLaunchId: launchId } });
+      upsertParticipant(plan.home, plan.rootTask, { ...lead!, metadata: { ...lead!.metadata, nativePendingLaunchId: launchId } });
+      upsertParticipant(plan.home, plan.childTask, { ...owner!, metadata: { ...owner!.metadata, nativePendingLaunchId: launchId } });
     } catch (error) { clearTeamleadReservation(plan, launchId); throw error; }
     return { launchId,
       oldRoot: nativeTeamleadState(participantOf(readTask(plan.home, plan.rootTask), plan.address)),
@@ -638,7 +713,7 @@ function reserveTeamleadRelift(plan, launchId) {
   }));
 }
 
-export function recoverTeamleadRebind(home, rootTask, address, fault = null) {
+export function recoverTeamleadRebind(home: string, rootTask: string, address: string, fault: SpawnOptions['fault'] = null) {
   const file = teamleadRebindFile(home, rootTask, address);
   if (!existsSync(file)) return false;
   const observed = readFileSync(file, 'utf8');
@@ -647,9 +722,9 @@ export function recoverTeamleadRebind(home, rootTask, address, fault = null) {
     if (!existsSync(file)) return false;
     const current = readFileSync(file, 'utf8');
     if (current !== observed) return false;
-    let intent;
-    try { intent = JSON.parse(current); } catch (error) {
-      throw new GateError(`teamlead rebind ${file} cannot be read: ${error.message}`);
+    let intent: TeamleadRebindIntent;
+    try { intent = JSON.parse(current) as TeamleadRebindIntent; } catch (error) {
+      throw new GateError(`teamlead rebind ${file} cannot be read: ${(error as Error).message}`);
     }
     if (intent.rootTask !== rootTask || intent.address !== address || !intent.childTask
       || !intent.sessionId || addressOf(intent.rootParticipant) !== address
@@ -671,14 +746,14 @@ export function recoverTeamleadRebind(home, rootTask, address, fault = null) {
       }
       if (intent.native) {
         const nextRoot = nativeTeamleadState(intent.rootParticipant), nextChild = nativeTeamleadState(intent.childParticipant);
-        const validNext = p => p.harness === 'codex' && p.metadata.nativeLaunchId === intent.native.launchId
+        const validNext = (p: NativeTeamleadState) => p.harness === 'codex' && p.metadata.nativeLaunchId === intent.native!.launchId
           && !p.metadata.nativeStop && !p.metadata.nativePendingLaunchId && !p.metadata.nativeUnlaunched;
-        const same = (p, expected) => isDeepStrictEqual(nativeTeamleadState(p), expected);
-        if (!intent.native.launchId || !validNext(nextRoot) || !validNext(nextChild))
+        const same = (p: ParticipantV1 | null, expected: NativeTeamleadState) => isDeepStrictEqual(nativeTeamleadState(p), expected);
+        if (!intent.native!.launchId || !validNext(nextRoot) || !validNext(nextChild))
           throw new GateError('native teamlead rebind has invalid new launch metadata');
         if (!(same(lead, intent.native.oldRoot) || same(lead, nextRoot))
           || !(same(owner, intent.native.oldChild) || same(owner, nextChild))) {
-          const withoutStop = p => { const state = nativeTeamleadState(p); delete state.metadata.nativeStop; return state; };
+          const withoutStop = (p: ParticipantV1 | null) => { const state = nativeTeamleadState(p); delete state.metadata.nativeStop; return state; };
           if (!isDeepStrictEqual(withoutStop(lead), nextRoot) || !isDeepStrictEqual(withoutStop(owner), nextChild))
             throw new GateError('native teamlead generation changed during rebind recovery');
           requireNativeTerminal(home, root, lead);
@@ -701,7 +776,7 @@ export function recoverTeamleadRebind(home, rootTask, address, fault = null) {
             ? intent.rootParticipant : participant),
         }, () => new Date());
       }
-      const latest = JSON.parse(readFileSync(file, 'utf8'));
+      const latest = JSON.parse(readFileSync(file, 'utf8')) as { id?: unknown };
       if (latest.id !== intent.id) return false;
       unlinkSync(file);
       return true;
@@ -710,7 +785,7 @@ export function recoverTeamleadRebind(home, rootTask, address, fault = null) {
   });
 }
 
-export async function planTeamlead(rootOrHost, opts) {
+export async function planTeamlead(rootOrHost: unknown, opts: SpawnOptions): Promise<TeamleadPlan> {
   const host = hostOf(rootOrHost);
   const home = host.promptobusHome();
   const rootTask = opts.task;
@@ -737,7 +812,7 @@ export async function planTeamlead(rootOrHost, opts) {
     throw new GateError(`--harness ${opts.harness}: teamlead lift is supported only on ${TEAMLEAD_HARNESSES.map(harnessName).join(' and ')}`);
   }
   let modelHarness = null;
-  let modelMatches = [];
+  let modelMatches: CatalogTuple[] = [];
   if (opts.model) {
     const tuples = loadCatalog({ host }).tuples ?? [];
     modelMatches = tuples.filter((tuple) => tuple.model === opts.model);
@@ -751,7 +826,7 @@ export async function planTeamlead(rootOrHost, opts) {
       && !modelMatches.some((tuple) => tuple.harness === 'claude')) modelHarness = 'codex';
   }
   const pendingRebind = existsSync(teamleadRebindFile(home, rootTask, address));
-  const former = participantOf(rootMeta, address);
+  const former = participantOf(rootMeta, address) as SpawnParticipant | null;
   const requestedHarness = opts.harness ?? modelHarness ?? former?.harness ?? null;
   if (former && requestedHarness && requestedHarness !== former.harness) {
     throw new GateError(`${address} was lifted by harness ${former.harness}; a relift cannot change its harness to ${requestedHarness}`);
@@ -776,7 +851,7 @@ export async function planTeamlead(rootOrHost, opts) {
   if (former && !pendingRebind && participantSession(former, opts.sessions) === 'alive') {
     throw new GateError(`${address} is already running in root task ${rootTask}; stop that session before relifting it`);
   }
-  const routingHost = Object.create(host);
+  const routingHost: PromptobusHost = Object.create(host);
   routingHost.declaredTools = () => host.declaredTools().filter((harness) => harness !== 'cursor');
   const routed = former ? null : await routeLift(routingHost, {
     role: WORKER, strategy: opts.strategy, harness: requestedHarness, model: opts.model, effort: opts.effort,
@@ -812,7 +887,7 @@ export async function planTeamlead(rootOrHost, opts) {
     { meta: rootMeta, sender: former ?? participantRecord(address, { childTask }, registry) },
   ] });
   const prompt = teamleadPrompt({ host, driver, rootTask, childTask, address, rootAddress, brief, siblings, rules, contacts }) + nativeContextPrompt(selectedContext);
-  const launch = driver.prepare({
+  const launch = driver.prepare!({
     ref: name, role: 'teamlead', mcp: mcp.descriptor, prompt, model, effort, permissionMode,
     addDirs: ruleDirs, pluginDir, mcpConfigPath, settingsPath, guardCommand,
     extraSettings: selectedContext ? {} : skillSettings(host), selectedContext,
@@ -828,10 +903,10 @@ export async function planTeamlead(rootOrHost, opts) {
   };
 }
 
-function buildPrompt({ taskId, nsPath, brief, rules, branch, worktreePath, ruleDirs, driver, host, repoSkills, worktreeDeps, address, contacts }) {
-  const bus = (name) => toolName(driver, PROMPTOBUS_SERVER, name, host);
+function buildPrompt({ taskId, nsPath, brief, rules, branch, worktreePath, ruleDirs, driver, host, repoSkills, worktreeDeps, address, contacts }: Pick<SpawnPlan, 'taskId' | 'nsPath' | 'brief' | 'rules' | 'branch' | 'worktreePath' | 'ruleDirs' | 'driver' | 'host' | 'repoSkills' | 'worktreeDeps' | 'address'> & { contacts: Contacts }) {
+  const bus = (name: string) => toolName(driver, PROMPTOBUS_SERVER, name, host);
   return renderWorkerInstructions({ brief, rules, bindings: {
-    tools: Object.fromEntries(['promptobus_send', 'promptobus_mailbox', 'promptobus_task'].map(name => [name, bus(name)])),
+    tools: Object.fromEntries(['promptobus_send', 'promptobus_mailbox', 'promptobus_task'].map(name => [name, bus(name)])) as Record<keyof ParticipantTools, string>,
     preamble: host.workerPreamble({ taskId, nsPath, branch, worktreePath }) + host.liveRunNote(nsPath),
     workspace: `Allowed roots (session cwd and addDirs): ${[worktreePath, ...ruleDirs].join(', ')}. The first root is your worktree; make repository edits there.`,
     repositorySkills: repoSkillsLine(repoSkills), dependencies: worktreeDepsLine(worktreeDeps),
@@ -849,7 +924,7 @@ function buildPrompt({ taskId, nsPath, brief, rules, branch, worktreePath, ruleD
 
 // Spawn plan: everything is computed, nothing is written to disk. The same plan prints
 // --dry-run and drives the real start — there is nowhere for them to diverge.
-export async function planSpawn(rootOrHost, opts) {
+export async function planSpawn(rootOrHost: unknown, opts: SpawnOptions): Promise<SpawnPlan> {
   const host = hostOf(rootOrHost);
   const root = host.workspaceRoot();
   const {
@@ -864,7 +939,7 @@ export async function planSpawn(rootOrHost, opts) {
 
   let resolved;
   try {
-    resolved = await host.resolveRepo(repo);
+    resolved = await host.resolveRepo(repo!);
   } catch (e) {
     if (!(e instanceof HostResolveError)) throw e;
     throw new Error([e.message, ...e.candidates.map((c) => `    ${host.formatCandidate(c)}`)].join('\n'));
@@ -929,7 +1004,7 @@ export async function planSpawn(rootOrHost, opts) {
   // Plan shape is the journal shape, the same `readTask` returns: slug, stamp, and the
   // explicit-title mark live in `adapter`; the task's own fields are title, status, and
   // participants.
-  const createNew = existing ? null : {
+  const createNew: NewTask | null = existing ? null : {
     id: taskId,
     title: taskTitle,
     status: 'active',
@@ -1007,7 +1082,7 @@ export async function planSpawn(rootOrHost, opts) {
   }
   // Mechanism fields live in the v1 record `metadata`; v1's own fields are role, harness,
   // mode, session reference, and the capabilities snapshot.
-  const was = participant?.metadata ?? {};
+  const was = (participant?.metadata as SpawnMetadata | undefined) ?? {};
   // An explicit name taken by a worker of ANOTHER repository: the journal participant
   // would hand over its worktree. An automatic slug splits that collision with a number;
   // an explicit one does not.
@@ -1046,8 +1121,8 @@ export async function planSpawn(rootOrHost, opts) {
   // Title of an existing task: `--task-title` pins it for good, otherwise attaching a
   // NEW track appends its title to the previous ones. `retitleTask` decides under the
   // lock: here there is only the intent and the prediction for `--dry-run` print.
-  let retitle = null;
-  let titleKept = null;
+  let retitle: Retitle | null = null;
+  let titleKept: string | null = null;
   if (existing) {
     if (explicitTaskTitle) {
       // A diverged title of a pinned task is restamped only on double explicitness:
@@ -1202,18 +1277,18 @@ export async function planSpawn(rootOrHost, opts) {
   // to disk and the worktree does not exist yet, so it carries both forecasts and `spawn`
   // rebuilds once with the outcomes. Nothing but the prompt differs between the two, and
   // rebuilding before the launch files are written keeps them written exactly once.
-  const plannedWorktreeDeps = existsSync(worktreePath)
+  const plannedWorktreeDeps: WorktreeDepsState = existsSync(worktreePath)
     ? { ran: false, repeat: true }
     : worktreeHasLock(repoAbs)
       ? { planned: true, command: npmCiCommand() }
       : { ran: false };
-  const buildLaunch = (repoSkills, worktreeDeps = plannedWorktreeDeps) => {
+  const buildLaunch = (repoSkills: RepoSkillsState, worktreeDeps: WorktreeDepsState = plannedWorktreeDeps) => {
     if (selectedContext) {
       prepareNativeContext(host, { root: repoAbs, role: ownerName, taskId, options: opts, participant, preparedSelection: selectedContext });
       contextRules(selectedContext, () => [], repoAbs, worktreePath, existsSync(worktreePath));
     }
     const prompt = buildPrompt({ taskId, nsPath, brief, rules, branch, worktreePath, ruleDirs, driver, host, repoSkills, worktreeDeps, address, contacts }) + nativeContextPrompt(selectedContext);
-    return { prompt, launch: driver.prepare({ ...launchContext, prompt }) };
+    return { prompt, launch: driver.prepare!({ ...launchContext, prompt }) };
   };
   // The plan reads the CLONE's file: the worktree does not exist yet. The run reads the
   // worktree's own — see `runRepoGenerator` — so the two can disagree, and the plan is a
@@ -1221,7 +1296,7 @@ export async function planSpawn(rootOrHost, opts) {
   // state: printing "no generator" for it would contradict the preamble and hide the
   // reason a repository's skills went missing.
   const declaredGenerator = repoGenerator(repoAbs);
-  const plannedSkills = declaredGenerator
+  const plannedSkills: RepoSkillsState = declaredGenerator
     ? {
       kind: declaredGenerator.argv ? 'planned' : 'invalid',
       argv: declaredGenerator.argv,
@@ -1262,7 +1337,7 @@ export async function planSpawn(rootOrHost, opts) {
  * otherwise Cursor would read "not attached" after already receiving the canon in the
  * worktree `.cursor/skills`.
  */
-export function skillsNote(plan) {
+export function skillsNote(plan: { launch?: Pick<LibLaunchPlan, 'skillsNote'>; pluginDir?: string | null; driver: Pick<LibDriver, 'options'> }) {
   if (plan.launch?.skillsNote) return plan.launch.skillsNote;
   if (plan.pluginDir) return plan.pluginDir;
   if (!plan.driver.options.skillsDir) {
@@ -1272,7 +1347,7 @@ export function skillsNote(plan) {
 }
 
 // Module state is assembled once in the plan and printed twice.
-export function sayModule(plan) {
+export function sayModule(plan: { module: HostModuleNote }) {
   (plan.module.level === 'warn' ? warn : info)(plan.module.text);
 }
 
@@ -1298,16 +1373,16 @@ export const GENERATOR_FIELD = 'generate';
  * silently treating a malformed field as "no generator" is how a participant comes up
  * without the skills its repository thinks it declared.
  */
-export function repoGenerator(repoAbs) {
+export function repoGenerator(repoAbs: string): { argv: string[] | null; why: string | null } | null {
   const file = path.join(repoAbs, HOST_CONFIG);
   if (!existsSync(file)) return null;
-  let parsed;
+  let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(file, 'utf8'));
   } catch (e) {
-    return { argv: null, why: `could not be read: ${file} is not valid JSON (${e.message})` };
+    return { argv: null, why: `could not be read: ${file} is not valid JSON (${(e as Error).message})` };
   }
-  const declared = parsed?.[GENERATOR_FIELD];
+  const declared = (parsed as Record<string, unknown> | null)?.[GENERATOR_FIELD];
   if (declared === undefined || declared === null) return null;
   if (Array.isArray(declared) && declared.length === 0) return null;
   if (!Array.isArray(declared) || !declared.every((a) => typeof a === 'string' && a.length > 0)) {
@@ -1317,7 +1392,7 @@ export function repoGenerator(repoAbs) {
         + '— the command and its arguments, not a shell line',
     };
   }
-  return { argv: declared, why: null };
+  return { argv: declared as string[], why: null };
 }
 
 /**
@@ -1333,7 +1408,7 @@ export function repoGenerator(repoAbs) {
  *
  * `exec` is the test seam, as in `installWorktreeDeps`.
  */
-export function runRepoGenerator({ worktreePath }, { fresh = true, exec = runProc, depsRefused = false } = {}) {
+export function runRepoGenerator({ worktreePath }: { worktreePath: string }, { fresh = true, exec = runProc, depsRefused = false }: { fresh?: boolean; exec?: NonNullable<Parameters<typeof runLogged>[1]>['exec']; depsRefused?: boolean } = {}): RepoSkillsState {
   // Read from the WORKTREE, not from the clone: the worktree is checked out from the
   // base branch and is the file the participant will actually see. The plan reads the
   // clone because the worktree does not exist yet at plan time, so the two can disagree
@@ -1361,8 +1436,8 @@ export function runRepoGenerator({ worktreePath }, { fresh = true, exec = runPro
   };
 }
 
-const trackedDirt = (state) => state?.dirt?.filter((line) => !line.startsWith('??')) ?? [];
-const dirtPaths = (lines) => `${lines.slice(0, 3).map((line) => line.slice(3)).join(', ')}`
+const trackedDirt = (state: RepoSkillsState | null | undefined) => state?.dirt?.filter((line) => !line.startsWith('??')) ?? [];
+const dirtPaths = (lines: readonly string[]) => `${lines.slice(0, 3).map((line) => line.slice(3)).join(', ')}`
   + `${lines.length > 3 ? ', …' : ''}`;
 const MISSING_DEPS = {
   refused: 'the dependency install refused before it, so this worktree has no complete node_modules',
@@ -1380,7 +1455,7 @@ const FIRST_STEP = {
  * the rules their repository generates, one noticed and two did not, and a participant
  * that is never told cannot notice.
  */
-export function repoSkillsLine(state) {
+export function repoSkillsLine(state: RepoSkillsState | null | undefined) {
   const cmd = state?.argv?.length ? `\`${state.argv.join(' ')}\`` : 'the command it declares';
   switch (state?.kind) {
     case 'planned':
@@ -1404,7 +1479,7 @@ export function repoSkillsLine(state) {
       return `Repository process skills were NOT laid out. The repository declares a generator (${cmd}) in its `
         + `${HOST_CONFIG}; spawn ran it in this worktree and it ${state.why}. Whatever that command generates — `
         + 'process skills, rules — is missing here. '
-        + (FIRST_STEP[state.missingDeps] ?? 'Run it yourself before you work')
+        + (FIRST_STEP[state.missingDeps!] ?? 'Run it yourself before you work')
         + '; if it refuses again, say so in your first status instead of working without them silently.';
     case 'kept':
       return `Repository process skills were not regenerated on this lift: the worktree already existed (a repeat `
@@ -1423,7 +1498,7 @@ export function repoSkillsLine(state) {
  * it deliberately does not rerun or check dependencies in a worktree that may contain
  * the previous session's changes.
  */
-export function worktreeDepsLine(state) {
+export function worktreeDepsLine(state: WorktreeDepsState | null | undefined) {
   if (state?.repeat || state?.kind === 'kept') {
     return 'Worktree dependencies were not re-run or checked: this is a repeat spawn into an existing worktree. '
       + `Look before relying on node_modules; run ${npmCiCommand()} yourself if needed.`;
@@ -1449,7 +1524,7 @@ export function worktreeDepsLine(state) {
  * say, in one line: a run that printed "no generator declared" while the participant was
  * told the declaration is broken would send the reader looking in the wrong file.
  */
-export function repoSkillsPlanNote(state) {
+export function repoSkillsPlanNote(state: RepoSkillsState | null | undefined) {
   if (state?.kind === 'invalid') {
     return `the repository declares "${GENERATOR_FIELD}" in its ${HOST_CONFIG}, but it ${state.why}`
       + ' — nothing will be run, and the participant is told so';
@@ -1466,10 +1541,10 @@ export function repoSkillsPlanNote(state) {
  * the preamble carries both, and a line about a step that did not happen would print on
  * every lift into every repository that never declared one.
  */
-export function sayRepoSkills(state) {
+export function sayRepoSkills(state: RepoSkillsState | null | undefined) {
   const cmd = state?.argv?.length ? state.argv.join(' ') : null;
   if (state?.kind === 'ok') {
-    const done = `repository skills generated in the worktree (${cmd}, ${(state.ms / 1000).toFixed(1)} s)`;
+    const done = `repository skills generated in the worktree (${cmd}, ${(state.ms! / 1000).toFixed(1)} s)`;
     if (state.missingDeps === 'refused') {
       warn(`${done}, but the dependency install refused before it: a tool the generator names may have come `
         + 'from an enclosing directory, such as the clone root, rather than from this worktree\'s lock');
@@ -1499,9 +1574,9 @@ export function sayRepoSkills(state) {
 
 // Outcome of install in a just-created worktree. A refusal is a warning with a command,
 // not `fail`: spawn of the participant is not rolled back for this.
-export function sayWorktreeDeps(result) {
+export function sayWorktreeDeps(result: WorktreeDepsState | null | undefined) {
   if (!result?.ran) return;
-  const dur = `${(result.ms / 1000).toFixed(1)} s`;
+  const dur = `${(result.ms! / 1000).toFixed(1)} s`;
   if (result.ok) {
     ok(`worktree dependencies installed (npm ci, ${dur})`);
   } else {
@@ -1516,29 +1591,29 @@ export function sayWorktreeDeps(result) {
 // Loop-guard line in `--dry-run`: the participant settings file and the identity the
 // hook will call the bus with. Printed by both lift commands — `--dry-run` must show
 // what will land on disk, and participant identity travels exactly here.
-export function guardHookNote(plan) {
+export function guardHookNote(plan: { settingsPath: string; guardCommand: string }) {
   return `participant settings: ${plan.settingsPath} · loop guard: ${plan.guardCommand}`;
 }
 
 // An opencode lift installs no settings file and no loop-guard hook: scope is prompt rules
 // plus the permission map. Dry-run says that instead of naming files that never land.
-export function opencodeGuardNote(plan) {
+export function opencodeGuardNote(plan: { mcpConfigPath: string }) {
   return `opencode config: ${plan.mcpConfigPath} · no loop-guard hook: scope is prompt rules plus the permission map`;
 }
 
 // Participant-environment line in `--dry-run` — next to the environment assembly itself.
 // Identity is no longer named in it: it is not in the session environment, it stands as
 // Stop-hook command arguments in the settings file, and the line about that file prints it.
-export function sessionEnvNote(driver, host) {
+export function sessionEnvNote(driver: Pick<LibDriver, 'options'>, host: Pick<PromptobusHost, 'extraEnv'>) {
   const extra = host.extraEnv();
   return `session environment: ${Object.entries(extra).map(([k, v]) => `${k}=${v}`).join(' ')}`
     + ' — the memory gate does not hold a background session; '
-    + `dropped from the parent: ${driver.options.envDrop.join(', ')} — these variables leak foreign values`;
+    + `dropped from the parent: ${driver.options.envDrop!.join(', ')} — these variables leak foreign values`;
 }
 
 // How `--dry-run` explains silence about the binary version — the same words for spawn
 // and review. The driver names the binary: the command has none of its own.
-export function dryRunToolNote(driver) {
+export function dryRunToolNote(driver: Pick<LibDriver, 'options'>) {
   return `version was not checked: dry-run — ${driver.options.tool} --version is not run,`
     + ' the binary is resolved on the real run';
 }
@@ -1546,7 +1621,7 @@ export function dryRunToolNote(driver) {
 // About the binary — only when there is something to say. `reason: false` is for the
 // real run, where `fail(tool.reason)` follows: the same text as a warning and a refusal
 // in a row reads as two different troubles.
-export function sayTool(tool, { reason = true } = {}) {
+export function sayTool(tool: LibToolBin, { reason = true } = {}) {
   if (tool.note) info(tool.note);
   if (tool.warn) warn(tool.warn);
   if (!tool.ok && reason) warn(tool.reason);
@@ -1566,16 +1641,16 @@ export function sayTool(tool, { reason = true } = {}) {
  * session, no report and no route back. What is lost is a copy — the orchestrator still
  * holds the file it passed.
  */
-export function keepBrief(plan) {
+export function keepBrief(plan: { home: string; taskId: string; slug: string; brief: string; briefStem?: string }) {
   const stem = plan.briefStem ?? `brief-${plan.slug}`;
   try {
     ok(`brief kept in the task files: ${occupyTaskFile(filesDir(plan.home, plan.taskId), stem, '.md', `${plan.brief}\n`)}`);
   } catch (e) {
-    warn(`the brief was not kept: ${e.message}; the participant is up, spawn is not rolled back for this`);
+    warn(`the brief was not kept: ${(e as Error).message}; the participant is up, spawn is not rolled back for this`);
   }
 }
 
-export async function spawnTeamlead(rootOrHost, opts) {
+export async function spawnTeamlead(rootOrHost: unknown, opts: SpawnOptions): Promise<TeamleadPlan> {
   let plan = await planTeamlead(rootOrHost, opts);
   if (plan.routingSkipped) warn(plan.routingSkipped);
   if (plan.routing) info(routingLine(plan.routing));
@@ -1588,13 +1663,13 @@ export async function spawnTeamlead(rootOrHost, opts) {
     info(`mcp-config: ${plan.mcpConfigPath} · default task ${plan.childTask} · reports to ${plan.rootTask}`);
     if (plan.driver.id === 'codex') {
       info('teamlead thread: features.hooks=false · holder completion and wake provide the loop guard');
-      info(`Codex sandbox: ${plan.launch.settings.sandbox}`);
+      info(`Codex sandbox: ${(plan.launch.settings as { sandbox?: unknown }).sandbox}`);
     }
     else if (plan.driver.id === 'opencode') info(opencodeGuardNote(plan));
     else info(guardHookNote(plan));
     info(sessionEnvNote(plan.driver, plan.host));
     if (plan.launch.envNote) info(plan.launch.envNote);
-    info(`participant MCP (${Object.keys(plan.launch.mcpConfig?.mcpServers ?? {}).length}):`);
+    info(`participant MCP (${Object.keys((plan.launch.mcpConfig as McpConfigView | null)?.mcpServers ?? {}).length}):`);
     for (const line of mcpServerLines(plan.launch.mcpConfig)) console.log(`  ${line}`);
     info(`workspace skills: ${skillsNote(plan)}`);
     info('teamlead rules:');
@@ -1635,8 +1710,8 @@ export async function spawnTeamlead(rootOrHost, opts) {
   const formerTokenLogs = tokenLogHistoryOf(plan.host, plan.home, plan.rootTask, plan.former);
   const formerChildTokenLogs = plan.childMeta
     ? tokenLogHistoryOf(plan.host, plan.home, plan.childTask, participantOf(plan.childMeta, ORCHESTRATOR)) : [];
-  const { output, session, seen } = await plan.driver.spawn(plan.launch, {
-    tool, host: plan.host, home: plan.home, task: plan.childTask, address: ORCHESTRATOR,
+  const { output, session, seen } = await plan.driver.spawn!(plan.launch, {
+    tool: tool as LibToolBin & { bin: string }, host: plan.host, home: plan.home, task: plan.childTask, address: ORCHESTRATOR,
     cwd: plan.root, env: plan.env, ref: plan.name, role: 'teamlead', noun: 'teamlead',
     requireFullSession: true, requireLaunchMatch: true,
     launchFailNote: ` Repeat spawn --teamlead --task ${plan.rootTask} --slug ${plan.slug} after fixing the launch.`,
@@ -1680,7 +1755,7 @@ export async function spawnTeamlead(rootOrHost, opts) {
         mkdirSync(filesDir(plan.home, plan.childTask), { recursive: true });
         return;
       }
-      const childOwner = participantOf(readTask(plan.home, plan.childTask), ORCHESTRATOR);
+      const childOwner = participantOf(readTask(plan.home, plan.childTask), ORCHESTRATOR)!;
       const { nativeLaunchId: previousLaunch, nativeStop: previousStop, nativeUnlaunched,
         nativePendingLaunchId, ...childMetadata } = childOwner.metadata;
       const nextChild = participantRecord(ORCHESTRATOR, {
@@ -1693,7 +1768,7 @@ export async function spawnTeamlead(rootOrHost, opts) {
       const file = teamleadRebindFile(plan.home, plan.rootTask, plan.address);
       withTaskLock(plan.home, plan.rootTask, () => {
         const currentLead = participantOf(readTask(plan.home, plan.rootTask), plan.address);
-        if (currentLead?.metadata.sessionId !== plan.former.metadata.sessionId) {
+        if (currentLead?.metadata.sessionId !== plan.former!.metadata.sessionId) {
           throw new GateError(`${plan.address} changed session while this lift started; stop the extra session before retrying`);
         }
         if (nativeReservation && (!isDeepStrictEqual(nativeTeamleadState(currentLead), nativeReservation.oldRoot)
@@ -1704,7 +1779,7 @@ export async function spawnTeamlead(rootOrHost, opts) {
         writeJsonAtomic(file, {
           id: randomUUID(),
           rootTask: plan.rootTask, childTask: plan.childTask, address: plan.address,
-          oldRootSession: plan.former.metadata.sessionId, oldChildSession: childOwner.metadata.owner,
+          oldRootSession: plan.former!.metadata.sessionId, oldChildSession: childOwner.metadata.owner,
           sessionId: full, rootParticipant: nextLead, childParticipant: nextChild,
           ...(nativeReservation ? { native: nativeReservation } : {}),
         });
@@ -1720,8 +1795,8 @@ export async function spawnTeamlead(rootOrHost, opts) {
     }, { mode: 0o600 });
   }
   if (plan.driver.id === 'codex' && plan.launch.sessionRecord) {
-    plan.driver.registerWake(plan.home, plan.rootTask, plan.address, {
-      ...plan.env, [plan.driver.options.mcpIdentity.recordVar]: plan.launch.sessionRecord,
+    plan.driver.registerWake!(plan.home, plan.rootTask, plan.address, {
+      ...plan.env, [plan.driver.options.mcpIdentity!.recordVar]: plan.launch.sessionRecord,
     }, session);
   }
   ensureRootRecord(plan.home, plan.childTask);
@@ -1731,11 +1806,11 @@ export async function spawnTeamlead(rootOrHost, opts) {
   ensureWarden(plan.home, plan.childTask, { host: plan.host });
   keepBrief(plan);
   ok(`${plan.address} lifted at ${plan.root} for child task ${plan.childTask}${session ? ` (session ${session})` : ''}`);
-  plan.driver.saidLiftoff({ name: plan.name, seen, session, output });
+  plan.driver.saidLiftoff!({ name: plan.name, seen, session, output });
   return plan;
 }
 
-export async function spawn(rootOrHost, opts) {
+export async function spawn(rootOrHost: unknown, opts: SpawnOptions): Promise<SpawnPlan | TeamleadPlan> {
   if (opts.teamlead) return spawnTeamlead(rootOrHost, opts);
   const plan = await planSpawn(rootOrHost, opts);
   // Before the `--dry-run` branch: an ignored --task-title is reported on a dry run too.
@@ -1769,7 +1844,7 @@ export async function spawn(rootOrHost, opts) {
     // What this output does NOT have and why: a harness that invents the session name
     // itself cannot have it printed in advance, and silence about that would read as a skip.
     if (plan.driver.phrases.naming) info(`harness session name: ${plan.driver.phrases.naming}`);
-    info(`participant MCP (${plan.mcpConfig.mcpServers ? Object.keys(plan.mcpConfig.mcpServers).length : 0}):`);
+    info(`participant MCP (${(plan.mcpConfig as McpConfigView).mcpServers ? Object.keys((plan.mcpConfig as McpConfigView).mcpServers!).length : 0}):`);
     for (const line of mcpServerLines(plan.mcpConfig)) console.log(`  ${line}`);
     sayMcp(plan, { hint: false });
     info(`workspace skills: ${skillsNote(plan)}`);
@@ -1947,7 +2022,7 @@ export async function spawn(rootOrHost, opts) {
     plan.worktreeDeps = worktreeDeps;
     plan.prompt = rebuilt.prompt;
     plan.launch = rebuilt.launch;
-    if (plan.driver.id === 'codex') plan.launch.launchId = record.metadata.nativeLaunchId;
+    if (plan.driver.id === 'codex') plan.launch.launchId = record.metadata.nativeLaunchId as string;
     plan.argv = rebuilt.launch.argv;
     plan.mcpConfig = rebuilt.launch.mcpConfig;
     plan.settings = rebuilt.launch.settings;
@@ -1968,7 +2043,7 @@ export async function spawn(rootOrHost, opts) {
 
   } catch (error) {
     try { if (reserved) releaseNativeReservation(plan.home, plan.taskId, reserved.record); }
-    catch (releaseError) { warn('native reservation release refused: ' + releaseError.message); }
+    catch (releaseError) { warn('native reservation release refused: ' + (releaseError as Error).message); }
     throw error;
   }
 
@@ -1976,8 +2051,8 @@ export async function spawn(rootOrHost, opts) {
   // survives only on the native binary; `claude.cmd` pulls cmd.exe, and the helper gives
   // a clear refusal instead of a mangled command. Start and the "session came up" check
   // are shared with the reviewer in liftoff.js, and they live on the driver.
-  const { output, session, seen } = await plan.driver.spawn(plan.launch, {
-    tool,
+  const { output, session, seen } = await plan.driver.spawn!(plan.launch, {
+    tool: tool as LibToolBin & { bin: string },
     // Address, task, and bus home travel to the driver TOGETHER with the plan: a harness
     // whose wake channel is driven by the mechanism itself has to hand contact points to
     // its own machinery, and there is nothing else to address them with.
@@ -1998,7 +2073,7 @@ export async function spawn(rootOrHost, opts) {
       + ' There will be no messages from this address — waiting for them is pointless.',
     unboundNote: ` Stop it — its record is the only handle: ${plan.host.busCommand(['stop', plan.address, `--task ${plan.taskId}`])},`
       + ' then repeat spawn with the same command.',
-    persist: (id, state, sessionId) => plan.driver.id === 'codex'
+    persist: (id, _state, sessionId) => plan.driver.id === 'codex'
       ? persistNativeParticipant(plan.home, plan.taskId, record, { session: id ?? null, ...(sessionId ? { sessionId } : {}) })
       : persistLegacyParticipant(plan.home, plan.taskId,
         { ...record, metadata: { ...record.metadata, session: id ?? null, ...(sessionId ? { sessionId } : {}) } }),
@@ -2013,6 +2088,6 @@ export async function spawn(rootOrHost, opts) {
   // as an assignment someone is working by. And after the warden: the safety net over a
   // live participant must not depend on a file write.
   keepBrief(plan);
-  plan.driver.saidLiftoff({ name: plan.name, seen, session, output });
+  plan.driver.saidLiftoff!({ name: plan.name, seen, session, output });
   return plan;
 }

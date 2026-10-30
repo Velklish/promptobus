@@ -317,7 +317,7 @@ send order. `task`, `question`, `answer`, `review`, `result` and `artifact` stil
 knock. The native orchestrator's silence budget starts with actionable mail;
 retained progress consumes none of it. Participant stall reporting is unchanged.
 
-Source: `src/supervisor.ts`, `lib/warden.ts`, `lib/guard.js`.
+Source: `src/supervisor.ts`, `lib/warden.ts`, `lib/guard.ts`.
 
 The task warden is a detached process that watches every mailbox and knocks
 on unread mail. Its decisions live in the package state machine; the process

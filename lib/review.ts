@@ -45,33 +45,100 @@ import { ensureWarden, handOverContactPoints } from './warden.js';
 import { clearThroughputSidecar, sessionLogOf, tokenLogHistoryOf } from './model-routing/telemetry.js';
 import { assertNativeContextDriver, contextRules, nativeContextMetadata, nativeContextPrompt, prepareNativeContext } from './native-participant-context.js';
 
+import type { DeclaredStep, DriverDenyTool, HostClone, HostDenyRole, HostMcpTool, ParticipantV1, PreparedHostParticipantContextSelection, PromptobusHost, ReviewerCommandPhrases, RoleEntry, SessionSnapshot, StepKind, TaskV1 } from '../dist/index.js';
+import type { ParticipantTools } from './prompts/roles.js';
+import type { LibDriver, LibLaunchPlan, LibSpawnContext, LibToolBin } from './driver-runtime.js';
+import { coreDriver } from './driver-runtime.js';
+
+type GitRead = { refusal: string; out?: never } | { refusal?: never; out: string };
+type TaskIdentity = ReturnType<typeof newTaskIdentity>;
+type PlannedTask = Pick<TaskV1, 'id' | 'title' | 'status' | 'adapter' | 'participants'>;
+type TaskParticipants = Pick<TaskV1, 'participants'>;
+type Contacts = ReturnType<typeof contactsOf>;
+type RoutingContext = Awaited<ReturnType<typeof routingContext>>;
+type RoutedLift = NonNullable<ReturnType<typeof decideLift>>;
+type NativeSelection = PreparedHostParticipantContextSelection | null;
+export type DenyEntry = Pick<RoleEntry, 'hostDenyRole'> & { kind: StepKind };
+export interface GateInstructions { path: string; text: string }
+export interface ReviewOptions {
+  target?: string; base?: string; task?: string; title?: string; model?: string; effort?: string; permissionMode?: string;
+  harness?: string; strategy?: string; dryRun?: boolean; stepName?: string; approver?: boolean; alias?: boolean;
+  brief?: string; allowPayg?: boolean; refresh?: boolean; tool?: LibToolBin;
+  adapterFor?: NonNullable<Parameters<typeof routingContext>[1]>['adapterFor'];
+  awaitOptions?: LibSpawnContext['awaitOptions']; contextPurpose?: string; contextDeclaration?: unknown;
+}
+interface ReviewPlanningOptions extends ReviewOptions {
+  routing?: RoutingContext; instructions?: GateInstructions | null; instructionsReuse?: boolean;
+  taskIdentity?: TaskIdentity | null; preparedContext?: NativeSelection;
+}
+interface ReviewPreflight { taskIdentity: TaskIdentity | null; participant: ParticipantV1 | null; selectedContext: NativeSelection }
+interface ReviewRefusal {
+  refusal: string; routingSkipped?: undefined; routing?: undefined; reuse?: undefined;
+  taskIdentity?: undefined; selectedContext?: undefined;
+}
+interface ReviewSnapshot { at: string; head: string | null; clean: boolean; modifiedTracked: string[]; line: string }
+interface ReviewSkill { name: string; module: string; dir: string; shared: string | null }
+type Attachments = ReturnType<typeof attachedFiles>;
+type Seat = { kind: 'several'; detail: string; owner?: undefined } | { kind: 'one'; owner: ParticipantV1; detail: string }
+  | { kind: 'latest'; owner: ParticipantV1; detail: string; picked: string | null };
+type DiffSnapshot = { diff: string; stat: string; modifiedTracked: string[] };
+interface SubjectInput {
+  diffPath: string; repoDir: string; stat: string; untracked: string[]; baseLine: string; snapshot: ReviewSnapshot;
+  gateRecords: string[]; handoverRecords: string[]; attachments: Attachments; reviewedAddress: string | null;
+  attachmentSeat: Seat | null; approverBeside: Seat | null; approverFiles: Attachments;
+}
+interface ReviewPromptInput extends SubjectInput {
+  taskId: string; nsPath: string; address: string; stepName: string; instructions: GateInstructions | null;
+  rules: string[]; skill: ReviewSkill | null; driver: LibDriver; host: PromptobusHost; contacts: Contacts; priorFindings: string | null;
+}
+export interface ReviewPlan extends ReviewPromptInput {
+  home: string; createNew: PlannedTask | null; taskIdentity: TaskIdentity | null; selectedContext: NativeSelection;
+  otherActive: string[]; slug: string; name: string; baseRef: string | null; ownerAddress: string | null;
+  owner: ParticipantV1 | null; warnings: string[]; diff: string; participant: ParticipantV1 | null;
+  sessionState: 'alive' | 'dead' | 'unknown' | null; reuse: boolean; unlaunched: boolean; titleIgnored: boolean;
+  rebind: { from: string; to: string } | null; ruleDirs: string[]; addDirs: string[]; prompt: string; reReview: string;
+  module: ReturnType<PromptobusHost['moduleNote']>; pluginDir: string | null; settingsPath: string; guardCommand: string;
+  mcpConfigPath: string; mcpNote: ReturnType<typeof mcpNote>; launch: LibLaunchPlan; argv: string[]; mcpConfig: unknown; settings: unknown;
+  model: string; effort: string | null; permissionMode: string | null; refusal: string | null;
+  routing: RoutedLift['metadata'] | null; decision: RoutedLift['decision'] | null; routingSkipped: string | null;
+  env: NodeJS.ProcessEnv;
+}
+interface HarnessGeneration extends Record<string, unknown> { harness: string }
+interface ClosedGeneration {
+  harness: string; from: string | null; until: string; sessionId: string | null;
+  tokenLog: ReturnType<typeof sessionLogOf>; tokenLogHistory: ReturnType<typeof tokenLogHistoryOf>;
+  model?: string; effort?: string;
+}
+
 // Reviewer — a bus participant in the directory of the reviewed copy, one per task and repository.
 // **Read-only is a capability, not a wish**: `denyTools` is asked BEFORE lift and before any write.
 
 /** Refusal on the ability to strip tools; `null` means the driver declared it. A pure function:
  * there is no live driver without `denyTools`, so the branch is reachable only with a stand-in. */
-export function denyToolsRefusal(driver) {
-  if (hasFeature(driver, 'denyTools')) return null;
+export function denyToolsRefusal(driver: LibDriver) {
+  if (hasFeature(coreDriver(driver), 'denyTools')) return null;
   return `harness "${driver.id}" cannot strip session tools, and isolation of the reviewer rests `
     + 'exactly on that: a reviewer it started would write the reviewed tree, not read it. '
     + 'Review is not started with this harness — take a harness that declares denyTools.';
 }
 
-export function hostDenyClassification(host, entry, declaredServers = [], repoDir) {
+export function hostDenyClassification(host: Pick<PromptobusHost, 'participantDenyToolsByKind' | 'participantDenyTools'>, entry: DenyEntry, declaredServers: readonly unknown[] = [], repoDir?: string) {
   const canonicalServers = [...new Set((declaredServers ?? [])
     .map(String).filter((server) => server && server !== PROMPTOBUS_SERVER))];
   const member = typeof host.participantDenyToolsByKind === 'function' ? 'participantDenyToolsByKind'
     : typeof host.participantDenyTools === 'function' && entry.hostDenyRole ? 'participantDenyTools' : null;
   const selector = member === 'participantDenyToolsByKind' ? entry.kind : entry.hostDenyRole;
-  const answer = member ? host[member](selector, repoDir) : null;
-  const classified = Array.isArray(answer) ? answer : Array.isArray(answer?.tools) ? answer.tools : [];
-  const valid = classified.filter((tool) => tool && typeof tool === 'object'
-    && typeof tool.server === 'string' && typeof tool.tool === 'string'
-    && tool.server && tool.tool && tool.server !== PROMPTOBUS_SERVER);
+  const answer: unknown = member === 'participantDenyToolsByKind'
+    ? host.participantDenyToolsByKind!(selector as StepKind, repoDir)
+    : member ? host.participantDenyTools!(selector as HostDenyRole, repoDir) : null;
+  const classified: unknown[] = Array.isArray(answer) ? answer : Array.isArray((answer as { tools?: unknown } | null)?.tools) ? (answer as { tools: unknown[] }).tools : [];
+  const valid = classified.filter((tool): tool is HostMcpTool => (tool && typeof tool === 'object'
+    && typeof (tool as { server?: unknown }).server === 'string' && typeof (tool as { tool?: unknown }).tool === 'string'
+    && (tool as { server?: unknown }).server && (tool as { tool?: unknown }).tool && (tool as { server?: unknown }).server !== PROMPTOBUS_SERVER) as boolean);
   const tools = [...new Map(valid.map((tool) => [`${tool.server}\0${tool.tool}`, tool])).values()];
   const complete = !member && canonicalServers.length === 0
     ? true
-    : !Array.isArray(answer) && answer?.complete === true && Array.isArray(answer.tools);
+    : !Array.isArray(answer) && (answer as { complete?: unknown } | null)?.complete === true && Array.isArray((answer as { tools?: unknown }).tools);
   const covered = new Set(tools.map(({ server }) => server));
   const unclassified = canonicalServers.filter((server) => !covered.has(server));
   const source = member ? `${member}('${selector}')` : 'host write-tool classifier';
@@ -85,11 +152,11 @@ export function hostDenyClassification(host, entry, declaredServers = [], repoDi
 
 // The host names MCP writes in canonical pairs; only a driver declaring a mechanical MCP deny adds
 // them. The bus stays available, and `complete` tells an empty classification from an uninspected host.
-export function reviewerDenyTools(host, driver, declaredServers = [], stepName = REVIEWER, repoDir) {
+export function reviewerDenyTools(host: PromptobusHost, driver: LibDriver, declaredServers: readonly unknown[] = [], stepName: string = REVIEWER, repoDir?: string): { tools: readonly DriverDenyTool[]; refusal: string | null } {
   const registry = registryOf(host);
   const builtIn = packageDenyTools(registry, stepName, driver.options.denyTools ?? []);
-  if (!hasFeature(driver, 'mcpDenyTools')) return { tools: builtIn, refusal: null };
-  const classified = hostDenyClassification(host, roleEntry(registry, stepName), declaredServers, repoDir);
+  if (!hasFeature(coreDriver(driver), 'mcpDenyTools')) return { tools: builtIn, refusal: null };
+  const classified = hostDenyClassification(host, roleEntry(registry, stepName) as DenyEntry, declaredServers, repoDir);
   if (!classified.complete) return {
     tools: builtIn,
     refusal: `harness "${driver.id}" cannot mechanically deny MCP writes for host "${host.commandName}": `
@@ -97,28 +164,28 @@ export function reviewerDenyTools(host, driver, declaredServers = [], stepName =
       + 'Review is not started — the host must return { tools, complete: true } before this harness can review.',
   };
   return {
-    tools: classified.tools.length ? [...builtIn, ...driver.mcpDenyTools(classified.tools)] : builtIn,
+    tools: classified.tools.length ? [...builtIn, ...driver.mcpDenyTools!(classified.tools)] : builtIn,
     refusal: null,
   };
 }
 
 // Hint "how to wait for the report", naming the task by its id — what `--task` accepts. Otherwise
 // `--task` would get the session name from the neighbouring line of output.
-function waitHint(what, taskId) {
+function waitHint(what: string, taskId: string) {
   return `${what} will arrive as a type=result message to the orchestrator of task ${taskId}: `
     + 'the bus warden will wake you, fetch the mailbox';
 }
 
 /** Which reviewer this subject belongs to. The slug comes from the SUBJECT, not the clone root: with
  * two workers of one repository `basename` would send the second review to the first's reviewer. */
-export function reviewerFor(ownerStep, taskMeta, repoDir, clone, stepName = REVIEWER) {
+export function reviewerFor(ownerStep: DeclaredStep, taskMeta: TaskParticipants, repoDir: string, clone: Pick<HostClone, 'abs'>, stepName: string = REVIEWER) {
   const owner = worktreeOwner(ownerStep, taskMeta, repoDir);
   const slug = (owner ? addressSlug(addressOf(owner)) : normalize(path.basename(clone.abs))) || 'repo';
   return { owner, slug, address: `${stepName}:${slug}` };
 }
 
 /** The bus checks only journal facts: the current assignment, the subject and a result after it. */
-export function requireStepResults(host, { home, taskId, taskMeta, stepName, slug, repoDir, facts = null }) {
+export function requireStepResults(host: Pick<PromptobusHost, 'pipeline'>, { home, taskId, taskMeta, stepName, slug, repoDir, facts = null }: { home: string; taskId: string; taskMeta: TaskParticipants; stepName: string; slug: string; repoDir: string; facts?: ReturnType<typeof strictTaskFacts> | null; signal?: AbortSignal }) {
   const steps = pipelineOf(host);
   const index = steps.findIndex((step) => step.name === stepName);
   if (index < 1) throw new GateError(`step ${stepName} is not a gate in the declared pipeline: ${steps.map((s) => s.name).join(' → ')}`);
@@ -147,52 +214,52 @@ export function requireStepResults(host, { home, taskId, taskMeta, stepName, slu
   }
 }
 
-export function readGateInstructions(host, stepName, cached = null) {
+export function readGateInstructions(host: PromptobusHost, stepName: string | undefined, cached: unknown = null): GateInstructions | null {
   const file = pipelineOf(host).find((step) => step.name === stepName)?.instructions;
   if (!file) return null;
   if (!path.isAbsolute(file)) {
     throw new GateError(`step ${stepName} instructions path ${file} is not absolute; the host must resolve it from the install root`);
   }
-  if (cached?.path === file && typeof cached.text === 'string') return cached;
+  if ((cached as { path?: unknown } | null)?.path === file && typeof (cached as { text?: unknown }).text === 'string') return cached as GateInstructions;
   try {
     return { path: file, text: readFileSync(file, 'utf8') };
   } catch (error) {
-    throw new GateError(`step ${stepName} instructions ${file} cannot be read: ${error.message}`);
+    throw new GateError(`step ${stepName} instructions ${file} cannot be read: ${(error as Error).message}`);
   }
 }
 
-export function gateInstructionsSection(instructions) {
+export function gateInstructionsSection(instructions: GateInstructions | null | undefined) {
   return instructions ? `## Gate instructions\n\n${instructions.text}\n\n` : '';
 }
 
 /** The subject's reviewer, if any, before the routing context. Read-only and silent. */
-function reviewerInJournal(host, { target, task, stepName = REVIEWER }) {
+function reviewerInJournal(host: PromptobusHost, { target, task, stepName = REVIEWER }: Pick<ReviewOptions, 'target' | 'task' | 'stepName'>) {
   try {
     const ownerStep = pipelineOf(host)[0];
-    const resolved = resolveRepoDir(target);
+    const resolved = resolveRepoDir(target!);
     if (resolved.refusal) return false;
-    const clone = host.cloneOf(resolved.repoDir);
+    const clone = host.cloneOf(resolved.repoDir!);
     if (!clone) return false;
     const home = host.promptobusHome();
-    const taskId = task ?? claimingTasks(ownerStep, home, resolved.repoDir, stepName)[0]?.id ?? null;
+    const taskId = task ?? claimingTasks(ownerStep, home, resolved.repoDir!, stepName)[0]?.id ?? null;
     if (!taskId || !taskExists(home, taskId)) return false;
     const meta = readTask(home, taskId);
-    return participantOf(meta, reviewerFor(ownerStep, meta, resolved.repoDir, clone, stepName).address);
+    return participantOf(meta, reviewerFor(ownerStep, meta, resolved.repoDir!, clone, stepName).address);
   } catch {
     return false;
   }
 }
 
-function harnessHistoryOf(metadata) {
+function harnessHistoryOf(metadata: Record<string, unknown> | null | undefined) {
   const raw = metadata?.harnessHistory;
   if (!Array.isArray(raw)) return [];
-  return raw.filter((row) => row && typeof row.harness === 'string' && row.harness);
+  return (raw as unknown[]).filter((row): row is HarnessGeneration => (row && typeof (row as { harness?: unknown }).harness === 'string' && (row as { harness?: unknown }).harness) as boolean);
 }
 
-function closedRouting(participant) {
+function closedRouting(participant: ParticipantV1) {
   const routing = routingOf(participant);
   if (!routing) return {};
-  const entry = {};
+  const entry: { tupleId?: string; strategy?: string; strategySource?: string } = {};
   if (typeof routing.tupleId === 'string' && routing.tupleId) entry.tupleId = routing.tupleId;
   if (typeof routing.strategy === 'string' && routing.strategy) entry.strategy = routing.strategy;
   if (typeof routing.strategySource === 'string' && routing.strategySource) entry.strategySource = routing.strategySource;
@@ -201,9 +268,9 @@ function closedRouting(participant) {
 
 // One closed generation. `from` is that harness's last lift; the counting window starts at the
 // previous entry's `until`, so a same-harness re-lift in between does not drop its earlier rounds.
-function closedHarnessGeneration(participant, until, plan) {
+function closedHarnessGeneration(participant: ParticipantV1, until: string, plan: Pick<ReviewPlan, 'host' | 'home' | 'taskId'>) {
   const meta = participant?.metadata ?? {};
-  const entry = {
+  const entry: ClosedGeneration = {
     harness: participant.harness,
     from: typeof meta.started === 'string' ? meta.started : null,
     until,
@@ -219,27 +286,29 @@ function closedHarnessGeneration(participant, until, plan) {
 
 // A new lift replaces the participant record whole. History is copied on every lift and extended
 // only when this call re-binds; a same-harness repeat would otherwise forget the earlier tool.
-function harnessHistoryForLift(participant, rebind, until, plan) {
+function harnessHistoryForLift(participant: ParticipantV1 | null, rebind: ReviewPlan['rebind'], until: string, plan: Pick<ReviewPlan, 'host' | 'home' | 'taskId'>) {
   if (!participant) return [];
   return rebind ? closedHarnessGeneration(participant, until, plan) : harnessHistoryOf(participant.metadata);
 }
 
-function harnessChangeRefusal(host, { address, taskId, from, to, sessionState, participant, driver, sessions }) {
+function harnessChangeRefusal(host: PromptobusHost, { address, taskId, from, to, sessionState, participant, driver, sessions }: { address: string; taskId: string; from: string; to: string; sessionState: ReviewPlan['sessionState']; participant?: ParticipantV1 | null; driver?: LibDriver; sessions?: SessionSnapshot }) {
   const head = `${address} in task ${taskId} was started by harness ${from}, and --harness asks for ${to}: `;
   if (sessionState === 'alive') {
     const stop = host.busCommand(['stop', address, `--task ${taskId}`]);
     return `${head}the session is alive, so its tool is not changed. `
       + `Stop it first: ${stop}, then repeat this review with --harness ${to}.`;
   }
-  const why = unknownWhy(participant, sessions, driver);
+  const why = unknownWhy(participant, sessions!, driver!);
   return `${head}liveness of the session is unknown — ${why} — `
     + 'and unknown is not a gone session, so its tool is not changed. '
-    + `This call saw unknown. Check ${driver.phrases.sessions}.`;
+    + `This call saw unknown. Check ${driver!.phrases.sessions}.`;
 }
 
 // Review plan: everything computed, nothing written. Gates of the REQUEST throw; a refusal from what
 // was READ leaves as a `{ refusal }` field, because `fail()` here would take a unit test past the summary.
-export function planReview(rootOrHost, { target, base, task, title, model, effort: effortOpt, permissionMode: permissionOpt, harness, strategy = undefined, routing = null, instructions: suppliedInstructions = undefined, instructionsReuse = undefined, dryRun, stepName = REVIEWER, contextPurpose, contextDeclaration, taskIdentity, preparedContext, contextPreflightOnly = false } = {}) {
+export function planReview(rootOrHost: unknown, options: ReviewPlanningOptions & { contextPreflightOnly: true }): ReviewPreflight | ReviewRefusal;
+export function planReview(rootOrHost: unknown, options?: ReviewPlanningOptions & { contextPreflightOnly?: false }): ReviewPlan | ReviewRefusal;
+export function planReview(rootOrHost: unknown, { target, base, task, title, model, effort: effortOpt, permissionMode: permissionOpt, harness, strategy = undefined, routing = null, instructions: suppliedInstructions = undefined, instructionsReuse = undefined, dryRun, stepName = REVIEWER, contextPurpose, contextDeclaration, taskIdentity, preparedContext, contextPreflightOnly = false }: ReviewPlanningOptions & { contextPreflightOnly?: boolean } = {}): ReviewPlan | ReviewPreflight | ReviewRefusal {
   const host = hostOf(rootOrHost);
   const stepKind = roleEntry(registryOf(host), stepName)?.kind;
   if (stepKind !== READS_DIFF) throw new GateError(`step ${stepName} is ${stepKind ?? 'unknown'}, not ${READS_DIFF}`);
@@ -257,21 +326,21 @@ export function planReview(rootOrHost, { target, base, task, title, model, effor
     // participant driver, and this gate is the very first.
     throw new GateError(missingTarget(host, { task, title, base, model, effort: effortOpt, harness, dryRun }));
   }
-  const resolved = resolveRepoDir(target);
+  const resolved = resolveRepoDir(target!);
   if (resolved.refusal) return { refusal: resolved.refusal };
-  const { targetDir, repoDir } = resolved;
+  const { targetDir, repoDir } = resolved as { targetDir: string; repoDir: string };
   if (!host.inWorkspace(repoDir)) {
     // The target is inside the zone and its git-toplevel is above: a group folder with nested
     // clones, not a clone — an "outside" refusal here would confuse.
     if (host.inWorkspace(targetDir)) {
-      throw new GateError(host.reviewLayoutError('not-clone', { targetDir, repoDir }));
+      throw new GateError(host.reviewLayoutError('not-clone', { targetDir, repoDir })!);
     }
-    throw new GateError(host.reviewLayoutError('outside', { repoDir }));
+    throw new GateError(host.reviewLayoutError('outside', { repoDir })!);
   }
   // Which clone that is and how it is named — the host's answer: zones and
   // namespace depth are its layout, not the package's.
   const clone = host.cloneOf(repoDir);
-  if (!clone) throw new GateError(host.reviewLayoutError('no-clone', { repoDir }));
+  if (!clone) throw new GateError(host.reviewLayoutError('no-clone', { repoDir })!);
   const nsPath = clone.nsPath;
 
   const home = host.promptobusHome();
@@ -312,20 +381,20 @@ export function planReview(rootOrHost, { target, base, task, title, model, effor
   // The command does not invent a task name: opening a new one means naming it, and the session is
   // called by that name. Checked below, once there is something to review.
   const identity = existing ? null : taskIdentity ?? newTaskIdentity(slugify(String(title ?? '').trim()));
-  const taskId = existing ?? identity.id;
+  const taskId = existing ?? identity!.id;
   // Plan shape is journal shape, the same `readTask` returns: slug and stamp sit
   // in `adapter`.
-  const createNew = existing ? null : {
+  const createNew: PlannedTask | null = existing ? null : {
     id: taskId,
     title: String(title ?? '').trim(),
     status: 'active',
     adapter: {
-      ...(identity.slug ? { slug: identity.slug } : {}),
-      ...(identity.stamp ? { stamp: identity.stamp } : {}),
+      ...(identity!.slug ? { slug: identity!.slug } : {}),
+      ...(identity!.stamp ? { stamp: identity!.stamp } : {}),
     },
     participants: [],
   };
-  const taskMeta = createNew ?? readTask(home, taskId);
+  const taskMeta = (createNew ?? readTask(home, taskId)) as PlannedTask;
 
   // Whose subject this is: a directory listed as a participant worktree is reviewed FOR them — the
   // address and the diff base come from them, and the main clone has no owner.
@@ -345,7 +414,7 @@ export function planReview(rootOrHost, { target, base, task, title, model, effor
   // Diff base: `--base` is strongest, then the branch point spawn wrote, then a guess from the LOCAL
   // default branch. The recorded point is checked against HEAD history, since a branch may be rebased.
   const isWorktree = repoDir !== clone.abs;
-  const recorded = base ? null : ancestorOfHead(repoDir, ownerFields.baseSha);
+  const recorded = base ? null : ancestorOfHead(repoDir, ownerFields.baseSha as string | null | undefined);
   // The main clone is still computed from the default branch: merge-base with itself would give HEAD
   // and an empty diff, and reviewing unpushed work is a legal move.
   const defBranch = base || !isWorktree ? null : localDefault(repoDir, host);
@@ -410,15 +479,15 @@ export function planReview(rootOrHost, { target, base, task, title, model, effor
   if (!baseRef) warnings.push('base branch is not determined — only uncommitted work is reviewed (pass --base <ref>)');
   // Git reads are checked separately, since each depends on the last. Patch, stat and raw records
   // come from one diff queue, and the comparison after it never reads the moving tree again.
-  const from = baseRef ? git(repoDir, ['merge-base', baseRef, 'HEAD']) : { out: 'HEAD' };
+  const from: GitRead = baseRef ? git(repoDir, ['merge-base', baseRef, 'HEAD']) : { out: 'HEAD' };
   if (from.refusal) return { refusal: from.refusal };
-  const diffFrom = from.out;
+  const diffFrom = from.out!;
   const diffOut = snapshotDiff(repoDir, diffFrom, head);
   if (diffOut.refusal) return { refusal: diffOut.refusal };
-  const { diff, stat, modifiedTracked } = diffOut;
+  const { diff, stat, modifiedTracked } = diffOut as DiffSnapshot;
   const others = git(repoDir, ['ls-files', '--others', '--exclude-standard']);
   if (others.refusal) return { refusal: others.refusal };
-  const untracked = others.out.split('\n').filter(Boolean);
+  const untracked = others.out!.split('\n').filter(Boolean);
   // The diff file is a ONE-TIME snapshot: the worker goes on committing while the reviewer reads.
   // What the reviewer needs is its age and whether the tracked tree matched HEAD, so all three travel.
   const snapshot = {
@@ -426,7 +495,7 @@ export function planReview(rootOrHost, { target, base, task, title, model, effor
     head: head ?? null,
     clean: modifiedTracked.length === 0,
     modifiedTracked,
-  };
+  } as ReviewSnapshot;
   snapshot.line = `diff snapshot: ${snapshot.at}${snapshot.head ? `, worktree HEAD ${snapshot.head}` : ''}, `
     + (snapshot.clean ? 'tracked tree clean' : `tracked tree dirty (modified tracked paths: ${snapshot.modifiedTracked.join(', ')})`);
 
@@ -442,18 +511,18 @@ export function planReview(rootOrHost, { target, base, task, title, model, effor
   const was = participant?.metadata ?? {};
   // The participant name from the journal is not rewritten: the session was started under it, and
   // re-review finds it by that line. The title is taken from the worktree owner.
-  const name = was.name ?? sessionName(taskMeta, {
+  const name = (was.name ?? sessionName(taskMeta, {
     slug: stepName === REVIEWER ? slug : `${stepName}-${slug}`,
     reviewer: true,
-    title: ownerFields.title,
+    title: ownerFields.title as string | null | undefined,
     taken: (taskMeta.participants ?? []).map((p) => p.metadata.name).filter(Boolean),
-  });
+  })) as string;
   // Re-review goes to the participant only if its bg-session is alive: after a stop the message
   // would sit in the mailbox forever. Unknown — the diff goes to the former address.
   const sessions = participant ? snapshotOf([participant]) : null;
   const sessionState = participant ? participantSession(participant, sessions) : null;
   const lastResultId = sessionState === 'dead'
-    ? strictTaskFacts(home, taskId).messages.filter((m) => m.sender === participant.id && m.type === 'result')
+    ? strictTaskFacts(home, taskId).messages.filter((m) => m.sender === participant!.id && m.type === 'result')
       .map((m) => m.id).sort().at(-1)
     : null;
   const priorFindings = lastResultId ? journalMessageBody(home, taskId, lastResultId, 'review') : null;
@@ -471,7 +540,7 @@ export function planReview(rootOrHost, { target, base, task, title, model, effor
   const declaredSkill = moduleHit?.meta?.review?.skill;
   let skill = null;
   if (declaredSkill) {
-    const dir = selectedContext ? selectedContext.skills.find(entry => entry.name === declaredSkill).root : host.reviewSkillDir(declaredSkill, repoDir);
+    const dir = selectedContext ? selectedContext.skills.find(entry => entry.name === declaredSkill)!.root : host.reviewSkillDir(declaredSkill, repoDir);
     if (!existsSync(path.join(dir, 'SKILL.md'))) {
       throw new GateError(`module ${moduleHit.name} declared review skill "${declaredSkill}", but ${dir} is not laid out — ${host.syncHint()}`);
     }
@@ -481,7 +550,7 @@ export function planReview(rootOrHost, { target, base, task, title, model, effor
 
   // A name is required only when a task will actually be opened, and an empty SLUG is not an absent
   // name: a non-latin title slugs to nothing, and refusing there would loop.
-  if (createNew && !identity.slug && (diff.trim() || untracked.length)) {
+  if (createNew && !identity!.slug && (diff.trim() || untracked.length)) {
     if (!createNew.title) {
       throw new GateError(`review of ${nsPath} opens a new task, and it has no name: `
         + 'name it — --title "<whose work we are looking at>". '
@@ -497,15 +566,15 @@ export function planReview(rootOrHost, { target, base, task, title, model, effor
   const recordedDriver = participant ? driverOf(participant) : null;
   // Gone is the measured `dead` state. Unknown is the driver not answering, and it is not gone.
   const sessionGone = sessionState === 'dead';
-  const harnessChange = !!(participant && harness && recordedDriver && harness !== recordedDriver.id);
+  const harnessChange = !!(participant && harness && recordedDriver && harness !== recordedDriver!.id);
   if (harnessChange && sessionState === 'alive') {
     throw new GateError(harnessChangeRefusal(host, {
-      address, taskId, from: recordedDriver.id, to: harness, sessionState: 'alive',
+      address, taskId, from: recordedDriver!.id, to: harness, sessionState: 'alive',
     }));
   }
   if (harnessChange && !sessionGone) {
     throw new GateError(harnessChangeRefusal(host, {
-      address, taskId, from: recordedDriver.id, to: harness, sessionState,
+      address, taskId, from: recordedDriver!.id, to: harness, sessionState,
       participant, driver: recordedDriver, sessions,
     }));
   }
@@ -515,13 +584,13 @@ export function planReview(rootOrHost, { target, base, task, title, model, effor
   // had been paid for would be silent exactly where it matters.
   const routingSkipped = participant && strategy
     ? (rebind
-      ? `${address} in task ${taskId} is being re-bound from harness ${recordedDriver.id} to ${harness}: `
+      ? `${address} in task ${taskId} is being re-bound from harness ${recordedDriver!.id} to ${harness}: `
         + '--strategy routes a lift, and --harness names the tool. The flag is ignored here.'
       : `${address} in task ${taskId} is already in the journal, started by harness ${participant.harness}: `
         + '--strategy routes a lift, and this call sends a new diff to a reviewer whose harness is already '
         + 'fixed. The flag is ignored here.')
     : null;
-  const driver = rebind ? lifter : (participant ? recordedDriver : (routed ? liftHarness(host, routed.harness) : lifter));
+  const driver = (rebind ? lifter : (participant ? recordedDriver : (routed ? liftHarness(host, routed.harness) : lifter)))!;
   assertNativeContextDriver(selectedContext, driver);
   // Legal flag values — the dictionary of THIS participant's driver; a foreign one would let a level
   // through as a model-id suffix. A routed lift's effort goes through the same gate.
@@ -560,7 +629,7 @@ export function planReview(rootOrHost, { target, base, task, title, model, effor
   // tools, the same loop-guard command, default permission mode, and the driver's default model.
   const resolvedModel = routed?.model ?? model ?? driver.options.defaultModel;
   const liftEnv = sessionEnv(driver, process.env, host);
-  const launch = driver.prepare({
+  const launch = driver.prepare!({
     ref: name,
     address,
     task: taskId,
@@ -589,7 +658,7 @@ export function planReview(rootOrHost, { target, base, task, title, model, effor
   return {
     home, taskId, createNew, taskIdentity: identity, selectedContext, otherActive, slug, stepName, address, name, nsPath, repoDir, baseRef, baseLine, snapshot, gateRecords, handoverRecords, attachments, ownerAddress, reviewedAddress, attachmentSeat, approverBeside, approverFiles, owner, warnings,
     diff, untracked, stat,
-    participant, sessionState, reuse, unlaunched, titleIgnored, rebind: rebind ? { from: recordedDriver.id, to: harness } : null,
+    participant, sessionState, reuse, unlaunched, titleIgnored, rebind: rebind ? { from: recordedDriver!.id, to: harness } : null,
     skill, rules, ruleDirs, addDirs, diffPath, prompt, reReview, instructions, contacts, priorFindings,
     module: host.moduleNote(repoDir), pluginDir,
     settingsPath, guardCommand, mcpConfigPath, mcpNote: mcpNote(mcp, 'the reviewer'),
@@ -606,7 +675,7 @@ export function planReview(rootOrHost, { target, base, task, title, model, effor
 
 // Mail piled up in the orchestrator's own mailbox is shown here too: a notification may not have
 // arrived. A task opened by this same call gets no counter — its mailbox is empty by construction.
-function warnUnread(plan) {
+function warnUnread(plan: ReviewPlan) {
   if (plan.createNew) return;
   const note = unreadNote(plan.home, plan.taskId, ORCHESTRATOR, sessionIdentity());
   if (note) warn(note);
@@ -614,24 +683,24 @@ function warnUnread(plan) {
 
 /** Where the reviewer actually sits, printed on a real lift as well as in `--dry-run`: the repository
  * under review is NOT the session's working directory. One function for both prints, so they cannot drift. */
-function sayReviewerHome(plan) {
+function sayReviewerHome(plan: ReviewPlan) {
   if (!plan.launch.cwd || plan.launch.cwd === plan.repoDir) return;
   info(`reviewer home: ${plan.launch.cwd} — the reviewed directory is attached read-only`);
 }
 
-function sayRebind(plan) {
+function sayRebind(plan: ReviewPlan) {
   if (!plan.rebind) return;
   info(`reviewer ${plan.address} re-bound from harness ${plan.rebind.from} to ${plan.rebind.to}: `
     + 'the previous session is gone, and this lift starts a new one');
 }
 
-function warnDirtySnapshot(plan) {
+function warnDirtySnapshot(plan: ReviewPlan) {
   if (plan.snapshot.clean) return;
   warn(`the diff snapshot was taken from a dirty tracked tree (${plan.snapshot.modifiedTracked.join(', ')}): `
     + 'the snapshot can omit committed content or include uncommitted content');
 }
 
-export async function review(rootOrHost, opts = {}) {
+export async function review(rootOrHost: unknown, opts: ReviewOptions = {}): Promise<ReviewPlan | import('./approver.js').ApproverPlan> {
   const host = hostOf(rootOrHost);
   const kind = opts.approver ? WRITES_MAIN_TREE : READS_DIFF;
   const found = pipelineOf(host).slice(1).find((gate) => gate.kind === kind);
@@ -642,7 +711,7 @@ export async function review(rootOrHost, opts = {}) {
   return step(host, { ...opts, stepName: found.name, alias: true });
 }
 
-export async function step(rootOrHost, opts = {}) {
+export async function step(rootOrHost: unknown, opts: ReviewOptions = {}): Promise<ReviewPlan | import('./approver.js').ApproverPlan> {
   const host = hostOf(rootOrHost);
   const gates = pipelineOf(host).slice(1);
   const selected = gates.find((gate) => gate.name === opts.stepName);
@@ -667,7 +736,7 @@ export async function step(rootOrHost, opts = {}) {
   return reviewLift(host, { ...opts, stepName: selected.name });
 }
 
-async function reviewLift(rootOrHost, opts) {
+async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<ReviewPlan> {
   const host = hostOf(rootOrHost);
   const wanted = effectiveStrategy(host, { strategy: opts?.strategy });
   if (!String(opts.target ?? '').trim()) {
@@ -680,7 +749,7 @@ async function reviewLift(rootOrHost, opts) {
     target: opts.target, task: opts.task, stepName: opts.stepName,
   });
   const selectedMode = typeof host.selectParticipantContext === 'function' || opts.contextPurpose !== undefined
-    || opts.contextDeclaration !== undefined || participant?.metadata?.participantContext;
+    || opts.contextDeclaration !== undefined || (participant as ParticipantV1 | null)?.metadata?.participantContext;
   const preliminary = selectedMode ? planReview(host, { ...opts, contextPreflightOnly: true }) : null;
   const state = participant ? participantSession(participant, snapshotOf([participant])) : null;
   const reuse = !!participant && state !== 'dead' && !(participant.metadata?.pending && state !== 'alive');
@@ -705,20 +774,22 @@ async function reviewLift(rootOrHost, opts) {
       liftUnrated: true,
     });
   })();
-  const plan = planReview(host, { ...opts, routing, instructions, instructionsReuse: reuse,
+  const outcome = planReview(host, { ...opts, routing, instructions, instructionsReuse: reuse,
     taskIdentity: preliminary?.taskIdentity, preparedContext: preliminary?.selectedContext });
-  if (plan.routingSkipped) warn(plan.routingSkipped);
-  if (plan.routing) info(routingLine(plan.routing));
+  if (outcome.routingSkipped) warn(outcome.routingSkipped);
+  if (outcome.routing) info(routingLine(outcome.routing));
   // A plan refusal is printed and the command exits: `fail()` lives here, not in
   // the plan.
-  if (plan.refusal && !plan.reuse) fail(plan.refusal);
+  if (outcome.refusal && !outcome.reuse) fail(outcome.refusal);
   // A re-review keeps the running session and the denies it launched with; the
   // regressed host answer is said, not swallowed — a new lift would refuse.
-  else if (plan.refusal) warn(`${plan.refusal} The running reviewer keeps the deny list it was launched with; this re-review proceeds.`);
+  else if (outcome.refusal) warn(`${outcome.refusal} The running reviewer keeps the deny list it was launched with; this re-review proceeds.`);
+  // The refusal-only result cannot pass the fail branch above.
+  const plan = outcome as ReviewPlan;
   // The binary is resolved lazily: the command has three early returns without
   // lift. `opts.tool` is a seam.
-  let toolCache = null;
-  let liftProvenance = null;
+  let toolCache: ReturnType<typeof withToolVersion> | null = null;
+  let liftProvenance: ReturnType<typeof launchProvenance> | null = null;
   // The binary name is named by the driver: the command has none of its own.
   const harnessTool = () => (toolCache ??= withToolVersion(
     plan.driver, plan.host, normalizeLaunchTool(
@@ -741,7 +812,7 @@ async function reviewLift(rootOrHost, opts) {
     warnDirtySnapshot(plan);
     info(`task: ${plan.taskId}${plan.createNew ? ` (will be created: ${plan.createNew.title})` : ''}${titleNote(plan)}`);
     // Name from the journal, not rebuilt: on a former-CLI task they will not match.
-    const sessionShown = plan.reuse ? plan.participant.metadata.name ?? plan.name : plan.name;
+    const sessionShown = plan.reuse ? plan.participant!.metadata.name ?? plan.name : plan.name;
     info(`reviewer address: ${plan.address}${ownerNote(plan)} · session: "${sessionShown}"${modelNote(plan)}${effortNote(plan)}${participantNote(plan)}`);
     sayRebind(plan);
     if (plan.decision) sayDecision(plan.decision);
@@ -751,7 +822,7 @@ async function reviewLift(rootOrHost, opts) {
     for (const f of plan.rules) console.log(`  ${f}`);
     sayModule(plan);
     // The server list, not the whole config: it holds substituted tokens.
-    info(`reviewer MCP (${plan.mcpConfig.mcpServers ? Object.keys(plan.mcpConfig.mcpServers).length : 0}):`);
+    info(`reviewer MCP (${(plan.mcpConfig as { mcpServers?: unknown }).mcpServers ? Object.keys((plan.mcpConfig as { mcpServers: object }).mcpServers).length : 0}):`);
     for (const line of mcpServerLines(plan.mcpConfig)) console.log(`  ${line}`);
     sayMcp(plan, { hint: false });
     // We do not ask the binary version in `--dry-run`: nothing is started, and
@@ -782,7 +853,7 @@ async function reviewLift(rootOrHost, opts) {
     if (noDeny) fail(noDeny);
     const t = harnessTool();
     sayTool(t, { reason: false });
-    if (!t.ok) fail(t.reason);
+    if (!t.ok) fail(t.reason!);
     // Version gate is shared with the worker: if the refusals diverged, the
     // reviewer would silently sit on default effort.
     const ultra = optionRefusal(plan.driver, plan.effort, t, plan.host);
@@ -842,20 +913,20 @@ async function reviewLift(rootOrHost, opts) {
       diffClean: plan.snapshot.clean,
       diffModifiedTracked: plan.snapshot.modifiedTracked,
       pending: true,
-      mechanismPath: liftProvenance.mechanismPath,
-      mechanismPathIssue: liftProvenance.mechanismPathIssue,
+      mechanismPath: liftProvenance!.mechanismPath,
+      mechanismPathIssue: liftProvenance!.mechanismPathIssue,
       mechanismVersion: plan.host.version,
-      packagePath: liftProvenance.packagePath,
-      packageVersion: liftProvenance.packageVersion,
-      packageIssue: liftProvenance.packageIssue,
-      hostVersion: liftProvenance.hostVersion,
-      binaryPath: liftProvenance.binaryPath,
-      binaryVersion: liftProvenance.binaryVersion,
+      packagePath: liftProvenance!.packagePath,
+      packageVersion: liftProvenance!.packageVersion,
+      packageIssue: liftProvenance!.packageIssue,
+      hostVersion: liftProvenance!.hostVersion,
+      binaryPath: liftProvenance!.binaryPath,
+      binaryVersion: liftProvenance!.binaryVersion,
     }, registryOf(plan.host)), plan.participant, REGISTRY);
   };
   const reserved = !plan.reuse ? reserve() : null;
 
-  let record, tool;
+  let record: ParticipantV1, tool: ReturnType<typeof withToolVersion>;
   try {
     // The reviewer is alive — we send it a new diff: re-review in the same context checks findings.
     if (plan.reuse) {
@@ -923,19 +994,19 @@ async function reviewLift(rootOrHost, opts) {
     // the record is laid by the registry: an unknown-harness refusal arrives before the journal entry.
     if (!plan.reuse) clearThroughputSidecar(plan.home, plan.taskId, plan.address);
     ({ record } = reserved ?? reserve());
-    if (plan.driver.id === 'codex') plan.launch.launchId = record.metadata.nativeLaunchId;
+    if (plan.driver.id === 'codex') plan.launch.launchId = record.metadata.nativeLaunchId as string;
 
     tool = harnessTool();
 
   } catch (error) {
     try { if (reserved) releaseNativeReservation(plan.home, plan.taskId, reserved.record); }
-    catch (releaseError) { warn('native reservation release refused: ' + releaseError.message); }
+    catch (releaseError) { warn('native reservation release refused: ' + (releaseError as Error).message); }
     throw error;
   }
 
   // Start and the "session lifted" check — a helper shared with the worker inside the driver.
-  const { output, session, seen } = await plan.driver.spawn(plan.launch, {
-    tool,
+  const { output, session, seen } = await plan.driver.spawn!(plan.launch, {
+    tool: tool as LibToolBin & { bin: string },
     // Address, task and bus home go to the driver TOGETHER with the plan: a harness whose wake
     // channel the mechanism drives has to hand contact points to its own machinery.
     home: plan.home,
@@ -980,7 +1051,7 @@ async function reviewLift(rootOrHost, opts) {
   // The warden is started right after the participant: without it the reviewer would not learn about
   // a message — it fetches the mailbox only on its own turn.
   ensureWarden(plan.home, plan.taskId, { host: plan.host });
-  plan.driver.saidLiftoff({ name: plan.name, seen, session, output });
+  plan.driver.saidLiftoff!({ name: plan.name, seen, session, output });
   info(waitHint('the report', plan.taskId));
   // Print the re-review command in full so the task id does not have to be fished from the output.
   const repeat = plan.stepName === REVIEWER
@@ -993,13 +1064,13 @@ async function reviewLift(rootOrHost, opts) {
 
 // What survived a failure — one line for both refusals. A task opened by this call has no worktree
 // participant, so a repeat without `--task` will not pick it up: the refusal names the orphan.
-function keptNote(plan) {
+function keptNote(plan: ReviewPlan) {
   return ` Task ${plan.taskId} and the participant record ${plan.address} are in place; the diff is saved in ${plan.diffPath}.`;
 }
 
 // Start succeeded and there is no session: run the same command again and it picks the task up by
 // `--task`. Cleanup is named as the alternative, for a review that was dropped.
-function deadSessionNote(plan) {
+function deadSessionNote(plan: ReviewPlan) {
   const repeat = plan.stepName === REVIEWER
     ? ['review', `"${plan.repoDir}"`, `--task ${plan.taskId}`]
     : ['step', plan.stepName, `"${plan.repoDir}"`, `--task ${plan.taskId}`];
@@ -1009,7 +1080,7 @@ function deadSessionNote(plan) {
 }
 
 // The session is alive and cannot report: stop it by its record, then lift again.
-function unboundSessionNote(plan) {
+function unboundSessionNote(plan: ReviewPlan) {
   const repeat = plan.stepName === REVIEWER
     ? ['review', `"${plan.repoDir}"`, `--task ${plan.taskId}`]
     : ['step', plan.stepName, `"${plan.repoDir}"`, `--task ${plan.taskId}`];
@@ -1017,7 +1088,7 @@ function unboundSessionNote(plan) {
     + ` then start the reviewer again: ${plan.host.busCommand(repeat)}.`;
 }
 
-function launchFailureNote(plan) {
+function launchFailureNote(plan: ReviewPlan) {
   const kept = keptNote(plan);
   return plan.createNew
     ? `${kept} This is an active orphan task: the reviewer was not started, and the next call without --task will not pick it up. `
@@ -1027,7 +1098,7 @@ function launchFailureNote(plan) {
 
 // A review task of our own beside a foreign active one means several active, and resolving "the
 // single active one" refuses — better learnt here than on the next call.
-function warnSecondTask({ createNew, otherActive, taskId, host }) {
+function warnSecondTask({ createNew, otherActive, taskId, host }: Pick<ReviewPlan, 'createNew' | 'otherActive' | 'taskId' | 'host'>) {
   if (!createNew || !otherActive.length) return;
   const many = otherActive.length > 1;
   warn(`${many ? 'other tasks are also active' : 'another task is also active'} ${otherActive.join(', ')} — there will be several active: `
@@ -1037,7 +1108,7 @@ function warnSecondTask({ createNew, otherActive, taskId, host }) {
 
 // Model and effort in dry run: on re-review argv is not executed, and printing the flag as applied
 // would be a lie. "The session is already alive" is not asserted when liveness is unconfirmed.
-function notApplied({ reuse, sessionState }) {
+function notApplied({ reuse, sessionState }: Pick<ReviewPlan, 'reuse' | 'sessionState'>) {
   if (!reuse) return '';
   return sessionState === 'unknown'
     ? ' (not applied — the diff will go to the former address)'
@@ -1045,27 +1116,27 @@ function notApplied({ reuse, sessionState }) {
 }
 
 // A name given together with --task: the task already exists, and the title is taken from its journal.
-function titleNote({ titleIgnored, taskId }) {
+function titleNote({ titleIgnored, taskId }: Pick<ReviewPlan, 'titleIgnored' | 'taskId'>) {
   return titleIgnored ? ` · --title is not applied — the name is taken from the journal of task ${taskId}` : '';
 }
 
-function modelNote(plan) {
+function modelNote(plan: ReviewPlan) {
   return ` · model: ${plan.model}${notApplied(plan)}`;
 }
 
-function effortNote(plan) {
+function effortNote(plan: ReviewPlan) {
   return plan.effort ? ` · requested effort: ${plan.effort}${notApplied(plan)}` : '';
 }
 
 // Whose worktree we review — a note on the address: otherwise "why the reviewer
 // is not named like the repository" is found by reading the code.
-function ownerNote({ owner }) {
+function ownerNote({ owner }: Pick<ReviewPlan, 'owner'>) {
   return owner ? ` (by the worker ${addressOf(owner)})` : '';
 }
 
 // Task participant whose worktree is this directory, compared by canonical paths — the target went
 // through realpath and the journal stores the spawn path. A participant without `worktree` owns nothing.
-export function worktreeOwner(ownerStep, taskMeta, repoDir) {
+export function worktreeOwner(ownerStep: DeclaredStep, taskMeta: TaskParticipants, repoDir: string) {
   if (ownerStep.kind !== EDITS_TREE) return null;
   return (taskMeta.participants ?? [])
     .find((p) => p.role === ownerStep.name && p.metadata?.worktree
@@ -1073,7 +1144,7 @@ export function worktreeOwner(ownerStep, taskMeta, repoDir) {
 }
 
 // The declared owner's worktree wins first. Otherwise the approver's own worktree is the seat.
-export function approverSeat(taskMeta, repoDir, cloneRoot) {
+export function approverSeat(taskMeta: TaskParticipants, repoDir: string, cloneRoot: string | null | undefined) {
   if (!cloneRoot) return null;
   const root = canonical(cloneRoot);
   const here = canonical(repoDir);
@@ -1088,7 +1159,7 @@ export function approverSeat(taskMeta, repoDir, cloneRoot) {
 }
 
 // Approvers whose recorded repository is this directory. The worker still owns the subject.
-function approversAt(taskMeta, repoDir) {
+function approversAt(taskMeta: TaskParticipants, repoDir: string) {
   const here = canonical(repoDir);
   return seatFrom((taskMeta.participants ?? []).filter((p) => {
     if (p.role !== APPROVER) return false;
@@ -1098,7 +1169,7 @@ function approversAt(taskMeta, repoDir) {
 }
 
 // The latest lift is the seat. A tie, or a record with no readable started stamp, picks nobody.
-function seatFrom(matches) {
+function seatFrom(matches: ParticipantV1[]): Seat | null {
   if (!matches.length) return null;
   const detail = matches.map((p) => {
     const started = p.metadata?.started;
@@ -1119,21 +1190,21 @@ function seatFrom(matches) {
 
 // Active tasks whose journal lists the target as a participant worktree or a reviewer's repository.
 // Belonging is asked of the journal, not of a name; `repo` is not checked — `repoAbs` is exact.
-function claimingTasks(ownerStep, home, repoDir, stepName = REVIEWER) {
+function claimingTasks(ownerStep: DeclaredStep, home: string, repoDir: string, stepName: string = REVIEWER) {
   return activeTasks(home).filter((t) => worktreeOwner(ownerStep, t, repoDir)
     || (t.participants ?? []).some((p) => p.role === stepName
       && p.metadata.repoAbs && canonical(p.metadata.repoAbs) === repoDir));
 }
 
 // The directory may already be gone (task closed, worktree removed) — the path from the journal is absolute.
-function canonical(p) {
-  try { return realpathSync(p); } catch { return path.resolve(p); }
+function canonical(p: unknown) {
+  try { return realpathSync(p as string); } catch { return path.resolve(p as string); }
 }
 
 // Local default branch: merge-base with it gives where the worker work actually starts. The LOCAL
 // branch is what must exist — the orchestrator's unpushed work is not in the remote.
-function localDefault(repoDir, host) {
-  const exists = (br) => gitIn(repoDir, ['rev-parse', '--verify', '-q', `refs/heads/${br}`]).status === 0;
+function localDefault(repoDir: string, host: PromptobusHost) {
+  const exists = (br: string) => gitIn(repoDir, ['rev-parse', '--verify', '-q', `refs/heads/${br}`]).status === 0;
   const named = host.defaultBranch(repoDir);
   // A name with no local branch under it gives no base from here, and the ladder does not help: the
   // worker branched from `origin/<name>`, not from a random local branch.
@@ -1145,18 +1216,18 @@ function localDefault(repoDir, host) {
 
 // Questions to git about the diff base use the shared low-level helper, not the wrappers: those take
 // the whole plan with a refusal, and here a refusal is a legal answer.
-function mergeBase(repoDir, ref) {
+function mergeBase(repoDir: string, ref: string) {
   const r = gitIn(repoDir, ['merge-base', ref, 'HEAD']);
   if (r.error || r.status !== 0) return null;
   return (r.stdout ?? '').trim() || null;
 }
 
-function isAncestor(repoDir, sha, ref) {
+function isAncestor(repoDir: string, sha: string, ref: string) {
   const r = gitIn(repoDir, ['merge-base', '--is-ancestor', sha, ref]);
   return !r.error && r.status === 0;
 }
 
-function headOf(repoDir) {
+function headOf(repoDir: string) {
   const r = gitIn(repoDir, ['rev-parse', 'HEAD']);
   if (r.error || r.status !== 0) return null;
   return (r.stdout ?? '').trim() || null;
@@ -1164,20 +1235,20 @@ function headOf(repoDir) {
 
 // Whether the recorded branch point lies in HEAD history: the sha, or `null` for "cannot be
 // trusted". The reasons need not be told apart — the rollback from them is one.
-function ancestorOfHead(repoDir, sha) {
+function ancestorOfHead(repoDir: string, sha: string | null | undefined) {
   if (!sha) return null;
   return isAncestor(repoDir, sha, 'HEAD') ? sha : null;
 }
 
 // Slug from a participant address — inverse of workerAddress/reviewerAddress (store.js).
-function addressSlug(address) {
+function addressSlug(address: unknown) {
   const addr = String(address ?? '');
   return addr.slice(addr.indexOf(':') + 1);
 }
 
 // What `--dry-run` says about an already opened reviewer, by the same three-valued session state the
 // real start uses to choose between re-review and a new spawn.
-function participantNote({ participant, sessionState, unlaunched }) {
+function participantNote({ participant, sessionState, unlaunched }: Pick<ReviewPlan, 'participant' | 'sessionState' | 'unlaunched'>) {
   if (!participant) return '';
   // A record before start is not "already on the bus": the real run in this
   // state will start a new reviewer, and print must say the same.
@@ -1189,7 +1260,7 @@ function participantNote({ participant, sessionState, unlaunched }) {
 
 // Refusal of `promptobus review` without a path. The repository of the current directory lands here
 // only as hint text: the command does not execute it, it names it.
-function missingTarget(host, { task, title, base, model, effort, harness, dryRun }) {
+function missingTarget(host: PromptobusHost, { task, title, base, model, effort, harness, dryRun }: ReviewOptions) {
   const head = `repository path is required: ${host.busCommand(['review', '<path>'])} [--task <id> | --title <name>].`
     + '\n    There is no resolve from the current directory for this command: a workspace has dozens of clones side by side,'
     + ' and the current directory is almost never the one being talked about.';
@@ -1203,7 +1274,7 @@ function missingTarget(host, { task, title, base, model, effort, harness, dryRun
   if (!here.nsPath) {
     return `${head}\n    The repository of the current directory is ${here.dir}, but it ${host.reviewLayoutError('cwd-outside')}.${ask}`;
   }
-  const arg = (v) => (/[\s"]/.test(v) ? JSON.stringify(v) : v);
+  const arg = (v: string) => (/[\s"]/.test(v) ? JSON.stringify(v) : v);
   const flags = [
     ...(task ? ['--task', arg(task)] : []),
     ...(String(title ?? '').trim() ? ['--title', arg(String(title).trim())] : []),
@@ -1222,7 +1293,7 @@ function missingTarget(host, { task, title, base, model, effort, harness, dryRun
 }
 
 // The clone the current process directory resolves into — only for the refusal above.
-function cwdRepo(host) {
+function cwdRepo(host: PromptobusHost) {
   const r = gitIn(process.cwd(), ['rev-parse', '--show-toplevel']);
   if (r.error || r.status !== 0 || !r.stdout?.trim()) return null;
   let dir;
@@ -1232,7 +1303,7 @@ function cwdRepo(host) {
 
 // A refusal is a `refusal` field, the same outcome as `git()`. Target and git-toplevel both return:
 // `planReview` chooses how to refuse by their mismatch.
-export function resolveRepoDir(target) {
+export function resolveRepoDir(target: string): { refusal: string; repoDir?: never; targetDir?: never } | { refusal?: never; repoDir: string; targetDir: string } {
   const start = path.resolve(target);
   const r = gitIn(start, ['rev-parse', '--show-toplevel']);
   if (r.error || r.status !== 0) return { refusal: `${start}: not a git repository` };
@@ -1240,7 +1311,7 @@ export function resolveRepoDir(target) {
   return { targetDir: realpathSync(start), repoDir: realpathSync(path.resolve(r.stdout.trim())) };
 }
 
-function detectBase(repoDir) {
+function detectBase(repoDir: string) {
   const head = gitIn(repoDir, ['symbolic-ref', '-q', 'refs/remotes/origin/HEAD']);
   if (!head.error && head.status === 0) return (head.stdout ?? '').trim().replace('refs/remotes/', '');
   const current = gitIn(repoDir, ['rev-parse', '--abbrev-ref', 'HEAD']);
@@ -1258,7 +1329,7 @@ function detectBase(repoDir) {
 
 // Records a worker attached, resolved rather than described. The files folder holds
 // every worker's files and every review round's — a reviewer told "a JSON file" finds many.
-function recordPaths(home, taskId, stem) {
+function recordPaths(home: string, taskId: string, stem: string) {
   const dir = filesDir(home, taskId);
   const re = new RegExp(`^${stem}-[^.]*\\.json$`);
   try {
@@ -1271,7 +1342,7 @@ function recordPaths(home, taskId, stem) {
 
 // What a landed name claims to be, for the attachment list: the two records keep their own
 // blocks below, and everything else is named `other` rather than dropped.
-function recordKind(filename) {
+function recordKind(filename: string) {
   if (isGateRecordName(filename)) return 'gate record';
   if (isHandoverRecordName(filename)) return 'handover record';
   return 'other';
@@ -1279,33 +1350,33 @@ function recordKind(filename) {
 
 // Every file the reviewed address attached, taken from the JOURNAL — which binds sender to
 // artifact — and not from a name pattern. `null`: this subject has no reviewed address at all.
-function attachedFiles(home, taskId, owner) {
+function attachedFiles(home: string, taskId: string, owner: ParticipantV1 | null) {
   if (!owner) return null;
   const dir = filesDir(home, taskId);
   const { files, broken } = attachmentsOf(home, taskId, owner.id);
   return {
-    files: files.map(({ filename, at }) => ({ path: path.join(dir, filename), at, kind: recordKind(filename) })),
+    files: files.map(({ filename, at }) => ({ path: path.join(dir, filename!), at, kind: recordKind(filename!) })),
     broken,
   };
 }
 
-const gateRecordPaths = (home, taskId) => recordPaths(home, taskId, GATE_RECORD_STEM);
+const gateRecordPaths = (home: string, taskId: string) => recordPaths(home, taskId, GATE_RECORD_STEM);
 
 // Diff file stem — one home for it: the name is both PREDICTED (`diffName`) and written
 // (`writeDiff`), and a stem spelled twice is a stem that drifts.
-function diffStem(slug, stepName = REVIEWER) {
+function diffStem(slug: string, stepName: string = REVIEWER) {
   return `${stepName === REVIEWER ? 'review' : stepName}-${slug}`;
 }
 
 // Diff file name by slug and number. The numbering itself is the task files folder's
 // (`numberedName`): the same one an artifact that arrived through the bus gets.
-function diffFile(slug, n, stepName = REVIEWER) {
+function diffFile(slug: string, n: number, stepName: string = REVIEWER) {
   return numberedName(diffStem(slug, stepName), '.diff', n);
 }
 
 // The diff sits in task artifacts, where both the reviewer and a person see it. An occupied name
 // gets a number — the previous must not be overwritten. Here the name is only PREDICTED.
-function diffName(home, taskId, slug, stepName = REVIEWER) {
+function diffName(home: string, taskId: string, slug: string, stepName: string = REVIEWER) {
   const dir = filesDir(home, taskId);
   let n = 1;
   while (existsSync(path.join(dir, diffFile(slug, n, stepName)))) n += 1;
@@ -1314,13 +1385,13 @@ function diffName(home, taskId, slug, stepName = REVIEWER) {
 
 // Diff write that occupies the name by the write itself: between `existsSync` and the write a second
 // review of the same slug would slip in. Returns the path that LANDED on disk; exported for the test.
-export function writeDiff(dir, slug, content, stepName = REVIEWER) {
+export function writeDiff(dir: string, slug: string, content: string, stepName: string = REVIEWER) {
   return occupyTaskFile(dir, diffStem(slug, stepName), '.diff', content);
 }
 
 // The diff path sits in three places of the plan, rebuilt from the path that landed. Called
 // UNCONDITIONALLY: the "name moved forward" branch happens only in a race.
-function retargetDiff(plan, diffPath) {
+function retargetDiff(plan: ReviewPlan, diffPath: string) {
   const { taskId, nsPath, repoDir, address, stepName, instructions, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles, rules, skill, driver, host, contacts, priorFindings } = plan;
   plan.diffPath = diffPath;
   plan.prompt = buildPrompt({ taskId, nsPath, repoDir, address, stepName, instructions, diffPath, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles, rules, skill, driver, host, contacts, priorFindings });
@@ -1329,7 +1400,7 @@ function retargetDiff(plan, diffPath) {
 
 // The contract the worker and approver preambles quote, and the list it promises. Built from the
 // journal, so a file the author attached cannot be missing here however the author labelled it.
-function attachmentEvidence(attachments, reviewedAddress, at, attachmentSeat) {
+function attachmentEvidence(attachments: Attachments, reviewedAddress: string | null, at: string, attachmentSeat: Seat | null) {
   if (attachmentSeat?.kind === 'several') {
     return `${ATTACHMENT_CONTRACT} These approvers recorded this subject: ${attachmentSeat.detail}. `
       + 'The path matches more than one and there is no single latest lift, so this subject does not pick a reviewed address and no attachment list is built.';
@@ -1362,7 +1433,7 @@ function attachmentEvidence(attachments, reviewedAddress, at, attachmentSeat) {
 }
 
 // The worker owns a worktree subject. Approvers who recorded that same path are listed after.
-function approverBesideEvidence(seat, files, at) {
+function approverBesideEvidence(seat: Seat | null, files: Attachments, at: string) {
   if (!seat) return '';
   if (seat.kind === 'several') {
     return `\nApprovers recorded at this worktree: ${seat.detail}. The worker still owns the subject, so the list above is the worker's. `
@@ -1385,7 +1456,7 @@ function approverBesideEvidence(seat, files, at) {
 
 // What the record covers, said where the reviewer reads the snapshot: a matching sha is a
 // statement about the COMMIT, and the subject can hold more than the commit does.
-function gateEvidence(gateRecords, snapshot, untracked) {
+function gateEvidence(gateRecords: string[], snapshot: ReviewSnapshot, untracked: string[]) {
   if (!gateRecords.length) {
     return 'No gate record is attached to this task: the author\'s gate claim has nothing behind it. '
       + 'Say so in the report — that is not a refusal and not a green.';
@@ -1403,7 +1474,7 @@ function gateEvidence(gateRecords, snapshot, untracked) {
 
 // The second record: what makes the gate run mean anything. Its absence is stated, never
 // left to be inferred — the whole point of the form is that a missing check is not a pass.
-function handoverEvidence(handoverRecords) {
+function handoverEvidence(handoverRecords: string[]) {
   if (!handoverRecords.length) {
     return 'No handover record is attached to this task: none of the five pre-handover checks has anything '
       + 'behind it. Say so in the report — that is not a refusal and not a green. The one subject where its '
@@ -1430,7 +1501,7 @@ function handoverEvidence(handoverRecords) {
     + '`notRun` is not that boundary, and a mutation that reddens nothing is not saved by writing one.';
 }
 
-function subject({ diffPath, repoDir, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles }) {
+function subject({ diffPath, repoDir, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles }: SubjectInput) {
   const treeState = snapshot.clean
     ? 'At snapshot time the tracked tree was clean.'
     : `At snapshot time the tracked tree was dirty; modified tracked paths: ${snapshot.modifiedTracked.join(', ')}. `
@@ -1450,19 +1521,19 @@ ${gateEvidence(gateRecords, snapshot, untracked)}
 ${handoverEvidence(handoverRecords)}`;
 }
 
-function procedure(skill, reviewerCommands) {
+function procedure(skill: ReviewSkill | null, reviewerCommands: ReviewerCommandPhrases) {
   return renderReviewProcedure(skill, reviewerCommands);
 }
 
-function buildPrompt({ taskId, nsPath, repoDir, address, stepName, instructions, diffPath, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles, rules, skill, driver, host, contacts, priorFindings }) {
-  const bus = (name) => toolName(driver, PROMPTOBUS_SERVER, name, host);
+function buildPrompt({ taskId, nsPath, repoDir, address, stepName, instructions, diffPath, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles, rules, skill, driver, host, contacts, priorFindings }: ReviewPromptInput) {
+  const bus = (name: string) => toolName(driver, PROMPTOBUS_SERVER, name, host);
   const findings = priorFindings === null ? '' : '\n\n## Prior reviewer findings\n\n'
     + 'Check these findings for closure first, then review the rest of the diff. '
     + 'The previous reviewer\'s last result follows unchanged:\n\n' + priorFindings;
   return renderReviewerInstructions({ taskId, nsPath, repoDir, address, stepName, rules,
     reviewSubject: subject({ diffPath, repoDir, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles }) + findings,
     instructionsSection: gateInstructionsSection(instructions), procedureText: procedure(skill, driver.phrases.reviewerCommands),
-    bindings: { tools: Object.fromEntries(['promptobus_send', 'promptobus_mailbox', 'promptobus_task'].map(name => [name, bus(name)])), mcpBoundary: driver.phrases.mcpBoundary, reviewerCommands: driver.phrases.reviewerCommands,
+    bindings: { tools: Object.fromEntries(['promptobus_send', 'promptobus_mailbox', 'promptobus_task'].map(name => [name, bus(name)])) as Record<keyof ParticipantTools, string>, mcpBoundary: driver.phrases.mcpBoundary, reviewerCommands: driver.phrases.reviewerCommands,
       externalReads: `You have the whole canonical workspace set, and every name is pre-approved: nobody will ask you for permission, and there is no person behind the session who would refuse. Read as much as you need — an event contract, a task card, a merge request diff, a metric, a fact from team memory.`,
       communication: `the MCP server tools ${PROMPTOBUS_SERVER} (it is already attached to this session): ${bus('promptobus_send')}, ${bus('promptobus_mailbox')}, ${bus('promptobus_task')}`,
       memory: memoryRule(driver, host), contacts: contactsSection(contacts, bus('promptobus_task')),
@@ -1473,7 +1544,7 @@ function buildPrompt({ taskId, nsPath, repoDir, address, stepName, instructions,
 }
 
 // Re-review message: the reviewer already has the context (rules, skill, isolation).
-function buildReReview({ diffPath, repoDir, stepName, instructions, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles }) {
+function buildReReview({ diffPath, repoDir, stepName, instructions, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles }: SubjectInput & Pick<ReviewPromptInput, 'stepName' | 'instructions'>) {
   return `Re-review: the author sent a new version of the changes.
 
 Step ${stepName}.
@@ -1489,7 +1560,7 @@ const GIT_OPTS = ['-c', 'core.quotePath=false'];
 
 // The ordinary output ceiling is shared with the zone walk, and both wrappers share the git wait
 // ceiling. A timeout or overflow leaves no status, so the `error` branch names it.
-function git(repoDir, args) {
+function git(repoDir: string, args: readonly string[]): GitRead {
   const r = spawnSync('git', ['-C', repoDir, ...GIT_OPTS, ...args], {
     encoding: 'utf8', maxBuffer: PROC_MAX_OUTPUT, timeout: GIT_NET_TIMEOUT_MS,
   });
@@ -1500,7 +1571,7 @@ function git(repoDir, args) {
 
 // The ceiling here is its own and higher: the subject of the call is the diff itself. Output is not
 // trimmed — in a diff both the first and the last newline matter.
-function gitRaw(repoDir, args) {
+function gitRaw(repoDir: string, args: readonly string[]): GitRead {
   const r = spawnSync('git', ['-C', repoDir, ...GIT_OPTS, ...args], {
     encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, timeout: GIT_NET_TIMEOUT_MS,
   });
@@ -1511,15 +1582,15 @@ function gitRaw(repoDir, args) {
 
 // One git diff invocation gives the patch, stat and raw records off the same tracked-tree reads:
 // comparing them with the base-to-HEAD diff finds the race without opening the tree a second time.
-function snapshotDiff(repoDir, diffFrom, head) {
+function snapshotDiff(repoDir: string, diffFrom: string, head: string | null): { refusal: string; diff?: never; stat?: never; modifiedTracked?: never } | { refusal?: never; diff: string; stat: string; modifiedTracked: string[] } {
   // A stat-only change can leave the worktree side of a raw record at 0000000 though the content
   // still matches HEAD. Refresh the index stat data first, so the comparison is about content.
   git(repoDir, ['update-index', '-q', '--refresh']);
   const out = gitRaw(repoDir, ['diff', '--raw', '--stat', '--patch', diffFrom]);
   if (out.refusal) return out;
-  const patchAt = /^diff --(?:git|cc|combined) /m.exec(out.out)?.index ?? -1;
-  const prefix = patchAt < 0 ? out.out : out.out.slice(0, patchAt);
-  const diff = patchAt < 0 ? '' : out.out.slice(patchAt);
+  const patchAt = /^diff --(?:git|cc|combined) /m.exec(out.out!)?.index ?? -1;
+  const prefix = patchAt < 0 ? out.out! : out.out!.slice(0, patchAt);
+  const diff = patchAt < 0 ? '' : out.out!.slice(patchAt);
   const prefixLines = prefix.split('\n');
   const snapshotRecords = prefixLines.filter((line) => line.startsWith(':'));
   const stat = prefixLines.filter((line) => line && !line.startsWith(':')).join('\n').trim();
@@ -1527,7 +1598,7 @@ function snapshotDiff(repoDir, diffFrom, head) {
 
   const committed = gitRaw(repoDir, ['diff', '--raw', diffFrom, head]);
   if (committed.refusal) return committed;
-  const committedRecords = committed.out.split('\n').filter((line) => line.startsWith(':'));
+  const committedRecords = committed.out!.split('\n').filter((line) => line.startsWith(':'));
   const snapshotSet = new Set(snapshotRecords);
   const committedSet = new Set(committedRecords);
   const changedRecords = [

@@ -10,7 +10,7 @@ Run this pass before the release commit.
 
 Run `backslop-writer` in release mode over `git diff <previous tag>..HEAD`. Its default scope covers root `README*.md`, the unreleased section of `CHANGELOG.md`, and `docs/**` except the backlog and archive. This includes `docs/adr/` and `docs/ROADMAP.md`.
 
-The `writer.style` glob in `backslop.json` selects all of `lib/cli.js`, but the [local writer rule](contributing.md#local-writer-rules) narrows style review to the human-facing `helpText` block. Refusal strings and comments outside that block are not style targets. The `writer.currency` glob adds every shipped skill under `skills/` to currency review only; skills are written for agents and get no style pass.
+The `writer.style` glob in `backslop.json` selects all of `lib/cli.ts`, but the [local writer rule](contributing.md#local-writer-rules) narrows style review to the human-facing `helpText` block. Refusal strings and comments outside that block are not style targets. The `writer.currency` glob adds every shipped skill under `skills/` to currency review only; skills are written for agents and get no style pass.
 
 Record a currency ledger row for each behaviour-changing commit, plus one row for the CLI help and one for every shipped skill. A surface row names the change it was checked against or says `no change touches it`. Record a style ledger row for each `backslop-humanizer` pattern. A release has no writer task, so put both ledgers in the message body of the commit carrying the writer fixes. Commit fixes by document group as the writer skill directs, then review those commits before the release commit.
 

@@ -29,8 +29,8 @@ const CHILD_FILE = 'child.pid';
 const FORWARDED: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 
 /** Where the lease lives: outside every store home, so all workspaces of this user see one lease. */
-export function leaseRoot(env = process.env) {
-  if (env[LEASE_DIR_VAR]) return env[LEASE_DIR_VAR];
+export function leaseRoot(env = process.env): string {
+  if (env[LEASE_DIR_VAR]) return env[LEASE_DIR_VAR]!;
   if (process.platform === 'win32') return path.join(os.tmpdir(), 'promptobus-lease');
   return path.join('/tmp', `promptobus-${process.getuid!()}`);
 }
@@ -281,10 +281,10 @@ export function keyedCommandPlan(command: string[], env: NodeJS.ProcessEnv, keye
     throw new GateError('lease: keyed publication requires a POSIX shell to record the command pid before exec; your command was not run');
   }
   const file = keyedLocks.length ? '/bin/sh' : plan.file;
-  const args = keyedLocks.length
+  const args: string[] = keyedLocks.length
     ? ['-c', 'count="$1"; shift; while [ "$count" -gt 0 ]; do printf "%s\\n" "$$" > "$1" || exit 125; shift; count=$((count - 1)); done; exec "$@"',
       'promptobus-key-child', String(keyedLocks.length), ...keyedLocks.map(lock => path.join(lock, CHILD_FILE)), plan.file, ...plan.args]
-    : plan.args;
+    : plan.args as string[];
   return { file, args, verbatim: plan.verbatim };
 }
 

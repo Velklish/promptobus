@@ -376,7 +376,7 @@ asks `awaitingUser` below instead.
 
 ### `awaitingUser` — whether the turn waits on its user
 
-Source: `src/supervisor.ts`, `awaitingUser`; `lib/guard.js`; the Claude
+Source: `src/supervisor.ts`, `awaitingUser`; `lib/guard.ts`; the Claude
 driver's `awaitsUser` ([05-drivers.md](../reference/05-drivers.md#awaitsuser--whether-a-claude-transcript-holds-an-open-question)).
 
 The guard records the hook input's `transcript_path` from the session's

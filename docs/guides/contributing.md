@@ -33,7 +33,7 @@ The previous GitHub-form setup had the same blind spot across files. Since v0.8.
 
 Tests of instruction wording establish text contracts. Runtime claims require the production validator, engine or launcher; a second state machine in a test cannot establish them. Before removing a verdict, identify its surviving guarantee and use a semantic mutation to check the replacement. The package suite owns the token-aware source import scan and its trap fixtures. It builds its isolated copy once, then reads inventory and installs from the same tarball packed with `--ignore-scripts`; the separate typed role-instruction consumer keeps its own installation.
 
-Runtime TypeScript emits JavaScript and declarations beside its source after the core build. Generated counterparts are ignored individually while the remaining JavaScript stays tracked. The package suite removes those counterparts from its fresh-build copy, checks runtime type-error refusal, and installs a tarball without authored TypeScript. When probing a maintained TypeScript source, include `npm run build` in the probe's run command so both the mutation and its restoration reach the tested JavaScript.
+Runtime TypeScript in `lib/` and `bin/` emits JavaScript and declarations beside its source after the core build. Generated counterparts are ignored individually; maintained tests and development scripts stay JavaScript. The build restores the standalone CLI executable permission, and the package check rejects unchecked runtime JavaScript in its fresh source copy. The package suite removes those counterparts from its fresh-build copy, checks runtime type-error refusal, and installs a tarball without authored TypeScript. When probing a maintained TypeScript source, include `npm run build` in the probe's run command so both the mutation and its restoration reach the tested JavaScript.
 
 <a id="init-rewrite-at-another-pin"></a>Why it matters is an inference, not a measurement. Measured: `init` at a given pin rewrites the `AGENTS.md` backslop block and the adapter output to that version — at v0.6.0 it changed fourteen lines of `AGENTS.md`. Inferred from that: the workflow runs `init` at the pin it names before `npx --no-install backslop lint`, so one left on the old pin would be expected to regenerate the old block on every push and undo the raise. No CI run has been made to confirm it.
 
@@ -126,7 +126,7 @@ A task without attachments reaches the default branch as one commit; one with at
 
 ### Local writer rules
 
-The `writer.style` glob selects `lib/cli.js`, but the style pass applies only to its human-facing `helpText` block. Refusal strings and comments elsewhere in that file are outside the style pass. Check their behaviour against code when a changed command makes them relevant.
+The `writer.style` glob selects `lib/cli.ts`, but the style pass applies only to its human-facing `helpText` block. Refusal strings and comments elsewhere in that file are outside the style pass. Check their behaviour against code when a changed command makes them relevant.
 
 For a release, the currency ledger also has one row for the CLI help and one row for **every** shipped skill under `skills/`. Each row names the behaviour change it was checked against or says `no change touches it`. Keep the upstream rows for behaviour-changing commits and the style ledger. Releases have no writer task: put both ledgers in the message body of the commit carrying the writer fixes.
 

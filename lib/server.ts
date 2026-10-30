@@ -1,3 +1,7 @@
+import type { ParticipantV1, PromptobusHost } from '../dist/index.js';
+import type { McpEvent, McpInput, McpJoin, McpOutput } from '../dist/mcp/server.js';
+import type { PromptobusService } from '../dist/mcp/service.js';
+import type { GuardInput } from './guard.js';
 import {
   addrDir, bus, busService, contactsLine, journalMessageBody, ORCHESTRATOR, participantOf, participantRecord,
   readTask, resolveIdentity, sendMessage, strictTaskFacts, upsertParticipant,
@@ -18,7 +22,7 @@ export { ADDR_MARK } from '../dist/index.js';
 
 // Participant lines the store does not know: repository, worktree with its branch, and the
 // harness background session. The `task` reply has no such hook — it is all store.
-function decorateParticipant(p) {
+function decorateParticipant(p: ParticipantV1) {
   // Repository, worktree, branch and bg-session are mechanism fields kept in the v1
   // record `metadata`; the record's own fields know nothing about a workspace.
   const m = p.metadata ?? {};
@@ -31,7 +35,7 @@ function decorateParticipant(p) {
   if (m.worktree) {
     // branchLine is silent (null) when there is no branch anywhere: the template would
     // otherwise print the string "null".
-    const line = branchLine(m.branch, worktreeBranch(m.worktree));
+    const line = branchLine(m.branch as string | null | undefined, worktreeBranch(m.worktree as string));
     parts.push(`worktree ${m.worktree}${line ? ` (${line})` : ''}`);
   }
   if (m.session) parts.push(`bg-session ${m.session}`);
@@ -50,7 +54,7 @@ function decorateParticipant(p) {
 
 // Here because `mailbox` is called exactly on wake, and only the orchestrator looks. ALL
 // stalls are taken (a shared mark mutes a channel); the session list is re-queried per call.
-export function stallNote(home, task, addr, host = null) {
+export function stallNote(home: string, task: string, addr: string, host: PromptobusHost | null = null) {
   if (addr !== ORCHESTRATOR) return null;
   forgetSessions();
   const stalled = blockedParticipants(home, task, readTask(home, task).participants);
@@ -60,16 +64,16 @@ export function stallNote(home, task, addr, host = null) {
 
 // A participant hands over their contact point and starts a listener if there is none.
 // Only a proven right may: a foreign or no-identity socket would land in another run's wake file.
-function joinBus({ home, task, address, mayRegister, host }) {
+function joinBus({ home, task, address, mayRegister, host }: McpJoin & { host: PromptobusHost }) {
   if (host == null) throw new Error('joinBus: host is required');
   // The contact point is handed over by this participant's own driver; the fallback to the
   // lift driver is deliberate — a refusal here would leave the session without the bus.
   const driver = driverOrLift(participantOf(readTask(home, task), address));
   // `false` is a gate refusal, which `join` retries; `null` is nothing to hand over.
-  let handed = null;
+  let handed: unknown = null;
   if (mayRegister) {
     driver.bindHandshake?.(home, task, address);
-    handed = driver.registerWake(home, task, address);
+    handed = driver.registerWake!(home, task, address);
   }
   ensureWarden(home, task, { host });
   return handed;
@@ -77,7 +81,7 @@ function joinBus({ home, task, address, mayRegister, host }) {
 
 // Human text of a protocol event; the package names the event and sets the JSON-RPC code.
 // `default` reads no event fields — `errorText` is also called outside a catch.
-function errorText(event) {
+function errorText(event: McpEvent) {
   switch (event.kind) {
     case 'parse':
       return 'not parsed as JSON';
@@ -92,17 +96,17 @@ function errorText(event) {
   }
 }
 
-export function serviceFor(host) {
+export function serviceFor(host: PromptobusHost): PromptobusService {
   const registry = registryOf(host);
-  const scopedHost = (home) => Object.assign(Object.create(host), { promptobusHome: () => home });
+  const scopedHost = (home: string): PromptobusHost => Object.assign(Object.create(host), { promptobusHome: () => home });
   const hints = {
     status: host.busCommand(['status']),
     spawnRepo: host.busCommand(['spawn', '--repo', '<name>', '--brief', '<file>']),
     spawnNewTask: host.busCommand(['spawn', '--new-task']),
     registry,
   };
-  const reporterStatus = (home, task) => {
-    const lines = [];
+  const reporterStatus = (home: string, task: string) => {
+    const lines: string[] = [];
     const original = { log: console.log, warn: console.warn, error: console.error };
     try {
       forgetSessions();
@@ -157,7 +161,7 @@ export function serviceFor(host) {
   };
 }
 
-export async function serve({ host, env = process.env, cwd = process.cwd(), input = process.stdin, output = process.stdout } = {}) {
+export async function serve({ host, env = process.env, cwd = process.cwd(), input = process.stdin, output = process.stdout }: { host?: PromptobusHost | null; env?: NodeJS.ProcessEnv; cwd?: string; input?: GuardInput; output?: McpOutput } = {}) {
   if (host == null) throw new Error('serve: host is required');
   const server = createMcpServer({
     service: serviceFor(host),
@@ -181,5 +185,5 @@ export async function serve({ host, env = process.env, cwd = process.cwd(), inpu
     stalls: ({ home, task, address }) => stallNote(home, task, address, host),
     errorText,
   });
-  await server.serve({ input, output });
+  await server.serve({ input: input as McpInput, output });
 }

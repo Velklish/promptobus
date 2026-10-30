@@ -63,7 +63,7 @@ export function pipelineSteps(pipeline: Pipeline): readonly HostPipelineStep[] {
 }
 
 /** The steps of a host's pipeline in order; the default ones while it declares none, or with no host. */
-export function pipelineOf(host: PromptobusHost | null | undefined): readonly HostPipelineStep[] {
+export function pipelineOf(host: Pick<PromptobusHost, 'pipeline'> | null | undefined): readonly HostPipelineStep[] {
   return host?.pipeline?.() ?? pipelineSteps(DEFAULT_PIPELINE);
 }
 

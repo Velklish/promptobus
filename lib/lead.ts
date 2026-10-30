@@ -20,10 +20,30 @@ import { withDirLockAsync } from '../dist/fs/lock.js';
 import { ownerOf, registryOf, requireTaskId, sessionRefOf, WORKER } from '../dist/index.js';
 import { assertNativeContextDriver, contextRules, nativeContextMetadata, nativeContextPrompt, prepareNativeContext } from './native-participant-context.js';
 
-function resumeOwner(host, task, driver, env) {
+import type { PromptobusHost, ParticipantV1, TaskV1 } from '../dist/index.js';
+import type { SpawnOptions } from './spawn.js';
+import type { LibToolBin } from './driver-runtime.js';
+import type { ParticipantTools } from './prompts/roles.js';
+import type { CodexDriver } from './drivers.js';
+
+type Selection = ReturnType<typeof prepareNativeContext>;
+type RootOwner = Omit<ParticipantV1, 'metadata'> & {
+  metadata: ParticipantV1['metadata'] & { launcherPid?: number; model?: string; effort?: string };
+};
+export interface LeadOptions extends SpawnOptions { resume?: boolean }
+export interface LeadPlan {
+  host: PromptobusHost; home: string; root: string; task: string;
+  resume: { meta: TaskV1; owner: RootOwner; record: ReturnType<CodexDriver['resumeState']> } | null;
+  address: string; title: string | undefined; slug: string; brief: string; selectedContext: Selection;
+  driver: CodexDriver; model: string; effort: string | null; permissionMode: string; rules: string[];
+  env: NodeJS.ProcessEnv; name: string; launch: ReturnType<CodexDriver['prepare']>; prompt: string;
+  mcpNote: ReturnType<typeof mcpNote>; routing: NonNullable<Awaited<ReturnType<typeof routeLift>>>['metadata'] | null;
+}
+
+function resumeOwner(host: PromptobusHost, task: string, driver: CodexDriver, env: NodeJS.ProcessEnv) {
   const home = host.promptobusHome();
   const meta = bus(home, { cli: host.version }).readTask(task);
-  const owner = participantOf(meta, ORCHESTRATOR);
+  const owner = participantOf(meta, ORCHESTRATOR) as RootOwner | null;
   const ref = sessionRefOf(owner);
   const threadId = ownerOf(owner);
   if (meta.status !== 'active' || meta.parent || owner?.harness !== 'codex' || owner?.mode !== 'managed' || !ref || !threadId) {
@@ -37,7 +57,7 @@ function resumeOwner(host, task, driver, env) {
 }
 
 /** A new root owner uses the same holder and private-home protocol as a teamlead. */
-export async function planLead(rootOrHost, opts = {}) {
+export async function planLead(rootOrHost: unknown, opts: LeadOptions = {}): Promise<LeadPlan> {
   const host = hostOf(rootOrHost);
   if (opts.harness && opts.harness !== 'codex') {
     throw new GateError('managed root lead supports only Codex; another harness can own a task from its existing session');
@@ -46,16 +66,16 @@ export async function planLead(rootOrHost, opts = {}) {
   if (opts.resume && !opts.task) throw new GateError('lead --resume requires --task <existing-id>');
   const driver = liftHarness(host, 'codex');
   const env = sessionEnv(driver, process.env, host);
-  const resumed = opts.resume ? resumeOwner(host, opts.task, driver, env) : null;
+  const resumed = opts.resume ? resumeOwner(host, opts.task!, driver, env) : null;
   const requestedPermission = opts.permissionMode ?? resumed?.record.sandbox;
-  if (!['full-access', 'danger-full-access'].includes(requestedPermission)) {
+  if (!['full-access', 'danger-full-access'].includes(requestedPermission!)) {
     throw new GateError('managed Codex root lead requires explicit --permission-mode full-access; workspace-write cannot lift participants or provide the required network route. Participant permissions remain separate');
   }
   const brief = resumed && !opts.brief
     ? 'Continue the previous assignment and its approval boundaries from this same thread. Read the mailbox and answer pending questions before continuing.'
     : readBrief(opts.brief);
   const title = resumed?.meta.title ?? opts.title ?? brief.split('\n').map((line) => line.replace(/^#+\s*/, '').trim()).find(Boolean);
-  const slug = resumed?.meta.adapter?.slug ?? slugify(title);
+  const slug = (resumed?.meta.adapter?.slug as string | undefined) ?? slugify(title!);
   const task = opts.task ?? newTaskIdentity(slug).id;
   const home = host.promptobusHome();
   if (!resumed && taskExists(home, task)) {
@@ -76,14 +96,14 @@ export async function planLead(rootOrHost, opts = {}) {
   const rules = contextRules(selectedContext, () => host.collectRules(root));
   const addDirs = [...new Set(rules.filter((file) => !file.startsWith(root + path.sep)).map(path.dirname))];
   const mcp = participantMcp(host, { address: ORCHESTRATOR, taskId: task, home }, driver);
-  const call = (name) => toolName(driver, 'promptobus', name, host);
+  const call = (name: string) => toolName(driver, 'promptobus', name, host);
   const prompt = renderOrchestratorInstructions({ rules, brief, bindings: {
-    tools: Object.fromEntries(['promptobus_send', 'promptobus_mailbox', 'promptobus_task'].map(name => [name, call(name)])),
+    tools: Object.fromEntries(['promptobus_send', 'promptobus_mailbox', 'promptobus_task'].map(name => [name, call(name)])) as Record<keyof ParticipantTools, string>,
     preamble: driver.phrases.rootPreamble({ task, root }),
     delivery: 'The holder and warden deliver postcards when mail arrives;',
     operationalRules: driver.phrases.promptRulesFor(ORCHESTRATOR),
   } }) + nativeContextPrompt(selectedContext);
-  const name = resumed ? sessionRefOf(resumed.owner) : `Orchestrator: ${shortTitle(title) || slug} (${task})`;
+  const name = resumed ? sessionRefOf(resumed.owner)! : `Orchestrator: ${shortTitle(title) || slug} (${task})`;
   const launch = driver.prepare({
     ref: name, role: ORCHESTRATOR, task, address: ORCHESTRATOR, root, cwd: root,
     mcp: mcp.descriptor, prompt, model, effort, permissionMode, addDirs, env, selectedContext,
@@ -92,7 +112,7 @@ export async function planLead(rootOrHost, opts = {}) {
     readSkillDirs: selectedContext ? selectedContext.skills.map(skill => skill.root) : undefined,
   });
   launch.retainFailedSession = true;
-  if (resumed) launch.resumeThreadId = resumed.record.threadId;
+  if (resumed) launch.resumeThreadId = resumed.record.threadId!;
   return {
     host, home, root, task, resume: resumed, address: ORCHESTRATOR, title, slug, brief, selectedContext,
     driver, model, effort, permissionMode, rules, env, name, launch, prompt,
@@ -100,7 +120,7 @@ export async function planLead(rootOrHost, opts = {}) {
   };
 }
 
-export async function lead(rootOrHost, opts = {}) {
+export async function lead(rootOrHost: unknown, opts: LeadOptions = {}): Promise<LeadPlan> {
   const plan = await planLead(rootOrHost, opts);
   if (plan.routing) info(routingLine(plan.routing));
   if (opts.dryRun) {
@@ -128,7 +148,7 @@ export async function lead(rootOrHost, opts = {}) {
   });
 }
 
-async function startLead(plan, tool, provenance) {
+async function startLead(plan: LeadPlan, tool: LibToolBin, provenance: ReturnType<typeof launchProvenance>): Promise<LeadPlan> {
   if (plan.resume) {
     withTaskLock(plan.home, plan.task, () => {
       const { owner } = resumeOwner(plan.host, plan.task, plan.driver, plan.env);
@@ -148,7 +168,7 @@ async function startLead(plan, tool, provenance) {
   let spawned;
   try {
     spawned = await plan.driver.spawn(plan.launch, {
-      tool, host: plan.host, home: plan.home, task: plan.task, address: ORCHESTRATOR,
+      tool: tool as LibToolBin & { bin: string }, host: plan.host, home: plan.home, task: plan.task, address: ORCHESTRATOR,
       cwd: plan.root, env: plan.env, ref: plan.name, role: ORCHESTRATOR,
       launchFailNote: ` A bound root keeps its thread history; recover with lead --resume --task ${plan.task}.`,
       persist: (id, state, full) => {
@@ -175,7 +195,7 @@ async function startLead(plan, tool, provenance) {
           });
         } else {
           bus(plan.home, { cli: plan.host.version }).createTask({
-            id: plan.task, title: plan.title, adapter: { slug: plan.slug }, owner,
+            id: plan.task, title: plan.title!, adapter: { slug: plan.slug }, owner,
           });
         }
         mkdirSync(inboxDir(plan.home, plan.task, ORCHESTRATOR), { recursive: true });

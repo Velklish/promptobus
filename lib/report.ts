@@ -27,6 +27,27 @@ import { participantSession, unknownWhy } from './status.js';
 import { launchProvenance, provenanceLine } from './provenance.js';
 import { ensureWarden, handOverContactPoints } from './warden.js';
 
+import type { DriverDenyTool, ParticipantV1, PromptobusHost, SessionSnapshot, TaskV1 } from '../dist/index.js';
+import type { LibDriver, LibLaunchPlan, LibSpawnContext } from './driver-runtime.js';
+import type { SpawnOptions } from './spawn.js';
+
+type ReportOptions = SpawnOptions;
+interface ReporterPromptPlan {
+  host: PromptobusHost; home: string; task: string; root: string; rules: string[]; driver: LibDriver;
+  contacts: ReturnType<typeof contactsOf>;
+}
+
+type ReportRouting = NonNullable<Awaited<ReturnType<typeof routeLift>>>;
+interface ReportPlan extends ReporterPromptPlan {
+  meta: TaskV1; former: ParticipantV1 | null; formerSessions: SessionSnapshot; name: string; model: string;
+  effort: ReturnType<typeof resolveEffort>; permissionMode: ReturnType<typeof resolvePermissionMode>;
+  addDirs: string[]; selectedContext: ReturnType<typeof prepareNativeContext>;
+  mcpConfigPath: string; settingsPath: string; guardCommand: string; env: NodeJS.ProcessEnv;
+  denyTools: DriverDenyTool[]; pluginDir: string | null; mcpNote: ReturnType<typeof mcpNote>;
+  routing: ReportRouting['metadata'] | null; decision: ReportRouting['decision'] | null;
+  routingSkipped: string | null; prompt: string; launch: LibLaunchPlan;
+}
+
 export { reportQuestion } from './report-channel.js';
 
 const REPORTER = 'reporter';
@@ -34,12 +55,12 @@ const CURSOR_REFUSAL = 'A Cursor reporter at the install root is refused: '
   + 'ADR-024 found that Cursor reads the project layer from the selected cwd, '
   + 'where placing it would mutate the shared tree.';
 
-function requireFreeReporter(former, sessions, driver, task) {
+function requireFreeReporter(former: ParticipantV1 | null, sessions: SessionSnapshot, driver: LibDriver, task: string) {
   if (!former) return;
   const pid = former.metadata?.launchPid;
   const unlaunched = typeof former.metadata?.nativeLaunchId === 'string' && former.metadata.nativeLaunchId
     && former.metadata.nativeUnlaunched === former.metadata.nativeLaunchId;
-  if (former.metadata?.pending && !unlaunched && pidAlive(pid)) {
+  if (former.metadata?.pending && !unlaunched && pidAlive(pid as number)) {
     throw new GateError(`reporter launch of task ${task} is already in progress (pid ${pid}); retry after it finishes`);
   }
   const state = participantSession(former, sessions);
@@ -49,10 +70,10 @@ function requireFreeReporter(former, sessions, driver, task) {
   }
 }
 
-function reporterPrompt(plan) {
-  const bus = (name) => toolName(plan.driver, PROMPTOBUS_SERVER, name, plan.host);
+function reporterPrompt(plan: ReporterPromptPlan) {
+  const bus = (name: string) => toolName(plan.driver, PROMPTOBUS_SERVER, name, plan.host);
   return renderReporterInstructions({ task: plan.task, root: plan.root, rules: plan.rules, bindings: {
-    tools: Object.fromEntries(['promptobus_send', 'promptobus_task', 'promptobus_digest', 'promptobus_status', 'promptobus_ask'].map(name => [name, bus(name)])),
+    tools: Object.fromEntries(['promptobus_send', 'promptobus_task', 'promptobus_digest', 'promptobus_status', 'promptobus_ask'].map(name => [name, bus(name)])) as Parameters<typeof renderReporterInstructions>[0]['bindings']['tools'],
     contacts: contactsSection(plan.contacts, bus('promptobus_task')),
     journalSources: `The root task journal and its child journals under ${plan.home}/tasks are your sources.`,
     digestView: 'the same root-tree page as digest --json', journalBody: 'a journal message file',
@@ -61,7 +82,7 @@ function reporterPrompt(plan) {
   } });
 }
 
-export async function planReport(rootOrHost, opts = {}) {
+export async function planReport(rootOrHost: unknown, opts: ReportOptions = {}): Promise<ReportPlan> {
   const host = hostOf(rootOrHost);
   const home = host.promptobusHome();
   const task = opts.task;
@@ -86,7 +107,7 @@ export async function planReport(rootOrHost, opts = {}) {
   if (former && opts.sessions === undefined) forgetSessions();
   const sessions = former ? (opts.sessions === undefined ? snapshotOf([former]) : opts.sessions) : null;
   if (former) requireFreeReporter(former, sessions, liftHarness(host, former.harness), task);
-  const routingHost = Object.create(host);
+  const routingHost: PromptobusHost = Object.create(host);
   const root = host.workspaceRoot();
   const selectedContext = prepareNativeContext(host, { root, role: REPORTER, taskId: task, options: opts, participant: former });
   if (requestedHarness) assertNativeContextDriver(selectedContext, liftHarness(host, requestedHarness));
@@ -98,8 +119,8 @@ export async function planReport(rootOrHost, opts = {}) {
   });
   const driver = liftHarness(host, routed?.harness ?? requestedHarness ?? 'claude');
   assertNativeContextDriver(selectedContext, driver);
-  const model = opts.model ?? former?.metadata?.model ?? routed?.model ?? driver.options.defaultModel;
-  const effort = resolveEffort(opts.effort ?? former?.metadata?.effort ?? routed?.effort, driver);
+  const model = (opts.model ?? former?.metadata?.model ?? routed?.model ?? driver.options.defaultModel) as string;
+  const effort = resolveEffort((opts.effort ?? former?.metadata?.effort ?? routed?.effort) as string | null | undefined, driver);
   const permissionMode = resolvePermissionMode(driver.id === 'codex' ? 'read-only' : opts.permissionMode, driver, null);
   const name = `Reporter: ${shortTitle(meta.title) || meta.adapter?.slug || 'task'} (${task})`;
   const rules = contextRules(selectedContext, () => host.collectRules(root));
@@ -114,7 +135,7 @@ export async function planReport(rootOrHost, opts = {}) {
     .filter((server) => server !== PROMPTOBUS_SERVER);
   const deny = reviewerDenyTools(host, driver, declaredServers);
   if (deny.refusal) throw new GateError(deny.refusal);
-  const denyTools = [...deny.tools, REPORTER_DENY.at(-1)];
+  const denyTools = [...deny.tools, REPORTER_DENY.at(-1)!];
   const plan = {
     host, home, root, task, meta, former, formerSessions: sessions, driver, name, model, effort,
     permissionMode, rules, addDirs, selectedContext,
@@ -127,7 +148,7 @@ export async function planReport(rootOrHost, opts = {}) {
     }] }),
   };
   const prompt = reporterPrompt(plan) + nativeContextPrompt(selectedContext);
-  const launch = driver.prepare({
+  const launch = driver.prepare!({
     ref: name, role: REPORTER, mcp: mcp.descriptor, prompt, model, effort, permissionMode,
     addDirs, pluginDir: plan.pluginDir, mcpConfigPath, settingsPath, guardCommand, denyTools,
     extraSettings: selectedContext ? {} : skillSettings(host), selectedContext,
@@ -139,7 +160,7 @@ export async function planReport(rootOrHost, opts = {}) {
   return { ...plan, prompt, launch };
 }
 
-export async function report(rootOrHost, opts = {}) {
+export async function report(rootOrHost: unknown, opts: ReportOptions = {}): Promise<ReportPlan> {
   const plan = await planReport(rootOrHost, opts);
   if (plan.routingSkipped) warn(plan.routingSkipped);
   if (plan.routing) info(routingLine(plan.routing));
@@ -172,7 +193,7 @@ export async function report(rootOrHost, opts = {}) {
   info(provenanceLine(provenance));
   sayMcp(plan);
   const launchToken = randomUUID();
-  let record;
+  let record: ParticipantV1;
   withTaskLock(plan.home, plan.task, () => {
     const currentMeta = readTask(plan.home, plan.task);
     if (currentMeta.parent || currentMeta.status !== 'active') {
@@ -196,18 +217,18 @@ export async function report(rootOrHost, opts = {}) {
       binaryVersion: provenance.binaryVersion,
     }, registryOf(plan.host)), current, REGISTRY));
   });
-  if (plan.driver.id === 'codex') plan.launch.launchId = record.metadata.nativeLaunchId;
+  if (plan.driver.id === 'codex') plan.launch.launchId = record!.metadata.nativeLaunchId as string;
   try { writeLaunchFiles(plan.launch.files, plan.driver.options.launchDirs); }
   catch (error) {
-    try { releaseNativeReservation(plan.home, plan.task, record); }
-    catch (releaseError) { warn('native reservation release refused: ' + releaseError.message); }
+    try { releaseNativeReservation(plan.home, plan.task, record!); }
+    catch (releaseError) { warn('native reservation release refused: ' + (releaseError as Error).message); }
     throw error;
   }
-  let lostSession = null;
-  let launched;
+  let lostSession: string | null = null;
+  let launched: Awaited<ReturnType<NonNullable<LibDriver['spawn']>>>;
   try {
-    launched = await plan.driver.spawn(plan.launch, {
-      tool, host: plan.host, home: plan.home, task: plan.task, address: REPORTER,
+    launched = await plan.driver.spawn!(plan.launch, {
+      tool: tool as LibSpawnContext['tool'], host: plan.host, home: plan.home, task: plan.task, address: REPORTER,
       cwd: plan.root, env: plan.env, ref: plan.name, role: REPORTER, noun: 'reporter',
       launchFailNote: ` Reporter record kept in task ${plan.task}; retry report --task ${plan.task}.`,
       deadNote: ` Retry report --task ${plan.task}.`,
@@ -241,12 +262,12 @@ export async function report(rootOrHost, opts = {}) {
   } catch (error) {
     if (lostSession) {
       if (plan.driver.id === 'codex') {
-        const stopped = await plan.driver.stop(plan.name);
-        if (!stopped.ok) throw new GateError(`${error.message}; Codex stop ${lostSession} failed: ${stopped.note}`);
+        const stopped = await plan.driver.stop!(plan.name);
+        if (!stopped.ok) throw new GateError(`${(error as Error).message}; Codex stop ${lostSession} failed: ${stopped.note}`);
       } else {
-        const stopped = run(tool.bin, ['stop', lostSession], { cwd: plan.root, env: plan.env, encoding: 'utf8' });
+        const stopped = run(tool.bin!, ['stop', lostSession], { cwd: plan.root, env: plan.env, encoding: 'utf8' });
         if (stopped.error || stopped.status !== 0) {
-          throw new GateError(`${error.message}; claude stop ${lostSession} failed: ${stopped.error?.message ?? stopped.stderr ?? stopped.status}`);
+          throw new GateError(`${(error as Error).message}; claude stop ${lostSession} failed: ${stopped.error?.message ?? stopped.stderr ?? stopped.status}`);
         }
       }
     }
@@ -256,7 +277,7 @@ export async function report(rootOrHost, opts = {}) {
   handOverContactPoints(plan.home, { env: process.env });
   ensureWarden(plan.home, plan.task, { host: plan.host });
   ok(`reporter lifted for root task ${plan.task}${session ? ` (session ${session})` : ''}`);
-  plan.driver.saidLiftoff({ name: plan.name, seen, session, output });
+  plan.driver.saidLiftoff!({ name: plan.name, seen, session, output });
   if (plan.driver.id === 'codex') info(`Ask this reporter: ${plan.host.busCommand(['report', '--task', plan.task, '--question', shellQuote('What changed?')])}`);
   return plan;
 }

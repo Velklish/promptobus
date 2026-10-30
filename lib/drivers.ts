@@ -12,6 +12,7 @@ import type { LibDriver } from './driver-runtime.js';
 import type { ActivationTarget, ActivateResult, Notification, ParticipantV1, PromptobusHost, StalledParticipant } from '../dist/index.js';
 
 interface IdentityScope { home: string; task: string | null; address: string | null }
+export type CodexDriver = typeof codexDriver;
 interface IdentityCandidate { harness: string; variable: string | null; id: string; record?: string }
 interface IdentityRecord { home?: unknown; task?: unknown; address?: unknown; [key: string]: unknown }
 

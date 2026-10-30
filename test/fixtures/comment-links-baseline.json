@@ -15,7 +15,7 @@
       "../docs/reference/04-protocol.md",
       "../docs/reference/03-cli.md#guard-and-warden"
     ],
-    "lib/cli.js": [
+    "lib/cli.ts": [
       "../docs/reference/02-host.md#the-harness-session-registry-and-the-refusal-when-nobody-says",
       "harness-home.js"
     ],
@@ -88,7 +88,7 @@
       "../docs/reference/02-host.md#launching-a-process",
       "../docs/reference/02-host.md#launching-a-process"
     ],
-    "lib/guard.js": [
+    "lib/guard.ts": [
       "../docs/reference/03-cli.md"
     ],
     "lib/harness-home.ts": [
@@ -185,17 +185,17 @@
     "lib/prune.ts": [
       "../docs/reference/03-cli.md#status-done-sweep-dismiss-history"
     ],
-    "lib/review.js": [
+    "lib/review.ts": [
       "models.js"
     ],
-    "lib/send.js": [
+    "lib/send.ts": [
       "../docs/reference/03-cli.md#send"
     ],
-    "lib/server.js": [
+    "lib/server.ts": [
       "../src/mcp/server.ts",
       "../docs/reference/01-overview.md#the-stdio-server-transport-rules"
     ],
-    "lib/spawn.js": [
+    "lib/spawn.ts": [
       "drivers.js",
       "../docs/adr/adr-008-codex-reviewer-working-directory.md",
       "../src/hooks.ts",

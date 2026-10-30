@@ -8,7 +8,7 @@ import { isBuiltin } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { check } from './check.mjs';
+import { check, skip } from './check.mjs';
 import { run } from '../lib/exec.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -336,8 +336,19 @@ for (const file of ['src', 'lib', 'bin'].flatMap((dir) => tsFiles(path.join(REPO
 check('package sources import only Node built-ins and their own files',
   breaches.length === 0, breaches.join('; '));
 
+const untypedRuntime = ['lib', 'bin'].flatMap((dir) => readdirSync(path.join(COPY_ROOT, dir), { recursive: true })
+  .filter((name) => /\.[cm]?js$/i.test(String(name)))
+  .map((name) => `${dir}/${String(name).split(path.sep).join('/')}`));
+check('maintained runtime implementations are TypeScript', untypedRuntime.length === 0, untypedRuntime.join(', '));
+
 const built = npm(['run', 'build'], COPY_ROOT);
 check('copy of the repo builds', built.status === 0, why(built));
+if (process.platform === 'win32') skip('fresh build emits an executable CLI', 'POSIX executable mode is unavailable on Windows');
+else {
+  const cli = path.join(COPY_ROOT, 'bin', 'promptobus.js');
+  check('fresh build emits an executable CLI', built.status === 0 && existsSync(cli)
+    && (statSync(cli).mode & 0o100) !== 0, cli);
+}
 
 let serverContract = { adapter: null, hook: null, error: '' };
 if (built.status === 0) {

@@ -19,6 +19,21 @@ import { GUARD_START_EVENT } from '../dist/hooks.js';
 import { SHIPPED_REGISTRY } from '../dist/index.js';
 import { appendThroughputObservation } from './model-routing/telemetry.js';
 
+import type { ParticipantV1, PromptobusHost, TaskV1 } from '../dist/index.js';
+import type { Wake } from '../dist/sidecar.js';
+import type { Socket } from 'node:net';
+
+export interface GuardInput {
+  isTTY?: boolean; setEncoding(encoding: BufferEncoding): unknown; destroy?(): unknown;
+  [Symbol.asyncIterator](): AsyncIterator<unknown>;
+}
+interface GuardArgs { role?: unknown; task?: unknown; home?: unknown; host?: PromptobusHost | null }
+type Identity = ReturnType<typeof resolveIdentity>;
+type GuardMark = { key?: unknown; count?: unknown };
+interface HintItem { id: string; key: string; line: string }
+interface ProbeResult { dead: boolean; error: string | null }
+interface GuardOutcome { code: number; payload?: ReturnType<typeof hintPayload>; line?: string }
+
 // Bus loop guard, called by the Stop hook on EVERY turn end: do not let a session finish a
 // turn in a state from which nobody will wake it.
 
@@ -31,20 +46,20 @@ export const GUARD_MARK = 'LOOP GUARD';
 export const GUARD_BLOCK_LIMIT = 2;
 
 // Counter of consecutive returns — a file in the task `waits/`, one file per address.
-export function guardMarkFile(home, task, addr) {
+export function guardMarkFile(home: string, task: string, addr: string) {
   return path.join(taskDir(home, task), 'waits', `${addrDir(addr)}.guard.json`);
 }
 
 // Mark "this session has already been told", one file per reader: a shared file per task
 // would eat the hint of the next session in the root.
-export function successorMarkFile(home, task, session) {
+export function successorMarkFile(home: string, task: string, session: unknown) {
   const stem = String(session ?? '').trim().replace(/[^A-Za-z0-9._-]+/g, '-') || 'unknown';
   return path.join(taskDir(home, task), 'waits', `successor.hint.${stem}.json`);
 }
 
-function readGuardMark(file) {
+function readGuardMark(file: string): GuardMark | null | undefined {
   try {
-    return JSON.parse(readFileSync(file, 'utf8'));
+    return JSON.parse(readFileSync(file, 'utf8')) as GuardMark | null | undefined;
   } catch {
     return null;
   }
@@ -52,9 +67,9 @@ function readGuardMark(file) {
 
 // `Stop` payload on stdin. Reading it is REQUIRED — `CLAUDE_CODE_SESSION_ID` is not promised
 // to a hook process — and `isTTY` is the hang gate for a subcommand started by hand.
-export async function readEvent(stdin) {
+export async function readEvent(stdin: GuardInput): Promise<Record<string, unknown>> {
   if (stdin.isTTY) return {};
-  let timer;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     let raw = '';
     stdin.setEncoding('utf8');
@@ -63,7 +78,7 @@ export async function readEvent(stdin) {
         for await (const chunk of stdin) raw += chunk;
         return raw;
       })(),
-      new Promise((resolve) => {
+      new Promise<string | null>((resolve) => {
         timer = setTimeout(() => {
           try { stdin.destroy?.(); } catch { /* nothing to close */ }
           resolve(null);
@@ -71,8 +86,8 @@ export async function readEvent(stdin) {
       }),
     ]);
     clearTimeout(timer);
-    const event = JSON.parse(result ?? raw);
-    return event && typeof event === 'object' && !Array.isArray(event) ? event : {};
+    const event: unknown = JSON.parse(result ?? raw);
+    return event && typeof event === 'object' && !Array.isArray(event) ? event as Record<string, unknown> : {};
   } catch {
     clearTimeout(timer);
     return {};
@@ -80,7 +95,7 @@ export async function readEvent(stdin) {
 }
 
 /** Append hook evidence beside the guard mark; a refusal never blocks the turn. */
-function rememberThroughput(home, task, address, participant, event) {
+function rememberThroughput(home: string, task: string, address: string, participant: ParticipantV1 | null | undefined, event: unknown) {
   if (!participant) return;
   try {
     appendThroughputObservation(home, task, address, event);
@@ -89,7 +104,7 @@ function rememberThroughput(home, task, address, participant, event) {
   }
 }
 
-function said(value) {
+function said(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
@@ -98,7 +113,7 @@ function said(value) {
 const UNANSWERED_KEY = 'unanswered';
 const HANDOFF_KEY = 'handoff';
 
-function handoffPendingVerdict(home, task, addr) {
+function handoffPendingVerdict(home: string, task: string, addr: string) {
   const senderId = addrDir(addr);
   const since = lastTurnAt(home, task, addr) ?? 0;
   let sentRecordArtifact = false;
@@ -119,7 +134,7 @@ function handoffPendingVerdict(home, task, addr) {
 
 // Unread mail or user debt in OTHER tasks this session orchestrates. One binding stays,
 // so a task lifted from a bound session is watched here — 03-cli § Guard and warden.
-function liftedTaskPending(home, task, session) {
+function liftedTaskPending(home: string, task: string, session: string | null) {
   const waiting = orchestratedTasks(home, session)
     .filter((meta) => meta.id !== task)
     .map((meta) => ({
@@ -150,7 +165,7 @@ function liftedTaskPending(home, task, session) {
 
 // The state that requires returning the turn, or `null`. `key` includes the NUMBER of
 // messages, so a new one resets the counter; unread mail comes first, a debt after it.
-export function guardVerdict(home, task, addr, session = sessionIdentity()) {
+export function guardVerdict(home: string, task: string, addr: string, session = sessionIdentity()) {
   const unread = countMailbox(home, task, addr);
   if (unread) {
     const owed = addr === ORCHESTRATOR
@@ -189,7 +204,7 @@ export function guardVerdict(home, task, addr, session = sessionIdentity()) {
 const HOOK_STDIN_MS = 1000;
 const SUCCESSOR_PROBE_MS = 200;
 
-function sameWorkspaceRoot(cwd, home) {
+function sameWorkspaceRoot(cwd: string, home: string) {
   if (!cwd || !home) return false;
   try {
     return realpathSync(cwd) === realpathSync(path.dirname(home));
@@ -202,14 +217,14 @@ function sameWorkspaceRoot(cwd, home) {
 // registry). What a missing role costs: [03-cli.md § Guard and warden](../docs/reference/03-cli.md).
 const participantPrefixes = () => SHIPPED_REGISTRY.entries.filter((e) => e.layer === 'step').map((e) => `${e.name}:`);
 
-export function declaredParticipant(identity) {
+export function declaredParticipant(identity: { role?: unknown } | null | undefined) {
   const role = identity?.role;
   return typeof role === 'string' && participantPrefixes().some((p) => role.startsWith(p));
 }
 
 // Already on the bus: a binding, the mailbox owner, or a worker/reviewer in the journal. A
 // foreign session in the root is not yet a successor until it claims itself.
-function sessionOnBus(home, session, identity, tasks) {
+function sessionOnBus(home: string, session: string | null, identity: Identity, tasks: TaskV1[]) {
   if (declaredParticipant(identity)) return true;
   if (!session) return false;
   if (boundTaskId(home, session)) return true;
@@ -227,8 +242,8 @@ function sessionOnBus(home, session, identity, tasks) {
 
 // Dead only if the socket was handed over and is missing or refuses. Connect only when the
 // file exists and wake names another owner: a live owner would get an unauthed connect.
-export function probeContactPoint(socketPath, timeoutMs = SUCCESSOR_PROBE_MS) {
-  return new Promise((resolve) => {
+export function probeContactPoint(socketPath: string | null | undefined, timeoutMs = SUCCESSOR_PROBE_MS): Promise<ProbeResult> {
+  return new Promise<ProbeResult>((resolve) => {
     if (!socketPath) {
       resolve({ dead: false, error: null });
       return;
@@ -238,62 +253,62 @@ export function probeContactPoint(socketPath, timeoutMs = SUCCESSOR_PROBE_MS) {
       return;
     }
     let settled = false;
-    const done = (dead, error) => {
+    const done = (dead: boolean, error: string | null) => {
       if (settled) return;
       settled = true;
       try { sock.destroy(); } catch { /* nothing to close */ }
       resolve({ dead, error });
     };
-    let sock;
+    let sock: Socket;
     try {
       sock = createConnection(socketPath);
     } catch (e) {
-      resolve({ dead: true, error: e.code ?? 'error' });
+      resolve({ dead: true, error: (e as NodeJS.ErrnoException).code ?? 'error' });
       return;
     }
     sock.setTimeout(timeoutMs);
     sock.once('connect', () => done(false, null));
-    sock.once('error', (e) => done(true, e.code ?? e.message));
+    sock.once('error', (e) => done(true, (e as NodeJS.ErrnoException).code ?? e.message));
     sock.once('timeout', () => done(true, 'timeout'));
   });
 }
 
-function deadSinceOf(home, id, wake) {
-  const h = readHealth(home, id)[ORCHESTRATOR] ?? {};
+function deadSinceOf(home: string, id: string, wake: Wake | null) {
+  const h = (readHealth(home, id)[ORCHESTRATOR] ?? {}) as Record<string, unknown>;
   return h.triedAt ?? h.since ?? wake?.at ?? 'unknown';
 }
 
-export function successorLine(meta, owner, deadSince, unread) {
+export function successorLine(meta: Pick<TaskV1, 'id' | 'title'>, owner: string, deadSince: unknown, unread: number) {
   const title = meta.title ? ` "${meta.title}"` : '';
   return `task ${meta.id}${title}: orchestrator ${owner} contact appears unavailable (observed ${deadSince}), `
     + `unread ${unread} — sharing this workspace does not authorize takeover; explicit user direction is required before taking over the mailbox`;
 }
 
-function successorItemKey(id, owner, unread) {
+function successorItemKey(id: string, owner: string, unread: number) {
   return `${id}:${owner}:${unread}`;
 }
 
-function wardenHintMarkFile(home, task, session) {
+function wardenHintMarkFile(home: string, task: string, session: unknown) {
   const stem = String(session ?? '').trim().replace(/[^A-Za-z0-9._-]+/g, '-') || 'unknown';
   return path.join(taskDir(home, task), 'waits', `warden.hint.${stem}.json`);
 }
 
-function noExitNoteKey(home, task, unread) {
+function noExitNoteKey(home: string, task: string, unread: number) {
   return `no-exit-note:${unread}:gen=${readWardenGeneration(home, task)}`;
 }
 
-function noExitSuffix(home, task) {
+function noExitSuffix(home: string, task: string) {
   return `no-exit-note:gen=${readWardenGeneration(home, task)}`;
 }
 
-function clearNoExitLoopMark(home, task, session) {
+function clearNoExitLoopMark(home: string, task: string, session: string | null) {
   const file = wardenHintMarkFile(home, task, session);
   if (!existsSync(file)) return;
   const mark = readGuardMark(file);
-  if (mark?.key?.startsWith('no-exit-note:')) rmSync(file, { force: true });
+  if ((mark as { key?: { startsWith(prefix: string): boolean } } | null | undefined)?.key?.startsWith('no-exit-note:')) rmSync(file, { force: true });
 }
 
-function pruneNoExitSuccessorMarks(home, tasks) {
+function pruneNoExitSuccessorMarks(home: string, tasks: TaskV1[]) {
   for (const meta of tasks) {
     if (countMailbox(home, meta.id, ORCHESTRATOR) !== 0) continue;
     const waits = path.join(taskDir(home, meta.id), 'waits');
@@ -302,7 +317,7 @@ function pruneNoExitSuccessorMarks(home, tasks) {
       if (!name.startsWith('successor.hint.')) continue;
       const file = path.join(waits, name);
       const mark = readGuardMark(file);
-      if (!mark?.key?.includes('no-exit-note')) continue;
+      if (!(mark as { key?: { includes(text: string): boolean } } | null | undefined)?.key?.includes('no-exit-note')) continue;
       rmSync(file, { force: true });
     }
   }
@@ -310,7 +325,7 @@ function pruneNoExitSuccessorMarks(home, tasks) {
 
 const WARDEN_EXIT_UNKNOWN = 'without leaving a note';
 
-async function orchestratorOwnerAlive(wake, owner, probe) {
+async function orchestratorOwnerAlive(wake: Wake | null, owner: string | null, probe: typeof probeContactPoint) {
   if (!wake?.socket) return false;
   if (wake.session && !sameOwnerSession(wake.session, owner)) return false;
   const socketPath = contactSocketPath(wake.socket);
@@ -319,7 +334,7 @@ async function orchestratorOwnerAlive(wake, owner, probe) {
   return !(await probe(socketPath)).dead;
 }
 
-function wardenExitNotice(home, task, session, meta, host) {
+function wardenExitNotice(home: string, task: string, session: string | null, meta: TaskV1, host: PromptobusHost) {
   const exit = readWardenExit(home, task);
   if (exit) {
     const unread = countMailbox(home, task, ORCHESTRATOR);
@@ -347,7 +362,7 @@ function wardenExitNotice(home, task, session, meta, host) {
   return wardenDeadLine(meta, host, WARDEN_EXIT_UNKNOWN, unread);
 }
 
-async function deadWardenItems(home, cwd, session, tasks, probe, host) {
+async function deadWardenItems(home: string, cwd: string, session: string | null, tasks: TaskV1[], probe: typeof probeContactPoint, host: PromptobusHost | null) {
   if (!session || !sameWorkspaceRoot(cwd, home) || !host) return [];
   const items = [];
   for (const meta of tasks) {
@@ -369,7 +384,7 @@ async function deadWardenItems(home, cwd, session, tasks, probe, host) {
   return items;
 }
 
-async function deadOwnerItems(home, cwd, session, tasks, probe) {
+async function deadOwnerItems(home: string, cwd: string, session: string | null, tasks: TaskV1[], probe: typeof probeContactPoint) {
   if (!session || !sameWorkspaceRoot(cwd, home)) return [];
   const items = [];
   for (const meta of tasks) {
@@ -395,7 +410,7 @@ async function deadOwnerItems(home, cwd, session, tasks, probe) {
   return items;
 }
 
-function hintPayload(line, event) {
+function hintPayload(line: string, event: Record<string, unknown> | null | undefined) {
   if (event?.hook_event_name === GUARD_START_EVENT) {
     return {
       hookSpecificOutput: { hookEventName: GUARD_START_EVENT, additionalContext: line },
@@ -405,7 +420,7 @@ function hintPayload(line, event) {
   return { systemMessage: line };
 }
 
-function rememberSuccessorHints(home, session, items) {
+function rememberSuccessorHints(home: string, session: string | null, items: HintItem[]) {
   const fresh = items.filter((it) => readGuardMark(successorMarkFile(home, it.id, session))?.key !== it.key);
   if (!fresh.length) return null;
   for (const it of fresh) {
@@ -416,7 +431,7 @@ function rememberSuccessorHints(home, session, items) {
 
 // Successor in the root: the mailbox owner is another session and the socket is dead.
 // Capture is not done — a foreign session in the same root need not be the successor.
-export async function successorHint(identity, cwd, session, event, probe = probeContactPoint, host = null) {
+export async function successorHint(identity: Identity, cwd: string, session: string | null, event: Record<string, unknown> | null | undefined, probe = probeContactPoint, host: PromptobusHost | null = null) {
   const tasks = activeTasks(identity.home);
   if (sessionOnBus(identity.home, session, identity, tasks)) return null;
   pruneNoExitSuccessorMarks(identity.home, tasks);
@@ -429,12 +444,12 @@ export async function successorHint(identity, cwd, session, event, probe = probe
 }
 
 // An address alias reads and hands over at its primary address, so the owner gate judges it there.
-function ownershipAt(home, task, addr, session) {
+function ownershipAt(home: string, task: string, addr: string, session: string | null) {
   const box = mailboxOf(home, task, addr);
   return box.alias ? ownership(home, box.primary.task, box.primary.address, session) : ownership(home, task, addr, session);
 }
 
-function rememberTranscript(home, task, addr, session, event) {
+function rememberTranscript(home: string, task: string, addr: string, session: string | null, event: Record<string, unknown> | null | undefined) {
   const transcript = said(event?.transcript_path);
   if (!transcript) return;
   try {
@@ -446,7 +461,7 @@ function rememberTranscript(home, task, addr, session, event) {
 
 // Same gates as the Stop path's mark, and any refusal stays inside this call: SessionStart
 // still returns its successor hint.
-function rememberTranscriptAtStart(identity, session, event) {
+function rememberTranscriptAtStart(identity: Identity, session: string | null, event: Record<string, unknown> | null | undefined) {
   try {
     const task = identity.declaredTask ?? boundTaskId(identity.home, session);
     if (!task || !taskExists(identity.home, task)) return;
@@ -466,15 +481,15 @@ function rememberTranscriptAtStart(identity, session, event) {
 
 // Claude Code hook contract: code 2 yields `blockingError`, any other non-zero only warns.
 // A clean pass must be code 0 and EMPTY output — a line on every turn is noise.
-async function decide(args, env, cwd, event) {
+async function decide(args: GuardArgs, env: NodeJS.ProcessEnv, cwd: string, event: Record<string, unknown>): Promise<GuardOutcome | null> {
   // Who this session is — from the event payload, not from the environment (see
   // readEvent).
   const session = said(event.session_id) ?? sessionIdentity(env);
   // Identity comes from the hook ARGUMENTS first, the environment only as a fallback: a bg
   // session carries the FIRST spawn's triple. Probe target: swap the order, E2E goes red.
   const here = said(event.cwd) ?? cwd;
-  const identity = resolveIdentity(env, here, { declared: args, host: args.host });
-  bus(identity.home, { cli: args.host.version });
+  const identity = resolveIdentity(env, here, { declared: args, host: args.host as PromptobusHost | undefined });
+  bus(identity.home, { cli: args.host!.version });
   // SessionStart records the transcript, then stays the successor detector: a full
   // guard at start would burn GUARD_BLOCK_LIMIT, since the session id survives resume and clear.
   if (event.hook_event_name === GUARD_START_EVENT) {
@@ -505,7 +520,7 @@ async function decide(args, env, cwd, event) {
   // goes to the warden journal: a silent skip here looks exactly like a clean pass.
   const held = foreignSession(identity.home, task, addr, session);
   if (held) {
-    driver.sayForeignWrite(identity.home, task, addr, held, session, 'turn-end mark');
+    driver.sayForeignWrite!(identity.home, task, addr, held, session, 'turn-end mark');
     return null;
   }
 
@@ -515,15 +530,15 @@ async function decide(args, env, cwd, event) {
 
   // The guard is the main warden reviver — it alone runs on every turn end. The session is
   // passed EXPLICITLY: without it the record lands with no owner stamp and is wiped each turn.
-  driver.registerWake(identity.home, task, addr, env, session);
+  driver.registerWake!(identity.home, task, addr, env, session);
   // Every OTHER task this session owns gets the same socket: it has no binding of its own, and the
   // first bus call for it is what used to hand one over — which is exactly what never came.
   handOverContactPoints(identity.home, { env, session });
-  ensureWarden(identity.home, task, { env, host: args.host });
+  ensureWarden(identity.home, task, { env, host: args.host as PromptobusHost | undefined });
 
   const file = guardMarkFile(identity.home, task, addr);
   const wardenNotice = addr === ORCHESTRATOR
-    ? wardenExitNotice(identity.home, task, session, meta, args.host)
+    ? wardenExitNotice(identity.home, task, session, meta, args.host!)
     : null;
   const verdict = guardVerdict(identity.home, task, addr, session);
   if (!verdict) {
@@ -555,7 +570,7 @@ async function decide(args, env, cwd, event) {
   return { code: 2, line: `${GUARD_MARK}: ${reason} · ${label}` };
 }
 
-export async function guard(args = {}, env = process.env, cwd = process.cwd(), stdin = process.stdin) {
+export async function guard(args: GuardArgs = {}, env = process.env, cwd = process.cwd(), stdin: GuardInput = process.stdin) {
   let out = null;
   try {
     out = await decide(args, env, cwd, await readEvent(stdin));

@@ -14,6 +14,15 @@ import { resolveSessionIdentity } from './drivers.js';
 import { bindSessionIdentity, bus } from './store.js';
 import { CONTEXT_FLAGS, contextCliOptions } from './native-participant-context.js';
 
+import type { ParseArgsConfig } from 'node:util';
+type ParseArgsOptionsConfig = NonNullable<ParseArgsConfig['options']>;
+import type { PromptobusHost } from '../dist/index.js';
+import type { GuardInput } from './guard.js';
+
+interface CommandOutput { write?(chunk: string): unknown }
+type CliHost = Pick<PromptobusHost, 'kind' | 'commandName' | 'version'>;
+interface RunOptions { host?: CliHost | null; cwd?: string; env?: NodeJS.ProcessEnv; input?: GuardInput; output?: CommandOutput }
+
 // The command vocabulary, exported so a host's passthrough and refusal read it rather than a copy.
 export const COMMANDS = Object.freeze([
   'lead', 'spawn', 'step', 'review', 'report', 'models', 'status', 'digest', 'send', 'ask', 'link', 'unlink',
@@ -23,7 +32,7 @@ export const COMMANDS = Object.freeze([
 // after the resolve, so priming the host's here would open a second one for nothing.
 const STORE_COMMANDS = new Set(['spawn', 'step', 'review', 'report', 'status', 'digest', 'done', 'abandon', 'stop', 'sweep', 'dismiss', 'history']);
 
-export function helpText(host) {
+export function helpText(host: Pick<PromptobusHost, 'commandName'>) {
   const cmd = host.commandName;
   return `Promptobus — a bus for agent sessions
 
@@ -110,7 +119,7 @@ Participant launch options: --context-purpose technical|user-facing|author-voice
                               ask the existing Codex reporter and print its reply;
                               it answers from the digest and journals, asking the root
                               orchestrator as user when those records do not answer
-  ${cmd} models [--strategy <s>] [--role <${routedCatalogRoles(registryOf(host)).join('|')}|step-name>] [--refresh | --no-probe] [--json]
+  ${cmd} models [--strategy <s>] [--role <${routedCatalogRoles(registryOf(host as PromptobusHost)).join('|')}|step-name>] [--refresh | --no-probe] [--json]
   ${cmd} models validate
   ${cmd} models strategy [--set <s> | --clear]
   ${cmd} models calibrate [--json] [--write] [--yes]
@@ -235,7 +244,7 @@ Participant launch options: --context-purpose technical|user-facing|author-voice
 `;
 }
 
-function parse(name, args, { options = {}, positionals = 0 } = {}) {
+function parse<const O extends ParseArgsOptionsConfig = {}>(name: string, args: string[], { options = {} as O, positionals = 0 }: { options?: O; positionals?: number } = {}) {
   const known = Object.keys(options).map((f) => `--${f}`).join(', ');
   try {
     const parsed = parseArgs({ args, options, allowPositionals: true });
@@ -246,18 +255,19 @@ function parse(name, args, { options = {}, positionals = 0 } = {}) {
     }
     return parsed;
   } catch (e) {
-    if (!String(e?.code ?? '').startsWith('ERR_PARSE_ARGS_')) throw e;
-    fail(`${name}: ${e.message}\n  known flags: ${known || '(this command has no flags)'}`);
+    if (!String((e as NodeJS.ErrnoException | null | undefined)?.code ?? '').startsWith('ERR_PARSE_ARGS_')) throw e;
+    fail(`${name}: ${(e as Error).message}\n  known flags: ${known || '(this command has no flags)'}`);
   }
 }
 
-function writeLine(stream, text) {
+function writeLine(stream: CommandOutput, text: string) {
   const chunk = text.endsWith('\n') ? text : `${text}\n`;
   if (typeof stream.write === 'function') stream.write(chunk);
   else console.log(text);
 }
 
-export async function runPromptobus(argv, { host, cwd, env, input, output } = {}) {
+export async function runPromptobus(argv: readonly string[] | null | undefined, { host: suppliedHost, cwd, env, input, output }: RunOptions = {}) {
+  const host = suppliedHost as PromptobusHost | null | undefined;
   if (!host || typeof host.commandName !== 'string') {
     throw new TypeError('runPromptobus: host is required');
   }
@@ -276,10 +286,10 @@ export async function runPromptobus(argv, { host, cwd, env, input, output } = {}
   const args = [...(argv ?? [])];
   if (args[0] === host.commandName) args.shift();
   const [cmd, ...rest] = args;
-  const at = (sub) => `${host.commandName} ${sub}`.trim();
+  const at = (sub: string) => `${host.commandName} ${sub}`.trim();
 
   try {
-    if (STORE_COMMANDS.has(cmd)) bus(host.promptobusHome(), { cli: host.version });
+    if (STORE_COMMANDS.has(cmd as string)) bus(host.promptobusHome(), { cli: host.version });
     switch (cmd) {
       case undefined:
       case 'help':
@@ -293,7 +303,7 @@ export async function runPromptobus(argv, { host, cwd, env, input, output } = {}
         return 0;
       case 'mcp': {
         parse(at('mcp'), rest);
-        await (await import('./server.js')).serve({ host, env, cwd, input, output });
+        await (await import('./server.js')).serve({ host, env, cwd, input, output: output as { write(chunk: string): unknown } });
         return 0;
       }
       case 'lead': {
@@ -423,7 +433,7 @@ export async function runPromptobus(argv, { host, cwd, env, input, output } = {}
           write: values.write,
           yes: values.yes,
           subcommand: positionals[0],
-          output,
+          output: output as { write(text: string): unknown },
         });
       }
       case 'stats': {
@@ -664,14 +674,14 @@ export async function runPromptobus(argv, { host, cwd, env, input, output } = {}
         fail(`${host.commandName}: unknown command "${cmd ?? ''}" — ${COMMANDS.join(', ')}`);
     }
   } catch (e) {
-    const expected = e?.status !== undefined
+    const expected = (e as { status?: unknown } | null | undefined)?.status !== undefined
       || e instanceof GateError
       // A routing refusal is a `PromptobusError`: its message is the whole diagnosis, and
       // a stack under it would bury the part a person reads.
       || e instanceof PromptobusError
       || e instanceof HostResolveError;
-    if (!expected && e?.stack) console.error(e.stack);
-    fail(e.message ?? String(e));
+    if (!expected && (e as Error | null | undefined)?.stack) console.error((e as Error).stack);
+    fail((e as Error).message ?? String(e));
   }
   return 0;
 }

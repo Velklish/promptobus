@@ -23,20 +23,20 @@ const currency = config.writer?.currency ?? [];
 const upgrade = contributing.split('\n\n')
   .find((paragraph) => paragraph.startsWith('To update backslop,')) ?? '';
 
-check('writer styles CLI help', style.includes('lib/cli.js'));
+check('writer styles CLI help', style.includes('lib/cli.ts'));
 check('writer checks shipped skills for currency only',
   currency.includes('skills/**') && !style.includes('skills/**'));
 check('release guide invokes backslop-writer before the release commit',
   step >= 0 && release > step
   && section.includes('`backslop-writer` in release mode'));
 check('release guide names configured help and skill scope',
-  section.includes('`lib/cli.js`') && section.includes('`helpText` block')
+  section.includes('`lib/cli.ts`') && section.includes('`helpText` block')
   && section.includes('every shipped skill under `skills/` to currency review only'));
 check('local style rule confines the CLI glob to helpText',
-  localRules.includes('`writer.style` glob selects `lib/cli.js`')
+  localRules.includes('`writer.style` glob selects `lib/cli.ts`')
   && localRules.includes('only to its human-facing `helpText` block')
   && localRules.includes('Refusal strings and comments elsewhere in that file are outside the style pass')
-  && section.includes('selects all of `lib/cli.js`')
+  && section.includes('selects all of `lib/cli.ts`')
   && section.includes('narrows style review to the human-facing `helpText` block'));
 check('release guide keeps no translated README in step',
   !/translation|README\.ru/.test(section));

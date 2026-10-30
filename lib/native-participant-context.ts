@@ -11,20 +11,20 @@ interface NativeContextOptions { contextDeclaration?: unknown; contextPurpose?: 
 interface PreparedContextInput {
   root: string; role: string; taskId: string; options?: NativeContextOptions;
   participant?: { metadata?: Record<string, unknown> | null } | null;
-  preparedSelection?: ParticipantContextCeiling;
+  preparedSelection?: ParticipantContextCeiling | null;
 }
 
 const PURPOSES = ['technical', 'user-facing', 'author-voice'];
 const MARKER = '.promptobus-context.json';
 const inside = (root: string, file: string) => file === root || file.startsWith(`${root}${path.sep}`);
 
-export const CONTEXT_FLAGS = { 'context-purpose': { type: 'string' }, 'context-file': { type: 'string' } };
+export const CONTEXT_FLAGS = { 'context-purpose': { type: 'string' }, 'context-file': { type: 'string' } } as const;
 
 function declaration(value: unknown): HostTaskContextDeclaration {
   try { return normalizeContextDeclaration(value); } catch (error) { throw new GateError((error as Error).message); }
 }
 
-export function contextCliOptions(values: Record<string, string | undefined>, cwd = process.cwd()) {
+export function contextCliOptions(values: { 'context-purpose'?: string; 'context-file'?: string }, cwd = process.cwd()) {
   let contextDeclaration;
   if (values['context-file'] !== undefined) {
     const file = path.resolve(cwd, values['context-file']);

@@ -137,7 +137,7 @@ export function withSteps(registry: RoleRegistry, declared: readonly DeclaredSte
 }
 
 /** The registry a host declares; the shipped one while it declares no pipeline, or when there is no host. */
-export function registryOf(host: PromptobusHost | null | undefined): RoleRegistry {
+export function registryOf(host: Pick<PromptobusHost, 'pipeline'> | null | undefined): RoleRegistry {
   const declared = host?.pipeline?.();
   if (!declared) return SHIPPED_REGISTRY;
   const registry = withSteps(SHIPPED_REGISTRY, declared);

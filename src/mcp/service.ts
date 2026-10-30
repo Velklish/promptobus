@@ -83,8 +83,8 @@ export interface PromptobusService {
   historyMessage(home: string, task: string, addr: string, id: string): MessageV1 | null;
   /** Reply heading: home, task by id and name, address, and drift from the session binding. */
   identityLabel(home: string, task: string, addr: string, session?: string | null): string;
-  /** The address a mailbox call reads: the record the session holds in the task, else the declared role. */
-  mailboxAddress?(home: string, task: string, role: string, session: string | null): string;
+  /** The held address for a mailbox call; null keeps the declared role. */
+  mailboxAddress?(home: string, task: string, role: string, session: string | null): string | null;
   /** The participant mailbox an address belongs to. */
   mailboxOf?(home: string, task: string, addr: string): Mailbox;
   /** Mailbox ownership: `allowed` is the right, proven; `gated` is the narrower "proved foreign". */

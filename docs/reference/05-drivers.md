@@ -120,7 +120,7 @@ active reuse, confirmed Stop and relift, and those refusal cases.
 
 ## Approver worktree, project layer and publication
 
-Source: lib/approver.js (planApprover, approverLift), lib/worktree.js
+Source: lib/approver.ts (planApprover, approverLift), lib/worktree.js
 (createWorktree, inspectWorktree), and the three driver prepare functions.
 
 A fresh lift creates a service worktree and branch from the clone's local default branch.

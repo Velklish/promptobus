@@ -1317,7 +1317,7 @@ async function spawn(input: LibLaunchPlan, {
   };
 }
 
-function saidLiftoff({ output, seen: receipt }: LibSpawnResult) {
+function saidLiftoff({ output, seen: receipt }: LibSpawnResult & { name?: string }) {
   const seen = receipt as Pick<CodexSessionRecord, 'codexHome' | 'role'> | null;
   if (output) info(output);
   info(`Codex home: ${seen?.codexHome ?? 'unnamed on the record'} — the mechanism MCP set only, the owner's auth copied in, `

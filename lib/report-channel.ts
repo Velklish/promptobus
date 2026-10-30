@@ -1,3 +1,4 @@
+interface ReporterRpcResult { turn?: { id?: unknown }; thread?: { turns?: { id?: unknown; status?: unknown; items?: { type?: string; text?: unknown }[]; error?: { message?: unknown } }[] } }
 import { GateError } from '../dist/index.js';
 import { hostOf } from './host.js';
 import { humanTerminalIdentity } from './send.js';
@@ -6,7 +7,7 @@ import { holderAlive, holderAsk, readSession } from './codex-session.js';
 
 const WAIT_MS = 180_000;
 
-export async function reportQuestion(rootOrHost, opts = {}, context = {}) {
+export async function reportQuestion(rootOrHost: unknown, opts: { question?: unknown; task?: string; [key: string]: unknown } = {}, context: Parameters<typeof humanTerminalIdentity>[2] = {}) {
   if (typeof opts.question !== 'string' || !opts.question.trim()) throw new GateError('report --question needs non-empty text');
   if (Object.entries(opts).some(([key, value]) => !['task', 'question'].includes(key) && value != null && value !== false)) {
     throw new GateError('report --question cannot combine with reporter launch flags');
@@ -21,16 +22,16 @@ export async function reportQuestion(rootOrHost, opts = {}, context = {}) {
   const participant = participantOf(meta, 'reporter');
   if (participant?.harness !== 'codex') throw new GateError('report --question needs an existing Codex reporter; lift it first with report --task');
   const ref = participant.metadata?.sessionRef;
-  const record = ref ? readSession(ref) : null;
+  const record = ref ? readSession(ref as string) : null;
   if (!record || record.role !== 'reporter' || record.address !== 'reporter' || record.home !== home
     || record.task !== opts.task || record.threadId !== (participant.metadata.sessionId ?? participant.metadata.session)
-    || record.state !== 'alive' || !holderAlive(ref)) {
+    || record.state !== 'alive' || !holderAlive(ref as string)) {
     throw new GateError('the reporter session is stale or belongs to another task; lift this task reporter again');
   }
   const deadline = Date.now() + WAIT_MS;
-  const rpc = (method, params) => {
+  const rpc = (method: string, params: Record<string, unknown>) => {
     const timeoutMs = Math.max(1, Math.min(60_000, deadline - Date.now()));
-    return holderAsk(ref, 'rpc', { method, params, timeoutMs }, undefined, timeoutMs + 1_000);
+    return holderAsk<ReporterRpcResult>(ref as string, 'rpc', { method, params, timeoutMs }, undefined, timeoutMs + 1_000);
   };
   const started = await rpc('turn/start', {
     threadId: record.threadId, input: [{ type: 'text', text: opts.question }],
@@ -46,8 +47,8 @@ export async function reportQuestion(rootOrHost, opts = {}, context = {}) {
       console.log(text);
       return { threadId: record.threadId, turnId, text };
     }
-    if (['failed', 'interrupted'].includes(turn?.status)) {
-      throw new GateError(`reporter turn ${turnId} ${turn.status}: ${turn.error?.message ?? 'no answer'}`);
+    if (['failed', 'interrupted'].includes(turn?.status as string)) {
+      throw new GateError(`reporter turn ${turnId} ${turn!.status}: ${turn!.error?.message ?? 'no answer'}`);
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }

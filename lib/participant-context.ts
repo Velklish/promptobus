@@ -61,7 +61,7 @@ export function normalizeContextDeclaration(value: unknown): HostTaskContextDecl
 
 export function selectParticipantContext(host: ParticipantContextHost, { root, role, task, preparedSelection: prepared }: {
   root: string; role: string; task?: HostParticipantContextTask;
-  preparedSelection?: ParticipantContextCeiling;
+  preparedSelection?: ParticipantContextCeiling | null;
 }): PreparedHostParticipantContextSelection | null {
   const declaration = task?.context === undefined ? undefined : normalizeContextDeclaration(task.context);
   if (typeof host.selectParticipantContext !== 'function') {

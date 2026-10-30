@@ -5,6 +5,8 @@ import type { RoutingAdapter } from './model-routing/adapter-common.js';
 export interface LibLaunchPlan extends LaunchPlan {
   prelaunchBinding?: { sessionId?: string; sessionRecord?: string };
   sessionRecord?: string | null;
+  launchId?: string;
+  rootSessionRecord?: string | null;
   skillsNote?: string | null;
   envNote?: string;
   configDir?: string;
@@ -12,7 +14,8 @@ export interface LibLaunchPlan extends LaunchPlan {
 export interface LibPrepareContext extends Pick<SpawnContext,
   'ref' | 'address' | 'task' | 'mcp' | 'prompt' | 'cwd' | 'role' | 'model' | 'effort' | 'permissionMode' |
   'addDirs' | 'readFiles' | 'readSkillDirs' | 'skillsRoot' | 'selectedContext' | 'pluginDir' | 'mcpConfigPath' |
-  'settingsPath' | 'guardCommand' | 'denyTools' | 'extraSettings' | 'env'> {
+  'settingsPath' | 'guardCommand' | 'extraSettings' | 'env'> {
+  denyTools?: readonly DriverDenyTool[] | null;
   model: string;
   mcpConfigPath: string;
   settingsPath: string;
@@ -57,19 +60,21 @@ export interface LibMcpServer {
 export interface LibMcpConfig { mcpServers: Record<string, LibMcpServer> }
 export interface LibDriver extends Omit<Driver,
   'availability' | 'prepare' | 'spawn' | 'checkWake' | 'saidLiftoff' | 'sessionEnv' | 'stallRoute' |
-  'registerWake' | 'bindHandshake' | 'optionRefusal' | 'sweepParticipant' | 'normalizeTool' | 'resumeState'> {
+  'registerWake' | 'bindHandshake' | 'optionRefusal' | 'sweepParticipant' | 'normalizeTool' | 'resumeState' | 'refuseForeignProjectLayer' | 'shadowedUserServers'> {
   readonly availability?: RoutingAdapter;
   resumeState?(ref: string, context: Parameters<NonNullable<Driver['resumeState']>>[1]): { threadId?: string | null; sandbox?: string };
   normalizeTool?(tool: LibToolBin, context?: { env?: NodeJS.ProcessEnv }): LibToolBin;
+  refuseForeignProjectLayer?(lookupDir: string, writtenDir: string, tool?: LibToolBin | null, guardCommand?: string | null): void;
   prepare?: (context: LibPrepareContext) => LibLaunchPlan;
   spawn?: (plan: LibLaunchPlan, runtime: LibSpawnContext) => Promise<LibSpawnResult>;
   saidLiftoff?: (result: LibSpawnResult & { name: string }) => void;
   checkWake?: (env?: NodeJS.ProcessEnv) => WakeProbe | Promise<WakeProbe>;
-  sessionEnv?(base?: NodeJS.ProcessEnv, extra?: NodeJS.ProcessEnv): NodeJS.ProcessEnv;
+  sessionEnv: (base?: NodeJS.ProcessEnv, extra?: NodeJS.ProcessEnv) => NodeJS.ProcessEnv;
   stallRoute?(stall: LibStall, id: string | null, ref: string | null): string;
   registerWake?(home: string, task: string, address: string, env?: NodeJS.ProcessEnv, session?: string | null): unknown;
   bindHandshake?(home: string, task: string, address: string, env?: NodeJS.ProcessEnv, session?: string | null): unknown;
-  optionRefusal?(options: { effort?: string | null }, tool: LibToolBin): string | null;
+  optionRefusal: (options: { effort?: string | null; statusCommand?: string | null }, tool: LibToolBin) => string | null;
+  shadowedUserServers: (names: string[]) => string[];
   sweepParticipant?(participant: ParticipantV1, taskId: string): unknown;
   mcpDenyTools?(tools: readonly HostMcpTool[]): DriverDenyTool[];
 }

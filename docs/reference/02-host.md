@@ -487,7 +487,7 @@ nothing else). Threading a host through all of them to reach two functions would
 larger change than the one it protects, and a half-threaded version — a host on the
 write path, none on the read path — would rebuild the very split this fixes. The
 binding is set by whoever builds the host: `hostOf` in [host.ts](../../lib/host.ts) does it for
-the package's own helper, and `runPromptobus` in [cli.js](../../lib/cli.js) does it for a
+the package's own helper, and `runPromptobus` in [cli.ts](../../lib/cli.ts) does it for a
 consumer that passes its own. Two hosts in one process share this one binding and the
 FIRST one wins — the cost of not threading, written down where it is paid. The same two
 doors bind the host's `resolveToolBin` for the calls a driver makes after a lift, for the
@@ -1058,7 +1058,7 @@ not measured input, cache, output or tool tokens.
 ## BB Host context delivery
 
 `promptobus/bb-host` exports `createBbHostIntegration` and
-`renderBbHostContext`, with [public types](../../lib/bb-host.d.ts). The consumer
+`renderBbHostContext`, with [public types](../../lib/bb-host.ts). The consumer
 supplies `resolveHost(root)`, optional `prepareEnvironment({root, role, signal})`,
 and `listTools` / `invokeTool` when canonical servers are declared. The default
 plugin resolves the standalone Host and refuses declared servers without those

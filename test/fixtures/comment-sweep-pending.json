@@ -5,7 +5,7 @@
   "lib/model-routing/cache.ts": [
     "f951efa2ad0e"
   ],
-  "lib/spawn.js": [
+  "lib/spawn.ts": [
     "f8db911b3eb8",
     "806c3d9599dd",
     "33e7839ddcd4",

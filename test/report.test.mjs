@@ -135,64 +135,74 @@ check('status prints reporter under the root task', shown.indexOf(TASK) < shown.
   && shown.includes('reporter ·'), shown.slice(0, 600));
 
 function call(role, session, tool, args = {}, task = TASK) {
+  const requestId = 1;
   const run = spawnSync(process.execPath, [BIN, 'mcp'], {
     cwd: ROOT,
     env: {
       ...env, PROMPTOBUS_ROLE: role, PROMPTOBUS_TASK: task,
       CLAUDE_CODE_SESSION_ID: session,
     },
-    input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call',
-      params: { name: tool, arguments: args } }) + '\n',
+    input: JSON.stringify({ jsonrpc: '2.0', id: requestId, method: 'tools/call',
+      params: { name: tool, arguments: args } }) + '\n'
+      + JSON.stringify({ jsonrpc: '2.0', id: requestId + 1, method: 'ping' }) + '\n',
     encoding: 'utf8', timeout: 10_000,
   });
-  const reply = run.stdout.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)).at(-1);
-  return { exit: run.status, error: reply?.result?.isError === true,
-    text: reply?.result?.content?.[0]?.text ?? '', stderr: run.stderr };
+  const messages = (run.stdout ?? '').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
+  const responses = messages.filter((message) => message?.jsonrpc === '2.0' && message.id === requestId
+    && (Object.hasOwn(message, 'result') || Object.hasOwn(message, 'error')));
+  const reply = responses.length === 1 ? responses[0] : null;
+  return {
+    ok: run.status === 0 && run.signal === null && !run.error && responses.length === 1,
+    exit: run.status, signal: run.signal,
+    spawnError: run.error ? { code: run.error.code ?? null, message: run.error.message } : null,
+    stdout: run.stdout, stderr: run.stderr, requestId, messages, reply,
+    error: reply?.result?.isError === true, text: reply?.result?.content?.[0]?.text ?? '',
+  };
 }
 
 for (const [role, session] of roles) {
   for (const tool of ['promptobus_digest', 'promptobus_status', 'promptobus_ask']) {
     const denied = call(role, session, tool, tool === 'promptobus_ask' ? { body: 'borrowed?' } : {});
     check(`${tool} refuses ${role} before reading or writing as user`,
-      denied.error && /reporter only/.test(denied.text), denied.text);
+      denied.ok && denied.error && /reporter only/.test(denied.text), JSON.stringify(denied));
   }
 }
 const unbound = call('reporter', 'stranger-session', 'promptobus_ask', { body: 'borrowed?' });
 check('reporter role hint without a bound session cannot ask as user',
-  unbound.error && /session|binding|holds|reporter/.test(unbound.text), unbound.text);
+  unbound.ok && unbound.error && /session|binding|holds|reporter/.test(unbound.text), JSON.stringify(unbound));
 const page = call('reporter', 'reporter-session', 'promptobus_digest');
 let digest = null;
 try { digest = JSON.parse(page.text); } catch {}
-check('proven reporter reads the root and child digest JSON', !page.error
+check('proven reporter reads the root and child digest JSON', page.ok && !page.error
   && digest?.tasks?.map((task) => task.id).join(',') === [TASK, CHILD].join(','),
-  page.text.slice(0, 200));
+  JSON.stringify(page));
 const liveStatus = call('reporter', 'reporter-session', 'promptobus_status');
-check('proven reporter reads status of the root tree', !liveStatus.error
+check('proven reporter reads status of the root tree', liveStatus.ok && !liveStatus.error
   && liveStatus.text.includes(TASK) && liveStatus.text.includes('reporter'),
-  liveStatus.text.slice(0, 240));
+  JSON.stringify(liveStatus));
 const sent = call('reporter', 'reporter-session', 'promptobus_ask', { body: 'Which decision is open?' });
 const id = sent.text.match(/id ([^\s]+)/)?.[1];
 const question = store.glanceInbox(HOME, TASK, 'orchestrator').find((message) => message.id === id);
 check('proven reporter asks the root orchestrator with sender user',
-  !sent.error && question?.sender === store.addrDir('user')
-    && question?.body === 'Which decision is open?', sent.text);
+  sent.ok && !sent.error && question?.sender === store.addrDir('user')
+    && question?.body === 'Which decision is open?', JSON.stringify(sent));
 const direct = call('reporter', 'reporter-session', 'promptobus_send', {
   to: 'orchestrator', type: 'status', body: 'forbidden',
 });
 check('routing refuses reporter send even when the MCP tool is reached',
-  direct.error && /reporter reads and sends nothing/.test(direct.text), direct.text);
+  direct.ok && direct.error && /reporter reads and sends nothing/.test(direct.text), JSON.stringify(direct));
 const pending = call('reporter', 'reporter-session', 'promptobus_ask', { answers: true, after: id });
 check('reporter answer read says pending before the orchestrator answers',
-  !pending.error && pending.text.includes(`no answer after ${id} yet`), pending.text);
+  pending.ok && !pending.error && pending.text.includes(`no answer after ${id} yet`), JSON.stringify(pending));
 store.sendMessage(HOME, TASK, {
   from: 'orchestrator', to: 'user', type: 'answer', body: 'The release gate is open.',
   session: 'owner-session',
 });
 const answered = call('reporter', 'reporter-session', 'promptobus_ask', { answers: true, after: id });
 check('reporter reads the answer without consuming the user mailbox',
-  !answered.error && /The release gate is open/.test(answered.text)
+  answered.ok && !answered.error && /The release gate is open/.test(answered.text)
     && /message [^\s]+/.test(answered.text)
-    && store.countInbox(HOME, TASK, 'user') === 1, answered.text);
+    && store.countInbox(HOME, TASK, 'user') === 1, JSON.stringify(answered));
 const cliAsk = spawnSync(process.execPath, [BIN, 'ask', 'borrowed?', '--task', TASK], {
   cwd: ROOT, env: { ...env, PROMPTOBUS_ROLE: 'reporter', PROMPTOBUS_TASK: TASK,
     CLAUDE_CODE_SESSION_ID: 'reporter-session' },
