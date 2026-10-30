@@ -54,7 +54,9 @@ export interface LibStall extends Pick<StalledParticipant, 'kind' | 'address' | 
 }
 export interface LibMcpServer {
   command?: string; args?: string[]; env?: NodeJS.ProcessEnv; type?: string; url?: string;
-  headers?: Record<string, string>; disabled_tools?: string[];
+  headers?: Record<string, string>; http_headers?: Record<string, string>;
+  bearer_token_env_var?: string; env_http_headers?: Record<string, string>; oauth?: false;
+  disabled_tools?: string[];
   [key: string]: unknown;
 }
 export interface LibMcpConfig { mcpServers: Record<string, LibMcpServer> }

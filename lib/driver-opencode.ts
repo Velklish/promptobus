@@ -42,7 +42,7 @@ interface OpenCodePlan extends LibLaunchPlan {
   holder?: { password?: string; title?: string }; permissionPollMs?: number;
 }
 interface OpenCodeSession { id?: unknown; time?: { idle?: unknown } }
-type McpEntry = { type: 'remote'; url: string; headers?: Record<string, string> }
+type McpEntry = { type: 'remote'; url: string; headers?: Record<string, string>; oauth?: false }
   | { type: 'local'; command: string[]; environment?: NodeJS.ProcessEnv };
 interface PermissionOptions {
   url: string; password: string; sessionId: string; roots: readonly unknown[];
@@ -158,7 +158,10 @@ function mcpConfig({ servers }: Pick<LibPrepareContext['mcp'], 'servers'>, point
     const entry = raw as LibMcpServer | null;
     if (!entry || typeof entry !== 'object') continue;
     if (typeof entry.url === 'string' && entry.url) {
-      mcp[name] = { type: 'remote', url: entry.url, ...(entry.headers ? { headers: entry.headers } : {}) };
+      mcp[name] = {
+        type: 'remote', url: entry.url, ...(entry.headers ? { headers: entry.headers } : {}),
+        ...(entry.oauth === false ? { oauth: false } : {}),
+      };
     } else if (typeof entry.command === 'string' && entry.command) {
       // The bus entry carries the binary twice (`command` plus a `busArgv` head) — dedupe, or the
       // holder would exec the runtime as a script of itself.

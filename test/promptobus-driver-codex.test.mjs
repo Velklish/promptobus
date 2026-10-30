@@ -2567,7 +2567,11 @@ if (slowPart?.sessionRef) await codexDriver.stop(slowPart.sessionRef);
 writeHostConfig(ws, {
   tools: ['claude', 'codex'],
   mcp: {
-    'probe-http': { type: 'http', url: 'http://probe.invalid/mcp', headers: { api_key: 'PROBE-TOKEN' } },
+    'probe-http': {
+      type: 'http', url: 'http://probe.invalid/mcp', headers: { api_key: 'PROBE-TOKEN' },
+      bearer_token_env_var: 'CODEX_MCP_TOKEN_REF', env_http_headers: { 'X-Session': 'CODEX_MCP_SESSION_REF' },
+      disabled_tools: ['write_entry'],
+    },
   },
 });
 
@@ -2591,10 +2595,15 @@ const started = (() => {
 const busKey = codexMcpName('promptobus', PREFIX);
 const httpKey = codexMcpName('probe-http', PREFIX);
 check('PB-161: in the home config the url-server is in url form, the bus in stdio form',
-  Object.keys(started[httpKey] ?? {}).sort().join(',') === 'http_headers,url'
+  Object.keys(started[httpKey] ?? {}).sort().join(',') === 'bearer_token_env_var,disabled_tools,env_http_headers,http_headers,url'
   && started[httpKey].http_headers.api_key === 'PROBE-TOKEN'
   && Object.keys(started[busKey] ?? {}).sort().join(',') === 'args,command,env',
   JSON.stringify(started));
+check(': the private-home config read at thread/start retains HTTP auth references and disabled tools',
+  started[httpKey]?.bearer_token_env_var === 'CODEX_MCP_TOKEN_REF'
+  && started[httpKey]?.env_http_headers?.['X-Session'] === 'CODEX_MCP_SESSION_REF'
+  && started[httpKey]?.disabled_tools?.join(',') === 'write_entry',
+  JSON.stringify(started[httpKey]));
 check('PB-161: in the home config there are no canonical names — the bus is under the prefix',
   !('promptobus' in started) && !('probe-http' in started)
   && busKey in started && httpKey in started,

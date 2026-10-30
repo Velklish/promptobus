@@ -620,3 +620,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-416.1"></a>`PB-416.1-trusted-root-alias-context` · 2026-10-30 · completed · — · Preserve trusted root aliases without admitting symlinks in owned context trees
 - <a id="pb-416.2"></a>`PB-416.2-shared-service-http-lifecycle` · 2026-10-30 · completed · — · Own one workspace service process and isolated HTTP MCP clients
 - <a id="pb-416.6"></a>`PB-416.6-legacy-alias-workflows` · 2026-10-30 · completed · — · Resolve remaining legacy alias-sensitive hooks and native workflow fixtures
+- <a id="pb-416.7"></a>`PB-416.7-http-mcp-driver-auth-fields` · 2026-10-30 · completed · — · Preserve authenticated HTTP MCP fields in driver configurations

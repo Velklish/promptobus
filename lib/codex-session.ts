@@ -933,7 +933,7 @@ export function codexMcpName(name: unknown, prefix: string) {
 /** Workspace MCP set into the Codex `mcp_servers` form. The two transports do not share a
  * field, and a foreign one kills the config load: [05-drivers.md](../docs/reference/05-drivers.md#the-two-mcp_servers-transports-and-the-field-that-kills-the-config-load) */
 export function codexMcpServers(servers: Record<string, LibMcpServer> | null | undefined, prefix: string) {
-  const out: Record<string, LibMcpServer & { http_headers?: unknown }> = {};
+  const out: Record<string, LibMcpServer> = {};
   const skipped: string[] = [];
   const copyDisabledTools = (entry: LibMcpServer, cfg: LibMcpServer) => {
     const tools = Array.isArray(cfg.disabled_tools)
@@ -953,11 +953,13 @@ export function codexMcpServers(servers: Record<string, LibMcpServer> | null | u
         skipped.push(name);
         continue;
       }
-      const entry: LibMcpServer & { http_headers?: unknown } = { url: String(cfg.url) };
+      const entry: LibMcpServer = { url: String(cfg.url) };
       const headers = cfg.headers ?? cfg.http_headers;
       if (headers && typeof headers === 'object' && Object.keys(headers).length) {
         entry.http_headers = { ...headers };
       }
+      if (cfg.bearer_token_env_var !== undefined) entry.bearer_token_env_var = cfg.bearer_token_env_var;
+      if (cfg.env_http_headers !== undefined) entry.env_http_headers = { ...cfg.env_http_headers };
       copyDisabledTools(entry, cfg);
       out[key] = entry;
       continue;

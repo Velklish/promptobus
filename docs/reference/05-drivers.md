@@ -841,7 +841,7 @@ The command exited 0. These are its decisive output lines, followed by `standRem
 
 The workspace MCP set is written into the `[mcp_servers]` tables of the participant home's
 `config.toml`, and Codex has two transports whose fields do not overlap:
-`streamable_http` knows `url`, `http_headers` and `bearer_token_env_var`; `stdio` knows
+`streamable_http` knows `url`, `http_headers`, `bearer_token_env_var` and `env_http_headers`; `stdio` knows
 `command`, `args`, `env` and `cwd`. A foreign field is not ignored — it kills the config
 load entirely and the participant does not lift at all, with the reply *"failed to load
 configuration: args is not supported for streamable_http in `mcp_servers.<name>`"*.
@@ -849,6 +849,12 @@ Measured on codex-cli 0.146.0 with `thread/start` into an isolated `CODEX_HOME`:
 env}` on top of a url-server produced exactly that refusal, `{url, http_headers}` lifted the
 thread. An unknown transport — Claude Code's `sse` has no Codex counterpart — is not emitted
 at all, because a record with neither `url` nor `command` is an unbuildable half.
+
+The converter copies literal `headers` (or native `http_headers`) into `http_headers`,
+preserves `bearer_token_env_var` and copies the `env_http_headers` map. Environment names
+stay literal references: preparing the launch does not read their secret values.
+`disabled_tools` and the consumer namespace prefix survive the same conversion into the
+private home's TOML, which app-server reads at `thread/start`.
 
 The isolated home removed the NAME collision the key prefix was first introduced against:
 there is no personal set left to merge with, so the entries have one source and one shape.
@@ -1287,6 +1293,10 @@ entries as local ones), the `model` default and the permission map (bus deny nam
 lowercase spelling, plus an `external_directory` allow for the session directory and each
 `addDirs` entry at `<root>/*` and `<root>/**`; a filesystem root is omitted), and the skills canon through
 `OPENCODE_CONFIG_DIR`. `launchDirs` is empty.
+Remote entries retain caller-supplied `headers` and explicit `oauth: false`; omitting `oauth`
+keeps the native default. Header references such as `{env:TOKEN_NAME}` remain literal in
+the emitted config. Claude's `headersHelper` and Cursor's `${env:TOKEN_NAME}` headers likewise
+remain in their own native config files without expansion by the driver.
 Every driver's parent environment filter drops `PROMPTOBUS_OPENCODE_SESSION`,
 `OPENCODE_SESSION_ID`, `OPENCODE_SERVER_PASSWORD`, `OPENCODE_CONFIG` and `OPENCODE_CONFIG_DIR`.
 The OpenCode launch plan then sets its own contact record, holder password and config paths;
