@@ -610,3 +610,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-370.3"></a>`PB-370.3-bb-bindings-cli-output-limit` · 2026-10-29 · batch PB-408 · — · BB bindings inventory can exceed the plugin CLI output limit
 - <a id="pb-406.9"></a>`PB-406.9-opencode-five-hour-window-from-today-bucket` · 2026-10-29 · batch PB-408 · — · The OpenCode 5-hour window is estimated from the stats bucket for today
 - <a id="pb-415.1"></a>`PB-415.1-typescript-build-leaves` · 2026-10-30 · completed · — · Preserve runtime output paths while adding strict TypeScript build and leaf modules
+- <a id="pb-415.2"></a>`PB-415.2-typescript-common-runtime` · 2026-10-30 · completed · — · Migrate Host store and common runtime helpers to strict TypeScript

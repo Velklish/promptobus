@@ -1,6 +1,11 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
-import process from 'node:process';
+import type { SpawnSyncReturns } from 'node:child_process';
+
+interface WorktreeInspection {
+  branch?: string | null; dirty?: boolean | null; unmerged: number | null; base?: string | null;
+  adds?: boolean | null; squashed?: boolean | null; namedBy?: string | false | null;
+}
 import {
   PROC_INSTALL_TIMEOUT_MS, gitIn, runLogged, shellQuote, toPosix,
 } from './util.js';
@@ -21,25 +26,25 @@ export const WORKTREE_DIR_REL = path.join('.claude', 'worktrees');
 // Built FROM the prefix: otherwise a rename would leave the template and the citations behind.
 export const WORKTREE_BRANCH_TEMPLATE = `${WORKTREE_BRANCH_PREFIX}promptobus-<task-slug>-<worker-slug>-t<date>-<time>`;
 
-const git = (dir, ...args) => gitIn(dir, args);
-const out = (r) => (r.status === 0 ? (r.stdout ?? '').trim() : null);
+const git = (dir: string, ...args: string[]) => gitIn(dir, args);
+const out = (r: SpawnSyncReturns<string>) => (r.status === 0 ? (r.stdout ?? '').trim() : null);
 
 // Why git failed — one line and never empty: a process killed by timeout or hitting the
 // output ceiling leaves neither stderr nor a status, the reason sits in `error`.
-const gitWhy = (r) => (r.stderr ?? '').trim().split('\n').filter(Boolean).pop()
+const gitWhy = (r: SpawnSyncReturns<string>) => (r.stderr ?? '').trim().split('\n').filter(Boolean).pop()
   || r.error?.message
   || 'git did not explain';
 
 // Default-branch refs in preference order: local, then origin. Existing ones only, and the
 // order is one for all consumers — there must not be a second copy of this ladder.
-export function defaultRefs(repoAbs, def) {
+export function defaultRefs(repoAbs: string, def: string | null | undefined) {
   return [def, def && `origin/${def}`]
-    .filter(Boolean)
+    .filter((r): r is string => Boolean(r))
     .filter((r) => out(git(repoAbs, 'rev-parse', '--verify', '--quiet', r)) !== null);
 }
 
 // Branch the worktree is on now. null — no directory, git is silent, or HEAD is detached.
-export function worktreeBranch(worktreePath) {
+export function worktreeBranch(worktreePath: string | null | undefined) {
   if (!worktreePath || !existsSync(worktreePath)) return null;
   const branch = out(git(worktreePath, 'rev-parse', '--abbrev-ref', 'HEAD'));
   return branch && branch !== 'HEAD' ? branch : null;
@@ -51,7 +56,7 @@ export const BRANCH_CHANGED_MARK = 'WORKER CHANGED BRANCH';
 
 // Line about a participant's branch: journal versus git. They diverged — loud: the
 // result must be taken from the branch git named.
-export function branchLine(journalBranch, actualBranch) {
+export function branchLine(journalBranch: string | null | undefined, actualBranch: string | null | undefined) {
   if (!actualBranch) return journalBranch ? `branch ${journalBranch} (git did not answer — worktree removed?)` : null;
   if (!journalBranch || journalBranch === actualBranch) return `branch ${actualBranch}`;
   return `branch ${actualBranch} — ${BRANCH_CHANGED_MARK} (in the journal ${journalBranch}): take the result from ${actualBranch}`;
@@ -59,7 +64,7 @@ export function branchLine(journalBranch, actualBranch) {
 
 // What is known before cleanup. `unmerged` is a fact about ANCESTRY and decides nothing on
 // its own — after a squash merge it counts a branch whose work is entirely in.
-export function inspectWorktree(repoAbs, worktreePath, def) {
+export function inspectWorktree(repoAbs: string, worktreePath: string | null | undefined, def: string | null | undefined) {
   // No directory — answer with the same "I don't know" as on git silence: `dirty: null`
   // sends the decision to `keep`.
   if (!worktreePath || !existsSync(worktreePath)) return { branch: null, dirty: null, unmerged: null, base: null, adds: null };
@@ -72,10 +77,10 @@ export function inspectWorktree(repoAbs, worktreePath, def) {
   const known = counts.filter((c) => c.n !== null).map((c) => ({ ref: c.ref, n: Number(c.n) }));
   const best = known.length ? known.reduce((a, b) => (b.n < a.n ? b : a)) : null;
   const needAdds = !!best && best.n > 0 && dirty !== null && dirty.length === 0 && !!branch;
-  const adds = needAdds ? branchAdds(repoAbs, best.ref, branch) : null;
+  const adds = needAdds ? branchAdds(repoAbs, best!.ref, branch!) : null;
   // Asked only where the merge could not answer. Two measurements, not two opinions:
   // this one is about patch identity and does not care what the base did afterwards.
-  const squashed = needAdds && adds === null ? squashedInto(repoAbs, best.ref, branch) : null;
+  const squashed = needAdds && adds === null ? squashedInto(repoAbs, best!.ref, branch!) : null;
   return {
     branch,
     dirty: dirty === null ? null : dirty.length > 0,
@@ -86,13 +91,13 @@ export function inspectWorktree(repoAbs, worktreePath, def) {
     adds,
     squashed,
     // Asked last, wherever neither measurement proved the work in — `adds === true` included.
-    namedBy: needAdds && adds !== false && squashed !== true ? namedBySquash(repoAbs, best.ref, branch) : null,
+    namedBy: needAdds && adds !== false && squashed !== true ? namedBySquash(repoAbs, best!.ref, branch!) : null,
   };
 }
 
 // Whether the branch adds anything when merged. Ancestry is not enough — a squash merge
 // leaves no history. Conflict, old git or refusal is `null`, and the decision is "keep".
-function branchAdds(repoAbs, base, branch) {
+function branchAdds(repoAbs: string, base: string, branch: string) {
   const r = git(repoAbs, 'merge-tree', '--write-tree', base, branch);
   if (r.status !== 0) return null;
   const merged = (r.stdout ?? '').trim().split('\n')[0];
@@ -103,7 +108,7 @@ function branchAdds(repoAbs, base, branch) {
 
 /** Was the branch's work taken into the base as ONE commit?
  * [reference/03-cli.md#squashedinto--was-the-branchs-work-taken-into-the-base-as-one-commit](../docs/reference/03-cli.md#squashedinto--was-the-branchs-work-taken-into-the-base-as-one-commit) */
-function squashedInto(repoAbs, base, branch) {
+function squashedInto(repoAbs: string, base: string, branch: string) {
   const fork = out(git(repoAbs, 'merge-base', base, branch));
   if (!fork) return null;
   // Restricted to the branch's own paths: unrestricted, `log -p` prints every commit the
@@ -129,7 +134,7 @@ const PATCH_PATHS_MAX = 2000;
 
 /** Did a base commit since the fork name the branch head in its `Squash-of` trailer?
  * [reference/03-cli.md#namedbysquash--did-an-acceptance-commit-name-the-branch-head](../docs/reference/03-cli.md#namedbysquash--did-an-acceptance-commit-name-the-branch-head) */
-function namedBySquash(repoAbs, base, branch) {
+function namedBySquash(repoAbs: string, base: string, branch: string) {
   const fork = out(git(repoAbs, 'merge-base', base, branch));
   const head = out(git(repoAbs, 'rev-parse', '--verify', '--quiet', `${branch}^{commit}`));
   if (!fork || !head) return null;
@@ -145,7 +150,7 @@ function namedBySquash(repoAbs, base, branch) {
 
 // Patch ids of a diff or a `log -p` stretch. `null` — a side of the pipe refused, and the
 // caller may not turn that into a verdict. `--stable` is required: order changes the id.
-function patchIds(repoAbs, produced) {
+function patchIds(repoAbs: string, produced: SpawnSyncReturns<string>) {
   if (produced.status !== 0) return null;
   const r = gitIn(repoAbs, ['patch-id', '--stable'], produced.stdout ?? '');
   if (r.status !== 0) return null;
@@ -154,7 +159,7 @@ function patchIds(repoAbs, produced) {
 
 // Fate of the directory — a pure function of what was found. Remove only the proven
 // empty; keep everything else: a directory is cheap to delete and impossible to return.
-export function worktreeDisposition(info) {
+export function worktreeDisposition(info: WorktreeInspection | null | undefined) {
   if (info?.dirty == null) return { action: 'keep', reason: 'git did not answer about the tree state' };
   if (info.dirty) return { action: 'keep', reason: 'uncommitted changes in the tree' };
   if (!info.branch) return { action: 'keep', reason: 'git did not name the branch (detached HEAD?)' };
@@ -198,11 +203,11 @@ export function worktreeDisposition(info) {
 
 // Worktree lock: `git worktree list --porcelain` prints `locked`, with `--reason` the text.
 // Paths compare by realpath — on macOS a temp directory arrives as `/var/…` and `/private/var/…`.
-function realOrSelf(p) {
+function realOrSelf(p: string) {
   try { return realpathSync(p); } catch { return path.resolve(p); }
 }
 
-function worktreeLock(repoAbs, worktreePath) {
+function worktreeLock(repoAbs: string, worktreePath: string) {
   const list = out(git(repoAbs, 'worktree', 'list', '--porcelain'));
   if (list === null) return null;
   const target = realOrSelf(worktreePath);
@@ -225,7 +230,7 @@ function worktreeLock(repoAbs, worktreePath) {
 
 // Removing the directory and the branch; reached only after the content measurements prove
 // it removable. A force delete is required because ancestry cannot confirm a squash merge.
-export function removeWorktree(repoAbs, worktreePath, branch) {
+export function removeWorktree(repoAbs: string, worktreePath: string, branch: string | null | undefined) {
   let rm = git(repoAbs, 'worktree', 'remove', worktreePath);
   // A lock with a reason was set by a person and is not lifted; one without a reason is a
   // leftover of the former mechanism — unlock and retry. `-f` also lifts the dirt guard.
@@ -250,7 +255,7 @@ export function removeWorktree(repoAbs, worktreePath, branch) {
   // Only the branch spawn created: a branch a worker moved to is not ours, and the same
   // path would put the default branch under deletion. The prefix is the ownership check.
   const ours = typeof branch === 'string' && branch.startsWith(WORKTREE_BRANCH_PREFIX);
-  const br = ours ? git(repoAbs, 'branch', '-D', branch) : null;
+  const br = ours ? git(repoAbs, 'branch', '-D', branch!) : null;
   const deleted = br ? br.status === 0 : false;
   // A force-delete refusal is still named by the caller; cleanup must not pretend the
   // branch went away when Git did not remove it.
@@ -264,7 +269,7 @@ export function removeWorktree(repoAbs, worktreePath, branch) {
 
 // The working tree is created here, not with the `claude --worktree` flag: the flag takes
 // the base from origin, and the worker would not see unpushed local commits.
-export function createWorktree(repoAbs, worktreePath, branch, base) {
+export function createWorktree(repoAbs: string, worktreePath: string, branch: string, base: string | null | undefined) {
   // Two live leftovers of past runs on which `worktree add` refuses where it could go on:
   // an orphaned registration, and a surviving `worktree-…` branch — then no `-b`.
   pruneWorktrees(repoAbs);
@@ -285,7 +290,7 @@ export function createWorktree(repoAbs, worktreePath, branch, base) {
 const WORKTREE_LOCK = 'package-lock.json';
 const NPM_CI_ARGS = ['ci', '--no-audit', '--no-fund'];
 
-export function worktreeHasLock(dir) {
+export function worktreeHasLock(dir: string | null | undefined) {
   return !!dir && existsSync(path.join(dir, WORKTREE_LOCK));
 }
 
@@ -295,7 +300,7 @@ export function npmCiCommand() {
 
 // A repository where `node_modules` is not ignored is dirty forever after install: `done`
 // will not remove such a tree, and `git add -A` takes the dependencies into a commit.
-function nodeModulesIgnored(worktreePath) {
+function nodeModulesIgnored(worktreePath: string) {
   const r = git(worktreePath, 'check-ignore', '-q', 'node_modules');
   if (r.status === 0) return true;
   if (r.status === 1) return false;
@@ -306,7 +311,7 @@ function nodeModulesIgnored(worktreePath) {
  * output goes to a log beside the directory, whose path the warning names. */
 // `env` is an ENOENT-check seam: spawnSync without an explicit env takes the process PATH,
 // and the runner often leaves the system PATH to the child.
-export function installWorktreeDeps(worktreePath, { env } = {}) {
+export function installWorktreeDeps(worktreePath: string, { env }: { env?: NodeJS.ProcessEnv } = {}) {
   if (!worktreeHasLock(worktreePath)) return { ran: false };
   const logPath = `${worktreePath}.npm-ci.log`;
   const result = runLogged(['npm', ...NPM_CI_ARGS], {
@@ -319,7 +324,7 @@ export function installWorktreeDeps(worktreePath, { env } = {}) {
 
 // A service directory must not look like an uncommitted change, or the clone stays dirty
 // and `fresh` will not touch it. Three-state: added, present, failed — a boolean merges two.
-export function excludeWorktrees(repoAbs) {
+export function excludeWorktrees(repoAbs: string) {
   const probe = git(repoAbs, 'rev-parse', '--git-common-dir');
   const dir = out(probe);
   if (!dir) return { status: 'failed', error: `git did not name the .git directory: ${gitWhy(probe)}` };
@@ -339,20 +344,21 @@ export function excludeWorktrees(repoAbs) {
     writeFileAtomic(file, `${cur}${cur && !cur.endsWith('\n') ? '\n' : ''}${own}`,
       { mode: 0o644, preserveMode: true });
     return { status: 'added', error: null };
-  } catch (e) {
+  } catch (caught) {
+    const e = caught as Error;
     return { status: 'failed', error: e.message };
   }
 }
 
 /** What git calls uncommitted or untracked here; `null` is "git did not answer", not clean.
  * Exported because a generator leaving unignored files must be said out loud at spawn. */
-export function worktreeDirt(worktreePath) {
+export function worktreeDirt(worktreePath: string) {
   const r = git(worktreePath, 'status', '--porcelain', '--untracked-files=all');
   return r.status === 0 ? (r.stdout ?? '').split('\n').filter(Boolean) : null;
 }
 
 // Orphaned registrations in .git/worktrees, from directories removed outside git. While the
 // record lives, git considers the branch taken and refuses a worktree on the same path.
-export function pruneWorktrees(repoAbs) {
+export function pruneWorktrees(repoAbs: string) {
   return git(repoAbs, 'worktree', 'prune').status === 0;
 }

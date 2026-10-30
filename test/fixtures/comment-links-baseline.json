@@ -37,7 +37,7 @@
       "../docs/reference/01-overview.md#the-tool-declarations",
       "../docs/reference/03-cli.md#guard-and-warden"
     ],
-    "lib/cursor-persist.js": [
+    "lib/cursor-persist.ts": [
       "../docs/reference/05-drivers.md#cursor-the-persist-session",
       "../docs/reference/05-drivers.md#cursor-tmux-by-absolute-path",
       "../docs/reference/05-drivers.md#injecttext--deliver-text-into-a-live-session",
@@ -98,7 +98,7 @@
     "lib/history.js": [
       "../docs/reference/03-cli.md#status-done-sweep-dismiss-history"
     ],
-    "lib/host.js": [
+    "lib/host.ts": [
       "../docs/reference/02-host.md#the-harness-session-registry-and-the-refusal-when-nobody-says"
     ],
     "lib/install.js": [
@@ -111,7 +111,7 @@
     "lib/integration.js": [
       "../docs/reference/02-host.md#the-host-integration-entry-point"
     ],
-    "lib/lease.js": [
+    "lib/lease.ts": [
       "../docs/reference/01-overview.md#machine-lease"
     ],
     "lib/liftoff.js": [
@@ -121,7 +121,7 @@
       "../docs/reference/03-cli.md#bgsessionscache--live-background-sessions-by-the-names-we-set-at-spawn",
       "../docs/reference/05-drivers.md#the-harness-binary-after-a-lift-the-lifts-door-not-path"
     ],
-    "lib/model-routing/adapter-claude.js": [
+    "lib/model-routing/adapter-claude.ts": [
       "../../docs/guides/model-routing.md#claude-code-adapter-what-the-probe-reads",
       "../../docs/guides/model-routing.md#scopemodels--resolving-a-scope-display-name-to-model-ids",
       "../../docs/guides/model-routing.md#usagewindows--the-usage-answer-as-adr-005-windows",
@@ -133,7 +133,7 @@
       "../../docs/guides/model-routing.md#window_kind_by_id--the-subscription-windows-of-a-snapshot-normalised",
       "../../docs/guides/model-routing.md#killing-a-probes-child-why-three-lines-and-not-one"
     ],
-    "lib/model-routing/adapter-cursor.js": [
+    "lib/model-routing/adapter-cursor.ts": [
       "../../docs/guides/model-routing.md#cursor-adapter-what-the-probe-reads",
       "../../docs/guides/model-routing.md#autopoolmodels--the-inventory-ids-the-auto-pool-covers",
       "../../docs/guides/model-routing.md#autotiermodels--the-ids-cursor-billed-to-the-auto-pool-this-cycle-off-getaggregatedusageevents",
@@ -155,7 +155,7 @@
       "../../docs/guides/model-routing.md#the-overlay-to-copy",
       "../../docs/guides/model-routing.md#staleness"
     ],
-    "lib/model-routing/preflight.js": [
+    "lib/model-routing/preflight.ts": [
       "../../docs/guides/model-routing.md#preflight-running-the-adapters-together-under-one-budget",
       "../../docs/guides/model-routing.md#resolvebins--resolve-the-binary-of-every-harness-about-to-be-probed-before-any-adapter",
       "../drivers.js"
@@ -164,7 +164,7 @@
       "../../docs/guides/model-routing.md#rendering-a-decision-for-a-person",
       "../../docs/guides/model-routing.md#pacelines--the-pace-table-and-which-lines-it-must-always-print"
     ],
-    "lib/model-routing/resolver.js": [
+    "lib/model-routing/resolver.ts": [
       "../../docs/guides/model-routing.md#the-resolver-one-decision-and-the-three-rules-that-shape-it",
       "../../docs/guides/model-routing.md",
       "../../docs/guides/model-routing.md#paceof--the-pace-block-of-one-candidate-how-much-of-its-binding-window-is-spent",
@@ -215,7 +215,7 @@
       "../docs/reference/03-cli.md",
       "../docs/reference/03-cli.md#status-done-sweep-dismiss-history"
     ],
-    "lib/store.js": [
+    "lib/store.ts": [
       "../src/mcp/service.ts",
       "../docs/reference/04-protocol.md#artifacts"
     ],
@@ -234,7 +234,7 @@
       "../docs/guides/hooks-and-trust.md#wardenround--one-watch-round",
       "../docs/guides/hooks-and-trust.md#wardenround--one-watch-round"
     ],
-    "lib/worktree.js": [
+    "lib/worktree.ts": [
       "../docs/reference/03-cli.md#squashedinto--was-the-branchs-work-taken-into-the-base-as-one-commit",
       "../docs/reference/03-cli.md#namedbysquash--did-an-acceptance-commit-name-the-branch-head"
     ],

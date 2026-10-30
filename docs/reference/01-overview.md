@@ -96,7 +96,7 @@ One file sits at the root of the store rather than under `tasks/`: `model-routin
 
 ## Machine lease
 
-Source: `lib/lease.js`. Decision and the options it was chosen over: [ADR-018](../adr/adr-018-the-bus-leases-the-machine-for-measurements.md).
+Source: `lib/lease.ts`. Decision and the options it was chosen over: [ADR-018](../adr/adr-018-the-bus-leases-the-machine-for-measurements.md).
 
 Independent ordinary suites, gates, source work and preparation may overlap after worktree, output, temporary-root and writable-cache ownership is isolated and the approved actor/card limit is checked. Exclusivity applies to a named conflicting resource or an explicit controlled performance/load measurement. The optional machine lease lets one cooperating measuring run at a time onto it: `promptobus lease -- <command…>` ([03-cli](03-cli.md) § Lease) takes the lease, runs the command, and releases it when the command exits.
 

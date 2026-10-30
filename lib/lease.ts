@@ -9,26 +9,37 @@ import process from 'node:process';
 import { GateError, pidAlive } from '../dist/index.js';
 import { lockHolder, withDirLockAsync } from '../dist/fs/lock.js';
 import { planRun } from './exec.js';
+import type { PromptobusHost } from '../dist/index.js';
+
+interface LeaseParty {
+  pid?: number | null; since?: string | null; address?: string | null; task?: string | null; command?: string | null; cwd?: string;
+}
+interface LeaseWaiter extends LeaseParty { pid: number }
+interface LeaseHolder extends LeaseParty { alive: boolean; ambiguous?: boolean; childPid?: number | null }
+interface LeaseState { root: string; holder: LeaseHolder | null; waiters: LeaseWaiter[] }
+interface LeaseOptions {
+  key?: string | null; waitMs?: number; retryMs?: number; log?: (line: string) => void;
+}
 
 export const LEASE_DIR_VAR = 'PROMPTOBUS_LEASE_DIR';
 export const LEASE_WAIT_SEC = 1800;
 const RETRY_MS = 250;
 const HOLDER_FILE = 'holder.json';
 const CHILD_FILE = 'child.pid';
-const FORWARDED = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+const FORWARDED: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 
 /** Where the lease lives: outside every store home, so all workspaces of this user see one lease. */
 export function leaseRoot(env = process.env) {
   if (env[LEASE_DIR_VAR]) return env[LEASE_DIR_VAR];
   if (process.platform === 'win32') return path.join(os.tmpdir(), 'promptobus-lease');
-  return path.join('/tmp', `promptobus-${process.getuid()}`);
+  return path.join('/tmp', `promptobus-${process.getuid!()}`);
 }
 
-function scopeOf(key) {
+function scopeOf(key: unknown) {
   if (key === null || key === undefined) return null;
   let canonical;
   try { canonical = realpathSync(String(key)); } catch (e) {
-    throw new GateError(`lease: --key ${key} is not a directory (${e.message}) — your command was not run`);
+    throw new GateError(`lease: --key ${key} is not a directory (${(e as Error).message}) — your command was not run`);
   }
   if (!statSync(canonical).isDirectory()) {
     throw new GateError(`lease: --key ${key} is not a directory — your command was not run`);
@@ -36,41 +47,41 @@ function scopeOf(key) {
   return createHash('sha256').update(canonical).digest('hex');
 }
 
-const lockOf = (root, scope = null) => scope
+const lockOf = (root: string, scope: string | null = null) => scope
   ? path.join(root, 'keys', `${scope}.lock`) : path.join(root, 'machine.lock');
-const waitersOf = (root, scope = null) => scope
+const waitersOf = (root: string, scope: string | null = null) => scope
   ? path.join(root, 'key-waiters', scope) : path.join(root, 'waiters');
 
-function readJson(file) {
+function readJson(file: string): LeaseParty | null {
   try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; }
 }
 
-function readWaiters(root, scope) {
+function readWaiters(root: string, scope: string | null): LeaseWaiter[] {
   const dir = waitersOf(root, scope);
   if (scope && !ownRoot(path.join(root, 'key-waiters'), false)) return [];
   if (!ownRoot(dir, false)) return [];
-  let names = [];
+  let names: string[] = [];
   try { names = readdirSync(dir); } catch { /* nobody has waited yet */ }
-  return names.map((name) => {
+  return (names.map((name) => {
     if (!/^[1-9]\d*\.json$/.test(name)) return null;
     const pid = Number(name.slice(0, -5));
     if (!Number.isSafeInteger(pid)) return null;
     const file = path.join(dir, name);
     let st;
     try { st = lstatSync(file); } catch (e) {
-      if (e.code === 'ENOENT') return null;
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw e;
     }
-    if (!st.isFile() || (process.getuid && st.uid !== process.getuid())) return null;
+    if (!st.isFile() || (process.getuid && st.uid !== process.getuid!())) return null;
     const waiter = readJson(file);
     if (waiter !== null && waiter.pid !== pid) return null;
     if (pidAlive(pid)) return waiter;
     rmSync(file, { force: true });
     return null;
-  }).filter(Boolean).sort((a, b) => String(a.since).localeCompare(String(b.since)) || a.pid - b.pid);
+  }).filter(Boolean) as LeaseWaiter[]).sort((a, b) => String(a.since).localeCompare(String(b.since)) || a.pid - b.pid);
 }
 
-function keyedState(lock) {
+function keyedState(lock: string) {
   if (!existsSync(lock)) return null;
   const owner = lockHolder(lock);
   const raw = (() => { try { return readFileSync(path.join(lock, CHILD_FILE), 'utf8').trim(); } catch { return ''; } })();
@@ -83,13 +94,13 @@ function keyedState(lock) {
   };
 }
 
-async function dropDeadKeyedLock(lock) {
+async function dropDeadKeyedLock(lock: string) {
   const recovery = `${lock}.recovery`;
   return withDirLockAsync(recovery, async () => {
     if (keyedState(lock)?.state !== 'dead') return false;
     const tomb = `${lock}.dead.${randomUUID()}`;
     try { renameSync(lock, tomb); } catch (e) {
-      if (e.code === 'ENOENT') return false;
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return false;
       throw e;
     }
     rmSync(tomb, { recursive: true, force: true });
@@ -101,20 +112,20 @@ async function dropDeadKeyedLock(lock) {
   });
 }
 
-function span(ms) {
+function span(ms: number) {
   const s = Math.max(0, Math.round(ms / 1000));
   return s < 120 ? `${s} s` : `${Math.round(s / 60)} min`;
 }
 
 /** One party of the lease, for a person: who, in which task, running what, since when. */
-export function describeParty(p, now = Date.now()) {
+export function describeParty(p: LeaseParty, now = Date.now()) {
   const who = `${p.address ?? 'a caller that named no address'}${p.task ? ` (task ${p.task})` : ''}`;
   const since = p.since ? `since ${p.since} (${span(now - Date.parse(p.since))})` : 'since an unrecorded time';
   return `${who} · ${p.command ?? 'command not recorded yet'} · ${since} · pid ${p.pid ?? '?'}`;
 }
 
 /** The holder and the live waiters. Pid and time come from the lock's own owner file. */
-export function readLease(root = leaseRoot(), key = null) {
+export function readLease(root = leaseRoot(), key: string | null = null): LeaseState {
   root = path.resolve(root);
   const scope = scopeOf(key);
   if (!ownRoot(root, false)) return { root, holder: null, waiters: [] };
@@ -131,7 +142,7 @@ export function readLease(root = leaseRoot(), key = null) {
 }
 
 /** The `status` lines: the holder, or "free", then each waiter. */
-export function leaseLines(root = leaseRoot(), now = Date.now(), key = null) {
+export function leaseLines(root = leaseRoot(), now = Date.now(), key: string | null = null) {
   const scope = scopeOf(key);
   const label = scope ? 'clone publication lease' : 'machine lease';
   const { holder, waiters } = readLease(root, key);
@@ -145,7 +156,7 @@ export function leaseLines(root = leaseRoot(), now = Date.now(), key = null) {
   return [head, ...waiters.map((w) => `${label}: waiting — ${describeParty(w, now)}`)];
 }
 
-function parseWait(raw) {
+function parseWait(raw: unknown) {
   if (raw === undefined) return LEASE_WAIT_SEC;
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 0) throw new GateError(`lease: --wait takes whole seconds, got "${raw}"`);
@@ -155,17 +166,17 @@ function parseWait(raw) {
 class LeaseBusy extends Error {}
 
 // A directory another user owns could drop our lock or plant one: only our own is trusted.
-function ownRoot(root, create = true) {
+function ownRoot(root: string, create = true) {
   if (create) {
     try {
       mkdirSync(root, { recursive: true, mode: 0o700 });
     } catch (e) {
-      if (e.code !== 'EEXIST') throw new GateError(`lease: cannot create the lease directory ${root}: ${e.message} — your command was not run`);
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw new GateError(`lease: cannot create the lease directory ${root}: ${(e as Error).message} — your command was not run`);
     }
   }
   let st;
   try { st = lstatSync(root); } catch (e) {
-    if (!create && e.code === 'ENOENT') return false;
+    if (!create && (e as NodeJS.ErrnoException).code === 'ENOENT') return false;
     throw e;
   }
   const uid = process.getuid?.();
@@ -181,7 +192,7 @@ function ownRoot(root, create = true) {
 
 /** Hold the selected lease around `fn`. A live holder is waited out up to `waitMs`, with one
  * line each time the holder changes; past the bound the refusal carries that same line. */
-export async function underLease(root, me, fn, { key = null, waitMs = LEASE_WAIT_SEC * 1000, retryMs = RETRY_MS, log = () => {} } = {}) {
+export async function underLease<T>(root: string, me: LeaseParty, fn: (lock?: string) => T | Promise<T>, { key = null, waitMs = LEASE_WAIT_SEC * 1000, retryMs = RETRY_MS, log = () => {} }: LeaseOptions = {}): Promise<T> {
   root = path.resolve(root);
   ownRoot(root);
   const scope = scopeOf(key);
@@ -190,7 +201,7 @@ export async function underLease(root, me, fn, { key = null, waitMs = LEASE_WAIT
   mkdirSync(waitersOf(root, scope), { recursive: true, mode: 0o700 });
   const waiterFile = path.join(waitersOf(root, scope), `${me.pid}.json`);
   const started = Date.now();
-  let shown = null;
+  let shown: number | null | undefined = null;
   const takeTurn = () => {
     if (readWaiters(root, scope)[0]?.pid !== me.pid) throw new LeaseBusy();
   };
@@ -200,8 +211,8 @@ export async function underLease(root, me, fn, { key = null, waitMs = LEASE_WAIT
       try {
         if (scope) {
           try { mkdirSync(lock); } catch (e) {
-            if (e.code === 'EEXIST') throw new LeaseBusy();
-            if (e.code === 'ENOENT') throw new GateError(`lease: the lease directory ${root} vanished`);
+            if ((e as NodeJS.ErrnoException).code === 'EEXIST') throw new LeaseBusy();
+            if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw new GateError(`lease: the lease directory ${root} vanished`);
             throw e;
           }
           try {
@@ -235,7 +246,7 @@ export async function underLease(root, me, fn, { key = null, waitMs = LEASE_WAIT
           throw new GateError(`lease: clone publication lock ${lock} has no known wrapper — `
             + 'verify the publisher and child are dead before removing this lock; your command was not run');
         }
-        if (state?.state === 'ambiguous' && !pidAlive(state.owner.pid)) {
+        if (state?.state === 'ambiguous' && !pidAlive(state.owner!.pid)) {
           throw new GateError(`lease: clone publication lock ${lock} has no known child pid — `
             + 'verify the publisher and child are dead before removing this lock; your command was not run');
         }
@@ -263,7 +274,7 @@ export async function underLease(root, me, fn, { key = null, waitMs = LEASE_WAIT
   }
 }
 
-export function keyedCommandPlan(command, env, keyedLocks = []) {
+export function keyedCommandPlan(command: string[], env: NodeJS.ProcessEnv, keyedLocks: string[] = []) {
   const plan = planRun(command[0], command.slice(1), { env });
   if (!plan.ok) throw new GateError(`lease: ${plan.message}`);
   if (keyedLocks.length && process.platform === 'win32') {
@@ -279,25 +290,25 @@ export function keyedCommandPlan(command, env, keyedLocks = []) {
 
 // Signals reach the child and the wrapper waits for its exit: releasing first would let a
 // waiter in while the killed run is still on the machine.
-function runChild(command, env, cwd, keyedLock = null) {
+function runChild(command: string[], env: NodeJS.ProcessEnv, cwd: string, keyedLock: string | null | undefined = null): Promise<number> {
   const plan = keyedCommandPlan(command, env, keyedLock ? [keyedLock] : []);
-  return new Promise((resolve, reject) => {
+  return new Promise<number>((resolve, reject) => {
     const child = spawn(plan.file, plan.args, {
       stdio: 'inherit', env, cwd, windowsVerbatimArguments: plan.verbatim,
     });
-    const forward = (sig) => { child.kill(sig); };
+    const forward = (sig: NodeJS.Signals) => { child.kill(sig); };
     for (const sig of FORWARDED) process.on(sig, forward);
     const off = () => { for (const sig of FORWARDED) process.off(sig, forward); };
-    child.on('error', (e) => { off(); reject(new GateError(`lease: ${command[0]}: ${e.message}`)); });
+    child.on('error', (e) => { off(); reject(new GateError(`lease: ${command[0]}: ${(e as Error).message}`)); });
     child.on('exit', (code, signal) => {
       off();
-      resolve(code ?? 128 + (os.constants.signals[signal] ?? 0));
+      resolve(code ?? 128 + (os.constants.signals[signal!] ?? 0));
     });
   });
 }
 
 /** `lease [--key <clone-root>] [--wait <seconds>] -- <command…>`: the command's exit code. */
-export async function lease(host, { command, as, task, key = null, wait, env = process.env, cwd = process.cwd() }) {
+export async function lease(host: Pick<PromptobusHost, 'commandName'>, { command, as, task, key = null, wait, env = process.env, cwd = process.cwd() }: { command?: string[]; as?: string | null; task?: string | null; key?: string | null; wait?: unknown; env?: NodeJS.ProcessEnv; cwd?: string }) {
   if (!command?.length) {
     throw new GateError(`${host.commandName} lease: no command to run — `
       + `${host.commandName} lease [--as <address>] [--task <id>] [--key <clone-root>] [--wait <seconds>] -- <command…>`);
@@ -312,7 +323,7 @@ export async function lease(host, { command, as, task, key = null, wait, env = p
 }
 
 /** Resource ownership and optional machine lease guidance for executable participants. */
-export function leaseRule({ host, taskId, address }) {
+export function leaseRule({ host, taskId, address }: { host: Pick<PromptobusHost, 'busCommand'>; taskId: string; address: string }) {
   const cmd = host.busCommand(['lease', '--as', address, '--task', taskId, '--', '<command…>']);
   return '## Machine lease\n\n'
     + 'Independent source reads, setup, builds, no-model checks, focused tests, full suites and gates may run concurrently '

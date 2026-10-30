@@ -18,6 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import { check } from './check.mjs';
+import { sourceFile } from './source-files.mjs';
 
 const SB = mkdtempSync(path.join(os.tmpdir(), 'promptobus-wt-'));
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -648,7 +649,7 @@ check('spawn: a parsed token that is not in the shape of a session id binds noth
 // first edit reading the other module at the top level will hit a TDZ. The names, though,
 // remain available from spawn.js: this very file takes them from there (the import above),
 // meaning the re-export is verified by every check in this block.
-const liftoffSrc = readFileSync(path.join(here, '..', 'lib', 'liftoff.js'), 'utf8');
+const liftoffSrc = readFileSync(sourceFile(path.join(here, '..', 'lib', 'liftoff.js')), 'utf8');
 check('review note: liftoff.js does not import spawn.js — there is no cycle between them',
   !/^\s*import\s[^;]*from\s+'\.\/spawn\.js'/m.test(liftoffSrc),
   liftoffSrc.split('\n').filter((l) => /from '\.\/spawn\.js'/.test(l)).join(' | ') || 'no imports');

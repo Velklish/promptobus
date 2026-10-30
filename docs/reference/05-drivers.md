@@ -326,7 +326,7 @@ not measured.
 
 ## Cursor: the persist session
 
-Source: `lib/cursor-persist.js`.
+Source: `lib/cursor-persist.ts`.
 
 Persist-session machinery of Cursor — the inside of the Cursor driver
 ([driver-cursor.js](../../lib/driver-cursor.js)), one floor below it, as [liftoff.js](../../lib/liftoff.js)
@@ -415,7 +415,7 @@ the worker's `git status --porcelain` stays empty. The rule, the measurements an
 
 ### Cursor: tmux by absolute path
 
-Source: `lib/cursor-persist.js` (`tmuxBin`, `tmux`, `readTmuxSessions`, `findSession`).
+Source: `lib/cursor-persist.ts` (`tmuxBin`, `tmux`, `readTmuxSessions`, `findSession`).
 
 Every tmux call — the state query behind `inspect`, `activate`, `stop`, the lift's panes — runs
 the binary `tmuxBin` finds: `PATH`, then the install directories the Cursor binary is looked for
@@ -495,7 +495,7 @@ absent, and spawn does not ask it.
 
 ### `worktreeTouchedMs` — the third liveness signal, and what the first two miss
 
-Source: `lib/cursor-persist.js`, `worktreeTouchedMs`.
+Source: `lib/cursor-persist.ts`, `worktreeTouchedMs`.
 
 How long ago the participant last WROTE anything in its own working tree, in
 milliseconds. The third liveness signal, and the one the first two are blind to.
@@ -522,7 +522,7 @@ both questions. The caller reports that rather than reading it as either answer.
 
 ### `injectText` — deliver text into a live session
 
-Source: `lib/cursor-persist.js`, `injectText`.
+Source: `lib/cursor-persist.ts`, `injectText`.
 
 Each step of the protocol pays for a
 live miss:
@@ -1189,7 +1189,7 @@ measurement covers 0.159.2; it is not a new native Git measurement on 0.158.0.
 
 ### `OPENCODE` — opencode harness driver — the fourth production bus driver
 
-Source: `lib/driver-opencode.js`, `OPENCODE`. Availability: `lib/model-routing/adapter-opencode.js`.
+Source: `lib/driver-opencode.js`, `OPENCODE`. Availability: `lib/model-routing/adapter-opencode.ts`.
 The probe reads `opencode --version`, `opencode models`, and `opencode stats` for a local-estimate quota. A model list that is not read is `unknown`, and the previous windows stay. It does not start a session. The quota contract is [03-cli § OpenCode](03-cli.md#opencode-what-its-adapter-asks).
 Registry: the harness session registry (`harnessStateHome('opencode')`), ref → record path.
 An opencode session carries no CLI owner identity (`identityVar: null`).

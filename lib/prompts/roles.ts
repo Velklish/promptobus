@@ -1,10 +1,132 @@
 import path from 'node:path';
 import { ATTACHMENT_CONTRACT, GATE_LINE_COUNTS, GATE_LINE_VERIFICATION, GATE_RECORD_SCHEMA, GATE_RECORD_STEM, HANDOVER_RECORD_SCHEMA, HANDOVER_RECORD_STEM, RESULT_BODY_MAX } from '../handoff.js';
 
-export function renderWorkerInstructions({ brief, rules, bindings }) {
+export interface ParticipantTools {
+  promptobus_send: string;
+  promptobus_mailbox: string;
+  promptobus_task: string;
+}
+interface ParticipantBindings {
+  tools: ParticipantTools;
+  memory: string;
+  contacts: string;
+}
+export interface WorkerInstructionInput {
+  brief: string;
+  rules: readonly string[];
+  bindings: ParticipantBindings & {
+    preamble: string;
+    workspace: string;
+    repositorySkills: string;
+    dependencies: string;
+    lease: string;
+    orchestrator: string;
+    communication: string;
+    wait: string;
+    answerDelivery: string;
+    reviewDelivery: string;
+    branchDelivery: string;
+    operationalRules: string;
+    artifactDelivery?: string;
+    evidenceInstructions?: string;
+  };
+}
+export interface ReviewerInstructionInput {
+  taskId: string;
+  nsPath: string;
+  repoDir: string;
+  address: string;
+  stepName: string;
+  rules: readonly string[];
+  reviewSubject: string;
+  instructionsSection: string;
+  procedureText: string;
+  bindings: ParticipantBindings & {
+    mcpBoundary: string;
+    reviewerCommands: {
+      isolation: string;
+      procedureSkip: string;
+      record: string;
+      gate: string;
+    };
+    communication: string;
+    externalReads: string;
+    wait: string;
+    close: string;
+    operationalRules: string;
+    evidenceInstructions?: string;
+    reportInstructions?: string;
+    reportSend?: string;
+  };
+}
+export interface ApproverInstructionInput {
+  taskId: string;
+  nsPath: string;
+  address: string;
+  stepName: string;
+  reviewAddr: string;
+  rules: readonly string[];
+  mcpBoundary?: string | null;
+  brief?: string | null;
+  instructionsSection: string;
+  bindings: ParticipantBindings & {
+    workspace: string;
+    acceptance: string;
+    workerContext: string;
+    workerContact: string;
+    repositorySkills: string;
+    dependencies: string;
+    lease: string;
+    communication: string;
+    wait: string;
+    evidenceInstructions?: string;
+  };
+}
+export interface TeamleadInstructionInput {
+  rootTask: string;
+  childTask: string;
+  address: string;
+  rootAddress: string;
+  root: string;
+  brief: string;
+  siblings: readonly string[];
+  rules: readonly string[];
+  bindings: ParticipantBindings & {
+    entry: string;
+    installationNote: string;
+    secondaryMailbox: string;
+    lease: string;
+  };
+}
+export interface ReporterInstructionInput {
+  task: string;
+  root: string;
+  rules: readonly string[];
+  bindings: {
+    tools: { promptobus_send: string; promptobus_task: string; promptobus_digest: string; promptobus_status: string; promptobus_ask: string };
+    contacts: string;
+    answerChannel: string;
+    journalSources: string;
+    digestView: string;
+    journalBody: string;
+    fileBoundary: string;
+  };
+}
+export interface OrchestratorInstructionInput {
+  rules: readonly string[];
+  brief: string;
+  bindings: {
+    tools: ParticipantTools;
+    preamble: string;
+    delivery: string;
+    operationalRules: string;
+  };
+}
+
+export function renderWorkerInstructions({ brief, rules, bindings }: WorkerInstructionInput) {
   // Bus tool names in THIS harness's spelling: the participant looks them up by the
   // name they were given, and a foreign spelling leaves them with no bus at all.
-  const bus = (name) => bindings.tools[name];
+  const bus = (name: keyof typeof bindings.tools) => bindings.tools[name];
   return `${bindings.preamble}
 
 ${bindings.workspace}
@@ -71,8 +193,8 @@ The gate record says WHAT you ran; it does not say why that run means anything. 
 **A check you leave out is not a check you passed.** Every one of the five is required, and the only way past one is its own \`notRun\` branch naming why it was impossible here. A check honestly declared impossible passes; the form has that branch precisely so it never rewards an invented number. The bus checks the SHAPE of what you send against the schema and refuses a record that does not match it. It does not run these checks for you and does not grade them — running them is yours, judging them is the reviewer's, and the reviewer reads the record against the tree.`}${bindings.operationalRules}`;
 }
 
-export function renderTeamleadInstructions({ rootTask, childTask, address, rootAddress, root, brief, siblings, rules, bindings }) {
-  const bus = (name) => bindings.tools[name];
+export function renderTeamleadInstructions({ rootTask, childTask, address, rootAddress, root, brief, siblings, rules, bindings }: TeamleadInstructionInput) {
+  const bus = (name: keyof typeof bindings.tools) => bindings.tools[name];
   const rootMailbox = bindings.secondaryMailbox;
   return `You are ${address}, the orchestrator of child task ${childTask} under root task ${rootTask}.
 Your working directory is the install root ${root}, ${bindings.installationNote}. Your group is the repositories named in your brief. You own the child task and its delivery pipeline.
@@ -97,8 +219,8 @@ ${bindings.memory}
 ${bindings.lease}`;
 }
 
-export function renderReviewerInstructions({ taskId, nsPath, repoDir, address, stepName, rules, reviewSubject, instructionsSection, procedureText, bindings }) {
-  const bus = (name) => bindings.tools[name];
+export function renderReviewerInstructions({ taskId, nsPath, repoDir, address, stepName, rules, reviewSubject, instructionsSection, procedureText, bindings }: ReviewerInstructionInput) {
+  const bus = (name: keyof typeof bindings.tools) => bindings.tools[name];
   const mcpBoundary = bindings.mcpBoundary;
   const reviewerCommands = bindings.reviewerCommands;
   return `You are the ${stepName} code reviewer of task ${taskId}. The review subject is the changes of repository ${nsPath}; its working copy is ${repoDir}, read it freely: call sites of changed methods, neighboring code, tests. You are a Promptobus bus participant with address ${address}; the link to the orchestrator is ${bindings.communication}.
@@ -156,8 +278,8 @@ ${bindings.wait} The postcard names each message's sender, type and size, never 
 6. ${bindings.close}${bindings.operationalRules}`;
 }
 
-export function renderApproverInstructions({ taskId, nsPath, address, stepName, reviewAddr, rules, mcpBoundary = null, brief = null, instructionsSection, bindings }) {
-  const bus = (name) => bindings.tools[name];
+export function renderApproverInstructions({ taskId, nsPath, address, stepName, reviewAddr, rules, mcpBoundary = null, brief = null, instructionsSection, bindings }: ApproverInstructionInput) {
+  const bus = (name: keyof typeof bindings.tools) => bindings.tools[name];
   const mcpGuard = mcpBoundary ? `\n## MCP boundary\n\n${mcpBoundary}\n` : '';
   return `You are the ${stepName} approver of task ${taskId}. Repository ${nsPath}. ${bindings.workspace} You accept one piece after the preceding participant ${reviewAddr} and the owner sent type=result messages — the bus records those facts only; this package does not judge their content.
 
@@ -214,8 +336,8 @@ ${ATTACHMENT_CONTRACT} So everything you attached as an artifact before a review
 Your gate run travels as JSON to \`${GATE_RECORD_SCHEMA}\` — one entry per gate command — and is sent BEFORE the result as type=artifact. Request the file stem \`gates-<your approver slug>.json\`. The bus checks the record against that schema at send and refuses an invalid one, naming the faults by field. ${GATE_LINE_COUNTS} ${GATE_LINE_VERIFICATION}`}`;
 }
 
-export function renderReporterInstructions({ task, root, rules, bindings }) {
-  const bus = (name) => bindings.tools[name];
+export function renderReporterInstructions({ task, root, rules, bindings }: ReporterInstructionInput) {
+  const bus = (name: keyof typeof bindings.tools) => bindings.tools[name];
   return `You are reporter for root task ${task}. Your working directory is the install root ${root}.
 You are a read-only bus participant. ${bindings.journalSources} Read ${bus('promptobus_digest')} for ${bindings.digestView}, ${bus('promptobus_status')} for live session state, ${bus('promptobus_task')} for task metadata, and ${bindings.journalBody} when the page does not carry the needed body.
 
@@ -231,8 +353,8 @@ Never call ${bus('promptobus_send')}; the harness denies it and the bus refuses 
 ${rules.map((file) => `- ${file}`).join('\n')}`;
 }
 
-export function renderOrchestratorInstructions({ rules, brief, bindings }) {
-  const bus = (name) => bindings.tools[name];
+export function renderOrchestratorInstructions({ rules, brief, bindings }: OrchestratorInstructionInput) {
+  const bus = (name: keyof typeof bindings.tools) => bindings.tools[name];
   return `${bindings.preamble}
 ${rules.map((file) => `- ${file}`).join('\n')}
 
@@ -245,7 +367,7 @@ ${bindings.delivery} finish the turn when waiting for a worker or an answer. Kee
 ${bindings.operationalRules}`;
 }
 
-export function renderReviewProcedure(skill, reviewerCommands) {
+export function renderReviewProcedure(skill: { dir: string; shared?: string | null } | null, reviewerCommands: ReviewerInstructionInput['bindings']['reviewerCommands']) {
   if (skill) {
     return `Do not invent a review procedure: read ${path.join(skill.dir, 'SKILL.md')} and follow it in "report only" mode — do not fix findings and do not offer "I will fix it". Skill materials sit next to it${skill.shared ? `, shared standards are in ${skill.shared}` : ''}; resolve relative paths in the skill text from its directory. Skip steps that need a write, ${reviewerCommands.procedureSkip}, or an unavailable MCP server, and list what you skipped in the report.`;
   }

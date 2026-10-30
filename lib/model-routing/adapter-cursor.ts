@@ -9,6 +9,25 @@ import {
   readKeychainSecret, requestJson, spawnAndCapture, verdict,
 } from './adapter-common.js';
 
+import type { ProbeRequest } from '../../dist/index.js';
+import type { AvailabilityWindow } from './cache.js';
+import type { AdapterModel, AdapterVerdict, JsonResponse, RoutingAdapter, TokenRequest } from './adapter-common.js';
+
+interface CursorDocument {
+  autoBucketModels?: unknown;
+  billingCycleStart?: unknown; billingCycleEnd?: unknown; displayMessage?: unknown;
+  planUsage?: { autoPercentUsed?: unknown; apiPercentUsed?: unknown; limit?: unknown };
+  aggregations?: { tier?: unknown; modelIntent?: unknown }[];
+  thirdPartyUsageNudge?: { threshold?: unknown; targetModel?: unknown };
+}
+interface CursorDependencies {
+  readToken: (request: { timeoutMs: number }) => Promise<{ token: string; source: string } | null>;
+  readBackendUrl: () => Promise<string>;
+  postJson: (url: string, request: TokenRequest) => Promise<JsonResponse<CursorDocument>>;
+}
+type CommandAnswer = { ok: false; missing?: boolean; timedOut?: boolean }
+  | { ok: true; status: number | null; out: string };
+
 /** Subcommands, as they were measured. `status` exits 0 in both the logged-in and the logged-out
  * case, so the exit code is not the auth answer — the text is. */
 const STATUS_ARGS = ['status'];
@@ -33,7 +52,7 @@ const MODEL_ROW = /^([A-Za-z0-9][A-Za-z0-9._+-]*)\s+-\s+(.+)$/;
 const NO_ZDR = /\(NO ZDR\)/;
 const NO_ZDR_FLAG = 'no-zdr';
 
-const stripAnsi = (text) => String(text ?? '').replace(ANSI, '');
+const stripAnsi = (text: unknown) => String(text ?? '').replace(ANSI, '');
 
 /** The bearer, by the two routes the binary knows. **The keychain token is first** — the measured
  * one; `CURSOR_API_KEY` is a fallback. `cursor-refresh-token` is never asked for. */
@@ -61,14 +80,14 @@ const AUTO_TIER = 2;
 
 /** The cycle boundaries arrive as epoch milliseconds IN A STRING, which is how Connect carries a
  * 64-bit integer. The UNIT is this adapter's fact; the range check is shared. */
-function epochMs(value) {
+function epochMs(value: unknown) {
   const ms = typeof value === 'number' ? value : (/^\d{1,15}$/.test(String(value ?? '')) ? Number(value) : NaN);
   return Number.isFinite(ms) && ms > 0 ? ms : null;
 }
 
 /** A percentage the snapshot will take, or `null`. Capped at 100 rather than dropped above it:
  * `bonusSpend` can carry the total past the included amount, and "spent" is what that means. */
-function percentOf(value) {
+function percentOf(value: unknown) {
   // `typeof` first, because `Number(null)` and `Number('')` are 0: a field the answer left out
   // would become a pool reported as untouched, the one wrong number nobody would question.
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
@@ -77,9 +96,9 @@ function percentOf(value) {
 
 // The inventory ids the auto pool covers.
 // [guides/model-routing.md#autopoolmodels--the-inventory-ids-the-auto-pool-covers](../../docs/guides/model-routing.md#autopoolmodels--the-inventory-ids-the-auto-pool-covers)
-export function autoPoolModels(inventory, bucket, tiered) {
+export function autoPoolModels(inventory: readonly unknown[] | null | undefined, bucket: unknown, tiered: unknown) {
   const names = Array.isArray(bucket)
-    ? [...new Set(bucket.filter((b) => typeof b === 'string' && b.trim()).map((b) => b.trim()))]
+    ? [...new Set((bucket as unknown[]).filter((b) => typeof b === 'string' && b.trim()).map((b) => (b as string).trim()))]
     : [];
   const billed = tiered instanceof Set ? tiered : new Set(Array.isArray(tiered) ? tiered : []);
   if (!names.length && !billed.size) return [];
@@ -94,9 +113,9 @@ export function autoPoolModels(inventory, bucket, tiered) {
 
 // The ids Cursor BILLED to the auto pool this cycle, off `GetAggregatedUsageEvents`.
 // [guides/model-routing.md#autotiermodels--the-ids-cursor-billed-to-the-auto-pool-this-cycle-off-getaggregatedusageevents](../../docs/guides/model-routing.md#autotiermodels--the-ids-cursor-billed-to-the-auto-pool-this-cycle-off-getaggregatedusageevents)
-export function autoTierModels(events) {
+export function autoTierModels(events: CursorDocument | null | undefined) {
   const rows = Array.isArray(events?.aggregations) ? events.aggregations : [];
-  const ids = new Set();
+  const ids = new Set<string>();
   for (const row of rows) {
     // `typeof` first, for the reason `derivedTier` gives: `Number(null)` is 0, and
     // a row carrying no tier must not be read as a pool nobody named.
@@ -109,7 +128,7 @@ export function autoTierModels(events) {
 
 /** The billing cycle as ADR-005 windows: one length, two pools. `lengthSec` is the cycle the answer
  * states, not thirty days; unreadable boundaries yield no window, since a pace needs a length. */
-export function periodWindows(usage, inventory, events, autoModels = autoPoolModels(
+export function periodWindows(usage: CursorDocument | null | undefined, inventory: readonly unknown[] | null | undefined, events: CursorDocument | null | undefined, autoModels = autoPoolModels(
   inventory, usage?.autoBucketModels, autoTierModels(events),
 )) {
   const start = epochMs(usage?.billingCycleStart);
@@ -119,7 +138,7 @@ export function periodWindows(usage, inventory, events, autoModels = autoPoolMod
   const resetAt = stampAtMs(end);
   if (lengthSec < 1 || !resetAt) return [];
   const plan = usage?.planUsage ?? {};
-  const out = [];
+  const out: AvailabilityWindow[] = [];
 
   const autoPercent = percentOf(plan.autoPercentUsed);
   if (autoModels.length && autoPercent !== null) {
@@ -145,7 +164,7 @@ export function periodWindows(usage, inventory, events, autoModels = autoPoolMod
 
 /** The tier, derived, or `null`. **No Cursor method returns the plan name**, so ADR-005 makes the
  * cycle's included amount the proxy — the PLAN's cents, never the account's spend. */
-export function derivedTier(usage) {
+export function derivedTier(usage: CursorDocument | null | undefined) {
   // `typeof` first: `Number(null)` and `Number('')` are 0, and a plan that named no included
   // amount would come out as `included:0` — a tier a person would read as measured.
   const limit = usage?.planUsage?.limit;
@@ -155,7 +174,7 @@ export function derivedTier(usage) {
 
 /** A line of harness text made safe for a diagnosis, or `null`: control characters out, whitespace
  * collapsed, 120 characters, and any `@` refused — an address is what the cache never holds. */
-export function sanitizeMessage(text) {
+export function sanitizeMessage(text: unknown) {
   if (typeof text !== 'string') return null;
   // eslint-disable-next-line no-control-regex
   const clean = text.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -168,7 +187,7 @@ const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/;
 
 /** Cursor's own near-limit signal in this adapter's words, or `null`. The threshold and the target
  * travel; the nudge's `label` is prose written for a dialog and does not. */
-export function nudgeNote(policy) {
+export function nudgeNote(policy: CursorDocument | null | undefined) {
   const nudge = policy?.thirdPartyUsageNudge;
   // `typeof` first, for the reason `derivedTier` gives: `Number(null)` is 0, and a
   // nudge with no threshold would warn that the pool is "past 0 %".
@@ -183,8 +202,8 @@ export function nudgeNote(policy) {
 
 /** The backend URL the CLI cached, or `null`. **Only `https:` is accepted**: a bearer token is about
  * to be sent there, and a refused value falls back to the measured default. */
-export function backendUrlOf(text) {
-  let doc = null;
+export function backendUrlOf(text: unknown) {
+  let doc: { serverConfigCache?: { backendUrl?: unknown } } | null = null;
   try {
     doc = JSON.parse(String(text ?? ''));
   } catch {
@@ -203,7 +222,7 @@ export function backendUrlOf(text) {
 
 /** Run a harness command and hand back its exit code and stdout, or say how it failed. Asynchronous
  * on purpose — a `spawnSync` here would block the one budget timer. stderr is `ignore`d. */
-async function runOut(cmd, args, timeoutMs) {
+async function runOut(cmd: string, args: readonly string[], timeoutMs: number): Promise<CommandAnswer> {
   if (timeoutMs <= 0) return { ok: false, timedOut: true };
   const r = await spawnAndCapture(cmd, args, timeoutMs);
   if (!r.launched) return { ok: false, missing: r.error?.code === 'ENOENT' };
@@ -214,7 +233,7 @@ async function runOut(cmd, args, timeoutMs) {
 
 /** The bearer, or `null` when neither route has one. The answer says WHICH of the two it found,
  * because that decides what a refusal means one floor up. `cursor-refresh-token` is never asked. */
-async function liveToken({ timeoutMs }) {
+async function liveToken({ timeoutMs }: { timeoutMs: number }) {
   if (process.platform === 'darwin') {
     const token = await readKeychainSecret(TOKEN_SERVICE, { timeoutMs });
     if (token) return { token, source: 'keychain' };
@@ -236,15 +255,15 @@ async function liveBackendUrl() {
 
 /** One Connect call, JSON in hand or a word for why not. `timeout` and `network` are different
  * verdicts; the token appears in one header only, and the response text is parsed and dropped. */
-async function livePostJson(url, { token, timeoutMs }) {
+async function livePostJson(url: string, { token, timeoutMs }: TokenRequest): Promise<JsonResponse<CursorDocument>> {
   return requestJson(url, {
     method: 'POST', headers: connectHeaders(token), body: '{}', timeoutMs,
-  });
+  }) as Promise<JsonResponse<CursorDocument>>;
 }
 
 /** The three headers Connect wants, and no fourth. Exported so the shape can be checked without a
  * request: `connect-protocol-version` is what makes these methods answer 200 at all. */
-export function connectHeaders(token) {
+export function connectHeaders(token: string) {
   return {
     authorization: `Bearer ${token}`,
     'content-type': 'application/json',
@@ -256,12 +275,12 @@ export function connectHeaders(token) {
 const LIVE = { readToken: liveToken, readBackendUrl: liveBackendUrl, postJson: livePostJson };
 
 /** The inventory `models` listed, with the marks it printed. */
-export function parseModels(stdout) {
+export function parseModels(stdout: unknown) {
   const models = [];
   for (const line of stripAnsi(stdout).split('\n')) {
     const row = MODEL_ROW.exec(line.trim());
     if (!row) continue;
-    const model = { model: row[1] };
+    const model: AdapterModel = { model: row[1] };
     if (NO_ZDR.test(row[2])) model.flags = [NO_ZDR_FLAG];
     models.push(model);
   }
@@ -270,7 +289,7 @@ export function parseModels(stdout) {
 
 /** What `status` said: `in`, `out`, or `unreadable`. **The exit code is not consulted** — it is 0
  * either way — and the negative is matched first, because "not logged in" contains "logged in". */
-export function authState(stdout) {
+export function authState(stdout: unknown) {
   const text = stripAnsi(stdout);
   if (NOT_LOGGED_IN.test(text)) return 'out';
   return LOGGED_IN.test(text) ? 'in' : 'unreadable';
@@ -278,7 +297,7 @@ export function authState(stdout) {
 
 /** The verdict for a call that came back with no output, by the way it failed. Three different
  * facts about the machine, and only the last is a timeout. */
-function noAnswer(which, answer, timeoutMs, carry) {
+function noAnswer(which: string, answer: Extract<CommandAnswer, { ok: false }>, timeoutMs: number, carry: Partial<AdapterVerdict>) {
   if (answer.missing) {
     return verdict('unavailable', 'binary_missing',
       'the Cursor binary the host named could not be started', carry);
@@ -292,7 +311,7 @@ function noAnswer(which, answer, timeoutMs, carry) {
 
 /** Ask the Cursor account what it can do. `timeoutMs` is what is LEFT of the preflight budget and
  * both calls share it. A slow binary is a timeout and NOT `unavailable`. */
-async function probe({ toolBin: found, timeoutMs }, deps) {
+async function probe({ toolBin: found, timeoutMs }: ProbeRequest, deps: CursorDependencies) {
   // The binary arrives already resolved. This adapter must not call `resolveToolBin`: it is
   // synchronous, and a host may run `--version` inside it, stopping the preflight's timer.
   const deadline = Date.now() + Math.max(0, timeoutMs);
@@ -345,10 +364,10 @@ async function probe({ toolBin: found, timeoutMs }, deps) {
 
 /** The second half of the probe: the billing cycle, the two pools, the tier. `inventory` is the ids
  * the binary just printed — the `auto` pool's scope is drawn from it. */
-async function limitVerdict({ deadline, timeoutMs, deps, carry, inventory }) {
+async function limitVerdict({ deadline, timeoutMs, deps, carry, inventory }: { deadline: number; timeoutMs: number; deps: CursorDependencies; carry: Partial<AdapterVerdict>; inventory: string[] }) {
   const left = () => deadline - Date.now();
   const listed = `${inventory.length} models listed`;
-  const unknown = (what) => verdict('unknown', 'quota_unknown',
+  const unknown = (what: string) => verdict('unknown', 'quota_unknown',
     `authenticated; ${listed}; ${what}, so the remaining limit stays unknown`, carry);
 
   if (left() <= 0) return unknown('the preflight budget ran out before the usage call was made');
@@ -411,7 +430,7 @@ async function limitVerdict({ deadline, timeoutMs, deps, carry, inventory }) {
 
   // The HARNESS is exhausted only when BOTH pools were read and both are spent: one spent pool
   // leaves the other running, and a list of one window is no evidence about the one missing.
-  const spentPool = (id) => windows.find((w) => w.id === id)?.usedPercent >= 100;
+  const spentPool = (id: string) => windows.find((w) => w.id === id)?.usedPercent! >= 100;
   const bothRead = windows.length === 2;
   const spent = bothRead && spentPool(AUTO_WINDOW) && spentPool(API_WINDOW);
 
@@ -431,7 +450,7 @@ async function limitVerdict({ deadline, timeoutMs, deps, carry, inventory }) {
 
 /** The adapter the driver declares; the tool name comes from the driver, so there is no second copy
  * to drift. `deps` is the seam for everything that leaves this process but the harness binary. */
-export function cursorAvailability(tool, deps = {}) {
+export function cursorAvailability(tool: string, deps: Partial<CursorDependencies> = {}): RoutingAdapter {
   const wired = { ...LIVE, ...deps };
   return { tool, probe: (request) => probe(request, wired) };
 }

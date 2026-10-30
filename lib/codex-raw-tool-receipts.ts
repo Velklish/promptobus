@@ -6,8 +6,8 @@ interface ToolOutcome {
 }
 interface RawToolItem { type?: string; name?: string; input?: string | null; call_id?: unknown; arguments?: string; output?: unknown }
 interface RawToolMessage { method?: string; params?: { threadId?: unknown; turnId?: unknown; item?: RawToolItem | null } | null }
-interface ExecutionContext { launchId: string; threadId: string; cwd: string }
-interface CommandCall {
+export interface ExecutionContext { launchId: string; threadId: string; cwd: string }
+export interface CommandCall {
   callId: string; turnId: string; type: string; exec: boolean; sessionId: string | null;
   ownerCallId: string | null | undefined; command: string | null; cwd: string | null;
   processId: string | null | undefined; outcome: ToolOutcome | null; finalOutcome: ToolOutcome | null;

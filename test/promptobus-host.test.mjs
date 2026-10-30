@@ -1,10 +1,11 @@
 // Standalone host through the CLI adapter: two hosts in one process, liftHarness, sessionEnv.
-import { mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { expectFail } from './console.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
+import { sourceFile, sourceFilesUnder } from './source-files.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const { hostOf, isPromptobusHost } = await import(path.join(here, '..', 'lib', 'host.js'));
@@ -171,14 +172,6 @@ check('prune dry-run hints use the consumer host bus command',
   && !consumerPrune.out.includes('To delete: npx consumer prune'),
   consumerPrune.out);
 
-function javascriptFiles(dir) {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const file = path.join(dir, entry.name);
-    if (entry.isDirectory()) return javascriptFiles(file);
-    return entry.isFile() && entry.name.endsWith('.js') ? [file] : [];
-  });
-}
-
 const stripComments = (text) => text
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/(^|[^:'"\\])\/\/[^\n]*/g, '$1');
@@ -195,13 +188,13 @@ function callsFreePromptobusHome(source) {
 
 const repoRoot = path.join(here, '..');
 const homeGateRoots = [path.join(repoRoot, 'lib'), path.join(repoRoot, 'bin')];
-const allowedFreeHomeCalls = new Set([path.join(repoRoot, 'lib', 'store.js')]);
+const allowedFreeHomeCalls = new Set([sourceFile(path.join(repoRoot, 'lib', 'store.js'))]);
 check('store home gate ignores comments and host member calls but detects an aliased free call',
   !callsFreePromptobusHome('// promptobusHome(root, host)')
   && !callsFreePromptobusHome('/* promptobusHome(root, host) */ host.promptobusHome()')
   && callsFreePromptobusHome('const rootAlias = host.workspaceRoot(); promptobusHome(rootAlias, host);'),
   'comment or member classification failed');
-const homeBypasses = homeGateRoots.flatMap(javascriptFiles)
+const homeBypasses = homeGateRoots.flatMap(sourceFilesUnder)
   .filter((file) => !allowedFreeHomeCalls.has(file))
   .filter((file) => callsFreePromptobusHome(readFileSync(file, 'utf8')))
   .map((file) => path.relative(repoRoot, file));

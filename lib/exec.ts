@@ -11,7 +11,7 @@ interface ProcessEnvironment { platform?: NodeJS.Platform; env?: NodeJS.ProcessE
 interface RunPlan { ok: true; file: string; args: readonly string[]; verbatim: boolean }
 interface RunRefusal { ok: false; code: string; message: string }
 interface AsyncRunOptions extends SpawnOptions { timeoutMs?: number; encoding?: BufferEncoding | 'buffer' | null }
-interface AsyncRunResult<T extends string | Buffer = string | Buffer> {
+export interface AsyncRunResult<T extends string | Buffer = string | Buffer> {
   error: Error | null; status: number | null; signal: NodeJS.Signals | null;
   stdout: T; stderr: T; pid: number | undefined; output: [null, T, T];
 }

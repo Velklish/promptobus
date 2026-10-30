@@ -23,6 +23,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
+import { sourceFile } from './source-files.mjs';
 import { processProbe } from './process-probe.mjs';
 import { makeSandbox, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { buildWorkspace, cli, store } from './scenario.mjs';
@@ -289,7 +290,7 @@ for (const version of ['2026.08.11', PROVEN_CURSOR_VERSION, `v${PROVEN_CURSOR_VE
 // and the version is "undefined", so the `minVersion` gate NEVER fires. The stand answers
 // exactly on `-V`, so the verdict below goes red if the probe arguments drift from the
 // declaration.
-const driverSrc = readFileSync(path.join(here, '..', 'lib', 'driver-cursor.js'), 'utf8');
+const driverSrc = readFileSync(sourceFile(path.join(here, '..', 'lib', 'driver-cursor.js')), 'utf8');
 const tmuxFound = cursorDriver.optionRefusal({}, { version: PROVEN_CURSOR_VERSION }, {
   util: () => ({ ok: true, version: '3.6' }),
 });

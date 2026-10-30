@@ -48,6 +48,8 @@ jobs:
         run: npm run build
 
       - name: Test
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: npm test
 
       - name: Publicity audit

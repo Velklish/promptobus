@@ -9,6 +9,26 @@ import {
   readKeychainSecret, requestJson, spawnAndCapture, verdict,
 } from './adapter-common.js';
 
+import type { ProbeRequest } from '../../dist/index.js';
+import type { AvailabilityWindow } from './cache.js';
+import type { AdapterVerdict, CaptureError, JsonResponse, RoutingAdapter, TokenRequest } from './adapter-common.js';
+
+type ScopeTable = Record<string, readonly string[]>;
+interface ClaudeLimit {
+  kind?: string; percent?: unknown; resets_at?: unknown; locked_reason?: unknown; is_active?: unknown;
+  scope?: { model?: { display_name?: unknown } };
+}
+interface ClaudeDocument {
+  limits?: ClaudeLimit[];
+  organization?: { rate_limit_tier?: unknown };
+}
+interface ClaudeDependencies {
+  readCredential: (request: { timeoutMs: number }) => Promise<unknown>;
+  getJson: (url: string, request: TokenRequest) => Promise<JsonResponse<ClaudeDocument>>;
+  clearHint?: string;
+}
+interface WiredDependencies extends ClaudeDependencies { scopeIds: ScopeTable | null | undefined }
+
 /** The binary. The same name is what the host is asked to resolve. */
 const TOOL = 'claude';
 
@@ -26,8 +46,8 @@ const CREDENTIAL_HOME = '.claude';
 const CREDENTIAL_NAME = '.credentials.json';
 
 /** Where the record lives on a platform whose credentials are a file. */
-export function credentialFile(env = process.env, home = homedir()) {
-  const named = typeof env?.[CREDENTIAL_DIR_ENV] === 'string' ? env[CREDENTIAL_DIR_ENV].trim() : '';
+export function credentialFile(env: Record<string, unknown> | null | undefined = process.env, home = homedir()) {
+  const named = typeof env?.[CREDENTIAL_DIR_ENV] === 'string' ? (env[CREDENTIAL_DIR_ENV] as string).trim() : '';
   return path.join(named || path.join(home, CREDENTIAL_HOME), CREDENTIAL_NAME);
 }
 
@@ -43,7 +63,7 @@ const WEEKLY_LENGTH_SEC = 604_800;
 
 /** The three `limits[]` rows this adapter places. A row of any other kind is left out rather
  * than guessed at: the endpoint is not a published contract. */
-const WINDOW_KINDS = {
+const WINDOW_KINDS: Record<string, { id: string; kind: string; lengthSec: number }> = {
   session: { id: 'session', kind: 'session', lengthSec: SESSION_LENGTH_SEC },
   weekly_all: { id: 'weekly', kind: 'weekly', lengthSec: WEEKLY_LENGTH_SEC },
   weekly_scoped: { id: 'weekly', kind: 'weekly', lengthSec: WEEKLY_LENGTH_SEC },
@@ -51,26 +71,26 @@ const WINDOW_KINDS = {
 
 /** A moment as the snapshot writes them, or `null`. The UNIT is this adapter's fact; the range
  * check and formatting are shared. A number is refused — this endpoint names moments in strings. */
-export function stampOf(value) {
+export function stampOf(value: unknown) {
   return typeof value === 'string' ? stampAtMs(Date.parse(value)) : null;
 }
 
 /** The model ids a scope's display name resolves to, or null when it resolves to none.
  * [guides/model-routing.md#scopemodels--resolving-a-scope-display-name-to-model-ids](../../docs/guides/model-routing.md#scopemodels--resolving-a-scope-display-name-to-model-ids) */
-export function scopeModels(displayName, table) {
+export function scopeModels(displayName: unknown, table: ScopeTable | null | undefined) {
   const key = String(displayName ?? '').trim().toLowerCase();
   const ids = table?.[key];
   return Array.isArray(ids) && ids.length ? [...ids] : null;
 }
 
 /** A display name as a window id fragment: lower case, one dash between words. */
-const slug = (name) => String(name).trim().toLowerCase()
+const slug = (name: unknown) => String(name).trim().toLowerCase()
   .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
 /** Three fields of the credential record, and no fourth. The shape is the enforcement:
  * `refreshToken` is never read, so it cannot be carried into a message, a log or a cache. */
-export function credentialRecord(text) {
-  let doc = null;
+export function credentialRecord(text: unknown) {
+  let doc: { claudeAiOauth?: { accessToken?: unknown; expiresAt?: unknown; rateLimitTier?: unknown } } | null = null;
   try {
     doc = JSON.parse(String(text ?? ''));
   } catch {
@@ -95,16 +115,16 @@ export function credentialRecord(text) {
 
 // The usage answer as ADR-005 windows.
 // [guides/model-routing.md#usagewindows--the-usage-answer-as-adr-005-windows](../../docs/guides/model-routing.md#usagewindows--the-usage-answer-as-adr-005-windows)
-export function usageWindows(usage, scopeTable) {
+export function usageWindows(usage: ClaudeDocument | null | undefined, scopeTable?: ScopeTable | null) {
   const rows = Array.isArray(usage?.limits) ? usage.limits : [];
-  const out = [];
+  const out: AvailabilityWindow[] = [];
   const seen = new Set();
   for (const row of rows) {
-    const shape = WINDOW_KINDS[row?.kind];
+    const shape = WINDOW_KINDS[row?.kind as string];
     if (!shape) continue;
     const percent = Number(row?.percent);
     if (!Number.isFinite(percent) || percent < 0) continue;
-    const window = {
+    const window: AvailabilityWindow = {
       id: shape.id,
       kind: shape.kind,
       lengthSec: shape.lengthSec,
@@ -122,7 +142,7 @@ export function usageWindows(usage, scopeTable) {
       window.id = `weekly-${slug(display)}`;
       window.scope = { model: display };
       const models = scopeModels(display, scopeTable);
-      if (models) window.scope.models = models;
+      if (models) window.scope!.models = models;
     }
     if (seen.has(window.id)) continue;
     seen.add(window.id);
@@ -133,7 +153,7 @@ export function usageWindows(usage, scopeTable) {
 
 // The account-wide row that is spent, or none.
 // [guides/model-routing.md#spentwindow--the-account-wide-row-that-is-spent-or-none](../../docs/guides/model-routing.md#spentwindow--the-account-wide-row-that-is-spent-or-none)
-export function spentWindow(usage) {
+export function spentWindow(usage: ClaudeDocument | null | undefined) {
   const rows = Array.isArray(usage?.limits) ? usage.limits : [];
   for (const row of rows) {
     if (row?.kind !== 'session' && row?.kind !== 'weekly_all') continue;
@@ -148,13 +168,13 @@ export function spentWindow(usage) {
 /** A launch failure or signal name, when it has the shape of a code — the same rule the preflight
  * applies to an adapter's own codes. Nothing else from a failed launch is quoted. */
 const ERRNO = /^[A-Z][A-Z0-9_]{1,20}$/;
-const codeOf = (value) => (ERRNO.test(String(value ?? '')) ? String(value) : null);
+const codeOf = (value: unknown) => (ERRNO.test(String(value ?? '')) ? String(value) : null);
 
 /** Whether the account is logged in, or `null`. Three outcomes, not two: "the binary said no" and
  * "the binary said something unreadable" are different facts, and only the first is a logout. */
-function loggedIn(stdout) {
+function loggedIn(stdout: unknown) {
   try {
-    const doc = JSON.parse(String(stdout ?? ''));
+    const doc = JSON.parse(String(stdout ?? '')) as { loggedIn?: unknown } | null;
     return typeof doc?.loggedIn === 'boolean' ? doc.loggedIn : null;
   } catch {
     return null;
@@ -163,7 +183,7 @@ function loggedIn(stdout) {
 
 /** Run a command and hand back what it did, never rejecting: every outcome is data for a verdict.
  * `stderr` is not piped at all, and `timedOut` is set by OUR timer and by nothing else. */
-async function runCapture(bin, argv, ms) {
+async function runCapture(bin: string, argv: readonly string[], ms: number): Promise<{ error?: CaptureError | null; timedOut: boolean; stdout?: string; status?: number | null; signal?: NodeJS.Signals | null }> {
   const r = await spawnAndCapture(bin, argv, ms);
   if (!r.launched) return { error: r.error, timedOut: false };
   return {
@@ -173,7 +193,7 @@ async function runCapture(bin, argv, ms) {
 
 /** The credential record as text, or `null`. Two platforms, two mechanisms, one answer — and
  * nothing is said about WHY a read failed: to the caller every reason means no token. */
-async function liveCredential({ timeoutMs }) {
+async function liveCredential({ timeoutMs }: { timeoutMs: number }) {
   if (process.platform === 'darwin') {
     return readKeychainSecret(CREDENTIAL_SERVICE, { timeoutMs });
   }
@@ -186,7 +206,7 @@ async function liveCredential({ timeoutMs }) {
 
 /** The three headers both endpoints want, and no fourth. Exported so the shape can be checked
  * without a request: it is the only place a token is written. */
-export function oauthHeaders(token) {
+export function oauthHeaders(token: string) {
   return {
     authorization: `Bearer ${token}`,
     'anthropic-beta': OAUTH_BETA,
@@ -196,8 +216,8 @@ export function oauthHeaders(token) {
 
 /** One GET, JSON in hand or a word for why not. `timeout` and `network` are different verdicts;
  * the token appears in one header only, and the response text is parsed and dropped. */
-async function liveGetJson(url, { token, timeoutMs }) {
-  return requestJson(url, { headers: oauthHeaders(token), timeoutMs });
+async function liveGetJson(url: string, { token, timeoutMs }: TokenRequest): Promise<JsonResponse<ClaudeDocument>> {
+  return requestJson(url, { headers: oauthHeaders(token), timeoutMs }) as Promise<JsonResponse<ClaudeDocument>>;
 }
 
 /** The live side of the two calls that leave this process. Replaced whole by the suite. */
@@ -205,7 +225,7 @@ const LIVE = { readCredential: liveCredential, getJson: liveGetJson };
 
 /** The probe itself; never throws. The binary arrives already resolved — `resolveToolBin` is
  * synchronous, and an adapter calling it would stop the timer that bounds the preflight. */
-async function probe({ toolBin: tool, timeoutMs }, inventoryOf, deps) {
+async function probe({ toolBin: tool, timeoutMs }: ProbeRequest, inventoryOf: (version: string | undefined) => string[], deps: WiredDependencies) {
   const deadline = Date.now() + timeoutMs;
   if (!tool) {
     return verdict('unknown', 'probe_failed', 'the host resolved no tool binary, so the harness was never asked');
@@ -271,9 +291,9 @@ async function probe({ toolBin: tool, timeoutMs }, inventoryOf, deps) {
 
 /** The second half of the probe: the tier, the windows, and the states they reach. Its own
  * function because the first half answers about the BINARY and this one about the ACCOUNT. */
-async function limitVerdict({ deadline, timeoutMs, deps, carry, listed }) {
+async function limitVerdict({ deadline, timeoutMs, deps, carry, listed }: { deadline: number; timeoutMs: number; deps: WiredDependencies; carry: Partial<AdapterVerdict>; listed: string }) {
   const left = () => deadline - Date.now();
-  const spent = (what) => verdict('unknown', 'quota_unknown',
+  const spent = (what: string) => verdict('unknown', 'quota_unknown',
     `authenticated; ${listed}; ${what}, so the remaining limit stays unknown`, carry);
 
   if (left() <= 0) return spent('the preflight budget ran out before the usage endpoint was asked');
@@ -288,10 +308,10 @@ async function limitVerdict({ deadline, timeoutMs, deps, carry, listed }) {
   // offline, and an expired token or a refused endpoint does not unknow it.
   const tier = record.tier ? { tier: { name: record.tier, source: 'credentials' } } : {};
   const held = { ...carry, ...tier };
-  const stale = (what) => verdict('unknown', 'quota_unknown',
+  const stale = (what: string) => verdict('unknown', 'quota_unknown',
     `authenticated; ${listed}; ${what}, so the remaining limit stays unknown`, held);
 
-  if (Number.isFinite(record.expiresAt) && record.expiresAt <= Date.now()) {
+  if (Number.isFinite(record.expiresAt) && record.expiresAt! <= Date.now()) {
     // **Never a refresh.** The refresh endpoint rotates the credentials Claude Code is holding,
     // and a preflight that did it would sign a person out of the session they are working in.
     return stale('the stored token is past its expiry and this adapter never refreshes it');
@@ -349,7 +369,7 @@ async function limitVerdict({ deadline, timeoutMs, deps, carry, listed }) {
 
 /** The adapter a driver declares as `availability`.
  * [guides/model-routing.md#claudeavailability--the-adapter-a-driver-declares-as-availability](../../docs/guides/model-routing.md#claudeavailability--the-adapter-a-driver-declares-as-availability) */
-export function claudeAvailability(inventoryOf, scopeIds, deps = {}) {
+export function claudeAvailability(inventoryOf: (version: string | undefined) => string[], scopeIds?: ScopeTable | null, deps: Partial<ClaudeDependencies> = {}): RoutingAdapter {
   const wired = { ...LIVE, ...deps, scopeIds };
   return {
     tool: TOOL,

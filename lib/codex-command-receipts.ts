@@ -3,9 +3,34 @@ import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
 import { rawToolReceipts } from './codex-raw-tool-receipts.js';
 
-function commandAccounting(fail) {
-  const commands = new Map(), output = new Set(), declined = new Set(), ambiguous = new Set(), turns = new Set();
-  const nonStart = item => item && typeof item.threadId === 'string' && !!item.threadId.trim()
+interface CommandItem {
+  itemId: string; completed?: boolean; exitCode?: number | null; status?: string; threadId?: string | null;
+  turnId?: string | null; command?: string; cwd?: string; processId?: string | null; aggregatedOutput?: string | null;
+  [key: string]: unknown;
+}
+interface ReceiptIdentity {
+  ref: string; launchId?: string; task?: string; address?: string; threadId?: string | null; cwd?: string;
+  rawToolReceipts?: boolean; holderPid?: number; appPid?: number;
+  [key: string]: unknown;
+}
+interface CommandNotification {
+  method: string; params?: { threadId?: string; turnId?: string | null; id?: string;
+    status?: string; turn?: { id?: string; status?: string }; itemId?: string; delta?: string;
+    item?: { type?: string; id?: string; command?: string; cwd?: string; processId?: string | null;
+      status?: string; exitCode?: number | null; aggregatedOutput?: string | null };
+  };
+}
+interface ReceiptRow extends CommandItem {
+  sequence: number; at: string; kind: string; format?: number; ref?: string; task?: string; address?: string;
+  launchId?: string; threadId?: string | null; deadlineAt: number; holderPid?: number; appPid?: number;
+  rawToolReceipts?: boolean; appClose?: { code?: number | null; signal?: string | null };
+  code?: number | null; signal?: string | null; notification: Parameters<ReturnType<typeof rawToolReceipts>['observe']>[0];
+  rawTools?: unknown; originalToolReceipt?: unknown; commands?: unknown;
+}
+
+function commandAccounting(fail: (reason: string) => unknown) {
+  const commands = new Map<string, CommandItem>(), output = new Set<string>(), declined = new Set<string>(), ambiguous = new Set<string>(), turns = new Set<string | null | undefined>();
+  const nonStart = (item: CommandItem | null | undefined) => item && typeof item.threadId === 'string' && !!item.threadId.trim()
     && typeof item.turnId === 'string' && !!item.turnId.trim()
     && typeof item.itemId === 'string' && !!item.itemId.trim()
     && typeof item.command === 'string' && !!item.command.trim()
@@ -14,10 +39,10 @@ function commandAccounting(fail) {
     && (item.aggregatedOutput === null || item.aggregatedOutput === '');
   return {
     commands,
-    startTurn: turnId => turns.add(turnId),
-    terminal: item => item.completed === true && (declined.has(item.itemId)
-      || (['completed', 'failed'].includes(item.status) && Number.isInteger(item.exitCode) && item.exitCode >= 0)),
-    observe(kind, item) {
+    startTurn: (turnId: string | null | undefined) => turns.add(turnId),
+    terminal: (item: CommandItem) => item.completed === true && (declined.has(item.itemId)
+      || (['completed', 'failed'].includes(item.status!) && Number.isInteger(item.exitCode) && item.exitCode! >= 0)),
+    observe(kind: string, item: CommandItem) {
       const previous = commands.get(item.itemId);
       if (kind === 'item/commandExecution/outputDelta') {
         output.add(item.itemId);
@@ -41,10 +66,10 @@ function commandAccounting(fail) {
   };
 }
 
-export function commandReceipts(file, identity) {
-  let error = null;
+export function commandReceipts(file: string, identity: ReceiptIdentity) {
+  let error: string | null = null;
   let envelopeOnly = true;
-  const fail = reason => {
+  const fail = (reason: string) => {
     error ??= reason;
     if (reason !== 'original code-mode envelope is outside the supported single literal call shape') envelopeOnly = false;
   };
@@ -54,8 +79,8 @@ export function commandReceipts(file, identity) {
     mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     const fd = openSync(file, 'wx', 0o600);
     closeSync(fd);
-  } catch (err) { fail(`command receipt creation failed: ${err.code ?? err.message}`); }
-  const append = (kind, data) => {
+  } catch (err) { fail(`command receipt creation failed: ${(err as NodeJS.ErrnoException).code ?? (err as Error).message}`); }
+  const append = (kind: string, data: object) => {
     if (error) return false;
     let fd;
     try {
@@ -63,10 +88,10 @@ export function commandReceipts(file, identity) {
       appendFileSync(fd, JSON.stringify({ sequence: ++sequence, at: new Date().toISOString(), kind, ...data }) + '\n');
       fsyncSync(fd);
     } catch (err) {
-      fail(`command receipt persistence failed: ${err.code ?? err.message}`);
+      fail(`command receipt persistence failed: ${(err as NodeJS.ErrnoException).code ?? (err as Error).message}`);
     } finally {
       if (fd !== undefined) {
-        try { closeSync(fd); } catch (err) { fail(`command receipt close failed: ${err.code ?? err.message}`); }
+        try { closeSync(fd); } catch (err) { fail(`command receipt close failed: ${(err as NodeJS.ErrnoException).code ?? (err as Error).message}`); }
       }
     }
     return !error;
@@ -76,13 +101,13 @@ export function commandReceipts(file, identity) {
   return {
     file,
     append,
-    context(kind, data) {
+    context(kind: string, data: Record<string, unknown>) {
       if (!rawTools) return;
       append('execution-context/' + kind, data);
       rawTools.context(kind, data);
     },
     fail,
-    observe(msg, threadId) {
+    observe(msg: CommandNotification, threadId: string) {
       const p = msg.params ?? {};
       if (p.threadId && p.threadId !== threadId) return;
       rawTools?.observe(msg, threadId);
@@ -90,7 +115,7 @@ export function commandReceipts(file, identity) {
         const turnId = p.turn?.id ?? p.id;
         const status = p.turn?.status ?? p.status ?? null;
         if (typeof turnId !== 'string' || !turnId.trim()
-          || (msg.method === 'turn/completed' && !['completed', 'interrupted', 'failed'].includes(status)))
+          || (msg.method === 'turn/completed' && !['completed', 'interrupted', 'failed'].includes(status!)))
           fail('terminal turn notification is malformed');
         if (msg.method === 'turn/started') accounting.startTurn(turnId);
         append(msg.method, { threadId, turnId, status });
@@ -111,7 +136,7 @@ export function commandReceipts(file, identity) {
           fail('command output notification is malformed');
           return;
         }
-        accounting.observe(msg.method, p);
+        accounting.observe(msg.method, p as CommandItem);
         append(msg.method, { itemId: p.itemId, turnId: p.turnId ?? null, delta: p.delta });
       }
     },
@@ -123,14 +148,14 @@ export function commandReceipts(file, identity) {
   };
 }
 
-export function readStopConfirmation(file, record) {
+export function readStopConfirmation(file: string, record: ReceiptIdentity) {
   try {
     if (!lstatSync(file).isFile()) throw new Error('receipt is not a regular file');
     const text = readFileSync(file, 'utf8');
     if (!text.endsWith('\n')) throw new Error('receipt has an incomplete final row');
-    const rows = text.trimEnd().split('\n').map(JSON.parse);
+    const rows: ReceiptRow[] = text.trimEnd().split('\n').map(JSON.parse as (line: string) => ReceiptRow);
     if (!rows.every((row, i) => row.sequence === i + 1)) throw new Error('receipt sequence is incomplete');
-    const launch = rows[0], final = rows.at(-1);
+    const launch = rows[0], final = rows.at(-1)!;
     if (launch.kind !== 'launch' || launch.format !== 1 || launch.ref !== record.ref
       || (record.task !== undefined && launch.task !== record.task)
       || (record.address !== undefined && launch.address !== record.address)
@@ -147,8 +172,8 @@ export function readStopConfirmation(file, record) {
         !Number.isFinite(Date.parse(row.at)) || Date.parse(row.at) < Date.parse(requested.at)
         || Date.parse(row.at) >= requested.deadlineAt))
       throw new Error('Stop confirmation is outside its recorded request deadline');
-    for (const field of ['holderPid', 'appPid']) {
-      if (!Number.isInteger(record[field]) || record[field] <= 0
+    for (const field of ['holderPid', 'appPid'] as const) {
+      if (!Number.isInteger(record[field]) || record[field]! <= 0
         || launch[field] !== record[field] || final[field] !== record[field])
         throw new Error(`receipt ${field} identity does not match`);
     }
@@ -165,7 +190,7 @@ export function readStopConfirmation(file, record) {
         if (data.threadId === record.threadId) accounting.startTurn(data.turnId);
       }
       if (kind === 'turn/completed') {
-        if (!data.turnId || !['completed', 'interrupted', 'failed'].includes(data.status))
+        if (!data.turnId || !['completed', 'interrupted', 'failed'].includes(data.status!))
           throw new Error('terminal turn evidence is malformed');
         turns.delete(data.turnId);
       }
@@ -195,5 +220,5 @@ export function readStopConfirmation(file, record) {
       || items.some(item => typeof item.itemId !== 'string' || !item.itemId || !accounting.terminal(item)))
       throw new Error('terminal command/output evidence is incomplete');
     return { ok: true, receiptFile: file };
-  } catch (error) { return { ok: false, note: `Stop confirmation is unresolved: ${error.message}` }; }
+  } catch (error) { return { ok: false, note: `Stop confirmation is unresolved: ${(error as Error).message}` }; }
 }

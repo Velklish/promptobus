@@ -272,7 +272,7 @@ Production reads no JSON Schema — the grammar is written out in that file, and
 
 ### Claude Code adapter: what the probe reads
 
-Source: `lib/model-routing/adapter-claude.js`.
+Source: `lib/model-routing/adapter-claude.ts`.
 
 Claude Code availability adapter: what the account can do with the `claude`
 binary on this machine, right now. The verdict shape and the rules it answers
@@ -360,18 +360,18 @@ promises to hold no email and no open account id.
 
 ### Cursor adapter: what the probe reads
 
-Source: `lib/model-routing/adapter-cursor.js`.
+Source: `lib/model-routing/adapter-cursor.ts`.
 
 Cursor availability adapter: what the locally logged-in Cursor account can do
 right now. The driver ([driver-cursor.js](../../lib/driver-cursor.js)) declares it as
-`availability`, the preflight ([preflight.js](../../lib/model-routing/preflight.js)) runs it, and the
+`availability`, the preflight ([preflight.ts](../../lib/model-routing/preflight.ts)) runs it, and the
 verdict it answers is one harness entry of the availability snapshot.
 
 Two binary calls and nothing else: `status` for auth, `models` for the
 inventory. Neither starts a session, neither writes, and neither touches the
 availability cache — the cache is read and written around this module.
 Everything about a RUNNING Cursor participant — the tmux pane, `persist`, the
-transcript — lives one floor below in [cursor-persist.js](../../lib/cursor-persist.js)
+transcript — lives one floor below in [cursor-persist.ts](../../lib/cursor-persist.ts)
 and is none of this file's business: an adapter answers about the ACCOUNT,
 before any session exists.
 
@@ -605,7 +605,7 @@ indistinguishable from one derived from five runs.
 
 ### The resolver: one decision, and the three rules that shape it
 
-Source: `lib/model-routing/resolver.js`, `resolve`.
+Source: `lib/model-routing/resolver.ts`, `resolve`.
 
 The resolver: one decision from the merged catalog, the availability snapshot
 and a strategy. A pure function — no clock of its own, no disk, no harness —
@@ -616,7 +616,7 @@ pick is published.
 The shape it produces is `schemas/model-routing/decision.schema.json`, and the
 shape it consumes is what the two modules next door already answer:
 `loadCatalog` ([catalog.ts](../../lib/model-routing/catalog.ts)) for the tuples, the merged policy and
-its layers, `preflight` ([preflight.js](../../lib/model-routing/preflight.js)) for the snapshot. It
+its layers, `preflight` ([preflight.ts](../../lib/model-routing/preflight.ts)) for the snapshot. It
 wires nothing: `promptobus models` is the command line.
 
 Three rules shape the file.
@@ -727,7 +727,7 @@ diagnostic in the resolver and in `validate` is a filter over that list.
 
 ### Preflight: running the adapters together under one budget
 
-Source: `lib/model-routing/preflight.js`.
+Source: `lib/model-routing/preflight.ts`.
 
 Availability preflight: ask every declared harness what the account can do
 right now, all at once, under one budget, and hand back the availability
@@ -905,9 +905,9 @@ Everything below the command exists already as a library: the catalog and its
 overlays ([model-routing/catalog.ts](../../lib/model-routing/catalog.ts)), the checks
 behind `models validate` ([validate.js](../../lib/model-routing/validate.js)), the
 budgeted preflight and the availability cache
-([preflight.js](../../lib/model-routing/preflight.js),
+([preflight.ts](../../lib/model-routing/preflight.ts),
 [cache.ts](../../lib/model-routing/cache.ts)), and the pure resolver and renderer
-([resolver.js](../../lib/model-routing/resolver.js), [render.ts](../../lib/model-routing/render.ts)).
+([resolver.ts](../../lib/model-routing/resolver.ts), [render.ts](../../lib/model-routing/render.ts)).
 This file is the only place they meet, and it is deliberately the ONE place:
 `spawn` and `review` route through the same gate as `models` prints, so the
 decision a person is shown is the decision a lift is made on.
@@ -926,7 +926,7 @@ be indistinguishable from "nothing survived filtering".
 Source: `src/model-routing.ts`.
 
 Availability adapter contract: how ONE harness answers "can this account run
-right now". The preflight ([preflight.js](../../lib/model-routing/preflight.js)) runs every adapter
+right now". The preflight ([preflight.ts](../../lib/model-routing/preflight.ts)) runs every adapter
 in parallel under one budget and turns their verdicts into the availability
 snapshot the resolver reads; the cache keeps that snapshot between commands.
 
@@ -1070,7 +1070,7 @@ in which nothing cites a page at all.
 
 ### `autoPoolModels` — the inventory ids the auto pool covers
 
-Source: `lib/model-routing/adapter-cursor.js`, `autoPoolModels`.
+Source: `lib/model-routing/adapter-cursor.ts`, `autoPoolModels`.
 
 The inventory ids the `auto` pool covers.
 
@@ -1124,7 +1124,7 @@ from `windows`, while `reachedResetAt` still carries the exhaustion's reset.
 
 ### `spentWindow` — the account-wide row that is spent, or none
 
-Source: `lib/model-routing/adapter-claude.js`, `spentWindow`.
+Source: `lib/model-routing/adapter-claude.ts`, `spentWindow`.
 
 The account-wide row that is spent, or `null` when none is.
 
@@ -1150,7 +1150,7 @@ rather than a moment, and an inactive locked row is still locked.
 
 ### `usageWindows` — the usage answer as ADR-005 windows
 
-Source: `lib/model-routing/adapter-claude.js`, `usageWindows`.
+Source: `lib/model-routing/adapter-claude.ts`, `usageWindows`.
 
 `limits[]` is the general shape and the only one read: the top-level `five_hour`
 and `seven_day` objects duplicate two of its rows, and the neighbouring keys with
@@ -1175,7 +1175,7 @@ second, coarser answer to a question two consumers already answer per tuple.
 
 ### `resolveBins` — resolve the binary of every harness about to be probed, BEFORE any adapter
 
-Source: `lib/model-routing/preflight.js`, `resolveBins`.
+Source: `lib/model-routing/preflight.ts`, `resolveBins`.
 
 Resolve the binary of every harness about to be probed, BEFORE any adapter
 starts, and hand each one its answer.
@@ -1248,7 +1248,7 @@ against the windows its pick was scored on. Empty when the harness has none.
 
 ### `claudeAvailability` — the adapter a driver declares as availability
 
-Source: `lib/model-routing/adapter-claude.js`, `claudeAvailability`.
+Source: `lib/model-routing/adapter-claude.ts`, `claudeAvailability`.
 
 The adapter a driver declares as `availability`.
 
@@ -1272,7 +1272,7 @@ network or a person's keychain.
 
 ### `scopeModels` — resolving a scope display name to model ids
 
-Source: `lib/model-routing/adapter-claude.js`, `scopeModels`.
+Source: `lib/model-routing/adapter-claude.ts`, `scopeModels`.
 
 The model ids a scope's display name resolves to, or `null` when it resolves to
 none.
@@ -1336,7 +1336,7 @@ whose candidates carry a pace block at all.
 
 ### `paceOf` — the pace block of one candidate: how much of its binding window is spent
 
-Source: `lib/model-routing/resolver.js`, `paceOf`.
+Source: `lib/model-routing/resolver.ts`, `paceOf`.
 
 The pace block of one candidate: how much of its binding window is spent
 against how much of that window has elapsed.
@@ -1364,7 +1364,7 @@ window that has already reset would be a number about a period that is over.
 
 ### `readingAges` — availability, inventory and windows
 
-Source: `lib/model-routing/resolver.js`, `readingAges`.
+Source: `lib/model-routing/resolver.ts`, `readingAges`.
 
 The snapshot stamp names assembly time. Each harness has separate availability
 and inventory readings, and each window has its own reading. Their `checkedAt`,
@@ -1384,7 +1384,7 @@ A retained window can exclude an `unknown` harness by this rule.
 
 ### `events` — which pool a model is billed to, and why the bucket list is not the only source
 
-Source: `lib/model-routing/adapter-cursor.js`, `events`.
+Source: `lib/model-routing/adapter-cursor.ts`, `events`.
 
 The pool a model is billed to is a fact the harness states, and the bucket
 list is not the only place it states it — measured 2026-09-06, that list lags
@@ -1407,7 +1407,7 @@ it returns cover the current billing cycle, so no date range is sent.
 
 ### `autoTierModels` — the ids Cursor BILLED to the auto pool this cycle, off `GetAggregatedUsageEvents`
 
-Source: `lib/model-routing/adapter-cursor.js`, `autoTierModels`.
+Source: `lib/model-routing/adapter-cursor.ts`, `autoTierModels`.
 
 The bucket list is a list Cursor maintains and it lags Cursor's own billing:
 measured on the owner's account on 2026-09-06, one turn on

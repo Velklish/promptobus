@@ -9,6 +9,7 @@ import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { sourceFile } from './source-files.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(here, '..');
@@ -99,16 +100,18 @@ test('every HostToolBin field a driver or an adapter reads is declared', () => {
   const declared = interfaceFields(readFileSync(path.join(ROOT, 'src', 'host.ts'), 'utf8'), 'HostToolBin');
   const readers = [
     ...readdirSync(path.join(ROOT, 'lib'))
-      .filter((n) => /^driver-.+\.js$/.test(n))
-      .map((n) => path.join('lib', n)),
+      .filter((n) => /^driver-.+\.(?:js|ts)$/.test(n) && !n.endsWith('.d.ts'))
+      .map((n) => path.relative(ROOT, sourceFile(path.join(ROOT, 'lib', n)))),
     ...readdirSync(path.join(ROOT, 'lib', 'model-routing'))
-      .filter((n) => /^adapter-.+\.js$/.test(n)).map((n) => path.join('lib', 'model-routing', n)),
-    path.join('lib', 'harness-home.js'),
-  ].sort();
+      .filter((n) => /^adapter-.+\.(?:js|ts)$/.test(n) && !n.endsWith('.d.ts'))
+      .map((n) => path.relative(ROOT, sourceFile(path.join(ROOT, 'lib', 'model-routing', n)))),
+    path.relative(ROOT, sourceFile(path.join(ROOT, 'lib', 'harness-home.js'))),
+  ];
+  const sourceReaders = [...new Set(readers)].sort();
 
   const seen = new Map();
   let toolBinReaders = 0;
-  for (const rel of readers) {
+  for (const rel of sourceReaders) {
     const src = readFileSync(path.join(ROOT, rel), 'utf8').replace(/^\s*\/\/.*$/gm, '');
     const readsToolBin = /\bresolveToolBin\b|\btoolBin\b/.test(src)
       || /\bfunction\s+optionRefusal\s*\([^)]*\btool\b/.test(src);
@@ -139,7 +142,7 @@ test('every HostToolBin field a driver or an adapter reads is declared', () => {
   // This is a reader inventory, not a quota: a changed count needs inspection.
   // The shared driver leaf is not a HostToolBin reader.
   const expectedToolBinReaders = 5;
-  assert.equal(toolBinReaders, expectedToolBinReaders, `${toolBinReaders} tool-bin readers: ${readers.join(' ')}`);
+  assert.equal(toolBinReaders, expectedToolBinReaders, `${toolBinReaders} tool-bin readers: ${sourceReaders.join(' ')}`);
   assert.equal(seen.get('version')?.size, 3, [...seen.get('version') ?? []].join(' '));
   assert.ok(seen.get('bin')?.size >= 3 && seen.get('ok')?.size >= 3,
     [...seen].map(([f, files]) => `${f}:${files.size}`).join(' '));

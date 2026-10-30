@@ -486,7 +486,7 @@ most of them with no host in reach (`cursorDriver.inspect(ref)` takes a ref and
 nothing else). Threading a host through all of them to reach two functions would be a
 larger change than the one it protects, and a half-threaded version — a host on the
 write path, none on the read path — would rebuild the very split this fixes. The
-binding is set by whoever builds the host: `hostOf` in [host.js](../../lib/host.js) does it for
+binding is set by whoever builds the host: `hostOf` in [host.ts](../../lib/host.ts) does it for
 the package's own helper, and `runPromptobus` in [cli.js](../../lib/cli.js) does it for a
 consumer that passes its own. Two hosts in one process share this one binding and the
 FIRST one wins — the cost of not threading, written down where it is paid. The same two
@@ -1111,7 +1111,7 @@ records the BB projection and unchanged native semantics.
 
 ## BB reviewer compatibility proof
 
-The [reviewer transport](../../lib/bb-reviewer.js) admits Codex through the
+The [reviewer transport](../../lib/bb-reviewer.ts) admits Codex through the
 required effective runtime restrictions, without an exact or maximum numeric
 version requirement. The provider verifies effective `readOnly` with network
 access disabled, approval policy `never`, the requested model and effort, and

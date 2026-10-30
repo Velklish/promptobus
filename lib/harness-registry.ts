@@ -7,21 +7,34 @@ import { writeJsonAtomic } from '../dist/fs/atomic.js';
 import { harnessStateHome } from './harness-home.js';
 import { provenanceFromRecord, provenanceLine } from './provenance.js';
 
-export function sessionKey(ref) {
+export interface HarnessSessionRecord {
+  ref: string;
+  provenance?: string | null;
+  mechanismPath?: string | null; mechanismPathIssue?: string | null; mechanismVersion?: string | null;
+  packagePath?: string | null; packageVersion?: string | null; packageIssue?: string | null;
+  hostVersion?: string | null; binaryPath?: string | null; binaryVersion?: string | null; bin?: string | null;
+  [key: string]: unknown;
+}
+interface RegistryOptions<T extends HarnessSessionRecord> {
+  harness?: string; sidecars?: (ref: string, env: NodeJS.ProcessEnv) => string[];
+  onDrop?: (record: T, env: NodeJS.ProcessEnv) => void;
+}
+
+export function sessionKey(ref: unknown) {
   const flat = String(ref ?? '');
   const head = flat.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).toLowerCase();
   const hash = createHash('sha1').update(flat).digest('hex').slice(0, 12);
   return head ? `${head}-${hash}` : hash;
 }
 
-export function createHarnessRegistry({ harness, sidecars = () => [], onDrop = () => {} } = {}) {
+export function createHarnessRegistry<T extends HarnessSessionRecord = HarnessSessionRecord>({ harness, sidecars = () => [], onDrop = () => {} }: RegistryOptions<T> = {}) {
   if (!harness) throw new TypeError('harness registry needs a harness name');
 
   const stateHome = (env = process.env) => harnessStateHome(harness, env);
   const sessionsDir = (env = process.env) => path.join(stateHome(env), 'sessions');
-  const sessionFile = (ref, env = process.env) => path.join(sessionsDir(env), `${sessionKey(ref)}.json`);
+  const sessionFile = (ref: string, env = process.env) => path.join(sessionsDir(env), `${sessionKey(ref)}.json`);
 
-  function readSession(ref, env = process.env) {
+  function readSession(ref: string, env = process.env): T | null {
     try {
       return JSON.parse(readFileSync(sessionFile(ref, env), 'utf8'));
     } catch (e) {
@@ -30,7 +43,7 @@ export function createHarnessRegistry({ harness, sidecars = () => [], onDrop = (
     }
   }
 
-  function writeSession(record, env = process.env) {
+  function writeSession(record: T, env = process.env) {
     mkdirSync(sessionsDir(env), { recursive: true, mode: 0o700 });
     const { provenance, ...rest } = record;
     return writeJsonAtomic(sessionFile(record.ref, env), {
@@ -39,13 +52,13 @@ export function createHarnessRegistry({ harness, sidecars = () => [], onDrop = (
     }, { mode: 0o600 });
   }
 
-  function patchSession(ref, patch, env = process.env) {
+  function patchSession(ref: string, patch: Partial<T>, env = process.env) {
     const was = readSession(ref, env);
     if (!was) return null;
     return writeSession({ ...was, ...patch }, env);
   }
 
-  function dropSession(ref, env = process.env) {
+  function dropSession(ref: string, env = process.env) {
     const record = readSession(ref, env);
     for (const file of [sessionFile(ref, env), ...sidecars(ref, env)]) {
       rmSync(file, { force: true });
@@ -53,7 +66,7 @@ export function createHarnessRegistry({ harness, sidecars = () => [], onDrop = (
     if (record) onDrop(record, env);
   }
 
-  function registrySessions(env = process.env) {
+  function registrySessions(env = process.env): T[] {
     let names;
     try {
       names = readdirSync(sessionsDir(env));
@@ -67,7 +80,7 @@ export function createHarnessRegistry({ harness, sidecars = () => [], onDrop = (
       } catch {
         return null;
       }
-    }).filter(Boolean);
+    }).filter(Boolean) as T[];
   }
 
   return {

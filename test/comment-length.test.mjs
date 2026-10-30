@@ -8,6 +8,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { longRuns, maskedLines, trackedCode } from './comment-scan.mjs';
+import { sourceFile } from './source-files.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LIMIT = 2;
@@ -109,7 +110,7 @@ test('the walk says how much it read, because an empty one gives the same green 
 test('the walk refuses each of the four shapes it exists to catch', () => {
   // The floor catches a walk that read NOTHING; it cannot catch one that reads every file and
   // judges none, since `judged` and `seen` fill either way. So the judging branches are driven.
-  const debtor = 'lib/spawn.js';
+  const debtor = path.relative(ROOT, sourceFile(path.join(ROOT, 'lib/spawn.js')));
   const carried = runsOf(readFileSync(path.join(ROOT, debtor), 'utf8')).length;
   const bare = surveyTree([debtor], new Map());
   assert.ok(carried > 0, `${debtor} no longer carries debt — point this test at another listed file`);
@@ -119,7 +120,7 @@ test('the walk refuses each of the four shapes it exists to catch', () => {
   const owesNothing = surveyTree([debtor], new Map([[debtor, []]]));
   assert.deepEqual(owesNothing.offenders, [], 'a listed file is judged against its entries, not refused outright');
   assert.equal(owesNothing.appeared.length, carried, 'and every run beyond them is a run the list does not name');
-  const clean = 'lib/cli.js';
+  const clean = path.relative(ROOT, sourceFile(path.join(ROOT, 'lib/cli.js')));
   assert.deepEqual(surveyTree([clean], new Map([[clean, []]])).swept, [clean],
     'a listed file with nothing left to sweep has to come off the list');
   assert.deepEqual(unknownFiles([clean], new Map([['lib/gone.js', []]])), ['lib/gone.js'],

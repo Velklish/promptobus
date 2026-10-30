@@ -9,36 +9,53 @@ import {
 } from './cache.js';
 import { verdict } from './adapter-common.js';
 
+import type { HostToolBin, ProbeRequest, PromptobusHost } from '../../dist/index.js';
+import type { SnapshotEntry } from './cache.js';
+import type { AdapterVerdict, RoutingAdapter } from './adapter-common.js';
+
+type VerdictMap = Record<string, AdapterVerdict>;
+type BinMap = Record<string, HostToolBin | null>;
+interface PreflightAdapter extends Omit<RoutingAdapter, 'probe'> { probe(request: ProbeRequest): unknown }
+interface ProbeBatch {
+  host: PromptobusHost; harnesses: string[]; adapters: Map<string, PreflightAdapter>;
+  bins: BinMap; refresh: boolean; budgetMs: number; deadline: number;
+}
+interface PreflightRequest {
+  host: PromptobusHost; harnesses: readonly string[]; adapterFor: (harness: string) => unknown;
+  refresh?: boolean; dryRun?: boolean; recheckTimedExhaustion?: boolean; budgetMs?: number;
+  rated?: (harness: string, model: string) => unknown;
+}
+
 /** Total budget for the whole preflight, fixed at 15 s by ADR-005. The parameter exists so
  * the suite can run this code against a budget it can afford to wait out. */
 export const PREFLIGHT_BUDGET_MS = 15_000;
 
 /** A verdict that is not one — an adapter that threw or answered outside the contract. The
  * thrown TEXT is not carried: the cache is the file that must not leak. */
-function failedVerdict(kind) {
+function failedVerdict(kind: string) {
   return verdict('unknown', 'probe_failed', `the adapter did not answer the contract (${kind})`);
 }
 
 /** A harness the registry could not hand an adapter for: the same `unknown` / `probe_failed`
  * a driver with no adapter answers — from here the two are one fact, nothing was asked. */
-function noAdapterVerdict(kind) {
+function noAdapterVerdict(kind: string) {
   return verdict('unknown', 'probe_failed', `no adapter could be taken for this harness (${kind})`);
 }
 
 /** A harness that did not answer inside the budget. It is unknown, which the resolver penalises, not death. */
-function timedOutVerdict(budgetMs) {
+function timedOutVerdict(budgetMs: number) {
   return verdict('unknown', 'probe_timeout', `no answer within the ${budgetMs} ms preflight budget`);
 }
 
 /** A harness whose binary was never resolved, because the budget was gone. It names which
  * half spent the time: a slow adapter is a slow harness, a slow resolve is a slow HOST. */
-function unresolvedVerdict(budgetMs) {
+function unresolvedVerdict(budgetMs: number) {
   return verdict('unknown', 'probe_timeout',
     `the ${budgetMs} ms preflight budget was spent resolving harness binaries — this one was never asked`);
 }
 
 /** An expired entry keeps its last readings and their original timestamps. */
-function staleVerdict(stored, discardedVersion = null) {
+function staleVerdict(stored: SnapshotEntry | null | undefined, discardedVersion: number | null = null) {
   const message = stored
     ? 'the cache entry outlived its TTL and no probe ran'
     : (discardedVersion === null
@@ -50,13 +67,13 @@ function staleVerdict(stored, discardedVersion = null) {
   }), ...retainedReadings(stored) };
 }
 
-function retainedReadings(stored) {
+function retainedReadings(stored: SnapshotEntry | null | undefined) {
   if (!stored) return {};
   return {
     ...(stored.models ? { models: stored.models, inventoryCheckedAt: stored.inventoryCheckedAt ?? stored.checkedAt,
       inventorySource: 'cache' } : {}),
     ...(stored.autoPoolModels ? { autoPoolModels: stored.autoPoolModels } : {}),
-    ...(stored.poolWindowsUnbound === true ? { poolWindowsUnbound: true } : {}),
+    ...(stored.poolWindowsUnbound === true ? { poolWindowsUnbound: true as const } : {}),
     ...(stored.windows ? { windows: stored.windows.map((w) => ({ ...w,
       checkedAt: w.checkedAt ?? stored.checkedAt, source: 'cache' })) } : {}),
   };
@@ -65,71 +82,71 @@ function retainedReadings(stored) {
 /** A value echoed back in a diagnosis, or `null` when it is not safe to echo: a typo in a
  * closed list is invisible unless printed, and this is where adapter text could reach it. */
 const CODE_SHAPE = /^[A-Za-z0-9_-]{1,40}$/;
-const echoed = (value) => (CODE_SHAPE.test(String(value ?? '')) ? ` ${JSON.stringify(String(value))}` : '');
+const echoed = (value: unknown) => (CODE_SHAPE.test(String(value ?? '')) ? ` ${JSON.stringify(String(value))}` : '');
 
 /** What is wrong with an adapter's answer, or `null`. All three closed lists are checked: a
  * misspelled reason would break the cache's validation promise from inside. */
-function contractBreach(answer) {
+function contractBreach(answer: unknown) {
   if (!answer || typeof answer !== 'object') return 'no verdict at all';
-  if (!AVAILABILITY_STATES.includes(answer.state)) return `unknown state${echoed(answer.state)}`;
-  const reason = answer.reason ?? null;
+  if (!(AVAILABILITY_STATES as readonly unknown[]).includes((answer as Partial<AdapterVerdict>).state)) return `unknown state${echoed((answer as Partial<AdapterVerdict>).state)}`;
+  const reason = (answer as Partial<AdapterVerdict>).reason ?? null;
   if (reason === null) {
-    if (answer.state !== 'available') return `state ${answer.state} with no reason`;
-  } else if (!AVAILABILITY_REASONS.includes(reason)) {
+    if ((answer as Partial<AdapterVerdict>).state !== 'available') return `state ${(answer as Partial<AdapterVerdict>).state} with no reason`;
+  } else if (!(AVAILABILITY_REASONS as readonly unknown[]).includes(reason)) {
     return `unknown reason${echoed(reason)}`;
   }
-  if (answer.source !== undefined && !AVAILABILITY_SOURCES.includes(answer.source)) {
-    return `unknown source${echoed(answer.source)}`;
+  if ((answer as Partial<AdapterVerdict>).source !== undefined && !(AVAILABILITY_SOURCES as readonly unknown[]).includes((answer as Partial<AdapterVerdict>).source)) {
+    return `unknown source${echoed((answer as Partial<AdapterVerdict>).source)}`;
   }
-  if (answer.checkedAt !== undefined && !isTimestamp(answer.checkedAt)) return 'unreadable checkedAt';
+  if ((answer as Partial<AdapterVerdict>).checkedAt !== undefined && !isTimestamp((answer as Partial<AdapterVerdict>).checkedAt)) return 'unreadable checkedAt';
   return null;
 }
 
 /** An adapter answer, taken as far as the contract allows and no further. */
-function verdictOf(answer) {
+function verdictOf(answer: unknown): AdapterVerdict {
   const breach = contractBreach(answer);
   if (breach) return failedVerdict(breach);
   return {
-    ...answer,
-    checkedAt: isoStamp(answer.checkedAt ?? null),
-    source: answer.source ?? 'probe',
+    ...(answer as AdapterVerdict),
+    checkedAt: isoStamp((answer as AdapterVerdict).checkedAt ?? null),
+    source: (answer as AdapterVerdict).source ?? 'probe',
   };
 }
 
 /** The adapters, taken one by one and never all at once: `adapterFor` throws on a name no
  * driver answers for, and one bad config line would cost the whole preflight. */
-function adaptersOf(harnesses, adapterFor) {
-  const adapters = new Map();
-  const broken = {};
+function adaptersOf(harnesses: string[], adapterFor: PreflightRequest['adapterFor']) {
+  const adapters = new Map<string, PreflightAdapter>();
+  const broken: VerdictMap = {};
   for (const harness of harnesses) {
-    let adapter = null;
+    let adapter: Partial<PreflightAdapter> | null | undefined = null;
     try {
-      adapter = adapterFor(harness);
+      adapter = adapterFor(harness) as Partial<PreflightAdapter> | null | undefined;
     } catch (e) {
-      broken[harness] = noAdapterVerdict(`threw ${e?.constructor?.name ?? typeof e}`);
+      broken[harness] = noAdapterVerdict(`threw ${(e as { constructor?: { name?: unknown } } | null | undefined)?.constructor?.name ?? typeof e}`);
       continue;
     }
     if (typeof adapter?.probe !== 'function') {
       broken[harness] = noAdapterVerdict('the registry answered nothing with a probe');
       continue;
     }
-    adapters.set(harness, adapter);
+    adapters.set(harness, adapter as PreflightAdapter);
   }
   return { adapters, broken };
 }
 
 // Resolve the binary of every harness about to be probed, BEFORE any adapter.
 // [guides/model-routing.md#resolvebins--resolve-the-binary-of-every-harness-about-to-be-probed-before-any-adapter](../../docs/guides/model-routing.md#resolvebins--resolve-the-binary-of-every-harness-about-to-be-probed-before-any-adapter)
-function resolveBins({ host, harnesses, adapters, deadline }) {
-  const bins = {};
-  const unresolved = [];
-  const byTool = new Map();
+function resolveBins({ host, harnesses, adapters, deadline }: Pick<ProbeBatch, 'host' | 'harnesses' | 'adapters' | 'deadline'>) {
+  const bins: BinMap = {};
+  const unresolved: string[] = [];
+  const byTool = new Map<string, HostToolBin | null>();
   for (const harness of harnesses) {
     const tool = adapters.get(harness)?.tool ?? null;
     if (!tool) { bins[harness] = null; continue; }
-    if (byTool.has(tool)) { bins[harness] = byTool.get(tool); continue; }
+    if (byTool.has(tool)) { bins[harness] = byTool.get(tool)!; continue; }
     if (Date.now() >= deadline) { unresolved.push(harness); continue; }
-    let found = null;
+    let found: HostToolBin | null = null;
     try {
       found = typeof host?.resolveToolBin === 'function' ? host.resolveToolBin(tool) : null;
     } catch {
@@ -154,23 +171,23 @@ function resolveBins({ host, harnesses, adapters, deadline }) {
 
 /** Run the adapters together, with the budget beside them. Each is given what is LEFT of it,
  * not the whole figure: the binaries were resolved out of the same budget. */
-async function runProbes({ host, harnesses, adapters, bins, refresh, budgetMs, deadline }) {
-  const answers = {};
+async function runProbes({ host, harnesses, adapters, bins, refresh, budgetMs, deadline }: ProbeBatch) {
+  const answers: VerdictMap = {};
   if (!harnesses.length) return answers;
   const left = () => Math.max(0, deadline - Date.now());
   const started = harnesses.map((harness) => Promise.resolve()
-    .then(() => adapters.get(harness).probe({
+    .then(() => adapters.get(harness)!.probe({
       host, toolBin: bins[harness] ?? null, timeoutMs: left(), refresh,
     }))
     .then((answer) => { answers[harness] = verdictOf(answer); })
-    .catch((e) => { answers[harness] = failedVerdict(`threw ${e?.constructor?.name ?? typeof e}`); }));
+    .catch((e) => { answers[harness] = failedVerdict(`threw ${(e as { constructor?: { name?: unknown } } | null | undefined)?.constructor?.name ?? typeof e}`); }));
 
-  let timer = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
   const budget = new Promise((resolve) => { timer = setTimeout(resolve, left()); });
   try {
     await Promise.race([Promise.all(started), budget]);
   } finally {
-    clearTimeout(timer);
+    clearTimeout(timer!);
   }
   for (const harness of harnesses) {
     if (!answers[harness]) answers[harness] = timedOutVerdict(budgetMs);
@@ -180,7 +197,7 @@ async function runProbes({ host, harnesses, adapters, bins, refresh, budgetMs, d
 
 /** Whether the catalog rates a model, applied to what an adapter reported. The default says
  * `false` for everything — the reading that cannot go wrong: unrated is never auto-chosen. */
-function withRated(harness, entry, rated) {
+function withRated(harness: string, entry: AdapterVerdict, rated: NonNullable<PreflightRequest['rated']>) {
   if (!Array.isArray(entry.models)) return entry;
   return {
     ...entry,
@@ -199,7 +216,7 @@ export async function preflight({
   recheckTimedExhaustion = false,
   budgetMs = PREFLIGHT_BUDGET_MS,
   rated = () => false,
-}) {
+}: PreflightRequest) {
   const names = [...new Set(harnesses)];
   const stored = readSnapshot(host);
   // Asked only when the cache came back empty, so an ordinary run reads the file once. An
@@ -225,14 +242,14 @@ export async function preflight({
   for (const name of unresolved) answers[name] = unresolvedVerdict(budgetMs);
   Object.assign(answers, broken);
 
-  const out = {};
+  const out: Record<string, SnapshotEntry> = {};
   for (const name of names) {
     const previous = stored?.harnesses?.[name];
     let raw = answers[name] ?? held[name] ?? staleVerdict(previous, discardedVersion);
     if (answers[name] && previous && raw.state === 'unknown') {
       const retained = retainedReadings(previous);
       const oldAutoModels = previous.autoPoolModels
-        ?? previous.windows?.find((w) => w.scope?.pool === 'auto')?.scope.models;
+        ?? previous.windows?.find((w) => w.scope?.pool === 'auto')?.scope!.models;
       const newAutoModels = raw.autoPoolModels;
       const poolChanged = Array.isArray(newAutoModels)
         && retained.windows?.some((w) => w.scope?.pool === 'auto' || w.scope?.pool === 'api')
@@ -245,7 +262,7 @@ export async function preflight({
         } : {}),
         ...(!raw.windows?.length && retained.windows ? { windows: retained.windows } : {}),
         ...(!raw.autoPoolModels && retained.autoPoolModels ? { autoPoolModels: retained.autoPoolModels } : {}),
-        ...(poolChanged || retained.poolWindowsUnbound === true ? { poolWindowsUnbound: true } : {}),
+        ...(poolChanged || retained.poolWindowsUnbound === true ? { poolWindowsUnbound: true as const } : {}),
       };
     }
     if (answers[name]?.state === 'unknown' && previous?.state === 'exhausted'
@@ -256,7 +273,7 @@ export async function preflight({
     out[name] = snapshotEntry(withRated(name, raw, rated));
   }
 
-  const probed = {};
+  const probed: Record<string, SnapshotEntry> = {};
   for (const name of Object.keys(answers)) probed[name] = out[name];
   // Only a run that ASKED something writes: `writeEntries` re-stamps `takenAt`, so an empty
   // merge would age the facts by the clock of a run that learned nothing.
@@ -275,7 +292,7 @@ export async function preflight({
     } catch (e) {
       // The probes already answered: the cache is an accelerator, not the fact;
       // a failed persistence is re-asked next command, while clearExhausted stays an explicit write refusal.
-      warn(`availability cache was not written (${e.message}) — ${cacheFileOf(host)}`);
+      warn(`availability cache was not written (${(e as Error).message}) — ${cacheFileOf(host)}`);
     }
   }
 

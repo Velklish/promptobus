@@ -27,6 +27,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test, { afterEach } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { sourceFile } from './source-files.mjs';
 import Ajv2020 from 'ajv/dist/2020.js';
 
 import {
@@ -948,7 +949,7 @@ test('the refresh token is named in prose and never in code', () => {
   // file names it. The comments are stripped first on purpose — the header says
   // out loud that the refresh token is never asked for, and a check that forbade
   // the words would forbid the documentation along with the call.
-  const source = readFileSync(path.join(ROOT, 'lib', 'model-routing', 'adapter-cursor.js'), 'utf8');
+  const source = readFileSync(sourceFile(path.join(ROOT, 'lib', 'model-routing', 'adapter-cursor.js')), 'utf8');
   const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"\\])\/\/[^\n]*/g, '$1');
   assert.equal(code.includes('refresh-token'), false, 'the adapter names the refresh token in code');
   assert.equal(code.includes('refreshToken'), false, 'the adapter names the refresh token in code');
@@ -1182,7 +1183,7 @@ test('the driver wires the live token read and the live dashboard call', () => {
   // The suite builds this adapter with the account half stubbed, so the wiring a
   // person actually runs is pinned here, as source: the driver declares the
   // adapter with no `deps`, which is what leaves the live implementations in place.
-  const driver = readFileSync(path.join(ROOT, 'lib', 'driver-cursor.js'), 'utf8');
+  const driver = readFileSync(sourceFile(path.join(ROOT, 'lib', 'driver-cursor.js')), 'utf8');
   assert.match(driver, /availability: cursorAvailability\(CURSOR_TOOL\),/);
 });
 
@@ -1192,12 +1193,12 @@ test("runOut's stdout guard now lives in the shared spawnAndCapture, once, ahead
   // one does the same for the consolidation that followed it. `runOut` no longer spawns
   // anything itself — it delegates to `spawnAndCapture`, so the guard is checked there,
   // once, not per adapter.
-  const shared = readFileSync(path.join(ROOT, 'lib', 'model-routing', 'adapter-common.js'), 'utf8');
+  const shared = readFileSync(sourceFile(path.join(ROOT, 'lib', 'model-routing', 'adapter-common.js')), 'utf8');
   const dataAt = shared.indexOf("child.stdout.on('data'");
   const guardAt = shared.indexOf("child.stdout.on('error'");
   const closeAt = shared.indexOf("child.on('close'");
   assert.ok(dataAt > 0 && guardAt > dataAt && closeAt > guardAt,
     `the stdout error guard is not installed between the data listener and close: ${dataAt}, ${guardAt}, ${closeAt}`);
-  const cursorSource = readFileSync(path.join(ROOT, 'lib', 'model-routing', 'adapter-cursor.js'), 'utf8');
+  const cursorSource = readFileSync(sourceFile(path.join(ROOT, 'lib', 'model-routing', 'adapter-cursor.js')), 'utf8');
   assert.match(cursorSource, /await spawnAndCapture\(cmd, args, timeoutMs\)/);
 });

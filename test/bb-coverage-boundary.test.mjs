@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
+import { sourceFile } from './source-files.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(path.join(ROOT, rel), 'utf8');
@@ -24,7 +25,7 @@ function validatorRequiresCoverage(source) {
   return match[0].includes('establishes:') && match[0].includes('doesNotEstablish:') && !match[0].includes('.optional()');
 }
 
-const workerSource = read('lib/prompts/bb.js');
+const workerSource = readFileSync(sourceFile(path.join(ROOT, 'lib/prompts/bb.js')), 'utf8');
 const workerSkill = read('integrations/bb/skills/promptobus-worker/SKILL.md');
 const validator = read('integrations/bb/review-evidence.ts');
 const worker = requiresCoverageNow(workerSource) && requiresCoverageNow(workerSkill);

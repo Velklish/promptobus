@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox } from './sandbox.mjs';
 import { captureSplit, quiet } from './console.mjs';
+import { sourceFile, sourceFilesUnder } from './source-files.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SB = realpathSync(makeSandbox('promptobus-promptobus-adapter-'));
@@ -1020,6 +1021,9 @@ check(': a foreign directory next to the tasks is filtered out, not thrown as a 
 // using the harness's own protocol, the driver declares it as the `availability` field, and
 // nothing sticks out of it to the outside — the map remains the one and only door (`adapterOf`
 // in `drivers.js`).
+const MECHANISM_ROOT = path.join(here, '..');
+const sourceRel = (rel) => path.relative(MECHANISM_ROOT, sourceFile(path.join(MECHANISM_ROOT, rel)))
+  .split(path.sep).join('/');
 const DRIVER_OWN = new Set([
   'lib/drivers.js',
   'lib/driver-claude.js',
@@ -1031,7 +1035,7 @@ const DRIVER_OWN = new Set([
   'lib/codex-session.js',
   'lib/codex-hold.js',
   'lib/model-routing/adapter-codex.js',
-]);
+].map(sourceRel));
 
 // Modules that nothing from outside touches at all: the drivers themselves and their session
 // registries. The map (`drivers.js`) is not on the list — it is the door itself, and everyone
@@ -1044,41 +1048,28 @@ const DRIVER_PRIVATE = /(?:^|\/)(driver-claude|adapter-claude|liftoff|driver-cur
 
 // A module specifier in a static import, a re-export, and a dynamic `import(...)`. Prose is
 // not affected by this: `from` or `import` must stand right before the quote.
-const MODULE_SPEC = /(?:\bfrom|\bimport)\s*\(?\s*'([^']+)'/g;
+const MODULE_SPEC = /(?:\bfrom|\bimport)\s*\(?\s*(['"])(.+?)\1/g;
 
-function jsFilesUnder(dir, rel, out = []) {
-  for (const e of readdirSync(dir, { withFileTypes: true })) {
-    const at = path.join(dir, e.name);
-    const key = `${rel}/${e.name}`;
-    if (e.isDirectory()) jsFilesUnder(at, key, out);
-    else if (e.name.endsWith('.js')) out.push([key, at]);
-  }
-  return out;
-}
-
-const MECHANISM_ROOT = path.join(here, '..');
-const adapterFiles = [
-  ...jsFilesUnder(path.join(MECHANISM_ROOT, 'lib'), 'lib'),
-  ...jsFilesUnder(path.join(MECHANISM_ROOT, 'bin'), 'bin'),
-];
+const adapterFiles = ['lib', 'bin'].flatMap((dir) => sourceFilesUnder(path.join(MECHANISM_ROOT, dir)))
+  .map((file) => [path.relative(MECHANISM_ROOT, file).split(path.sep).join('/'), file]);
 
 const crossings = [];
 for (const [rel, file] of adapterFiles) {
   if (DRIVER_OWN.has(rel)) continue;
   const text = readFileSync(file, 'utf8');
   for (const m of text.matchAll(MODULE_SPEC)) {
-    if (!DRIVER_PRIVATE.test(m[1])) continue;
-    const statement = text.slice(0, m.index).split('\n').at(-1) + m[0];
-    if (rel === 'lib/bb-reviewer.js' && statement === "import { CodexRpc } from './codex-rpc.js'") continue;
-    if (rel === 'lib/report-channel.js' && statement === "import { holderAlive, holderAsk, readSession } from './codex-session.js'") continue;
-    if (rel === 'lib/native-lifecycle.js' && statement === "import { codexStateHome, pidAlive, sessionFile, sessionKey, sessionsDir, withSessionLaunch } from './codex-session.js'") continue;
-    crossings.push(`${rel} → ${m[1]} (line ${text.slice(0, m.index).split('\n').length})`);
+    if (!DRIVER_PRIVATE.test(m[2])) continue;
+    const statement = text.slice(0, m.index).split('\n').at(-1) + m[0].replace(/"([^"]+)"$/, "'$1'");
+    if (rel === sourceRel('lib/bb-reviewer.js') && statement === "import { CodexRpc } from './codex-rpc.js'") continue;
+    if (rel === sourceRel('lib/report-channel.js') && statement === "import { holderAlive, holderAsk, readSession } from './codex-session.js'") continue;
+    if (rel === sourceRel('lib/native-lifecycle.js') && statement === "import { codexStateHome, pidAlive, sessionFile, sessionKey, sessionsDir, withSessionLaunch } from './codex-session.js'") continue;
+    crossings.push(`${rel} → ${m[2]} (line ${text.slice(0, m.index).split('\n').length})`);
   }
 }
 
 check(': the boundary gate sees the mechanism files — there is something to check',
-  adapterFiles.length > 20 && adapterFiles.some(([rel]) => rel === 'lib/status.js')
-  && adapterFiles.some(([rel]) => rel === 'bin/promptobus.js'),
+  adapterFiles.length > 20 && adapterFiles.some(([rel]) => rel === sourceRel('lib/status.js'))
+  && adapterFiles.some(([rel]) => rel === sourceRel('bin/promptobus.js')),
   `${adapterFiles.length} files`);
 
 check(': driver internals stay behind the registry except exact native lifecycle, reporter contact and BB reviewer RPC imports',
@@ -1086,24 +1077,24 @@ check(': driver internals stay behind the registry except exact native lifecycle
 
 // There is one door, and it is not empty: the map itself must import a driver — otherwise the
 // gate above would be green on a mechanism that has no drivers at all.
-const doorSrc = readFileSync(path.join(MECHANISM_ROOT, 'lib', 'drivers.js'), 'utf8');
+const doorSrc = readFileSync(sourceFile(path.join(MECHANISM_ROOT, 'lib', 'drivers.js')), 'utf8');
 check(': the registry map imports a driver itself — the gate is not green on emptiness',
   /from '\.\/driver-claude\.js'/.test(doorSrc)
   && /export const REGISTRY/.test(doorSrc), doorSrc.split('\n').slice(0, 3).join(' | '));
 
-const commonDriverSrc = readFileSync(path.join(MECHANISM_ROOT, 'lib', 'driver-common.js'), 'utf8');
+const commonDriverSrc = readFileSync(sourceFile(path.join(MECHANISM_ROOT, 'lib', 'driver-common.js')), 'utf8');
 const commonDriverCrossings = [...commonDriverSrc.matchAll(MODULE_SPEC)]
-  .filter((m) => DRIVER_PRIVATE.test(m[1]))
-  .map((m) => m[1]);
+  .filter((m) => DRIVER_PRIVATE.test(m[2]))
+  .map((m) => m[2]);
 const driverNames = ['driver-claude.js', 'driver-cursor.js', 'driver-codex.js'];
 check(': one shared driver leaf supplies all three drivers without importing a driver',
-  driverNames.every((name) => readFileSync(path.join(MECHANISM_ROOT, 'lib', name), 'utf8')
+  driverNames.every((name) => readFileSync(sourceFile(path.join(MECHANISM_ROOT, 'lib', name)), 'utf8')
     .includes("from './driver-common.js'"))
   && commonDriverCrossings.length === 0,
   commonDriverCrossings.join(' | ') || 'all three drivers use lib/driver-common.js');
-const notificationSrc = readFileSync(path.join(MECHANISM_ROOT, 'lib', 'notification.js'), 'utf8');
+const notificationSrc = readFileSync(sourceFile(path.join(MECHANISM_ROOT, 'lib', 'notification.js')), 'utf8');
 check(': notification leaf owns the one mailbox wake frame used by all three drivers',
-  driverNames.every((name) => readFileSync(path.join(MECHANISM_ROOT, 'lib', name), 'utf8')
+  driverNames.every((name) => readFileSync(sourceFile(path.join(MECHANISM_ROOT, 'lib', name)), 'utf8')
     .includes("from './notification.js'"))
   && /export function orderBody\(/.test(notificationSrc),
   'driver imports or notification.js orderBody missing');
@@ -1162,7 +1153,7 @@ for (const [name, lookup, values] of [
 // assemble argv and the config themselves, calling `driver.spawnArgv` and `driver.mcpConfig`.
 // Now it is one operation, `prepare`, and bringing back the halves would mean bringing the
 // command assembly back outside the driver.
-const driverSrc = readFileSync(path.join(MECHANISM_ROOT, 'lib', 'driver-claude.js'), 'utf8');
+const driverSrc = readFileSync(sourceFile(path.join(MECHANISM_ROOT, 'lib', 'driver-claude.js')), 'utf8');
 check(': the argv and config assembly is not exported outward — it is half of `prepare`',
   !/^export function (spawnArgv|mcpConfig)\b/m.test(driverSrc),
   (driverSrc.match(/^export function \w+/gm) ?? []).join(', '));
@@ -1344,7 +1335,7 @@ const PRINT_SURFACE = new Set([
   'lib/stalls.js',
   'lib/notification.js',
   'lib/warden.js',
-]);
+].map(sourceRel));
 check(': the print surface is found in adapterFiles — the gate is not green on a rename',
   [...PRINT_SURFACE].every((rel) => adapterFiles.some(([r]) => r === rel)),
   [...PRINT_SURFACE].filter((rel) => !adapterFiles.some(([r]) => r === rel)).join(', ') || 'all in place');

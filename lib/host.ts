@@ -12,7 +12,7 @@ export { createStandaloneHost } from '../dist/host-index.js';
 
 // Also binds the host that answers `harnessStateHome` and `resolveToolBin` for this process,
 // and the FIRST binding wins: [02-host.md § The harness session registry](../docs/reference/02-host.md#the-harness-session-registry-and-the-refusal-when-nobody-says).
-export function hostOf(rootOrHost, options = {}) {
+export function hostOf(rootOrHost: unknown, options: Parameters<typeof createStandaloneHost>[0] = {}) {
   if (isPromptobusHost(rootOrHost)) {
     bindHarnessHomes(rootOrHost);
     bindHarnessBins(rootOrHost);

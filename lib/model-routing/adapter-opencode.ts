@@ -4,6 +4,18 @@ import { spawnAndCapture, verdict } from './adapter-common.js';
 import { OFF_ALLOWANCE_FLAG } from './cache.js';
 import { loadCatalog } from './catalog.js';
 
+import type { PromptobusHost } from '../../dist/index.js';
+import type { AvailabilityWindow } from './cache.js';
+import type { AdapterModel, AdapterVerdict, CaptureResult, RoutingAdapter } from './adapter-common.js';
+
+interface OpenCodeAccount { denySuffixes?: string[]; allowance?: { monthlyTokens?: number } }
+interface OpenCodeDependencies {
+  capture?: (bin: string, argv: readonly string[], timeoutMs: number) => Promise<CaptureResult>;
+  accountOf?: (host: PromptobusHost) => OpenCodeAccount | Promise<OpenCodeAccount>;
+}
+interface StatsTokens { input?: unknown; output?: unknown; reasoning?: unknown; cache?: { read?: unknown; write?: unknown } }
+interface StatsRow { model?: { providerID?: unknown; id?: unknown }; tokens?: StatsTokens }
+
 /** The binary. The same name is what the host is asked to resolve. */
 const TOOL = 'opencode';
 
@@ -33,12 +45,12 @@ export const OPENCODE_DENIED_SUFFIXES = Object.freeze(['-free', '-contributor'])
 
 const SUFFIX_RE = /^-[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
-function parseWarm(text) {
+function parseWarm(text: unknown) {
   const hit = String(text ?? '').match(/(\d+)\.(\d+)\.(\d+)/);
   return hit ? { major: Number(hit[1]), minor: Number(hit[2]), patch: Number(hit[3]) } : null;
 }
 
-function parseModelList(text) {
+function parseModelList(text: unknown) {
   const models = [];
   for (const line of String(text ?? '').split('\n')) {
     const id = line.trim();
@@ -48,31 +60,31 @@ function parseModelList(text) {
   return [...new Set(models)].sort();
 }
 
-function tokenPart(value) {
+function tokenPart(value: unknown) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
   return value;
 }
 
 /** The stats table's tokens column. A missing or non-numeric part is unreadable, not zero. */
-function tokenTotal(tokens) {
+function tokenTotal(tokens: StatsTokens | null | undefined) {
   if (!tokens || typeof tokens !== 'object' || Array.isArray(tokens)) return null;
   const cache = tokens.cache && typeof tokens.cache === 'object' && !Array.isArray(tokens.cache)
     ? tokens.cache : null;
   if (!cache) return null;
   const parts = [tokens.input, tokens.output, tokens.reasoning, cache.read, cache.write].map(tokenPart);
   if (parts.some((n) => n === null)) return null;
-  return parts.reduce((sum, n) => sum + n, 0);
+  return (parts as number[]).reduce((sum, n) => sum + n, 0);
 }
 
-function parseStats(text) {
-  let doc;
+function parseStats(text: unknown) {
+  let doc: { models?: StatsRow[] } | null;
   try {
     doc = JSON.parse(String(text ?? ''));
   } catch {
     return null;
   }
   if (!doc || !Array.isArray(doc.models)) return null;
-  const usage = new Map();
+  const usage = new Map<string, number>();
   for (const row of doc.models) {
     const provider = row?.model?.providerID;
     const id = row?.model?.id;
@@ -85,18 +97,18 @@ function parseStats(text) {
   return usage;
 }
 
-function suffixesOf(account) {
+function suffixesOf(account: OpenCodeAccount | null | undefined) {
   const extra = Array.isArray(account?.denySuffixes) ? account.denySuffixes : [];
   return [...new Set([...OPENCODE_DENIED_SUFFIXES, ...extra.filter((s) => SUFFIX_RE.test(s))])];
 }
 
-function modelRow(id, suffixes) {
-  const row = { model: id };
+function modelRow(id: string, suffixes: string[]) {
+  const row: AdapterModel = { model: id };
   if (suffixes.some((suffix) => id.endsWith(suffix))) row.flags = [OFF_ALLOWANCE_FLAG];
   return row;
 }
 
-function usedPercent(tokens, monthlyTokens, share) {
+function usedPercent(tokens: number, monthlyTokens: number, share: number) {
   const budget = monthlyTokens * share;
   if (!(budget > 0) || typeof tokens !== 'number' || !Number.isFinite(tokens) || tokens < 0) return null;
   const pct = (tokens / budget) * 100;
@@ -104,16 +116,16 @@ function usedPercent(tokens, monthlyTokens, share) {
   return Math.min(100, pct);
 }
 
-function windowsFor(models, sessionUsage, weeklyUsage, monthlyTokens) {
-  const allowance = Number.isInteger(monthlyTokens) && monthlyTokens > 0 ? monthlyTokens : null;
-  const out = [];
+function windowsFor(models: string[], sessionUsage: Map<string, number>, weeklyUsage: Map<string, number>, monthlyTokens: number | undefined) {
+  const allowance = Number.isInteger(monthlyTokens) && monthlyTokens! > 0 ? monthlyTokens! : null;
+  const out: AvailabilityWindow[] = [];
   for (const model of models) {
-    const rows = [
+    const rows: [string, string, Map<string, number>, number, number][] = [
       ['session', '5h', sessionUsage, OPENCODE_WINDOW_LENGTH_SEC.session, OPENCODE_WINDOW_SHARES.session],
       ['weekly', '7d', weeklyUsage, OPENCODE_WINDOW_LENGTH_SEC.weekly, OPENCODE_WINDOW_SHARES.weekly],
     ];
     for (const [kind, prefix, usage, lengthSec, share] of rows) {
-      const window = {
+      const window: AvailabilityWindow = {
         id: `${prefix}:${model}`,
         kind,
         lengthSec,
@@ -132,23 +144,23 @@ function windowsFor(models, sessionUsage, weeklyUsage, monthlyTokens) {
   return out;
 }
 
-async function accountOf(host, deps) {
+async function accountOf(host: PromptobusHost, deps: OpenCodeDependencies): Promise<OpenCodeAccount> {
   if (deps.accountOf) return deps.accountOf(host);
   if (!host?.routingPaths) return {};
   try {
-    return loadCatalog({ host }).policy?.account?.opencode ?? {};
+    return (loadCatalog({ host }).policy?.account?.opencode as OpenCodeAccount | undefined) ?? {};
   } catch {
     return {};
   }
 }
 
-async function captureArgv(capture, bin, argv, timeoutMs) {
+async function captureArgv(capture: typeof spawnAndCapture, bin: string, argv: readonly string[], timeoutMs: number): Promise<CaptureResult | { timedOut: true; status: null; stdout: string; error?: never }> {
   if (!(timeoutMs > 0)) return { timedOut: true, status: null, stdout: '' };
   return capture(bin, argv, timeoutMs);
 }
 
 /** Successful version telemetry establishes binary response; auth is checked by the lift. */
-export function opencodeAvailability(deps = {}) {
+export function opencodeAvailability(deps: OpenCodeDependencies = {}): RoutingAdapter {
   const capture = deps.capture ?? spawnAndCapture;
   return {
     tool: TOOL,
@@ -174,7 +186,7 @@ export function opencodeAvailability(deps = {}) {
       const version = parsed ? `${parsed.major}.${parsed.minor}.${parsed.patch}` : null;
       const label = version ?? `unknown label ${JSON.stringify((answer.stdout ?? '').trim().split('\n')[0])}`;
       const versionFields = version ? { version } : {};
-      const available = (message, extra = {}) => verdict('available', null, message, { ...versionFields, ...extra });
+      const available = (message: string, extra: Partial<AdapterVerdict> = {}) => verdict('available', null, message, { ...versionFields, ...extra });
       const plain = `opencode ${label}; auth is checked by the lift`;
       const listed = await captureArgv(capture, tool.bin, MODELS_ARGV, left());
       const models = listed.timedOut || listed.error || listed.status !== 0
@@ -204,7 +216,7 @@ export function opencodeAvailability(deps = {}) {
       }
       const monthlyTokens = account?.allowance?.monthlyTokens;
       const windows = windowsFor(models, sessionUsage, weeklyUsage, monthlyTokens);
-      const allowance = Number.isInteger(monthlyTokens) && monthlyTokens > 0
+      const allowance = Number.isInteger(monthlyTokens) && monthlyTokens! > 0
         ? 'against the declared monthly token allowance'
         : 'with no used percentage until account.opencode.allowance.monthlyTokens is set';
       return available(

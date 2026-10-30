@@ -6,6 +6,51 @@ import {
   BALANCE_ORDERING, ROUTED_ROLES, SELECTOR_KINDS, STRATEGIES, isRoutedRole, rulesFor, rulesForRole, rulesLabel,
 } from './catalog.js';
 
+import type { AvailabilityWindow, SnapshotDocument, SnapshotEntry, WindowScope } from './cache.js';
+import type { CatalogTuple, RoutingPolicy, RoutingSources } from './catalog.js';
+import type { AdapterModel } from './adapter-common.js';
+
+type Entry = Omit<Partial<SnapshotEntry>, 'models'> & { models?: AdapterModel[] };
+type MeasuredWindow = AvailabilityWindow & { usedPercent: number };
+type EffectiveRules = ReturnType<typeof rulesForRole>;
+type Rule = ReturnType<typeof rulesFor>[number];
+type TupleIdentity = Pick<CatalogTuple, 'harness' | 'model' | 'effort'> & { id: string | null };
+interface Constraints { harness?: string | null; model?: string | null; effort?: string | null; allowPayg?: boolean }
+interface Warning { code: string; message: string; harness?: string; usedPercent?: number }
+interface ResolverPolicy {
+  policy: RoutingPolicy; sources: RoutingSources; tuples?: CatalogTuple[]; warnings?: Warning[];
+  layers?: { id: string; path?: string; present?: boolean }[];
+}
+interface Exclusion { code: string; detail: string; usedPercent?: number; pool?: 'auto' | 'api' }
+interface Score {
+  total: number; base: number; components: Record<string, number>;
+  adjustments: { code: string; points: number }[];
+}
+interface PaceWindow { id: string; kind: string; scope: WindowScope }
+interface PaceMarks { atCap?: true; representative?: true }
+interface Unpaced extends PaceMarks {
+  window: PaceWindow | null; usedShare: number | null; elapsedShare: null; underspend: null;
+  spendPenalty: null; effective: null; eligible: false; note: string;
+}
+interface Paced extends PaceMarks {
+  window: PaceWindow; usedShare: number; elapsedShare: number; underspend: number;
+  spendPenalty: number; effective: number; eligible: true; note: null;
+}
+type Pace = Unpaced | Paced;
+interface CandidateRow {
+  tupleId: string; harness: string; model: string; effort: string | null; priority?: number;
+  availability: ReturnType<typeof availabilityOf>; excluded: Exclusion | null;
+  entry: SnapshotEntry; tuple: CatalogTuple; score?: Score; quality?: number; pace?: Pace;
+}
+interface ScoredRow extends CandidateRow { score: Score; quality: number }
+interface PacedRow extends ScoredRow { pace: Paced }
+interface ResolveRequest {
+  role?: string; step?: string; qualityFloor?: number | null; strategy?: string; constraints?: Constraints;
+  policy?: ResolverPolicy | null; snapshot?: SnapshotDocument | null;
+  liveParticipants?: { role?: string; harness?: string; model?: string }[];
+  strategyCommands?: Record<string, string>; expiredWindows?: Record<string, string>; now?: number;
+}
+
 /** Identity alias for the canonical routed-role list, kept for callers of this module. */
 export const ROLES = ROUTED_ROLES;
 
@@ -44,8 +89,8 @@ const CANONICAL_LAYER = 'catalog';
 
 // Rounded to two decimals wherever a number reaches the document: the tie-break
 // reads the printed total, so the number compared must be the number shown.
-const round2 = (n) => Math.round(n * 100) / 100;
-const capacityWeight = (capacity, kind) => {
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const capacityWeight = (capacity: Record<string, number> | undefined, kind: string) => {
   const value = capacity?.[kind] ?? 1;
   if (!(Number.isFinite(value) && value > 0 && value <= 1e9))
     throw new GateError(`account capacity for ${kind} must be positive and at most 1000000000`);
@@ -53,21 +98,21 @@ const capacityWeight = (capacity, kind) => {
 };
 
 /** A 1–10 maintainer rating on the 0–100 scale. */
-const normalise = (r) => ((r - 1) / 9) * 100;
+const normalise = (r: number) => ((r - 1) / 9) * 100;
 
 /** The same scale, inverted — a smaller spend contributes more. */
-const invert = (r) => ((10 - r) / 9) * 100;
+const invert = (r: number) => ((10 - r) / 9) * 100;
 
-const has = (obj, key) => obj != null && Object.hasOwn(obj, key);
+const has = (obj: unknown, key: PropertyKey) => obj != null && Object.hasOwn(obj, key);
 
 /** The harness entry of the snapshot, or `null`. `Object.hasOwn`, not a bare read: the harness
  * grammar admits `constructor` and `toString`, and a bare read hands over a prototype value. */
-function entryOf(snapshot, harness) {
-  return has(snapshot?.harnesses, harness) ? snapshot.harnesses[harness] : null;
+function entryOf(snapshot: SnapshotDocument | null | undefined, harness: string) {
+  return has(snapshot?.harnesses, harness) ? snapshot!.harnesses[harness] : null;
 }
 
 /** The candidate's availability block: the harness entry projected onto the four fields the decision declares. */
-function availabilityOf(entry) {
+function availabilityOf(entry: SnapshotEntry) {
   return {
     state: entry.state,
     reason: entry.reason ?? null,
@@ -77,50 +122,50 @@ function availabilityOf(entry) {
 }
 
 /** Ratings for the role being routed: the tuple's own, with its role override on top. */
-export function ratingsFor(tuple, role) {
-  const override = tuple.roleRatings?.[role];
+export function ratingsFor(tuple: CatalogTuple, role: string) {
+  const override = (tuple.roleRatings as Record<string, Record<string, number>> | null | undefined)?.[role];
   return override ? { ...tuple.ratings, ...override } : { ...tuple.ratings };
 }
 
 /** The models the resolver may choose from: the inventory rows the harness does not hide. A
  * hidden row stays in the snapshot; a tuple naming one is `model-not-in-inventory`. */
-function inventoryOf(entry) {
+function inventoryOf(entry: Entry) {
   return Array.isArray(entry.models) ? entry.models.filter((m) => m.hidden !== true) : null;
 }
 
 /** Whether one window binds this tuple's model: matched by EXACT id, never by an inferred
  * family (ADR-005). The `api` pool is defined by complement — no `auto` pool names the model. */
-function windowBinds(window, model, entry) {
+function windowBinds(window: AvailabilityWindow, model: string | undefined, entry: Entry) {
   const scope = window.scope ?? null;
   if (scope === null) return true;
   if (entry.poolWindowsUnbound === true && (scope.pool === 'auto' || scope.pool === 'api')) return false;
-  if (scope.pool === 'auto') return autoModelsOf(entry)?.includes(model) ?? false;
+  if (scope.pool === 'auto') return autoModelsOf(entry)?.includes(model as string) ?? false;
   if (scope.pool === 'api') {
     const autoModels = autoModelsOf(entry);
-    return autoModels ? !autoModels.includes(model) : false;
+    return autoModels ? !autoModels.includes(model as string) : false;
   }
-  return Array.isArray(scope.models) && scope.models.includes(model);
+  return Array.isArray(scope.models) && scope.models.includes(model as string);
 }
 
-function autoModelsOf(entry) {
+function autoModelsOf(entry: Entry | null | undefined) {
   if (Array.isArray(entry?.autoPoolModels) && entry.autoPoolModels.length) return entry.autoPoolModels;
-  return (entry?.windows ?? []).find((w) => w.scope?.pool === 'auto')?.scope.models ?? null;
+  return (entry?.windows ?? []).find((w) => w.scope?.pool === 'auto')?.scope!.models ?? null;
 }
 
 /** The windows that apply to one tuple: the account-wide ones plus the scope covering it.
  * Exported because a lift records the same set, and two definitions would measure two things. */
-export function applicableWindows(entry, model) {
+export function applicableWindows(entry: Entry, model: string | undefined) {
   return (Array.isArray(entry.windows) ? entry.windows : []).filter((w) => windowBinds(w, model, entry));
 }
 
 /** Windows that carry a percentage. A local estimate with no allowance stays visible and unscored. */
-function measuredWindows(entry, model) {
-  return applicableWindows(entry, model).filter((w) => typeof w.usedPercent === 'number');
+function measuredWindows(entry: Entry, model: string | undefined) {
+  return applicableWindows(entry, model).filter((w) => typeof w.usedPercent === 'number') as MeasuredWindow[];
 }
 
 /** The remaining allowance for one TUPLE: `100 − max(usedPercent)` over the applicable windows
  * (ADR-005). No measured window, or `unknown`, is the neutral value plus a penalty. */
-function remainingOf(entry, model, capacity = {}) {
+function remainingOf(entry: Entry, model: string | undefined, capacity: Record<string, number> = {}) {
   const windows = measuredWindows(entry, model);
   if (!windows.length) {
     return { percent: NEUTRAL_REMAINING_PERCENT, unknown: true };
@@ -129,28 +174,28 @@ function remainingOf(entry, model, capacity = {}) {
 }
 
 /** The window with the highest `usedPercent`, the id settling a tie so two runs on one snapshot agree. */
-const mostSpent = (windows) => [...windows]
+const mostSpent = (windows: MeasuredWindow[]) => [...windows]
   .sort((a, b) => b.usedPercent - a.usedPercent || (a.id < b.id ? -1 : 1))[0] ?? null;
 
 /** The binding window of one tuple: the most spent applicable window. `null` when no window applies. */
-function bindingWindowOf(entry, model) {
+function bindingWindowOf(entry: Entry, model: string | undefined) {
   return mostSpent(measuredWindows(entry, model));
 }
 
-export function poolOf(entry, model, harness) {
+export function poolOf(entry: Entry | null | undefined, model: string | undefined, harness: string) {
   if (harness !== 'cursor') return null;
   const autoModels = autoModelsOf(entry);
   if (!autoModels) return null;
-  return autoModels.includes(model) ? 'auto' : 'api';
+  return autoModels.includes(model as string) ? 'auto' : 'api';
 }
 
-function quotaCostOf(tuple, role, entry) {
+function quotaCostOf(tuple: CatalogTuple, role: string, entry: Entry) {
   const rated = ratingsFor(tuple, role).quotaCost;
   return poolOf(entry, tuple.model, tuple.harness) === 'api' ? 10 : rated;
 }
 
 /** The most spent applicable window whose figure has not reset, including a retained old reading. */
-function nearlySpentOf(entry, model, threshold, now) {
+function nearlySpentOf(entry: Entry, model: string | undefined, threshold: number, now: number) {
   if (!Number.isFinite(threshold)) return null;
   const spent = mostSpent(measuredWindows(entry, model).filter((w) => {
     const resetMs = Date.parse(w.resetAt ?? '');
@@ -160,27 +205,27 @@ function nearlySpentOf(entry, model, threshold, now) {
 }
 
 /** The constraint that named this tuple's account or model, or `null`. `--effort` alone names neither. */
-function namingFlag(tuple, constraints) {
+function namingFlag(tuple: TupleIdentity, constraints: Constraints) {
   if (constraints.harness === tuple.harness) return `--harness ${tuple.harness}`;
   if (constraints.model === tuple.model) return `--model ${tuple.model}`;
   return null;
 }
 
 /** The nearly spent window in one phrase, shared by the exclusion and the warning that waives it. */
-function spentText(harness, window, threshold) {
+function spentText(harness: string, window: MeasuredWindow, threshold: number) {
   return `${harness} ${window.kind} window "${window.id}" is ${round2(window.usedPercent)} % used, `
     + `at or past the ${threshold} % threshold (${window.resetAt ? `resets at ${window.resetAt}` : 'reset time unknown'})`;
 }
 
 /** A share of 0…1, clamped against clock skew — ADR-005 fixes the clamp on `elapsedShare`. */
-const clamp01 = (n) => Math.min(1, Math.max(0, n));
+const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 
 // The pace block of one candidate: how much of its binding window is spent.
 // [guides/model-routing.md#paceof--the-pace-block-of-one-candidate-how-much-of-its-binding-window-is-spent](../../docs/guides/model-routing.md#paceof--the-pace-block-of-one-candidate-how-much-of-its-binding-window-is-spent)
-function paceOf(entry, tuple, { role, spendUnit, now, capacity = {} }) {
+function paceOf(entry: Entry, tuple: CatalogTuple, { role, spendUnit, now, capacity = {} }: { role: string; spendUnit: number; now: number; capacity?: Record<string, number> }): Pace {
   // Every field is present in every branch, and what could not be computed is `null`: omitting
   // them would make a reader check two things to ask one question.
-  const blank = (note, over = {}) => ({
+  const blank = (note: string, over: Partial<Pick<Unpaced, 'window' | 'usedShare'>> = {}): Unpaced => ({
     window: null,
     usedShare: null,
     elapsedShare: null,
@@ -222,7 +267,7 @@ function paceOf(entry, tuple, { role, spendUnit, now, capacity = {} }) {
   };
 }
 
-const selectorValue = (tuple, kind) => ({
+const selectorValue = (tuple: TupleIdentity, kind: typeof POLICY_TUPLE_SELECTOR_KINDS[number]) => ({
   harnesses: tuple.harness,
   models: tuple.model,
   efforts: tuple.effort,
@@ -230,37 +275,37 @@ const selectorValue = (tuple, kind) => ({
 }[kind]);
 
 /** The marks the snapshot carries on this tuple's model — empty when the harness listed no inventory. */
-function flagsOf(entry, model) {
+function flagsOf(entry: Entry, model: string) {
   const row = (Array.isArray(entry.models) ? entry.models : []).find((m) => m.model === model);
   return Array.isArray(row?.flags) ? row.flags : [];
 }
 
 /** One `denied-by-policy` exclusion, naming every layer that wrote the rule: ADR-005 made deny
  * a union, so a ban two layers wrote is lifted in neither of them alone. */
-const deniedBy = (rules) => ({
+const deniedBy = (rules: Rule[]): Exclusion => ({
   code: 'denied-by-policy',
   detail: `denied by ${rulesLabel(rules)} — a ban is lifted only in the layer that wrote it`,
 });
 
-const notAllowedBy = (rules) => ({
+const notAllowedBy = (rules: Rule[]): Exclusion => ({
   code: 'denied-by-policy',
   detail: `not named by ${rulesLabel(rules)}`,
 });
 
 /** Step 2a — the allow and deny lists in force for this role, deny applied after allow, over every
  * spelling of one lift: an allow list passes on any, a deny list refuses on any. EMPTY allow admits none. */
-function policyExclusion(spellings, effective, sources, role, step) {
+function policyExclusion(spellings: TupleIdentity[], effective: EffectiveRules, sources: RoutingSources, role: string, step: string) {
   for (const kind of POLICY_TUPLE_SELECTOR_KINDS) {
     const allow = effective.allow?.[kind];
     if (!Array.isArray(allow)) continue;
-    if (!spellings.some((tuple) => allow.includes(selectorValue(tuple, kind)))) {
+    if (!spellings.some((tuple) => allow.includes(selectorValue(tuple, kind) as string))) {
       return notAllowedBy(rulesFor(sources, { rule: 'allow', kind, role, step }));
     }
   }
   for (const kind of POLICY_TUPLE_SELECTOR_KINDS) {
     const deny = effective.deny?.[kind];
     if (!Array.isArray(deny) || !deny.length) continue;
-    const value = spellings.map((tuple) => selectorValue(tuple, kind)).find((v) => deny.includes(v));
+    const value = spellings.map((tuple) => selectorValue(tuple, kind)).find((v) => deny.includes(v as string));
     if (value !== undefined) {
       return deniedBy(rulesFor(sources, {
         rule: 'deny', kind, role, step, name: value,
@@ -272,7 +317,7 @@ function policyExclusion(spellings, effective, sources, role, step) {
 
 /** Step 4a — the `flags` selector, one step after the inventory step. **Silence is not absence**
  * (ADR-005): a harness reporting no inventory has no flags, so a flag deny excludes nothing. */
-function flagExclusion(tuple, effective, sources, role, step, entry) {
+function flagExclusion(tuple: TupleIdentity, effective: EffectiveRules, sources: RoutingSources, role: string, step: string, entry: Entry): Exclusion | null {
   const flags = flagsOf(entry, tuple.model);
   const allow = effective.allow?.flags;
   if (Array.isArray(allow) && !flags.some((f) => allow.includes(f))) {
@@ -300,7 +345,7 @@ function flagExclusion(tuple, effective, sources, role, step, entry) {
  * `flags` are the marks of the model's snapshot row. */
 export function unratedExclusion({
   harness, models, effort = null, flags = [], pool = null,
-}, policy, role, step = role) {
+}: { harness: string; models: string[]; effort?: string | null; flags?: string[]; pool?: string | null }, policy: Pick<ResolverPolicy, 'policy' | 'sources'>, role: string, step = role) {
   const effective = rulesForRole(policy.policy, role, step);
   const lifts = models.map((model) => ({
     id: null, harness, model, effort,
@@ -313,7 +358,7 @@ export function unratedExclusion({
 
 /** Step 2b — `--harness`, `--model` and `--effort`. Constraints, not wishes: a named value
  * narrows and is never replaced, so one that leaves nothing standing ends with no tuple. */
-function constraintExclusion(tuple, constraints) {
+function constraintExclusion(tuple: TupleIdentity, constraints: Constraints): Exclusion | null {
   const named = [
     ['harness', constraints.harness, tuple.harness],
     ['model', constraints.model, tuple.model],
@@ -331,7 +376,7 @@ function constraintExclusion(tuple, constraints) {
 
 // Count efforts before policy, role, inventory or availability filtering: those filters
 // cannot turn an ambiguous model choice into permission to override its role rating.
-function namedRoleOverride(tuples, constraints) {
+function namedRoleOverride(tuples: CatalogTuple[], constraints: Constraints) {
   if (!constraints.model) return false;
   if (constraints.effort !== undefined && constraints.effort !== null) return true;
   const efforts = new Set(tuples
@@ -342,9 +387,9 @@ function namedRoleOverride(tuples, constraints) {
 }
 
 /** Steps 2…6 in the ADR's order. The first step that matches is the reason reported. */
-function exclusionOf(tuple, {
+function exclusionOf(tuple: CatalogTuple, {
   role, step, effective, sources, constraints, entry, paygAllowed, spentThreshold, now, roleOverride,
-}) {
+}: { role: string; step: string; effective: EffectiveRules; sources: RoutingSources; constraints: Constraints; entry: Entry; paygAllowed: boolean; spentThreshold: number; now: number; roleOverride: boolean }): Exclusion | null {
   const denied = policyExclusion([tuple], effective, sources, role, step);
   if (denied) return denied;
 
@@ -364,8 +409,8 @@ function exclusionOf(tuple, {
   const constrained = constraintExclusion(tuple, constraints);
   if (constrained) return constrained;
 
-  if (!tuple.roles.includes(role) && !roleOverride) {
-    return { code: 'role-not-allowed', detail: `rated for ${tuple.roles.join(', ')} only` };
+  if (!(tuple.roles as string[]).includes(role) && !roleOverride) {
+    return { code: 'role-not-allowed', detail: `rated for ${(tuple.roles as string[]).join(', ')} only` };
   }
 
   // Only when the harness answered with an inventory: silence about its models is not a claim
@@ -415,7 +460,7 @@ function exclusionOf(tuple, {
 
 /** Step 7 — the four weighted components, then the adjustments in order. A component is its
  * weight over 100 times the normalised value, and adjustments are published as their own rows. */
-function scoreOf(tuple, { role, weights, rules, entry, liveCount, diversity }) {
+function scoreOf(tuple: CatalogTuple, { role, weights, rules, entry, liveCount, diversity }: { role: string; weights: Record<string, number>; rules: RoutingPolicy; entry: Entry; liveCount: number; diversity: boolean }) {
   const ratings = ratingsFor(tuple, role);
   const remaining = remainingOf(entry, tuple.model, rules.account?.[tuple.harness]?.capacity);
   const components = {
@@ -447,24 +492,24 @@ function scoreOf(tuple, { role, weights, rules, entry, liveCount, diversity }) {
 
 /** Step 9 — the tie-break in ADR-005's order: effective score, confirmed availability, canonical
  * priority, tuple id. Total, because two tuples cannot share an id. */
-function byTieBreak(a, b) {
+function byTieBreak(a: ScoredRow, b: ScoredRow) {
   return b.score.total - a.score.total
     || (b.availability.state === 'available' ? 1 : 0) - (a.availability.state === 'available' ? 1 : 0)
-    || a.priority - b.priority
+    || a.priority! - b.priority!
     || (a.tupleId < b.tupleId ? -1 : 1);
 }
 
 /** Excluded rows print after the scored ones, in canonical priority order — the id settles a shared priority. */
-function byPriority(a, b) {
-  return a.priority - b.priority || (a.tupleId < b.tupleId ? -1 : 1);
+function byPriority(a: CandidateRow, b: CandidateRow) {
+  return a.priority! - b.priority! || (a.tupleId < b.tupleId ? -1 : 1);
 }
 
 /** The models the account exposes that the merged catalog does not rate. Shown, never chosen:
  * a rating is what makes a model a tuple. */
-function runtimeRows(snapshot) {
+function runtimeRows(snapshot: SnapshotDocument) {
   // Harness order is the sorted one, not the snapshot's key order: an object's
   // keys carry the order they were written in, and a decision must not.
-  const rows = [];
+  const rows: { harness: string; model: string; flags?: string[] }[] = [];
   for (const harness of Object.keys(snapshot.harnesses).sort()) {
     const entry = snapshot.harnesses[harness];
     for (const model of inventoryOf(entry) ?? []) {
@@ -476,7 +521,7 @@ function runtimeRows(snapshot) {
 }
 
 /** `probe` or `cache` when every harness agrees, `mixed` otherwise — the enum has no fourth answer. */
-function snapshotSource(snapshot) {
+function snapshotSource(snapshot: SnapshotDocument) {
   const seen = new Set(Object.values(snapshot.harnesses).map((h) => h.source));
   if (seen.size === 1) {
     const only = [...seen][0];
@@ -485,15 +530,15 @@ function snapshotSource(snapshot) {
   return 'mixed';
 }
 
-function ageOf(checkedAt, now) {
+function ageOf(checkedAt: string, now: number) {
   return Math.max(0, Math.floor((now - Date.parse(checkedAt)) / 1000));
 }
 
 // [guides/model-routing.md#readingages--availability-inventory-and-windows](../../docs/guides/model-routing.md#readingages--availability-inventory-and-windows)
-function readingAges(snapshot, now) {
+function readingAges(snapshot: SnapshotDocument, now: number) {
   return Object.keys(snapshot.harnesses).sort().map((harness) => {
     const entry = snapshot.harnesses[harness];
-    const reading = (checkedAt, source) => ({ checkedAt, ageSec: ageOf(checkedAt, now), source });
+    const reading = (checkedAt: string, source: string) => ({ checkedAt, ageSec: ageOf(checkedAt, now), source });
     return {
       harness,
       availability: reading(entry.checkedAt, entry.source),
@@ -520,16 +565,16 @@ export function resolve({
   strategyCommands,
   expiredWindows = {},
   now = Date.now(),
-} = {}) {
+}: ResolveRequest = {}) {
   const rules = policy?.policy;
   if (!rules) throw new GateError('resolve: `policy` must be the answer of loadCatalog — its policy block is missing');
-  if (!isRoutedRole(role)) throw new GateError(`resolve: unknown role "${role}" — allowed: ${ROUTED_ROLES.join(', ')}`);
-  if (!STRATEGIES.includes(strategy)) {
+  if (!isRoutedRole(role as string)) throw new GateError(`resolve: unknown role "${role}" — allowed: ${ROUTED_ROLES.join(', ')}`);
+  if (!STRATEGIES.includes(strategy as string)) {
     throw new GateError(`resolve: unknown strategy "${strategy}" — allowed: ${STRATEGIES.join(', ')}`);
   }
   // `balance` has no weight set of its own and orders tuples inside one harness by the merged
   // `balanced` weights, so the published `weights` are the ones actually used.
-  const ordering = strategy === 'balance' ? BALANCE_ORDERING : strategy;
+  const ordering = strategy === 'balance' ? BALANCE_ORDERING : strategy!;
   const weights = rules.weights?.[ordering];
   if (!weights) throw new GateError(`resolve: the merged policy has no weight set for "${ordering}"`);
   if (!snapshot?.harnesses) throw new GateError('resolve: the availability snapshot carries no harnesses');
@@ -543,26 +588,26 @@ export function resolve({
 
   // Read once: two walks of the same list are two places to drift. `liveParticipants` is ONE
   // TASK's list, so both the penalty and the cap bound a run rather than an account.
-  const liveOf = (harness) => liveParticipants.filter((p) => p?.harness === harness).length;
+  const liveOf = (harness: string) => liveParticipants.filter((p) => p?.harness === harness).length;
   const caps = rules.caps?.liveParticipants ?? {};
   // A harness with no cap is unbounded. `Number.isInteger`, not a truthiness test: a cap of 0
   // is the person saying "never this harness", and it has to survive the read.
-  const capOf = (harness) => (Number.isInteger(caps[harness]) ? caps[harness] : null);
-  const atCap = (harness) => {
+  const capOf = (harness: string) => (Number.isInteger(caps[harness]) ? caps[harness] : null);
+  const atCap = (harness: string) => {
     const cap = capOf(harness);
     return cap !== null && liveOf(harness) >= cap;
   };
 
   // The lists in force for THIS role, computed once: the rules do not change between
   // candidates, and a per-candidate merge is the same answer arrived at N times.
-  const effective = rulesForRole(rules, role, step);
+  const effective = rulesForRole(rules, role!, step!);
   const roleOverride = namedRoleOverride(policy.tuples ?? [], constraints);
 
-  const rows = [];
+  const rows: CandidateRow[] = [];
   for (const tuple of policy.tuples ?? []) {
     const entry = entryOf(snapshot, tuple.harness);
     if (!entry) continue;
-    const row = {
+    const row: CandidateRow = {
       tupleId: tuple.id,
       harness: tuple.harness,
       model: tuple.model,
@@ -570,7 +615,7 @@ export function resolve({
       priority: tuple.priority,
       availability: availabilityOf(entry),
       excluded: exclusionOf(tuple, {
-        role, step, effective, sources: policy.sources, constraints, entry, paygAllowed, spentThreshold, now, roleOverride,
+        role: role!, step: step!, effective, sources: policy.sources, constraints, entry, paygAllowed, spentThreshold, now, roleOverride,
       }),
       entry,
       tuple,
@@ -585,7 +630,7 @@ export function resolve({
     const diversity = role === REVIEWER && workers.length > 0
       && workers.every((w) => w.harness !== row.harness || w.model !== row.model);
     const { score, quality } = scoreOf(row.tuple, {
-      role,
+      role: role!,
       weights,
       rules,
       entry: row.entry,
@@ -596,7 +641,7 @@ export function resolve({
     row.quality = quality;
   }
 
-  const scored = rows.filter((r) => r.score).sort(byTieBreak);
+  const scored = (rows.filter((r) => r.score) as ScoredRow[]).sort(byTieBreak);
   const excluded = rows.filter((r) => !r.score).sort(byPriority);
 
   // The pace block (ADR-005) is computed for every scored candidate whatever the strategy asked
@@ -608,7 +653,7 @@ export function resolve({
   // `--strategy quality` is owed the same warning. Published only under `balance`.
   for (const row of scored) {
     row.pace = paceOf(row.entry, row.tuple, {
-      role, spendUnit, now, capacity: rules.account?.[row.harness]?.capacity,
+      role: role!, spendUnit, now, capacity: rules.account?.[row.harness]?.capacity,
     });
     // The mark is on the candidate rather than left for a reader to re-derive: a second copy of
     // the rule beside the printer would show a different row after the first edit here.
@@ -617,26 +662,26 @@ export function resolve({
 
   // Step 8. A quality floor is a choice rule, not a filter: a candidate below it keeps its score
   // and only the pick moves. Nothing reaching it is a soft fallback with a warning (ADR-005).
-  const floor = qualityFloor ?? rules.qualityFloor?.[role];
-  const bestOf = (rows_) => {
+  const floor = qualityFloor ?? rules.qualityFloor?.[role!];
+  const bestOf = <T extends ScoredRow>(rows_: T[]) => {
     if (!rows_.length) return null;
-    const above = Number.isFinite(floor) ? rows_.filter((r) => r.quality >= floor) : rows_;
+    const above = Number.isFinite(floor) ? rows_.filter((r) => r.quality >= floor!) : rows_;
     return above.length ? above[0] : rows_[0];
   };
 
   // One representative per eligible harness/pool group: its best ELIGIBLE candidate by the
   // role's ordering that meets the floor — a top row that cannot be paced would drop the group.
-  const eligible = scored.filter((r) => r.pace?.eligible);
-  const groups = new Map();
+  const eligible = scored.filter((r) => r.pace?.eligible) as PacedRow[];
+  const groups = new Map<string, { harness: string; pool: 'auto' | 'api' | null; rows: PacedRow[] }>();
   for (const row of eligible) {
     const pool = row.pace.window?.scope?.pool ?? null;
     const key = `${row.harness}\u0000${pool ?? ''}`;
     if (!groups.has(key)) groups.set(key, { harness: row.harness, pool, rows: [] });
-    groups.get(key).rows.push(row);
+    groups.get(key)!.rows.push(row);
   }
   const representatives = [...groups.values()]
     .map(({ rows: group }) => bestOf(group))
-    .filter(Boolean);
+    .filter(Boolean) as PacedRow[];
   // Marked in the document rather than left for a reader to re-derive: a second copy of the
   // rule in the renderer would show a different representative when the floor moved the first.
   for (const row of representatives) row.pace.representative = true;
@@ -644,16 +689,16 @@ export function resolve({
   // The quality floor sits above the balance comparison: with one floor-meeting representative,
   // only those contend. With none, every representative stays, so balance keeps its fallback.
   const floorRepresentatives = Number.isFinite(floor)
-    ? representatives.filter((row) => row.quality >= floor)
+    ? representatives.filter((row) => row.quality >= floor!)
     : [];
   const balanceRepresentatives = floorRepresentatives.length
     ? floorRepresentatives
     : representatives;
 
-  const warnings = scored.filter((row) => !row.tuple.roles.includes(role)).map((row) => ({
+  const warnings = scored.filter((row) => !(row.tuple.roles as string[]).includes(role!)).map((row) => ({
     code: 'role-not-rated-named',
     message: `"${row.tupleId}" was explicitly named for ${role}${step === role ? '' : ` (step ${step})`}, `
-      + `but is rated for ${row.tuple.roles.join(', ')} only — the named model and selected effort override the role rating`,
+      + `but is rated for ${(row.tuple.roles as string[]).join(', ')} only — the named model and selected effort override the role rating`,
   }));
   for (const row of scored) {
     const pool = poolOf(row.entry, row.model, row.harness);
@@ -671,7 +716,7 @@ export function resolve({
       });
     }
   }
-  let chosen = null;
+  let chosen: ScoredRow | null = null;
   if (scored.length) {
     if (strategy !== 'balance') chosen = bestOf(scored);
     else {
@@ -680,7 +725,7 @@ export function resolve({
       if (!representatives.length) {
         // No harness could be paced. A fallback rather than a refusal: a person asked for work
         // to start, and `unknown` has been a penalty and never a block since ADR-005.
-        const byHarness = new Map();
+        const byHarness = new Map<string, ScoredRow[]>();
         for (const row of scored) {
           const group = byHarness.get(row.harness) ?? [];
           group.push(row);
@@ -688,12 +733,12 @@ export function resolve({
         }
         const lessSpent = [...byHarness.values()].map((group) => {
           const measured = group.filter((row) => bindingWindowOf(row.entry, row.model));
-          const leastUsed = Math.min(...measured.map((row) => bindingWindowOf(row.entry, row.model).usedPercent));
+          const leastUsed = Math.min(...measured.map((row) => bindingWindowOf(row.entry, row.model)!.usedPercent));
           const candidates = measured.length
-            ? measured.filter((row) => bindingWindowOf(row.entry, row.model).usedPercent === leastUsed)
+            ? measured.filter((row) => bindingWindowOf(row.entry, row.model)!.usedPercent === leastUsed)
             : group;
           return bestOf(candidates);
-        }).sort(byTieBreak);
+        }).sort(byTieBreak as (a: ScoredRow | null, b: ScoredRow | null) => number) as ScoredRow[];
         chosen = bestOf(lessSpent);
         warnings.push({
           code: 'balance-fallback',
@@ -704,7 +749,7 @@ export function resolve({
       } else {
         // The band is measured from the single leader's NUMBER, not from a row: that is what
         // makes the tied set well defined whatever order the candidates arrived in.
-        const pickOf = (set) => {
+        const pickOf = (set: PacedRow[]) => {
           const leader = Math.max(...set.map((r) => r.pace.effective));
           const tied = set.filter((r) => r.pace.effective >= leader - band);
           return [...tied].sort(byTieBreak)[0];
@@ -746,13 +791,13 @@ export function resolve({
         }
       }
     }
-    const floorReached = scored.some((row) => row.quality >= floor);
-    if (Number.isFinite(floor) && chosen && chosen.quality < floor) {
+    const floorReached = scored.some((row) => row.quality >= floor!);
+    if (Number.isFinite(floor) && chosen && chosen.quality < floor!) {
       const code = `${role}-floor-not-met`;
-      const floorCandidate = scored.find((row) => row.quality >= floor);
+      const floorCandidate = scored.find((row) => row.quality >= floor!);
       const message = floorReached
         ? `"${chosen.tupleId}" on the ${chosen.harness} harness was taken below the quality floor `
-          + `of ${floor} of 10; "${floorCandidate.tupleId}" on the ${floorCandidate.harness} `
+          + `of ${floor} of 10; "${floorCandidate!.tupleId}" on the ${floorCandidate!.harness} `
           + 'harness meets the floor but was not considered because its binding window is not paced'
         : `no ${role} candidate reaches the quality floor of ${floor} of 10 — `
           + `"${chosen.tupleId}" was taken as the best remaining one`;
@@ -769,7 +814,7 @@ export function resolve({
   // Snapshot-derived warnings, per harness in name order, and only for a harness whose
   // candidates were actually scored: a warning about a harness nothing was taken from explains nothing.
   const inPlay = [...new Set(scored.map((r) => r.harness))].sort();
-  const fromSnapshot = [];
+  const fromSnapshot: Warning[] = [];
 
   // A flag rule whose mark no model of this snapshot carries — a warning, raised here because
   // only a run holds a snapshot. It says the rule matched nothing, never that a guarantee holds.
@@ -779,7 +824,7 @@ export function resolve({
       for (const flag of Array.isArray(model.flags) ? model.flags : []) marks.add(flag);
     }
   }
-  for (const rule of ['deny', 'allow']) {
+  for (const rule of ['deny', 'allow'] as const) {
     for (const flag of effective[rule]?.flags ?? []) {
       if (marks.has(flag)) continue;
       const wrote = rulesFor(policy.sources, {
@@ -824,7 +869,7 @@ export function resolve({
       const spent = nearlySpentOf(waived.entry, waived.model, spentThreshold, now);
       fromSnapshot.push({
         code: 'window-nearly-spent-named',
-        message: `${spentText(harness, spent, spentThreshold)} — "${waived.tupleId}" stays in the running `
+        message: `${spentText(harness, spent!, spentThreshold)} — "${waived.tupleId}" stays in the running `
           + `only because ${namingFlag(waived.tuple, constraints)} named it`,
       });
     }
@@ -851,7 +896,7 @@ export function resolve({
   // repeated. The TOP row would measure a different tuple from the one the pace table prints.
   const nearLimitRepresentatives = [...new Set(representatives.map((r) => r.harness))].sort()
     .map((harness) => bestOf(representatives.filter((r) => r.harness === harness).sort(byTieBreak)))
-    .filter(Boolean);
+    .filter(Boolean) as PacedRow[];
   const paced = nearLimitRepresentatives.map((row) => ({ harness: row.harness, row }));
   const short = paced.filter(({ row }) => row.pace.usedShare * 100 >= nearLimit.usedPercent
     || row.pace.underspend < nearLimit.underspend);
@@ -874,7 +919,7 @@ export function resolve({
               + `${nearLimit.underspend} the threshold allows`
             : null,
         ].filter(Boolean).join('; and ');
-        const binding = bindingWindowOf(row.entry, row.model);
+        const binding = bindingWindowOf(row.entry, row.model)!;
         const reset = binding.resetAt;
         // The harness and the percentage travel as fields, so the lift line names them without prose.
         fromSnapshot.push({
@@ -882,7 +927,7 @@ export function resolve({
           message: `${harness} is running short — its ${pace.window.kind} window "${pace.window.id}" `
             + `(${(pace.elapsedShare * 100).toFixed(1)} % elapsed${reset ? `, resets at ${reset}` : ''}): ${why}. `
             + `Propose --strategy ${proposed} to the person and run `
-            + `\`${strategyCommands[proposed]}\` once they agree — nothing switches on its own`,
+            + `\`${strategyCommands![proposed]}\` once they agree — nothing switches on its own`,
           harness,
           usedPercent: binding.usedPercent,
         });
@@ -890,9 +935,9 @@ export function resolve({
     }
   }
 
-  const applied = excluded.some((r) => r.excluded.code === 'constraint-mismatch');
+  const applied = excluded.some((r) => r.excluded!.code === 'constraint-mismatch');
   const takenAt = snapshot.takenAt;
-  const candidate = (row) => ({
+  const candidate = (row: CandidateRow) => ({
     tupleId: row.tupleId,
     harness: row.harness,
     model: row.model,

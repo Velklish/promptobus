@@ -10,15 +10,39 @@ import {
   newTaskIdentity, onTaskLock,
   openEngine, ORCHESTRATOR, ownerOf, participantFileStem, PromptobusError,
   listArtifacts, readBinding, requireTaskId,
-  roleOf, ROOT_DIR, sameSession, sessionFile, sessionIdOf, sessionOf, slugify, stampOfId, TASK_TITLE_SEP, taskDir,
+  roleOf, ROOT_DIR, sessionFile, sessionIdOf, sessionOf, slugify, stampOfId, TASK_TITLE_SEP,
   tasksDir, validate,
   withTaskLock as lockTask, withTaskLockAsync as lockTaskAsync, workersDir, writeBinding, readWake, wakeFile,
-  addressList, admitsAddress, APPROVER, EDITS_TREE, registryOf, roleEntry, SHIPPED_REGISTRY, WORKER, WRITES_MAIN_TREE,
+  addressList, admitsAddress, APPROVER, EDITS_TREE, registryOf, roleEntry, SHIPPED_REGISTRY, WRITES_MAIN_TREE,
 } from '../dist/index.js';
-import { writeFileAtomic, writeJsonAtomic } from '../dist/fs/atomic.js';
+import { writeJsonAtomic } from '../dist/fs/atomic.js';
 import { artifactsDir, blobsDir, brokenArtifactsDir, filesDir, messagesDir } from '../dist/v1/layout.js';
 import { RECORD_ID_RE } from '../dist/v1/model.js';
 import { writeTask } from '../dist/v1/store.js';
+
+import type {
+  ArtifactV1, BrokenNote, CapabilitiesSnapshot, Engine, HistoryQuery, Mailbox, MessageV1,
+  OutgoingMessage, Ownership, ParticipantV1, PromptobusHost, RecoverResult, RoleRegistry,
+  SenderCaller, SentMessage, TaskV1,
+} from '../dist/index.js';
+
+interface IdentityScope { home: string; task: string | null; address: string | null }
+interface IdentityAnswer { id: string | null; reason: string; why: string | null; candidates: unknown[] }
+type IdentityReader = (env: NodeJS.ProcessEnv, scope: IdentityScope | null) => IdentityAnswer | null;
+type AdapterRoutingDecision = { allow: true; deny?: never; reason?: never } | { deny: true; reason: string; allow?: never };
+type BindingCheck = (home: string, task: TaskV1, participant: ParticipantV1) => boolean;
+type MessageHeader = Omit<MessageV1, 'body' | 'protocolVersion'> & { firstLine?: string };
+interface HeaderOptions { statusLine?: boolean }
+interface MessageRead { file: string; type: string; purpose: string | null }
+interface ContactRoute { address: string | null; task: string; types: readonly string[] }
+interface TaskHints { spawnRepo: string; spawnNewTask: string }
+interface SendHints { status: string; registry?: RoleRegistry }
+interface CreateTaskInput {
+  id?: string; title?: string; adapter?: Record<string, unknown>; owner?: string | null;
+  parent?: string; teamlead?: string;
+}
+interface RetitleOptions { title?: string | null; fromLines?: boolean; explicit?: boolean; restamp?: boolean; session?: string | null }
+interface DeclaredIdentity { role?: unknown; home?: unknown; task?: unknown }
 
 // Keep these adapter-local path helpers for lib/ callers without widening the package entry.
 export { artifactsDir, blobsDir, brokenArtifactsDir, filesDir, messagesDir };
@@ -79,17 +103,17 @@ export const PROMPTOBUS_REL = ROOT_DIR;
 // Default harness for adapter records; kept equal to the driver registry fallback.
 export const FALLBACK_HARNESS = 'claude';
 
-export function promptobusHome(root, host) {
+export function promptobusHome(root: string, host: PromptobusHost | null | undefined) {
   if (host == null) throw new Error('promptobusHome: host is required');
   return path.join(root, PROMPTOBUS_REL);
 }
 
 // Who this session is — the drivers' answer, injected rather than imported: the core
 // cannot reach them, and 02-host.md § Session identity carries the measurement that says so.
-let readIdentity = null;
+let readIdentity: IdentityReader | null = null;
 let saidUnbound = false;
 
-export function bindSessionIdentity(fn) {
+export function bindSessionIdentity(fn: IdentityReader | null) {
   readIdentity = typeof fn === 'function' ? fn : null;
 }
 
@@ -97,7 +121,7 @@ export function bindSessionIdentity(fn) {
  * `null` is an answer here, never a silence. Unbound, the core says so once instead of
  * falling back to one harness's variable — the fallback IS the defect (ADR-019).
  */
-export function sessionIdentity(env = process.env, scope = null) {
+export function sessionIdentity(env = process.env, scope: IdentityScope | null = null) {
   if (!readIdentity) {
     if (!saidUnbound) {
       saidUnbound = true;
@@ -116,7 +140,7 @@ export function sessionIdentity(env = process.env, scope = null) {
 
 // Too much rather than too little. Named by the resolver's own state, not counted here:
 // counting was what read two variables as none.
-export function contestedIdentity(answer) {
+export function contestedIdentity(answer: IdentityAnswer | null | undefined): answer is IdentityAnswer & { reason: 'contested' | 'contested-records' } {
   return answer?.reason === 'contested' || answer?.reason === 'contested-records';
 }
 
@@ -124,14 +148,14 @@ export function contestedIdentity(answer) {
  * The resolver's whole answer, for a caller whose refusal must SAY why there is no identity.
  * `sessionIdentity` drops everything but the id, and "none" and "contested" then look alike.
  */
-export function sessionIdentityReport(env = process.env, scope = null) {
+export function sessionIdentityReport(env = process.env, scope: IdentityScope | null = null) {
   const answer = readIdentity ? readIdentity(env, scope) : null;
   return answer ?? { id: null, reason: 'none', why: 'no driver registry is bound to this process', candidates: [] };
 }
 
-const saidWhy = new Set();
+const saidWhy = new Set<string>();
 
-function warnOnce(text) {
+function warnOnce(text: string) {
   if (saidWhy.has(text)) return;
   saidWhy.add(text);
   warn(text);
@@ -145,7 +169,7 @@ const GOVERNANCE = Object.freeze(Object.fromEntries(
 ));
 const SIBLING_TYPES = Object.freeze(['question', 'answer', 'status', 'artifact']);
 
-function rootTeamlead(home, task, participant) {
+function rootTeamlead(home: string, task: TaskV1, participant: ParticipantV1): participant is ParticipantV1 & { metadata: { childTask: string } } {
   if (task.parent !== undefined || participant.role !== GOVERNANCE.teamlead) return false;
   const childId = participant.metadata?.childTask;
   if (typeof childId !== 'string') return false;
@@ -161,7 +185,7 @@ function rootTeamlead(home, task, participant) {
 
 /** The participant mailbox of an address: its primary address and the slots read as one; `alias` when
  * the address is an address alias (ADR-028). */
-export function mailboxOf(home, id, addr) {
+export function mailboxOf(home: string, id: string, addr: string): Mailbox {
   const self = { task: id, address: addr };
   try {
     const meta = readTask(home, id);
@@ -173,8 +197,8 @@ export function mailboxOf(home, id, addr) {
     if (addr === ORCHESTRATOR && meta.parent !== undefined) {
       const root = readTask(home, meta.parent);
       const lead = (root.participants ?? []).find((p) => p.role === GOVERNANCE.teamlead && p.metadata?.childTask === id);
-      if (lead && rootTeamlead(home, root, lead)) {
-        return { primary: self, slots: [self, { task: root.id, address: addressOf(lead) }], alias: false };
+      if (lead && rootTeamlead(home, root!, lead)) {
+        return { primary: self, slots: [self, { task: root.id, address: addressOf(lead)! }], alias: false };
       }
     }
   } catch {
@@ -184,13 +208,13 @@ export function mailboxOf(home, id, addr) {
 }
 
 /** The child's record that stands for its root orchestrator, or `null`. */
-export function rootRecordOf(child) {
+export function rootRecordOf(child: TaskV1 | null | undefined) {
   return (child?.participants ?? []).find((p) => p.role === GOVERNANCE.root) ?? null;
 }
 
 /** The child's address for its root: its record's, else `root:<root slug>`, never a bare `root` —
  * 04-protocol § Addresses gives the reason. */
-export function rootAddressOf(root, child = null) {
+export function rootAddressOf(root: TaskV1, child: TaskV1 | null = null) {
   const held = addressOf(rootRecordOf(child));
   if (held) return held;
   const named = `${GOVERNANCE.root}:${root.adapter?.slug}`;
@@ -198,11 +222,11 @@ export function rootAddressOf(root, child = null) {
 }
 
 /** The address of the child's `root:<slug>` record, written by the teamlead lift when it is missing. */
-export function ensureRootRecord(home, childId) {
+export function ensureRootRecord(home: string, childId: string) {
   const child = readTask(home, childId);
   const held = rootRecordOf(child);
   if (held) return addressOf(held);
-  const root = readTask(home, child.parent);
+  const root = readTask(home, child.parent!);
   const address = rootAddressOf(root);
   const version = writerVersion(home, `adding ${address} to child task ${childId}`);
   upsertParticipant(home, childId, participantRecord(address, {
@@ -211,7 +235,7 @@ export function ensureRootRecord(home, childId) {
   return address;
 }
 
-function linkedPeer(home, task, peer) {
+function linkedPeer(home: string, task: TaskV1, peer: ParticipantV1) {
   const otherId = peer.metadata?.peerTask;
   if (task.parent !== undefined || peer.role !== GOVERNANCE.peer || typeof otherId !== 'string') return false;
   try {
@@ -229,7 +253,7 @@ function linkedPeer(home, task, peer) {
   }
 }
 
-function routingPolicy(home, sender, recipient, task, type, registry, bound = rootTeamlead) {
+function routingPolicy(home: string, sender: ParticipantV1, recipient: ParticipantV1, task: TaskV1, type: string, registry?: RoleRegistry, bound: BindingCheck = rootTeamlead): AdapterRoutingDecision {
   const vertical = `route through the root orchestrator of task ${task.parent ?? task.id}`;
   if (sender.role === GOVERNANCE.reporter) {
     return { deny: true, reason: `the reporter reads and sends nothing — ${vertical}` };
@@ -261,7 +285,7 @@ function routingPolicy(home, sender, recipient, task, type, registry, bound = ro
       + `the root orchestrator and talks only to this child task's orchestrator — ${vertical}` };
   }
   if (sender.role === ORCHESTRATOR || recipient.role === ORCHESTRATOR) return { allow: true };
-  if (acceptanceRoute(sender, recipient, registry)) return { allow: true };
+  if (acceptanceRoute(sender, recipient, registry!)) return { allow: true };
   return {
     deny: true,
     reason: `${sender.role}s and ${recipient.role}s do not write to each other — `
@@ -277,12 +301,12 @@ function routingPolicy(home, sender, recipient, task, type, registry, bound = ro
 // diagnosis; that engine is a different cache entry. Tests may open the same home as two
 // releases, so a reader never inherits the diagnosis vocabulary of the writer that ran
 // before it.
-const engines = new Map();
-const selectedVersions = new Map();
-const warnedUnversionedReaders = new Set();
-const routeRegistries = new Map();
+const engines = new Map<string, Map<string | null, Engine>>();
+const selectedVersions = new Map<string, string>();
+const warnedUnversionedReaders = new Set<string>();
+const routeRegistries = new Map<string, RoleRegistry>();
 
-function engine(home, version = selectedVersions.get(home) ?? null) {
+function engine(home: string, version: string | null = selectedVersions.get(home) ?? null): Engine {
   if (version === null && !warnedUnversionedReaders.has(home)) {
     warnedUnversionedReaders.add(home);
     warn(`bus: unversioned reader opened ${home} — mixed-version diagnosis may be incomplete`);
@@ -302,7 +326,7 @@ function engine(home, version = selectedVersions.get(home) ?? null) {
   return opened;
 }
 
-function writerVersion(home, record) {
+function writerVersion(home: string, record: string) {
   const version = selectedVersions.get(home) ?? null;
   if (!version) {
     warn(`bus: ${record} in ${home} without mechanismVersion — no writer version was selected`);
@@ -310,7 +334,7 @@ function writerVersion(home, record) {
   return version;
 }
 
-function reportRecovery(result) {
+function reportRecovery(result: RecoverResult) {
   // Recovery activation events stay with the warden: it wakes from unread refs.
   for (const link of result.links) {
     warn(`bus recovery: task ${link.child} parent link to ${link.parent} completed `
@@ -343,7 +367,7 @@ function reportRecovery(result) {
  * given in full: the mechanism receives it from an environment variable, and `.promptobus`
  * may be missing from the end entirely.
  */
-export function bus(home, { cli } = {}) {
+export function bus(home: string, { cli }: { cli?: string } = {}) {
   const version = cli === undefined ? selectedVersions.get(home) : cli;
   if (typeof version !== 'string' || !version.trim()) {
     throw new TypeError(`bus: reader mechanism version is required on the first open of ${home}`);
@@ -363,7 +387,7 @@ export function bus(home, { cli } = {}) {
  * a break in the mechanism itself. The caller may also branch on the code — `ERROR_CODES`
  * are exported from here too.
  */
-function gate(fn) {
+function gate<T>(fn: () => T): T {
   try {
     return fn();
   } catch (e) {
@@ -383,7 +407,7 @@ function gate(fn) {
  * there too: it is how the participant is named to a human, and how health, contact points
  * and stop marks are keyed.
  */
-export function participantRecord(address, fields = {}, registry = SHIPPED_REGISTRY) {
+export function participantRecord(address: string, fields: Record<string, unknown> = {}, registry: RoleRegistry = SHIPPED_REGISTRY): ParticipantV1 {
   if (!admitsAddress(registry, address)) {
     throw new GateError(`invalid participant address "${address}" — `
       + `expected ${addressList(registry)}`);
@@ -412,32 +436,32 @@ export function participantRecord(address, fields = {}, registry = SHIPPED_REGIS
 
 // A capabilities snapshot is stored only whole: half a snapshot means nothing, and the
 // schema would reject such a record anyway.
-function capsOf(value) {
+function capsOf(value: unknown): CapabilitiesSnapshot | null {
   return validate('participant', {
     id: 'x', role: 'x', harness: 'x', mode: 'attached', sessionRef: null, capabilities: value, metadata: {},
-  }).ok ? value : null;
+  }).ok ? value as CapabilitiesSnapshot : null;
 }
 
 // Participant files in `workers/` — by address: lift writes them, and `promptobus done`
 // sweep cleans them. Name joining lives in the package (`participantFileStem`), the
 // directory lives in the sidecar; here there are only the two doors the mechanism calls
 // them through.
-export function participantMcpPath(home, taskId, address) {
+export function participantMcpPath(home: string, taskId: string, address: string) {
   return path.join(workersDir(home, taskId), `${participantFileStem(address)}.mcp.json`);
 }
 
-export function participantSettingsPath(home, taskId, address) {
+export function participantSettingsPath(home: string, taskId: string, address: string) {
   return path.join(workersDir(home, taskId), `${participantFileStem(address)}.settings.json`);
 }
 
 // The Claude Code session record the lift points the bus entry at: 02-host § Session identity.
-export function participantSessionPath(home, taskId, address) {
+export function participantSessionPath(home: string, taskId: string, address: string) {
   return path.join(workersDir(home, taskId), `${participantFileStem(address)}.session.json`);
 }
 
 // A contact point naming another session than the one being bound is a dead session's: a relift
 // drops it. A binding that names no session (a pointer-bound harness) drops nothing.
-export function dropStaleWake(home, taskId, address, session) {
+export function dropStaleWake(home: string, taskId: string, address: string, session: string | null) {
   if (!session) return false;
   const wake = readWake(home, taskId, address);
   if (!wake || wake.session === session) return false;
@@ -455,7 +479,7 @@ export function dropStaleWake(home, taskId, address, session) {
  * secret — so the same `promptobus done` sweep that cleans mcp-configs removes them
  * whole, without asking a driver what it put there.
  */
-export function participantDirs(home, taskId, address) {
+export function participantDirs(home: string, taskId: string, address: string) {
   const dir = workersDir(home, taskId);
   const stem = `${participantFileStem(address)}.`;
   try {
@@ -469,37 +493,37 @@ export function participantDirs(home, taskId, address) {
 }
 
 /** Participant of the task by address; `null` — no such record in the journal. */
-export function participantOf(meta, address) {
+export function participantOf(meta: TaskV1 | null | undefined, address: unknown) {
   return (meta?.participants ?? []).find((p) => addressOf(p) === address) ?? null;
 }
 
 /** Addresses of the task participants, in record order. Invalid records are skipped. */
-export function addressesOf(meta) {
+export function addressesOf(meta: TaskV1 | null | undefined) {
   return (meta?.participants ?? []).map((p) => addressOf(p)).filter(Boolean);
 }
 
 // --- task journal ---------------------------------------------------------------
 
-export function taskExists(home, id) {
+export function taskExists(home: string, id: unknown) {
   return typeof id === 'string' && engine(home).taskExists(id);
 }
 
-export function taskFile(home, id) {
+export function taskFile(home: string, id: string) {
   return engine(home).taskFile(requireTaskId(id));
 }
 
-export function inboxDir(home, id, addr) {
+export function inboxDir(home: string, id: string, addr: string) {
   return engine(home).inboxPath(requireTaskId(id), addrDir(addr));
 }
 
 /** What this address has read: in v1 the directory is called `history/` — fan-out
  * recovery uses the filename in it to tell delivered from missing. */
-export function historyDir(home, id, addr) {
+export function historyDir(home: string, id: string, addr: string) {
   return engine(home).historyPath(requireTaskId(id), addrDir(addr));
 }
 
 /** Where unreadable mail from this address mailbox is set aside. */
-export function brokenDir(home, id, addr) {
+export function brokenDir(home: string, id: string, addr: string) {
   return engine(home).brokenPath(requireTaskId(id), addrDir(addr));
 }
 
@@ -508,10 +532,10 @@ export function brokenDir(home, id, addr) {
 // wrapped synchronous stretch: outside it a neighbour edits the journal legally. A journal
 // write and the task lock clear it. Reader invariant: do not mutate a `readTask` result
 // that came from the cache.
-let taskCache = null;
+let taskCache: Map<string, TaskV1> | null = null;
 let taskCacheSuspensions = 0;
 
-export function withTaskCache(fn) {
+export function withTaskCache<T>(fn: () => T): T {
   const outer = taskCache;
   taskCache = outer ?? new Map();
   try {
@@ -524,7 +548,7 @@ export function withTaskCache(fn) {
 // The cache is dropped for the duration of the lock: under it the journal changes both
 // by this write and by a foreign write the lock waited for. The lock itself lives in the
 // package and knows nothing about caches.
-onTaskLock((fn) => {
+onTaskLock(<T>(fn: () => T): T => {
   const outer = taskCache;
   taskCacheSuspensions += 1;
   const restore = () => {
@@ -532,14 +556,14 @@ onTaskLock((fn) => {
     outer?.clear();
     taskCache?.clear();
   };
-  let result;
+  let result: T;
   try { result = fn(); } catch (error) { restore(); throw error; }
-  if (result instanceof Promise) return result.finally(restore);
+  if (result instanceof Promise) return result.finally(restore) as T;
   restore();
   return result;
 });
 
-export function readTask(home, id) {
+export function readTask(home: string, id: string): TaskV1 {
   const key = `${home}\u0000${requireTaskId(id)}`;
   const cache = taskCacheSuspensions ? null : taskCache;
   const hit = cache?.get(key);
@@ -550,17 +574,17 @@ export function readTask(home, id) {
 }
 
 /** Read-modify-write of the journal under the task lock, with session identity for diagnosis. */
-export function withTaskLock(home, id, fn, opts = {}) {
+export function withTaskLock<T>(home: string, id: string, fn: () => T, opts: Parameters<typeof lockTask>[3] = {}): T {
   return lockTask(home, id, fn, { session: sessionIdentity(), ...opts });
 }
 
 /** Asynchronous journal work with the same session diagnosis and cache suspension. */
-export function withTaskLockAsync(home, id, fn, opts = {}) {
+export function withTaskLockAsync<T>(home: string, id: string, fn: () => Promise<T>, opts: Parameters<typeof lockTaskAsync>[3] = {}): Promise<T> {
   return lockTaskAsync(home, id, fn, { session: sessionIdentity(), ...opts });
 }
 
 /** Patch the journal: title and mechanism fields in `adapter`. `adapter` fields are merged. */
-export function patchTask(home, id, patch) {
+export function patchTask(home: string, id: string, patch: Parameters<Engine['patchTask']>[1]) {
   const meta = gate(() => engine(home).patchTask(id, patch));
   taskCache?.clear();
   return meta;
@@ -575,10 +599,10 @@ export function patchTask(home, id, patch) {
  * The mailbox-owner session is not a task field: it rides in the `orchestrator` participant
  * record `metadata`, and is written only when the environment supplied identity.
  */
-export function createTask(home, {
+export function createTask(home: string, {
   id = newTaskIdentity().id, title, adapter: fields = {}, owner = sessionIdentity(),
   parent, teamlead,
-} = {}) {
+}: CreateTaskInput = {}): TaskV1 {
   requireTaskId(id);
   if (parent !== undefined) requireTaskId(parent);
   if (taskExists(home, id)) throw new Error(`task ${id} already exists`);
@@ -611,7 +635,7 @@ export function createTask(home, {
       adapter,
       ...(parent === undefined ? {} : {
         parent,
-        teamlead: participantRecord(leadAddress, {
+        teamlead: participantRecord(leadAddress!, {
           sessionId: owner,
           ...(version ? { [MECHANISM_VERSION_FIELD]: version } : {}),
         }),
@@ -631,7 +655,7 @@ export function createTask(home, {
 
 // Listing survives both a stray directory and a broken journal: one damaged task would
 // otherwise kill every bus command — `listTasks` feeds `resolveTaskId`.
-export function listTasks(home) {
+export function listTasks(home: string) {
   const { tasks, broken } = engine(home).listTasks();
   // The text is assembled here, not received as a ready-made string: id and reason arrive
   // as a pair, and a human also needs the file path — that is what they fix from.
@@ -641,11 +665,11 @@ export function listTasks(home) {
   return [...tasks].sort((a, b) => String(a.created).localeCompare(String(b.created)));
 }
 
-export function activeTasks(home) {
+export function activeTasks(home: string) {
   return listTasks(home).filter((t) => t.status === 'active');
 }
 
-export function closeTask(home, id) {
+export function closeTask(home: string, id: string) {
   const meta = gate(() => engine(home).closeTask(id, { adapter: { closed: new Date().toISOString() } }));
   taskCache?.clear();
   return meta;
@@ -659,7 +683,7 @@ export function closeTask(home, id) {
 // active tasks at once — so they are thrown as a `GateError`: a bare `Error` is printed
 // with a stack by the CLI top-level catch, and a legal refusal reads as a break in the
 // mechanism itself.
-export function resolveTaskId(home, declared, session = sessionIdentity(), hints) {
+export function resolveTaskId(home: string, declared: string | null | undefined, session = sessionIdentity(), hints: TaskHints) {
   const { spawnRepo, spawnNewTask } = hints;
   if (declared) {
     if (!taskExists(home, declared)) throw new GateError(`task ${declared} is not in ${tasksDir(home)}`);
@@ -684,7 +708,7 @@ export function resolveTaskId(home, declared, session = sessionIdentity(), hints
 // task, address. The task is also named by title: a foreign task is given away by the
 // subject, not by the id. The same line names the drift "session bound to A, journal
 // says B" — that is legal.
-export function identityLabel(home, task, addr, session = null) {
+export function identityLabel(home: string, task: string, addr: string, session: string | null = null) {
   const { title } = readTask(home, task);
   const named = title && title !== task ? `${task} "${title}"` : task;
   const bound = session ? boundTaskId(home, session) : null;
@@ -699,20 +723,20 @@ export function identityLabel(home, task, addr, session = null) {
  * new session, a new capabilities snapshot — and takes with it everything that belonged
  * to the former one, including the dismissed-from-watch mark.
  */
-export function upsertParticipant(home, id, participant) {
+export function upsertParticipant(home: string, id: string, participant: ParticipantV1) {
   const meta = gate(() => engine(home).putParticipant(id, participant));
   taskCache?.clear();
   return meta;
 }
 
-export function changePeerLink(home, aId, bId, { session, unlink = false, write = writeTask } = {}) {
+export function changePeerLink(home: string, aId: string, bId: string, { session, unlink = false, write = writeTask }: { session?: string | null; unlink?: boolean; write?: typeof writeTask } = {}) {
   requireTaskId(aId);
   requireTaskId(bId);
   if (aId === bId) throw new GateError(`task ${aId} cannot link to itself`);
-  const requireOwner = (metas) => {
-    if (metas.some((meta) => ownership(home, meta.id, ORCHESTRATOR, session).allowed)) return;
+  const requireOwner = (metas: TaskV1[]) => {
+    if (metas.some((meta) => ownership(home, meta.id, ORCHESTRATOR, session!).allowed)) return;
     const meta = metas[0];
-    const own = ownership(home, meta.id, ORCHESTRATOR, session);
+    const own = ownership(home, meta.id, ORCHESTRATOR, session!);
     throw new GateError(`${unprovenOwnerLine(home, meta, own)} — link and unlink require the owner of one named task. `
       + ownerRoute(home, meta, own, `the ${unlink ? 'unlink' : 'link'} command`));
   };
@@ -790,7 +814,7 @@ export function changePeerLink(home, aId, bId, { session, unlink = false, write 
 // The mark lives on the participant record in the journal: if a process held it, its death
 // would bring the reports back. Returns `{ found, was }`: "no such participant" and "the
 // mark was already there" are two different answers.
-function setDismissed(home, id, address, at) {
+function setDismissed(home: string, id: string, address: string, at: string | null) {
   return withTaskLock(home, id, () => {
     const meta = readTask(home, id);
     const p = participantOf(meta, address);
@@ -812,14 +836,14 @@ function setDismissed(home, id, address, at) {
   });
 }
 
-export function dismissParticipant(home, id, address, at = new Date().toISOString()) {
+export function dismissParticipant(home: string, id: string, address: string, at = new Date().toISOString()) {
   return setDismissed(home, id, address, at);
 }
 
 // Return to watch — where the participant is given new work. A fresh lift clears the
 // mark itself (the record is written in full); a re-review of a live session uses this
 // call.
-export function watchParticipant(home, id, address) {
+export function watchParticipant(home: string, id: string, address: string) {
   return setDismissed(home, id, address, null);
 }
 
@@ -840,7 +864,7 @@ export function watchParticipant(home, id, address) {
  * this diff was never taken from. The path list is always replaced too: otherwise a
  * clean re-review would keep reporting the prior dirty paths.
  */
-export function stampSnapshot(home, id, address, { at, head = null, clean, modifiedTracked }) {
+export function stampSnapshot(home: string, id: string, address: string, { at, head = null, clean, modifiedTracked }: { at: string; head?: string | null; clean: boolean; modifiedTracked: string[] }) {
   return withTaskLock(home, id, () => {
     const meta = readTask(home, id);
     const p = participantOf(meta, address);
@@ -861,11 +885,11 @@ export function stampSnapshot(home, id, address, { at, head = null, clean, modif
 }
 
 /** Causal reviewer-assignment watermark — set from the sent task message; null clears until send. */
-export function stampReviewAssignment(home, id, address, afterId, at = null) {
+export function stampReviewAssignment(home: string, id: string, address: string, afterId: string | null, at: string | null = null) {
   return stampAssignment(home, id, address, afterId, at);
 }
 
-function stampAssignment(home, id, address, afterId, at) {
+function stampAssignment(home: string, id: string, address: string, afterId: string | null, at?: string | null) {
   return withTaskLock(home, id, () => {
     const meta = readTask(home, id);
     const p = participantOf(meta, address);
@@ -885,7 +909,7 @@ function stampAssignment(home, id, address, afterId, at) {
 // written — two spawns from one pre-image would give "A · B" and "A · C", and the winner
 // would lose the foreign track. An empty list is not a reason to rename: a former-CLI
 // task has no `title` field.
-export function titleFromLines(meta, registry = SHIPPED_REGISTRY) {
+export function titleFromLines(meta: TaskV1 | null | undefined, registry: RoleRegistry = SHIPPED_REGISTRY) {
   const owner = registry.entries.find((entry) => entry.kind === EDITS_TREE
     && (!registry.activeSteps || registry.activeSteps.includes(entry.name)));
   const lines = [...new Set((meta?.participants ?? [])
@@ -900,9 +924,9 @@ export function titleFromLines(meta, registry = SHIPPED_REGISTRY) {
 // `--task`), and the right is checked here with the same `ownership` as the rest of the
 // bus — under the lock, not in the plan: the mailbox may have changed owner after the
 // plan was built.
-export function retitleTask(home, id, {
+export function retitleTask(home: string, id: string, {
   title = null, fromLines = false, explicit = false, restamp = false, session = null,
-} = {}, registry = SHIPPED_REGISTRY) {
+}: RetitleOptions = {}, registry: RoleRegistry = SHIPPED_REGISTRY) {
   return withTaskLock(home, id, () => {
     const meta = readTask(home, id);
     if (meta.adapter.titleExplicit && !(restamp && !ownership(home, id, ORCHESTRATOR, session).gated)) return null;
@@ -924,7 +948,7 @@ export function retitleTask(home, id, {
 
 // Owner of the `orchestrator` address — the session that created the task: `promptobus spawn`
 // and `promptobus review` are launched by Bash from it and inherit its identity.
-export function taskOwner(home, id) {
+export function taskOwner(home: string, id: string) {
   return ownerOf(participantOf(readTask(home, id), ORCHESTRATOR));
 }
 
@@ -932,7 +956,7 @@ export function taskOwner(home, id) {
  * Two answers about the `orchestrator` mailbox, and they are not each other's negation:
  * `allowed` is the right, `gated` the narrower "proved foreign" — 03-cli § The owner gate.
  */
-export function ownership(home, id, addr, session) {
+export function ownership(home: string, id: string, addr: string, session: string | null): Ownership {
   // Not the address this gate judges. No right is proven here, so none is granted.
   if (addr !== ORCHESTRATOR) return { gated: false, allowed: false, right: 'other-address', owner: null, session };
   const owner = taskOwner(home, id);
@@ -946,21 +970,21 @@ export function ownership(home, id, addr, session) {
 
 // Active tasks whose `orchestrator` mailbox this session PROVABLY owns. One binding stays,
 // so a task lifted from a bound session is visible only through this walk — 03-cli § Guard and warden.
-export function orchestratedTasks(home, session = sessionIdentity()) {
+export function orchestratedTasks(home: string, session = sessionIdentity()) {
   if (!session) return [];
   return activeTasks(home).filter((meta) => ownership(home, meta.id, ORCHESTRATOR, session).right === 'owner');
 }
 
 // Why this call names no session. The mailbox tool prints the same sentence the refusal
 // does — 03-cli § The owner gate — so the two cannot grow a second wording.
-function identitySaid(home, meta, own) {
+function identitySaid(home: string, meta: TaskV1, own: Ownership) {
   if (own.right !== 'no-identity') return null;
   return sessionIdentityReport(process.env, { home, task: meta.id, address: ORCHESTRATOR });
 }
 
 // An answer this gate never gave carries `owner: null` because nobody looked, so nothing
 // true is printable from it — 03-cli § The owner gate.
-function requireOwnerGateAnswer(own) {
+function requireOwnerGateAnswer(own: Ownership) {
   if (own.right !== 'other-address') return;
   throw new Error('unprovenOwnerLine and ownerRoute serve the owner gate only: `ownership` was asked about an '
     + 'address other than `orchestrator`, and its `owner` is null because the gate never looked it up');
@@ -970,7 +994,7 @@ function requireOwnerGateAnswer(own) {
  * Head of a refusal from the owner gate: what the call could NOT prove, by `right`
  * — 03-cli § The owner gate.
  */
-export function unprovenOwnerLine(home, meta, own) {
+export function unprovenOwnerLine(home: string, meta: TaskV1, own: Ownership) {
   requireOwnerGateAnswer(own);
   if (own.right === 'foreign') return foreignTaskLine(meta, own);
   const whose = own.owner ? `is bound to session ${own.owner}` : 'records no mailbox owner';
@@ -986,7 +1010,7 @@ export function unprovenOwnerLine(home, meta, own) {
  * Where to go after that refusal, and every branch must be walkable by whoever gets it
  * — 03-cli § The owner gate.
  */
-export function ownerRoute(home, meta, own, repeat) {
+export function ownerRoute(home: string, meta: TaskV1, own: Ownership, repeat: string) {
   requireOwnerGateAnswer(own);
   if (own.right === 'foreign') return claimRoute(repeat);
   const said = identitySaid(home, meta, own);
@@ -1004,7 +1028,7 @@ export function ownerRoute(home, meta, own, repeat) {
 
 /** The owner-gate line, the shared copy sentence, and `ownerRoute`. `null` for every
  * other `right`: those words belong to the refusal, and a second wording would drift. */
-export function noIdentityMailboxLine(home, id, own) {
+export function noIdentityMailboxLine(home: string, id: string, own: Ownership | null | undefined) {
   if (own?.right !== 'no-identity') return null;
   const meta = readTask(home, id);
   return `${unprovenOwnerLine(home, meta, own)}\n${MAILBOX_COPY}\n${ownerRoute(home, meta, own, 'the promptobus_mailbox tool')}`;
@@ -1012,7 +1036,7 @@ export function noIdentityMailboxLine(home, id, own) {
 
 /** An approver of THIS task holding the calling session, proven by the participant record's own
  * session — the one home of the proof `sweep`, `dismiss` and `stop` share. */
-export function approverHere(meta, session) {
+export function approverHere(meta: TaskV1 | null | undefined, session: string | null) {
   if (!session) return null;
   // Keyed on the shipped step names, not on step kinds: 04-protocol § The role registry.
   return (meta?.participants ?? []).find((p) => p.role === APPROVER
@@ -1022,7 +1046,7 @@ export function approverHere(meta, session) {
 
 /** Why the approver route did not open either, said only where an approver record exists: a
  * record with no session of its own, or a session that is not the one recorded. */
-export function unprovenApproverLine(meta, session) {
+export function unprovenApproverLine(meta: TaskV1 | null | undefined, session: string | null) {
   // Keyed on the shipped step names, not on step kinds: 04-protocol § The role registry.
   const approvers = (meta?.participants ?? []).filter((p) => p.role === APPROVER);
   if (!session || !approvers.length || approverHere(meta, session)) return null;
@@ -1043,7 +1067,7 @@ export function unprovenApproverLine(meta, session) {
  * that shares the first eight hex digits, and would mute the successor hint and the
  * status line.
  */
-export function sameOwnerSession(a, b) {
+export function sameOwnerSession(a: unknown, b: unknown) {
   const x = typeof a === 'string' ? a.trim() : '';
   const y = typeof b === 'string' ? b.trim() : '';
   return Boolean(x && y && x === y);
@@ -1066,7 +1090,7 @@ export function sameOwnerSession(a, b) {
  * and that ownership of the `orchestrator` address is not the concern of this gate — that
  * has its own (`ownership` above); no driver started that session.
  */
-export function foreignSession(home, id, addr, session) {
+export function foreignSession(home: string, id: string, addr: string, session: string | null) {
   if (!session || addr === ORCHESTRATOR) return null;
   try {
     return foreignSessionOf(participantOf(readTask(home, id), addr), session);
@@ -1079,13 +1103,13 @@ export function foreignSession(home, id, addr, session) {
 
 /** The address a caller sends as in task `id`: the record this session PROVABLY holds; a declared
  * role picks among held records anywhere and binds only on its declared task — 04-protocol § Addresses. */
-export function senderFor(home, id, { session = null, why = null, hint = null, declaredTask = null } = {}) {
+export function senderFor(home: string, id: string, { session = null, why = null, hint = null, declaredTask = null }: Partial<SenderCaller> = {}) {
   const meta = readTask(home, id);
   if (!session) {
     throw new GateError(`this process cannot name its own session${why ? ` — ${why}` : ''}, so no address `
       + `it claims in task ${id} can be checked, and none is given to it`);
   }
-  const held = (meta.participants ?? []).filter((p) => holdsSession(p, session)).map(addressOf).filter(Boolean);
+  const held = (meta.participants ?? []).filter((p) => holdsSession(p, session)).map(addressOf).filter((address): address is string => Boolean(address));
   if (hint && held.includes(hint)) return hint;
   const said = hint && (!declaredTask || declaredTask === id) ? hint : null;
   if (!said && held.length === 1) return held[0];
@@ -1097,7 +1121,7 @@ export function senderFor(home, id, { session = null, why = null, hint = null, d
 }
 
 // Why no address was proven: by the declared one when it names a record here, else by the owner.
-function unheldLine(meta, named, inScope, session, held) {
+function unheldLine(meta: TaskV1, named: string | null, inScope: boolean, session: string, held: readonly string[]) {
   const holds = held.length ? `; this session holds ${held.join(', ')} there` : '';
   const p = named && named !== ORCHESTRATOR ? participantOf(meta, named) : null;
   const bound = boundSessionOf(p);
@@ -1127,31 +1151,31 @@ function unheldLine(meta, named, inScope, session, held) {
 }
 
 /** Where a contact point handed over at an address is written: the primary address's own point. */
-export function wakeAddressOf(home, id, addr) {
+export function wakeAddressOf(home: string, id: string, addr: string) {
   const box = mailboxOf(home, id, addr);
   return box.alias ? box.primary : { task: id, address: addr };
 }
 
-function slotView(home, id, addr) {
+function slotView(home: string, id: string, addr: string) {
   const box = mailboxOf(home, id, addr);
   return { alias: box.alias, slots: box.slots.map((slot) => ({ task: slot.task, participant: addrDir(slot.address) })) };
 }
 
 /** The warden's view of each record of task `id`: the slots its mailbox reads, and whether it is an
  * alias. Built once per call, every journal parsed once; a record added since is viewed on demand. */
-export function participantSlots(home, id) {
-  const views = new Map();
+export function participantSlots(home: string, id: string) {
+  const views = new Map<string | null, ReturnType<typeof slotView>>();
   try {
     withTaskCache(() => {
-      for (const p of readTask(home, id).participants ?? []) views.set(addressOf(p), slotView(home, id, addressOf(p)));
+      for (const p of readTask(home, id).participants ?? []) views.set(addressOf(p), slotView(home, id, addressOf(p)!));
     });
   } catch { /* A journal that does not read is the round's own stop, named there. */ }
-  return (p) => views.get(addressOf(p)) ?? slotView(home, id, addressOf(p));
+  return (p: ParticipantV1) => views.get(addressOf(p)) ?? slotView(home, id, addressOf(p)!);
 }
 
 /** The address a mailbox call reads in task `id`: the record this session provably holds there, the
  * declared role when it holds that one too or none at all — ADR-028 § The journal, the mailbox reads. */
-export function mailboxAddress(home, id, role, session) {
+export function mailboxAddress(home: string, id: string, role: string, session: string | null) {
   if (!session) return role;
   try {
     const held = (readTask(home, id).participants ?? []).filter((p) => holdsSession(p, session)).map(addressOf);
@@ -1162,24 +1186,24 @@ export function mailboxAddress(home, id, role, session) {
 }
 
 // The participant a recipient address reaches: two routes to one participant share this key.
-function reachedBy(home, meta, p) {
+function reachedBy(home: string, meta: TaskV1, p: ParticipantV1) {
   const stands = p.role === GOVERNANCE.root ? p.metadata?.rootTask : p.role === GOVERNANCE.peer ? p.metadata?.peerTask : null;
   if (typeof stands === 'string') return `${stands}/${ORCHESTRATOR}`;
-  const { primary } = mailboxOf(home, meta.id, addressOf(p));
+  const { primary } = mailboxOf(home, meta.id, addressOf(p)!);
   return `${primary.task}/${primary.address}`;
 }
 
 /** Whom a participant may write: per participant reached, its addresses with the types the routing
  * policy allows and their tasks. `seats` state a lift's tasks and records before they are written. */
-export function contactsOf(home, id, addr, { registry = SHIPPED_REGISTRY, seats = null } = {}) {
+export function contactsOf(home: string, id: string, addr: string, { registry = SHIPPED_REGISTRY, seats = null }: { registry?: RoleRegistry; seats?: { meta: TaskV1; sender: ParticipantV1 | null }[] | null } = {}) {
   const held = seats ?? mailboxOf(home, id, addr).slots.map((slot) => {
     const meta = readTask(home, slot.task);
     return { meta, sender: participantOf(meta, slot.address) };
   });
-  const reached = new Map();
+  const reached = new Map<string, ContactRoute[]>();
   for (const { meta, sender } of held) {
     if (!sender) continue;
-    const bound = seats ? (h, task, p) => p === sender || rootTeamlead(h, task, p) : rootTeamlead;
+    const bound = seats ? (h: string, task: TaskV1, p: ParticipantV1) => p === sender || rootTeamlead(h, task, p) : rootTeamlead;
     for (const recipient of meta.participants ?? []) {
       if (recipient.id === sender.id) continue;
       const types = MESSAGE_TYPES.filter((type) => routingPolicy(home, sender, recipient, meta, type, registry, bound).allow);
@@ -1192,7 +1216,7 @@ export function contactsOf(home, id, addr, { registry = SHIPPED_REGISTRY, seats 
 }
 
 /** One contact as `<address> (<types>) in task <id>`, its routes joined by "or". */
-export function contactText(routes) {
+export function contactText(routes: readonly ContactRoute[]) {
   return routes.map(({ address, task, types }) => {
     const named = types.length === MESSAGE_TYPES.length ? 'all seven types' : types.join(', ');
     return `${address} (${named}) in task ${task}`;
@@ -1200,13 +1224,13 @@ export function contactText(routes) {
 }
 
 /** Whom the address may write, on one line, or `null` when it is no participant of the task. */
-export function contactsLine(home, id, addr, registry = SHIPPED_REGISTRY) {
+export function contactsLine(home: string, id: string, addr: string, registry: RoleRegistry = SHIPPED_REGISTRY) {
   if (!participantOf(readTask(home, id), addr)) return null;
   return contactsOf(home, id, addr, { registry }).map(contactText).join('; ') || 'nobody';
 }
 
 // What a refused send adds: where the sender's message may go instead.
-function contactsTail(home, id, from, registry) {
+function contactsTail(home: string, id: string, from: string, registry?: RoleRegistry) {
   const line = contactsLine(home, id, from, registry);
   return line ? ` · you may write: ${line}` : '';
 }
@@ -1214,7 +1238,7 @@ function contactsTail(home, id, from, registry) {
 // Claim of the mailbox by a successor session. Returns the former owner: there is one
 // `owner` field and no history. A claim is also a rebind: the owner also declares their
 // current task.
-export function claimOwnership(home, id, owner) {
+export function claimOwnership(home: string, id: string, owner: string) {
   const previous = withTaskLock(home, id, () => {
     const meta = readTask(home, id);
     const p = participantOf(meta, ORCHESTRATOR);
@@ -1245,12 +1269,12 @@ export function claimOwnership(home, id, owner) {
 
 // Only an ACTIVE task is bound: `liveBinding` will never return a closed one. Claiming the
 // mailbox of a closed task is still legal — nobody forbade reading its mail.
-export function bindSession(home, id, session = sessionIdentity()) {
+export function bindSession(home: string, id: string, session = sessionIdentity()) {
   const file = sessionFile(home, session);
   if (!file || !taskExists(home, id) || readTask(home, id).status !== 'active') return null;
   const address = addressIn(home, id, session);
   return writeBinding(home, {
-    session,
+    session: session!,
     task: id,
     since: new Date().toISOString(),
     ...(address ? { address, role: roleOf(address) } : {}),
@@ -1261,7 +1285,7 @@ export function bindSession(home, id, session = sessionIdentity()) {
 // a participant gets identity through the env of their mcp-config, not through the
 // binding. The field is optional: when a source appears, the binding will carry it
 // without a second migration.
-function addressIn(home, id, session) {
+function addressIn(home: string, id: string, session: string | null) {
   try {
     return taskOwner(home, id) === session ? ORCHESTRATOR : null;
   } catch {
@@ -1273,31 +1297,31 @@ function addressIn(home, id, session) {
 // that kept working after `promptobus done` must fall back to the spare path again. The
 // mark and the journal share one `try`: a truncated journal would have crashed
 // `resolveTaskId`.
-export function liveBinding(home, session = sessionIdentity()) {
+export function liveBinding(home: string, session = sessionIdentity()) {
   try {
     const mark = readBinding(home, session);
     if (!taskExists(home, mark?.task)) return null;
-    return readTask(home, mark.task).status === 'active' ? mark : null;
+    return readTask(home, mark!.task).status === 'active' ? mark : null;
   } catch {
     return null;
   }
 }
 
-export function boundTaskId(home, session = sessionIdentity()) {
+export function boundTaskId(home: string, session = sessionIdentity()) {
   return liveBinding(home, session)?.task ?? null;
 }
 
 // Bind the session to the task it owns. Spawn and review call this, not `bindSession`:
 // a session that entered a foreign run with an explicit `--task` would send argument-less
 // calls into the foreign journal.
-export function bindIfOwner(home, id, session = sessionIdentity()) {
+export function bindIfOwner(home: string, id: string, session = sessionIdentity()) {
   if (!session || taskOwner(home, id) !== session) return null;
   return bindSession(home, id, session);
 }
 
 // Sweep of bindings that have lost liveness: the mechanism does not need it, the
 // directory does.
-export function sweepBindings(home) {
+export function sweepBindings(home: string) {
   let dropped = 0;
   for (const session of bindingNames(home)) {
     if (liveBinding(home, session)) continue;
@@ -1311,7 +1335,7 @@ export function sweepBindings(home) {
 
 /** The name a sent file lands under, at number `n`; leading dots are dropped.
  * [reference/04-protocol.md#artifacts](../docs/reference/04-protocol.md#artifacts) */
-export function landedName(source, n = 1) {
+export function landedName(source: string, n = 1) {
   const bare = path.basename(source).replace(/^\.+/, '');
   if (!bare) {
     throw new GateError(`artifact «${path.basename(source)}» has no name left once leading dots are dropped, `
@@ -1327,7 +1351,7 @@ export function landedName(source, n = 1) {
  * held with `COPYFILE_EXCL`. A link, not a copy: content lives in the blob and is
  * deduplicated.
  */
-function placeFile(home, id, source, sha256) {
+function placeFile(home: string, id: string, source: string, sha256: string) {
   const dir = filesDir(home, id);
   for (let i = 1; ; i += 1) {
     const name = landedName(source, i);
@@ -1342,25 +1366,26 @@ function placeFile(home, id, source, sha256) {
  * through the bus (`placeFile`) and one the mechanism put there itself
  * (`occupyTaskFile`), and both the write and the PREDICTION of a name are spelled here.
  */
-export function numberedName(stem, ext, n) {
+export function numberedName(stem: string, ext: string, n: number) {
   return n > 1 ? `${stem}-${n}${ext}` : `${stem}${ext}`;
 }
 
-let messageReadHook = null;
-let bodyReadPurpose = null;
+let messageReadHook: ((read: MessageRead) => void) | null = null;
+let bodyReadPurpose: string | null = null;
 
-export function withMessageReadHook(hook, work) {
+export function withMessageReadHook<T>(hook: ((read: MessageRead) => void) | null, work: () => T): T {
   const previous = messageReadHook;
   messageReadHook = hook;
   try { return work(); } finally { messageReadHook = previous; }
 }
 
-function readCanonical(file) {
-  const record = JSON.parse(readFileSync(file, 'utf8'));
-  return observeCanonical(record, file);
+function readCanonical(file: string) {
+  const record: unknown = JSON.parse(readFileSync(file, 'utf8'));
+  // Persistence projection only: the engine writes MessageV1; this legacy reader does not validate it.
+  return observeCanonical(record as MessageV1, file);
 }
 
-function observeCanonical(record, file) {
+function observeCanonical(record: MessageV1, file: string) {
   if (!messageReadHook) return record;
   const hook = messageReadHook;
   return new Proxy(record, {
@@ -1371,13 +1396,13 @@ function observeCanonical(record, file) {
   });
 }
 
-function messageBody(record, purpose) {
+function messageBody(record: MessageV1, purpose: string) {
   const previous = bodyReadPurpose;
   bodyReadPurpose = purpose;
   try { return record.body; } finally { bodyReadPurpose = previous; }
 }
 
-function firstStatusLine(record) {
+function firstStatusLine(record: MessageV1) {
   const body = String(messageBody(record, 'firstLine') ?? '');
   let start = 0;
   for (;;) {
@@ -1388,8 +1413,8 @@ function firstStatusLine(record) {
   }
 }
 
-function messageHeader(record, { statusLine = false } = {}) {
-  const head = {
+function messageHeader(record: MessageV1, { statusLine = false }: HeaderOptions = {}) {
+  const head: MessageHeader = {
     id: record.id, task: record.task, ts: record.ts, type: record.type, sender: record.sender,
     ...(record.originTask ? { originTask: record.originTask } : {}),
     recipients: record.recipients, ...(record.artifact ? { artifact: record.artifact } : {}),
@@ -1398,7 +1423,7 @@ function messageHeader(record, { statusLine = false } = {}) {
   return head;
 }
 
-function taskMessages(home, id) {
+function taskMessages(home: string, id: string) {
   const dir = messagesDir(home, id);
   if (!existsSync(dir)) return [];
   const out = [];
@@ -1413,11 +1438,11 @@ function taskMessages(home, id) {
   return out;
 }
 
-export function taskMessageHeaders(home, id, options = {}) {
+export function taskMessageHeaders(home: string, id: string, options: HeaderOptions = {}) {
   return taskMessages(home, id).map((record) => messageHeader(record, options));
 }
 
-export function strictTaskFacts(home, id, options = {}) {
+export function strictTaskFacts(home: string, id: string, options: HeaderOptions = {}) {
   const facts = gate(() => engine(home).facts(id));
   return {
     task: facts.task,
@@ -1426,17 +1451,17 @@ export function strictTaskFacts(home, id, options = {}) {
   };
 }
 
-export function currentResult(participant, messages) {
+export function currentResult<T extends MessageHeader>(participant: ParticipantV1 | null | undefined, messages: readonly T[]): T | null {
   const boundary = participant?.metadata?.assignmentAfterId;
   if (typeof boundary !== 'string' || !RECORD_ID_RE.test(boundary)) return null;
-  const assignments = messages.filter((message) => message.recipients.includes(participant.id)
+  const assignments = messages.filter((message) => message.recipients.includes(participant!.id)
     && (message.type === 'task' || message.type === 'review'));
   const afterId = assignments.reduce((latest, message) => message.id > latest ? message.id : latest, boundary);
-  return messages.filter((message) => message.sender === participant.id && message.type === 'result'
+  return messages.filter((message) => message.sender === participant!.id && message.type === 'result'
     && message.id > afterId).sort(bySendOrder).at(-1) ?? null;
 }
 
-export function historyHeaders(home, id, addr) {
+export function historyHeaders(home: string, id: string, addr: string) {
   const dir = historyDir(home, id, addr);
   if (!existsSync(dir)) return [];
   const headers = [];
@@ -1447,7 +1472,7 @@ export function historyHeaders(home, id, addr) {
   return headers.sort(bySendOrder);
 }
 
-export function journalMessageBody(home, id, messageId, purpose) {
+export function journalMessageBody(home: string, id: string, messageId: string, purpose: string) {
   if (!RECORD_ID_RE.test(messageId)) throw new GateError(`invalid message id ${messageId}`);
   const record = readCanonical(path.join(messagesDir(home, id), `${messageId}.json`));
   if (record.type === 'status') throw new GateError('the full body of a status is not a digest field');
@@ -1456,30 +1481,30 @@ export function journalMessageBody(home, id, messageId, purpose) {
 
 // Send order by the same comparison the core sorts records with: `localeCompare` depends on the
 // locale, and a message id is machine-made.
-function bySendOrder(a, b) {
+function bySendOrder(a: Pick<MessageV1, 'id'>, b: Pick<MessageV1, 'id'>) {
   if (a.id < b.id) return -1;
   return a.id > b.id ? 1 : 0;
 }
 
 /** Files one address attached to the task, in send order, and the records that could not be read.
  * [reference/04-protocol.md#artifacts](../docs/reference/04-protocol.md#artifacts) */
-export function attachmentsOf(home, id, participantId) {
+export function attachmentsOf(home: string, id: string, participantId: string) {
   const { artifacts, broken } = listArtifacts(home, id);
-  const named = new Map(artifacts.map((a) => [a.id, a.filename]));
+  const named = new Map<string | undefined, string>(artifacts.map((a) => [a.id, a.filename]));
   // The live note reaches the FIRST reader only: `readArtifact` moves a corrupt record into
   // `broken/artifacts` before it throws, and from the second read the attic is the only witness.
-  const noted = new Map(broken.map((n) => [String(n).split(':')[0].replace(/\.json$/, ''), String(n)]));
+  const noted = new Map<string | undefined, string>(broken.map((n) => [String(n).split(':')[0].replace(/\.json$/, ''), String(n)]));
   const attic = brokenArtifactsDir(home, id);
   const mine = taskMessages(home, id)
     .filter((m) => m?.type === 'artifact' && m.sender === participantId)
     .sort(bySendOrder);
   // The id comes from the journal, read as raw JSON, and it is about to become a PATH: the
   // grammar is checked for the reason `safeRecord` names — `..` in it would leave the task.
-  const atticFile = (artifact) => (RECORD_ID_RE.test(String(artifact))
+  const atticFile = (artifact: unknown) => (RECORD_ID_RE.test(String(artifact))
     ? path.join(attic, `${artifact}.json`) : null);
   // Counted from the journal, and scoped to this sender by it: another address's unreadable
   // record is not a gap in THIS list, and a gap with no record anywhere is a swept piece.
-  const gapNote = (m) => {
+  const gapNote = (m: MessageV1) => {
     const live = noted.get(m.artifact);
     if (live) return live;
     const aside = atticFile(m.artifact);
@@ -1492,7 +1517,7 @@ export function attachmentsOf(home, id, participantId) {
   };
 }
 
-function outboundMessages(home, id, senderId, sinceMs = 0) {
+function outboundMessages(home: string, id: string, senderId: string, sinceMs = 0) {
   return taskMessageHeaders(home, id).filter((msg) => {
     if (msg?.sender !== senderId) return false;
     const at = Date.parse(msg.ts);
@@ -1501,7 +1526,7 @@ function outboundMessages(home, id, senderId, sinceMs = 0) {
   });
 }
 
-function validateResultHandoff(home, id, from, body) {
+function validateResultHandoff(home: string, id: string, from: string, body: string) {
   const artifacts = engine(home).listArtifacts(id).artifacts;
   const byName = new Map(artifacts.map((a) => [a.filename, a]));
   const claims = artifactClaimsInResult(body, artifacts.map((a) => a.filename));
@@ -1511,7 +1536,7 @@ function validateResultHandoff(home, id, from, body) {
   const ownMessages = allMessages.filter((msg) => msg?.sender === senderId);
   let linkId = null;
   for (const filename of claims) {
-    const meta = byName.get(filename);
+    const meta = byName.get(filename)!;
     if (!allMessages.some((m) => m?.type === 'artifact' && m.artifact === meta.id)) {
       throw new GateError(`result claims artifact «${filename}» with no artifact message from any sender`);
     }
@@ -1534,20 +1559,21 @@ export { outboundMessages };
  * flag refuses on an existing file — a signal to take the next number. Returns the path
  * that LANDED on disk.
  */
-export function occupyTaskFile(dir, stem, ext, content) {
+export function occupyTaskFile(dir: string, stem: string, ext: string, content: string | Buffer) {
   mkdirSync(dir, { recursive: true });
   for (let n = 1; ; n += 1) {
     const at = path.join(dir, numberedName(stem, ext, n));
     try {
       writeFileSync(at, content, { flag: 'wx' });
       return at;
-    } catch (e) {
+    } catch (caught) {
+      const e = caught as NodeJS.ErrnoException;
       if (e.code !== 'EEXIST') throw e;
     }
   }
 }
 
-function acceptanceRoute(sender, recipient, registry) {
+function acceptanceRoute(sender: ParticipantV1, recipient: ParticipantV1, registry: RoleRegistry) {
   const names = registry.activeSteps ?? registry.entries.filter((entry) => entry.layer === 'step').map((entry) => entry.name);
   const owner = names.find((name) => roleEntry(registry, name)?.kind === EDITS_TREE);
   const writer = names.find((name) => roleEntry(registry, name)?.kind === WRITES_MAIN_TREE);
@@ -1555,13 +1581,13 @@ function acceptanceRoute(sender, recipient, registry) {
     || (sender.role === writer && recipient.role === owner));
 }
 
-function directParticipantRoute(sender, recipient, registry) {
+function directParticipantRoute(sender: ParticipantV1, recipient: ParticipantV1, registry: RoleRegistry) {
   return acceptanceRoute(sender, recipient, registry)
     || (sender.role === GOVERNANCE.teamlead && recipient.role === GOVERNANCE.teamlead)
     || (sender.role === GOVERNANCE.peer && recipient.role === ORCHESTRATOR);
 }
 
-function requireDirectSender(home, meta, sender, session) {
+function requireDirectSender(home: string, meta: TaskV1, sender: ParticipantV1, session: string | null) {
   const address = addressOf(sender);
   if (!session) {
     // Two variables are not zero variables: the repair is to remove the extra one, and a
@@ -1590,9 +1616,9 @@ function requireDirectSender(home, meta, sender, session) {
  * talk, and the participant id stays inside the store. Returns the v1 outcome: the canon
  * and the artifact metadata, if there was one.
  */
-export function sendMessage(home, id, {
+export function sendMessage(home: string, id: string, {
   from, to, type, body, artifactPath, session = null,
-}, hints) {
+}: OutgoingMessage, hints: SendHints): SentMessage {
   if (!isAddress(from)) throw new Error(`unknown sender address "${from}"`);
   if (!isAddress(to)) throw new Error(`unknown recipient address "${to}" — ${addressList(hints?.registry ?? SHIPPED_REGISTRY)}`);
   if (!MESSAGE_TYPES.includes(type)) {
@@ -1616,7 +1642,7 @@ export function sendMessage(home, id, {
       + `and a mailbox opened for them will be seen by neither ${hints.status} nor task. Task participants: ${known.join(', ')}`
       + contactsTail(home, id, from, hints?.registry));
   }
-  const recipient = participantOf(meta, to);
+  const recipient = participantOf(meta, to)!;
   const sender = participantOf(meta, from);
   // Only a registered address sends: the doors resolve it from a record the session holds,
   // and a task names its participants by lift, never by a first message.
@@ -1630,7 +1656,7 @@ export function sendMessage(home, id, {
     if (!session || !holdsSession(sender, session)) {
       throw new GateError(`task ${id} peer send needs its recorded orchestrator owner session`);
     }
-    const remoteTask = recipient.metadata.peerTask;
+    const remoteTask = recipient.metadata.peerTask as string;
     const remoteFrom = `peer:${meta.adapter.slug}`;
     const sent = sendMessage(home, remoteTask, {
       from: remoteFrom, to: ORCHESTRATOR, type, body, artifactPath, session,
@@ -1640,14 +1666,14 @@ export function sendMessage(home, id, {
   if (from === ORCHESTRATOR && recipient.role === GOVERNANCE.root) {
     const root = meta.parent === undefined ? null : readTask(home, meta.parent);
     const lead = (root?.participants ?? []).find((p) => p.role === GOVERNANCE.teamlead && p.metadata?.childTask === id);
-    if (!lead || !rootTeamlead(home, root, lead)) {
+    if (!lead || !rootTeamlead(home, root!, lead)) {
       throw new GateError(`task ${meta.parent ?? id} holds no teamlead bound to this session's child task ${id}, `
         + `and a send to ${to} lands in the root only as that teamlead — spawn --teamlead from the root rebinds the pair`);
     }
-    const sent = sendMessage(home, root.id, {
-      from: addressOf(lead), to: ORCHESTRATOR, type, body, artifactPath, session,
+    const sent = sendMessage(home, root!.id, {
+      from: addressOf(lead)!, to: ORCHESTRATOR, type, body, artifactPath, session,
     }, hints);
-    return { ...sent, deliveredTask: root.id, deliveredFrom: addressOf(lead) };
+    return { ...sent, deliveredTask: root!.id, deliveredFrom: addressOf(lead)! };
   }
   const linkArtifact = type === 'result' ? validateResultHandoff(home, id, from, body) : null;
   const routeRegistry = hints?.registry ?? SHIPPED_REGISTRY;
@@ -1676,12 +1702,13 @@ export function sendMessage(home, id, {
         to: [addrDir(to)],
         type,
         body,
-        ...(sender.role === GOVERNANCE.peer ? { originTask: sender.metadata.peerTask } : {}),
+        ...(sender.role === GOVERNANCE.peer ? { originTask: sender.metadata.peerTask as string } : {}),
         ...(sender.role === GOVERNANCE.root ? { originTask: meta.parent } : {}),
         ...(artifactPath ? { artifact: { path: artifactPath, name: (sha) => placeFile(home, id, artifactPath, sha) } } : {}),
         ...(linkArtifact ? { linkArtifact } : {}),
       });
-    } catch (e) {
+    } catch (caught) {
+      const e = caught as NodeJS.ErrnoException;
       if (e?.code === 'policy-denied') throw new GateError(e.message + contactsTail(home, id, from, routeRegistry));
       throw e;
     }
@@ -1696,7 +1723,7 @@ export function sendMessage(home, id, {
 
 /** The file that already holds these bytes and how many names the payload has, or `null`.
  * [reference/04-protocol.md#artifacts](../docs/reference/04-protocol.md#artifacts) */
-function sameContentAs(home, id, artifact) {
+function sameContentAs(home: string, id: string, artifact: ArtifactV1 | null) {
   if (!artifact) return null;
   const twins = engine(home).listArtifacts(id).artifacts
     .filter((a) => a.sha256 === artifact.sha256 && a.id !== artifact.id);
@@ -1712,7 +1739,7 @@ function sameContentAs(home, id, artifact) {
 
 // Every slot of the participant mailbox, oldest first across them. A slot other than the address's
 // own that does not read is named and retried by the next read; the address's own refuses as before.
-function readSlots(home, id, addr, op) {
+function readSlots(home: string, id: string, addr: string, op: 'read' | 'peek') {
   const messages = [];
   const broken = [];
   for (const slot of mailboxOf(home, id, addr).slots) {
@@ -1721,7 +1748,8 @@ function readSlots(home, id, addr, op) {
       const got = gate(() => engine(home)[op](slot.task, addrDir(slot.address)));
       messages.push(...got.messages);
       broken.push(...brokenLines(got.broken));
-    } catch (e) {
+    } catch (caught) {
+      const e = caught as Error;
       if (own) throw e;
       const said = `MAILBOX SLOT ${slot.address} of task ${slot.task} did not read, the next read retries it: ${e.message}`;
       warn(said);
@@ -1732,12 +1760,12 @@ function readSlots(home, id, addr, op) {
 }
 
 /** Fetch incoming mail: what was read moves to history, in the slot it was read from. */
-export function readInbox(home, id, addr) {
+export function readInbox(home: string, id: string, addr: string) {
   return readSlots(home, id, addr, 'read');
 }
 
 /** Read without fetching: needed by a foreign session — `mailbox` gives them a copy. */
-export function peekInbox(home, id, addr) {
+export function peekInbox(home: string, id: string, addr: string) {
   return readSlots(home, id, addr, 'peek');
 }
 
@@ -1747,7 +1775,7 @@ export function peekInbox(home, id, addr) {
  * it out loud, while warden diagnostics go to `stdio: 'ignore'` — set-aside mail would
  * vanish without a word to anyone.
  */
-export function glanceInbox(home, id, addr) {
+export function glanceInbox(home: string, id: string, addr: string) {
   try {
     return engine(home).glance(id, addrDir(addr));
   } catch {
@@ -1763,7 +1791,7 @@ export function glanceInbox(home, id, addr) {
 // The string is assembled FROM FIELDS, not sliced by regex from a ready-made one: reason
 // and place arrive from v1 separately, and a join would force parsing it back — the two
 // report channels would drift on the first wording change.
-function brokenLines(notes) {
+function brokenLines(notes: BrokenNote[]) {
   return notes.map(({ name, note, attic, failure }) => {
     const where = failure ? ` and not set aside (${failure}) — skipped`
       : (attic ? ` — set aside in ${attic}, mailbox continues` : ' — left in place');
@@ -1773,19 +1801,19 @@ function brokenLines(notes) {
   });
 }
 
-export function countInbox(home, id, addr) {
+export function countInbox(home: string, id: string, addr: string) {
   return engine(home).unread(id, addrDir(addr));
 }
 
 /** Unread of the whole participant mailbox the address belongs to. */
-export function countMailbox(home, id, addr) {
+export function countMailbox(home: string, id: string, addr: string) {
   return mailboxOf(home, id, addr).slots.reduce((n, slot) => n + countInbox(home, slot.task, slot.address), 0);
 }
 
 // When the address last SENT on the bus; `null` — has not sent anything yet.
-export function lastSentAt(home, id, addr) {
+export function lastSentAt(home: string, id: string, addr: string) {
   const sender = addrDir(addr);
-  let last = null;
+  let last: number | null = null;
   for (const message of taskMessageHeaders(home, id)) {
     if (message.sender !== sender) continue;
     const at = Date.parse(message.ts);
@@ -1799,7 +1827,7 @@ export function lastSentAt(home, id, addr) {
 // counter rides as a tail on replies where the session does not fetch the mailbox
 // (`send`, `task`, `promptobus review` output); zero is not named. To a foreign mailbox
 // the line says something else: the originals will not be given to them.
-export function unreadNote(home, id, addr, session = null) {
+export function unreadNote(home: string, id: string, addr: string, session: string | null = null) {
   const n = countMailbox(home, id, addr);
   if (!n) return null;
   const own = ownership(home, id, addr, session);
@@ -1821,7 +1849,7 @@ export function unreadNote(home, id, addr, session = null) {
  * two entries. There is no unread here at all — it lives in the mailbox, and reading
  * history does not touch it.
  */
-export function history(home, query = {}) {
+export function history(home: string, query: HistoryQuery = {}) {
   return gate(() => engine(home).history(query));
 }
 
@@ -1829,7 +1857,7 @@ export function history(home, query = {}) {
 // notification and the `promptobus history` journal print it, and a human finds the file
 // in the task folder by it. In v1 the message carries the metadata-record id, so the name
 // is read from that. Messages without an artifact are not worth a metadata read at all.
-export function nameOfArtifact(home, task, id) {
+export function nameOfArtifact(home: string, task: string, id: string) {
   try {
     return engine(home).readArtifact(task, id).filename;
   } catch {
@@ -1882,7 +1910,7 @@ export { writeJsonAtomic };
 // This identity fallback deliberately differs from codex-session.js's containmentPath:
 // it uses existsSync and returns abs when resolution fails, while that approval helper
 // follows links with lstat/readlink and returns null so an unresolved target is denied.
-export function canonicalPath(value) {
+export function canonicalPath(value: string) {
   const abs = path.resolve(value);
   let existing = abs;
   const tail = [];
@@ -1901,11 +1929,11 @@ export function canonicalPath(value) {
 
 // Hook-declared identity outranks the inherited environment.
 // Task bindings are resolved per call; this result holds only home, role and session.
-export function resolveIdentity(env = process.env, cwd = process.cwd(), { declared: said = null, host } = {}) {
+export function resolveIdentity(env = process.env, cwd = process.cwd(), { declared: said = null, host }: { declared?: DeclaredIdentity | null; host?: PromptobusHost } = {}) {
   if (host == null) {
     throw new Error('resolveIdentity: host is required');
   }
-  const of = (name, key) => (typeof said?.[key] === 'string' && said[key].trim() ? said[key].trim() : env[name]?.trim() || '');
+  const of = (name: string, key: keyof DeclaredIdentity) => (typeof said?.[key] === 'string' && said[key].trim() ? said[key].trim() : env[name]?.trim() || '');
   const hint = of('PROMPTOBUS_ROLE', 'role') || null;
   const role = hint || ORCHESTRATOR;
   const registry = registryOf(host);
@@ -1939,6 +1967,6 @@ export function resolveIdentity(env = process.env, cwd = process.cwd(), { declar
 }
 
 // Two claimants are not zero: a contested answer names both, and only an absent one says none.
-function identityWhy(said) {
+function identityWhy(said: IdentityAnswer) {
   return contestedIdentity(said) ? said.why : `the calling harness supplied no session identity: ${said.why}`;
 }

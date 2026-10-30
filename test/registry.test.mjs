@@ -89,7 +89,7 @@ test('no role word is spelled as a literal in lib/, src/ or scripts/ outside the
       if (LITERAL.test(line)) hits.push(`${rel}:${i + 1}: ${line.trim()}`);
     });
   }
-  assert.ok(files.includes('lib/store.js') && files.includes('src/protocol.ts')
+  assert.ok(files.includes('lib/store.ts') && files.includes('src/protocol.ts')
     && files.includes('scripts/live-mixed.mjs'), 'the walk read lib/, src/ and scripts/');
   assert.deepEqual(hits, [], 'surfaces that keep their own copy of a role word');
 });

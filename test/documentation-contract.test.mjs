@@ -1,14 +1,20 @@
-import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { threadStartConfig } from '../lib/codex-session.js';
+import { sourceFile } from './source-files.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (file) => process.env.PROMPTOBUS_DOCS_REV
   ? execFileSync('git', ['show', `${process.env.PROMPTOBUS_DOCS_REV}:${file}`], { cwd: root, encoding: 'utf8' })
   : readFileSync(path.join(root, file), 'utf8');
+const readSource = (file) => read(sourceFile(file, (candidate) => process.env.PROMPTOBUS_DOCS_REV
+  ? spawnSync('git', ['cat-file', '-e', `${process.env.PROMPTOBUS_DOCS_REV}:${candidate}`], {
+    cwd: root, stdio: 'ignore',
+  }).status === 0
+  : existsSync(path.join(root, candidate))));
 const adr = (number, slug) => read(`docs/adr/adr-${number}-${slug}.md`);
 const compact = (value) => value.replace(/\s+/g, ' ').trim();
 const has = (passage, claim) => compact(passage).includes(compact(claim));
@@ -140,7 +146,7 @@ const bbParticipants = [
 ];
 const workerProtocol = section(read('skills/orchestrate/SKILL.md'), '## Worker protocol');
 check('docs: a bespoke verification harness is refused in the orchestrate skill and every BB participant skill',
-  [workerProtocol, read('lib/prompts/bb.js'), ...bbParticipants.map((name) => read(`integrations/bb/skills/${name}/SKILL.md`))]
+  [workerProtocol, readSource('lib/prompts/bb.js'), ...bbParticipants.map((name) => read(`integrations/bb/skills/${name}/SKILL.md`))]
     .every((text) => has(text, evidenceRule) && has(text, bespokeBan) && has(text, packetBan)
       && has(text, closingRule) && has(text, childCard))
   && has(workerProtocol, 'The orchestrator does not add wrapper scripts, receipt files, hash manifests or frozen review packets.')

@@ -1,5 +1,5 @@
 {
-  "lib/model-routing/adapter-cursor.js": [
+  "lib/model-routing/adapter-cursor.ts": [
     "b8762a2ab70a"
   ],
   "lib/model-routing/cache.ts": [
@@ -79,7 +79,7 @@
     "a08d755076dc",
     "2654a011d00d"
   ],
-  "lib/store.js": [
+  "lib/store.ts": [
     "340251e3685a",
     "1847fb9ce8f2",
     "38922e28424f",
@@ -129,7 +129,7 @@
     "aff5d221861f",
     "ed300690bad5"
   ],
-  "lib/worktree.js": [
+  "lib/worktree.ts": [
     "8e35c640920d"
   ],
   "src/mcp/render.ts": [

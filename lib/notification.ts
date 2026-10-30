@@ -1,4 +1,9 @@
+import type { MessageV1 } from '../dist/index.js';
 import { KNOCK_TEXT_MAX } from './contract.js';
+
+export interface PreviewMessage extends Partial<Pick<MessageV1, 'type' | 'ts' | 'body' | 'artifact'>> {
+  from?: string; bus?: boolean;
+}
 
 // Shared preview arithmetic for driver-specific notification frames.
 // Drivers retain their exact headers and tails while this leaf owns previews and budget.
@@ -11,7 +16,7 @@ const BUS_ROUTE = 'not in the mailbox — the bus status command shows it';
 
 /** "And N more" tail: overflow becomes a count instead of vanishing silently. Mail is fetched from
  * the mailbox; a bus line is not there, so it is counted apart. */
-export function restLine(n, bus = 0) {
+export function restLine(n: number, bus = 0) {
   const parts = [];
   if (n) parts.push(`${n} more: fetch the mailbox`);
   if (bus) parts.push(`${bus} bus line${bus > 1 ? 's' : ''} more, ${BUS_ROUTE}`);
@@ -20,7 +25,7 @@ export function restLine(n, bus = 0) {
 
 /** One message as a preview: its stub — sender, type and size, never the text. A bus line
  * (`bus: true`) rides whole when it fits, and otherwise names its size and where to read it. */
-function previewLine(m) {
+function previewLine(m: PreviewMessage) {
   const head = `— ${m.type} from ${m.from} · ${m.ts}`;
   const body = typeof m.body === 'string' ? m.body : '';
   if (m.bus === true) return { full: `${head}:\n${body}`, counter: `${head}: ${body.length} characters, ${BUS_ROUTE}` };
@@ -30,8 +35,8 @@ function previewLine(m) {
 
 /** The whole preview block. The budget holds the ENTIRE block of stub lines: a burst of mail
  * would otherwise grow the postcard line by line. */
-export function previewBlock(msgs = [], budget = KNOCK_TEXT_MAX) {
-  const cost = (line) => line.length + PREVIEW_SEP.length;
+export function previewBlock(msgs: readonly PreviewMessage[] = [], budget = KNOCK_TEXT_MAX) {
+  const cost = (line: string) => line.length + PREVIEW_SEP.length;
   const busTotal = msgs.filter((m) => m.bus === true).length;
   let left = budget - cost(restLine(msgs.length - busTotal, busTotal));
   const lines = [];
@@ -53,7 +58,7 @@ export function previewBlock(msgs = [], budget = KNOCK_TEXT_MAX) {
 }
 
 /** Build one channel's frame around the shared preview block. */
-export function orderBody(task, addr, unread, msgs = [], {
+export function orderBody(task: string, addr: string, unread: number, msgs: readonly PreviewMessage[] = [], {
   header = 'Promptobus service wake',
   fetchLine = "Fetch the mailbox with this session's promptobus mailbox tool: only it marks messages read. ",
   workingOrder = 'The working order is in the bus rules',

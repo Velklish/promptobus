@@ -1706,7 +1706,7 @@ dependencies, and the channels cannot drift: there is one function.
 
 ### `squashedInto` — was the branch's work taken into the base as ONE commit?
 
-Source: `lib/worktree.js`, `squashedInto`.
+Source: `lib/worktree.ts`, `squashedInto`.
 
 `branchAdds` asks "would merging change the base", and that question has an answer
 only while nothing else has touched the same lines. After a squash merge the base
@@ -1733,7 +1733,7 @@ next measurement's question, not this one's.
 
 ### `namedBySquash` — did an acceptance commit name the branch head?
 
-Source: `lib/worktree.js`, `namedBySquash`.
+Source: `lib/worktree.ts`, `namedBySquash`.
 
 `squashedInto` finds the branch only while the squash carries the branch's own
 patch. An approver who resolves a conflict while squashing, or whose
@@ -1798,7 +1798,7 @@ read-only routing directory is not a reason to leave the run half-closed.
 
 ### `ownership` — the owner gate of `done`, `stop` and `dismiss`
 
-Source: `lib/store.js`, `ownership`, `unprovenOwnerLine`, `ownerRoute`, `approverHere`,
+Source: `lib/store.ts`, `ownership`, `unprovenOwnerLine`, `ownerRoute`, `approverHere`,
 `unprovenApproverLine`.
 
 The answer carries two fields, and they are not each other's negation. **`allowed` is the

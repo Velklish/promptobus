@@ -14,18 +14,10 @@ import { HostResolveError } from '../dist/host.js';
 import { COMMANDS, helpText, runPromptobus } from '../lib/cli.js';
 import { TEAMLEAD_HARNESSES } from '../lib/contract.js';
 import { expectFail } from './console.mjs';
+import { sourceFile, sourceFilesUnder } from './source-files.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const LIB = path.join(here, '..', 'lib');
-
-function jsFiles(dir, out = []) {
-  for (const e of readdirSync(dir, { withFileTypes: true })) {
-    const abs = path.join(dir, e.name);
-    if (e.isDirectory()) jsFiles(abs, out);
-    else if (e.name.endsWith('.js')) out.push(abs);
-  }
-  return out;
-}
 
 function collect() {
   const chunks = [];
@@ -140,12 +132,12 @@ test('CLI recognizes expected errors by class, not constructor name', async () =
  * drifted.
  */
 function subcommands() {
-  const cli = readFileSync(path.join(LIB, 'cli.js'), 'utf8');
+  const cli = readFileSync(sourceFile(path.join(LIB, 'cli.js')), 'utf8');
   return new Set([...cli.matchAll(/^\s*case '([^']+)':/gm)].map((m) => m[1]));
 }
 
 function optionNames(command) {
-  const cli = readFileSync(path.join(LIB, 'cli.js'), 'utf8');
+  const cli = readFileSync(sourceFile(path.join(LIB, 'cli.js')), 'utf8');
   const start = cli.indexOf(`case '${command}':`);
   assert.notEqual(start, -1, `dispatcher case for ${command} was not found`);
   const end = cli.indexOf('\n      case ', start + 1);
@@ -238,7 +230,7 @@ test('no message names a command the CLI does not have', () => {
   const wrongWrapper = [];
   // Recursive: `lib/model-routing/` is a whole subsystem, and a gate that read only the
   // top level would be green about the half of the runtime it never opened.
-  for (const file of jsFiles(LIB)) {
+  for (const file of sourceFilesUnder(LIB)) {
     for (const m of readFileSync(file, 'utf8').matchAll(HEAD)) {
       const wrapper = m[1];
       const command = m[2];
@@ -255,7 +247,7 @@ test('no message names a command the CLI does not have', () => {
 
   const literalStray = [];
   const STRING = /(['"`])((?:\\.|(?!\1)[^\\\r\n])*)\1/g;
-  for (const file of jsFiles(LIB)) {
+  for (const file of sourceFilesUnder(LIB)) {
     const relative = path.relative(path.join(LIB, '..'), file);
     const lines = readFileSync(file, 'utf8').split('\n');
     for (const [lineNumber, line] of lines.entries()) {
@@ -287,8 +279,8 @@ test('the gate above reads a command list that is not empty and holds the real c
   assert.equal(known.has('clone'), false);
   // …and the walk itself: an empty file list reports no stray command for the same
   // reason an empty command list reports every one of them.
-  const walked = jsFiles(LIB).map((f) => path.relative(LIB, f));
-  assert.ok(walked.includes('cli.js'), walked.join(', '));
+  const walked = sourceFilesUnder(LIB).map((f) => path.relative(LIB, f));
+  assert.ok(walked.includes(path.basename(sourceFile(path.join(LIB, 'cli.js')))), walked.join(', '));
   assert.ok(walked.some((f) => f.includes(path.sep)), `no subdirectory was walked: ${walked.join(', ')}`);
 });
 
@@ -305,7 +297,7 @@ test('the reference command list is the dispatcher, aliases aside', () => {
 
 test('the unknown-command refusal names every command the dispatcher knows', () => {
   // COMMANDS is a hand copy of the dispatcher's case labels; held equal here, and the refusal joins it.
-  const cli = readFileSync(path.join(LIB, 'cli.js'), 'utf8');
+  const cli = readFileSync(sourceFile(path.join(LIB, 'cli.js')), 'utf8');
   const aliases = new Set(['help', '--help', '-h', '--version', '-v']);
   const dispatcherCommands = [...subcommands()].filter((cmd) => !aliases.has(cmd)).sort();
   assert.deepEqual([...COMMANDS].sort(), dispatcherCommands);

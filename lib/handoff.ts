@@ -5,6 +5,18 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { schemaErrors, sayErrors } from './schema.js';
 import { admitsAddress } from '../dist/index.js';
+import type { RoleRegistry } from '../dist/index.js';
+import type { SchemaNode } from './schema.js';
+
+interface ProbeRecord {
+  expected?: string[]; reddened: string[]; tree?: string; treeLag?: string;
+  verdicts?: { baseTotal: number; passed: number; unaccounted: number };
+  coverage?: { establishes?: string; doesNotEstablish?: string };
+}
+interface EvidenceRecord {
+  by: string; records: { by: string }[]; tree?: string;
+  checks?: { mutationProbe?: ProbeRecord };
+}
 
 const SCHEMA_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -64,26 +76,26 @@ const DECIDE_HEADER = {
   plain: /^\s*Decide\s*:\s*(.*)$/i,
 };
 
-export function isGateRecordName(filename) {
+export function isGateRecordName(filename: unknown) {
   return typeof filename === 'string' && GATE_RECORD_RE.test(filename);
 }
 
-export function isHandoverRecordName(filename) {
+export function isHandoverRecordName(filename: unknown) {
   return typeof filename === 'string' && HANDOVER_RECORD_RE.test(filename);
 }
 
 /** The schema a landed filename claims by its stem, or `null` — it claims neither. */
-export function recordSchemaOf(filename) {
+export function recordSchemaOf(filename: unknown) {
   if (isGateRecordName(filename)) return GATE_RECORD_SCHEMA;
   if (isHandoverRecordName(filename)) return HANDOVER_RECORD_SCHEMA;
   return null;
 }
 
-const say = (names) => names.map((n) => `«${n}»`).join(', ');
+const say = (names: readonly string[]) => names.map((n) => `«${n}»`).join(', ');
 
 /** Why the declared target is not among the names the probe reddened, or `null` — two fields of
  * one document, which no schema keyword compares. [reference/04-protocol.md#the-handover-record](../docs/reference/04-protocol.md#the-handover-record) */
-function probeIntentRefusal(document) {
+function probeIntentRefusal(document: EvidenceRecord | null | undefined) {
   const probe = document?.checks?.mutationProbe;
   if (!Array.isArray(probe?.expected)) return null;
   const reddened = new Set(probe.reddened);
@@ -103,7 +115,7 @@ function probeIntentRefusal(document) {
 
 /** Why the stated remainder is not the counts' subtraction, or `null` — two sides,
  * which no schema keyword compares. [reference/04-protocol.md#the-handover-record](../docs/reference/04-protocol.md#the-handover-record) */
-function probeCountsRefusal(document) {
+function probeCountsRefusal(document: EvidenceRecord | null | undefined) {
   const probe = document?.checks?.mutationProbe;
   const verdicts = probe?.verdicts;
   if (!verdicts) return null;
@@ -122,7 +134,7 @@ function probeCountsRefusal(document) {
 }
 
 /** Why the two coverage claims are one claim, or `null` — they differ, or this is not a performed probe. */
-function probeCoverageRefusal(document) {
+function probeCoverageRefusal(document: EvidenceRecord | null | undefined) {
   const coverage = document?.checks?.mutationProbe?.coverage;
   if (typeof coverage?.establishes !== 'string' || typeof coverage?.doesNotEstablish !== 'string') return null;
   if (coverage.establishes.trim() !== coverage.doesNotEstablish.trim()) return null;
@@ -130,7 +142,7 @@ function probeCoverageRefusal(document) {
 }
 
 /** Why the probe sha is not the tree being handed over, or `null` — they agree, or `treeLag` says why. */
-function probeTreeRefusal(document) {
+function probeTreeRefusal(document: EvidenceRecord | null | undefined) {
   const probe = document?.checks?.mutationProbe;
   if (typeof probe?.tree !== 'string' || typeof document?.tree !== 'string') return null;
   if (probe.tree === document.tree || typeof probe.treeLag === 'string') return null;
@@ -142,22 +154,25 @@ function probeTreeRefusal(document) {
 
 /** Why this file is not the record its name claims, or `null` — it is one, or claims none.
  * [reference/04-protocol.md#the-gate-record](../docs/reference/04-protocol.md#the-gate-record) */
-export function recordRefusal(filename, file, registry) {
+export function recordRefusal(filename: string, file: string, registry: RoleRegistry) {
   const schemaPath = recordSchemaOf(filename);
   if (!schemaPath) return null;
   let raw;
   // Unreadable is not this check's refusal: the send already says «artifact is missing».
   try { raw = readFileSync(file, 'utf8'); } catch { return null; }
-  let document;
+  let parsed: unknown;
   try {
-    document = JSON.parse(raw);
-  } catch (e) {
+    parsed = JSON.parse(raw);
+  } catch (caught) {
+    const e = caught as Error;
     return `«${filename}» is named as a record of ${schemaPath} and did not parse as JSON: ${e.message}`;
   }
-  const errors = schemaErrors(JSON.parse(readFileSync(path.join(SCHEMA_ROOT, schemaPath), 'utf8')), document);
+  const schema: unknown = JSON.parse(readFileSync(path.join(SCHEMA_ROOT, schemaPath), 'utf8'));
+  const errors = schemaErrors(schema as SchemaNode, parsed);
   if (errors.length) {
     return `«${filename}» does not match ${schemaPath}, so it is not the evidence its name claims: ${sayErrors(errors)}`;
   }
+  const document = parsed as EvidenceRecord;
   const addresses = schemaPath === GATE_RECORD_SCHEMA
     ? document.records.map((record) => record.by) : [document.by];
   const unknown = addresses.find((address) => !admitsAddress(registry, address));
@@ -173,7 +188,7 @@ export function recordRefusal(filename, file, registry) {
   return coverage ? `«${filename}» contradicts itself: ${coverage}` : null;
 }
 
-function headerLine(body, patterns) {
+function headerLine(body: unknown, patterns: { bold: RegExp; plain: RegExp }) {
   for (const line of String(body ?? '').split('\n')) {
     const bold = line.match(patterns.bold);
     if (bold) return bold[1].trim();
@@ -187,7 +202,7 @@ const BEFORE_BOUNDARY = /[\w.-]/;
 const AFTER_BOUNDARY = /[\w-]/;
 const EXTENSION_HEAD = /[A-Za-z0-9]/;
 
-function isDelimitedMatch(line, name, index) {
+function isDelimitedMatch(line: string, name: string, index: number) {
   const before = index > 0 ? line[index - 1] : '';
   if (before && BEFORE_BOUNDARY.test(before)) return false;
   const pos = index + name.length;
@@ -201,7 +216,7 @@ function isDelimitedMatch(line, name, index) {
   return true;
 }
 
-function landedNamesInLine(line, landedFilenames) {
+function landedNamesInLine(line: string, landedFilenames: readonly string[]) {
   const known = new Set(landedFilenames);
   const hits = [];
   for (const name of known) {
@@ -223,7 +238,7 @@ function landedNamesInLine(line, landedFilenames) {
 }
 
 /** Landed filenames named in the Gate or Decide header lines. */
-export function artifactClaimsInResult(body, landedFilenames) {
+export function artifactClaimsInResult(body: unknown, landedFilenames: readonly string[]) {
   const claims = [];
   const gate = headerLine(body, GATE_HEADER);
   if (gate) claims.push(...landedNamesInLine(gate, landedFilenames));

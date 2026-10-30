@@ -3,6 +3,11 @@ import { closeSync, openSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { run } from './exec.js';
 
+interface HolderResponse { status: number; data: unknown }
+type HolderFetch = (url: string, password: string, method: string, path: string, body?: unknown, timeoutMs?: number) => Promise<HolderResponse>;
+interface PermissionAsk { action: string; [key: string]: unknown }
+interface HolderMessage { type?: unknown; outcome?: unknown }
+
 // Per-participant `opencode serve` holder: raw HTTP with basic auth (05-drivers).
 
 /** A holder password — 43 base62 chars, the shape the binary prints itself. */
@@ -12,20 +17,20 @@ export function holderPassword(random = randomBytes) {
 }
 
 /** The listening port off the holder log line, case-insensitive — the binary owns the words. */
-export function portOfLog(text) {
+export function portOfLog(text: unknown) {
   const hit = String(text ?? '').match(/server listening on http:\/\/127\.0\.0\.1:(\d+)/i);
   return hit ? Number(hit[1]) : null;
 }
 
-export const holderUrl = (port) => `http://127.0.0.1:${port}`;
+export const holderUrl = (port: number) => `http://127.0.0.1:${port}`;
 
-function authHeader(password) {
+function authHeader(password: string) {
   return `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}`;
 }
 
 export const HOLDER_HTTP_TIMEOUT_MS = 10_000;
 
-async function call(url, password, method, path, body = undefined, timeoutMs = HOLDER_HTTP_TIMEOUT_MS) {
+async function call(url: string, password: string, method: string, path: string, body: unknown = undefined, timeoutMs = HOLDER_HTTP_TIMEOUT_MS): Promise<HolderResponse> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -39,7 +44,7 @@ async function call(url, password, method, path, body = undefined, timeoutMs = H
       signal: ctrl.signal,
     });
     const text = await res.text();
-    let data = null;
+    let data: unknown = null;
     try {
       data = text ? JSON.parse(text) : null;
     } catch {
@@ -53,7 +58,7 @@ async function call(url, password, method, path, body = undefined, timeoutMs = H
 
 /** The holder answers session lists: readiness is an answered request, not a port bind. */
 export async function waitReady(
-  url, password, { timeoutMs = 30_000, stepMs = 250 } = {}, fetchFn = call,
+  url: string, password: string, { timeoutMs = 30_000, stepMs = 250 } = {}, fetchFn: HolderFetch = call,
 ) {
   const edge = Date.now() + timeoutMs;
   for (;;) {
@@ -67,7 +72,7 @@ export async function waitReady(
 }
 
 /** Start the holder detached with its log; the caller waits readiness separately. */
-export function startHolder(bin, argv, { cwd, env, log }) {
+export function startHolder(bin: string, argv: string[], { cwd, env, log }: { cwd?: string; env?: NodeJS.ProcessEnv; log?: string | null }) {
   const out = log ? openSync(log, 'w', 0o600) : 'ignore';
   let child;
   try {
@@ -88,7 +93,7 @@ export function startHolder(bin, argv, { cwd, env, log }) {
 }
 
 /** Stop the holder: SIGTERM, a grace wait, then SIGKILL to the group. */
-export async function reapHolder(pid, { graceMs = 5000, stepMs = 100 } = {}) {
+export async function reapHolder(pid: number, { graceMs = 5000, stepMs = 100 } = {}) {
   if (!pidAlive(pid)) return;
   try {
     process.kill(-pid, 'SIGTERM');
@@ -106,7 +111,7 @@ export async function reapHolder(pid, { graceMs = 5000, stepMs = 100 } = {}) {
   }
 }
 
-export function pidAlive(pid) {
+export function pidAlive(pid: number) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
@@ -116,24 +121,25 @@ export function pidAlive(pid) {
   }
 }
 
-export const createSession = (url, password, title, fetchFn = call) => fetchFn(url, password, 'POST', '/api/session', { title });
+export const createSession = (url: string, password: string, title: string, fetchFn: HolderFetch = call) => fetchFn(url, password, 'POST', '/api/session', { title });
 
-export const sendPrompt = (url, password, sessionId, text, fetchFn = call) => fetchFn(
+export const sendPrompt = (url: string, password: string, sessionId: string, text: string, fetchFn: HolderFetch = call) => fetchFn(
   url, password, 'POST', `/api/session/${sessionId}/prompt`, { text },
 );
 
-export const listPermissions = (url, password, sessionId, fetchFn = call) => fetchFn(
+export const listPermissions = (url: string, password: string, sessionId: string, fetchFn: HolderFetch = call) => fetchFn(
   url, password, 'GET', `/api/session/${sessionId}/permission`,
 );
 
 // `once` answers this ask and does not save a rule. The route is session.permission.reply.
-export const replyPermission = (url, password, sessionId, requestId, fetchFn = call) => fetchFn(
+export const replyPermission = (url: string, password: string, sessionId: string, requestId: string, fetchFn: HolderFetch = call) => fetchFn(
   url, password, 'POST', `/api/session/${sessionId}/permission/${requestId}/reply`,
   { decision: 'once' },
 );
 
 /** Asks from a permission body, or null when the body is not that list. */
-export function parsePermissionList(body) {
+export function parsePermissionList(value: unknown): PermissionAsk[] | null {
+  const body = value as { data?: unknown } | null | undefined;
   const list = Array.isArray(body) ? body : Array.isArray(body?.data) ? body.data : null;
   if (!list) return null;
   const asks = list.filter((ask) => ask && typeof ask.action === 'string' && ask.action);
@@ -141,17 +147,18 @@ export function parsePermissionList(body) {
   return asks;
 }
 
-export const readMessages = (url, password, sessionId, limit = 5, fetchFn = call) => fetchFn(
+export const readMessages = (url: string, password: string, sessionId: string, limit = 5, fetchFn: HolderFetch = call) => fetchFn(
   url, password, 'GET', `/api/session/${sessionId}/message?limit=${limit}`,
 );
 
-export const deleteSession = (url, password, sessionId, fetchFn = call) => fetchFn(
+export const deleteSession = (url: string, password: string, sessionId: string, fetchFn: HolderFetch = call) => fetchFn(
   url, password, 'DELETE', `/api/session/${sessionId}`,
 );
 
 /** The trailing idle outcome of a message list, newest first, or null while the turn runs. */
-export function idleOutcome(messages) {
-  const items = Array.isArray(messages?.data) ? messages.data : (Array.isArray(messages) ? messages : []);
+export function idleOutcome(value: unknown): unknown {
+  const messages = value as { data?: HolderMessage[] } | HolderMessage[] | null | undefined;
+  const items = Array.isArray((messages as { data?: unknown })?.data) ? (messages as { data: HolderMessage[] }).data : (Array.isArray(messages) ? messages : []);
   if (!items.length) return null;
   const last = items[0];
   return last?.type === 'idle' ? (last.outcome ?? 'done') : null;
@@ -185,7 +192,7 @@ export const HOLDER_REQUEST_SOURCE = [
 ].join('\n');
 
 /** One holder request from a synchronous caller. Null when the process or the body fails. */
-export function holderRequestSync(url, password, method, requestPath, body, runFn = run) {
+export function holderRequestSync(url: string, password: string, method: string, requestPath: string, body: unknown, runFn = run): HolderResponse | null {
   // `node` by name: an absolute execPath sits outside the suite's sealed PATH.
   const result = runFn('node', ['-e', HOLDER_REQUEST_SOURCE], {
     input: JSON.stringify({ url, password, method, path: requestPath, body }),
@@ -193,8 +200,8 @@ export function holderRequestSync(url, password, method, requestPath, body, runF
   });
   if (result?.error || result?.status !== 0 || typeof result?.stdout !== 'string') return null;
   try {
-    const parsed = JSON.parse(result.stdout);
-    let data = null;
+    const parsed: { status: number; text?: string } = JSON.parse(result.stdout);
+    let data: unknown = null;
     try { data = parsed.text ? JSON.parse(parsed.text) : null; } catch { data = null; }
     return { status: parsed.status, data };
   } catch {

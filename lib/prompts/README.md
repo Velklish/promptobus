@@ -1,8 +1,8 @@
 # Role instruction sources
 
-`promptobus/instructions` exports six pure role renderers from `roles.js` and
-their TypeScript input types. Worker ownership, mailbox protocol, independent
-review, acceptance and evidence forms share this source. Native planners in
+`promptobus/instructions` exports six pure role renderers from compiled `roles.js` and
+their TypeScript input types, maintained together in `roles.ts`. Worker ownership,
+mailbox protocol, independent review, acceptance and evidence forms share this source. Native planners in
 `lib/spawn.js`, `lib/review.js`, `lib/approver.js`, `lib/report.js` and `lib/lead.js`
 retain state reads, snapshot construction, permission and launch planning. They
 supply task context and concrete tool, environment, continuation and publication

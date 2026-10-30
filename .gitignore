@@ -51,6 +51,47 @@ coverage/
 /lib/prompts/codex.js
 /lib/prompts/codex.d.ts
 
+/lib/bb-reviewer.js
+/lib/bb-reviewer.d.ts
+/lib/codex-command-receipts.js
+/lib/codex-command-receipts.d.ts
+/lib/handoff.js
+/lib/handoff.d.ts
+/lib/harness-registry.js
+/lib/harness-registry.d.ts
+/lib/host.js
+/lib/host.d.ts
+/lib/lease.js
+/lib/lease.d.ts
+/lib/native-participant-context.js
+/lib/native-participant-context.d.ts
+/lib/notification.js
+/lib/notification.d.ts
+/lib/opencode-session.js
+/lib/opencode-session.d.ts
+/lib/util.js
+/lib/util.d.ts
+/lib/cursor-persist.js
+/lib/cursor-persist.d.ts
+/lib/store.js
+/lib/store.d.ts
+/lib/worktree.js
+/lib/worktree.d.ts
+/lib/model-routing/adapter-common.js
+/lib/model-routing/adapter-common.d.ts
+/lib/model-routing/resolver.js
+/lib/model-routing/resolver.d.ts
+/lib/model-routing/adapter-claude.js
+/lib/model-routing/adapter-claude.d.ts
+/lib/model-routing/adapter-cursor.js
+/lib/model-routing/adapter-cursor.d.ts
+/lib/model-routing/adapter-opencode.js
+/lib/model-routing/adapter-opencode.d.ts
+/lib/model-routing/preflight.js
+/lib/model-routing/preflight.d.ts
+/lib/prompts/roles.js
+/lib/prompts/roles.d.ts
+
 # Per-run gate records written beside the worktree during a bus task — task artifacts, not source.
 /gates-*-t*-*.json
 

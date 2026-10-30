@@ -23,6 +23,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { sourceFile } from './source-files.mjs';
 import Ajv2020 from 'ajv/dist/2020.js';
 
 import {
@@ -916,7 +917,7 @@ test('the driver wires the live keychain read and the live endpoint, and hands o
   // wiring is pinned at the foot of this file. Two halves: the inventory the
   // driver derives, and the declaration that hands it over with no `deps`, which
   // is what leaves the live implementations in place.
-  const driver = readFileSync(path.join(here, '..', 'lib', 'driver-claude.js'), 'utf8');
+  const driver = readFileSync(sourceFile(path.join(here, '..', 'lib', 'driver-claude.js')), 'utf8');
   assert.match(driver, /const PROBE_MODELS = \[\.\.\.new Set\(\[\.\.\.MODEL_IDS, \.\.\.MODEL_ALIASES, DEFAULT_MODEL\]\)\];/);
   assert.match(driver, /availability: claudeAvailability\(inventoryFor, MODEL_SCOPE_IDS\),/);
 });
@@ -1052,9 +1053,9 @@ test('the lift passes the late-start hook down to the launcher and appends what 
   // stayed green when the returned line was dropped from the refusal text. So both
   // halves are counted: two branches take the line, and two branches append it,
   // which is four mentions of the variable and no fewer.
-  const driver = readFileSync(path.join(here, '..', 'lib', 'driver-claude.js'), 'utf8');
+  const driver = readFileSync(sourceFile(path.join(here, '..', 'lib', 'driver-claude.js')), 'utf8');
   assert.match(driver, /sayLimit: \(output\) => markLimitAtStart\(host, output\)/);
-  const liftoff = readFileSync(path.join(here, '..', 'lib', 'liftoff.js'), 'utf8');
+  const liftoff = readFileSync(sourceFile(path.join(here, '..', 'lib', 'liftoff.js')), 'utf8');
   assert.equal((liftoff.match(/sayLimit\?\.\(output\)/g) ?? []).length, 2, 'both refusal branches report');
   assert.equal((liftoff.match(/\$\{limitNote\}|\+ deadNote \+ limitNote/g) ?? []).length, 2,
     'both branches put the returned line in their refusal');

@@ -11,6 +11,23 @@ import { shellQuote } from '../dist/fs/shell.js';
 import { GateError } from '../dist/index.js';
 import { createHarnessRegistry } from './harness-registry.js';
 import { PROMPTOBUS_SERVER } from './contract.js';
+import type { HarnessSessionRecord } from './harness-registry.js';
+
+interface CursorSessionRecord extends HarnessSessionRecord {
+  sessionName?: string; tmuxServer?: string; cwd?: string; chatId?: string; transcript?: string;
+  injectedAt?: string; panePid?: number | null;
+}
+interface TmuxSession {
+  name: string; attached: number; created: number; panePid: number | null; managed: boolean;
+  hash: string | null; chatId: string | null; task: string | null; address: string | null;
+}
+interface TmuxOptions { server?: string; env?: NodeJS.ProcessEnv; input?: string | Buffer | null }
+interface TmuxContext { server: string; env: NodeJS.ProcessEnv }
+interface ProcessReadResult {
+  status: number | null; stdout: string | Buffer; stderr: string | Buffer; error?: Error | null; signal?: NodeJS.Signals | null;
+}
+interface McpConfig { mcpServers?: Record<string, { type?: string; command?: unknown; args?: unknown } | null | undefined> }
+type CursorRecord = CursorSessionRecord | null | undefined;
 // Cursor: the persist session.
 // [reference/05-drivers.md#cursor-the-persist-session](../docs/reference/05-drivers.md#cursor-the-persist-session)
 
@@ -82,17 +99,17 @@ export function cursorUserHome(env = process.env) {
   return named || path.join(homedir(), '.cursor');
 }
 
-function launchScriptFile(ref, env = process.env) {
+function launchScriptFile(ref: string, env = process.env): string {
   return path.join(sessionsDir(env), sessionKey(ref) + '.launch.sh');
 }
 
-export function lockFile(ref, env = process.env) {
+export function lockFile(ref: string, env = process.env): string {
   return path.join(sessionsDir(env), sessionKey(ref) + '.inject.lock');
 }
 
-const cursorRegistry = createHarnessRegistry({
+const cursorRegistry = createHarnessRegistry<CursorSessionRecord>({
   harness: CURSOR_HARNESS,
-  sidecars: (ref, env) => [launchScriptFile(ref, env), lockFile(ref, env), bufferFile(ref, env)],
+  sidecars: (ref, env): string[] => [launchScriptFile(ref, env), lockFile(ref, env), bufferFile(ref, env)],
 });
 
 export const cursorStateHome = cursorRegistry.stateHome;
@@ -111,7 +128,7 @@ export const LOCK_STALE_MS = 60_000;
 
 /** Take the inject lock or say who holds it. **An ownerless lock is taken over**: a writer that dies
  * between take and drop would otherwise refuse every later delivery into that session. */
-function takeLock(file) {
+function takeLock(file: string) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       writeFileSync(file, `${JSON.stringify({ pid: process.pid, at: new Date().toISOString() })}\n`, { flag: 'wx' });
@@ -119,7 +136,7 @@ function takeLock(file) {
     } catch {
       // Lock is taken — see whether its holder is alive.
     }
-    let held = null;
+    let held: { pid?: number; at?: string } | null = null;
     try {
       held = JSON.parse(readFileSync(file, 'utf8'));
     } catch {
@@ -143,11 +160,11 @@ function takeLock(file) {
 }
 
 /** File the text leaves through into the tmux buffer: multiline does not ride through argv. */
-function bufferFile(ref, env = process.env) {
+function bufferFile(ref: string, env = process.env): string {
   return path.join(sessionsDir(env), `${sessionKey(ref)}.buf`);
 }
 
-async function settle(ms) {
+async function settle(ms: number) {
   await new Promise((r) => { setTimeout(r, ms); });
 }
 
@@ -162,11 +179,11 @@ const INSTALL_DIRS_VAR = 'PROMPTOBUS_CURSOR_INSTALL_DIRS';
 export const TMUX_NOT_FOUND = 'not found in PATH or in the known install locations '
   + `(${CURSOR_INSTALL_DIRS.join(', ')})`;
 
-function expandHomeDir(dir, home) {
+function expandHomeDir(dir: string, home: string) {
   return dir.startsWith('~/') ? path.join(home, dir.slice(2)) : dir;
 }
 
-export function binInDir(dir, bin) {
+export function binInDir(dir: string, bin: string) {
   const p = path.join(dir, bin);
   try {
     if (!existsSync(p)) return null;
@@ -199,7 +216,7 @@ export function tmuxBin({ env = process.env } = {}) {
 
 /** Tmux call on the named server, with the caller's environment. `-f /dev/null`, the same flag
  * `persist` uses: a person's `~/.tmux.conf` would otherwise change what the mechanism pastes and reads. */
-export function tmux(args, { server = CURSOR_TMUX_SERVER, env = process.env, input = null } = {}) {
+export function tmux(args: string[], { server = CURSOR_TMUX_SERVER, env = process.env, input = null }: TmuxOptions = {}): ProcessReadResult {
   const bin = tmuxBin({ env });
   if (!bin) return { status: null, stdout: '', stderr: '', error: new Error(TMUX_NOT_FOUND) };
   return run(bin, ['-u', '-L', server, '-f', '/dev/null', ...args], {
@@ -219,14 +236,14 @@ const LIST_FIELDS = [
 
 /** The two no-server wordings measured on tmux 3.6b, matched by stable substring rather than by
  * the socket path they carry, which differs on every call. */
-function isNoServerLine(line) {
+function isNoServerLine(line: string) {
   return line.includes('no server running on')
     || (line.includes('error connecting to') && line.includes('No such file or directory'));
 }
 
 /** Server sessions, machine-readable, and `missing` when tmux could not be run, or exited
  * non-zero without a measured no-server line — a live server could still be behind that. */
-export function readTmuxSessions({ server = CURSOR_TMUX_SERVER, env = process.env } = {}) {
+export function readTmuxSessions({ server = CURSOR_TMUX_SERVER, env = process.env } = {}): { sessions: TmuxSession[]; missing: null } | { sessions: null; missing: string } {
   const r = tmux(['list-sessions', '-F', LIST_FIELDS.join(LIST_SEP)], { server, env });
   if (r.error) return { sessions: null, missing: `tmux could not be run: ${r.error.message}` };
   if (r.status !== 0) {
@@ -256,14 +273,14 @@ export function tmuxSessions({ server = CURSOR_TMUX_SERVER, env = process.env } 
   return readTmuxSessions({ server, env }).sessions ?? [];
 }
 
-function optionWriteError(r) {
+function optionWriteError(r: ProcessReadResult | null | undefined) {
   if (!r?.error && r?.status === 0) return null;
   return r?.error?.message ?? (String(r?.stderr ?? '').trim() || `code ${r?.status}`);
 }
 
 /** Read one user option back. An unset option is exit 1 `invalid option: @…` on tmux 3.6b;
  * any other non-zero is unreadable and is not treated as an empty server. */
-function optionRead(name, opt, env) {
+function optionRead(name: string, opt: string, env: NodeJS.ProcessEnv) {
   const r = tmux(['show-options', '-t', name, '-v', opt], { env });
   if (!r.error && r.status === 0) {
     return { value: String(r.stdout ?? '').replace(/\n$/, ''), absent: false, detail: null };
@@ -273,7 +290,7 @@ function optionRead(name, opt, env) {
 }
 
 /** Set one mark, read it back, try once more, then refuse. The refusal names the option. */
-function stampMark(name, opt, value, env) {
+function stampMark(name: string, opt: string, value: string, env: NodeJS.ProcessEnv) {
   const write = () => tmux(['set-option', '-t', name, opt, value], { env });
   let why = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -293,16 +310,16 @@ function stampMark(name, opt, value, env) {
 
 /** One session by name, or `null` when the server does not have it. A tmux that could not be run
  * refuses instead: `null` there would read a live session as gone. */
-export function findSession(name, { server = CURSOR_TMUX_SERVER, env = process.env } = {}) {
+export function findSession(name: string | null | undefined, { server = CURSOR_TMUX_SERVER, env = process.env } = {}) {
   if (!name) return null;
   const { sessions, missing } = readTmuxSessions({ server, env });
   if (missing) throw new GateError(`${missing} — the state of persist session ${name} cannot be read`);
-  return sessions.find((s) => s.name === name) ?? null;
+  return sessions!.find((s) => s.name === name) ?? null;
 }
 
 /** Working-directory hash `persist` stamps on its session — how ours is found among foreigners.
  * **The path is taken RESOLVED**: on macOS `$TMPDIR` is a symlink, and the hashes differ. */
-export function workspaceHash(cwd) {
+export function workspaceHash(cwd: unknown) {
   let flat = String(cwd);
   try {
     flat = realpathSync(flat);
@@ -314,7 +331,7 @@ export function workspaceHash(cwd) {
 }
 
 /** What is visible in the pane now. Read for the input field and the running-turn label. */
-export function capturePane(name, { server = CURSOR_TMUX_SERVER, env = process.env } = {}) {
+export function capturePane(name: string, { server = CURSOR_TMUX_SERVER, env = process.env } = {}) {
   const r = tmux(['capture-pane', '-p', '-t', name], { server, env });
   if (r.error || r.status !== 0) return null;
   return String(r.stdout ?? '');
@@ -328,7 +345,7 @@ const BUSY_LINE = 'ctrl+c to stop';
 
 /** Text standing in the pane input field; an empty field is the prompt with no text. **The running-
  * turn label lives on the SAME line**, so unstripped it makes every running turn read as occupied. */
-export function inputText(pane) {
+export function inputText(pane: unknown) {
   const lines = String(pane ?? '').split('\n');
   for (let i = lines.length - 1; i >= 0; i -= 1) {
     const line = lines[i].trim();
@@ -348,7 +365,7 @@ const LAUNCH_UNSET = ['TMUX', 'TMUX_PANE'];
 
 /** Pty provider pane script. The environment is materialised HERE: the pane inherits the tmux SERVER
  * environment, which a previous lift may have set. `env -u` guards a foreign `TMUX`. */
-export function launchScript({ bin, argv, env }) {
+export function launchScript({ bin, argv, env }: { bin: string; argv: string[]; env?: NodeJS.ProcessEnv }) {
   const drop = new Set(LAUNCH_UNSET);
   const assignments = Object.entries(env ?? {})
     .filter(([k, v]) => v !== undefined && v !== null && !drop.has(k))
@@ -363,7 +380,7 @@ export function launchScript({ bin, argv, env }) {
 export async function liftSession({
   ref, bin, argv, cwd, env = process.env, launchEnv = null, task = null, address = null,
   tries = LIFT_TRIES, delayMs = LIFT_STEP_MS,
-}) {
+}: { ref: string; bin: string; argv: string[]; cwd: string; env?: NodeJS.ProcessEnv; launchEnv?: NodeJS.ProcessEnv | null; task?: string | null; address?: string | null; tries?: number; delayMs?: number }) {
   const script = launchScriptFile(ref, env);
   mkdirSync(path.dirname(script), { recursive: true });
   // The SESSION environment and the environment of our tmux calls are different things: the first is
@@ -416,11 +433,11 @@ export async function liftSession({
 
 /** Deliver text into a live session, by the protocol the spike measured.
  * [reference/05-drivers.md#injecttext--deliver-text-into-a-live-session](../docs/reference/05-drivers.md#injecttext--deliver-text-into-a-live-session) */
-export async function injectText(record, text, { env = process.env, pauseMs = ENTER_PAUSE_MS } = {}) {
+export async function injectText(record: CursorRecord, text: string, { env = process.env, pauseMs = ENTER_PAUSE_MS } = {}) {
   const name = record?.sessionName;
   const server = record?.tmuxServer || CURSOR_TMUX_SERVER;
   if (!name) return { ok: false, error: 'the session record has no persist session name — nothing to deliver' };
-  const lock = lockFile(record.ref, env);
+  const lock = lockFile(record!.ref, env);
   mkdirSync(path.dirname(lock), { recursive: true });
   const taken = takeLock(lock);
   if (!taken.ok) return taken;
@@ -428,10 +445,10 @@ export async function injectText(record, text, { env = process.env, pauseMs = EN
   try {
     const cleared = await clearInput(name, { server, env });
     if (!cleared.ok) return cleared;
-    buf = bufferFile(record.ref, env);
+    buf = bufferFile(record!.ref, env);
     writeFileSync(buf, text, { mode: 0o600 });
     chmodSync(buf, 0o600);
-    const bufName = `promptobus-${sessionKey(record.ref)}`;
+    const bufName = `promptobus-${sessionKey(record!.ref)}`;
     const loaded = tmux(['load-buffer', '-b', bufName, buf], { server, env });
     if (loaded.error || loaded.status !== 0) {
       return { ok: false, error: `text did not go into the tmux buffer: ${String(loaded.stderr ?? '').trim() || `code ${loaded.status}`}` };
@@ -469,7 +486,7 @@ export async function injectText(record, text, { env = process.env, pauseMs = EN
 
 /** Clear the input field before paste. A session that did not understand `C-u` leaves the text and
  * delivery honestly refuses: gluing onto someone else's leftover is worse than not delivering. */
-async function clearInput(name, { server, env }) {
+async function clearInput(name: string, { server, env }: TmuxContext) {
   if (!inputText(capturePane(name, { server, env }))) return { ok: true };
   tmux(['send-keys', '-t', name, 'C-u'], { server, env });
   const empty = await waitInput(name, { server, env }, (value) => value === '');
@@ -480,7 +497,7 @@ async function clearInput(name, { server, env }) {
   };
 }
 
-async function waitInput(name, { server, env }, ok, { timeoutMs = INPUT_WAIT_MS, stepMs = INPUT_STEP_MS } = {}) {
+async function waitInput(name: string, { server, env }: TmuxContext, ok: (value: string) => boolean, { timeoutMs = INPUT_WAIT_MS, stepMs = INPUT_STEP_MS } = {}) {
   const edge = Date.now() + timeoutMs;
   for (;;) {
     if (ok(inputText(capturePane(name, { server, env })))) return true;
@@ -493,10 +510,10 @@ async function waitInput(name, { server, env }, ok, { timeoutMs = INPUT_WAIT_MS,
 
 /** The chat transcript is the only machine source about a turn under persist. The mechanism does NOT
  * compute its path slug — Cursor truncates and hashes — so it is found by chat id once and recorded. */
-export function findTranscript(chatId, env = process.env) {
+export function findTranscript(chatId: string | null | undefined, env = process.env) {
   if (!chatId) return null;
   const root = path.join(cursorUserHome(env), 'projects');
-  let dirs = [];
+  let dirs: string[] = [];
   try {
     dirs = readdirSync(root);
   } catch {
@@ -510,7 +527,7 @@ export function findTranscript(chatId, env = process.env) {
 }
 
 /** Transcript path of a record: from the record, and on first find — into the record. */
-export function transcriptOf(record, env = process.env) {
+export function transcriptOf(record: CursorRecord, env = process.env) {
   const known = record?.transcript;
   if (known && existsSync(known)) return known;
   const found = findTranscript(record?.chatId, env);
@@ -520,7 +537,7 @@ export function transcriptOf(record, env = process.env) {
 
 /** What the transcript says about the turn, read from the ORDER of lines. **`turn_ended` is an
  * end-of-FILE marker, not an event**: it cannot count turns, so only "running or not" is taken. */
-export function readTranscript(file) {
+export function readTranscript(file: string) {
   let raw = '';
   try {
     raw = readFileSync(file, 'utf8');
@@ -529,10 +546,10 @@ export function readTranscript(file) {
   }
   let busy = false;
   let ended = 0;
-  let status = null;
+  let status: unknown = null;
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
-    let event;
+    let event: { type?: unknown; role?: unknown; status?: unknown } | null;
     try {
       event = JSON.parse(line);
     } catch {
@@ -557,7 +574,7 @@ export function readTranscript(file) {
 
 /** Whether a session turn is running, and whether it has been silent past the threshold. An injection
  * counts as a turn before the transcript says so, or the warden would wake twice on one unread. */
-export function turnState(record, env = process.env) {
+export function turnState(record: CursorRecord, env = process.env) {
   const file = transcriptOf(record, env);
   const seen = file ? readTranscript(file) : null;
   const injectedAt = Date.parse(record?.injectedAt ?? '');
@@ -588,8 +605,8 @@ export const BUS_MCP_NEEDLE = `${PROMPTOBUS_SERVER} mcp`;
 const INTERPRETERS = /^(?:node|nodejs|python\d*|python|ruby|perl|php|sh|bash|zsh|env|npx|npm|pnpm|yarn|deno|bun)$/i;
 
 /** Command-line needles of stdio servers from the participant project MCP. */
-export function mcpRuntimeNeedles(mcp) {
-  const needles = [];
+export function mcpRuntimeNeedles(mcp: McpConfig | null | undefined) {
+  const needles: string[] = [];
   for (const cfg of Object.values(mcp?.mcpServers ?? {})) {
     if (!cfg || (cfg.type && cfg.type !== 'stdio')) continue;
     const parts = [cfg.command, ...(Array.isArray(cfg.args) ? cfg.args : [])]
@@ -604,7 +621,7 @@ export function mcpRuntimeNeedles(mcp) {
   return needles;
 }
 
-export function readParticipantMcp(record) {
+export function readParticipantMcp(record: CursorRecord): McpConfig | null {
   const cwd = record?.cwd;
   if (!cwd) return null;
   try {
@@ -614,7 +631,7 @@ export function readParticipantMcp(record) {
   }
 }
 
-export function isRuntimeCmd(cmd, needles = []) {
+export function isRuntimeCmd(cmd: unknown, needles: string[] = []) {
   const s = String(cmd ?? '');
   if (WORKER_SERVER_CMD.test(s)) return true;
   if (s.includes(BUS_MCP_NEEDLE)) return true;
@@ -623,11 +640,11 @@ export function isRuntimeCmd(cmd, needles = []) {
 
 /** Process table in one `ps`. `ww` is required: BSD `ps` without it cuts the width, the 159-character
  * `promptobus mcp` line loses its tail, and the bus server is counted as a tool. */
-function psTable(ps, columns) {
+function psTable(ps: typeof run, columns: string) {
   const listed = ps('ps', ['-Awwo', columns], { encoding: 'utf8' });
   if (listed.error || listed.status !== 0) return null;
-  const kids = new Map();
-  const cmd = new Map();
+  const kids = new Map<number, number[]>();
+  const cmd = new Map<number, string>();
   for (const line of String(listed.stdout ?? '').split('\n')) {
     const m = /^\s*(\d+)\s+(\d+)(?:\s+(.*))?$/.exec(line);
     if (!m) continue;
@@ -635,20 +652,20 @@ function psTable(ps, columns) {
     const parent = Number(m[2]);
     cmd.set(child, m[3] ?? '');
     if (!kids.has(parent)) kids.set(parent, []);
-    kids.get(parent).push(child);
+    kids.get(parent)!.push(child);
   }
   return { kids, cmd };
 }
 
-function walkKids(root, kids, { keep = () => true, descend = () => true } = {}) {
+function walkKids(root: unknown, kids: Map<number, number[]>, { keep = () => true, descend = () => true }: { keep?: (pid: number) => boolean; descend?: (pid: number) => boolean } = {}): number[] {
   const base = Number(root);
   if (!Number.isInteger(base) || base <= 0) return [];
   const walk = [base];
   const seen = new Set([base]);
-  const out = [];
+  const out: number[] = [];
   while (walk.length) {
     const next = walk.pop();
-    for (const child of kids.get(next) ?? []) {
+    for (const child of kids.get(next!) ?? []) {
       if (seen.has(child) || child === process.pid) continue;
       seen.add(child);
       if (keep(child)) out.push(child);
@@ -660,10 +677,10 @@ function walkKids(root, kids, { keep = () => true, descend = () => true } = {}) 
 
 /** Instrumental descendants of the pane process — a sign of turn life wider than transcript silence.
  * The runtime subtree is not descended into: a descent would leave kids non-empty forever. */
-export function toolKidsOf(pid, { ps = run, needles = [] } = {}) {
+export function toolKidsOf(pid: unknown, { ps = run, needles = [] }: { ps?: typeof run; needles?: string[] } = {}) {
   const table = psTable(ps, 'pid=,ppid=,command=');
   if (!table) return [];
-  const runtime = (id) => isRuntimeCmd(table.cmd.get(id), needles);
+  const runtime = (id: number) => isRuntimeCmd(table.cmd.get(id), needles);
   return walkKids(pid, table.kids, {
     keep: (id) => !runtime(id),
     descend: (id) => !runtime(id),
@@ -680,14 +697,14 @@ export const TOUCH_SCAN_MAX = 500;
 
 /** How long since the participant last WROTE in its own tree, in milliseconds.
  * [reference/05-drivers.md#worktreetouchedms--the-third-liveness-signal-and-what-the-first-two-miss](../docs/reference/05-drivers.md#worktreetouchedms--the-third-liveness-signal-and-what-the-first-two-miss) */
-export function worktreeTouchedMs(record, { exec = run, now = Date.now } = {}) {
+export function worktreeTouchedMs(record: CursorRecord, { exec = run, now = Date.now } = {}) {
   const cwd = record?.cwd;
   if (!cwd || !existsSync(cwd)) return null;
-  const git = (args) => exec('git', ['-C', cwd, ...args], {
+  const git = (args: string[]) => exec('git', ['-C', cwd, ...args], {
     encoding: 'utf8',
     timeout: TOUCH_GIT_TIMEOUT_MS,
   });
-  let newest = null;
+  let newest: number | null = null;
   const head = git(['log', '-1', '--format=%ct', 'HEAD']);
   if (head.status === 0) {
     const sec = Number(String(head.stdout ?? '').trim());
@@ -709,7 +726,7 @@ export function worktreeTouchedMs(record, { exec = run, now = Date.now } = {}) {
 
 /** A stall is silence AND no instrumental descendants AND no recent write in the working tree —
  * three signals because each covers a phase the others do not see. `null` decides nothing. */
-export function silentIsStall(turn, kids, touchedMs = null, env = process.env) {
+export function silentIsStall(turn: { silent?: boolean } | null | undefined, kids: number[] | null | undefined, touchedMs: number | null = null, env = process.env) {
   if (!turn?.silent) return false;
   if (kids?.length) return false;
   return !(touchedMs !== null && touchedMs <= turnIdleMs(env));
@@ -719,17 +736,17 @@ export function silentIsStall(turn, kids, touchedMs = null, env = process.env) {
 
 /** Session mark in the environment of its processes. Computed from the ref, not taken from the
  * record: by cleanup time there is already no record of the turn. */
-export function sessionMarker(record, env = process.env) {
+export function sessionMarker(record: CursorRecord, env = process.env) {
   return record?.ref ? `${SESSION_ENV_VAR}=${sessionFile(record.ref, env)}` : null;
 }
 
 /** Orphaned `worker-server`, recognised by TWO marks at once — the subcommand name and the session
  * mark in the environment. It outlives a NORMAL end of turn: measured alive 11 minutes after one. */
-export function reapOrphans(marker, { ps = run } = {}) {
+export function reapOrphans(marker: string | null | undefined, { ps = run } = {}) {
   if (!marker) return [];
   const listed = ps('ps', ['-Ao', 'pid=,command='], { encoding: 'utf8' });
   if (listed.error || listed.status !== 0) return [];
-  const killed = [];
+  const killed: number[] = [];
   for (const line of String(listed.stdout ?? '').split('\n')) {
     const m = /^\s*(\d+)\s+(.*\S)\s*$/.exec(line);
     if (!m || !WORKER_SERVER_CMD.test(m[2])) continue;
@@ -752,15 +769,15 @@ export function reapOrphans(marker, { ps = run } = {}) {
 
 /** TOOL children of a running turn: `agent persist stop` takes the pane down in 0.14 s and leaves
  * them alive. Found by the tree from the pane process, not by a mark — a tool builds its own environment. */
-export function treeOf(pid, { ps = run } = {}) {
+export function treeOf(pid: unknown, { ps = run } = {}) {
   const table = psTable(ps, 'pid=,ppid=');
   if (!table) return [];
   return walkKids(pid, table.kids);
 }
 
 /** Kill the named processes. Died itself between listing and signal — a lawful outcome. */
-export function killPids(pids) {
-  const killed = [];
+export function killPids(pids: number[] | null | undefined) {
+  const killed: number[] = [];
   for (const pid of pids ?? []) {
     if (!pidAlive(pid)) continue;
     try {
@@ -775,9 +792,9 @@ export function killPids(pids) {
 
 /** Stop a persist session. **It returns AFTER the harness no longer HAS the session**: cleanup
  * follows stop, and an earlier return would leave the worktree in place. */
-export async function stopSession(record, {
+export async function stopSession(record: CursorRecord, {
   env = process.env, bin = null, timeoutMs = STOP_TIMEOUT_MS, stepMs = STOP_STEP_MS,
-} = {}) {
+}: { env?: NodeJS.ProcessEnv; bin?: string | null; timeoutMs?: number; stepMs?: number } = {}) {
   const server = record?.tmuxServer || CURSOR_TMUX_SERVER;
   const name = record?.sessionName ?? null;
   const marker = sessionMarker(record, env);
@@ -797,7 +814,7 @@ export async function stopSession(record, {
   const edge = Date.now() + timeoutMs;
   let said = null;
   if (agent) {
-    const r = await runAsync(agent, ['persist', 'stop', name], {
+    const r = await runAsync(agent, ['persist', 'stop', name!], {
       encoding: 'utf8', env, cwd: record?.cwd, timeoutMs: Math.max(0, edge - Date.now()),
     });
     said = r.error ? r.error.message : String(r.stdout ?? r.stderr ?? '').trim();
@@ -807,7 +824,7 @@ export async function stopSession(record, {
   if (!stopped) {
     // The harness command did not work — stop the pane directly. Not a bypass of the one-session-one-
     // mode gate: the binary holds that on ITS store, and picks the chat binding up on the next lift.
-    tmux(['kill-session', '-t', name], { server, env });
+    tmux(['kill-session', '-t', name!], { server, env });
     while (findSession(name, { server, env }) && Date.now() < edge) await settle(stepMs);
     stopped = !findSession(name, { server, env });
   }

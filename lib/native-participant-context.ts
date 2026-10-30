@@ -3,61 +3,71 @@ import { isDeepStrictEqual, TextDecoder } from 'node:util';
 import path from 'node:path';
 import { normalizeContextDeclaration, selectParticipantContext } from './participant-context.js';
 import { GateError } from '../dist/index.js';
+import type { PreparedHostParticipantContextSelection, HostParticipantContextPurpose, HostTaskContextDeclaration, Driver, LaunchFile } from '../dist/index.js';
+import type { ParticipantContextHost, ParticipantContextCeiling } from './participant-context.js';
+
+type Selection = PreparedHostParticipantContextSelection | null | undefined;
+interface NativeContextOptions { contextDeclaration?: unknown; contextPurpose?: string }
+interface PreparedContextInput {
+  root: string; role: string; taskId: string; options?: NativeContextOptions;
+  participant?: { metadata?: Record<string, unknown> | null } | null;
+  preparedSelection?: ParticipantContextCeiling;
+}
 
 const PURPOSES = ['technical', 'user-facing', 'author-voice'];
 const MARKER = '.promptobus-context.json';
-const inside = (root, file) => file === root || file.startsWith(`${root}${path.sep}`);
+const inside = (root: string, file: string) => file === root || file.startsWith(`${root}${path.sep}`);
 
 export const CONTEXT_FLAGS = { 'context-purpose': { type: 'string' }, 'context-file': { type: 'string' } };
 
-function declaration(value) {
-  try { return normalizeContextDeclaration(value); } catch (error) { throw new GateError(error.message); }
+function declaration(value: unknown): HostTaskContextDeclaration {
+  try { return normalizeContextDeclaration(value); } catch (error) { throw new GateError((error as Error).message); }
 }
 
-export function contextCliOptions(values, cwd = process.cwd()) {
+export function contextCliOptions(values: Record<string, string | undefined>, cwd = process.cwd()) {
   let contextDeclaration;
   if (values['context-file'] !== undefined) {
     const file = path.resolve(cwd, values['context-file']);
     try {
       if (!statSync(file).isFile() || statSync(file).size > 256 * 1024) throw new GateError('--context-file requires a JSON file of at most 256 KiB');
       contextDeclaration = declaration(JSON.parse(readFileSync(file, 'utf8')));
-    } catch (error) { throw new GateError(`Invalid --context-file ${file}: ${error.message}`); }
+    } catch (error) { throw new GateError(`Invalid --context-file ${file}: ${(error as Error).message}`); }
   }
   const contextPurpose = values['context-purpose'];
   if (contextPurpose !== undefined && !PURPOSES.includes(contextPurpose)) throw new GateError('--context-purpose requires technical, user-facing or author-voice');
   return { ...(contextPurpose !== undefined ? { contextPurpose } : {}), ...(contextDeclaration !== undefined ? { contextDeclaration } : {}) };
 }
 
-export function prepareNativeContext(host, { root, role, taskId, options = {}, participant = null, preparedSelection = undefined }) {
-  const prior = participant?.metadata?.participantContext;
+export function prepareNativeContext(host: ParticipantContextHost, { root, role, taskId, options = {}, participant = null, preparedSelection = undefined }: PreparedContextInput) {
+  const prior = participant?.metadata?.participantContext as PreparedHostParticipantContextSelection | undefined;
   const context = options.contextDeclaration === undefined ? prior?.task.context : declaration(options.contextDeclaration);
   const purpose = options.contextPurpose ?? prior?.task.purpose;
   const requested = purpose !== undefined || context !== undefined || prior || preparedSelection || typeof host.selectParticipantContext === 'function';
   if (!requested) return null;
-  if (!PURPOSES.includes(purpose)) throw new GateError('Selected native context requires explicit --context-purpose or a recorded purpose');
+  if (!PURPOSES.includes(purpose!)) throw new GateError('Selected native context requires explicit --context-purpose or a recorded purpose');
   if (typeof host.selectParticipantContext !== 'function') throw new GateError('Selected native context requires Host selector support');
   if (participant && !prior) throw new GateError('A legacy participant needs a new preparation and session before selected context can be delivered');
-  const task = { id: taskId, purpose, ...(context === undefined ? {} : { context }) };
+  const task = { id: taskId, purpose: purpose as HostParticipantContextPurpose, ...(context === undefined ? {} : { context }) };
   if (prior && !isDeepStrictEqual(prior.task, task)) throw new GateError('Native participant context changed; prepare a new participant and session');
   let selection;
   try { selection = selectParticipantContext(host, { root, role, task, preparedSelection: prior ?? preparedSelection }); }
-  catch (error) { throw new GateError(error.message); }
+  catch (error) { throw new GateError((error as Error).message); }
   if ((prior ?? preparedSelection) && !isDeepStrictEqual(selection, prior ?? preparedSelection)) throw new GateError('Native context selection changed; prepare a new participant and session');
   selectedNativeFiles(selection, null);
   nativeContextPrompt(selection);
   return selection;
 }
 
-export function assertNativeContextDriver(selection, driver) {
+export function assertNativeContextDriver(selection: Selection, driver: Pick<Driver, 'id' | 'options'>) {
   if (selection && driver.options.selectedContext !== true) throw new GateError(`Harness ${driver.id} does not support selected native context`);
 }
 
-export function nativeContextMetadata(selection) {
+export function nativeContextMetadata(selection: Selection) {
   return selection ? { contextPurpose: selection.task.purpose,
     ...(selection.task.context === undefined ? {} : { contextDeclaration: selection.task.context }), participantContext: selection } : {};
 }
 
-export function contextRules(selection, legacyRules, from = null, to = null, verify = false) {
+export function contextRules(selection: Selection, legacyRules: () => string[], from: string | null = null, to: string | null = null, verify = false) {
   const rules = selection ? selection.rules.map(rule => rule.path) : legacyRules();
   return rules.map(file => {
     const mapped = from && to && inside(from, file) ? path.join(to, path.relative(from, file)) : file;
@@ -71,7 +81,7 @@ export function contextRules(selection, legacyRules, from = null, to = null, ver
   });
 }
 
-export function nativeContextPrompt(selection) {
+export function nativeContextPrompt(selection: Selection) {
   if (!selection) return '';
   let resourceBytes = 0;
   const resources = selection.resources.map(resource => {
@@ -87,7 +97,7 @@ export function nativeContextPrompt(selection) {
   ].join('\n');
 }
 
-function openSelectedNativeSource(file) {
+function openSelectedNativeSource(file: string) {
   if (realpathSync(file) !== file) throw new GateError(`Selected native context source changed its canonical path: ${file}`);
   const before = statSync(file);
   const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -101,7 +111,7 @@ function openSelectedNativeSource(file) {
   } catch (error) { closeSync(fd); throw error; }
 }
 
-function nativeResourceBody(file) {
+function nativeResourceBody(file: string) {
   const { fd, stat } = openSelectedNativeSource(file), limit = 256 * 1024;
   try {
     if (stat.size > limit) throw new GateError(`Selected native resource requires a regular UTF-8 file of at most 256 KiB: ${file}`);
@@ -116,8 +126,8 @@ function nativeResourceBody(file) {
   } finally { closeSync(fd); }
 }
 
-function filesUnder(root, prefix = '', skipIgnored = true) {
-  const files = [];
+function filesUnder(root: string, prefix = '', skipIgnored = true): { relative: string; source: string }[] {
+  const files: { relative: string; source: string }[] = [];
   for (const entry of readdirSync(root, { withFileTypes: true })) {
     if (skipIgnored && (entry.name === '.git' || entry.name === '.DS_Store')) continue;
     const file = path.join(root, entry.name), relative = path.join(prefix, entry.name);
@@ -129,7 +139,7 @@ function filesUnder(root, prefix = '', skipIgnored = true) {
   return files;
 }
 
-function checkDestination(destination, selection, expected) {
+function checkDestination(destination: string, selection: PreparedHostParticipantContextSelection, expected: string[]) {
   let parent = path.dirname(destination), parentEntry;
   while (!(parentEntry = existingEntry(parent))) parent = path.dirname(parent);
   if (parentEntry.isSymbolicLink() || realpathSync(parent) !== parent) throw new GateError(`Selected native context destination traverses a symbolic link: ${destination}`);
@@ -140,7 +150,7 @@ function checkDestination(destination, selection, expected) {
   if (!entry.isDirectory()) throw new GateError(`Selected native context destination is not an owned directory: ${destination}`);
   if (!readdirSync(destination).length) return;
   const marker = path.join(destination, MARKER);
-  let previous;
+  let previous: { owner?: unknown; task?: unknown; paths?: unknown[] } | undefined;
   try { previous = JSON.parse(readFileSync(marker, 'utf8')); } catch { /* A foreign directory has no ownership receipt. */ }
   if (previous?.owner !== 'promptobus-selected-context' || !isDeepStrictEqual(previous.task, selection.task)
     || !Array.isArray(previous.paths)) throw new GateError(`Selected native context refuses a pre-existing unowned skills container: ${destination}`);
@@ -150,7 +160,7 @@ function checkDestination(destination, selection, expected) {
   for (const relative of expected) if (path.isAbsolute(relative) || relative.split(path.sep).includes('..')) throw new GateError(`Selected native context destination escapes its container: ${relative}`);
 }
 
-export function assertNativeContainer(directory, allowed) {
+export function assertNativeContainer(directory: string, allowed: string[]) {
   const entry = existingEntry(directory);
   if (!entry) return;
   if (entry.isSymbolicLink()) throw new GateError(`Selected native container refuses a symbolic link: ${directory}`);
@@ -161,11 +171,11 @@ export function assertNativeContainer(directory, allowed) {
   }
 }
 
-function existingEntry(file) {
-  try { return lstatSync(file); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+function existingEntry(file: string) {
+  try { return lstatSync(file); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
 }
 
-export function assertNativePluginManifest(plugin, selection, manifestText) {
+export function assertNativePluginManifest(plugin: string, selection: PreparedHostParticipantContextSelection, manifestText: string) {
   assertNativeContainer(plugin, ['skills', '.claude-plugin', 'bootstrap']);
   assertNativeContainer(path.join(plugin, '.claude-plugin'), ['plugin.json']);
   checkDestination(path.join(plugin, 'bootstrap'), selection, ['assignment.md']);
@@ -178,7 +188,7 @@ export function assertNativePluginManifest(plugin, selection, manifestText) {
   if (readFileSync(manifest, 'utf8') !== manifestText) throw new GateError(`Selected native plugin manifest is unowned: ${manifest}`);
 }
 
-export function selectedNativePrompt(selection, prompt, directory) {
+export function selectedNativePrompt(selection: Selection, prompt: string, directory: string): { argument: string; files: LaunchFile[]; addDirs: string[] } {
   if (!selection || !prompt || Buffer.byteLength(prompt, 'utf8') <= 32 * 1024) return { argument: prompt, files: [], addDirs: [] };
   const paths = ['assignment.md'], file = path.join(directory, paths[0]);
   checkDestination(directory, selection, paths);
@@ -193,10 +203,10 @@ export function selectedNativePrompt(selection, prompt, directory) {
   };
 }
 
-export function selectedNativeFiles(selection, destination) {
+export function selectedNativeFiles(selection: Selection, destination: string | null): LaunchFile[] {
   if (!selection) return [];
-  const sources = new Map();
-  const add = (relative, source) => {
+  const sources = new Map<string, string>();
+  const add = (relative: string, source: string) => {
     if (relative === MARKER || relative.startsWith(`${MARKER}${path.sep}`)
       || [...sources.keys()].some(prior => prior.startsWith(`${relative}${path.sep}`) || relative.startsWith(`${prior}${path.sep}`))) {
       throw new GateError(`Selected native context destination collision: ${relative}`);
@@ -210,7 +220,7 @@ export function selectedNativeFiles(selection, destination) {
   }
   for (const resource of selection.resources) {
     if (selection.skills.some(skill => inside(skill.root, resource.path))) continue;
-    const targets = new Set();
+    const targets = new Set<string>();
     for (const skill of selection.skills) {
       const relative = path.relative(path.dirname(skill.sourceRoot), resource.sourcePath);
       if (relative.startsWith(`_shared${path.sep}`) && !relative.split(path.sep).includes('..')) targets.add(relative);
@@ -231,8 +241,8 @@ export function selectedNativeFiles(selection, destination) {
   ];
 }
 
-export function assertSelectedNativeFiles(files) {
-  for (const file of files) if (file.clearDirectory) checkDestination(file.path, file.selectedContext, file.selectedPaths);
+export function assertSelectedNativeFiles(files: LaunchFile[]) {
+  for (const file of files) if (file.clearDirectory) checkDestination(file.path, file.selectedContext!, file.selectedPaths!);
   for (const file of files) if (file.selectedContext && path.basename(file.path) === 'plugin.json'
     && path.basename(path.dirname(file.path)) === '.claude-plugin') {
     assertNativePluginManifest(path.dirname(path.dirname(file.path)), file.selectedContext, file.text);
@@ -243,7 +253,7 @@ export function assertSelectedNativeFiles(files) {
   }
 }
 
-export function writeSelectedNativeFile(file) {
+export function writeSelectedNativeFile(file: LaunchFile) {
   if (file.clearDirectory) { rmSync(file.path, { recursive: true, force: true }); mkdirSync(file.path, { recursive: true }); }
   else if (file.copyFileFrom) {
     const source = openSelectedNativeSource(file.copyFileFrom);
@@ -264,7 +274,7 @@ export function writeSelectedNativeFile(file) {
   return true;
 }
 
-export function installSelectedNativeFiles(files) {
+export function installSelectedNativeFiles(files: LaunchFile[]) {
   assertSelectedNativeFiles(files);
   for (const file of files) {
     if (writeSelectedNativeFile(file)) continue;

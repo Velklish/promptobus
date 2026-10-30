@@ -311,7 +311,7 @@ The Cursor adapter's event-loop test uses a fixed 100 ms delay in each of its tw
 
 Socket-dependent groups probe their local listener before starting child processes. A sandbox refusal is a named skip only when the failure is the `listen` syscall with `EACCES` or `EPERM`; another error stays red. Skips never count as passes: the runner lists their checks and files, and its final summary calls out every file with zero passed checks so a wholly skipped suite cannot look fully exercised. Where local sockets are available, the probe succeeds and the original integration assertions run.
 
-CI runs the same steps on Node 20 and 22, on Ubuntu and macOS ([ci.yml](https://github.com/Velklish/promptobus/blob/v0.31.0/.github/workflows/ci.yml)).
+CI runs the same steps on Node 20 and 22, on Ubuntu and macOS. Its test step uses the job-owned temporary directory. On macOS, local acceptance uses a canonical temporary root: `TMPDIR="$(node -p "require('node:fs').realpathSync(require('node:os').tmpdir())")" npm test`. Explicit link fixtures retain their checks; handling arbitrary root aliases in the product is a separate compatibility boundary.
 
 ## Contributing
 
