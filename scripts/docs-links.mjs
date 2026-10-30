@@ -5,6 +5,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { run } from '../lib/exec.js';
+import { withPackageSnapshot } from './package-snapshot.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -424,7 +425,7 @@ function walkFiles(abs, rel, out) {
 
 export function packedPaths(root) {
   const args = ['pack', '--dry-run', '--json', '--ignore-scripts'];
-  const result = run('npm', args, { cwd: root, encoding: 'utf8' });
+  const result = withPackageSnapshot(root, (snapshot) => run('npm', args, { cwd: snapshot, encoding: 'utf8' }));
   if (result.error || result.signal || result.status !== 0) {
     const detail = result.error?.message
       ?? (result.signal ? `signal ${result.signal}` : `status ${result.status}`);

@@ -616,3 +616,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-415.5"></a>`PB-415.5-typescript-orchestration-cli` · 2026-10-30 · completed · — · Migrate orchestration public entry points and CLI to strict TypeScript
 - <a id="pb-415"></a>`PB-415-typescript-migration` · 2026-10-30 · completed · — · Migrate maintained Promptobus code to strict TypeScript without changing runtime contracts
 - <a id="pb-139.1"></a>`PB-139.1-lib-ts-check-net-fictitious` · 2026-10-30 · batch PB-415 · — · lib/ has no type net: @ts-check on the dist boundary needs its own tsconfig and a gate
+- <a id="pb-415.10"></a>`PB-415.10-npm10-pack-prepare-isolation` · 2026-10-30 · completed · — · Isolate npm pack preparation from runtime files used by parallel verification

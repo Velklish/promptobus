@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compile all maintained runtime and CLI source with strict TypeScript after the core build, including executable CLI output from a fresh checkout. Package entry names and emitted JavaScript paths stay the same; the tarball contains runtime JavaScript and declarations without authored TypeScript. Tests and development scripts remain JavaScript.
 - Run CI tests with the job-owned temporary directory, matching the explicit fixture-root conditions used for local acceptance. Product root-alias handling remains a separate compatibility boundary.
 
+### Fixed
+
+- Isolate package preparation used by verification from the runtime tree read by parallel MCP subprocesses. npm 10 can run `prepare` during `npm pack --ignore-scripts`; packing in an owned snapshot preserves the original runtime and package manifest.
+
 ## [0.31.0] — 2026-10-29
 
 ### Changed

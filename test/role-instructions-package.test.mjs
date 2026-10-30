@@ -1,11 +1,12 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { makeSandbox } from './sandbox.mjs';
 import { run as runProcess } from '../lib/exec.js';
+import { withPackageSnapshot } from '../scripts/package-snapshot.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const stand = makeSandbox('promptobus-package-role-instructions-');
@@ -18,8 +19,27 @@ const run = (command, args, cwd) => {
   assert.equal(result.status, 0, `${command} ${args.join(' ')}\n${result.error ?? ''}\n${result.stdout}\n${result.stderr}`);
   return result.stdout;
 };
-const packed = JSON.parse(run('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', stand], root))[0];
+const runtimeState = () => new Map(['lib', 'bin', 'dist'].flatMap((dir) =>
+  readdirSync(path.join(root, dir), { recursive: true }).filter((file) => /\.(?:js|d\.ts)$/.test(file))
+    .map((file) => {
+      const relative = path.join(dir, file);
+      return [relative, { bytes: readFileSync(path.join(root, relative)),
+        mtimeNs: statSync(path.join(root, relative), { bigint: true }).mtimeNs }];
+    })));
+const beforePack = runtimeState();
+const packed = withPackageSnapshot(root, (snapshot) => JSON.parse(
+  run('npm', ['pack', '--json', '--pack-destination', stand], snapshot))[0]);
+const afterPack = runtimeState();
 run('npm', ['install', '--ignore-scripts', '--offline', '--no-audit', '--no-fund', path.join(stand, packed.filename)], consumer);
+
+test('packing role instructions preserves original runtime bytes and timestamps', () => {
+  const changed = [...new Set([...beforePack.keys(), ...afterPack.keys()])].filter((file) => {
+    const before = beforePack.get(file);
+    const after = afterPack.get(file);
+    return !before || !after || !before.bytes.equals(after.bytes) || before.mtimeNs !== after.mtimeNs;
+  });
+  assert.deepEqual(changed, []);
+});
 
 test('core tarball excludes the optional BB plugin source package', () => {
   const plugin = JSON.parse(readFileSync(path.join(root, 'integrations/bb/package.json'), 'utf8'));
