@@ -2,7 +2,7 @@ import path from 'node:path';
 import { APPROVER, hasFeature, harnessOf, holdsSession, snapshotSessions } from '../dist/index.js';
 import { bindSessionIdentity, canonicalPath, participantOf, readTask } from './store.js';
 import { readRecordAt } from './driver-common.js';
-import { CLAUDE, CLAUDE_SKILLS_REL, REPORTER_DENY, claudeDriver } from './driver-claude.js';
+import { CLAUDE, CLAUDE_SKILLS_REL, REPORTER_DENY, SESSION_RECORD_VAR, claudeDriver } from './driver-claude.js';
 import { CURSOR, CURSOR_SKILLS_REL, cursorDriver } from './driver-cursor.js';
 import { CODEX, CODEX_SKILLS_REL, codexDriver } from './driver-codex.js';
 import { OPENCODE, opencodeDriver } from './driver-opencode.js';
@@ -134,6 +134,13 @@ export function identityCandidates(env = process.env): IdentityCandidate[] {
     const id = variable ? String(env?.[variable] ?? '').trim() : '';
     return id ? [{ harness, variable, id }] : [];
   });
+}
+
+export function actorIdentityVariables(): string[] {
+  // Claude's handshake pointer carries a record but is not MCP identity fallback.
+  return [SESSION_RECORD_VAR, ...Object.values(REGISTRY.drivers).flatMap(driver =>
+    [driver.options.identityVar, driver.options.mcpIdentity?.recordVar])]
+    .filter((name): name is string => typeof name === 'string');
 }
 
 /** Session records named by an MCP child, after the record proves the same bus identity: a

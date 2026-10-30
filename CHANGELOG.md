@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add private owner transactions for explicitly approved native root profiles and managed BB launch exclusion. One canonical workspace/store lock covers complete owner lookup, root realization and intent publication; unresolved intents retain their block after crashes, and completed BB thread exclusions are permanent. Native guard, BB SDK wiring and profile activation remain separate integration work.
 - Add `service ensure`, `service status` and `service stop` for a shared workspace HTTP owner, with separate bus and reviewer-file connections, scoped client credentials, retained endpoint recovery and idle shutdown. Consumer CLI entries provide `createHost({ cwd, env })` when routing the internal `service run` command. Managed harness configuration and task warden migration follow separately.
+- Allow private owner-created Codex HTTP grants to remain pending through initialization and discovery, then bind once to an owner-established native thread. Bus and reviewer-file calls require matching actual thread metadata before dispatch or saved mutation replay; revoked or replaced grants cannot recover authority through a deferred Host factory. Native eligibility and launch activation remain owner responsibilities.
 
 ### Changed
 

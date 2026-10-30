@@ -625,3 +625,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-416.10"></a>`PB-416.10-root-profile-admission` · 2026-10-30 · completed · — · Serialize approved root profiles with managed launch exclusion
 - <a id="pb-416.11"></a>`PB-416.11-bb-current-sdk-git-reads` · 2026-10-30 · completed · — · Adapt the BB integration to the installed SDK Git read contract
 - <a id="pb-416.12"></a>`PB-416.12-owned-service-lock-release` · 2026-10-30 · completed · — · Make shared service lock acquisition safe during owner release
+- <a id="pb-416.9"></a>`PB-416.9-codex-http-native-binding` · 2026-10-30 · completed · — · Bind Codex HTTP clients to one owner-realized native thread

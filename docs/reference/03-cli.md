@@ -1709,6 +1709,23 @@ an unrelated process that acquired the retained TCP port after a crash. A client
 bearer cannot register or rebind another client. Reviewer grants that contain the
 private credential tree are refused, including a broad ancestor such as `/`.
 
+An owner-created grant may carry `nativeBinding: { kind: 'codex', state:
+'pending' }`. This credential can initialize, negotiate, ping and list the existing
+tools without constructing a client Host, resolving an actor, joining a task,
+handing over contact, requesting a warden or reading reviewer files. Tool calls
+refuse until the private owner control operation `realize` supplies its actual
+native `threadId`. Repeating the same ID succeeds; another ID refuses. A grant
+without `nativeBinding` retains its existing behavior.
+
+Realization keeps the initialized MCP sessions and their protocol state. Each bus
+and reviewer-file `tools/call` must then carry that exact ID in
+`params._meta.threadId`, including a retry with a saved mutation response.
+Missing, malformed or foreign metadata refuses before Host construction, file
+reads, journal writes or receipt replay. The service rechecks the authoritative
+grant after asynchronous Host construction; revocation or replacement cannot
+restore an earlier actor. The [Codex identity contract](05-drivers.md#shared-http-native-binding)
+states the owner's obligations and effective environment.
+
 The default idle interval is 30 seconds without clients, reservations, requests
 or attached work. A live client with no current HTTP request keeps its service;
 optional SSE/DELETE behavior is not the lifetime proof. Unknown managed liveness

@@ -121,6 +121,10 @@ export async function bindServiceClient(host: PromptobusHost, clientId: string, 
   return serviceControl(servicePaths(host, options.env), { operation: 'bind', runtime: runtimeIdentity(host), clientId, lifetime });
 }
 
+export async function realizeServiceClient(host: PromptobusHost, clientId: string, threadId: string, options: ServiceCallOptions = {}) {
+  return serviceControl(servicePaths(host, options.env), { operation: 'realize', runtime: runtimeIdentity(host), clientId, threadId });
+}
+
 export async function revokeServiceClient(host: PromptobusHost, clientId: string, options: ServiceCallOptions = {}) {
   return serviceControl(servicePaths(host, options.env), { operation: 'revoke', runtime: runtimeIdentity(host), clientId });
 }

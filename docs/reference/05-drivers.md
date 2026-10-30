@@ -611,6 +611,30 @@ codex-cli 0.156.1 recorded `hook/started stop` and `hook/completed stop` before
 `turn/completed` for a worker and a reviewer on turns needing no follow-up; the
 journal and hooks-file evidence is in [hooks and trust](../guides/hooks-and-trust.md#a-participants-hooks-are-not-the-workspaces).
 
+### Shared HTTP native binding
+
+A shared HTTP bearer identifies a client grant, while one Codex app-server may
+host several native threads. A native grant binds to one exact actual thread ID
+through trusted private owner control. `tools/call` metadata verifies this binding;
+it never selects the actor or realizes a pending grant. `params._meta.sessionId`
+may identify a shared root and supplies no thread proof. Role headers and tool
+arguments supply no substitute for `params._meta.threadId`.
+
+After realization, the ordinary full consumer Host receives frozen lexical env.
+`CODEX_THREAD_ID` comes from the binding; inherited harness identity variables and
+session-record pointers are removed. For a managed lifetime, the validated owner
+launch proof supplies `PROMPTOBUS_CODEX_SESSION` from its `record`, independently
+of inherited env, so the ordinary bus join can hand over that launch's contact
+point. A pending credential has no client Host.
+The [shared service](03-cli.md#shared-service) preserves its MCP session across
+realization and checks current authority before dispatch or saved receipt replay.
+
+Realization is an owner assertion, not native transcript or process proof. The
+owner must establish the actual thread and its eligibility before realizing the
+grant, and match it to the launch record when declaring a managed lifetime.
+The transport makes no root eligibility decision and does not install or
+activate native profiles, hooks or launch configuration.
+
 ### Execution-free Codex review
 
 The reviewer thread sets `features.shell_tool = false` and `features.unified_exec = false`.
