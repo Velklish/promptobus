@@ -6,7 +6,7 @@ import { createConnection } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { PromptobusHost } from '../dist/index.js';
-import { withDirLockAsync } from '../dist/fs/lock.js';
+import { withDirLock } from '../dist/fs/lock.js';
 import { canonicalPath, writeJsonAtomic } from './store.js';
 
 export interface ProcessIdentity { pid: number; birth: string }
@@ -176,11 +176,13 @@ export function runtimeIdentity(host: PromptobusHost) {
   return hash.digest('hex');
 }
 
+const serviceLockOptions = {
+  onMissing: () => new Error('Shared service lock parent vanished'),
+  onBusy: () => new Error('Shared service startup is busy; retry after its owner finishes'),
+};
+
 export async function acquireServiceLock(directory: string): Promise<(() => void) | null> {
-  return withDirLockAsync(`${directory}.gate`, async () => acquireOwnedLock(directory), {
-    onMissing: () => new Error('Shared service lock parent vanished'),
-    onBusy: () => new Error('Shared service startup is busy; retry after its owner finishes'),
-  });
+  return withDirLock(`${directory}.gate`, () => acquireOwnedLock(directory), serviceLockOptions);
 }
 
 function acquireOwnedLock(directory: string): (() => void) | null {
@@ -198,8 +200,8 @@ function acquireOwnedLock(directory: string): (() => void) | null {
     return acquireOwnedLock(directory);
   }
   writePrivate(path.join(directory, 'owner.json'), own);
-  return () => {
+  return () => withDirLock(`${directory}.gate`, () => {
     const latest = readPrivate(path.join(directory, 'owner.json'));
     if (recordOf(latest) && latest.nonce === own.nonce) rmSync(directory, { recursive: true });
-  };
+  }, serviceLockOptions);
 }

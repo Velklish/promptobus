@@ -97,6 +97,24 @@ former product stdio entries report the migration instructions; they do not
 remain permanent fallback processes. Native BB dispatch, pause and epoch
 authority retain their existing delivery path.
 
+### Owner lock release
+
+Acquisition and release use the same core gate around the active owner lock.
+Both gate transactions are synchronous: process-birth observation and filesystem
+publication on acquisition, nonce comparison and removal on release. No awaited
+callback, HTTP request or native provider operation runs under this gate. Gate
+contention uses the core lock's existing bounded synchronous wait; this does not
+establish a responsiveness guarantee. Acquisition still returns a promise, and
+release remains a synchronous callback. A live or unknown active owner returns
+busy so callers can wait asynchronously outside the gate.
+
+A contender cannot lose owner proof to a cooperating release between checking
+the active directory and reading its owner. Release removes only its matching
+nonce; a replacement generation retains its proof. A genuinely missing or
+corrupt owner still refuses acquisition and preserves the lock for inspection.
+Controlled owned-process fixtures establish this ordering and retention, not
+the cause of an earlier CI refusal.
+
 ### Root profile admission
 
 The private owner module `lib/root-admission.ts` records explicitly approved

@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Serialize shared service lock acquisition and release through the same short core gate, so release cannot erase owner proof during a contender's read. Preserve synchronous release, replacement generations and refusal of genuinely missing or corrupt proof.
 - Make startup verification wait for listener readiness and require durable Stop confirmation before certifying fixture cleanup.
 - Preserve bearer and header environment-variable references in generated Codex HTTP MCP configuration and explicit `oauth:false` in OpenCode remote MCP configuration.
 - Remove known legacy feedback hooks through trusted root aliases while preserving foreign commands and sibling handlers. Fallback recognition requires the historical command shape and the current trusted Node executable's physical identity; native execution-cwd evidence remains exact.
