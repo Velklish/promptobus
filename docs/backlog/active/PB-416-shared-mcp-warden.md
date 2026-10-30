@@ -1,10 +1,11 @@
 # PB-416 · Share one MCP server and warden across agent sessions
 
-- **Order:** 390
 - **Scope:** [MCP and warden](../../reference/01-overview.md), [Host](../../reference/02-host.md), [CLI](../../reference/03-cli.md), [Drivers](../../reference/05-drivers.md)
 - **Created:** 2026-10-30
 - **Dependencies:** PB-415.5
 - **Cost:** major
+- **Previous order:** 390
+- **Taken:** 2026-10-30
 
 ## Context
 
