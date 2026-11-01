@@ -47,14 +47,21 @@ let present = true;
 const calls = [];
 const dependencies = {
   process, STOP_TIMEOUT_MS: 100, STOP_STEP_MS: 1, CURSOR_TMUX_SERVER: 'fixture',
+  TMUX_TMPDIR: SB, TMUX_NOT_FOUND: 'fixture tmux unavailable', tmuxBin: () => 'owned-tmux',
   sessionMarker: () => 'owned', findSession: () => present ? { panePid: 123 } : null,
-  treeOf: () => [124], reapOrphans: () => [], killPids: (pids) => { calls.push(['kill kids', pids]); return pids; },
+  readTmuxSessionsAsync: async () => ({ sessions: present ? [{ name: 'owned', chatId: 'chat', panePid: 123 }] : [], missing: null }),
+  readTmuxSessions: () => ({ sessions: present ? [{ name: 'owned', chatId: 'chat', panePid: 123 }] : [], missing: null }),
+  parsePsTable: () => ({ kids: new Map() }), walkKids: () => [124],
+  reapOrphans: () => [], killPids: (pids) => { calls.push(['kill kids', pids]); return pids; },
   tmux: (args) => { calls.push(['tmux', args]); present = false; }, settle: async () => {},
-  runAsync: (...args) => exec.runAsync(...args),
+  runAsync: (cmd, ...args) => {
+    if (cmd === 'owned-tmux') { calls.push(['tmux', args[0].slice(5)]); present = false; return Promise.resolve({ status: 0 }); }
+    return cmd === 'ps' ? Promise.resolve({ status: 0, stdout: '', stderr: '' }) : exec.runAsync(cmd, ...args);
+  },
 };
 const stopSession = await new AsyncFunction(...Object.keys(dependencies), `${stopSource}; return stopSession;`)(...Object.values(dependencies));
 const launchesBeforeStop = exec.launches.length;
-const stopped = await stopSession({ sessionName: 'owned', cwd: SB }, { bin: path.join(bin, 'agent.cmd'), env, timeoutMs: 0 });
+const stopped = await stopSession({ sessionName: 'owned', chatId: 'chat', cwd: SB }, { bin: path.join(bin, 'agent.cmd'), env, timeoutMs: 100 });
 check('async batch: persist stop preserves the refusal diagnostic and stops the owned pane through its fallback',
   stopped.stopped === true && stopped.said?.includes('cancellable execution of a Windows command file is unsupported')
   && exec.launches.length === launchesBeforeStop

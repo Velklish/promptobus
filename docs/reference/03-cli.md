@@ -1495,7 +1495,39 @@ One list does have to learn every role, and it is not this one: the guard's part
 
 **The guard holds the turn for those tasks too, and the guarded task itself does not move.** `identity.declaredTask ?? boundTaskId(...)` still picks the ONE task whose guard mark, end-of-turn mark and warden revival this hook owns. Beside that verdict it walks OTHER active tasks this session owns as `orchestrator`. Unread mail is keyed `lifted:<id>:<n>` and names each task by id and title, because fetching it takes `promptobus_mailbox` with that task named. Once a user question there is read, its debt remains keyed `lifted-user:<id>:<since>`; `status` cannot settle it, and the guard names the task that needs an `answer` to `user`. This is the LAST branch of the verdict, below this address's own unread, its `UNANSWERED` debt and its pending hand-off. The return ceiling `GUARD_BLOCK_LIMIT` is shared, so an unattended lifted task cannot hold a session past two turns either.
 
-`warden` is the only listener for a task. Any bus command starts it. `PROMPTOBUS_WARDEN=off` disables auto-start. A knock carries one stub per message and never a body, in a block of at most `KNOCK_TEXT_MAX` (2000) characters (`lib/contract.js`). Only `promptobus_mailbox` marks mail read.
+`warden [--task <id>]` requests the task's listener in the shared workspace
+service and returns after that demand is accepted. Bus writes request the same
+listener, including when the service already runs for another task.
+`PROMPTOBUS_WARDEN=off` disables auto-start. A knock carries one stub per message
+and never a body, in a block of at most `KNOCK_TEXT_MAX` (2000) characters
+(`lib/contract.js`). Only `promptobus_mailbox` marks mail read.
+
+The CLI help names the shared owner explicitly:
+
+<!-- quote:../../lib/cli.js -->
+```text
+                              ensure this task's listener in the shared workspace service.
+```
+<!-- /quote -->
+
+One physical service owns the task loops in one package-owned Worker thread.
+Departure-note persistence, watcher closure and owned seat cleanup are attempted
+independently. A failure preserves its original cause and any cleanup errors;
+it is not a successful stopped task and cannot consume a later recovery demand.
+The service closes its own Worker and waits for actual exit before releasing its
+owner lock. A failed task cleanup can therefore close the shared owner; retained
+required demands resume through owner preflight after the failure is corrected.
+An unconfirmed Worker exit retains the lock rather than claiming shutdown.
+
+Each task retains its own journal seat, watcher, heartbeat and cleanup. An abort
+wakes an idle watcher; an activation already in progress must settle before its
+seat is cleared or a requested successor starts. Demands arriving after a loop's
+start coalesce into one successor, including across its natural completion;
+explicit abort cancels demand unless a later request renews it. A physically live
+legacy warden
+is reported as `legacy-busy`, even with a stale heartbeat; it is neither stolen
+nor killed. A consumed demand is not restarted merely because the task's journal
+still says `active`. A new bus write or `warden` command supplies a new demand.
 
 **One participant, one contact point, one knocking warden.** A participant mailbox can span tasks ([ADR-028](../adr/adr-028-participant-mailbox.md)): a teamlead's is its child `orchestrator` slot and its root `teamlead:<slug>` slot. The warden of the primary task counts every slot, watches their directories, keeps `health` under the primary address and knocks once for the sum, with one coalescing window and one take across the slots. Another task's warden skips an address alias record: no knock, no `SILENT`, no stall line about its channel, and its slot does not keep that warden alive. A handover through an address alias, such as a Codex teamlead's root entry, writes the primary address's `wake/` file. The Stop guard and the `send` reply's unread tail count the whole participant mailbox (`countMailbox`, `lib/store.js`).
 
@@ -1729,11 +1761,67 @@ states the owner's obligations and effective environment.
 The default idle interval is 30 seconds without clients, reservations, requests
 or attached work. A live client with no current HTTP request keeps its service;
 optional SSE/DELETE behavior is not the lifetime proof. Unknown managed liveness
-is retained and reported by status. After a listener crash, run `service ensure`
+is retained and reported by status. Status observations do not authorize operations.
+Each managed HTTP admission awaits a fresh native observation for the exact launch
+record revision; pending or unknown proof permits no mutation or saved-response replay.
+An unavailable observation returns HTTP 503 while retaining the credential, session
+and prior receipts. Grant, participant and record revision are checked again after
+asynchronous preparation and at synchronous lock acquisition.
+
+Managed synchronous dispatch takes its own task lock before creating a request
+receipt and refuses contention immediately. Its nested target, alias and message
+commit locks also do not wait on earlier native proof. A refusal before dispatch
+returns HTTP 503 without a new receipt. A later refusal may follow a partial effect:
+the existing request receipt remains authoritative, and replay returns its saved
+outcome instead of silently rerunning the tool. Inspect the journal before issuing
+a new request. Other clients, stdio and asynchronous lock policies are unchanged.
+Native observation and filesystem writes are not an atomic OS-liveness transaction.
+
+After a listener crash, run `service ensure`
 or repeat consumer preflight before the existing harness reconnects/reinitializes.
+
+Task demand changes become visible to the coordinator only after their durable
+write returns normally. Any owner ensure/abort, settlement or recovery write error
+enters the common fatal path and closes the owned Worker before releasing the
+service lock. Closing does not rewrite the demand file. HTTP500 does not prove a
+write was uncommitted: inspect the retained file and receipts before issuing a new
+action. Preflight recovers the actual persisted demand UUID; it does not invent a
+replacement generation from the failed response. Late callbacks cannot schedule
+work after the fatal transition.
 The launcher ensures readiness at launch; it does not continuously supervise the
 process afterward. A successful stop confirms this process's exit, not a native
 participant Stop receipt. See the [service decision](../adr/adr-040-shared-workspace-service.md).
+
+Status includes `warden.tasks` with task, state and PID, and
+`warden.observations` for pending provider reads. Task states are `starting`,
+`running`, `stopping` and `legacy-busy`. Active task loops and pending observations
+keep the service alive. Owner control alone can request or abort a task loop;
+client bearer tokens cannot use that control channel. Native BB delivery keeps
+its existing owner, pause and epoch checks.
+
+Background provider reads run on the single warden Worker. Root process birth
+checks run asynchronously in main, independently of that Worker's queue. A slow
+provider can delay other background reads, but it does not run its synchronous
+subprocess on the HTTP event loop. Explicit user operations such as `status` or
+mailbox stall inspection can still run synchronous driver calls and delay other
+requests up to the call's timeout; this is not a general HTTP latency guarantee.
+
+The service fixes the common poll environment, harness homes and actual driver
+binaries at startup; incompatible clients are refused. Internal owner registration
+uses `ServiceCallOptions.pollEnv` for cold startup as the full common owner
+environment, retaining root consumer/account settings and removing actor
+task/role, native identity, record and contact fields. The owner cwd is the
+canonical Host workspace; `ServiceCallOptions.cwd` retains only caller/preflight
+context, while `ServiceClientInput.cwd` remains client-specific. A managed cold
+caller with no common snapshot is refused before spawn and must run owner
+preflight. An unbound ordinary root can use its own environment as the default.
+A launcher that creates private native configs must capture the full root/common
+snapshot before that preparation. Background polling uses its finite projection;
+client identity variables never become the Worker's identity.
+`ServiceClientInput.pollEnv` separately supplies the common context for client
+compatibility checks; client `env` and `cwd` retain that client's own identity.
+The exact environment projection and late contact handover boundary are specified
+in [ADR-040](../adr/adr-040-shared-workspace-service.md#common-poll-context).
 
 ## MCP
 
@@ -2205,20 +2293,21 @@ Source: `lib/liftoff.ts`, `bgSessionsCache`.
 Live background sessions by the names we set at spawn. The `claude agents --json`
 format is not a contract: if we did not parse it — we say so, we do not invent state.
 
-A successful parse is remembered until reset: `promptobus status` and the warden
-heartbeat read the list per participant, and without memory each would cost a
-separate launch. A parse refusal is not cached — one failure does not declare every
-later call `unknown`. That costs today's readers nothing, and both halves were
-measured (2026-09-02): the snapshot dies on the FIRST `null`, so an unparsed reply
-costs one launch at any participant count, and the warden resets the cache itself
-before the heartbeat snapshot — it has no inter-beat memory at all. The cost would
-appear for a reader that takes state more often than the heartbeat and without a
-reset: 60 snapshots in a row — 1 launch on a parsed reply versus 60 on an unparsed
-one. There is no such reader, and one must not be added (see [warden.ts](../../lib/warden.ts)).
-The suite after spawn/stop calls `resetBgSessionsCache` (sandbox.mjs); `awaitSession`
-and the warden reset themselves, otherwise they would see the list from before the
-change. This read measures 0.34–0.41 s (driver-claude.js); the shared minute is a
-wedge ceiling, not a latency budget, and a crossing becomes `unknown` below.
+A successful parse is remembered until reset, keyed by the resolved binary and
+poll environment. `status` and task snapshots read the list per participant;
+without memory each participant would cost a separate launch. A parse refusal is
+not cached: one failed parse must not declare every later read `unknown`.
+
+The suite resets after spawn/stop (`sandbox.mjs`); `awaitSession`, each task
+heartbeat and each service lifetime observation reset before their snapshots.
+The shared service also observes managed clients between task heartbeats. Those
+reads run in its single Worker with the fixed common poll environment; the main
+thread accepts their result only while the owned launch record is unchanged.
+Provider unavailability or a record changed during observation leaves liveness
+unknown. A later read may recover; an unknown read never grants authority or
+proves death. The shared 60-second subprocess timeout is a wedge ceiling, not a
+latency budget. Background reads serialize on that Worker, so one slow provider
+can delay the next observation.
 
 ## BB participant lifecycle
 

@@ -648,7 +648,7 @@ export async function approverLift(rootOrHost: unknown, opts: ApproverOptions): 
     awaitOptions: opts.awaitOptions,
   });
   ok(`approver ${plan.address} started in ${plan.nsPath}${session ? ` (session ${session})` : ''}`);
-  ensureWarden(plan.home, plan.taskId, { host: plan.host });
+  await ensureWarden(plan.home, plan.taskId, { host: plan.host });
   if (plan.brief) keepBrief(plan as ApproverPlan & { brief: string });
   plan.driver.saidLiftoff!({ name: plan.name, seen, session, output });
   warnUnread(plan);

@@ -1,10 +1,13 @@
 import './home.mjs';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
-import { makeSandbox, stubCommand, writeHostConfig } from './sandbox.mjs';
+import { makeSandbox, makeSockDir, stubCommand, writeHostConfig } from './sandbox.mjs';
+import { waitFor } from './harness.mjs';
+import { initialTaskClaimStarted, taskServiceFixture } from './task-service-fixture.mjs';
+import { processState } from '../lib/service-state.js';
 import { releaseNativeReservation, reserveNativeParticipant } from '../lib/native-lifecycle.js';
 import { REGISTRY } from '../lib/drivers.js';
 import { readSession } from '../lib/codex-session.js';
@@ -31,6 +34,10 @@ if (process.argv[2] === 'agents') { console.log('[]'); process.exit(0); }
 if (process.argv[2] === '--version') { console.log('2.1.280'); process.exit(0); }
 process.exit(2);
 `);
+const socketDirectory = makeSockDir('a2s-').dir;
+const service = await taskServiceFixture({ workspace: root, home, task, socketDirectory, env });
+Object.assign(env, service.env);
+try {
 const store = await import('../lib/store.js');
 store.createTask(home, { id: task, title: 'user asks before close', owner, adapter: { slug: 'done-user' } });
 
@@ -105,6 +112,22 @@ const sweep = cli(['sweep', 'worker:swept', '--task', task], true);
 check('sweep accepts a dead participant after user', sweep.status === 0
   && result(sweep).includes('task stays active'), result(sweep));
 
+const demand = cli(['warden', '--task', task]);
+const claimDeadline = Date.now() + 5000;
+// Auto-start is off and this fresh fixture has one initial demand. Running status
+// acknowledges that entry's started message; a published mark alone does not.
+const initialStatus = await service.status(), initialOwner = initialStatus.process, initialDemand = await service.demand();
+let claimSample;
+const started = await waitFor(async () => {
+  const status = await service.status(), durableDemand = await service.demand(), mark = store.liveWarden(home, task);
+  claimSample = { status, owner: initialOwner, task, initialDemand, durableDemand, mark,
+    ownerState: initialOwner ? processState(initialOwner) : 'unknown' };
+  return initialTaskClaimStarted(claimSample);
+}, { timeoutMs: Math.max(0, claimDeadline - Date.now()) });
+check('the active task with user obtains an actual shared task seat before done', demand.status === 0 && started === true,
+  JSON.stringify({ result: result(demand), claimSample }));
+const generation = started === true ? store.readWardenGeneration(home, task) : null;
+const baselineSample = { at: Date.now(), generation, started, claim: claimSample };
 const done = cli(['done', '--task', task], true);
 check('done closes an ask-and-answer task through the CLI', done.status === 0
   && store.readTask(home, task).status === 'done', `${done.status}: ${result(done)}`);
@@ -118,8 +141,15 @@ check('done keeps user and its correspondence in the task journal',
     && store.history(home, { task, participant: store.addrDir('user') }).entries.length > 0,
   JSON.stringify(store.readTask(home, task).participants.map((p) => store.addressOf(p))));
 const warden = cli(['warden', '--task', task]);
+const settled = await waitFor(() => !store.liveWarden(home, task)
+  && store.readWardenExit(home, task)?.reason === 'task is closed', { timeoutMs: 5000 });
+const finalGeneration = store.readWardenGeneration(home, task);
+const closeReceipt = { status: warden.status, result: result(warden), settled,
+  baseline: baselineSample, finalGeneration, exit: store.readWardenExit(home, task) };
+writeSync(1, `  · done-user-claim-receipt: ${JSON.stringify(closeReceipt)}\n`);
 check('warden exits cleanly for the closed task with user', warden.status === 0
-  && result(warden).includes('task is closed'), `${warden.status}: ${result(warden)}`);
+  && result(warden).includes('inactive') && settled === true
+  && started === true && finalGeneration === generation, JSON.stringify(closeReceipt));
 const unknown = cli(['prune']);
 check('prune is not a command', unknown.status !== 0 && /unknown command "prune"/.test(result(unknown)),
   result(unknown));
@@ -164,3 +194,7 @@ check('the printed command leaves the other active task open and removes the clo
   && liveStatus() === 'active'
   && !existsSync(store.taskDir(home, closed)),
   result(besideApplied));
+const closedService = await service.close();
+check('the user-task fixture confirms physical exit of its owned shared service', closedService.stopped
+  && processState(closedService.process) === 'dead');
+} finally { await service.close(); }

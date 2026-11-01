@@ -1,17 +1,18 @@
 // Mixed live script on isolated stubs: catalog refusal, awaited abort and a slow stop.
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { proveStandIsolation, STUB_BIN } from '../scripts/live-entry.mjs';
-import { makeSandbox } from './sandbox.mjs';
+import { makeSandbox, stubCommand } from './sandbox.mjs';
 import * as cursorStub from './harness-cursor.mjs';
 import * as codexStub from './harness-codex.mjs';
 import { store } from './scenario.mjs';
 import { waitFor } from './harness.mjs';
 import * as cursorSession from '../lib/cursor-persist.js';
 import * as codexSession from '../lib/codex-session.js';
+import { processState } from '../lib/service-state.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.join(here, '..', 'scripts', 'live-mixed.mjs');
@@ -89,9 +90,90 @@ if (!refusedExit) {
   await refused.done;
 }
 
+const externalMechanism = path.join(SB, 'mechanism');
+mkdirSync(externalMechanism);
+for (const name of ['bin', 'dist', 'lib', 'models', 'schemas', 'skills', 'package.json']) {
+  cpSync(path.join(here, '..', name), path.join(externalMechanism, name), { recursive: true });
+}
+appendFileSync(path.join(externalMechanism, 'bin', 'promptobus.js'), `
+if (argv[0] === 'warden' && process.env.PROMPTOBUS_TEST_MIXED_COLD_START) {
+  const { existsSync, renameSync, writeFileSync } = await import('node:fs');
+  const { requireProcess } = await import('../lib/service-state.js');
+  const { workspaceServiceStatus } = await import('../lib/service-client.js');
+  const marker = process.env.PROMPTOBUS_TEST_MIXED_COLD_START;
+  const status = await workspaceServiceStatus(host, { env: process.env });
+  writeFileSync(marker + '.pending', JSON.stringify({ cli: requireProcess(), owner: status.process,
+    parent: process.ppid, cwd: process.cwd(), home: process.env.PROMPTOBUS_HOME, task: argv[argv.indexOf('--task') + 1] }));
+  renameSync(marker + '.pending', marker);
+  while (!existsSync(marker + '.release')) await new Promise(resolve => setTimeout(resolve, 10));
+}
+`);
+const coldBarrier = path.join(SB, 'cold-start.json');
+const cold = start([], { PROMPTOBUS_E2E_ROOT: externalMechanism, PROMPTOBUS_TEST_MIXED_COLD_START: coldBarrier });
+const coldOwner = await waitFor(() => existsSync(coldBarrier) ? JSON.parse(readFileSync(coldBarrier, 'utf8')) : null, { timeoutMs: 60000 });
+const coldTask = coldOwner ? store.readTask(coldOwner.home, coldOwner.task) : null;
+check('cold start: the owned service is live while its warden CLI and parent are still pending before native lifts',
+  coldOwner?.cli && coldOwner?.owner && coldOwner.parent === cold.child.pid
+  && processState(coldOwner.cli) === 'alive' && processState(coldOwner.owner) === 'alive'
+  && !store.participantOf(coldTask, WORKER) && !store.participantOf(coldTask, REVIEWER), JSON.stringify({ coldOwner, out: cold.out }));
+cold.child.kill('SIGTERM');
+await sleep(30);
+writeFileSync(coldBarrier + '.release', 'release');
+const coldExit = await Promise.race([cold.done, sleep(30000).then(() => null)]);
+const coldPreExit = JSON.parse(line(cold.out, /^ {2}· pre-exit: (.+)$/m) ?? 'null');
+check('cold abort: the queued signal reaches awaited cleanup before either native participant is raised',
+  coldExit?.code === 143 && /run cut off by SIGTERM/.test(cold.out) && coldPreExit?.sandboxPresent === true
+  && coldPreExit.worker.ref === '' && coldPreExit.reviewer.ref === '', JSON.stringify({ coldExit, coldPreExit, out: cold.out }));
+check('cold abort: the same owned physical service exits and its task seat is gone before parent exit',
+  coldPreExit?.warden?.stopped === true && coldPreExit.warden.seat === null
+  && coldPreExit.warden.process?.pid === coldOwner?.owner?.pid && coldPreExit.warden.process?.birth === coldOwner?.owner?.birth
+  && processState(coldOwner.owner) === 'dead', JSON.stringify({ coldPreExit, coldOwner }));
+if (!coldExit) { cold.child.kill('SIGKILL'); await cold.done; }
+for (const owned of [coldOwner?.cli, coldOwner?.owner]) {
+  if (owned && processState(owned) === 'alive') {
+    try { process.kill(owned.pid, 'SIGTERM'); } catch { /* already gone */ }
+    await waitFor(() => processState(owned) === 'dead', { timeoutMs: 10000 });
+  }
+}
+if (coldOwner?.cwd) rmSync(path.dirname(coldOwner.cwd), { recursive: true, force: true });
+cursorStub.planParticipant(cursorHarness.home, WORKER, { turns: [HELLO_TURN, HELLO_TURN] });
+codexStub.planParticipant(codexHarness.home, REVIEWER, { turns: [{ do: [{ tool: 'promptobus_mailbox' }] }] });
+
 // --- a cut-off run after both participants are up ----------------------------------------------
 
-const cut = start();
+const stopBarrier = path.join(SB, 'stop-preflight');
+appendFileSync(path.join(externalMechanism, 'lib', 'driver-cursor.js'), `
+import { writeFileSync as writeBarrier } from 'node:fs';
+const stopWithoutBarrier = cursorDriver.stop;
+cursorDriver.stop = (ref, options) => {
+  if (existsSync(${JSON.stringify(stopBarrier + '.enabled')})) {
+    writeBarrier(${JSON.stringify(stopBarrier + '.armed')}, String(Date.now()));
+  }
+  return stopWithoutBarrier(ref, options);
+};
+`);
+// The wrapper only holds the stub's read; the real driver must let Codex send its request.
+stubCommand(binDir, 'tmux', `
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmuxMain } from ${JSON.stringify(path.join(here, 'harness-cursor.mjs'))};
+const barrier = ${JSON.stringify(stopBarrier)};
+if (process.argv.includes('list-sessions') && existsSync(barrier + '.armed') && !existsSync(barrier + '.released')) {
+  const { receipt, launchId } = JSON.parse(readFileSync(barrier + '.enabled', 'utf8'));
+  const startedAt = Date.now();
+  let requested = null;
+  while (Date.now() - startedAt < 5200) {
+    let rows = [];
+    try { rows = readFileSync(receipt, 'utf8').trim().split('\\n').map(line => JSON.parse(line)); }
+    catch { /* The holder may still be appending; poll the next complete receipt. */ }
+    if (rows[0]?.launchId === launchId) requested = rows.find(row => row.kind === 'stop/requested');
+    if (requested) break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  writeFileSync(barrier + '.released', JSON.stringify({ startedAt, releasedAt: Date.now(), requested }));
+}
+await tmuxMain(process.argv.slice(2), { ...process.env, ${cursorStub.CURSOR_HOME_VAR}: ${JSON.stringify(cursorHarness.home)} });
+`);
+const cut = start([], { PROMPTOBUS_E2E_ROOT: externalMechanism });
 const bothUp = await waitFor(() => (/✔ step 4: the reviewer thread landed in the Codex registry/.test(cut.out) ? true : null), { timeoutMs: 180000 });
 const sandbox = line(cut.out, /^▸ sandbox: (\S+) ·/m);
 const storeHome = line(cut.out, /^▸ sandbox: \S+ · store: (\S+)$/m);
@@ -114,8 +196,22 @@ check('cut: before the signal both participants are up — the worker pane and t
   `${cut.out.slice(-800)} · workerRef ${workerRef} pane ${workerPid}`
   + ` · reviewerRef ${reviewerRef} ${JSON.stringify(reviewerPids)}`);
 
+writeFileSync(stopBarrier + '.enabled', JSON.stringify({ receipt: reviewerRecord?.commandReceiptFile, launchId: reviewerRecord?.launchId }));
 cut.child.kill('SIGTERM');
 const exit = await Promise.race([cut.done, sleep(30000).then(() => null)]);
+rmSync(stopBarrier + '.enabled', { force: true });
+const barrierResult = existsSync(stopBarrier + '.released') ? JSON.parse(readFileSync(stopBarrier + '.released', 'utf8')) : null;
+const keptLogs = line(cut.out, /^ {2}· turn logs: (.+)$/m);
+const receiptFile = keptLogs ? path.join(keptLogs, `${cursorStub.addrKey(REVIEWER)}.commands.jsonl`) : null;
+const receiptText = receiptFile && existsSync(receiptFile) ? readFileSync(receiptFile, 'utf8') : '';
+const receipts = receiptText.trim().split('\n').filter(Boolean).map(row => JSON.parse(row));
+check('abort: native shutdown is requested while the Cursor tmux preflight is still held',
+  barrierResult?.requested?.kind === 'stop/requested' && barrierResult.requested.deadlineAt > barrierResult.releasedAt,
+  JSON.stringify({ barrierResult, receiptText }));
+check('abort: durable selected receipts bind native request, app exit and Stop confirmation to the original reviewer launch',
+  receipts[0]?.launchId === reviewerRecord?.launchId && receipts.some(row => row.kind === 'stop/requested')
+  && receipts.some(row => row.kind === 'app-server/close' && row.code === 0)
+  && receipts.some(row => row.kind === 'stop/confirmed' && row.launchId === reviewerRecord?.launchId), receiptText);
 // Stop results and liveness come from the child before teardown; parent PID reads are delayed.
 const stopNoteOf = (out, who, ref) => (out.split('\n').find((l) => l.startsWith(`  · stop returned for the ${who} ${ref}: `)) ?? '')
   .slice(`  · stop returned for the ${who} ${ref}: `.length);
@@ -135,8 +231,9 @@ check('abort: the child sampled its own participants before teardown — matchin
   && JSON.stringify(preExit.reviewer.pids) === JSON.stringify(reviewerPids) && reviewerPids.length === 2
   && preExit.worker.alive.every((alive) => alive === false) && preExit.reviewer.alive.every((alive) => alive === false)
   && preExit.worker.stop?.ok === true && preExit.worker.stop?.stopped === true
-  && preExit.reviewer.stop?.ok === true && preExit.reviewer.stop?.stopped === true,
-  JSON.stringify({ preExit, sandbox, workerPid, reviewerPids }));
+  && preExit.reviewer.stop?.ok === true && preExit.reviewer.stop?.stopped === true
+  && preExit.warden?.stopped === true && preExit.warden.seat === null && preExit.warden.process && processState(preExit.warden.process) === 'dead',
+  JSON.stringify({ preExit, sandbox, workerPid, reviewerPids, receiptText }));
 // Delay the parent's PID read past the record watch; only the child's sample proves stop.
 await sleep(6000);
 const workerGoneLate = Number.isInteger(workerPid) && !pidAlive(workerPid);
@@ -147,9 +244,9 @@ check('abort: after the holder\'s record watch the parent sees the same — insu
   + ` · sandbox ${sandbox ? (existsSync(sandbox) ? 'still there' : 'swept') : '(not parsed)'}`);
 
 // Insurance, not a verdict: a fallen run leaves neither processes nor directories behind.
-const warden = storeHome && task ? store.liveWarden(storeHome, task) : null;
-if (warden?.pid) {
-  try { process.kill(-warden.pid, 'SIGKILL'); } catch { /* already gone */ }
+const warden = preExit?.warden?.process;
+if (warden && processState(warden) !== 'dead') {
+  try { process.kill(warden.pid, 'SIGTERM'); } catch { /* already gone */ }
 }
 for (const pid of [workerPid, ...reviewerPids]) {
   if (pidAlive(pid)) {
@@ -162,7 +259,7 @@ if (!exit) cut.child.kill('SIGKILL');
 // --- a cut-off run whose worker's `persist stop` outlasts every budget -----------------------------
 // The stub stop outlasts the budget; reviewer and warden must still receive cleanup.
 
-const hang = start([], { [cursorStub.STOP_HANG_VAR]: '60000' });
+const hang = start([], { [cursorStub.STOP_HANG_VAR]: '60000', PROMPTOBUS_E2E_ROOT: externalMechanism });
 const hangBothUp = await waitFor(() => (/✔ step 4: the reviewer thread landed in the Codex registry/.test(hang.out) ? true : null), { timeoutMs: 180000 });
 const hangSandbox = line(hang.out, /^▸ sandbox: (\S+) ·/m);
 const hangStoreHome = line(hang.out, /^▸ sandbox: \S+ · store: (\S+)$/m);
@@ -183,6 +280,9 @@ check('hang: before the signal both participants are up — the worker\'s stop c
   && Number.isInteger(hangWorkerPid) && pidAlive(hangWorkerPid)
   && hangReviewerPids.length === 2 && hangReviewerPids.every(pidAlive),
   `${hang.out.slice(-500)} · worker ${hangWorkerRef} pane ${hangWorkerPid} · reviewer ${hangReviewerRef} ${JSON.stringify(hangReviewerPids)}`);
+check('hang: the declared external mechanism starts the task warden before either participant',
+  hang.out.includes(`▸ mechanism: ${externalMechanism}\n`)
+  && hang.out.includes('✔ step 1: the task warden is up as a real process'), hang.out.slice(0, 1500));
 
 const hangKilledAt = Date.now();
 hang.child.kill('SIGTERM');
@@ -200,15 +300,16 @@ check('hang: a persist stop that outlasts the budget is cut off at it — the ru
 check('hang: both participants\' stops and the warden\'s were still attempted inside that budget',
   hang.out.includes(`  · stop returned for the Cursor worker ${hangWorkerRef}: `)
   && hang.out.includes(`  · stop returned for the Codex reviewer ${hangReviewerRef}: `)
-  && hang.out.includes('  · task warden stopped by its process group')
+  && hang.out.includes('  · task warden and owned service physically stopped')
+  && hangPreExit?.warden?.stopped === true && hangPreExit.warden.seat === null && hangPreExit.warden.process && processState(hangPreExit.warden.process) === 'dead'
   && hangPreExit?.sandboxPresent === true && hangPreExit.elapsedMs < 10_000
   && hangPreExit.worker.ref === hangWorkerRef && hangPreExit.reviewer.ref === hangReviewerRef,
   hangStops || hang.out.slice(-500));
 
 if (!hangExit) hang.child.kill('SIGKILL');
-const hangWarden = hangStoreHome && hangTask ? store.liveWarden(hangStoreHome, hangTask) : null;
-if (hangWarden?.pid) {
-  try { process.kill(-hangWarden.pid, 'SIGKILL'); } catch { /* already gone */ }
+const hangWarden = hangPreExit?.warden?.process;
+if (hangWarden && processState(hangWarden) !== 'dead') {
+  try { process.kill(hangWarden.pid, 'SIGTERM'); } catch { /* already gone */ }
 }
 for (const pid of [hangWorkerPid, ...hangReviewerPids]) {
   if (pidAlive(pid)) {

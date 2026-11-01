@@ -192,7 +192,7 @@ export async function installHarness({ binDir, sock, env = process.env }) {
   // by both the test and the binary, and they can only stay in sync while they share one
   // home.
   stubCommand(binDir, 'claude', `import { claudeMain } from ${JSON.stringify(path.join(here, 'harness.mjs'))};\n`
-    + 'await claudeMain(process.argv.slice(2));\n');
+    + `await claudeMain(process.argv.slice(2), { ...process.env, ${HARNESS_HOME_VAR}: ${JSON.stringify(home)}, ${SOCK_BASE_VAR}: ${JSON.stringify(sock('@'))} });\n`);
   const restore = withStubPath(binDir);
   env[HARNESS_HOME_VAR] = home;
   env[SOCK_BASE_VAR] = sock('@');

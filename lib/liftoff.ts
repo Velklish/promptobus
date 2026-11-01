@@ -3,7 +3,7 @@ import path from 'node:path';
 import { liftWords, PromptobusError, SHIPPED_REGISTRY, WORKER } from '../dist/index.js';
 import { info, warn, fail } from './util.js';
 import { run } from './exec.js';
-import { harnessBin } from './harness-home.js';
+import { commonPollEnvironment, harnessBin } from './harness-home.js';
 import { dropStaleWake, participantOf, readTask, upsertParticipant, withTaskLock } from './store.js';
 import { requireCurrentNativeLaunch } from './native-lifecycle.js';
 
@@ -226,9 +226,11 @@ export async function awaitSession(name: string, { tries = 6, delayMs = 500, ses
 // Live background sessions by the names we set at spawn.
 // [reference/03-cli.md#bgsessionscache--live-background-sessions-by-the-names-we-set-at-spawn](../docs/reference/03-cli.md#bgsessionscache--live-background-sessions-by-the-names-we-set-at-spawn)
 let bgSessionsCache: unknown[] | null | undefined = undefined;
+let bgSessionsCacheKey: string | null = null;
 
 export function resetBgSessionsCache() {
   bgSessionsCache = undefined;
+  bgSessionsCacheKey = null;
 }
 
 export function bgSessions({ fresh = false } = {}) {
@@ -238,7 +240,8 @@ export function bgSessions({ fresh = false } = {}) {
 // The same read, saying WHY there is no list: `missing` — the harness binary was not found or does
 // not start, in words that name it; `null` beside a `null` list — it ran and did not parse.
 export function readBgSessions({ fresh = false } = {}): { list: unknown[] | null; missing: string | null } {
-  if (!fresh && bgSessionsCache !== undefined) return { list: bgSessionsCache, missing: null };
+  const key = JSON.stringify({ tool: harnessBin('claude'), env: commonPollEnvironment() });
+  if (!fresh && bgSessionsCache !== undefined && bgSessionsCacheKey === key) return { list: bgSessionsCache, missing: null };
   const { r, missing } = runClaude(['agents', '--json']);
   if (missing) return { list: null, missing };
   if (r!.error || r!.status !== 0) return { list: null, missing: null };
@@ -248,6 +251,7 @@ export function readBgSessions({ fresh = false } = {}): { list: unknown[] | null
     const list = Array.isArray(parsed) ? parsed : parsed.agents ?? parsed.sessions ?? [];
     if (!Array.isArray(list)) return { list: null, missing: null };
     bgSessionsCache = list;
+    bgSessionsCacheKey = key;
     return { list, missing: null };
   } catch {
     return { list: null, missing: null };
@@ -259,7 +263,7 @@ export function readBgSessions({ fresh = false } = {}): { list: unknown[] | null
 export function runClaude(args: readonly string[]) {
   const tool = harnessBin('claude');
   if (!tool.bin) return { r: null, missing: `the harness binary was not found: ${tool.reason}` };
-  const r = run(tool.bin, args, { encoding: 'utf8' });
+  const r = run(tool.bin, args, { encoding: 'utf8', env: commonPollEnvironment() });
   const code = (r.error as NodeJS.ErrnoException | undefined)?.code;
   if (code === 'EACCES' || code === 'ENOEXEC') {
     return { r: null, missing: `the harness binary does not start: ${tool.bin} (${code})` };

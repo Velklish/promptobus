@@ -273,7 +273,7 @@ export async function installHarness({ binDir, env = process.env } = {}) {
     mkdirSync(path.join(home, dir), { recursive: true });
   }
   const agentStub = `import { agentMain } from ${JSON.stringify(path.join(here, 'harness-cursor.mjs'))};\n`
-    + 'await agentMain(process.argv.slice(2));\n';
+    + `await agentMain(process.argv.slice(2), { ...process.env, ${CURSOR_HOME_VAR}: ${JSON.stringify(home)} });\n`;
   // `cursorDriver.options.tool` says `cursor-agent`, and the host's resolveToolBin
   // returns `{ ok: true, bin: name }` with no PATH search, so spawn runs that name.
   // All three lookup names are stubbed anyway: the driver's own `CURSOR_BINS`
@@ -285,7 +285,7 @@ export async function installHarness({ binDir, env = process.env } = {}) {
   stubCommand(binDir, 'cursor', agentStub);
   stubCommand(binDir, 'cursor-agent', agentStub);
   stubCommand(binDir, 'tmux', `import { tmuxMain } from ${JSON.stringify(path.join(here, 'harness-cursor.mjs'))};\n`
-    + 'await tmuxMain(process.argv.slice(2));\n');
+    + `await tmuxMain(process.argv.slice(2), { ...process.env, ${CURSOR_HOME_VAR}: ${JSON.stringify(home)} });\n`);
   const restore = withStubPath(binDir);
   const was = { state: env.PROMPTOBUS_CURSOR_HOME, user: env.PROMPTOBUS_CURSOR_USER_HOME };
   env[CURSOR_HOME_VAR] = home;

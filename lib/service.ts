@@ -4,22 +4,26 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { chmodSync, readFileSync, readdirSync, realpathSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import type { PromptobusHost } from '../dist/index.js';
-import { admitsAddress, registryOf, sessionRefOf } from '../dist/index.js';
+import type { ParticipantV1, PromptobusHost, SessionSnapshot } from '../dist/index.js';
+import { admitsAddress, registryOf, sessionIdOf, sessionRefOf, TICK_MS } from '../dist/index.js';
+import { withSynchronousAuthority } from '../dist/fs/lock.js';
 import type { JsonRpcMessage } from '../dist/mcp/server.js';
 import { mcpTools } from '../dist/mcp/tools.js';
 import { busConnection } from './server.js';
-import { canonicalPath, participantOf, readTask } from './store.js';
+import { canonicalPath, participantOf, readTask, withTaskLock } from './store.js';
 import { participantSession } from './status.js';
 import { actorIdentityVariables, REGISTRY } from './drivers.js';
 import { bindServiceHarnessContext, requireServiceHarnessContext } from './harness-home.js';
+import { ServiceWarden } from './service-warden.js';
+import type { WardenDiagnostics } from './service-warden.js';
+import { bindSharedWarden } from './warden.js';
 import { REVIEW_FILE_TOOLS, reviewerFiles } from './reviewer-files.js';
 import { PROMPTOBUS_SERVER, PROTOCOL_VERSIONS } from './contract.js';
 import {
   acquireServiceLock, contained, prepareControlSocket, prepareServicePaths, privateDirectory, processRecord, readDiscovery, readPrivate,
-  recordOf, requireProcess, runtimeIdentity, processState, servicePaths, writePrivate,
+  recordOf, recordVersion, requireProcess, runtimeIdentity, processStateAsync, sameRecordVersion, servicePaths, writePrivate,
 } from './service-state.js';
-import type { ProcessIdentity, ServiceDiscovery, ServicePaths } from './service-state.js';
+import type { ProcessIdentity, RecordVersion, ServiceDiscovery, ServicePaths } from './service-state.js';
 
 export type ServiceHostFactory = (context: { cwd: string; env: Readonly<NodeJS.ProcessEnv> }) => PromptobusHost | Promise<PromptobusHost>;
 export type ServiceClientLifetime =
@@ -30,17 +34,19 @@ export type ServiceNativeBinding =
   | { kind: 'codex'; state: 'pending' }
   | { kind: 'codex'; state: 'bound'; threadId: string };
 export interface ServiceClientInput {
-  cwd: string; env: NodeJS.ProcessEnv; lifetime?: ServiceClientLifetime;
+  cwd: string; env: NodeJS.ProcessEnv; pollEnv?: NodeJS.ProcessEnv; lifetime?: ServiceClientLifetime;
   files?: { roots: string[]; canonicalFiles?: string[] };
   nativeBinding?: ServiceNativeBinding;
 }
 export interface ServiceClientGrant {
-  schemaVersion: 1; id: string; token: string; runtime: string; cwd: string; env: NodeJS.ProcessEnv;
+  schemaVersion: 1; id: string; token: string; runtime: string; cwd: string; env: NodeJS.ProcessEnv; pollEnv: NodeJS.ProcessEnv;
   lifetime: ServiceClientLifetime; files: { roots: string[]; canonicalFiles: string[] } | null;
   nativeBinding?: ServiceNativeBinding;
 }
 export interface ServiceClientCredential { clientId: string; token: string; credentialFile: string; busUrl: string; filesUrl: string | null }
-export interface ServiceStatus extends ServiceDiscovery { clients: number; reservations: number; unknownClients: number; unknownManaged: number; sessions: number }
+export interface ServiceStatus extends ServiceDiscovery {
+  clients: number; reservations: number; unknownClients: number; unknownManaged: number; sessions: number; warden: WardenDiagnostics;
+}
 export interface RunServiceOptions {
   host: PromptobusHost; createHost: ServiceHostFactory; env?: NodeJS.ProcessEnv;
   activeWork?: () => boolean;
@@ -50,6 +56,7 @@ type Endpoint = 'bus' | 'reviewer_files';
 interface Connection { handle: (message: JsonRpcMessage) => object | null }
 interface ClientContext { grant: ServiceClientGrant; host: PromptobusHost; env: Readonly<NodeJS.ProcessEnv> }
 interface RequestReceipt { digest: string; state: 'started' | 'completed'; readOnly: boolean; response?: object | null }
+interface ManagedAuthorization { revision: RecordVersion; participant: ParticipantV1 }
 class HttpFailure extends Error {
   constructor(readonly status: number, message: string) { super(message); }
 }
@@ -139,7 +146,7 @@ function grantOf(value: unknown): ServiceClientGrant {
   const lifetime = lifetimeOf(value.lifetime);
   if (!lifetime) throw new Error('Invalid shared service client lifetime');
   return { schemaVersion: 1, id: value.id, token: String(value.token), runtime: String(value.runtime), cwd: String(value.cwd),
-    env: environmentOf(value.env), lifetime, files: filesOf(value.files),
+    env: environmentOf(value.env), pollEnv: environmentOf(value.pollEnv ?? value.env), lifetime, files: filesOf(value.files),
     ...(value.nativeBinding === undefined ? {} : { nativeBinding: nativeBindingOf(value.nativeBinding) }) };
 }
 
@@ -174,23 +181,33 @@ function managedParticipant(proof: Extract<ServiceClientLifetime, { kind: 'manag
   return participant;
 }
 
-function lifetimeState(grant: ServiceClientGrant, home: string): 'alive' | 'dead' | 'unknown' {
+type Liveness = 'alive' | 'dead' | 'unknown';
+interface LifetimeObservations {
+  process(grant: ServiceClientGrant): Liveness;
+  managed(grant: ServiceClientGrant, participant: ParticipantV1): Liveness;
+}
+const unavailableObservations: LifetimeObservations = { process: () => 'unknown', managed: () => 'unknown' };
+function lifetimeState(grant: ServiceClientGrant, home: string, observe: LifetimeObservations): Liveness {
   const proof = grant.lifetime;
   if (proof.kind === 'reservation') return Date.now() < proof.expiresAt ? 'alive' : 'dead';
-  if (proof.kind === 'process') return processState(proof.process);
+  if (proof.kind === 'process') {
+    try { process.kill(proof.process.pid, 0); }
+    catch (error) { if (recordOf(error) && error.code === 'ESRCH') return 'dead'; }
+    return observe.process(grant);
+  }
   try {
     const participant = managedParticipant(proof, home);
-    return participant ? participantSession(participant) : 'dead';
+    return participant ? observe.managed(grant, participant) : 'dead';
   } catch { return 'unknown'; }
 }
 
-function requireLifetime(grant: ServiceClientGrant, home: string, status = 409) {
+function requireLifetime(grant: ServiceClientGrant, home: string, observe: LifetimeObservations, status = 409) {
   if (grant.lifetime.kind === 'managed') {
     try {
       if (!managedParticipant(grant.lifetime, home)) throw new Error('mismatched participant');
     } catch { throw new HttpFailure(status, 'Managed lifetime has no matching task, participant and launch record'); }
   }
-  if (lifetimeState(grant, home) === 'dead') throw new HttpFailure(status, 'Client lifetime is already expired or replaced');
+  if (lifetimeState(grant, home, observe) === 'dead') throw new HttpFailure(status, 'Client lifetime is already expired or replaced');
 }
 
 function privateReadGrants(paths: ServicePaths, files: NonNullable<ServiceClientGrant['files']>) {
@@ -285,15 +302,20 @@ function reply(response: ServerResponse, status: number, value?: unknown, header
   response.end(value === undefined ? undefined : JSON.stringify(value));
 }
 
-export async function runWorkspaceService({ host, createHost, env = process.env, activeWork = () => false }: RunServiceOptions) {
+export async function runWorkspaceService({ host, createHost, env = process.env, activeWork: additionalWork = () => false }: RunServiceOptions) {
   const paths = servicePaths(host, env), runtime = runtimeIdentity(host);
   prepareServicePaths(paths);
   const release = await acquireServiceLock(paths.lock);
   if (!release) return;
-  const lifecycle: { stop?: () => void } = {};
+  const lifecycle: { stop?: () => void; fail?: (error: Error) => void } = {};
+  let sharedWarden: ServiceWarden | null = null;
+  let releaseWardenBinding: (() => void) | null = null;
+  let wardenFailure: Error | null = null;
   let timer: NodeJS.Timeout | null = null;
   let http: ReturnType<typeof createServer> | null = null;
   let ipc: ReturnType<typeof createServer> | null = null;
+  const pendingObservations = new Set<Promise<unknown>>();
+  let serviceFailed = false, serviceFailure: unknown;
   try {
     const prior = readDiscovery(paths);
     const ownerValue = readPrivate(paths.owner);
@@ -301,6 +323,49 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
     const ownerToken = recordOf(ownerValue) && typeof ownerValue.token === 'string' ? ownerValue.token : randomBytes(32).toString('hex');
     writePrivate(paths.owner, { token: ownerToken });
     const expectedHarness = bindServiceHarnessContext(host, env, REGISTRY);
+    const warden = sharedWarden = new ServiceWarden(paths, host, expectedHarness, env, error => {
+      wardenFailure = error; lifecycle.fail?.(error); lifecycle.stop?.();
+    });
+    releaseWardenBinding = bindSharedWarden((home, task) => {
+      if (canonicalPath(home) !== paths.home) throw new Error('Task warden belongs to a different canonical store');
+      return warden.ensure(task);
+    });
+    const activeWork = () => additionalWork() || warden.active() || pendingObservations.size > 0;
+    interface Observation { key: string; at: number; pending: boolean; state: Liveness }
+    const observed = new Map<string, Observation>();
+    const cachedObservation = (id: string, key: string, load: () => Promise<Liveness>, valid: () => boolean): Liveness => {
+      const previous = observed.get(id);
+      if (previous?.pending) return 'unknown';
+      if (previous?.key === key && Date.now() - previous.at < TICK_MS) return previous.state;
+      const current: Observation = { key, at: Date.now(), pending: true, state: 'unknown' };
+      observed.set(id, current);
+      const pending = load().then(state => {
+        if (observed.get(id) === current && valid()) current.state = state;
+      }).catch(() => { current.state = 'unknown'; }).finally(() => { current.pending = false; current.at = Date.now(); });
+      pendingObservations.add(pending);
+      void pending.then(() => pendingObservations.delete(pending));
+      return 'unknown';
+    };
+    const managedState: LifetimeObservations = {
+      process: grant => {
+        if (grant.lifetime.kind !== 'process') return 'unknown';
+        const proof = grant.lifetime;
+        return cachedObservation(grant.id, JSON.stringify(proof), () => processStateAsync(proof.process), () => true);
+      },
+      managed: (grant, participant) => {
+        if (grant.lifetime.kind !== 'managed') return 'unknown';
+        const proof = grant.lifetime, revision = recordVersion(proof.record), key = JSON.stringify([proof, revision]);
+        return cachedObservation(grant.id, key, async () => participantSession(participant, await warden.observe([participant], [revision])),
+          () => sameRecordVersion(revision) && Boolean(managedParticipant(proof, paths.home)));
+      },
+    };
+    const requireProcessLifetime = async (grant: ServiceClientGrant, status = 409) => {
+      if (grant.lifetime.kind !== 'process') return;
+      const state = await processStateAsync(grant.lifetime.process);
+      observed.set(grant.id, { key: JSON.stringify(grant.lifetime), at: Date.now(), pending: false, state });
+      if (state === 'dead') throw new HttpFailure(status, 'Client lifetime is already expired or replaced');
+      if (state === 'unknown') throw new HttpFailure(status, 'Client process birth identity is unavailable; retry after owner diagnostics');
+    };
     const contexts = new Map<string, ClientContext>();
     const connections = new Map<string, { context: ClientContext; connection: Connection }>();
     let discovery: ServiceDiscovery;
@@ -322,6 +387,7 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
     };
     const removeClient = (id: string) => {
       rmSync(clientFile(paths, id), { force: true });
+      observed.delete(id);
       contexts.delete(id);
       for (const file of readdirSync(paths.sessions)) {
         const record = connectionOf(readPrivate(path.join(paths.sessions, file)));
@@ -330,10 +396,15 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
     };
     const state = () => {
       let clients = 0, reservations = 0, unknownClients = 0, unknownManaged = 0;
-      for (const grant of grants()) {
-        const life = lifetimeState(grant, paths.home);
+      const values = grants();
+      for (const grant of values) if (grant.runtime !== runtime) {
+        if (lifetimeState(grant, paths.home, unavailableObservations) === 'dead') removeClient(grant.id);
+        else throw new Error('Live clients belong to another shared service runtime; close and reconnect them before upgrade');
+      }
+      for (const grant of values) {
+        if (grant.runtime !== runtime) continue;
+        const life = lifetimeState(grant, paths.home, managedState);
         if (life === 'dead') { removeClient(grant.id); continue; }
-        if (grant.runtime !== runtime) throw new Error('Live clients belong to another shared service runtime; close and reconnect them before upgrade');
         clients += 1;
         if (grant.lifetime.kind === 'reservation') reservations += 1;
         if (life === 'unknown') {
@@ -341,40 +412,77 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
           if (grant.lifetime.kind === 'managed') unknownManaged += 1;
         }
       }
-      return { clients, reservations, unknownClients, unknownManaged, sessions: readdirSync(paths.sessions).filter(name => name.endsWith('.json')).length };
+      return { clients, reservations, unknownClients, unknownManaged, sessions: readdirSync(paths.sessions).filter(name => name.endsWith('.json')).length,
+        warden: warden.diagnostics() };
     };
     state();
+    await warden.recover();
 
-    const contextFor = async (grant: ServiceClientGrant, revalidate: () => void): Promise<ClientContext> => {
+    const contextFor = async (grant: ServiceClientGrant, revalidate: () => Promise<unknown>): Promise<ClientContext> => {
       const cached = contexts.get(grant.id);
       if (cached && isDeepStrictEqual(cached.grant, grant)) return cached;
       const clientEnv = clientEnvironment(grant);
       const clientHost = await createHost({ cwd: grant.cwd, env: clientEnv });
-      revalidate();
+      await revalidate();
       const clientPaths = servicePaths(clientHost, env);
       if (clientPaths.root !== paths.root || clientPaths.home !== paths.home) throw new Error('Client Host belongs to a different canonical workspace/store');
       if (runtimeIdentity(clientHost) !== runtime) throw new Error('Client Host belongs to a different shared-service runtime');
-      requireServiceHarnessContext(expectedHarness, clientHost, clientEnv, REGISTRY);
+      requireServiceHarnessContext(expectedHarness, clientHost, clientEnv, REGISTRY, grant.pollEnv);
       if (!admitsAddress(registryOf(clientHost), clientEnv.PROMPTOBUS_ROLE || 'orchestrator')) throw new Error('Unknown client bus address');
       if (grant.files) privateReadGrants(paths, grant.files);
       const context = { grant, env: clientEnv, host: clientHost };
       return context;
     };
-    const authorizeGrant = (grant: ServiceClientGrant) => {
+    const currentGrant = (grant: ServiceClientGrant) => {
       const value = readPrivate(clientFile(paths, grant.id));
       const current = value === null ? null : grantOf(value);
       if (!current || !tokenEquals(current.token, grant.token) || current.runtime !== runtime || !isDeepStrictEqual(current, grant)) {
         throw new HttpFailure(401, 'Client binding is absent or expired');
       }
-      requireLifetime(current, paths.home, 401);
+      return current;
     };
-    const authenticateClient = (authorization: string | undefined) => {
+    const authorizeCurrent = (grant: ServiceClientGrant, proof: ManagedAuthorization | null = null) => {
+      const current = currentGrant(grant);
+      if (current.lifetime.kind !== 'managed') {
+        requireLifetime(current, paths.home, unavailableObservations, 401); return;
+      }
+      const participant = managedParticipant(current.lifetime, paths.home);
+      if (!proof || !sameRecordVersion(proof.revision)
+        || !participant || participant.harness !== proof.participant.harness
+        || sessionIdOf(participant) !== sessionIdOf(proof.participant)
+        || participant.metadata?.nativeLaunchId !== proof.participant.metadata?.nativeLaunchId) {
+        throw new HttpFailure(409, 'Managed lifetime changed after observation; retry with current owner proof');
+      }
+    };
+    const authorizeGrant = async (grant: ServiceClientGrant) => {
+      const current = currentGrant(grant);
+      await requireProcessLifetime(current, 401);
+      let proof: ManagedAuthorization | null = null;
+      if (current.lifetime.kind === 'managed') {
+        let revision: RecordVersion, participant: ParticipantV1 | null;
+        try {
+          revision = recordVersion(current.lifetime.record);
+          participant = managedParticipant(current.lifetime, paths.home);
+        } catch { throw new HttpFailure(401, 'Managed lifetime has no matching task, participant and launch record'); }
+        if (!participant) throw new HttpFailure(401, 'Managed lifetime has no matching task, participant and launch record');
+        proof = { revision, participant };
+        let snapshot: SessionSnapshot = null;
+        try { snapshot = await warden.observe([participant], [revision]); } catch { /* no observation is no authority */ }
+        authorizeCurrent(grant, proof);
+        const state = participantSession(participant, snapshot);
+        if (state === 'dead') throw new HttpFailure(401, 'Client lifetime is already expired or replaced');
+        if (state !== 'alive') throw new HttpFailure(503, 'Managed lifetime observation is unavailable; retry after owner diagnostics');
+      }
+      const authorize = () => authorizeCurrent(grant, proof);
+      authorize();
+      return authorize;
+    };
+    const authenticateClient = async (authorization: string | undefined) => {
       if (!authorization?.startsWith('Bearer ')) throw new HttpFailure(401, 'Client authentication required');
       const bearer = authorization.slice(7);
       const grant = grants().find(candidate => tokenEquals(candidate.token, bearer));
       if (!grant || grant.runtime !== runtime) throw new HttpFailure(401, 'Client binding is absent or expired');
-      requireLifetime(grant, paths.home, 401);
-      return grant;
+      return { grant, authorize: await authorizeGrant(grant) };
     };
     const readConnection = (id: string, grant: ServiceClientGrant, endpoint: Endpoint) => {
       if (!CLIENT_ID.test(id)) throw new HttpFailure(404, 'MCP session not found');
@@ -399,6 +507,11 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
       if (!recordOf(input) || typeof input.operation !== 'string') throw new HttpFailure(400, 'Invalid service control operation');
       if (input.operation === 'status') return { ...discovery, ...state() };
       if (input.runtime !== runtime) throw new HttpFailure(409, 'Owner request belongs to a different shared service runtime');
+      if (input.operation === 'warden-ensure' || input.operation === 'warden-abort') {
+        if (typeof input.task !== 'string') throw new HttpFailure(400, 'Task warden requires a task');
+        requireServiceHarnessContext(expectedHarness, host, env, REGISTRY, environmentOf(input.pollEnv ?? env));
+        return input.operation === 'warden-ensure' ? warden.ensure(input.task) : await warden.abort(input.task);
+      }
       if (input.operation === 'stop') {
         if (state().clients || activeWork() || requests > 1) throw new HttpFailure(409, 'Shared service still has live clients or active work');
         lifecycle.stop?.();
@@ -407,6 +520,7 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
       if (input.operation === 'register') {
         if (!recordOf(input.client) || typeof input.client.cwd !== 'string' || !path.isAbsolute(input.client.cwd)) throw new HttpFailure(400, 'Client cwd must be absolute');
         const requestedEnv = environmentOf(input.client.env);
+        const pollEnv = environmentOf(input.client.pollEnv ?? input.client.env);
         if (requestedEnv.PROMPTOBUS_HOME && canonicalPath(requestedEnv.PROMPTOBUS_HOME) !== paths.home) throw new HttpFailure(400, 'Client store does not match the shared service');
         requestedEnv.PROMPTOBUS_HOME = paths.home;
         requestedEnv.PROMPTOBUS_ROLE ||= 'orchestrator';
@@ -419,13 +533,18 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
           files.roots = files.roots.map(root => realpathSync(root));
         }
         const grant: ServiceClientGrant = { schemaVersion: 1, id: randomUUID(), token: randomBytes(32).toString('hex'), runtime,
-          cwd: canonicalPath(input.client.cwd), env: requestedEnv, lifetime, files, ...(nativeBinding ? { nativeBinding } : {}) };
+          cwd: canonicalPath(input.client.cwd), env: requestedEnv, pollEnv, lifetime, files, ...(nativeBinding ? { nativeBinding } : {}) };
         if (lifetime.kind === 'managed' && (requestedEnv.PROMPTOBUS_TASK !== lifetime.task || requestedEnv.PROMPTOBUS_ROLE !== lifetime.address)) throw new HttpFailure(400, 'Managed lifetime does not match the client task/address');
-        requireLifetime(grant, paths.home);
+        const validateRegistration = async () => {
+          await requireProcessLifetime(grant);
+          requireLifetime(grant, paths.home, managedState);
+        };
+        await validateRegistration();
         if (files) privateReadGrants(paths, files);
-        const context = nativeBinding ? null : await contextFor(grant, () => requireLifetime(grant, paths.home));
+        const context = nativeBinding ? null : await contextFor(grant, validateRegistration);
+        await validateRegistration();
         if (closing) throw new HttpFailure(503, 'Shared service is stopping');
-        requireLifetime(grant, paths.home);
+        requireLifetime(grant, paths.home, managedState);
         writePrivate(clientFile(paths, grant.id), grant);
         if (context) contexts.set(grant.id, context);
         return { clientId: grant.id, token: grant.token, credentialFile: clientFile(paths, grant.id),
@@ -440,9 +559,14 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         if (input.operation === 'realize') {
           if (!nativeThreadId(input.threadId)) throw new HttpFailure(400, 'Invalid Codex native thread id');
           if (!grant.nativeBinding) throw new HttpFailure(409, 'This client has no Codex native binding');
-          requireLifetime(grant, paths.home, 401);
-          if (grant.nativeBinding.state === 'bound' && grant.nativeBinding.threadId !== input.threadId) throw new HttpFailure(409, 'Codex client is already bound to another native thread id');
-          if (grant.nativeBinding.state === 'pending') writePrivate(clientFile(paths, id), { ...grant,
+          await requireProcessLifetime(grant, 401);
+          const latestValue = readPrivate(clientFile(paths, id)), latest = latestValue === null ? null : grantOf(latestValue);
+          const binding = latest?.nativeBinding;
+          const current = currentGrant(grant.nativeBinding.state === 'pending' && binding?.state === 'bound'
+            ? { ...grant, nativeBinding: binding } : grant);
+          requireLifetime(current, paths.home, managedState, 401);
+          if (binding?.state === 'bound' && binding.threadId !== input.threadId) throw new HttpFailure(409, 'Codex client is already bound to another native thread id');
+          if (binding?.state === 'pending') writePrivate(clientFile(paths, id), { ...current,
             nativeBinding: { kind: 'codex', state: 'bound', threadId: input.threadId } });
           return { clientId: id, operation: input.operation };
         }
@@ -451,7 +575,9 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
           if (!lifetime || lifetime.kind === 'reservation') throw new HttpFailure(400, 'Binding requires native lifetime proof');
           if (lifetime.kind === 'managed' && (grant.env.PROMPTOBUS_TASK !== lifetime.task || grant.env.PROMPTOBUS_ROLE !== lifetime.address)) throw new HttpFailure(400, 'Managed lifetime does not match the client task/address');
           const updated = { ...grant, lifetime };
-          requireLifetime(updated, paths.home);
+          await requireProcessLifetime(updated);
+          currentGrant(grant);
+          requireLifetime(updated, paths.home, managedState);
           writePrivate(clientFile(paths, id), updated);
         } else {
           removeClient(id);
@@ -472,7 +598,8 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         if (url.origin !== expected.origin) throw new HttpFailure(403, 'Foreign HTTP request target');
         const endpoint: Endpoint | null = url.pathname === '/mcp/bus' ? 'bus' : url.pathname === '/mcp/reviewer_files' ? 'reviewer_files' : null;
         if (!endpoint) throw new HttpFailure(404, 'Endpoint not found');
-        const grant = authenticateClient(request.headers.authorization);
+        const { grant, authorize } = await authenticateClient(request.headers.authorization);
+        authorize();
         if (endpoint === 'reviewer_files' && !grant.files) throw new HttpFailure(403, 'This client has no reviewer file grant');
         const header = request.headers['mcp-session-id'];
         if (Array.isArray(header)) throw new HttpFailure(400, 'Invalid MCP session header');
@@ -498,7 +625,8 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         const accepts = (request.headers.accept ?? '').split(',').map(type => type.split(';')[0]?.trim().toLowerCase());
         if (!accepts.includes('application/json') || !accepts.includes('text/event-stream')) throw new HttpFailure(406, 'MCP client must accept JSON and event streams');
         const message = jsonRpc(await bodyOf(request));
-        authorizeGrant(grant);
+        const authorizeBody = await authorizeGrant(grant);
+        authorizeBody();
         requireNativeCall(grant, message);
         let record: ConnectionRecord;
         if (message.method === 'initialize') {
@@ -526,10 +654,26 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
           else if (grant.nativeBinding && message.method !== 'tools/call') result = nativeDiscovery(host, endpoint).handle(message);
           else {
             const context = await contextFor(grant, () => authorizeGrant(grant));
-            authorizeGrant(grant);
+            const authorizeDispatch = await authorizeGrant(grant);
+            authorizeDispatch();
             if (closing) throw new HttpFailure(503, 'Shared service is stopping');
             contexts.set(grant.id, context);
-            result = dispatch(paths, record, message, connectionFor(record, context));
+            const invoke = () => dispatch(paths, record, message, connectionFor(record, context));
+            if (grant.lifetime.kind !== 'managed') result = invoke();
+            else {
+              const task = grant.lifetime.task;
+              let entered = false;
+              try {
+                result = withSynchronousAuthority(authorizeDispatch, () => withTaskLock(paths.home, task, () => {
+                  entered = true;
+                  return invoke();
+                }, { waitMs: 0 }));
+              } catch (error) {
+                if (!entered && !(error instanceof HttpFailure)) throw new HttpFailure(503,
+                  `Managed operation did not enter its journal: ${error instanceof Error ? error.message : String(error)}`);
+                throw error;
+              }
+            }
           }
         }
         catch (error) { if (message.method === 'initialize') removeSession(record.id); throw error; }
@@ -575,6 +719,7 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
     chmodSync(paths.controlSocket, 0o600);
     writePrivate(paths.discovery, discovery);
     await new Promise<void>((resolve, reject) => {
+      lifecycle.fail = reject;
       lifecycle.stop = () => {
         if (closing) return;
         closing = true;
@@ -583,6 +728,7 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         server.close(done); controlServer.close(done);
         server.closeIdleConnections(); controlServer.closeIdleConnections();
       };
+      if (wardenFailure) { reject(wardenFailure); lifecycle.stop(); return; }
       const onSignal = () => lifecycle.stop?.();
       process.once('SIGTERM', onSignal); process.once('SIGINT', onSignal);
       server.once('close', () => { process.off('SIGTERM', onSignal); process.off('SIGINT', onSignal); });
@@ -593,13 +739,28 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         } catch (error) { server.closeAllConnections(); controlServer.closeAllConnections(); lifecycle.stop?.(); reject(error); }
       }, Math.min(1000, idleMs));
     });
+  } catch (error) {
+    serviceFailed = true; serviceFailure = error;
+    throw error;
   } finally {
-    if (timer) clearInterval(timer);
-    lifecycle.stop?.();
-    for (const server of [http, ipc]) if (server?.listening) {
-      server.closeAllConnections();
-      await new Promise<void>(resolve => server.close(() => resolve()));
+    const cleanupErrors: unknown[] = [];
+    try { if (timer) clearInterval(timer); } catch (error) { cleanupErrors.push(error); }
+    try { lifecycle.stop?.(); } catch (error) { cleanupErrors.push(error); }
+    try { releaseWardenBinding?.(); } catch (error) { cleanupErrors.push(error); }
+    try { await sharedWarden?.close(); } catch (error) { if (!serviceFailed || error !== serviceFailure) cleanupErrors.push(error); }
+    await Promise.allSettled(pendingObservations);
+    for (const server of [http, ipc]) if (server) {
+      try {
+        server.closeAllConnections();
+        if (server.listening) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+      } catch (error) { cleanupErrors.push(error); }
     }
-    release();
+    if (!sharedWarden || sharedWarden.hasExited()) {
+      try { release(); } catch (error) { cleanupErrors.push(error); }
+    } else cleanupErrors.push(new Error('Shared task Worker exit unconfirmed; owner lock retained'));
+    if (cleanupErrors.length) {
+      const errors = [...(serviceFailed ? [serviceFailure] : []), ...cleanupErrors];
+      throw new AggregateError(errors, `Shared service cleanup failed: ${errors.map(error => error instanceof Error ? error.message : String(error)).join('; ')}`);
+    }
   }
 }

@@ -1,7 +1,8 @@
 import { check, skip } from './check.mjs';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createServer, request } from 'node:http';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -10,7 +11,7 @@ import { bindServiceClient, ensureWorkspaceService, registerServiceClient, revok
 import { processState, readDiscovery, requireProcess, runtimeIdentity, servicePaths } from '../lib/service-state.js';
 import { bindSessionIdentity, bus, createTask, participantRecord, strictTaskFacts, upsertParticipant, withIdentityEnvironment, sessionIdentity } from '../lib/store.js';
 import { REGISTRY, resolveSessionIdentity } from '../lib/drivers.js';
-import { bindServiceHarnessContext, requireServiceHarnessContext, serviceHarnessContext } from '../lib/harness-home.js';
+import { bindServiceHarnessContext, pollEnvironmentOf, requireServiceHarnessContext, serviceHarnessContext } from '../lib/harness-home.js';
 import { sessionFile as codexSessionFile } from '../lib/codex-session.js';
 
 if (!['darwin', 'linux'].includes(process.platform)) {
@@ -43,7 +44,8 @@ if (!['darwin', 'linux'].includes(process.platform)) {
     rmSync(PRIVATE, { recursive: true, force: true });
   });
   writeHostConfig(ROOT, { tools: [] });
-  writeFileSync(ENTRY, `import {existsSync,writeFileSync} from 'node:fs';
+  writeFileSync(ENTRY, `import fs,{existsSync,writeFileSync} from 'node:fs';
+import {syncBuiltinESMExports} from 'node:module';
 import {createStandaloneHost} from ${JSON.stringify(pathToFileURL(path.join(PACKAGE, 'dist', 'host-index.js')).href)};
 import {runPromptobus} from ${JSON.stringify(pathToFileURL(path.join(PACKAGE, 'lib', 'cli.js')).href)};
 // Hold deferred shutdown work to expose admission between its acknowledgement and execution.
@@ -52,19 +54,27 @@ globalThis.setImmediate=(callback,...args)=>immediate(()=>{
   if(process.env.SHARED_TEST_STOP_GATE && existsSync(process.env.SHARED_TEST_STOP_GATE)) setTimeout(callback,250,...args);
   else callback(...args);
 });
+const rename=fs.renameSync;
+fs.renameSync=(from,to)=>{
+  for(const gate of ${JSON.stringify([path.join(ROOT, 'pause-gate'), path.join(ROOT, 'managed-pause-gate')])}) {
+    if(!existsSync(gate)) continue;
+    const target=JSON.parse(fs.readFileSync(gate,'utf8'));
+    if(String(to)!==target.receiptFile || !target.receiptFile.startsWith(${JSON.stringify(PRIVATE + path.sep)})
+      || !target.receiptFile.endsWith('/requests/'+target.session+'/'+target.key+'.json')) continue;
+    const completed=JSON.parse(fs.readFileSync(from,'utf8'));
+    if(completed.state!=='completed') continue;
+    const started=JSON.parse(fs.readFileSync(to,'utf8'));
+    if(completed.readOnly!==false || completed.digest!==target.digest
+      || completed.response?.id!==target.id || started.state!=='started' || started.digest!==target.digest
+      || !Array.isArray(completed.response?.result?.content) || completed.response?.result?.isError===true || completed.response?.error) throw new Error('fixture receipt completion did not match its successful owned request');
+    writeFileSync(target.marker,'entered');
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,30000);
+  }
+  return rename(from,to);
+};
+syncBuiltinESMExports();
 const make=({cwd,env})=>{
   const host=createStandaloneHost({cwd,binPath:${JSON.stringify(ENTRY)},version:${JSON.stringify(VERSION)}});
-  const argv=host.busArgv;
-  host.busArgv=args=>{
-    if(args[0]==='warden') {
-      if(env.SHARED_TEST_GATE && existsSync(env.SHARED_TEST_GATE)) {
-        writeFileSync(env.SHARED_TEST_MARKER,'entered');
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,30000);
-      }
-      throw new Error('fixture does not launch an external warden');
-    }
-    return argv(args);
-  };
   if(env.SHARED_TEST_BIN) host.resolveToolBin=()=>({ok:true,bin:env.SHARED_TEST_BIN});
   return host;
 };
@@ -119,6 +129,13 @@ if(code) process.exitCode=code;
   const tool = (credential, connection, name, args = {}, id = ++sequence, headers = {}) => http(connection.url, credential.token,
     { jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } },
     { 'mcp-session-id': connection.session, 'mcp-protocol-version': '2025-06-18', ...headers });
+  const receiptGate = (gate, marker, connection, name, args, id) => {
+    const key = createHash('sha256').update(JSON.stringify(id)).digest('hex');
+    const digest = createHash('sha256').update(JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } })).digest('hex');
+    const receiptFile = path.join(paths.requests, connection.session, `${key}.json`);
+    writeFileSync(gate, JSON.stringify({ marker, receiptFile, session: connection.session, key, digest, id }));
+    return receiptFile;
+  };
   const clientEnv = (role, session) => ({ ...env, PROMPTOBUS_ROLE: role, PROMPTOBUS_TASK: TASK, CLAUDE_CODE_SESSION_ID: session });
   let current = null;
   try {
@@ -225,6 +242,20 @@ if(code) process.exitCode=code;
     try { await registerServiceClient(host, { cwd: ROOT, env: { ...clientEnv('worker:one', 'worker-one'), SHARED_TEST_BIN: '/different/bin' } }, options); }
     catch (error) { changedHarness = error.message; }
     check('a different harness binding refuses without switching global state', /different harness/.test(changedHarness), changedHarness);
+    for (const key of ['HOME', 'CLAUDE_CONFIG_DIR', 'ANTHROPIC_API_KEY', 'CLAUDE_CODE_USE_BEDROCK', 'HTTPS_PROXY', 'http_proxy', 'NODE_EXTRA_CA_CERTS']) {
+      const refused = await registerServiceClient(host, { cwd: ROOT, env: { ...clientEnv('worker:one', 'worker-one'), [key]: 'different-owned-fixture-value' } }, options)
+        .then(() => null, error => error.message);
+      check(`a different shared poll ${key} refuses instead of installing a client's account or transport context`, /common poll environment/.test(refused ?? ''));
+    }
+    const privateConfig = await registerServiceClient(host, { cwd: ROOT,
+      env: { ...clientEnv('worker:one', 'worker-one'), CLAUDE_CONFIG_DIR: path.join(ROOT, 'private-claude-config') }, pollEnv: env }, options);
+    const privateConnection = await initialize(privateConfig);
+    check('an explicit common poll snapshot permits a client private config without changing its authority', privateConnection.status === 200
+      && !(await tool(privateConfig, privateConnection, 'promptobus_task')).json.result.isError);
+    await revokeServiceClient(host, privateConfig.clientId, options);
+    const unchanged = await http(connection.url, worker.token, { jsonrpc: '2.0', id: ++sequence, method: 'ping' },
+      { 'mcp-session-id': connection.session, 'mcp-protocol-version': '2025-06-18' });
+    check('rejected poll contexts and a private client leave the original client usable', unchanged.status === 200);
 
     const id = ++sequence, args = { to: 'orchestrator', type: 'status', body: 'one commit' };
     const sent = await tool(worker, connection, 'promptobus_send', args, id);
@@ -243,13 +274,15 @@ if(code) process.exitCode=code;
       && strictTaskFacts(HOME, TASK).messages.filter(message => message.type === 'status').length === 1);
 
     const gate = path.join(ROOT, 'pause-gate'), marker = path.join(ROOT, 'pause-marker');
-    const reporter = await registerServiceClient(host, { cwd: ROOT, env: { ...clientEnv('reporter', 'reporter-one'), PROMPTOBUS_WARDEN: 'on',
+    const reporter = await registerServiceClient(host, { cwd: ROOT, env: { ...clientEnv('reporter', 'reporter-one'),
       SHARED_TEST_GATE: gate, SHARED_TEST_MARKER: marker }, lifetime: { kind: 'process', process: requireProcess() } }, options);
     const reporterConnection = await initialize(reporter);
-    writeFileSync(gate, 'pause after journal commit');
     const uncertainId = ++sequence, uncertainArgs = { body: 'one uncertain question' };
+    const uncertainReceipt = receiptGate(gate, marker, reporterConnection, 'promptobus_ask', uncertainArgs, uncertainId);
     const pending = tool(reporter, reporterConnection, 'promptobus_ask', uncertainArgs, uncertainId).catch(error => ({ error: error.message }));
-    check('the real reporter request reached its post-commit consumer callback', await until(() => existsSync(marker)));
+    check('the real reporter request committed its question and retains a started receipt before completion', await until(() => existsSync(marker))
+      && strictTaskFacts(HOME, TASK).messages.filter(message => message.type === 'question').length === 1
+      && JSON.parse(readFileSync(uncertainReceipt, 'utf8')).state === 'started');
     process.kill(current.process.pid, 'SIGKILL');
     await pending; await until(() => processState(current.process) === 'dead');
     rmSync(gate);
@@ -290,7 +323,7 @@ if(code) process.exitCode=code;
       sessionId: launchRecord.threadId, sessionRecord: managedRecord, nativeLaunchId: managedProof.launchId }));
     const managedGate = path.join(ROOT, 'managed-pause-gate'), managedMarker = path.join(ROOT, 'managed-pause-marker');
     const managedEnv = { ...clientEnv(managedProof.address, 'managed-one'), CLAUDE_CODE_SESSION_ID: undefined,
-      CODEX_THREAD_ID: launchRecord.threadId, PROMPTOBUS_CODEX_SESSION: managedRecord, PROMPTOBUS_WARDEN: 'on',
+      CODEX_THREAD_ID: launchRecord.threadId, PROMPTOBUS_CODEX_SESSION: managedRecord,
       SHARED_TEST_GATE: managedGate, SHARED_TEST_MARKER: managedMarker };
     try { await bindServiceClient(host, binding.clientId, { ...managedProof, address: 'worker:one', ref: 'replaced-ref' }, options); }
     catch (error) { replaced = error.message; }
@@ -311,16 +344,30 @@ if(code) process.exitCode=code;
     const managedReadId = ++sequence;
     const managedRead = await tool(managed, managedConnection, 'promptobus_task', {}, managedReadId);
     check('the live owned managed holder serves an ordinary bus read', managedRead.status === 200 && !managedRead.json.result.isError
-      && (await workspaceServiceStatus(host, options)).unknownManaged === 0);
-    writeFileSync(managedGate, 'pause managed send after journal commit');
+      && await until(async () => (await workspaceServiceStatus(host, options)).unknownManaged === 0));
     const managedUncertainId = ++sequence, managedUncertainArgs = { body: 'one uncertain managed question' };
+    const managedReceipt = receiptGate(managedGate, managedMarker, managedConnection, 'promptobus_ask', managedUncertainArgs, managedUncertainId);
     const questionsBeforeManaged = strictTaskFacts(HOME, TASK).messages.filter(message => message.type === 'question').length;
     const managedPending = tool(managed, managedConnection, 'promptobus_ask', managedUncertainArgs, managedUncertainId).catch(error => ({ error: error.message }));
-    check('the managed request reaches its real post-journal callback with its holder alive', await until(() => existsSync(managedMarker))
-      && processState(managedHolder) === 'alive'
+    const reached = await until(() => existsSync(managedMarker)), crashOwner = current.process;
+    const expectedReceipt = JSON.parse(readFileSync(managedGate, 'utf8'));
+    const startedReceipt = JSON.parse(readFileSync(managedReceipt, 'utf8'));
+    const beforeCrash = { reached, owner: crashOwner, ownerState: processState(crashOwner), holder: managedHolder,
+      holderState: processState(managedHolder), receipt: { state: startedReceipt.state, digest: startedReceipt.digest,
+        key: path.basename(managedReceipt, '.json'), expectedDigest: expectedReceipt.digest, expectedKey: expectedReceipt.key } };
+    const ownedCrash = reached && beforeCrash.ownerState === 'alive' && beforeCrash.holderState === 'alive'
+      && startedReceipt.state === 'started' && startedReceipt.digest === expectedReceipt.digest
+      && beforeCrash.receipt.key === expectedReceipt.key;
+    check('the managed successful completion gate retains its exact started receipt and live owned PID/birth proofs', ownedCrash, JSON.stringify(beforeCrash));
+    if (!ownedCrash) throw new Error('Managed fixture refused an unproven owner crash');
+    process.kill(crashOwner.pid, 'SIGKILL');
+    await managedPending;
+    const observedOwnerDead = await until(() => processState(crashOwner) === 'dead');
+    writeSync(1, `  · managed-crash-proof: ${JSON.stringify({ ...beforeCrash, observedOwnerDead })}\n`);
+    check('the exact owned managed service lifetime is observed dead before any journal read or successor', observedOwnerDead);
+    if (!observedOwnerDead) throw new Error('Managed fixture owner death remained unconfirmed');
+    check('the managed request reaches its real post-journal callback with its holder alive', ownedCrash
       && strictTaskFacts(HOME, TASK).messages.filter(message => message.type === 'question').length === questionsBeforeManaged + 1);
-    process.kill(current.process.pid, 'SIGKILL');
-    await managedPending; await until(() => processState(current.process) === 'dead');
     rmSync(managedGate);
     current = remember(await ensureWorkspaceService(host, options));
     const managedUncertain = await tool(managed, managedConnection, 'promptobus_ask', managedUncertainArgs, managedUncertainId);
@@ -451,6 +498,15 @@ if(code) process.exitCode=code;
       ? { ok: true, bin: '/different/cursor-agent' } : resolveBin(tool) }, env, REGISTRY); }
     catch (error) { cursorMismatch = error.message; }
     check('compatibility checks the Cursor driver binary even when cursor and every other tool response are unchanged', /different harness/.test(cursorMismatch), cursorMismatch);
+    const nativeOnly = { ...env, CLAUDE_CODE_SESSION_ID: 'foreign-native', CLAUDE_CODE_HOST_SESSION_ID: 'foreign-host',
+      CLAUDE_CODE_MESSAGING_SOCKET: '/foreign/socket', CLAUDE_CODE_MESSAGING_TOKEN: 'foreign-token', CODEX_THREAD_ID: 'foreign-codex',
+      CODEX_HOME: '/foreign/private-codex', OPENCODE_CONFIG: '/foreign/private-opencode' };
+    let nativeMismatch = '';
+    try { requireServiceHarnessContext(expectedHarness, host, nativeOnly, REGISTRY); } catch (error) { nativeMismatch = error.message; }
+    const projected = pollEnvironmentOf(nativeOnly);
+    check('native session, contact and private config variables are excluded from common polling without mutating input', !nativeMismatch
+      && Object.keys(nativeOnly).filter(key => /^(CLAUDE_CODE_(SESSION_ID|HOST_SESSION_ID|MESSAGING_SOCKET|MESSAGING_TOKEN)|CODEX_THREAD_ID|CODEX_HOME|OPENCODE_CONFIG)$/.test(key)).every(key => !(key in projected))
+      && nativeOnly.CLAUDE_CODE_MESSAGING_TOKEN === 'foreign-token');
   } finally {
     if (lifetimeChild) lifetimeChild.kill('SIGTERM');
     if (fakePort) await new Promise(resolve => fakePort.close(resolve));

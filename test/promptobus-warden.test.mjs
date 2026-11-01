@@ -1053,7 +1053,7 @@ check('a few seconds short of the working ceiling — keep sitting',
 const BUSY = 'sup-busy-t20260829-150004';
 store.createTask(HOME, { id: BUSY, title: 'an occupied seat', owner: SESSION });
 store.claimWarden(HOME, BUSY, { cli: '0.45.0' });
-const busyOut = await capture(() => wdn.warden({ host: HOST, task: BUSY }, { PROMPTOBUS_HOME: HOME }, SB));
+const busyOut = await capture(() => wdn.runTaskWarden({ home: HOME, task: BUSY, host: wdn.taskWardenHost(HOST), session: SESSION }));
 check('the spot is taken by a live one — the process leaves, naming the holder',
   /already running/.test(busyOut) && busyOut.includes(String(process.pid))
   && !store.tailWardenLog(HOME, BUSY, 20).some((l) => /warden started/.test(l)),
@@ -1061,7 +1061,7 @@ check('the spot is taken by a live one — the process leaves, naming the holder
 
 // The task closed — the process ends on its own, on the very first loop, and clears its own
 // mark.
-const closedOut = await capture(() => wdn.warden({ host: HOST, task: CLOSED }, { PROMPTOBUS_HOME: HOME }, SB));
+const closedOut = await capture(() => wdn.runTaskWarden({ home: HOME, task: CLOSED, host: wdn.taskWardenHost(HOST), session: SESSION }));
 check('a closed task: the process exits with a reason and clears its own mark',
   /exited: task is closed/.test(closedOut) && store.liveWarden(HOME, CLOSED) === null, closedOut);
 check('the exit reason also went into the task log',
@@ -1085,7 +1085,7 @@ const shift = setTimeout(() => { skew = (store.WARDEN_BEAT_SEC + 1) * 1000; }, 2
 // task closes, the process exits for a different reason, and a single verdict turns red
 // instead of the whole run.
 const guard = setTimeout(() => store.closeTask(HOME, LOOP), 15_000);
-const loopOut = await capture(() => wdn.warden({ host: HOST, task: LOOP }, { PROMPTOBUS_HOME: HOME }, SB));
+const loopOut = await capture(() => wdn.runTaskWarden({ home: HOME, task: LOOP, host: wdn.taskWardenHost(HOST), session: SESSION }));
 clearTimeout(shift);
 clearTimeout(guard);
 Date.now = realNow;
@@ -1131,7 +1131,7 @@ let skewLast = 0;
 Date.now = () => realNowLast.call(Date) + skewLast;
 const shiftLast = setTimeout(() => { skewLast = (store.WARDEN_BEAT_SEC + 1) * 1000; }, 20);
 const guardLast = setTimeout(() => store.closeTask(HOME, LAST), 15_000);
-const lastOut = await capture(() => wdn.warden({ host: HOST, task: LAST }, { PROMPTOBUS_HOME: HOME }, SB));
+const lastOut = await capture(() => wdn.runTaskWarden({ home: HOME, task: LAST, host: wdn.taskWardenHost(HOST), session: SESSION }));
 clearTimeout(shiftLast);
 clearTimeout(guardLast);
 Date.now = realNowLast;
@@ -1158,7 +1158,7 @@ store.createTask(HOME, { id: FAIL, title: 'a round refusal', owner: SESSION });
 store.upsertParticipant(HOME, FAIL, store.participantRecord('worker:api'));
 store.sendMessage(HOME, FAIL, { from: 'orchestrator', to: 'worker:api', type: 'task', body: 'brief' });
 mkdirSync(store.healthFile(HOME, FAIL), { recursive: true });
-const failOut = await capture(() => wdn.warden({ host: HOST, task: FAIL }, { PROMPTOBUS_HOME: HOME }, SB));
+const failOut = await capture(() => wdn.runTaskWarden({ home: HOME, task: FAIL, host: wdn.taskWardenHost(HOST), session: SESSION }));
 check(`the watch loop failed ${wdn.ROUND_FAIL_LIMIT} times in a row — exit with a reason`,
   new RegExp(`exited: watch round failed ${wdn.ROUND_FAIL_LIMIT} times in a row`).test(failOut), failOut);
 check('each failure is numbered in the warden log',

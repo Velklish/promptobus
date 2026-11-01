@@ -216,7 +216,7 @@ async function startLead(plan: LeadPlan, tool: LibToolBin, provenance: ReturnTyp
     }
   }
   const { session, seen, output } = spawned;
-  ensureWarden(plan.home, plan.task, { host: plan.host });
+  await ensureWarden(plan.home, plan.task, { host: plan.host });
   ok(`root task ${plan.task} owned by Codex thread ${session}`);
   plan.driver.saidLiftoff({ name: plan.name, seen, session, output });
   return plan;

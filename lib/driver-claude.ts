@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync } from 'node:fs';
 import { connect } from 'node:net';
-import { homedir } from 'node:os';
+import { homedir, userInfo } from 'node:os';
 import path from 'node:path';
+import { commonPollEnvironment } from './harness-home.js';
 import { PROMPTOBUS_SERVER } from './contract.js';
 import { assertNativePluginManifest, selectedNativeFiles, selectedNativePrompt } from './native-participant-context.js';
 import {
-  canonicalPath, foreignSession, participantOf, participantSessionPath, readTask, upsertParticipant, wakeAddressOf,
+  canonicalPath, foreignSession, participantOf, participantSessionPath, readTask, readWake, upsertParticipant, wakeAddressOf,
   withTaskLock, writeJsonAtomic, writeWake,
 } from './store.js';
 import { PARENT_SESSION_ENV } from './session-env.js';
@@ -175,8 +176,9 @@ export const KNOCK_FROM = 'promptobus-warden';
 // --- session-state parse --------------------------------------------------
 
 // Claude config directory — the same one that holds `jobs/` and `daemon/`.
-function claudeHome(env = process.env) {
-  return env.CLAUDE_CONFIG_DIR || path.join(homedir(), '.claude');
+function claudeHome(env = commonPollEnvironment()) {
+  const home = process.platform === 'win32' ? env.USERPROFILE : env.HOME;
+  return env.CLAUDE_CONFIG_DIR || path.join(home || userInfo().homedir, '.claude');
 }
 
 // The reason goes into one-line output. `state.json` is not a contract — a whole paragraph used to
@@ -485,9 +487,12 @@ export function registerWake(home: string, task: string, addr: string, env = pro
       return false;
     }
     const at = wakeAddressOf(home, task, addr);
+    const socket = env.CLAUDE_CODE_MESSAGING_SOCKET?.trim() || null;
+    const token = env.CLAUDE_CODE_MESSAGING_TOKEN?.trim() || null;
+    const previous = readWake(home, at.task, at.address);
+    if (!socket || (!token && previous?.token && previous.session === who)) return null;
     return writeWake(home, at.task, at.address, {
-      socket: env.CLAUDE_CODE_MESSAGING_SOCKET?.trim() || null,
-      token: env.CLAUDE_CODE_MESSAGING_TOKEN?.trim() || null,
+      socket, token,
       session: who || null,
     });
   } catch {

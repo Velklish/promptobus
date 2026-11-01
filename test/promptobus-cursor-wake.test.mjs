@@ -25,7 +25,9 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
-import { makeSandbox, writeHostConfig } from './sandbox.mjs';
+import { makeSandbox, makeSockDir, writeHostConfig } from './sandbox.mjs';
+import { taskServiceFixture } from './task-service-fixture.mjs';
+import { processState } from '../lib/service-state.js';
 import { PROMPTOBUS_BIN, buildWorkspace, cli, store } from './scenario.mjs';
 import { diagnoseTrace, installHarness, planParticipant, serverDir } from './harness-cursor.mjs';
 import { waitFor } from './harness.mjs';
@@ -108,7 +110,9 @@ planParticipant(HARNESS, WORKER, {
   ],
 });
 
-const env = { ...process.env, PROMPTOBUS_HOME: home, CLAUDE_CODE_SESSION_ID: ORCH_SESSION };
+const service = await taskServiceFixture({ workspace: ws, home, task: TASK, socketDirectory: makeSockDir('a2s-').dir });
+const env = { ...service.env, CLAUDE_CODE_SESSION_ID: ORCH_SESSION };
+try {
 // The warden is lifted BY HAND, as in E2E: the shared hygiene list kills auto-lift, and
 // the runner verdict goes red on it. The separate process is real.
 const wardenEnv = { ...env };
@@ -240,9 +244,7 @@ const gone = await waitFor(() => (store.liveWarden(home, TASK) ? null : true), {
 check('step 6: the warden of the closed task exited on its own',
   gone === true, `${JSON.stringify(store.liveWarden(home, TASK))} · ${wardenLog}`);
 
-try {
-  process.kill(-warden.pid, 'SIGTERM');
-} catch {
-  // No group, or the process already exited — both branches are legal.
-}
-restore();
+const closedService = await service.close();
+check('step 6: the owned shared service physically exited after the task seat settled', closedService.stopped
+  && processState(closedService.process) === 'dead');
+} finally { await service.close(); restore(); }

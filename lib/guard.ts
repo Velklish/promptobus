@@ -534,7 +534,7 @@ async function decide(args: GuardArgs, env: NodeJS.ProcessEnv, cwd: string, even
   // Every OTHER task this session owns gets the same socket: it has no binding of its own, and the
   // first bus call for it is what used to hand one over — which is exactly what never came.
   handOverContactPoints(identity.home, { env, session });
-  ensureWarden(identity.home, task, { env, host: args.host as PromptobusHost | undefined });
+  await ensureWarden(identity.home, task, { env, host: args.host as PromptobusHost | undefined });
 
   const file = guardMarkFile(identity.home, task, addr);
   const wardenNotice = addr === ORCHESTRATOR

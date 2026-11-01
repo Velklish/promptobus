@@ -35,18 +35,19 @@
 //
 // A review round is answered by the reviewer's next unseen result naming the round's diff file.
 import {
-  copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, writeSync,
+  copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, writeSync,
 } from 'node:fs';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { finishLiveArgs, parseLiveArgs } from './live-args.mjs';
 import { guardStubLaunch, refuseImportedEntry } from './live-entry.mjs';
-import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
+import { makeSandbox, retainSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
-import { freshScenarioIdentity, buildWorkspace, cli, MECHANISM_ROOT, PROMPTOBUS_BIN, sentBy, store } from '../test/scenario.mjs';
+import { freshScenarioIdentity, buildWorkspace, cli, MECHANISM_ROOT, sentBy, store } from '../test/scenario.mjs';
 import { waitFor } from '../test/harness.mjs';
+import { taskServiceFixture } from '../test/task-service-fixture.mjs';
 import { markRunOwner, sweepLiveRuns, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
 import { onAbort } from './live-abort.mjs';
 import { codexConfigSha } from './codex-config.mjs';
@@ -223,15 +224,17 @@ line of the body and write nothing before it. One message — one result. Do not
 else.
 `);
 
-const env = { ...process.env, PROMPTOBUS_HOME: home, CLAUDE_CODE_SESSION_ID: ORCH_SESSION };
+const serviceDirectory = mkdtempSync(path.join(realpathSync(process.platform === 'win32' ? tmpdir() : '/tmp'), 'pbmix-'));
+const taskService = await taskServiceFixture({ workspace: ws, home, task: TASK, socketDirectory: serviceDirectory,
+  mechanismRoot: MECHANISM_ROOT,
+  env: { ...process.env, PROMPTOBUS_HOME: home, CLAUDE_CODE_SESSION_ID: ORCH_SESSION } });
+const env = taskService.env;
+let serviceClosed = false;
+let serviceClosing;
+const closeService = () => serviceClosing ??= taskService.close().then((result) => { serviceClosed = true; return result; });
+process.once('exit', () => { if (serviceClosed) rmSync(serviceDirectory, { recursive: true, force: true }); });
 const wardenEnv = { ...env };
 delete wardenEnv.PROMPTOBUS_WARDEN;
-
-store.createTask(home, { ...identity, owner: ORCH_SESSION });
-const warden = spawn(process.execPath, [PROMPTOBUS_BIN, 'warden', '--task', TASK], {
-  cwd: ws, detached: true, stdio: 'ignore', env: wardenEnv,
-});
-warden.unref();
 
 process.stdout.write(`▸ live mixed-lineup run: worker Cursor + reviewer Codex\n`);
 process.stdout.write(`▸ cursor: ${tools.cursor.path}${tools.cursor.version ? ` (${tools.cursor.version})` : ''} · model ${CURSOR_MODEL}\n`);
@@ -264,6 +267,7 @@ const said = (from, type, mark) => orchInbox()
 let workerRef = '';
 let reviewerRef = '';
 let transcriptPath = null;
+let commandReceiptPath = null;
 let codexStateBeforeCleanup = [];
 // Turn logs are taken BEFORE stop, and the two halves of the lineup differ,
 // because `done` sweeps different things. It does not touch the Cursor
@@ -321,18 +325,30 @@ function keepTranscript() {
   }
 }
 
+function keepCommandReceipts() {
+  try {
+    commandReceiptPath = (reviewerRef ? codexSession.readSession(reviewerRef)?.commandReceiptFile : null) ?? commandReceiptPath;
+    if (commandReceiptPath && existsSync(commandReceiptPath)) {
+      copyFileSync(commandReceiptPath, path.join(logsDir(), `${addrKey(REVIEWER)}.commands.jsonl`));
+    }
+  } catch {
+    // A missing receipt cannot be reconstructed; the Stop result remains unconfirmed.
+  }
+}
+
 /** Any outcome: a holder copy — a repeat for a red loop that never reached stop. */
 function keepLogs() {
   keepTranscript();
   keepHolderLog();
+  keepCommandReceipts();
 }
 
-/** The pane pid of a persist session, read while the record and the session still exist. */
+/** The owned pane pid recorded at lift, without a synchronous tmux preflight before Stop. */
 function panePidOf(ref) {
   try {
     const record = cursorPersist.readSession(ref);
-    if (!record?.sessionName) return null;
-    return cursorPersist.findSession(record.sessionName, { server: record.tmuxServer || cursorPersist.CURSOR_TMUX_SERVER })?.panePid ?? null;
+    const pid = record?.panePid;
+    return typeof pid === 'number' && Number.isInteger(pid) ? pid : null;
   } catch {
     // No record — no pane to name; the pre-exit verdict below says unknown, never invents one.
     return null;
@@ -351,9 +367,18 @@ function holderPidsOf(ref) {
 }
 
 // The same cleanup as `finally`, and it is awaited: logs first, every raised participant
-// stopped by its own driver within the budget, the warden by its process group, then exit.
+// stopped by its own driver within the budget, then its task seat and owned service close.
 const ABORT_STOP_MS = 5_000;
+const NORMAL_STOP_MS = 5_000;
 let aborted = false;
+let workerStopping, reviewerStopping;
+let sandboxRetained = false;
+const retainOwnedSandbox = () => { if (!sandboxRetained) { retainSandbox(SB); sandboxRetained = true; } };
+const stopWorker = (deadline) => workerStopping ??= Promise.resolve().then(() =>
+  cursorDriver.stop(workerRef, { timeoutMs: Math.max(0, deadline - Date.now()) }));
+const stopReviewer = (allowance) => reviewerStopping ??= Promise.resolve().then(() =>
+  codexDriver.stop(reviewerRef, { timeoutMs: allowance() }));
+const stopUnconfirmed = (result) => result?.ok !== true || (result?.attempted === true && result?.stopped !== true);
 const assertRunning = () => { if (aborted) throw new Error('live run aborted'); };
 async function waitForRunning(probe, options) {
   assertRunning();
@@ -365,41 +390,55 @@ onAbort(async (signal) => {
   aborted = true;
   const say = (line) => writeSync(1, line);
   const deadline = Date.now() + ABORT_STOP_MS;
+  let retentionError;
+  try { retainOwnedSandbox(); } catch (error) { retentionError = error; }
   say(`\n▸ run cut off by ${signal}: keeping the logs and stopping the loop\n`);
   keepLogs();
   // The owned PIDs are read BEFORE the stops: the records go with them, and the pre-exit
   // verdict below must name the processes the stops were sent to.
   const workerPane = workerRef ? panePidOf(workerRef) : null;
   const reviewerPids = reviewerRef ? holderPidsOf(reviewerRef) : [];
-  // Start both stops before awaiting either. Codex bounds its ask and death wait separately,
-  // so each gets half the remaining budget.
+  // Start both stops before awaiting either, retaining the abort caller's Codex allowance.
   const stopping = Promise.all([
-    workerRef ? cursorDriver.stop(workerRef, { timeoutMs: Math.max(0, deadline - Date.now()) }) : null,
-    reviewerRef ? codexDriver.stop(reviewerRef, { timeoutMs: Math.max(0, Math.floor((deadline - Date.now()) / 2)) }) : null,
+    workerRef ? stopWorker(deadline) : null,
+    reviewerRef ? stopReviewer(() => Math.max(0, Math.floor((deadline - Date.now()) / 2))) : null,
   ].map((stop) => Promise.resolve(stop).catch((error) => ({ ok: false, stopped: false, note: error.message }))));
-  try {
-    process.kill(-warden.pid, 'SIGTERM');
-    say('  · task warden stopped by its process group\n');
-  } catch {
-    say('  · no task warden left\n');
-  }
+  const closingService = closeService().catch(error => ({ stopped: false, error: error.message }));
+  const serviceStopped = await closingService;
+  say(serviceStopped.stopped ? '  · task warden and owned service physically stopped\n'
+    : `  · owned service stop unconfirmed: ${serviceStopped.error ?? 'no live owner'}\n`);
   const [workerStopped, reviewerStopped] = await stopping;
+  keepCommandReceipts();
   if (workerRef) say(`  · stop returned for the Cursor worker ${workerRef}: ${workerStopped?.note ?? 'no stop result'}\n`);
   if (reviewerRef) say(`  · stop returned for the Codex reviewer ${reviewerRef}: ${reviewerStopped?.note ?? 'no stop result'}\n`);
   // The stop verdict is sampled HERE, while the sandbox still exists: once
   // the exit hook takes them, a reader cannot tell a real stop from the teardown.
   say(`  · pre-exit: ${JSON.stringify({ sandbox: SB, sandboxPresent: existsSync(SB), elapsedMs: Date.now() - (deadline - ABORT_STOP_MS),
+    warden: { process: serviceStopped.process ?? null, seat: store.liveWarden(home, TASK), stopped: serviceStopped.stopped },
     worker: { ref: workerRef, pids: [workerPane], alive: [workerPane == null ? null : cursorPersist.pidAlive(workerPane)], stop: workerStopped },
     reviewer: { ref: reviewerRef, pids: reviewerPids, alive: reviewerPids.map((pid) => codexSession.pidAlive(pid)), stop: reviewerStopped },
   })}\n`);
-  say(`  · the sandbox goes on exit, with the thread records under it: ${SB}\n`);
+  if ((workerRef && stopUnconfirmed(workerStopped)) || (reviewerRef && stopUnconfirmed(reviewerStopped)) || serviceStopped.error || retentionError) {
+    say(`  · cleanup unconfirmed; sandbox ${sandboxRetained ? 'retained' : 'retention unconfirmed'}: ${SB}\n`);
+    if (retentionError) say(`  · sandbox retention error: ${retentionError?.message ?? String(retentionError)}\n`);
+  } else {
+    rmSync(SB, { recursive: true, force: true });
+    say(`  · sandbox removed after confirmed cleanup: ${SB}\n`);
+  }
   say(`  · turn logs: ${KEPT_LOGS}\n`);
 }, { waitMs: 30_000 });
 
 const t0 = Date.now();
+let runFailed = false, runFailure;
 try {
+  assertRunning();
+  store.createTask(home, { ...identity, owner: ORCH_SESSION });
+  const wardenDemand = cli(['warden', '--task', TASK], { cwd: ws, env: wardenEnv });
+  // A synchronous CLI can leave native signals queued after poll; cross the next poll
+  // before lifting a participant, even if the first immediate runs in this iteration.
+  await new Promise(resolve => setImmediate(() => setImmediate(resolve)));
   const live = await waitForRunning(() => store.liveWarden(home, TASK), { timeoutMs: 30000 });
-  check('step 1: the task warden is up as a real process', !!live?.pid, JSON.stringify(live));
+  check('step 1: the task warden is up as a real process', wardenDemand.status === 0 && !!live?.pid, `${wardenDemand.out} · ${JSON.stringify(live)}`);
 
   // --- step 2: the worker is raised by the cursor harness -----------------------------------
   const t2 = Date.now();
@@ -538,21 +577,41 @@ try {
     !!wardenLeft, JSON.stringify(store.liveWarden(home, TASK)));
   at_('stop', Date.now() - t7);
 } catch (e) {
-  if (!aborted) check('the run reached the end without a break', false, e.stack ?? e.message);
+  if (!aborted) {
+    runFailed = true; runFailure = e;
+    check('the run reached the end without a break', false, e?.stack ?? e?.message ?? String(e));
+  }
 } finally {
   if (!aborted) {
+    const deadline = Date.now() + NORMAL_STOP_MS;
+    const cleanupErrors = [];
+    try { retainOwnedSandbox(); } catch (error) { cleanupErrors.push(error); }
     keepLogs();
+    const stopNative = async (stopping, ref) => {
+      try {
+        const result = await stopping;
+        if (stopUnconfirmed(result)) {
+          cleanupErrors.push(new Error(`${ref}: ${result?.note ?? 'native Stop unconfirmed'}`));
+        }
+      } catch (error) { cleanupErrors.push(error); }
+    };
     // A signal transfers cleanup ownership to the abort handler, with the sandbox intact.
-    if (workerRef) await Promise.resolve(cursorDriver.stop(workerRef, { timeoutMs: 0 })).catch(() => {});
-    if (!aborted && reviewerRef) await Promise.resolve(codexDriver.stop(reviewerRef)).catch(() => {});
+    const stopping = [
+      workerRef ? stopNative(stopWorker(deadline), workerRef) : null,
+      reviewerRef ? stopNative(stopReviewer(() => Math.max(0, deadline - Date.now())), reviewerRef) : null,
+    ];
+    await Promise.all(stopping);
+    keepCommandReceipts();
     if (!aborted) {
       codexStateBeforeCleanup = listing(CODEX_STATE);
-      try {
-        process.kill(-warden.pid, 'SIGTERM');
-      } catch {
-        // No group, or the process already exited.
+      try { await closeService(); } catch (error) { if (!aborted) cleanupErrors.push(error); }
+      if (!aborted) {
+        if (cleanupErrors.length) {
+          throw new AggregateError([...(runFailed ? [runFailure] : []), ...cleanupErrors],
+            `live cleanup unconfirmed; sandbox ${sandboxRetained ? 'retained' : 'retention unconfirmed'}: ${SB}`);
+        }
+        rmSync(SB, { recursive: true, force: true });
       }
-      rmSync(SB, { recursive: true, force: true });
     }
   }
 }

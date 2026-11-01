@@ -120,6 +120,8 @@ export const SUITE_PREFIXES = [
   'promptobus-mcp-', 'promptobus-membership-', 'promptobus-owner-gate-', 'promptobus-package-',
   'promptobus-pack-isolation-', 'promptobus-pack-output-',
   'promptobus-shared-service-', 'promptobus-root-admission-', 'promptobus-service-lock-',
+  'promptobus-service-operation-locks-', 'promptobus-service-operation-',
+  'promptobus-shared-warden-',
   'promptobus-project-hooks-', 'promptobus-promptobus', 'promptobus-races-', 'promptobus-repo-path-', 'promptobus-retirement-',
   // Covers the `-a-`/`-b-` pair of host.test.mjs too: an entry sweeps everything
   // that starts with it.

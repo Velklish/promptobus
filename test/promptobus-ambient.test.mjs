@@ -133,6 +133,8 @@ const ALLOWED = [
     'locks an asynchronous holder of THIS process has in flight: a synchronous wait on one would block the loop that releases it'],
   ['src/fs/lock.ts::asyncQueue',
     'queue tail per lock path: an await admits a second holder of this process where a synchronous frame cannot, and it must wait'],
+  ['src/fs/lock.ts::synchronousAuthority',
+    'internal authority of THIS process during one synchronous managed dispatch frame: nested calls restore the previous frame in finally; no adapter setter or authority survives an await'],
   ['src/sidecar.ts::suspenders',
     'registry of onTaskLock wrappers: adapter caches register independently; one registrar cannot cancel another'],
   ['src/v1/artifacts.ts::tmpSeq',

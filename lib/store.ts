@@ -17,6 +17,7 @@ import {
   addressList, admitsAddress, APPROVER, EDITS_TREE, registryOf, roleEntry, SHIPPED_REGISTRY, WRITES_MAIN_TREE,
 } from '../dist/index.js';
 import { writeJsonAtomic } from '../dist/fs/atomic.js';
+import { requireSynchronousAuthority } from '../dist/fs/lock.js';
 import { artifactsDir, blobsDir, brokenArtifactsDir, filesDir, messagesDir } from '../dist/v1/layout.js';
 import { RECORD_ID_RE } from '../dist/v1/model.js';
 import { writeTask } from '../dist/v1/store.js';
@@ -565,7 +566,7 @@ onTaskLock(<T>(fn: () => T): T => {
     taskCache?.clear();
   };
   let result: T;
-  try { result = fn(); } catch (error) { restore(); throw error; }
+  try { requireSynchronousAuthority(); result = fn(); } catch (error) { restore(); throw error; }
   if (result instanceof Promise) return result.finally(restore) as T;
   restore();
   return result;

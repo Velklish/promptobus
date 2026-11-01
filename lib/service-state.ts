@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { createConnection } from 'node:net';
@@ -8,8 +9,19 @@ import { fileURLToPath } from 'node:url';
 import type { PromptobusHost } from '../dist/index.js';
 import { withDirLock } from '../dist/fs/lock.js';
 import { canonicalPath, writeJsonAtomic } from './store.js';
+import { runAsync } from './exec.js';
 
 export interface ProcessIdentity { pid: number; birth: string }
+export interface RecordVersion { file: string; version: string }
+
+export function recordVersion(file: string): RecordVersion {
+  const value = statSync(file, { bigint: true });
+  return { file, version: [value.dev, value.ino, value.size, value.mtimeNs, value.ctimeNs].map(String).join(':') };
+}
+
+export function sameRecordVersion(expected: RecordVersion) {
+  try { return recordVersion(expected.file).version === expected.version; } catch { return false; }
+}
 export interface ServicePaths {
   base: string; directory: string; discovery: string; owner: string; lock: string; startup: string;
   clients: string; sessions: string; requests: string; controlSocket: string; root: string; home: string;
@@ -55,6 +67,32 @@ export function processState(identity: ProcessIdentity): 'alive' | 'dead' | 'unk
     if (recordOf(error) && error.code === 'ESRCH') return 'dead';
   }
   return 'unknown';
+}
+
+const processObservations = new Map<string, Promise<'alive' | 'dead' | 'unknown'>>();
+export function processStateAsync(identity: ProcessIdentity): Promise<'alive' | 'dead' | 'unknown'> {
+  const key = JSON.stringify(identity), existing = processObservations.get(key);
+  if (existing) return existing;
+  const pending = (async (): Promise<'alive' | 'dead' | 'unknown'> => {
+    try {
+      if (process.platform === 'linux') {
+        const source = await readFile(`/proc/${identity.pid}/stat`, 'utf8');
+        const fields = source.slice(source.lastIndexOf(')') + 2).split(' ');
+        if (fields[0] !== 'Z' && fields[19]) {
+          const birth = `${(await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim()}:${fields[19]}`;
+          return birth === identity.birth ? 'alive' : 'dead';
+        }
+      } else if (process.platform === 'darwin') {
+        const result = await runAsync('ps', ['-p', String(identity.pid), '-o', 'stat=', '-o', 'lstart='], { encoding: 'utf8', timeoutMs: 2000 });
+        const match = result.status === 0 && /^\s*(\S+)\s+(.+?)\s*$/.exec(result.stdout);
+        if (match && !match[1]!.startsWith('Z')) return match[2] === identity.birth ? 'alive' : 'dead';
+      }
+    } catch {}
+    try { process.kill(identity.pid, 0); } catch (error) { if (recordOf(error) && error.code === 'ESRCH') return 'dead'; }
+    return 'unknown';
+  })().finally(() => { processObservations.delete(key); });
+  processObservations.set(key, pending);
+  return pending;
 }
 
 export function requireProcess(pid = process.pid) {

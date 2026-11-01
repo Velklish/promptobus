@@ -183,6 +183,109 @@ Those integrations, native proofs, profile activation and SDK wiring are not
 implemented here; current launch paths are not protected by an unused module.
 Process fixtures establish the filesystem transaction only, not native workflow
 or physical Stop behavior.
+### Task loops and background observations
+
+One package-owned Worker thread runs all task loops and native provider
+observations. The consumer entry is never replayed there, and arbitrary Host
+callbacks are not serialized. The original owner Host formats stall reports in
+main through one typed request; the Worker receives the resulting text.
+Each task keeps its own abort signal, watcher, heartbeat and journal seat. Its
+map entry remains until the loop's actual `finally` completes, including an
+activation already in progress. Demands received after a loop's start coalesce
+into one successor after that cleanup, including natural completion before main
+handles the completion event. Explicit abort cancels outstanding demand unless
+a later request renews it. A live legacy per-task PID is busy even with
+a stale heartbeat; the shared service neither takes its seat nor kills it.
+
+Private demand state records whether a task still needs a loop. Recovery reads
+only outstanding demands, rather than restarting every journal marked `active`.
+A completed no-work loop consumes its demand; a new write or explicit `warden`
+command requests another. Pending task work and provider observations count
+toward service lifetime. A failed Worker closes the owner for explicit preflight
+recovery, rather than replacing it under the same PID while old seats remain.
+
+This isolation follows an owned blocking fixture: with a 1200 ms provider
+inspect, authenticated HTTP pings took 1223–1230 ms while the loop ran in main,
+and 54–58 ms while it ran on the Worker (baseline 54–58 ms on that run). These
+are local fixture measurements, not a latency SLA or native-model benchmark.
+Explicit user `status` or mailbox operations may still make synchronous driver
+calls on main; background reads serialize on one Worker and can delay each
+other. Root PID/birth checks use asynchronous OS reads independently of that
+queue, and admit a process only after verifying its actual birth identity.
+The Worker uses the package's supported Node 20+ API; see the
+[Node Worker documentation](https://nodejs.org/docs/latest-v20.x/api/worker_threads.html).
+
+Managed observation never creates authority. Main checks immutable task,
+address, ref, launch generation and owned record before dispatch. Provider reads
+are accepted only if the record's filesystem revision remains unchanged before
+and after observation and at reacceptance. That revision is a stability check,
+not OS birth or launch authority. Missing, corrupt or changing evidence retains
+an unknown client and refuses its tools until proof returns; only verified
+replacement or death permits retirement.
+
+### Common poll context
+
+The service fixes registry homes, actual driver binary names and one poll
+environment at startup. Every owner registration must match it. The internal
+owner API accepts optional `ServiceCallOptions.pollEnv`. For cold startup this is the full root
+owner environment, preserving consumer-specific settings and common account
+config such as `CODEX_HOME`; it is not a finite patch over a managed caller's
+environment. Known actor task/role, native identity, record and contact variables
+are removed from the startup snapshot. Service location uses the caller's
+canonical private registry; idle/reservation settings and execution traces may
+be overlaid from that caller. The owner starts at the canonical Host workspace,
+regardless of the caller/preflight `ServiceCallOptions.cwd`. Client cwd remains
+the explicit `ServiceClientInput.cwd` and is not changed.
+
+A managed caller, proven by a non-root role or session-record pointer, cannot
+cold-start an owner without this common snapshot. It receives an actionable
+owner-preflight refusal before any child is spawned. An ordinary unbound root
+may use its own environment as the default, with the same actor-field removal.
+Ready compatible owners may be reused without another bootstrap; subsequent
+client/demand context validation still applies. A launcher
+preparing private native config must capture this root/common context before
+that preparation and pass it separately; neither a client's private config nor
+its identity may silently become the shared poll context.
+Client registration uses `ServiceClientInput.pollEnv` for common-context
+compatibility independently; its `env` and `cwd` remain client-specific.
+
+Only background native polling uses a finite projection of this environment.
+`lib/harness-home.ts` owns that exact projection:
+
+- Account/home: `HOME`, `USER`, `LOGNAME`, `USERPROFILE`, `HOMEDRIVE`, `HOMEPATH`,
+  `CLAUDE_CONFIG_DIR`, and `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`,
+  `XDG_CACHE_HOME`, `TMUX_TMPDIR`.
+- Execution: `PATH`, `Path`, `PATHEXT`, `ComSpec`, `COMSPEC`, `SystemRoot`,
+  `WINDIR`, `TMPDIR`, `TMP`, `TEMP`, `LANG`, `LC_ALL`, `LC_CTYPE`, `TZ`,
+  `NODE_OPTIONS`, `NODE_USE_ENV_PROXY`.
+- Transport: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and their
+  lowercase forms, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `NODE_EXTRA_CA_CERTS`.
+- The `ANTHROPIC_` and `CLAUDE_CODE_` prefixes, except the four native contact
+  keys `CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_HOST_SESSION_ID`,
+  `CLAUDE_CODE_MESSAGING_SOCKET`, `CLAUDE_CODE_MESSAGING_TOKEN`.
+
+Unlisted client variables are not forwarded to shared polling. Verified harness
+registry homes and the optional owner execution trace path are added separately.
+If the common context omits config and home variables, the OS user record supplies
+the home; ambient daemon home overrides do not become an implicit poll profile.
+No per-client mutation of process environment, cwd or global Host occurs.
+The background session cache is keyed by the resolved binary and this context;
+each task/provider snapshot resets it before observing current state.
+
+### Late Claude contact handover
+
+The poll context excludes native socket/token identity. If a known Claude
+contact has a token, a handover with no socket or no token preserves that entire
+known socket/token pair. A different socket without its token cannot receive
+the old token. An initially token-less profile can still register its contact.
+Foreign sessions and replaced immutable launch generations cannot transfer
+contacts through an old HTTP grant.
+
+Managed launch wiring must issue a new generation marker even when a resume
+reuses the same native session ID, replace the old generation's contact, and
+deliver a complete fresh owned socket/token handover. This loop/service change
+does not invent native IDs or derive them from the daemon's startup environment.
+Native profile launch/hook wiring remains a separate integration boundary.
 
 ## Consequences
 

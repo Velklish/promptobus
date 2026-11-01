@@ -278,7 +278,9 @@ const PORTED = {
     'a ps listing that must show this process': /maxBuffer: 32 \* 1024 \* 1024[\s\S]*ps\.status === 0 && seesSelf/,
     'the config hash without refresh timestamps': /codexConfigSha\(CODEX_CONFIG\)/,
     'the reviewer model verified against the binary catalog before the first raise': /pickCodexModel\(codexCatalogEntries\(tools\.codex\.path\), LIVE_ARGS\.codexModel, CODEX_DEFAULT\)/,
-    'a cut-off run starts both stops before awaiting either, sharing the remaining deadline': /const stopping = Promise\.all\([\s\S]*workerRef \? cursorDriver\.stop\(workerRef, \{ timeoutMs: Math\.max\(0, deadline - Date\.now\(\)\) \}\)[\s\S]*reviewerRef \? codexDriver\.stop\(reviewerRef,[\s\S]*await stopping/,
+    'the memoized worker cleanup forwards the original remaining deadline to its native Stop': /const stopWorker = \(deadline\) => workerStopping \?\?= Promise\.resolve\(\)\.then\(\(\) =>\s*cursorDriver\.stop\(workerRef, \{ timeoutMs: Math\.max\(0, deadline - Date\.now\(\)\) \}\)\)/,
+    'the memoized reviewer cleanup forwards its supplied allowance to its native Stop': /const stopReviewer = \(allowance\) => reviewerStopping \?\?= Promise\.resolve\(\)\.then\(\(\) =>\s*codexDriver\.stop\(reviewerRef, \{ timeoutMs: allowance\(\) \}\)\)/,
+    'a cut-off run starts both stops before awaiting either, sharing the remaining deadline': /const stopping = Promise\.all\(\[\s*workerRef \? stopWorker\(deadline\) : null,\s*reviewerRef \? stopReviewer\(\(\) => Math\.max\(0, Math\.floor\(\(deadline - Date\.now\(\)\) \/ 2\)\)\) : null,[\s\S]*await stopping/,
     'the pre-exit sample includes the sandbox and each participant identity and stop result': /sandboxPresent: existsSync\(SB\)[\s\S]*worker: \{ ref: workerRef,[\s\S]*stop: workerStopped[\s\S]*reviewer: \{ ref: reviewerRef,[\s\S]*stop: reviewerStopped/,
   },
   'live-codex.mjs': {

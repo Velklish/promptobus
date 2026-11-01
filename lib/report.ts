@@ -275,7 +275,7 @@ export async function report(rootOrHost: unknown, opts: ReportOptions = {}): Pro
   }
   const { output, session, seen } = launched;
   handOverContactPoints(plan.home, { env: process.env });
-  ensureWarden(plan.home, plan.task, { host: plan.host });
+  await ensureWarden(plan.home, plan.task, { host: plan.host });
   ok(`reporter lifted for root task ${plan.task}${session ? ` (session ${session})` : ''}`);
   plan.driver.saidLiftoff!({ name: plan.name, seen, session, output });
   if (plan.driver.id === 'codex') info(`Ask this reporter: ${plan.host.busCommand(['report', '--task', plan.task, '--question', shellQuote('What changed?')])}`);

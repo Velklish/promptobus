@@ -119,6 +119,17 @@ const heldAsync = new Set<string>();
 /** Tail of the queue of asynchronous holders, per lock path. */
 const asyncQueue = new Map<string, Promise<void>>();
 
+let synchronousAuthority: (() => void) | null = null;
+
+/** Private HTTP dispatch scope: no synchronous wait may carry an earlier native proof forward. */
+export function withSynchronousAuthority<T>(authorize: () => void, fn: () => T): T {
+  const previous = synchronousAuthority;
+  synchronousAuthority = authorize;
+  try { authorize(); return fn(); } finally { synchronousAuthority = previous; }
+}
+
+export function requireSynchronousAuthority(): void { synchronousAuthority?.(); }
+
 // Waiting this one out synchronously would block the very loop that has to release it.
 // That is a caller mistake — a design with no lawful case — not a busy lock.
 function selfAsyncError(lock: string): Error {
@@ -153,7 +164,7 @@ function grabDirLock(lock: string, {
   waitMs = LOCK_WAIT_MS, retryMs = LOCK_RETRY_MS, session = null, onMissing, onBusy,
 }: DirLockOptions): string {
   const started = Date.now();
-  const deadline = started + waitMs;
+  const deadline = started + (synchronousAuthority ? 0 : waitMs);
   for (;;) {
     const nonce = tryGrabDirLock(lock, session, onMissing);
     if (nonce) return nonce;
@@ -185,11 +196,12 @@ function releaseDirLock(lock: string, nonce: string): void {
 /** Take the lock directory, run, and drop. A missing task directory stays the caller's
  * own refusal: a nested call does not reach the directory at all. */
 export function withDirLock<T>(lock: string, fn: () => T, options: DirLockOptions): T {
-  if (heldSync.has(lock)) return fn();
+  if (heldSync.has(lock)) { requireSynchronousAuthority(); return fn(); }
   if (heldAsync.has(lock)) throw (options.onSelfAsync ?? selfAsyncError)(lock);
   const nonce = grabDirLock(lock, options);
   heldSync.add(lock);
   try {
+    requireSynchronousAuthority();
     return fn();
   } finally {
     heldSync.delete(lock);

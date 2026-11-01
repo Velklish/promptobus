@@ -107,10 +107,12 @@ check('docs: native teamlead relift retains prior proof until the actual generat
 const wardenRuntime = compact(section(read('docs/guides/hooks-and-trust.md'),
   '## The warden state machine: what is here and what is not').split('\n### ')[0]);
 check('docs: the package owns the warden runtime and the Host supplies launch inputs',
-  /\bpackage\b.{0,60}\b(?:owns|implements)\b.{0,60}`lib\/warden\.js`/i.test(wardenRuntime)
-  && ['detached', 'fs.watch', 'loop', 'Host', 'nodePath()', 'busArgv', 'environment']
+  has(wardenRuntime, 'The shared workspace service owns one package Worker for the task loops')
+  && has(wardenRuntime, '`lib/warden.js` owns each loop; `lib/service-warden.js` retains its task entry until the loop\'s actual cleanup has finished.')
+  && ['fs.watch', 'Host', 'nodePath()', 'busArgv', 'environment', 'callbacks stay in main',
+    'Worker never executes the consumer entry point', 'Only stall formatting crosses back as a typed request']
     .every((term) => wardenRuntime.includes(term)),
-  'the warden process must belong to lib/warden.js with explicit Host launch inputs');
+  'the package Worker must retain task loops while the original main Host supplies startup and formatting');
 
 const engineOptions = section(protocol, '## Engine');
 check('docs: EngineOptions documents injected seams and the reader version',

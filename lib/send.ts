@@ -12,7 +12,7 @@ import { addressList, admitsAddress, registryOf } from '../dist/index.js';
 
 // Write one bus message from the command line. There is no `--from`: the sender is the address
 // this session PROVABLY holds in the named task — [03-cli.md § Send](../docs/reference/03-cli.md#send), ADR-019.
-export function send(rootOrHost: unknown, { task, to, type = 'status', body, file, artifact }: { task?: string | null; to?: string; type?: string; body?: string; file?: string; artifact?: string } = {}, { env = process.env, cwd = process.cwd() }: CommandContext = {}) {
+export async function send(rootOrHost: unknown, { task, to, type = 'status', body, file, artifact }: { task?: string | null; to?: string; type?: string; body?: string; file?: string; artifact?: string } = {}, { env = process.env, cwd = process.cwd() }: CommandContext = {}) {
   const host = hostOf(rootOrHost);
   const identity = resolveIdentity(env, cwd, { host });
   const home = identity.home;
@@ -57,8 +57,8 @@ export function send(rootOrHost: unknown, { task, to, type = 'status', body, fil
   }
   // The listener, as on every other write path on the bus: a message nobody is watching
   // for waits until its addressee happens to take a turn.
-  ensureWarden(home, landedTask, { env, host });
-  if (sent.mailboxTask) ensureWarden(home, sent.mailboxTask, { env, host });
+  await ensureWarden(home, landedTask, { env, host });
+  if (sent.mailboxTask) await ensureWarden(home, sent.mailboxTask, { env, host });
   return 0;
 }
 
@@ -91,7 +91,7 @@ export function humanTerminalIdentity(rootOrHost: unknown, task: string,
   return identity;
 }
 
-export function ask(rootOrHost: unknown, { task, to = 'orchestrator', body, answers = false }: { task?: string; to?: string; body?: string; answers?: boolean } = {},
+export async function ask(rootOrHost: unknown, { task, to = 'orchestrator', body, answers = false }: { task?: string; to?: string; body?: string; answers?: boolean } = {},
   { env = process.env, cwd = process.cwd() }: CommandContext = {}) {
   if (!task) fail('ask needs --task <id> to name the task whose orchestrator should answer');
   if (answers && body !== undefined) fail('ask --answers takes no question text');
@@ -132,6 +132,6 @@ export function ask(rootOrHost: unknown, { task, to = 'orchestrator', body, answ
     from: 'user', to: 'orchestrator', type: 'question', body: body as string, session: null,
   }, { status: host.busCommand(['status']), registry: registryOf(host) });
   ok(`asked orchestrator · from user · task ${id} · id ${sent.message.id}`);
-  ensureWarden(home, id, { env, host });
+  await ensureWarden(home, id, { env, host });
   return 0;
 }

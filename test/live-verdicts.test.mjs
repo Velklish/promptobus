@@ -38,7 +38,14 @@ const deadYoung = run('dead-young', { owner: 'dead' });
 const liveOld = run('live-old', { owner: 'self', ageMs: 2 * MIN_AGE_MS });
 const bareOld = run('bare-old', { ageMs: 2 * MIN_AGE_MS });
 const bareYoung = run('bare-young');
-const copiedMarker = run('copied-marker', { owner: 'dead', foreignPath: true });
+const copiedMarker = run('copied-marker', { owner: 'dead', foreignPath: true, ageMs: 2 * MIN_AGE_MS });
+const retainedOwner = run('retained-owner', { owner: 'dead', ageMs: 2 * MIN_AGE_MS });
+const unknownCleanup = run('unknown-cleanup', { owner: 'dead', ageMs: 2 * MIN_AGE_MS });
+const unreadableOwner = run('unreadable-owner', { ageMs: 2 * MIN_AGE_MS });
+writeFileSync(path.join(unreadableOwner, RUN_OWNER_FILE), '{');
+for (const [dir, cleanup] of [[retainedOwner, { state: 'unresolved' }], [unknownCleanup, null]]) {
+  writeFileSync(path.join(dir, RUN_OWNER_FILE), JSON.stringify({ pid: deadPid, path: dir, cleanup }));
+}
 
 check('ownership: a marker is written once — a second claim on the same directory refuses',
   (() => { try { markRunOwner(current); return false; } catch (e) { return e.code === 'EEXIST'; } })(), current);
@@ -55,6 +62,15 @@ check('sweep: the current run, a live owner\'s old sandbox, a young unmarked one
 check('sweep: the report names what went and what a live owner holds',
   lines[0].includes(`${PREFIX}dead-young`) && lines[0].includes(`${PREFIX}bare-old`)
   && lines.some((l) => l.startsWith('held, their owner is alive:') && l.includes(`${PREFIX}live-old`)),
+  lines.join(' | '));
+check('sweep: explicit and incomplete cleanup states retain old dead-owned runs and are diagnosed',
+  existsSync(retainedOwner) && existsSync(unknownCleanup)
+  && !runOwnerIsDead(retainedOwner) && !runOwnerIsDead(unknownCleanup)
+  && lines.some(line => line.startsWith('held, cleanup unresolved:') && line.includes('retained-owner') && line.includes('unknown-cleanup')),
+  lines.join(' | '));
+check('sweep: unknown owner proof is diagnosed and held without claiming that a copied owner is live',
+  existsSync(unreadableOwner) && existsSync(copiedMarker)
+  && lines.some(line => line.startsWith('held, cleanup unresolved:') && line.includes('unreadable-owner') && line.includes('copied-marker')),
   lines.join(' | '));
 const throwing = run('throwing', { owner: 'dead' });
 sweepPreviousRuns(RUNS, { prefix: PREFIX, current, keep: 0, isDead: () => { throw new Error('boom'); } });

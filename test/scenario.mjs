@@ -46,6 +46,7 @@ import {
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { waitFor } from './harness.mjs';
+import { taskServiceFixture } from './task-service-fixture.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -535,8 +536,11 @@ export async function runScenario({
     };
   }
 
+  const service = await taskServiceFixture({ workspace: ws, home, task: TASK,
+    socketDirectory: path.dirname(orchSock), mechanismRoot: MECHANISM_ROOT });
+  harness.resource?.(() => service.close());
   const orchEnv = {
-    ...process.env,
+    ...service.env,
     CLAUDE_CODE_SESSION_ID: ORCH_SESSION,
     CLAUDE_CODE_MESSAGING_SOCKET: orchSock,
     CLAUDE_CODE_MESSAGING_TOKEN: orchToken,
@@ -544,7 +548,7 @@ export async function runScenario({
   };
   // The warden does not need the orchestrator identity and it is harmful: its own
   // launcher strips the parent's contact point for the same reason.
-  const wardenEnv = { ...process.env, PROMPTOBUS_HOME: home };
+  const wardenEnv = { ...service.env };
   delete wardenEnv.CLAUDE_CODE_MESSAGING_SOCKET;
   delete wardenEnv.CLAUDE_CODE_MESSAGING_TOKEN;
 
@@ -1313,7 +1317,7 @@ export async function runScenario({
     if (!harness.child) {
       mcp.stop();
       await inbox.close();
-      try { process.kill(warden.pid, 'SIGTERM'); } catch { /* already exited */ }
+      await service.close();
     }
     await harness.cleanup();
   }

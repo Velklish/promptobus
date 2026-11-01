@@ -9,8 +9,8 @@ import { selectedNativeFiles, selectedNativePrompt } from './native-participant-
 import { foreignSession, wakeAddressOf, writeWake } from './store.js';
 import {
   binInDir, CURSOR_TMUX_SERVER, dropSession, findSession, injectText, liftSession,
-  mcpRuntimeNeedles, patchSession, readParticipantMcp, readSession, readTmuxSessions, searchPath, SESSION_ENV_VAR,
-  sessionFile, silentIsStall, stopSession, TMUX_NOT_FOUND, tmuxBin, toolKidsOf, turnIdleMs, turnState,
+  mcpRuntimeNeedles, patchSession, readParticipantMcp, readSession, readTmuxSessionsAsync, searchPath, SESSION_ENV_VAR,
+  sessionFile, sessionRevision, silentIsStall, stopSession, STOP_TIMEOUT_MS, TMUX_NOT_FOUND, tmuxBin, toolKidsOf, turnIdleMs, turnState,
   worktreeTouchedMs, writeSession,
 } from './cursor-persist.js';
 import { cursorAvailability } from './model-routing/adapter-cursor.js';
@@ -754,28 +754,42 @@ function approveOwnServer(bin: string, dir: string, env: NodeJS.ProcessEnv) {
 /** Stop a session. **It returns AFTER the harness no longer HAS the session.** Reap covers two kinds
  * of process: tool children of a running turn, and the `worker-server` orphan that outlives a normal end. */
 async function stop(ref: string, waitOptions: Parameters<typeof stopSession>[1] = undefined) {
+  const deadline = Date.now() + (waitOptions?.timeoutMs ?? STOP_TIMEOUT_MS);
+  const revision = sessionRevision(ref);
   const record = readSession(ref);
   if (!record) return { ok: true, stopped: false, note: `no session «${ref}» in the Cursor registry` };
   const id = record.sessionName ?? record.chatId ?? ref;
-  // An unread server says nothing about the session: stopping on it would drop a live one as gone.
-  const unread = record.sessionName
-    ? readTmuxSessions({ server: record.tmuxServer || CURSOR_TMUX_SERVER, env: waitOptions?.env }).missing : null;
-  if (unread) return { ok: false, stopped: false, note: `${unread} — persist session ${id} was not stopped` };
-  const done = await stopSession(record, { bin: liveBin(record.bin, waitOptions ?? {}), ...(waitOptions ?? {}) });
+  const changed = () => !revision || sessionRevision(ref) !== revision;
+  if (changed()) return { ok: false, stopped: false, note: `persist session ${id} registry revision changed; record retained` };
+  const done = await stopSession(record, { bin: liveBin(record.bin, waitOptions ?? {}), ...(waitOptions ?? {}),
+    timeoutMs: Math.max(0, deadline - Date.now()) });
+  if (changed()) return { ok: false, stopped: false, note: `persist session ${id} registry revision changed during Stop; record retained` };
+  if (done.missing) return { ok: false, stopped: false, note: `${done.missing} — persist session ${id} was not stopped` };
   const reaped = [
     done.kids.length ? `reaped tool children: ${done.kids.length}` : null,
     done.orphans.length ? `reaped orphans: ${done.orphans.length}` : null,
   ].filter(Boolean).join(', ');
   const tail = reaped ? `, ${reaped}` : '';
-  if (record.sessionName && !done.stopped && findSession(record.sessionName, { server: record.tmuxServer || CURSOR_TMUX_SERVER })) {
+  if (Date.now() >= deadline) return { ok: false, stopped: false, note: `persist session ${id} final absence deadline elapsed; record retained` };
+  const after = await readTmuxSessionsAsync({ server: record.tmuxServer || CURSOR_TMUX_SERVER, env: waitOptions?.env,
+    timeoutMs: Math.max(0, deadline - Date.now()), deadlineAt: deadline });
+  if (changed()) return { ok: false, stopped: false, note: `persist session ${id} registry revision changed during Stop; record retained` };
+  if (Date.now() >= deadline) return { ok: false, stopped: false, note: `persist session ${id} final absence deadline elapsed; record retained` };
+  if (after.sessions === null) return { ok: false, stopped: false, note: `${after.missing} — persist session ${id} Stop unconfirmed` };
+  if (after.sessions.some(session => session.name === record.sessionName)) {
     // Stop ran with nothing to confirm it. The record is not dropped: directory cleanup follows
     // this outcome, and the session must not be declared stopped.
     return {
-      ok: true,
+      ok: false,
       stopped: false,
       attempted: true,
       note: `persist session ${id} did not leave the tmux server after agent persist stop${tail}`,
     };
+  }
+  const current = readSession(ref);
+  if (!current || current.sessionName !== record.sessionName || current.chatId !== record.chatId
+    || current.panePid !== record.panePid || current.workspaceHash !== record.workspaceHash || current.launchId !== record.launchId) {
+    return { ok: false, stopped: false, note: `persist session ${id} registry identity changed during Stop; record retained` };
   }
   dropSession(ref);
   return {

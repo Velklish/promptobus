@@ -1,5 +1,8 @@
 import { check, skip } from './check.mjs';
 import { createHash } from 'node:crypto';
+import childProcess from 'node:child_process';
+import fsPromises from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { request } from 'node:http';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -27,7 +30,29 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
   const env = { ...process.env, PROMPTOBUS_SERVICE_HOME: privateHome, PROMPTOBUS_HOME: home,
     PROMPTOBUS_SERVICE_IDLE_MS: '60000', PROMPTOBUS_WARDEN: 'off' };
-  const options = { cwd: root, env }, clients = [], factories = [], gates = new Map();
+  const options = { cwd: root, env }, clients = [], factories = [], validations = [], gates = new Map();
+  const originalSpawn = childProcess.spawn, originalReadFile = fsPromises.readFile;
+  let birthGate = null;
+  childProcess.spawn = function(command, args, ...rest) {
+    const child = originalSpawn.call(this, command, args, ...rest);
+    const held = birthGate;
+    if (held && command === 'ps' && args?.[0] === '-p' && args[1] === String(process.pid)) {
+      const emit = child.emit;
+      child.emit = function(event, ...values) {
+        if (event === 'close' && !held.entered) {
+          held.entered = true; held.promise.then(() => emit.call(this, event, ...values)); return true;
+        }
+        return emit.call(this, event, ...values);
+      };
+    }
+    return child;
+  };
+  fsPromises.readFile = async function(file, ...args) {
+    const value = await originalReadFile.call(this, file, ...args), held = birthGate;
+    if (held && file === `/proc/${process.pid}/stat` && !held.entered) { held.entered = true; await held.promise; }
+    return value;
+  };
+  syncBuiltinESMExports();
   writeHostConfig(root, { tools: [] });
   mkdirSync(readRoot);
   writeFileSync(path.join(readRoot, 'proof.txt'), 'owned reviewer text');
@@ -36,7 +61,9 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   const makeHost = async context => {
     factories.push({ ...context, frozen: Object.isFrozen(context.env) });
     if (context.env.FACTORY_GATE && context.env.CODEX_THREAD_ID !== 'ancestor-codex') await gates.get(context.env.FACTORY_GATE).promise;
-    return createStandaloneHost({ cwd: context.cwd, binPath, version });
+    const actor = createStandaloneHost({ cwd: context.cwd, binPath, version }), resolve = actor.resolveToolBin;
+    actor.resolveToolBin = tool => { validations.push(context.env.FACTORY_GATE); return resolve(tool); };
+    return actor;
   };
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
   const until = async predicate => {
@@ -192,6 +219,10 @@ if (!['darwin', 'linux'].includes(process.platform)) {
     const winner = readPrivate(other.credentialFile).nativeBinding?.threadId;
     check('concurrent owner realizations cannot bind two native threads', racing.filter(result => !result.error).length === 1
       && racing.filter(result => /already bound/.test(result.error ?? '')).length === 1 && ['racing-one', 'racing-two'].includes(winner), JSON.stringify(racing));
+    const identical = await register();
+    const identicalResults = await Promise.all([realize(identical, nativeId), realize(identical, nativeId)]);
+    check('concurrent owner realizations of the same native thread remain idempotent', identicalResults.every(result => !result.error)
+      && readPrivate(identical.credentialFile).nativeBinding?.threadId === nativeId, JSON.stringify(identicalResults));
     const otherFiles = await initialize(other, 'reviewer_files');
     const crossed = await tool(other, otherFiles, 'read_file', { path: path.join(readRoot, 'proof.txt') });
     check('a second reviewer grant cannot dispatch with the first native identity', crossed.status === 403, crossed.text);
@@ -250,6 +281,48 @@ if (!['darwin', 'linux'].includes(process.platform)) {
           && !existsSync(path.join(paths.sessions, `${route.session}.json`)) && !existsSync(path.join(paths.requests, route.session)));
       }
     }
+    for (const name of ['environment', 'poll environment', 'review files', 'lifetime']) {
+      const held = gate(name), credential = await register({ FACTORY_GATE: name });
+      const route = await initialize(credential);
+      await realize(credential, nativeId);
+      const started = factories.length, priorState = state();
+      const inFlight = tool(credential, route, 'promptobus_send', { to: 'user', type: 'status', body: `${name} replacement must not commit` });
+      await until(() => factories.length > started);
+      const saved = readPrivate(credential.credentialFile);
+      const replacement = name === 'environment' ? { env: { ...saved.env, ROOT_CONSUMER_SETTING: 'replacement' } }
+        : name === 'poll environment' ? { pollEnv: { ...saved.pollEnv, ROOT_CONSUMER_SETTING: 'replacement' } }
+        : name === 'review files' ? { files: { roots: [otherRoot], canonicalFiles: [] } }
+        : { lifetime: { kind: 'reservation', expiresAt: Date.now() + 60000 } };
+      writePrivate(credential.credentialFile, { ...saved, ...replacement });
+      held.release();
+      const refused = await inFlight;
+      check(`a deferred Host factory rechecks the complete authoritative ${name} grant`, refused.status === 401 && state() === priorState, refused.text);
+    }
+    const birthFactory = gate('birth-pending'), birthCredential = await register({ FACTORY_GATE: 'birth-pending' });
+    const birthRoute = await initialize(birthCredential);
+    await realize(birthCredential, nativeId);
+    const started = factories.length, validationCount = validations.length, beforeBirth = state();
+    const validating = tool(birthCredential, birthRoute, 'promptobus_send', { to: 'user', type: 'status', body: 'pending during birth must not commit' });
+    await until(() => factories.length > started);
+    birthGate = gate('async-birth');
+    birthFactory.release();
+    await until(() => birthGate.entered);
+    check('post-factory Host compatibility waits for actual asynchronous process proof', validations.length === validationCount
+      && state() === beforeBirth, JSON.stringify({ validations, validationCount }));
+    const bound = readPrivate(birthCredential.credentialFile);
+    writePrivate(birthCredential.credentialFile, { ...bound, nativeBinding: { kind: 'codex', state: 'pending' } });
+    birthGate.release(); birthGate = null;
+    const pendingDuringBirth = await validating;
+    check('a grant returned to pending during asynchronous birth cannot install context or commit', pendingDuringBirth.status === 401
+      && state() === beforeBirth && validations.length === validationCount, pendingDuringBirth.text);
+    const afterPending = factories.length;
+    const stillPending = await tool(birthCredential, birthRoute, 'promptobus_task');
+    check('the pending replacement still discovers without recovering cached actor authority', stillPending.status === 403
+      && factories.length === afterPending, stillPending.text);
+    await realize(birthCredential, nativeId);
+    const restoredBirth = await tool(birthCredential, birthRoute, 'promptobus_task');
+    check('a newly realized grant after the birth race constructs a fresh actor context', restoredBirth.status === 200
+      && factories.length === afterPending + 1 && !restoredBirth.json.result?.isError, restoredBirth.text);
     const race = await register();
     const controls = await Promise.all([realize(race, nativeId), revokeServiceClient(host, race.clientId, options)]);
     check('realize racing with revoke cannot recreate a removed grant', controls.length === 2 && !existsSync(race.credentialFile));
@@ -257,6 +330,7 @@ if (!['darwin', 'linux'].includes(process.platform)) {
     check('a revoked native credential cannot borrow an existing session', removed.status === 401, removed.text);
   } finally {
     for (const held of gates.values()) held.release();
+    childProcess.spawn = originalSpawn; fsPromises.readFile = originalReadFile; syncBuiltinESMExports();
     for (const credential of clients) {
       if (existsSync(credential.credentialFile)) await revokeServiceClient(host, credential.clientId, options);
     }

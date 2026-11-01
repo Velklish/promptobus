@@ -391,6 +391,37 @@ Every number and shape below was taken from live spike runs (2026-09-03, `agent`
 2026.09.02-c22c1a3, tmux 3.6b), not inferred from documentation: Cursor has no docs
 on `persist` at all, and the subcommand itself has no flags of its own.
 
+Cursor Stop awaits every pre-confirmation tmux observation and the pre-stop process
+tree. Each command consumes only the remaining original deadline, including polling
+after native shutdown, early-refusal observation and the final pre-fallback read.
+Unknown, cancelled or exhausted observation retains the record without granting
+fallback authority. The named fallback is also awaited with that same remaining
+allowance; a failed or cancelled fallback returns unconfirmed without later cleanup
+mutation. Registry-backed stops fence the exact record revision after each await
+and immediately before native mutation and record retirement.
+
+`timeoutMs: 0` remains a valid argument and grants no time for native shutdown.
+There is no separate observation allowance and no unconditional forced Stop.
+Missing registry state can still be a scoped no-op; an unread live binding is
+unconfirmed and retained. This changes the former synchronous overrun behavior,
+which could reach named fallback after its allowance expired. Native shutdown and
+fallback now each check the original deadline immediately before dispatch.
+A refused native command can reach fallback while time remains, after a fresh
+identity check. Only confirmed native absence permits orphan/child reaping; that
+cleanup still uses synchronous system calls and can delay delivery of a sibling's
+completion after both Stops have started. Filesystem work, OS child-close delivery
+and post-confirmation reaping remain outside a hard wall-clock guarantee. They do
+not renew native command or observation allowance, and the whole cleanup is not
+promised to finish within five seconds.
+
+Stop requires the stored session name and chat id to match a fresh native observation.
+Any recorded pane PID and workspace hash must match as well; the hash comes from the
+observed session, not a calculation from its working directory. Identity is checked
+again after asynchronous process preflight and before the named fallback kill.
+Unreadable identity, a reused name or a changed registry binding returns unconfirmed
+and retains the record. These observations do not make the external named command
+atomic with tmux session replacement.
+
 **Nothing is refused on the requested effort, and that is a measurement rather than a gap.**
 In Cursor the effort level is a flat suffix on the model id, not a separate flag, so only the
 binary knows whether a given model-and-level pair exists: not every model has every level, and

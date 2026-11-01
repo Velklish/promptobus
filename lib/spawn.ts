@@ -1802,8 +1802,8 @@ export async function spawnTeamlead(rootOrHost: unknown, opts: SpawnOptions): Pr
   ensureRootRecord(plan.home, plan.childTask);
   bindIfOwner(plan.home, plan.rootTask);
   handOverContactPoints(plan.home, { env: process.env });
-  ensureWarden(plan.home, plan.rootTask, { host: plan.host });
-  ensureWarden(plan.home, plan.childTask, { host: plan.host });
+  await ensureWarden(plan.home, plan.rootTask, { host: plan.host });
+  await ensureWarden(plan.home, plan.childTask, { host: plan.host });
   keepBrief(plan);
   ok(`${plan.address} lifted at ${plan.root} for child task ${plan.childTask}${session ? ` (session ${session})` : ''}`);
   plan.driver.saidLiftoff!({ name: plan.name, seen, session, output });
@@ -2082,7 +2082,7 @@ export async function spawn(rootOrHost: unknown, opts: SpawnOptions): Promise<Sp
   ok(`worker ${plan.address} lifted in ${plan.nsPath}, branch ${plan.branch}${session ? ` (session ${session})` : ''}`);
   // The warden is lifted right after the participant. Spawn does not hand over its own
   // contact point — each participant hands it over itself, from its own bus process.
-  ensureWarden(plan.home, plan.taskId, { host: plan.host });
+  await ensureWarden(plan.home, plan.taskId, { host: plan.host });
   // The brief copy is AFTER the lift, and only after it: a refused spawn leaves no
   // artifact — a brief of a worker that never started explains nothing and would be read
   // as an assignment someone is working by. And after the warden: the safety net over a

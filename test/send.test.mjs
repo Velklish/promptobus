@@ -24,6 +24,7 @@ const runPromptobusHelp = () => { console.log(helpText(host)); };
 const { hostOf } = await import(path.join(here, '..', 'lib', 'host.js'));
 const { sessionEnv } = await import(path.join(here, '..', 'lib', 'spawn.js'));
 const { driverByHarness } = await import(path.join(here, '..', 'lib', 'drivers.js'));
+const { bindSharedWarden } = await import(path.join(here, '..', 'lib', 'warden.js'));
 
 const OWNER = 'orch-session';
 // The identity this process presents. Without it `send` cannot prove it is the task owner
@@ -239,10 +240,14 @@ for (const [name, argv] of [
     CLAUDE_CODE_SESSION_ID: OWNER,
     PROMPTOBUS_WARDEN_TRACE: trace,
   };
-  await capture(() => call(['send', 'worker:one', '--body', 'wake up', '--task', TASK], wardenEnv));
+  const demands = [];
+  const release = bindSharedWarden((home, task) => { demands.push({ home, task }); });
+  try { await capture(() => call(['send', 'worker:one', '--body', 'wake up', '--task', TASK], wardenEnv)); }
+  finally { release(); }
   const line = existsSync(trace) ? readFileSync(trace, 'utf8') : '';
-  check(': a successful send starts the task warden, as every other bus write path does',
-    line.includes(`warden auto-start · task ${TASK}`), JSON.stringify(line));
+  check(': a successful send requests its task loop from the shared warden owner',
+    demands.length === 1 && demands[0].home === HOME && demands[0].task === TASK
+      && line.includes(`shared warden demand · task ${TASK}`), JSON.stringify(line));
 }
 
 {

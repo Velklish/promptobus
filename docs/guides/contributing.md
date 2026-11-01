@@ -308,17 +308,62 @@ A stand is the approved stub entry. Before the stand spawns the script, it prove
 
 A run that names a Codex model the binary's own catalog does not know exits 1 the same way — before any sandbox, task or session exists ([codex-models.mjs](../../scripts/codex-models.mjs)). The catalog is the binary's local `codex debug models`, read once before the first raise in `live-codex.mjs` and `live-mixed.mjs`, from the owner home the lift authenticates from — `ownerCodexHome`, the durable host override over `CODEX_HOME`, so the preflight and the raise see one account even when the ambient `CODEX_HOME` names another home; when the catalog cannot be read, the run refuses too, because a session started on an unverified model is spent on a refusal. A hidden catalog entry is still a named model: visibility does not gate naming. Whatever model reaches a raise — named or the driver's default — is one the catalog knows.
 
-Each run builds its own workspace in a sandbox under `$TMPDIR` on the standalone host (`promptobus.json`), drives the package from this checkout (`PROMPTOBUS_E2E_ROOT` names another tree), and strips the session identity variables of the shell it runs from. It ends with a verdict count and exits 0 only when every verdict passed.
+Each run builds its own workspace in a sandbox under `$TMPDIR` on the standalone host (`promptobus.json`), drives the package from this checkout (`PROMPTOBUS_E2E_ROOT` names another tree), and strips the session identity variables of the shell it runs from. The CLI, drivers and shared-service fixture use that same mechanism root. It ends with a verdict count and exits 0 only when every verdict passed.
 
 **Every run has its own task id, stamped to the second, and prints it** (`▸ task:`, or the `loop task` trace line of the E2E scenario). The E2E loop task is `e2ebus-` plus a random suffix and that stamp. Its participant titles carry the full identity too, because the readable stamp in a session name stops at minutes: two runs in one UTC minute would otherwise lift sessions with the same name, and the session registry of a harness is shared by the whole machine. A stale session of a run that was cut off would then answer in the new run's place.
 
-**A run cut off by `SIGINT`, `SIGTERM` or `SIGHUP` runs the cleanup of its `finally` and exits `128 + signal`.** `finally` itself never runs on a signal. The cleanup is prepended to the signal's listeners ([live-abort.mjs](../../scripts/live-abort.mjs)): the sandbox helper of `test/sandbox.mjs` registers its own handler first, removes the sandbox and exits 130, and an appended cleanup would never run. Cursor cleanup uses that synchronous handler. Mixed and Codex use its awaited form — `onAbort` waits for a thenable cleanup up to a bound and then exits with the signal's code — and their sandboxes opt out of the sandbox helper's signal cleanup (`makeSandbox` with `signalCleanup: false`): that handler would remove the sandbox and exit 130 before an awaited cleanup ends, and the stops need the records under it until they return. E2E uses the awaited handler in [live-run.mjs](../../scripts/live-run.mjs) and keeps its stand outside the sandbox exit hook. Cleanup touches only what the run started:
+**A run cut off by `SIGINT`, `SIGTERM` or `SIGHUP` runs the cleanup of its `finally` and exits `128 + signal`.** `finally` itself never runs on a signal. The cleanup is prepended to the signal's listeners ([live-abort.mjs](../../scripts/live-abort.mjs)): the sandbox helper of `test/sandbox.mjs` registers its own handler first, removes the sandbox and exits 130, and an appended cleanup would never run. Cursor, mixed and Codex use its awaited form — `onAbort` waits for a thenable cleanup up to a bound and then exits with the signal's code — and their sandboxes opt out of the sandbox helper's signal cleanup (`makeSandbox` with `signalCleanup: false`): that handler would remove the sandbox and exit 130 before an awaited cleanup ends, and the stops need the records under it until they return. E2E uses the awaited handler in [live-run.mjs](../../scripts/live-run.mjs) and keeps its stand outside the sandbox exit hook. Cleanup touches only what the run started:
 
-- Cursor: turn logs are copied first, each participant's persist session gets its `agent persist stop`, and the task warden is stopped by its process group. The warden is detached, so a foreground signal does not reach it.
+- Cursor: the run uses a private task/service owner fixture. One memoized cleanup starts both owned participant Stops with remaining time from a single 5000 ms deadline, awaits their outcomes, and then uses scoped task/service controls. The former warden CLI process group is not an owner. Service closure has its separate existing boundary and physical PID/birth proof; this fixture never stops a workspace owner containing foreign tasks.
 - Claude Code: a fresh registry read binds the full session id, task participant, cwd and PID birth before `claude stop`. E2E awaits the stop and process cleanup; uncertainty preserves the stand and leaves the run unsuccessful.
-- Codex and mixed: the cleanup awaits the drivers' stops — `stop` takes `{ timeoutMs }`, bounding the shutdown ask and the death wait, and the Cursor persist stop runs as a cancellable awaited command under the SAME deadline as the polling after it, so a hung harness command is cut off at the budget instead of waited out. `live-mixed.mjs` stops both raised participants in flight together with the remaining deadline, and signals the warden before awaiting them — a hung stop of one participant cannot eat the other's, or the warden's — and each cut-off run prints its own pre-exit liveness sample of the PIDs it stopped, taken while the sandbox still exists: once the exit hook takes them, a reader cannot tell a real stop from the teardown, because the holder's 5 s record watch ends the thread either way.
+- Codex and mixed: the cleanup awaits the drivers' stops — `stop` takes `{ timeoutMs }`, bounding the shutdown ask and the death wait, and the Cursor persist stop runs as a cancellable awaited command under the SAME deadline as the polling after it, so a hung harness command is cut off at the budget instead of waited out. `live-mixed.mjs` starts both raised participants' stops with the remaining deadline, then closes its task seat and owned shared service alongside them. Service inspection cannot prevent either native stop attempt. A failed service close reports unconfirmed cleanup; a successful one returns the validated owner PID and birth for the pre-exit physical-death check. Each cut-off run prints its own pre-exit liveness sample of the PIDs it stopped, taken while the sandbox still exists: once the exit hook takes them, a reader cannot tell a real stop from the teardown, because the holder's 5 s record watch ends the thread either way.
 
-Mixed cancellation is latched synchronously before cleanup yields. Pending waits stop probing and reject the scenario after cancellation; later commits, lifts and bus messages are guarded. Each synchronous lift records its owned session reference before the event loop can deliver a signal. The abort handler keeps cleanup ownership and the sandbox until its stops complete; normal teardown and hygiene do not run alongside it. `test/live-mixed-cancel.test.mjs` executes the production scenario block with held worker hello and stop barriers, releasing both a result and a timeout outcome while the abort stop is held.
+The mixed abort sample takes the worker pane PID from its lift record, without a
+synchronous tmux query before either Stop. Cursor Stop yields during tmux and process
+tree preflight, every pre-confirmation tmux poll and the named fallback, with each
+awaited command consuming the original remaining deadline. Unknown observation or
+fallback retains the record; only confirmed absence permits residual orphan/tool
+reaping. The
+mixed stand holds its real tmux stub until the native holder records `stop/requested`;
+the unchanged participant-success checks require both Stops to complete. Selected
+Codex command JSONL is copied with the turn logs before sandbox cleanup and after
+Stop, including unresolved outcomes. Failure details retain that fixture JSONL so a
+later missing PID cannot replace the native lifecycle evidence.
+
+Normal mixed cleanup starts both native Stops before awaiting either, with one
+5000 ms deadline established at cleanup entry. Each driver receives the remaining
+allowance from that same deadline. Service closure keeps its separate existing
+boundary; the whole cleanup is not claimed to finish in five seconds. The abort
+caller's 5000 ms allowance and its Codex share are unchanged. Normal and abort
+cleanup reuse each participant's first Stop promise, including refusal or rejection;
+a signal cannot initiate a concurrent Stop or renew the existing allowance.
+
+Cursor and mixed transfer their registered sandbox out of exit cleanup and mark
+it unresolved before the first cleanup await. A signal-handler timeout therefore
+retains pending native records, participant homes and the sandbox. Successful
+abort cleanup copies receipts and prints its pre-exit sample before explicitly
+removing the owned sandbox. Normal cleanup removes it only after confirmed native
+and service outcomes; a signal joins the same memoized cleanup. The 30000 ms
+abort wait and native Stop allowances are unchanged.
+
+Normal mixed cleanup collects native Stop refusals, unconfirmed attempted Stops and
+service-close errors, and still attempts service closure. An existing no-record
+scoped no-op does not claim physical Stop. Any collected failure prevents hygiene
+and sandbox removal and fails the run with the collected errors. Retention removes
+only this process's registered sandbox from its exit/signal cleanup and sets its
+own run marker's cleanup state to `unresolved`. Subsequent live-run sweep diagnoses
+and preserves a marker with any cleanup field, including an incomplete state.
+Abort cleanup also retains its registered sandbox after an unconfirmed native Stop
+or service error. Other dead-owned and unmarked runs keep their existing cleanup
+rules. An unreadable or mismatched owner marker does not establish a dead owner.
+
+Resolve the retained participant through its driver and verify the same owned
+process has exited, including required native terminal receipts. The owner can then
+explicitly remove that one retained run directory. Automatic sweep does not clear
+the cleanup field. This protection relies on the retained marker; arbitrary marker
+edits are not a resolution of native Stop.
+
+Mixed cancellation is latched synchronously before cleanup yields. The abort handler is registered before task creation and cold service startup. After the synchronous warden command, the script crosses the next native event-loop poll before lifting a participant, so a queued signal reaches cleanup first. Pending waits stop probing and reject the scenario after cancellation; later commits, lifts and bus messages are guarded. Each synchronous lift records its owned session reference before the event loop can deliver a signal. The abort handler keeps cleanup ownership and the sandbox until its stops complete; normal teardown and hygiene do not run alongside it. Normal and abort cleanup share one service-close promise, including its rejection. Once abort owns cleanup, normal teardown leaves that rejection to its unconfirmed-cleanup report; without abort, service-close failure still fails the run. `test/live-mixed-cancel.test.mjs` executes the production scenario block with held worker hello and stop barriers, releasing both a result and a timeout outcome while the abort stop is held, and checks successful and rejected service closure at the cleanup handover. The mixed stand also signals a real parent while its cold warden CLI is held with a live owned service, then verifies the same owner's physical exit before any native lift.
 
 Codex cancellation is latched synchronously, including when a normal stop or normal cleanup stop is already awaiting. Pending hello and idle waits reject the scenario after cancellation. The existing owned session reference remains available to abort cleanup; completing an earlier normal stop cannot resume verdicts, remove the sandbox or start hygiene. Only abort cleanup samples the stop while the sandbox exists, then the exit hook removes it. `test/live-codex-cancel.test.mjs` executes the entire production script with injected dependencies and held waits and stops; it releases the normal stop while abort stop remains pending.
 

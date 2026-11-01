@@ -223,11 +223,11 @@ Participant launch options: --context-purpose technical|user-facing|author-voice
                               mail. The layout Stop hook calls it; clean — silent exit 0,
                               otherwise return the turn with exit 2
   ${cmd} warden [--task <id>]
-                              task warden: its only listener and alarm.
+                              ensure this task's listener in the shared workspace service.
                               On unread mail it wakes the addressee with one stub per
                               message and never its text (a block of at most
                               ${KNOCK_TEXT_MAX} characters); mailbox is what marks them read.
-                              Any bus command starts it; PROMPTOBUS_WARDEN=off disables auto-start
+                              Bus writes request it; PROMPTOBUS_WARDEN=off disables auto-start
   ${cmd} lease [--as <address>] [--task <id>] [--key <clone-root>] [--wait <seconds>] -- <command…>
                               run under the machine lease, or with --key under a
                               clone publication lease. A live
@@ -495,7 +495,7 @@ export async function runPromptobus(argv: readonly string[] | null | undefined, 
           },
           positionals: 1,
         });
-        return (await import('./send.js')).send(host, { ...values, to: positionals[0] }, { cwd, env });
+        return await (await import('./send.js')).send(host, { ...values, to: positionals[0] }, { cwd, env });
       }
       case 'link':
       case 'unlink': {
@@ -509,7 +509,7 @@ export async function runPromptobus(argv: readonly string[] | null | undefined, 
           options: { task: { type: 'string' }, to: { type: 'string' }, answers: { type: 'boolean' } },
           positionals: 1,
         });
-        return (await import('./send.js')).ask(host, {
+        return await (await import('./send.js')).ask(host, {
           task: values.task, to: values.to, answers: values.answers, body: positionals[0],
         }, { cwd, env });
       }

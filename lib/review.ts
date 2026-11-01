@@ -1050,7 +1050,7 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
   ok(`reviewer ${plan.address} started in ${plan.nsPath}${session ? ` (session ${session})` : ''}`);
   // The warden is started right after the participant: without it the reviewer would not learn about
   // a message — it fetches the mailbox only on its own turn.
-  ensureWarden(plan.home, plan.taskId, { host: plan.host });
+  await ensureWarden(plan.home, plan.taskId, { host: plan.host });
   plan.driver.saidLiftoff!({ name: plan.name, seen, session, output });
   info(waitHint('the report', plan.taskId));
   // Print the re-review command in full so the task id does not have to be fished from the output.

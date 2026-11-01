@@ -254,11 +254,37 @@ it is time to knock, which messages to show, who stalled, and who has already
 been reported. There is no delivery channel here, and no text: the channel
 comes from the driver via `activate`, and the same driver renders the text —
 the frame and the words belong to the harness channel, not the bus. There is
-also no process in `src/supervisor.ts`. The package owns this process in
-`lib/warden.js`: the detached launcher, the `fs.watch` observers and the daemon
-loop. The Host supplies `nodePath()` and `busArgv(...)`; the launcher derives its
-child environment from the supplied environment and sets `PROMPTOBUS_HOME`.
-A process death costs nothing by construction — the entire state sits in the task store.
+also no process in `src/supervisor.ts`. The shared workspace service owns one
+package Worker for the task loops, their `fs.watch` observers and provider reads.
+Task cleanup attempts watcher closure, departure-note persistence and owned seat
+clear independently. A rejected cleanup stays failed, with primary and cleanup
+causes preserved across the Worker channel. The coordinator retains recovery
+demand and closes its Worker even after persistence failure; the owner lock is
+released only after actual Worker exit. A live same-PID seat left by failure is
+not accepted as a successfully stopped task or an indefinitely busy legacy owner.
+`lib/warden.js` owns each loop; `lib/service-warden.js` retains its task entry
+until the loop's actual cleanup has finished. Aborting one task does not stop
+another, and a requested successor cannot overlap a pending activation or clear
+its seat. A physically live legacy warden remains busy even if its heartbeat is
+stale.
+
+Bus writes and the `warden` command request a task loop through owner control.
+The Host supplies `nodePath()` and `busArgv(...)` for service startup; its
+callbacks stay in main, and the Worker never executes the consumer entry point.
+Only stall formatting crosses back as a typed request to the original owner
+Host. All clients must agree on the common poll environment, registry homes and
+actual driver binaries; no client's environment is installed globally.
+
+The task store retains the journal, seat and health. Private service state also
+retains outstanding task demands across a crash. Owner preflight starts the
+service again; it does not revive a demand already consumed by a no-work exit
+merely because that journal still says `active`. Unavailable provider evidence
+retains unknown managed clients, rather than declaring them dead to obtain idle
+exit. Root PID/birth reads run asynchronously in main while background provider
+reads run in the Worker. Explicit user `status` and mailbox inspections can
+still use synchronous driver calls; no general request latency bound is claimed.
+See [ADR-040](../adr/adr-040-shared-workspace-service.md) for recovery and the
+common poll context.
 
 The intervals this machine runs on are not in this guide: `TICK_MS`,
 `KNOCK_RETRY_SEC`, `KNOCK_COALESCE_SEC`, `SILENCE_SEC`, `WARDEN_TOTAL_SEC`, `WARDEN_ABSOLUTE_SEC`,
@@ -329,15 +355,19 @@ Source: `lib/warden.ts`.
 Listening on the bus is held by a process, not by model discipline: the warden is
 the only listener of every task mailbox and its only activator. On unread mail it
 wakes the addressee and thereby starts their turn. The process has no state of its
-own — everything lives in the task store, so its death loses nothing, and any CLI
-command may start it again (`ensureWarden`).
+own that can substitute for the journal. Task state lives in the task store;
+private service state retains outstanding loop demands. Owner preflight restores
+the shared process after death, and bus writes request their task's loop
+(`ensureWarden`). Completed no-work demands wait for a new request.
 
 **This file does not make the decisions.** Rounds, knock-retry thresholds, unread
 health, silence escalation, stall resolution, and the "whom to activate" decision
 live in the package ([supervisor.ts](../../src/supervisor.ts)) and know nothing about
 the harness. What remains here is exactly what belongs to the harness and the
-workspace: a detached process, `fs.watch` watchers, a session snapshot through the
-driver registry, human diagnostics, and the loop. The delivery channel is the
+workspace: the shared process's single Worker, `fs.watch` watchers, a session
+snapshot through the fixed common poll context, human diagnostics, and the loop.
+The original owner Host remains on main; its stall formatter is the one typed
+callback bridge. The delivery channel is the
 driver, and it is taken from the registry
 ([drivers.ts](../../lib/drivers.ts)).
 
@@ -507,11 +537,14 @@ The cost of an "improvement" is there too, but it is counterfactual: if the roun
 took state itself and WITHOUT a cache reset, sixty snapshots (a minute) would cost
 1 launch on a parsed reply and 60 on an unparsed one — a parse refusal is not
 cached on purpose ([liftoff.ts](../../lib/liftoff.ts)).
-Nobody pays that cost today: the snapshot dies on the FIRST `null`, and the loop
-resets the cache itself before the heartbeat snapshot.
+The loop does not pay that cost: the snapshot dies on the FIRST `null`, and it
+resets the cache itself before the heartbeat snapshot. Managed-client lifetime
+observations are a separate reader on the same Worker; each resets before its
+own snapshot, and an unavailable result retains unknown liveness.
 
 The loop variable holding it starts as `undefined`, meaning "not taken yet", and the
-very first round takes it from INSIDE the guard rather than before it. A refusal
-raised before the guard would carry the process past `finally` — without clearing the
-mark and without a journal line — and the next bus command would start a warden into
-the same death. `null` from a snapshot is a legal state and is not re-taken.
+very first round takes it inside the round's failure guard. `null` from a
+snapshot is a legal state and is not re-taken. All initialization after claiming
+the journal seat, including logging and watcher setup, is inside the task's outer
+`try`/`finally`. A failed initialization still closes its watcher and clears its
+own seat. No task cleanup calls `process.exit` or aborts another task.

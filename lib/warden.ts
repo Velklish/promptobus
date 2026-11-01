@@ -1,27 +1,49 @@
-import { spawn } from 'node:child_process';
 import { appendFileSync, mkdirSync, watch } from 'node:fs';
 import { ok, info, warn } from './util.js';
 import {
-  addressOf, bus, claimWarden, clearWarden, inboxDir, liveWarden, logWarden, mailboxOf, orchestratedTasks,
+  addressOf, bus, claimWarden, clearWarden, inboxDir, logWarden, mailboxOf, orchestratedTasks,
   ORCHESTRATOR, participantOf, participantSlots, readTask, resolveIdentity,
   sessionIdentity, writeWardenExit,
-  resolveTaskId, WARDEN_BEAT_SEC,
+  resolveTaskId, WARDEN_BEAT_SEC, withTaskLock, pidAlive,
 } from './store.js';
 import {
-  beatRound, reportResets, ROUND_FAIL_LIMIT, stallRound, supervisorRound, TICK_MS,
+  beatRound, reportResets, ROUND_FAIL_LIMIT, snapshotSessions, stallRound, supervisorRound, TICK_MS,
 } from '../dist/index.js';
+import { readWardenMark } from '../dist/sidecar.js';
 import { driverOrLift, forgetSessions, knockRegistry, REGISTRY, snapshotOf } from './drivers.js';
 import { stallLine } from './status.js';
 
 import { coreRegistry } from './driver-runtime.js';
+import type { LibRegistry } from './driver-runtime.js';
 import type { FSWatcher } from 'node:fs';
-import type { PromptobusHost, SessionSnapshot } from '../dist/index.js';
+import type { PromptobusHost, SessionSnapshot, StalledParticipant, WardenMark } from '../dist/index.js';
 
 type Knock = Parameters<typeof knockRegistry>[0];
 interface RoundOptions { now?: number; knock?: Knock; sessions?: SessionSnapshot }
 interface ReportStallsOptions extends RoundOptions { host?: PromptobusHost | null }
 interface WardenOptions { host?: PromptobusHost | null; task?: string | null }
-interface EnsureWardenOptions { env?: NodeJS.ProcessEnv; launch?: typeof launchWarden; host?: PromptobusHost | null }
+interface EnsureWardenOptions {
+  env?: NodeJS.ProcessEnv; pollEnv?: NodeJS.ProcessEnv; host?: PromptobusHost | null;
+  launch?: (home: string, task: string, env: NodeJS.ProcessEnv, host: PromptobusHost) => number | null;
+}
+let sharedEnsure: ((home: string, task: string) => unknown) | null = null;
+export function bindSharedWarden(ensure: (home: string, task: string) => unknown) {
+  if (sharedEnsure) throw new Error('A shared task warden is already bound in this process');
+  sharedEnsure = ensure;
+  return () => { if (sharedEnsure === ensure) sharedEnsure = null; };
+}
+export interface TaskWardenHost {
+  version: string;
+  formatStalls(task: string, fresh: readonly StalledParticipant[]): string[] | Promise<string[]>;
+}
+export interface TaskWardenOptions {
+  home: string; task: string; host: TaskWardenHost; session: string | null; signal?: AbortSignal; registry?: LibRegistry;
+}
+export type TaskWardenResult = { kind: 'busy'; mark: WardenMark } | { kind: 'stopped'; reason: string | null };
+
+export function taskWardenHost(host: PromptobusHost): TaskWardenHost {
+  return { version: host.version, formatStalls: (task, fresh) => fresh.map(stall => stallLine(stall, task, host)) };
+}
 
 // The warden is a process, not a state machine.
 // [guides/hooks-and-trust.md#the-warden-is-a-process-not-a-state-machine](../docs/guides/hooks-and-trust.md#the-warden-is-a-process-not-a-state-machine)
@@ -68,9 +90,13 @@ export async function reportStalls(home: string, task: string, {
 
 // Wake on `fs.watch` on top of polling: the event arrives in milliseconds, and polling
 // backs it up — on network and virtual filesystems `fs.watch` silently drops events.
-function watchInboxes(home: string, task: string, addrs: readonly string[]) {
+function watchInboxes(home: string, task: string, addrs: readonly string[], signal?: AbortSignal) {
   const watchers: FSWatcher[] = [];
+  const drained: Promise<void>[] = [];
   let wake: (() => void) | null = null;
+  let closed: Promise<void> | null = null;
+  const abort = () => wake?.();
+  signal?.addEventListener('abort', abort);
   for (const dir of watchedDirs(home, task, addrs)) {
     try {
       mkdirSync(dir, { recursive: true });
@@ -81,6 +107,7 @@ function watchInboxes(home: string, task: string, addrs: readonly string[]) {
       });
       w.on('error', () => {});
       watchers.push(w);
+      drained.push(new Promise(resolve => w.once('close', resolve)));
     } catch {
       // polling remains
     }
@@ -88,18 +115,23 @@ function watchInboxes(home: string, task: string, addrs: readonly string[]) {
   return {
     addrs: watchKey(home, task, addrs),
     next(ms: number) {
+      if (signal?.aborted || closed) return Promise.resolve();
       return new Promise<void>((resolve) => {
         const t = setTimeout(() => {
           wake = null;
           resolve();
         }, ms);
         wake = () => {
+          wake = null;
           clearTimeout(t);
           resolve();
         };
       });
     },
     close() {
+      if (closed) return closed;
+      signal?.removeEventListener('abort', abort);
+      wake?.();
       for (const w of watchers) {
         try {
           w.close();
@@ -107,6 +139,8 @@ function watchInboxes(home: string, task: string, addrs: readonly string[]) {
           // nothing to close
         }
       }
+      closed = Promise.all(drained).then(() => {});
+      return closed;
     },
   };
 }
@@ -121,28 +155,6 @@ function watchedDirs(home: string, task: string, addrs: readonly string[]) {
 
 function watchKey(home: string, task: string, addrs: readonly string[]) {
   return watchedDirs(home, task, addrs).sort().join(',');
-}
-
-// Started as a separate detached process without streams: it must outlive the command that
-// started it, up to a Stop hook that lives a fraction of a second.
-function wardenArgv(host: PromptobusHost, task: string) {
-  return { node: host.nodePath(), argv: host.busArgv(['warden', '--task', task]) };
-}
-
-function launchWarden(home: string, task: string, env: NodeJS.ProcessEnv, host: PromptobusHost) {
-  const clean: NodeJS.ProcessEnv = { ...env, PROMPTOBUS_HOME: home };
-  delete clean.PROMPTOBUS_ROLE;
-  delete clean.PROMPTOBUS_TASK;
-  delete clean.CLAUDE_CODE_MESSAGING_SOCKET;
-  delete clean.CLAUDE_CODE_MESSAGING_TOKEN;
-  const { node, argv } = wardenArgv(host, task);
-  const child = spawn(node, argv, {
-    detached: true,
-    stdio: 'ignore',
-    env: clean,
-  });
-  child.unref();
-  return child.pid ?? null;
 }
 
 // Auto-start trace for the suite; the warden journal will not do — it sits in the sandbox
@@ -165,15 +177,28 @@ export function wardenOff(env = process.env) {
 
 // "Is the warden alive? No — start it." Called by commands that already walk the bus;
 // `status` only reads. Silent on any surprise: a safety net may not drop a spawn or a turn.
-export function ensureWarden(home: string, task: string, { env = process.env, launch = launchWarden, host }: EnsureWardenOptions = {}) {
+export function ensureWarden(home: string, task: string, { env = process.env, pollEnv, launch, host }: EnsureWardenOptions = {}): number | null | Promise<number | null> {
   if (host == null) throw new Error('ensureWarden: host is required');
   try {
     if (wardenOff(env)) return null;
-    if (liveWarden(home, task)) return null;
     if (readTask(home, task).status !== 'active') return null;
-    const pid = launch(home, task, env, host);
-    traceLaunch(env, `${new Date().toISOString()} warden auto-start · task ${task} · pid ${pid ?? '?'}`);
-    return pid;
+    if (launch) {
+      const existing = readWardenMark(home, task);
+      if (existing && pidAlive(existing.pid)) return null;
+      const pid = launch(home, task, env, host);
+      traceLaunch(env, `${new Date().toISOString()} warden auto-start · task ${task} · pid ${pid ?? '?'}`);
+      return pid;
+    }
+    if (sharedEnsure) {
+      sharedEnsure(home, task);
+      traceLaunch(env, `${new Date().toISOString()} shared warden demand · task ${task} · pid ${process.pid}`);
+      return process.pid;
+    }
+    return import('./service-client.js').then(client => client.ensureTaskWarden(host, home, task, { env, pollEnv }))
+      .then(result => {
+        traceLaunch(env, `${new Date().toISOString()} shared warden demand · task ${task} · pid ${result.pid}`);
+        return result.pid;
+      }).catch(() => null);
   } catch {
     return null;
   }
@@ -208,53 +233,69 @@ export async function warden(opts: WardenOptions = {}, env = process.env, cwd = 
     spawnNewTask: host.busCommand(['spawn', '--new-task']),
   });
 
-  // The seat is taken first-wins under the task lock: otherwise two knocks on one message.
-  const claimed = claimWarden(home, task, { cli, session: sessionIdentity() });
+  const { ensureTaskWarden } = await import('./service-client.js');
+  const result = await ensureTaskWarden(host, home, task, { env, cwd });
+  ok(`warden of task ${task}: shared service pid ${result.pid} · ${result.state}`);
+  return result;
+}
+
+export async function runTaskWarden({ home, task, host, session, signal, registry = REGISTRY }: TaskWardenOptions): Promise<TaskWardenResult> {
+  if (signal?.aborted) return { kind: 'stopped', reason: 'warden task aborted' };
+  const cli = host.version;
+  const claimed = withTaskLock(home, task, () => {
+    const existing = readWardenMark(home, task);
+    if (existing && pidAlive(existing.pid)) return { busy: existing };
+    return claimWarden(home, task, { cli, session });
+  }, { session });
   if (claimed.busy) {
     warn(`warden of task ${task} is already running: pid ${claimed.busy.pid}, heartbeat ${claimed.busy.beat}`);
-    return;
+    return { kind: 'busy', mark: claimed.busy };
   }
-  ok(`warden of task ${task}: pid ${process.pid} · CLI ${cli}`);
-  logWarden(home, task, `warden started · pid ${process.pid} · CLI ${cli}`);
-
-  const startedMs = Date.now();
-  const addrsOf = () => (readTask(home, task).participants ?? []).map((p) => addressOf(p)).filter(Boolean) as string[];
-  let watcher = watchInboxes(home, task, addrsOf());
-  let lastBeat = Date.now();
-  // The snapshot is held between rounds on purpose, and `undefined` means "not taken yet":
-  // [hooks-and-trust.md § wardenRound](../docs/guides/hooks-and-trust.md#wardenround--one-watch-round).
-  let sessions: SessionSnapshot | undefined;
+  let watcher: ReturnType<typeof watchInboxes> | null = null;
   let why: string | null = null;
-  // The warden has no right to die by exception: its `stdio` is `ignore`, the stack
-  // would go nowhere, and the run would simply stop delivering — quietly.
-  let failures = 0;
+  let failed = false, failure: unknown;
   try {
+    ok(`warden of task ${task}: pid ${process.pid} · CLI ${cli}`);
+    logWarden(home, task, `warden started · pid ${process.pid} · CLI ${cli}`);
+    const startedMs = Date.now();
+    const addrsOf = () => (readTask(home, task).participants ?? []).flatMap(p => addressOf(p) ? [addressOf(p)!] : []);
+    const snapshot = (participants: Parameters<typeof snapshotOf>[0]) => snapshotSessions(participants, coreRegistry(registry));
+    watcher = watchInboxes(home, task, addrsOf(), signal);
+    let lastBeat = Date.now(), failures = 0;
+    // Hold the snapshot between rounds; undefined requests its first read.
+    // [hooks-and-trust.md § wardenRound](../docs/guides/hooks-and-trust.md#wardenround--one-watch-round).
+    let sessions: SessionSnapshot | undefined;
     for (;;) {
+      if (signal?.aborted) { why = 'warden task aborted'; break; }
       try {
-        if (sessions === undefined) sessions = snapshotOf(readTask(home, task).participants);
+        if (sessions === undefined) sessions = snapshot(readTask(home, task).participants);
         const mailboxes = participantSlots(home, task);
-        const tick = await supervisorRound(home, task, { sessions, registry: coreRegistry(REGISTRY), mailboxes });
+        const tick = await supervisorRound(home, task, { sessions, registry: coreRegistry(registry), mailboxes });
+        if (signal?.aborted) { why = 'warden task aborted'; break; }
         if (tick.stop) {
           why = tick.stop;
           break;
         }
-        sessions = reinspectKnocked(home, task, sessions, tick.knocked);
+        sessions = reinspectKnocked(home, task, sessions, tick.knocked, snapshot);
         if (Date.now() - lastBeat >= WARDEN_BEAT_SEC * 1000) {
           lastBeat = Date.now();
           forgetSessions();
-          sessions = snapshotOf(readTask(home, task).participants);
+          sessions = snapshot(readTask(home, task).participants);
           // Stalls into the journal BEFORE the verdict: after it, the task's last stall
           // would not make the round on which `beatRound` decides to exit.
-          for (const line of await reportStalls(home, task, { sessions, host })) {
+          const fresh = await stallRound(home, task, { sessions, mailboxes });
+          const reported = await reportResets(home, task, fresh, { registry: coreRegistry(registry), mailboxes });
+          for (const line of [...await host.formatStalls(task, fresh), ...reported]) {
             logWarden(home, task, line);
           }
-          why = beatRound(home, task, startedMs, { sessions, session: sessionIdentity(), mailboxes });
+          if (signal?.aborted) { why = 'warden task aborted'; break; }
+          why = beatRound(home, task, startedMs, { sessions, session, mailboxes });
           if (why) break;
           // The participant set changes during the run — watchers are rebuilt on the beat.
           const addrs = addrsOf();
           if (watchKey(home, task, addrs) !== watcher.addrs) {
-            watcher.close();
-            watcher = watchInboxes(home, task, addrs);
+            await watcher.close();
+            watcher = watchInboxes(home, task, addrs, signal);
           }
         }
         failures = 0;
@@ -268,15 +309,20 @@ export async function warden(opts: WardenOptions = {}, env = process.env, cwd = 
       }
       await watcher.next(TICK_MS);
     }
+  } catch (error) {
+    why = `warden task failed: ${error instanceof Error ? error.message : String(error)}`;
+    failed = true; failure = error;
   } finally {
-    watcher.close();
-    try {
-      if (why) writeWardenExit(home, task, { reason: why, at: new Date().toISOString() });
-      clearWarden(home, task, process.pid, { session: sessionIdentity() });
-    } catch {
-      // The mark will outlive the process, but nobody alive will count it: liveness is read by pid.
-    }
+    const cleanupErrors: unknown[] = [];
+    try { await watcher?.close(); } catch (error) { cleanupErrors.push(error); }
+    try { if (why) writeWardenExit(home, task, { reason: why, at: new Date().toISOString() }); }
+    catch (error) { cleanupErrors.push(error); }
+    try { clearWarden(home, task, process.pid, { session }); } catch (error) { cleanupErrors.push(error); }
+    if (readWardenMark(home, task)?.pid === process.pid) cleanupErrors.push(new Error(`Task ${task} retained its own warden seat`));
+    if (cleanupErrors.length) throw new AggregateError([...(failed ? [failure] : []), ...cleanupErrors], `Task ${task} warden cleanup failed`);
   }
+  if (failed) throw failure;
   logWarden(home, task, `warden exited · ${why}`);
   info(`warden of task ${task} exited: ${why}`);
+  return { kind: 'stopped', reason: why };
 }

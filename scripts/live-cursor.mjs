@@ -31,17 +31,18 @@
 // not check model-reasoning quality: checks go by a marker at the start of the
 // body.
 import {
-  copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, writeSync,
+  copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync, writeSync,
 } from 'node:fs';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { finishLiveArgs, parseLiveArgs } from './live-args.mjs';
 import { guardStubLaunch, refuseImportedEntry } from './live-entry.mjs';
-import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
+import { makeSandbox, retainSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
-import { freshScenarioIdentity, buildWorkspace, cli, MECHANISM_ROOT, PROMPTOBUS_BIN, sentBy, store } from '../test/scenario.mjs';
+import { freshScenarioIdentity, buildWorkspace, cli, MECHANISM_ROOT, sentBy, store } from '../test/scenario.mjs';
+import { taskServiceFixture } from '../test/task-service-fixture.mjs';
 import { waitFor } from '../test/harness.mjs';
 import { markRunOwner, sweepLiveRuns, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
 import { onAbort } from './live-abort.mjs';
@@ -63,9 +64,10 @@ const LIVE_ARGS = finishLiveArgs(parseLiveArgs(process.argv.slice(2), LIVE_FLAGS
 
 const { cursorDriver, reviewSandbox } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-cursor.js'));
 const {
-  cursorStateHome, readTmuxSessions, tmuxSessions, readSession, reapOrphans, sessionMarker, tmux, transcriptOf,
+  cursorStateHome, readTmuxSessions, tmuxSessions, readSession, reapOrphans, sessionMarker, tmux, transcriptOf, pidAlive,
   LAUNCH_TMUX_SERVER,
 } = await import(path.join(MECHANISM_ROOT, 'lib', 'cursor-persist.js'));
+const { processState } = await import(path.join(MECHANISM_ROOT, 'lib', 'service-state.js'));
 
 // The model is named by a flag, not taken from the driver default: the live
 // check is driven on the one the owner named, and it goes into the report.
@@ -160,7 +162,7 @@ try {
 
 // Not a prefix of the logs prefix: sandboxes are swept with none kept, logs keep the three newest.
 const RUN_PREFIX = 'promptobus-live-cursor-run-';
-const SB = makeSandbox(RUN_PREFIX);
+const SB = makeSandbox(RUN_PREFIX, { signalCleanup: false });
 markRunOwner(SB);
 for (const line of sweepLiveRuns(tmpdir(), { prefix: RUN_PREFIX, current: SB })) process.stdout.write(`▸ ${line}\n`);
 // Turn logs outlive the run: the sandbox is swept, and the stream is needed to
@@ -204,21 +206,21 @@ message named. Put the marker as the FIRST line of the body and write nothing be
 One message — one result. Do nothing else.
 `);
 
-const env = { ...process.env, PROMPTOBUS_HOME: home, CLAUDE_CODE_SESSION_ID: ORCH_SESSION };
+const serviceDirectory = mkdtempSync(path.join(realpathSync(process.platform === 'win32' ? tmpdir() : '/tmp'), 'pbcur-'));
+const taskService = await taskServiceFixture({ workspace: ws, home, task: TASK, socketDirectory: serviceDirectory,
+  mechanismRoot: MECHANISM_ROOT, env: { ...process.env, PROMPTOBUS_HOME: home, CLAUDE_CODE_SESSION_ID: ORCH_SESSION } });
+const env = taskService.env;
+let serviceClosed = false, taskCreated = false;
+process.once('exit', () => { if (serviceClosed) rmSync(serviceDirectory, { recursive: true, force: true }); });
 const wardenEnv = { ...env };
 delete wardenEnv.PROMPTOBUS_WARDEN;
-
-store.createTask(home, { ...identity, owner: ORCH_SESSION });
-const warden = spawn(process.execPath, [PROMPTOBUS_BIN, 'warden', '--task', TASK], {
-  cwd: ws, detached: true, stdio: 'ignore', env: wardenEnv,
-});
-warden.unref();
 
 process.stdout.write(`▸ live Cursor run: ${tool.path}${tool.version ? ` (${tool.version})` : ''}\n`);
 process.stdout.write(`▸ model: ${MODEL}\n`);
 process.stdout.write(`▸ mechanism: ${MECHANISM_ROOT}\n`);
 process.stdout.write(`▸ sandbox: ${SB} · store: ${home}\n`);
 process.stdout.write(`▸ task: ${TASK}\n`);
+process.stdout.write(`▸ owned service directory: ${serviceDirectory}\n`);
 if (leaked.length) process.stdout.write(`▸ stripped from the run environment: ${leaked.join(', ')}\n`);
 
 // Transcripts of both participants — into a directory that outlives the run.
@@ -254,6 +256,7 @@ function keepTranscripts() {
 }
 
 let ref = '';
+let reviewerRef = '';
 let sandboxDir = '';
 // Session markers of THIS run: `~/legacy/cursor/sessions/` is shared by every
 // persist session of the mechanism on the machine, and leftovers cannot be
@@ -271,34 +274,77 @@ function rememberProbeMarks() {
     }
   }
 }
-// The same cleanup as `finally`, in its order: logs first, then a stop with no wait, then the
-// warden by its process group — it is detached, and a foreground signal does not reach it.
-onAbort((signal) => {
+const PARTICIPANT_STOP_MS = 5_000;
+let aborted = false, runFailed = false, runFailure, cleanupPromise;
+const assertRunning = () => { if (aborted) throw new Error('live run aborted'); };
+async function waitForRunning(probe, options) {
+  assertRunning();
+  const result = await waitFor(() => aborted ? true : probe(), options);
+  assertRunning();
+  return result;
+}
+const cleanupRun = () => cleanupPromise ??= (async () => {
+  const startedAt = Date.now(), deadline = startedAt + PARTICIPANT_STOP_MS, errors = [];
+  let retained = false;
+  try { retainSandbox(SB); retained = true; } catch (error) { errors.push(error); }
+  rememberProbeMarks(); keepTranscripts();
+  const refs = new Map([[WORKER, ref], [REVIEWER, reviewerRef]]);
+  if (taskCreated) for (const address of [WORKER, REVIEWER]) {
+    try { refs.set(address, store.participantOf(store.readTask(home, TASK), address)?.sessionRef || refs.get(address)); }
+    catch (error) { errors.push(error); }
+  }
+  const raised = [...refs].filter(([, owned]) => owned).map(([address, owned]) => {
+    let panePid = null;
+    try { panePid = readSession(owned)?.panePid ?? null; } catch (error) { errors.push(error); }
+    return { address, ref: owned, panePid };
+  });
+  const native = await Promise.all(raised.map(async owned => {
+    let result;
+    try { result = await cursorDriver.stop(owned.ref, { timeoutMs: Math.max(0, deadline - Date.now()) }); }
+    catch (error) { result = { ok: false, stopped: false, note: error?.message ?? String(error) }; }
+    if (result?.ok !== true || (result?.attempted === true && result?.stopped !== true)) errors.push(new Error(`${owned.ref}: ${result?.note ?? 'native Stop unconfirmed'}`));
+    return { ...owned, result };
+  }));
+  let service;
+  try {
+    service = await taskService.close();
+    if (service.stopped && (!service.process || processState(service.process) !== 'dead')) throw new Error('Owned service physical exit unconfirmed');
+    serviceClosed = true;
+  } catch (error) { errors.push(error); service = { stopped: false, error: error?.message ?? String(error) }; }
+  return { native, service, retained, elapsedMs: Date.now() - startedAt,
+    error: errors.length ? new AggregateError([...(runFailed ? [runFailure] : []), ...errors], 'Live Cursor cleanup unconfirmed') : null };
+})();
+onAbort(async (signal) => {
+  aborted = true;
   const say = (line) => writeSync(1, line);
   say(`\n▸ run cut off by ${signal}: keeping the logs and stopping the loop\n`);
-  keepTranscripts();
-  for (const addr of [WORKER, REVIEWER]) {
-    const left = store.participantOf(store.readTask(home, TASK), addr)?.sessionRef;
-    if (!left) continue;
-    Promise.resolve(cursorDriver.stop(left, { timeoutMs: 0 })).catch(() => {});
-    say(`  · stop sent: ${addr} → ${left}\n`);
-  }
-  try {
-    process.kill(-warden.pid, 'SIGTERM');
-    say('  · task warden stopped by its process group\n');
-  } catch {
-    say('  · no task warden left\n');
+  const result = await cleanupRun();
+  for (const owned of result.native) say(`  · stop returned: ${owned.address} → ${owned.ref}: ${owned.result?.note ?? 'no result'}\n`);
+  say(`  · pre-exit: ${JSON.stringify({ sandbox: SB, sandboxPresent: existsSync(SB), elapsedMs: result.elapsedMs,
+    native: result.native.map(owned => ({ ...owned, alive: owned.panePid == null ? null : pidAlive(owned.panePid) })),
+    service: result.service, seat: taskCreated ? store.liveWarden(home, TASK) : null })}\n`);
+  if (result.error) {
+    say(`  · cleanup unconfirmed; sandbox ${result.retained ? 'retained' : 'retention unconfirmed'}: ${SB}\n`);
+    for (const error of result.error.errors) say(`  · cleanup error: ${error?.message ?? String(error)}\n`);
+  } else {
+    rmSync(SB, { recursive: true, force: true });
+    say('  · owned native cleanup and service exit confirmed\n');
   }
   say(`  · turn logs: ${KEPT_LOGS}\n`);
-});
+}, { waitMs: 30_000 });
 
 const t0 = Date.now();
 try {
-  const live = await waitFor(() => store.liveWarden(home, TASK), { timeoutMs: 30000 });
-  check('step 1: the task warden is up as a real process', !!live?.pid, JSON.stringify(live));
+  assertRunning();
+  store.createTask(home, { ...identity, owner: ORCH_SESSION }); taskCreated = true;
+  const warden = cli(['warden', '--task', TASK], { cwd: ws, env: wardenEnv });
+  await new Promise(resolve => setImmediate(() => setImmediate(resolve)));
+  const live = await waitForRunning(() => store.liveWarden(home, TASK), { timeoutMs: 30000 });
+  check('step 1: the task warden is up as a real process', warden.status === 0 && !!live?.pid, `${warden.out} · ${JSON.stringify(live)}`);
 
   // --- step 2: raise a Cursor participant ------------------------------------------------
   const t2 = Date.now();
+  assertRunning();
   const spawned = cli([ 'spawn', '--repo', repo, '--brief', workerBrief, '--task', TASK, '--title', identity.title,
     '--worker', 'live', '--harness', 'cursor', '--model', MODEL], { cwd: ws, env });
   check('step 2: promptobus spawn --harness cursor raised a live participant',
@@ -329,6 +375,7 @@ try {
   check('step 2: the one-shot pty-provider pane is down — the launch server is empty',
     launchList.ok, launchList.detail);
 
+  assertRunning();
   const statusOut = cli([ 'status', '--task', TASK], { cwd: ws, env });
   check('step 2: promptobus status shows the Cursor session is alive',
     statusOut.status === 0 && statusOut.out.includes(WORKER) && /session /.test(statusOut.out),
@@ -342,7 +389,7 @@ try {
 
   // --- step 3: bus loop from a live Cursor session ---------------------------------------
   const t3 = Date.now();
-  const hello = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
+  const hello = await waitForRunning(() => store.glanceInbox(home, TASK, 'orchestrator')
     .find((m) => String(m.body ?? '').includes(MARK.hello)) ?? null, { timeoutMs: 300000 });
   check('step 3: the first-turn result reached the orchestrator — the bus loop from Cursor closed',
     !!hello, JSON.stringify(hello ?? readSession(ref)?.last));
@@ -369,7 +416,7 @@ try {
         .map((c) => JSON.stringify(c).slice(0, 400));
     });
   };
-  const calledBus = await waitFor(() => (toolCalls().some((n) => /promptobus/.test(String(n))) ? toolCalls() : null),
+  const calledBus = await waitForRunning(() => (toolCalls().some((n) => /promptobus/.test(String(n))) ? toolCalls() : null),
     { timeoutMs: 120000 });
   check('step 3: the bus was called as a TOOL — the call is visible in the chat transcript',
     !!calledBus, `transcript calls: ${JSON.stringify(toolCalls()).slice(0, 500)}`);
@@ -378,6 +425,7 @@ try {
   // --- step 4: wake by injection into a live session ------------------------------------
   const t4 = Date.now();
   const paneWas = readSession(ref)?.panePid ?? null;
+  assertRunning();
   store.sendMessage(home, TASK, {
     from: 'orchestrator', to: WORKER, type: 'answer',
     body: `Woke you. Fetch the mailbox and reply to the orchestrator with a result message whose body starts with the line «${MARK.woke}».`,
@@ -387,7 +435,7 @@ try {
   // the second marker — containment then catches the wrong turn, and the
   // verdict goes green on nothing (measured 2026-09-03: the first run gave
   // "wake 0.0 s").
-  const woke = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
+  const woke = await waitForRunning(() => store.glanceInbox(home, TASK, 'orchestrator')
     .find((m) => m.type === 'result' && String(m.body ?? '').trimStart().startsWith(MARK.woke)) ?? null,
   { timeoutMs: 300000 });
   check('step 4: the warden woke the Cursor session by injection, and the participant replied',
@@ -411,16 +459,17 @@ try {
   // attach pane is raised wide.
   const t4b = Date.now();
   const seat = `promptobus-live-attach-${process.pid}`;
+  assertRunning();
   tmux(['new-session', '-d', '-s', seat, '-x', '200', '-y', '50',
     `${tool.path} persist attach ${record?.sessionName}`], { server: LAUNCH_TMUX_SERVER });
-  const attached = await waitFor(() => {
+  const attached = await waitForRunning(() => {
     const s = tmuxSessions().find((x) => x.name === record?.sessionName);
     return s && s.attached > 0 ? s : null;
   }, { timeoutMs: 30000 });
   check('step 4b: a human attaches to the live session — attach gives a second client',
     !!attached, `${JSON.stringify(tmuxSessions())} · attach pane: ${JSON.stringify(tmuxSessions({ server: LAUNCH_TMUX_SERVER }))}`);
   tmux(['kill-session', '-t', seat], { server: LAUNCH_TMUX_SERVER });
-  const leftSeat = await waitFor(() => {
+  const leftSeat = await waitForRunning(() => {
     const s = tmuxSessions().find((x) => x.name === record?.sessionName);
     return s && s.attached === 0 ? s : null;
   }, { timeoutMs: 30000 });
@@ -436,6 +485,7 @@ try {
   // leaves while the first turn is going — and by the process not changing for
   // both.
   const t4c = Date.now();
+  assertRunning();
   store.sendMessage(home, TASK, {
     from: 'orchestrator', to: WORKER, type: 'answer',
     body: `First of a pair. Fetch the mailbox and reply to the orchestrator with a result whose body starts with the line «${MARK.pairA}».`,
@@ -446,9 +496,11 @@ try {
   check('step 4c: the first delivery went into an idle session', first?.ok === true, JSON.stringify(first));
   // Wait until the turn actually starts: an injection into a turn that is NOT
   // going does not check the gap.
-  const busy = await waitFor(() => (cursorDriver.inspect(ref)?.busy ? cursorDriver.inspect(ref) : null),
+  assertRunning();
+  const busy = await waitForRunning(() => (cursorDriver.inspect(ref)?.busy ? cursorDriver.inspect(ref) : null),
     { timeoutMs: 60000 });
   check('step 4c: the participant turn started — there is something to deliver into', !!busy, JSON.stringify(cursorDriver.inspect(ref)));
+  assertRunning();
   store.sendMessage(home, TASK, {
     from: 'orchestrator', to: WORKER, type: 'answer',
     body: `Second of a pair, arrived during a turn. Reply to the orchestrator with a result whose body starts with the line «${MARK.pairB}».`,
@@ -456,12 +508,13 @@ try {
   const second = await cursorDriver.activate({ ref }, {
     kind: 'unread', task: TASK, address: WORKER, unread: 1, messages: [],
   });
+  assertRunning();
   check('step 4c: delivery into a GOING turn succeeds, and is not refused as "turn in progress"',
     second?.ok === true, `${JSON.stringify(second)} · ${JSON.stringify(cursorDriver.inspect(ref))}`);
-  const pairA = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
+  const pairA = await waitForRunning(() => store.glanceInbox(home, TASK, 'orchestrator')
     .find((m) => m.type === 'result' && String(m.body ?? '').trimStart().startsWith(MARK.pairA)) ?? null,
   { timeoutMs: 300000 });
-  const pairB = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
+  const pairB = await waitForRunning(() => store.glanceInbox(home, TASK, 'orchestrator')
     .find((m) => m.type === 'result' && String(m.body ?? '').trimStart().startsWith(MARK.pairB)) ?? null,
   { timeoutMs: 300000 });
   check('step 4c: both messages were handled — the second on the next turn, without a new process',
@@ -476,9 +529,11 @@ try {
   // writer, otherwise the second text would land in the input field on top of
   // the first, between its paste and Enter, and one glued message would go into
   // the transcript.
+  assertRunning();
   const race = await Promise.all([1, 2].map(() => cursorDriver.activate({ ref }, {
     kind: 'unread', task: TASK, address: WORKER, unread: 1, messages: [],
   })));
+  assertRunning();
   check('step 4d: two injections at once — one delivered, the other refused by the lock',
     race.filter((r) => r.ok).length === 1 && /already writing/.test(String(race.find((r) => !r.ok)?.error)),
     JSON.stringify(race));
@@ -491,8 +546,10 @@ try {
   spawnSync('git', ['-C', wt, '-c', 'user.name=live', '-c', 'user.email=live@example.invalid', 'add', '-A'], { encoding: 'utf8' });
   spawnSync('git', ['-C', wt, '-c', 'user.name=live', '-c', 'user.email=live@example.invalid', 'commit', '-m', 'live: review subject'], { encoding: 'utf8' });
 
+  assertRunning();
   const reviewed = cli([ 'review', wt, '--task', TASK, '--harness', 'cursor', '--model', MODEL],
     { cwd: ws, env });
+  reviewerRef = store.participantOf(store.readTask(home, TASK), REVIEWER)?.sessionRef ?? '';
   check('step 5: promptobus review --harness cursor raised a live reviewer',
     reviewed.status === 0 && /reviewer reviewer:live started/.test(reviewed.out), reviewed.out.slice(-600));
   rememberProbeMarks();
@@ -525,7 +582,7 @@ try {
     /writePermissionDenied|permissionDenied|Blocked by permissions/.test(String(denied.stdout ?? '')),
     String(denied.stdout ?? '').slice(-500));
 
-  const reviewSaid = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
+  const reviewSaid = await waitForRunning(() => store.glanceInbox(home, TASK, 'orchestrator')
     .filter((m) => sentBy(m, REVIEWER) && m.type === 'result').pop() ?? null,
   { timeoutMs: 300000 });
   check('step 5: the Cursor reviewer report reached the orchestrator on the same bus',
@@ -548,6 +605,7 @@ try {
 
   // --- step 6: stop and cleanup --------------------------------------------------------
   const t6 = Date.now();
+  assertRunning();
   const done = cli([ 'done', '--task', TASK], { cwd: ws, env });
   check('step 6: promptobus done closed the task and stopped the Cursor participants',
     done.status === 0, done.out.slice(-600));
@@ -566,30 +624,18 @@ try {
     String(persistOut.stdout ?? '').slice(-400));
   at_('stop and cleanup', Date.now() - t6);
 } catch (e) {
-  check('the run reached the end without a break', false, e.stack ?? e.message);
+  if (!aborted) { runFailed = true; runFailure = e; check('the run reached the end without a break', false, e?.stack ?? e?.message ?? String(e)); }
 } finally {
-  // A safety net for a run broken before a lift; the lifts above already took their marks.
-  rememberProbeMarks();
-  // Turn logs are taken FIRST and on any outcome (review note): teardown sweeps
-  // them with the session record, and the stream is needed exactly where the
-  // run went red. Copying on the happy path would leave diagnostics only on a
-  // green run.
-  keepTranscripts();
-  // Cleanup runs on any outcome: a fallen run must leave neither processes nor
-  // directories. Stop is by its own driver, with a zero wait: the script does
-  // not sit out timers.
-  for (const addr of [WORKER, REVIEWER]) {
-    const left = store.participantOf(store.readTask(home, TASK), addr)?.sessionRef;
-    if (left) await Promise.resolve(cursorDriver.stop(left, { timeoutMs: 0 })).catch(() => {});
+  if (!aborted) {
+    const result = await cleanupRun();
+    if (!aborted) {
+      if (result.error) throw result.error;
+      rmSync(SB, { recursive: true, force: true });
+    }
   }
-  try {
-    process.kill(-warden.pid, 'SIGTERM');
-  } catch {
-    // No group, or the process already exited.
-  }
-  rmSync(SB, { recursive: true, force: true });
 }
 
+if (!aborted) {
 // Run processes — those whose argv/cwd/environment contain THIS run directory
 // (`SB` / `ws`) or a participant session marker of the run. The directory
 // `~/legacy/cursor/sessions/` is shared by every persist session of the
@@ -657,3 +703,4 @@ process.stdout.write(`entries in ${CURSOR_HOME}: new chat directories ${newChats
   + `; new project entries ${newProjects.length}`
   + `${newProjects.length ? ` (${newProjects.map((n) => path.join(CURSOR_HOME, 'projects', n)).join(', ')})` : ''}\n`);
 process.exitCode = passed === verdicts.length ? 0 : 1;
+}

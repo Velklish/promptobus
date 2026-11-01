@@ -85,6 +85,7 @@ export function runOwnerIsLive(dir) {
   } catch (error) {
     return error?.code === 'ENOENT' ? false : true;
   }
+  if (owner && Object.hasOwn(owner, 'cleanup')) return true;
   const pid = Number(owner?.pid);
   if (!Number.isInteger(pid) || pid <= 0) return true;
   try {
@@ -105,10 +106,30 @@ export function markRunOwner(dir, pid = process.pid) {
   writeFileSync(path.join(dir, RUN_OWNER_FILE), `${JSON.stringify({ pid, path: dir })}\n`, { flag: 'wx', mode: 0o600 });
 }
 
+/** Retain only this process's own run marker; any cleanup state blocks automatic sweep. */
+export function markRunUnresolved(dir) {
+  const file = path.join(dir, RUN_OWNER_FILE);
+  const owner = JSON.parse(readFileSync(file, 'utf8'));
+  if (owner?.pid !== process.pid || realpathSync(owner.path) !== realpathSync(dir)) {
+    throw new Error('Cannot retain a run owned by another process or directory');
+  }
+  writeFileSync(file, `${JSON.stringify({ ...owner, cleanup: { state: 'unresolved' } })}\n`);
+}
+
+function runCleanupUnresolved(dir) {
+  try {
+    const owner = JSON.parse(readFileSync(path.join(dir, RUN_OWNER_FILE), 'utf8'));
+    if (owner && Object.hasOwn(owner, 'cleanup')) return true;
+    const pid = Number(owner?.pid);
+    return !Number.isInteger(pid) || pid <= 0 || realpathSync(owner.path) !== realpathSync(dir);
+  } catch (error) { return error?.code !== 'ENOENT'; }
+}
+
 /** True only for a readable marker of this very directory whose pid no longer exists; anything else is not dead. */
 export function runOwnerIsDead(dir) {
   try {
     const owner = JSON.parse(readFileSync(path.join(dir, RUN_OWNER_FILE), 'utf8'));
+    if (owner && Object.hasOwn(owner, 'cleanup')) return false;
     const pid = Number(owner?.pid);
     if (!Number.isInteger(pid) || pid <= 0 || realpathSync(owner.path) !== realpathSync(dir)) return false;
     process.kill(pid, 0);
@@ -238,12 +259,18 @@ export function sweptLine(what, swept, { keep = KEEP_RUNS } = {}) {
 export function sweepLiveRuns(dir, { prefix, current }) {
   const refused = [];
   const held = [];
+  const retained = [];
   const swept = sweepPreviousRuns(dir, {
-    prefix, current, keep: 0, refused, held, isLive: runOwnerIsLive, isDead: runOwnerIsDead,
+    prefix, current, keep: 0, refused, held, isLive: (full) => runCleanupUnresolved(full) || runOwnerIsLive(full), isDead: (full) => {
+      if (runCleanupUnresolved(full)) { retained.push(path.basename(full)); return false; }
+      return runOwnerIsDead(full);
+    },
   });
+  const live = held.filter(name => !retained.includes(name));
   return [
     sweptLine('previous-run sandboxes', swept, { keep: 0 }),
-    ...(held.length ? [`held, their owner is alive: ${held.join(', ')}`] : []),
+    ...(live.length ? [`held, their owner is alive: ${live.join(', ')}`] : []),
+    ...(retained.length ? [`held, cleanup unresolved: ${retained.join(', ')}`] : []),
     ...(refused.length ? [`sweep refused (busy or foreign permissions): ${refused.join(', ')}`] : []),
   ];
 }

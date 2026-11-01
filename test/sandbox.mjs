@@ -58,6 +58,7 @@ import process from 'node:process';
 import { resetBgSessionsCache } from '../lib/liftoff.js';
 import { claudeDriver } from '../lib/driver-claude.js';
 import { addressOf } from '../lib/store.js';
+import { markRunUnresolved } from '../scripts/canary-runs.mjs';
 
 // Reset of CLI process memory: the suite swaps PATH, the stub-binary
 // body, and the "session is up" marker, and without a reset the cache
@@ -179,6 +180,16 @@ function keepUntilExit(dir, { signalCleanup = true } = {}) {
 
 export function makeSandbox(prefix, { signalCleanup = true } = {}) {
   return keepUntilExit(mkdtempSync(path.join(os.tmpdir(), prefix)), { signalCleanup });
+}
+
+/** Keep this process's registered run after unknown cleanup, including its exit hook. */
+export function retainSandbox(dir) {
+  const owned = sandboxes.indexOf(dir);
+  if (owned < 0) throw new Error('Cannot retain a sandbox not registered by this process');
+  sandboxes.splice(owned, 1);
+  const signalled = signalSandboxes.indexOf(dir);
+  if (signalled >= 0) signalSandboxes.splice(signalled, 1);
+  markRunUnresolved(dir);
 }
 
 /** Standalone host config for a sandbox workspace: tools live in promptobus.json. */

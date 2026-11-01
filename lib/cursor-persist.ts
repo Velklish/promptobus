@@ -15,7 +15,7 @@ import type { HarnessSessionRecord } from './harness-registry.js';
 
 interface CursorSessionRecord extends HarnessSessionRecord {
   sessionName?: string | null; tmuxServer?: string; cwd?: string; chatId?: string | null; transcript?: string;
-  injectedAt?: string; panePid?: number | null;
+  injectedAt?: string; panePid?: number | null; workspaceHash?: string | null;
 }
 interface TmuxSession {
   name: string; attached: number; created: number; panePid: number | null; managed: boolean;
@@ -121,6 +121,13 @@ export const writeSession = cursorRegistry.writeSession;
 export const patchSession = cursorRegistry.patchSession;
 export const dropSession = cursorRegistry.dropSession;
 export const pidAlive = cursorRegistry.pidAlive;
+
+export function sessionRevision(ref: string, env = process.env): string | null {
+  try {
+    const value = statSync(sessionFile(ref, env), { bigint: true });
+    return [value.dev, value.ino, value.size, value.mtimeNs, value.ctimeNs].map(String).join(':');
+  } catch { return null; }
+}
 
 /** How long a lock is considered live without its process: an injection takes a second, a broken
  * one about five, and a minute is ten times smaller than the participant silence threshold. */
@@ -245,6 +252,23 @@ function isNoServerLine(line: string) {
  * non-zero without a measured no-server line — a live server could still be behind that. */
 export function readTmuxSessions({ server = CURSOR_TMUX_SERVER, env = process.env } = {}): { sessions: TmuxSession[]; missing: null } | { sessions: null; missing: string } {
   const r = tmux(['list-sessions', '-F', LIST_FIELDS.join(LIST_SEP)], { server, env });
+  return parseTmuxSessions(r);
+}
+
+/** Stop preflight yields while tmux runs, so another participant can issue its shutdown. */
+export async function readTmuxSessionsAsync({ server = CURSOR_TMUX_SERVER, env = process.env, timeoutMs = STOP_TIMEOUT_MS, deadlineAt }: {
+  server?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number; deadlineAt?: number;
+} = {}) {
+  const bin = tmuxBin({ env });
+  const remaining = deadlineAt === undefined ? timeoutMs : Math.min(timeoutMs, deadlineAt - Date.now());
+  if (deadlineAt !== undefined && remaining <= 0) return { sessions: null, missing: 'Stop deadline elapsed before native observation' };
+  const r = bin ? await runAsync(bin, ['-u', '-L', server, '-f', '/dev/null', 'list-sessions', '-F', LIST_FIELDS.join(LIST_SEP)], {
+    encoding: 'utf8', env: { ...env, TMUX_TMPDIR }, timeoutMs: remaining,
+  }) : { status: null, stdout: '', stderr: '', error: new Error(TMUX_NOT_FOUND) };
+  return parseTmuxSessions(r);
+}
+
+function parseTmuxSessions(r: ProcessReadResult): { sessions: TmuxSession[]; missing: null } | { sessions: null; missing: string } {
   if (r.error) return { sessions: null, missing: `tmux could not be run: ${r.error.message}` };
   if (r.status !== 0) {
     const line = String(r.stderr ?? '').split('\n')[0].trim();
@@ -642,6 +666,10 @@ export function isRuntimeCmd(cmd: unknown, needles: string[] = []) {
  * `promptobus mcp` line loses its tail, and the bus server is counted as a tool. */
 function psTable(ps: typeof run, columns: string) {
   const listed = ps('ps', ['-Awwo', columns], { encoding: 'utf8' });
+  return parsePsTable(listed);
+}
+
+function parsePsTable(listed: ProcessReadResult) {
   if (listed.error || listed.status !== 0) return null;
   const kids = new Map<number, number[]>();
   const cmd = new Map<number, string>();
@@ -795,40 +823,105 @@ export function killPids(pids: number[] | null | undefined) {
 export async function stopSession(record: CursorRecord, {
   env = process.env, bin = null, timeoutMs = STOP_TIMEOUT_MS, stepMs = STOP_STEP_MS,
 }: { env?: NodeJS.ProcessEnv; bin?: string | null; timeoutMs?: number; stepMs?: number } = {}) {
+  const edge = Date.now() + timeoutMs;
   const server = record?.tmuxServer || CURSOR_TMUX_SERVER;
   const name = record?.sessionName ?? null;
   const marker = sessionMarker(record, env);
-  const live = name ? findSession(name, { server, env }) : null;
+  const refused = (missing: string) => ({ stopped: false, missing, orphans: [], kids: [] });
+  if (!name || !record?.chatId) return refused('persist session identity is incomplete');
+  const revision = () => record.ref ? sessionRevision(record.ref, env) : null;
+  const initialRevision = revision();
+  const ownsRecord = () => {
+    if (!record.ref) return true;
+    const current = readSession(record.ref, env);
+    return initialRevision !== null && revision() === initialRevision && current
+      && current.launchId === record.launchId && current.sessionName === name && current.chatId === record.chatId
+      && current.panePid === record.panePid && current.workspaceHash === record.workspaceHash;
+  };
+  const owned = (seen: ReturnType<typeof readTmuxSessions>) => {
+    if (!ownsRecord()) return { live: null, missing: 'persist registry revision changed during Stop' };
+    const live = seen.sessions?.find(session => session.name === name) ?? null;
+    const mismatch = live && (live.chatId !== record.chatId
+      || (record.panePid != null && live.panePid !== record.panePid)
+      || (record.workspaceHash != null && live.hash !== record.workspaceHash));
+    return { live, missing: seen.missing ?? (mismatch ? `persist session ${name} identity changed` : null) };
+  };
+  const observe = async () => {
+    if (!ownsRecord()) return { live: null, missing: 'persist registry revision changed during Stop' };
+    const remaining = edge - Date.now();
+    if (remaining <= 0) return { live: null, missing: 'Stop deadline elapsed before native observation' };
+    const seen = owned(await readTmuxSessionsAsync({ server, env, timeoutMs: remaining, deadlineAt: edge }));
+    return Date.now() >= edge ? { live: null, missing: 'Stop deadline elapsed during native observation' } : seen;
+  };
+  let observed = await observe();
+  if (observed.missing) return refused(observed.missing);
+  if (!observed.live) return { stopped: false, missing: null, orphans: reapOrphans(marker), kids: [] };
   // Tool children are listed BEFORE stop and killed after: stop kills the pane, orphaned children
   // move under PPID 1 at once, and the tree from the pane pid is empty after that.
-  const panePid = live?.panePid ?? (Number(record?.panePid) || null);
-  const kids = treeOf(panePid);
-  if (!live) {
-    // No session, but its processes may have outlived it: the `worker-server` orphan
-    // lives for minutes even after a normal end of a turn.
-    return { stopped: false, orphans: reapOrphans(marker), kids: killPids(kids) };
-  }
+  const panePid = observed.live.panePid;
+  const preflightRemaining = edge - Date.now();
+  if (preflightRemaining <= 0) return refused('Stop deadline elapsed before process preflight');
+  const processRead = await runAsync('ps', ['-Awwo', 'pid=,ppid='], {
+    encoding: 'utf8', timeoutMs: preflightRemaining,
+  });
+  if (!ownsRecord()) return refused('persist registry revision changed during Stop');
+  if (Date.now() >= edge) return refused('Stop deadline elapsed during process preflight');
+  const table = parsePsTable(processRead);
+  if (!table) return refused('process-tree observation unavailable during Stop');
+  const kids = table ? walkKids(panePid, table.kids) : [];
+  observed = await observe();
+  if (observed.missing) return refused(observed.missing);
+  if (!observed.live) return refused(`persist session ${name} disappeared during Stop preflight`);
   const agent = bin || record?.bin;
   // One deadline covers the whole stop — the harness command and the polling after it: a
   // stop asked with a budget never waits a hung harness command past that budget.
-  const edge = Date.now() + timeoutMs;
   let said = null;
+  let accepted = false;
   if (agent) {
+    if (!ownsRecord()) return refused('persist registry revision changed during Stop');
+    if (Date.now() >= edge) return refused('Stop deadline elapsed before native shutdown');
     const r = await runAsync(agent, ['persist', 'stop', name!], {
       encoding: 'utf8', env, cwd: record?.cwd, timeoutMs: Math.max(0, edge - Date.now()),
     });
-    said = r.error ? r.error.message : String(r.stdout ?? r.stderr ?? '').trim();
+    if (!ownsRecord()) return refused('persist registry revision changed during Stop');
+    said = r.error ? r.error.message : String(r.stdout || r.stderr || '').trim();
+    accepted = !r.error && r.status === 0;
   }
-  while (findSession(name, { server, env }) && Date.now() < edge) await settle(stepMs);
-  let stopped = !findSession(name, { server, env });
+  const poll = async () => {
+    let seen = await observe();
+    while (!seen.missing && seen.live && Date.now() < edge) {
+      await settle(Math.min(stepMs, Math.max(0, edge - Date.now())));
+      seen = await observe();
+    }
+    return seen;
+  };
+  observed = accepted ? await poll() : await observe();
+  if (observed.missing) return refused(observed.missing);
+  let stopped = !observed.live;
   if (!stopped) {
+    if (Date.now() >= edge) return refused('Stop deadline elapsed before named fallback');
+    const fallbackBin = tmuxBin({ env });
+    if (!fallbackBin) return refused(TMUX_NOT_FOUND);
+    observed = await observe();
+    if (observed.missing) return refused(observed.missing);
+    if (!observed.live) return { stopped: true, missing: null, said, orphans: reapOrphans(marker), kids: killPids(kids) };
     // The harness command did not work — stop the pane directly. Not a bypass of the one-session-one-
     // mode gate: the binary holds that on ITS store, and picks the chat binding up on the next lift.
-    tmux(['kill-session', '-t', name!], { server, env });
-    while (findSession(name, { server, env }) && Date.now() < edge) await settle(stepMs);
-    stopped = !findSession(name, { server, env });
+    if (!ownsRecord()) return refused('persist registry revision changed during Stop');
+    const remaining = edge - Date.now();
+    if (remaining <= 0) return refused('Stop deadline elapsed before named fallback');
+    const fallback = await runAsync(fallbackBin, ['-u', '-L', server, '-f', '/dev/null', 'kill-session', '-t', name!], {
+      encoding: 'utf8', env: { ...env, TMUX_TMPDIR }, timeoutMs: remaining,
+    });
+    if (!ownsRecord()) return refused('persist registry revision changed during Stop');
+    if (fallback.error || fallback.status !== 0) return refused(`tmux fallback outcome unconfirmed: ${fallback.error?.message
+      ?? String(fallback.stderr || fallback.stdout || `exit ${fallback.status ?? fallback.signal}`)}`);
+    observed = await poll();
+    if (observed.missing) return refused(observed.missing);
+    stopped = !observed.live;
   }
+  if (!stopped) return refused('persist session absence unconfirmed before the Stop deadline');
   return {
-    stopped, said, orphans: reapOrphans(marker), kids: killPids(kids),
+    stopped, missing: null, said, orphans: reapOrphans(marker), kids: killPids(kids),
   };
 }

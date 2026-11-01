@@ -6,9 +6,33 @@ import type { PromptobusHost } from '../dist/index.js';
 import type { ServiceClientCredential, ServiceClientInput, ServiceClientLifetime, ServiceStatus } from './service.js';
 import { acquireServiceLock, prepareServicePaths, processRecord, readDiscovery, readPrivate, recordOf, runtimeIdentity, sameProcess, servicePaths } from './service-state.js';
 import type { ServiceDiscovery, ServicePaths } from './service-state.js';
+import type { WardenDiagnostics } from './service-warden.js';
+import { canonicalPath } from './store.js';
+import { actorIdentityVariables } from './drivers.js';
 
-export interface ServiceCallOptions { cwd?: string; env?: NodeJS.ProcessEnv }
+/** pollEnv is the full owner bootstrap snapshot; cwd remains caller context, not the daemon cwd. */
+export interface ServiceCallOptions { cwd?: string; env?: NodeJS.ProcessEnv; pollEnv?: NodeJS.ProcessEnv }
 const wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+const OWNER_RECORD_ENV = ['PROMPTOBUS_CLAUDE_SESSION', 'PROMPTOBUS_CODEX_SESSION', 'PROMPTOBUS_CURSOR_SESSION', 'PROMPTOBUS_OPENCODE_SESSION'] as const;
+const OWNER_ACTOR_ENV = ['PROMPTOBUS_ROLE', 'PROMPTOBUS_TASK', 'PROMPTOBUS_ROOT_TASK',
+  'CLAUDE_CODE_HOST_SESSION_ID', 'CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN', 'CLAUDE_PID',
+  'BB_THREAD_ID', 'BB_ENVIRONMENT_ID', 'BB_PROJECT_ID', 'BB_THREAD_STORAGE',
+  'AGENT_CLI_SOCKET_PATH', 'AGENT_CLI_LOG_PATH', 'CURSOR_AGENT_SOCKET', 'OPENCODE_SESSION_ID'] as const;
+const OWNER_OPERATIONAL_ENV = ['PROMPTOBUS_SERVICE_IDLE_MS', 'PROMPTOBUS_SERVICE_RESERVATION_MS',
+  'PROMPTOBUS_EXEC_TRACE', 'PROMPTOBUS_WARDEN_TRACE', 'PROMPTOBUS_HOLDER_TRACE'] as const;
+
+function ownerStartupEnvironment(paths: ServicePaths, env: NodeJS.ProcessEnv, common: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
+  const role = env.PROMPTOBUS_ROLE?.trim();
+  if (!common && ((role && role !== 'orchestrator') || OWNER_RECORD_ENV.some(name => env[name]?.trim()))) {
+    throw new Error('Managed cold startup requires the common owner environment; run owner preflight with the root snapshot before launching or reconnecting this participant');
+  }
+  const startup: NodeJS.ProcessEnv = { ...(common ?? env) };
+  for (const name of [...actorIdentityVariables(), ...OWNER_ACTOR_ENV]) delete startup[name];
+  for (const name of OWNER_OPERATIONAL_ENV) if (env[name] !== undefined) startup[name] = env[name];
+  startup.PROMPTOBUS_HOME = paths.home;
+  startup.PROMPTOBUS_SERVICE_HOME = paths.base;
+  return startup;
+}
 
 export async function serviceControl(paths: ServicePaths, input: object): Promise<unknown> {
   const owner = readPrivate(paths.owner);
@@ -42,8 +66,15 @@ function statusOf(value: unknown, expected: ServiceDiscovery): ServiceStatus {
     || !recordOf(value.process) || value.process.pid !== expected.process.pid || value.process.birth !== expected.process.birth
     || typeof value.clients !== 'number' || typeof value.reservations !== 'number' || typeof value.unknownClients !== 'number'
     || typeof value.unknownManaged !== 'number' || typeof value.sessions !== 'number') throw new Error('Shared service control identity did not match discovery');
+  if (!recordOf(value.warden) || !Array.isArray(value.warden.tasks) || typeof value.warden.observations !== 'number') throw new Error('Invalid shared warden diagnostics');
+  const tasks: WardenDiagnostics['tasks'] = [];
+  for (const item of value.warden.tasks) {
+    if (!recordOf(item) || typeof item.task !== 'string' || typeof item.pid !== 'number'
+      || (item.state !== 'starting' && item.state !== 'running' && item.state !== 'stopping' && item.state !== 'legacy-busy')) throw new Error('Invalid shared warden diagnostics');
+    tasks.push({ task: item.task, pid: item.pid, state: item.state });
+  }
   return { ...expected, clients: value.clients, reservations: value.reservations, unknownClients: value.unknownClients,
-    unknownManaged: value.unknownManaged, sessions: value.sessions };
+    unknownManaged: value.unknownManaged, sessions: value.sessions, warden: { tasks, observations: value.warden.observations } };
 }
 
 function compatible(discovery: ServiceDiscovery, runtime: string) {
@@ -57,7 +88,7 @@ export async function workspaceServiceStatus(host: PromptobusHost, { env = proce
   return { running: true as const, ...statusOf(await serviceControl(paths, { operation: 'status' }), discovery) };
 }
 
-export async function ensureWorkspaceService(host: PromptobusHost, { cwd = host.workspaceRoot(), env = process.env }: ServiceCallOptions = {}): Promise<ServiceDiscovery> {
+export async function ensureWorkspaceService(host: PromptobusHost, { env = process.env, pollEnv }: ServiceCallOptions = {}): Promise<ServiceDiscovery> {
   const paths = servicePaths(host, env), runtime = runtimeIdentity(host);
   prepareServicePaths(paths);
   const ready = async () => {
@@ -85,10 +116,11 @@ export async function ensureWorkspaceService(host: PromptobusHost, { cwd = host.
     try {
       const discovery = await ready();
       if (discovery) return discovery;
+      const startupEnv = ownerStartupEnvironment(paths, env, pollEnv);
       const logFile = path.join(paths.directory, 'startup-error.log');
       const fd = openSync(logFile, constants.O_CREAT | constants.O_TRUNC | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600);
       let error: Error | null = null;
-      const child = spawn(host.nodePath(), host.busArgv(['service', 'run']), { cwd, env: { ...env, PROMPTOBUS_HOME: paths.home }, detached: true, stdio: ['ignore', 'ignore', fd] });
+      const child = spawn(host.nodePath(), host.busArgv(['service', 'run']), { cwd: paths.root, env: startupEnv, detached: true, stdio: ['ignore', 'ignore', fd] });
       closeSync(fd);
       child.once('error', failure => { error = failure; });
       child.unref();
@@ -139,4 +171,18 @@ export async function stopWorkspaceService(host: PromptobusHost, { env = process
     await wait(25);
   }
   return { stopped: true };
+}
+
+export async function ensureTaskWarden(host: PromptobusHost, home: string, task: string, options: ServiceCallOptions = {}) {
+  const paths = servicePaths(host, options.env);
+  if (canonicalPath(home) !== paths.home) throw new Error('Task warden belongs to a different canonical store');
+  const discovery = await ensureWorkspaceService(host, options);
+  const value = await serviceControl(paths, { operation: 'warden-ensure', runtime: runtimeIdentity(host), task, pollEnv: options.pollEnv ?? options.env ?? process.env });
+  if (!recordOf(value) || (value.state !== 'inactive' && value.state !== 'starting' && value.state !== 'running' && value.state !== 'stopping')) throw new Error('Invalid task warden demand response');
+  return { pid: discovery.process.pid, state: value.state };
+}
+
+export async function abortTaskWarden(host: PromptobusHost, task: string, options: ServiceCallOptions = {}) {
+  return serviceControl(servicePaths(host, options.env), { operation: 'warden-abort', runtime: runtimeIdentity(host), task,
+    pollEnv: options.pollEnv ?? options.env ?? process.env });
 }

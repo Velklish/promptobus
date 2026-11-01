@@ -155,7 +155,7 @@ export function serviceFor(host: PromptobusHost, env: NodeJS.ProcessEnv = proces
         throw new Error(`unknown recipient address "${outgoing.to}" — ${addressList(registry)}`);
       }
       const sent = busService.send(home, task, outgoing, hints);
-      if (sent.deliveredTask) ensureWarden(home, sent.deliveredTask, { host, env });
+      ensureWarden(home, sent.deliveredTask ?? task, { host, env });
       if (sent.mailboxTask) ensureWarden(home, sent.mailboxTask, { host, env });
       return sent;
     },

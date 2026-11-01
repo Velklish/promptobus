@@ -64,10 +64,44 @@ export function harnessBin(tool: string) {
   return { bin: null, reason: said?.reason ?? `the host named no binary for ${tool}` };
 }
 
-export interface HarnessContext { homes: Record<string, string | null>; bins: Record<string, string | null>; searchPath: string | null }
+export const POLL_ENV_KEYS = [
+  'HOME', 'USER', 'LOGNAME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'CLAUDE_CONFIG_DIR',
+  'PATH', 'Path', 'PATHEXT', 'ComSpec', 'COMSPEC', 'SystemRoot', 'WINDIR',
+  'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME', 'TMUX_TMPDIR',
+  'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'NODE_OPTIONS', 'NODE_USE_ENV_PROXY',
+  'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy',
+  'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS',
+] as const;
+const POLL_NATIVE_ENV = new Set(['CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_HOST_SESSION_ID',
+  'CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN']);
+let boundPollEnvironment: Readonly<NodeJS.ProcessEnv> | null = null;
+
+export function pollEnvironmentOf(env: NodeJS.ProcessEnv): Readonly<NodeJS.ProcessEnv> {
+  const result: NodeJS.ProcessEnv = {};
+  for (const key of Object.keys(env).sort()) {
+    if (POLL_NATIVE_ENV.has(key)) continue;
+    if (POLL_ENV_KEYS.some(allowed => allowed === key) || key.startsWith('ANTHROPIC_') || key.startsWith('CLAUDE_CODE_')) {
+      if (typeof env[key] === 'string') result[key] = env[key];
+    }
+  }
+  return Object.freeze(result);
+}
+
+export function bindPollEnvironment(env: NodeJS.ProcessEnv) {
+  const projected = pollEnvironmentOf(env);
+  if (boundPollEnvironment && !isDeepStrictEqual(boundPollEnvironment, projected)) throw new GateError('Shared service has a different common poll environment');
+  return boundPollEnvironment ??= projected;
+}
+
+export function commonPollEnvironment() { return boundPollEnvironment ?? process.env; }
+
+export interface HarnessContext {
+  homes: Record<string, string | null>; bins: Record<string, string | null>; searchPath: string | null;
+  pollEnvironment: Readonly<NodeJS.ProcessEnv>;
+}
 type HarnessContextHost = Pick<PromptobusHost, 'declaredTools' | 'harnessStateHome' | 'resolveToolBin'>;
 
-export function serviceHarnessContext(host: HarnessContextHost, env: NodeJS.ProcessEnv, registry: Pick<LibRegistry, 'drivers'>): HarnessContext {
+export function serviceHarnessContext(host: HarnessContextHost, env: NodeJS.ProcessEnv, registry: Pick<LibRegistry, 'drivers'>, pollEnv = env): HarnessContext {
   const homes: HarnessContext['homes'] = {}, bins: HarnessContext['bins'] = {};
   for (const harness of Object.keys(registry.drivers)) {
     const home = env[harnessHomeVar(harness)]?.trim() || host.harnessStateHome(harness);
@@ -77,12 +111,13 @@ export function serviceHarnessContext(host: HarnessContextHost, env: NodeJS.Proc
     const bin = host.resolveToolBin(tool).bin || null;
     bins[tool] = bin && path.isAbsolute(bin) ? canonicalPath(bin) : bin;
   }
-  return { homes, bins, searchPath: Object.values(bins).some(bin => bin && !path.isAbsolute(bin)) ? env.PATH ?? null : null };
+  return { homes, bins, searchPath: Object.values(bins).some(bin => bin && !path.isAbsolute(bin)) ? env.PATH ?? null : null,
+    pollEnvironment: pollEnvironmentOf(pollEnv) };
 }
 
-export function requireServiceHarnessContext(expected: HarnessContext, host: HarnessContextHost, env: NodeJS.ProcessEnv, registry: Pick<LibRegistry, 'drivers'>) {
-  if (!isDeepStrictEqual(expected, serviceHarnessContext(host, env, registry))) {
-    throw new GateError('Shared service client has different harness state homes or binaries; reconnect through the same workspace runtime');
+export function requireServiceHarnessContext(expected: HarnessContext, host: HarnessContextHost, env: NodeJS.ProcessEnv, registry: Pick<LibRegistry, 'drivers'>, pollEnv = env) {
+  if (!isDeepStrictEqual(expected, serviceHarnessContext(host, env, registry, pollEnv))) {
+    throw new GateError('Shared service client has different harness state homes, binaries or common poll environment; reconnect through the same workspace runtime');
   }
 }
 
@@ -93,6 +128,7 @@ export function bindServiceHarnessContext(host: PromptobusHost, env: NodeJS.Proc
     declaredTools: () => host.declaredTools(),
     harnessStateHome: harness => bound?.harnessStateHome(harness) ?? null,
     resolveToolBin: tool => boundBins?.resolveToolBin(tool) ?? { ok: true, bin: tool },
-  }, process.env, registry);
+  }, process.env, registry, env);
+  bindPollEnvironment(env);
   return expected;
 }
