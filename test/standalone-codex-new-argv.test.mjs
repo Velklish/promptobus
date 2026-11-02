@@ -15,6 +15,9 @@ const approved = ['exec', ...controls, prompt];
 check('the approved 21-argument control invocation is a Codex NEW exec', approved.length === 21 && codexStandaloneNewExec(approved, cwd));
 check('the same controls with an explicit prompt separator are NEW', codexStandaloneNewExec(['exec', ...controls, '--', prompt], cwd));
 check('the bare exec -- prompt form stays NEW', codexStandaloneNewExec(['exec', '--', prompt], cwd));
+for (const name of ['resume', 'help', 'Resume']) {
+  check(`a prompt ${name} after the separator is a prompt, not a subcommand`, codexStandaloneNewExec(['exec', '--', name], cwd));
+}
 
 const replace = (from, to) => approved.map(arg => arg === from ? to : arg);
 const without = (...drop) => approved.filter((_, index) => !drop.includes(index));
@@ -59,6 +62,20 @@ const refused = {
   'foreign server tool exposure': replace('mcp_servers.promptobus.enabled_tools=["promptobus_status"]', 'mcp_servers.promptobus.enabled_tools=["shell"]'),
   'duplicated exposed tool': replace('mcp_servers.promptobus.enabled_tools=["promptobus_status"]',
     'mcp_servers.promptobus.enabled_tools=["promptobus_status","promptobus_status"]'),
+  'joined model value': ['exec', '--model=x', prompt],
+  'joined boolean value': ['exec', '--json=true', prompt],
+  'long config alias': ['exec', '--config', 'model_reasoning_effort="xhigh"', prompt],
+  'short model alias': ['exec', '-m', 'x', prompt],
+  'sandbox without value': ['exec', prompt, '--sandbox'],
+  'model without value': ['exec', prompt, '--model'],
+  'duplicated sandbox': ['exec', '--sandbox', 'read-only', '--sandbox', 'read-only', prompt],
+  'uppercase exposed tool': replace('mcp_servers.promptobus.enabled_tools=["promptobus_status"]', 'mcp_servers.promptobus.enabled_tools=["promptobus_Status"]'),
+  'newline in config value': replace('model_reasoning_effort="xhigh"', 'model_reasoning_effort="xhigh"\n'),
+  'whitespace around config key': replace('model_reasoning_effort="xhigh"', ' model_reasoning_effort="xhigh"'),
+  'whitespace around config value': replace('model_reasoning_effort="xhigh"', 'model_reasoning_effort= "xhigh"'),
+  'empty hook state table': replace(hooks, 'hooks.state={}'),
+  'empty hook state key': replace(hooks, 'hooks.state={""={enabled=false}}'),
+  'flags after the separator': ['exec', '--', '--json', prompt],
   'other server tool policy': replace('mcp_servers.promptobus.tools={promptobus_status={approval_mode="approve"}}',
     'mcp_servers.other.tools={promptobus_status={approval_mode="approve"}}'),
 };

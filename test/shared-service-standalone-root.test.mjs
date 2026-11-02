@@ -672,6 +672,10 @@ writeFileSync(${JSON.stringify(execOutput)},JSON.stringify(result));
     && unsupported.result === null && /not a supported NEW form or resume selection/.test(unsupported.exit.err)
     && readPrivate(path.join(paths.directory, 'native-admission.json')).bindings.length === unsupported.count
     && factories.length === unsupported.actorCount, unsupported.evidence);
+  const unsupportedPreview = await standaloneRootExecPlan(host, 'codex-exec', { file: nativeExecutable, args: ['exec', '--ephemeral', 'owned frozen fixture read'] },
+    { env, dryRun: true, cwd: root }).then(() => null, error => error);
+  check('the same unsupported exec argv also refuses in a dry run', /not a supported NEW form or resume selection/.test(String(unsupportedPreview?.message)),
+    String(unsupportedPreview?.message));
 } finally {
   await Promise.all([...children].map(child => new Promise(resolve => { child.once('close', resolve); child.kill('SIGTERM'); })));
   for (const name of existsSync(paths.clients) ? readdirSync(paths.clients) : []) {

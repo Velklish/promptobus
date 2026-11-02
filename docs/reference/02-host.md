@@ -1756,7 +1756,8 @@ turn an unknown ID into a fresh session.
 The exec controls are a closed set; each appears at most once and takes the
 arity Codex gives it. Flags: `--strict-config`, `--ignore-user-config`,
 `--dangerously-bypass-hook-trust`, `--skip-git-repo-check` and `--json`;
-`--sandbox read-only`; and `--model <id>`. Each `-c` takes one `key=value`
+`--sandbox read-only`; and `--model <id>` (letters, digits, `.`, `_`, `:` and `-`,
+starting with a letter or digit). Each `-c` takes one `key=value`
 and names a distinct key from this list:
 
 - `model_reasoning_effort` — a quoted effort name Codex knows;
@@ -1767,13 +1768,17 @@ and names a distinct key from this list:
 - `mcp_servers.promptobus.tools` — entries exactly
   `{approval_mode="approve"}` for enabled tools only.
 
-The prompt is the last token. It is not `-`, not option-like and not an `exec`
-subcommand name, unless it follows `--`. Any other flag, key, value shape,
+The prompt is the last token. It is not `-`, not option-like and not one of
+`resume`, `fork`, `review` or `help`, unless it follows `--`. Any other flag, key, value shape,
 `=`-joined option, duplicate or subcommand is not NEW. Admitting a control as
 NEW grants nothing: hook trust, sandbox and tool policy remain the native
-invocation's own. Preflight applies the same classifier. A Codex `exec` command
-that is neither NEW nor a `resume`/`fork` selection refuses before the exec
-plan is written, so no native process, model turn or client grant is spent.
+invocation's own. Preflight applies the same classifier. It refuses a Codex
+`exec` command that is not NEW and has no `resume` or `fork` token before
+`--`. The refusal happens before the exec plan is written, including
+in a dry run, so no native process, model turn or client grant is spent. An
+argv carrying such a token, even as an option value, passes on to first binding
+and is refused there unless it names a known binding. The classifier follows
+rust-v0.166.0 parsing. It does not check the approved executable's Codex version.
 
 Claude NEW mode is the foreground executable with no arguments and an actual
 `SessionStart.source="startup"`. Its actual absolute transcript must be an
