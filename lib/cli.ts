@@ -2,6 +2,7 @@
 // in one process are legal; the one exception is [`harnessStateHome`](../docs/reference/02-host.md#the-harness-session-registry-and-the-refusal-when-nobody-says).
 
 import { parseArgs } from 'node:util';
+import path from 'node:path';
 import { openEngine, GateError, PromptobusError, registryOf, routedCatalogRoles } from '../dist/index.js';
 import { HostResolveError } from '../dist/host.js';
 import { fail } from './util.js';
@@ -241,8 +242,24 @@ Participant launch options: --context-purpose technical|user-facing|author-voice
   ${cmd} service run
                               internal shared service entry; the consumer supplies
                               its Host factory through runPromptobus options
+  ${cmd} service profile --id <id> --native-store <path>
+                              approve a BB Codex root profile and print its HTTP
+                              and ordered SessionStart configuration
+  ${cmd} service profile --standalone --id <id> --harness codex|claude
+                        --native-store <path> --executable <absolute-native-binary>
+                              approve a separate process-owned native root profile;
+                              Codex TUI/resume requires explicit --no-daemon
+  ${cmd} service headers (--profile <id> | --client-file <path>) [--service-home <path>]
+                              native headers helper; --standalone selects that mode
+  ${cmd} service preflight --standalone --profile <id> --native-id <id>
+                              explicitly recover capability for the same proved
+                              native process; uncertain mutations refuse recovery
   ${cmd} mcp
                               stdio MCP server for the bus
+  ${cmd} service exec-plan --profile <id> [--service-home <path>] [--dry-run]
+                         -- <native-command> [args...]
+                              private transport for promptobus-root; native identity
+                              stays pending until the approved actual hook proof.
   ${cmd} install [--harnesses claude,cursor,codex] [--check] [--dry-run]
                               install project-level bus hooks; the first call saves
                               the harness list in promptobus.json
@@ -315,7 +332,63 @@ export async function runPromptobus(argv: readonly string[] | null | undefined, 
       }
       case 'service': {
         const [operation, ...flags] = rest;
-        if (!['ensure', 'run', 'status', 'stop'].includes(operation ?? '')) throw new GateError('service requires ensure, run, status or stop');
+        if (operation === 'exec-plan') {
+          const separator = flags.indexOf('--');
+          if (separator < 0 || !flags[separator + 1]) throw new GateError('service exec-plan requires -- before the native command');
+          const { values } = parse(at('service exec-plan'), flags.slice(0, separator), { options: {
+            profile: { type: 'string' }, 'service-home': { type: 'string' }, 'dry-run': { type: 'boolean' }, 'launcher-pid': { type: 'string' },
+          } });
+          if (!values.profile) throw new GateError('service exec-plan requires an approved --profile');
+          if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(values.profile)) throw new GateError('Root profile requires a scoped ID');
+          const launchEnv = values['service-home'] ? { ...env, PROMPTOBUS_SERVICE_HOME: values['service-home'] } : env;
+          const { readPrivate, servicePaths } = await import('./service-state.js');
+          const profile = readPrivate(path.join(servicePaths(host, launchEnv).directory, `root-profile-${values.profile}.json`));
+          const standalone = profile && typeof profile === 'object' && 'mode' in profile && profile.mode === 'standalone';
+          const command = { file: flags[separator + 1]!, args: flags.slice(separator + 2) };
+          const result = standalone ? await (await import('./standalone-root.js')).standaloneRootExecPlan(host, values.profile, command,
+            { env: launchEnv, dryRun: values['dry-run'], launcherPid: Number(values['launcher-pid']), cwd })
+            : await (await import('./root-launch.js')).codexRootExecPlan(host, values.profile, command, { env: launchEnv, dryRun: values['dry-run'] });
+          writeLine(output, typeof result === 'string' ? result : JSON.stringify(result));
+          return 0;
+        }
+        if (operation === 'profile') {
+          const { values } = parse(at('service profile'), flags, { options: {
+            id: { type: 'string' }, 'native-store': { type: 'string' }, standalone: { type: 'boolean' },
+            harness: { type: 'string' }, executable: { type: 'string' },
+          } });
+          if (!values.id || !values['native-store']) throw new GateError('service profile requires --id and --native-store');
+          if (values.standalone && (!values.executable || !['codex', 'claude'].includes(values.harness ?? ''))) {
+            throw new GateError('Standalone profile requires --harness codex|claude and an absolute --executable; other native chains are not implemented');
+          }
+          if (!values.standalone && (values.harness || values.executable)) throw new GateError('--harness and --executable require --standalone');
+          const result = values.standalone ? await (await import('./standalone-root.js')).approveStandaloneRootProfile(host,
+            { id: values.id, harness: values.harness as 'codex' | 'claude', nativeStore: values['native-store'], executable: values.executable! }, env)
+            : await (await import('./root-launch.js')).approveCodexRootProfile(host, { id: values.id, nativeStore: values['native-store'] }, env);
+          writeLine(output, JSON.stringify(result));
+          return 0;
+        }
+        if (operation === 'preflight') {
+          const { values } = parse(at('service preflight'), flags, { options: {
+            standalone: { type: 'boolean' }, profile: { type: 'string' }, 'native-id': { type: 'string' }, 'service-home': { type: 'string' },
+          } });
+          if (!values.standalone || !values.profile || !values['native-id']) throw new GateError('service preflight requires --standalone, --profile and --native-id');
+          const helperEnv = { ...env, ...(values['service-home'] ? { PROMPTOBUS_SERVICE_HOME: values['service-home'] } : {}) };
+          writeLine(output, JSON.stringify(await (await import('./standalone-root.js')).preflightStandaloneRoot(host, values.profile, values['native-id'], helperEnv)));
+          return 0;
+        }
+        if (operation === 'headers') {
+          const { values } = parse(at('service headers'), flags, { options: { profile: { type: 'string' }, 'client-file': { type: 'string' }, 'service-home': { type: 'string' }, standalone: { type: 'boolean' } } });
+          if ((!values.profile && !values['client-file']) || (values['client-file'] && (values.profile || values.standalone))) {
+            throw new GateError('service headers requires either --profile or --client-file');
+          }
+          const helperEnv = values['service-home'] ? { ...env, PROMPTOBUS_SERVICE_HOME: values['service-home'] } : env;
+          const headers = values['client-file'] ? (await import('./service-launch.js')).managedServiceHeaders(host, values['client-file'], { env: helperEnv })
+            : values.standalone ? await (await import('./standalone-root.js')).standaloneRootHeaders(host, values.profile!, helperEnv)
+            : await (await import('./root-launch.js')).codexRootHeaders(host, values.profile!, helperEnv);
+          writeLine(output, JSON.stringify(headers));
+          return 0;
+        }
+        if (!['ensure', 'run', 'status', 'stop'].includes(operation ?? '')) throw new GateError('service requires ensure, run, status, stop, profile, headers, exec-plan or preflight');
         const { values } = parse(at(`service ${operation}`), flags, { options: { json: { type: 'boolean' } } });
         if (operation === 'run') {
           if (!createHost) throw new GateError('Shared service requires the consumer-owned createHost({cwd, env}) option');
@@ -351,9 +424,11 @@ export async function runPromptobus(argv: readonly string[] | null | undefined, 
       }
       case 'guard': {
         const { values } = parse(at('guard'), rest, {
-          options: { role: { type: 'string' }, task: { type: 'string' }, home: { type: 'string' } },
+          options: { role: { type: 'string' }, task: { type: 'string' }, home: { type: 'string' }, 'root-profile': { type: 'string' },
+            'standalone-profile': { type: 'string' }, 'service-home': { type: 'string' }, 'client-file': { type: 'string' } },
         });
-        await (await import('./guard.js')).guard({ ...values, host }, env, cwd, input);
+        await (await import('./guard.js')).guard({ ...values, rootProfile: values['root-profile'], standaloneProfile: values['standalone-profile'],
+          serviceHome: values['service-home'], clientFile: values['client-file'], host }, env, cwd, input);
         return 0;
       }
       case 'review': {

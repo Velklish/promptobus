@@ -10,7 +10,7 @@ import { runWorkspaceService } from '../lib/service.js';
 import { ensureTaskWarden, abortTaskWarden, registerServiceClient, revokeServiceClient, stopWorkspaceService, workspaceServiceStatus } from '../lib/service-client.js';
 import { processState, readDiscovery, recordVersion, requireProcess, servicePaths } from '../lib/service-state.js';
 import { bus, createTask, participantOf, participantRecord, readTask, strictTaskFacts, upsertParticipant } from '../lib/store.js';
-import { sessionFile } from '../lib/codex-session.js';
+import { publishCodexNativeAdmission, readSession, sessionFile, writeSession } from '../lib/codex-session.js';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 
 if (!['darwin', 'linux'].includes(process.platform)) {
@@ -45,11 +45,16 @@ console.log('[]');}
   const host = make({ cwd: root }), paths = servicePaths(host, env);
   const codexEnv = { ...env, PROMPTOBUS_CODEX_HOME: host.harnessStateHome('codex') };
   let sequence = 0, replyGate = null, serviceError;
-  const emit = Worker.prototype.emit;
+  const emit = Worker.prototype.emit, postMessage = Worker.prototype.postMessage, observing = new Map();
+  Worker.prototype.postMessage = function(message, ...args) {
+    if (message?.kind === 'observe') observing.set(message.id, JSON.stringify(message.participants));
+    return postMessage.call(this, message, ...args);
+  };
+  // The service tick observes managed grants too, so a gate holds every reply until its request settles.
   Worker.prototype.emit = function(event, ...args) {
     const gate = replyGate;
-    if (gate && event === 'message' && args[0]?.kind === 'observed' && !gate.entered) {
-      gate.entered = true;
+    if (gate && event === 'message' && args[0]?.kind === 'observed') {
+      gate.held.push(observing.get(args[0].id) ?? '');
       gate.promise.then(() => emit.call(this, event, gate.fail
         ? { ...args[0], snapshot: null, error: 'owned observation delivery refused' } : args[0]));
       return true;
@@ -59,7 +64,7 @@ console.log('[]');}
   const holdReply = fail => {
     let release;
     const promise = new Promise(resolve => { release = resolve; });
-    return replyGate = { promise, release, fail, entered: false };
+    return replyGate = { promise, release, fail, held: [] };
   };
   const rpc = async (actor, method, params = {}, id = ++sequence) => {
     const response = await fetch(actor.credential.busUrl, { method: 'POST', headers: {
@@ -69,6 +74,17 @@ console.log('[]');}
     return { status: response.status, session: response.headers.get('mcp-session-id'), text: await response.text() };
   };
   const question = (actor, body, id) => rpc(actor, 'tools/call', { name: 'promptobus_ask', arguments: { body }, _meta: { threadId: actor.thread } }, id);
+  const gatedQuestion = async (actor, fail, body, id) => {
+    const gate = holdReply(fail), own = () => gate.held.filter(participants => participants.includes(JSON.stringify(actor.ref))).length;
+    writeFileSync(actor.record, readFileSync(actor.record));
+    await workspaceServiceStatus(host, options);
+    await until(() => own() > 0);
+    let settled = false;
+    const request = question(actor, body, id);
+    request.then(() => { settled = true; }, () => { settled = true; });
+    await until(() => own() > 1 || settled);
+    return { gate, request };
+  };
   const questions = actor => strictTaskFacts(home, actor.task).messages.filter(message => message.type === 'question').length;
   const receipt = (actor, id) => path.join(paths.requests, actor.session, `${createHash('sha256').update(JSON.stringify(id)).digest('hex')}.json`);
   const journal = directory => readdirSync(directory, { withFileTypes: true }).filter(entry => entry.name !== '.lock').sort((a, b) => a.name.localeCompare(b.name))
@@ -81,19 +97,33 @@ console.log('[]');}
     await new Promise((resolve, reject) => { child.once('error', reject); child.stdout.once('data', resolve); });
     const identity = requireProcess(child.pid); holderIdentities.push(identity);
     const record = sessionFile(ref, codexEnv);
-    mkdirSync(path.dirname(record), { recursive: true });
-    const value = { ref, home, task, address, role: address, launchId: `launch-${label}`, threadId: thread, holderPid: child.pid, state: 'idle' };
-    writeFileSync(record, JSON.stringify(value));
+    const nativeStore = path.join(root, `native-store-${label}`); mkdirSync(nativeStore);
+    // The live owned app models a correlated API publication; the separately owned holder is retired below.
+    const app = spawn(process.execPath, ['-e', "const {createInterface}=require('node:readline');\ncreateInterface({input:process.stdin}).once('line',line=>{\n  const request=JSON.parse(line);\n  if(request.id!==1||request.method!=='thread/start') throw new Error('Unexpected owned unit API request');\n  process.stdout.write(JSON.stringify({id:request.id,result:{thread:{id:process.argv[1]}}})+'\\n');\n});", thread], {
+      env: { ...process.env, CODEX_HOME: nativeStore }, stdio: ['pipe', 'pipe', 'inherit'],
+    });
+    holders.push(app);
+    const reply = new Promise((resolve, reject) => { app.once('error', reject); app.stdout.once('data', bytes => resolve(JSON.parse(String(bytes)))); });
+    app.stdin.write(`${JSON.stringify({ id: 1, method: 'thread/start', params: {} })}\n`);
+    const started = await reply;
+    if (started.id !== 1 || started.result?.thread?.id !== thread) throw new Error('Owned unit thread/start response did not correlate');
+    const appProcess = requireProcess(app.pid); holderIdentities.push(appProcess);
+    writeSession({ ref, home, task, address, role: address, launchId: `launch-${label}`, threadId: thread,
+      holderPid: child.pid, holderProcess: identity, appPid: app.pid, appProcess, nativeAdmissionSchema: 1,
+      codexHome: nativeStore, state: 'idle' }, codexEnv);
+    publishCodexNativeAdmission(ref, { version: recordVersion(record), launchId: `launch-${label}`,
+      home, task, address, nativeStore, nativeId: thread, process: appProcess, method: 'thread/start' }, codexEnv);
+    const value = readSession(ref, codexEnv);
     const owner = address === 'orchestrator' ? 'previous-owned-session' : thread;
     createTask(home, { id: task, title: 'owned operation admission', owner });
-    upsertParticipant(home, task, participantRecord(address, { harness: 'codex', sessionRef: ref, sessionId: thread, sessionRecord: record,
+    upsertParticipant(home, task, participantRecord(address, { harness: 'codex', sessionRef: ref, sessionId: thread, sessionRecord: record, nativeLaunchId: value.launchId,
       ...(address === 'orchestrator' ? { owner } : {}) }));
     const credential = await registerServiceClient(host, { cwd: root,
       env: { ...codexEnv, PROMPTOBUS_TASK: task, PROMPTOBUS_ROLE: address },
       nativeBinding: { kind: 'codex', state: 'bound', threadId: thread },
       lifetime: { kind: 'managed', task, address, ref, record, launchId: value.launchId } }, options);
     clients.push(credential);
-    const result = { task, record, value, child, identity, credential, thread, session: null };
+    const result = { task, ref, record, value, child, identity, credential, thread, session: null };
     const initialized = await rpc(result, 'initialize', { protocolVersion: '2025-06-18' });
     result.session = initialized.session;
     if (initialized.status !== 200 || !result.session) throw new Error(`Owned actor initialization refused: ${initialized.text}`);
@@ -147,18 +177,15 @@ console.log('[]');}
     await abortTaskWarden(host, busyTask, options);
 
     const current = await actor('revision');
-    const drift = holdReply(false), driftId = ++sequence;
-    const drifting = question(current, 'must not cross record revision', driftId);
-    await until(() => drift.entered);
+    const driftId = ++sequence, drift = await gatedQuestion(current, false, 'must not cross record revision', driftId);
     const bytes = readFileSync(current.record); writeFileSync(current.record, bytes);
-    replyGate = null; drift.release();
-    const drifted = await drifting;
+    drift.gate.release();
+    const drifted = await drift.request; replyGate = null;
     check('an actual observation result for a prior record revision cannot create a receipt or journal question', drifted.status === 409
       && questions(current) === 0 && !existsSync(receipt(current, driftId)), drifted.text);
-    const unknown = holdReply(true), unknownId = ++sequence;
-    const unavailable = question(current, 'must not cross unknown observation', unknownId);
-    await until(() => unknown.entered); replyGate = null; unknown.release();
-    const refused = await unavailable;
+    const unknownId = ++sequence, unknown = await gatedQuestion(current, true, 'must not cross unknown observation', unknownId);
+    unknown.gate.release();
+    const refused = await unknown.request; replyGate = null;
     check('controlled observation delivery failure refuses mutation and retains recovery credential/session', refused.status === 503
       && questions(current) === 0 && !existsSync(receipt(current, unknownId)) && existsSync(current.credential.credentialFile)
       && existsSync(path.join(paths.sessions, `${current.session}.json`)), refused.text);
@@ -189,7 +216,7 @@ console.log('[]');}
     check('an admitted own-mailbox claim and its subsequent request retain ordinary binding behavior', claim.status === 200
       && !JSON.parse(claim.text).result?.isError && next.status === 200 && !JSON.parse(next.text).result?.isError, JSON.stringify({ claim, next }));
   } finally {
-    replyGate?.release(); replyGate = null; Worker.prototype.emit = emit;
+    replyGate?.release(); replyGate = null; Worker.prototype.emit = emit; Worker.prototype.postMessage = postMessage;
     writeFileSync(release, 'fixture cleanup release');
     await abortTaskWarden(host, busyTask, options).catch(() => {});
     for (const credential of clients) await revokeServiceClient(host, credential.clientId, options).catch(() => {});

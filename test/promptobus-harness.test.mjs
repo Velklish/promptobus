@@ -18,7 +18,7 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check, skip } from './check.mjs';
-import { listenTestSocket, makeSandbox, makeSockPath } from './sandbox.mjs';
+import { listenTestSocket, makeSandbox, makeSockPath, writeHostConfig } from './sandbox.mjs';
 import {
   authorErrors, claudeConfigDir, diagnoseTrace, installHarness, harnessSessions, pidAlive, planParticipant,
   readLog, readTrace, sessionByName, stopAll, traceFile, waitFor,
@@ -66,7 +66,29 @@ if (socketPermission.ok) {
 // The harness home is created by the stand itself and outside the sandbox: otherwise
 // cleanup on exit is a no-op — the sandbox hook removes the directory before the stand
 // has time to kill its processes.
+const explicitServiceHome = path.join(SB, 'explicit-service');
+const explicitEnv = { ...process.env, PROMPTOBUS_SERVICE_HOME: explicitServiceHome };
+const explicitHarness = await installHarness({ binDir: path.join(SB, 'explicit-bin'), sock, env: explicitEnv });
+check('the harness preserves an explicitly owned child service override',
+  explicitEnv.PROMPTOBUS_SERVICE_HOME === explicitServiceHome);
+explicitHarness.restore();
+check('restoring the harness keeps the explicit service override',
+  explicitEnv.PROMPTOBUS_SERVICE_HOME === explicitServiceHome);
 const { home: HARNESS, restore } = await installHarness({ binDir: path.join(SB, 'bin'), sock });
+const { createStandaloneHost } = await import('../dist/host-index.js');
+const { ensureWorkspaceService, stopWorkspaceService, workspaceServiceStatus } = await import('../lib/service-client.js');
+const { sameProcess } = await import('../lib/service-state.js');
+writeHostConfig(SB, { tools: [] });
+const serviceHost = createStandaloneHost({ cwd: SB });
+let service, serviceError;
+try { service = await ensureWorkspaceService(serviceHost); }
+catch (error) { serviceError = error; }
+check('the harness-owned service cold-starts under the suite HOME',
+  !!service && (await workspaceServiceStatus(serviceHost)).running, serviceError?.message);
+if (service) {
+  await stopWorkspaceService(serviceHost);
+  check('the harness-owned service physically exits before fixture removal', !sameProcess(service.process));
+}
 const { run } = await import(path.join(here, '..', 'lib', 'exec.js'));
 const claude = (...args) => run('claude', args, { cwd: SB, encoding: 'utf8' });
 

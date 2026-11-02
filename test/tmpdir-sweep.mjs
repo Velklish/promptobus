@@ -106,6 +106,9 @@ export const SUITE_PREFIXES = [
   // stranger in a shared `$TMPDIR`; `pb-hooks-` covers `pb-hooks-home-`.
   'pb-home-', 'pb-hooks-', 'pb-install-', 'pb-bb-native-', 'pb-direct-receipt-',
   'pb-message-order-', 'pb-native-message-order-', 'pb-legacy-feedback-alias-',
+  'pb-bb-root-command-', 'pb-bb-root-new-owner-', 'pb-bb-root-owner-',
+  'pb-codex-cleanup-policy-', 'pb-kernel-read-shapes-', 'pb-lead-generation-',
+  'pb-native-alias-', 'pb-native-retirement-', 'pb-managed-path-',
   // As `mutation-probe.test.mjs` spells it, for the reason the three above are kept:
   // the sweep does not care about the name, and a rename would be an edit for its convenience.
   'mutation-probe-',
@@ -121,6 +124,12 @@ export const SUITE_PREFIXES = [
   'promptobus-pack-isolation-', 'promptobus-pack-output-',
   'promptobus-shared-service-', 'promptobus-root-admission-', 'promptobus-service-lock-',
   'promptobus-service-operation-locks-', 'promptobus-service-operation-',
+  'promptobus-managed-native-', 'promptobus-default-owner-', 'promptobus-native-start-', 'promptobus-root-profile-',
+  'promptobus-claude-genesis-', 'promptobus-launch-cleanup-', 'promptobus-native-api-refusal-',
+  'promptobus-native-provenance-', 'promptobus-managed-roles-', 'promptobus-managed-store-genesis-',
+  'promptobus-native-admission-', 'promptobus-managed-transition-', 'promptobus-native-resume-',
+  'promptobus-bb-successor-', 'promptobus-root-process-', 'promptobus-service-stores-',
+  'promptobus-standalone-root-', 'promptobus-owner-recovery-',
   'promptobus-shared-warden-',
   'promptobus-project-hooks-', 'promptobus-promptobus', 'promptobus-races-', 'promptobus-repo-path-', 'promptobus-retirement-',
   // Covers the `-a-`/`-b-` pair of host.test.mjs too: an entry sweeps everything

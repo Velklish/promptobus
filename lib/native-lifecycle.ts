@@ -4,7 +4,7 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { readStopConfirmation } from './codex-command-receipts.js';
 import { codexStateHome, pidAlive, sessionFile, sessionKey, sessionsDir, withSessionLaunch } from './codex-session.js';
-import { addressOf, GateError, ORCHESTRATOR, participantOf, readTask, sameStoreHome, upsertParticipant, withTaskLock } from './store.js';
+import { addressOf, GateError, ORCHESTRATOR, participantOf, readTask, sameStoreHome, taskExists, upsertParticipant, withTaskLock } from './store.js';
 
 import type { ParticipantV1, TaskV1 } from '../dist/index.js';
 import { libOpenParticipant } from './driver-runtime.js';
@@ -26,6 +26,23 @@ const refuse: (address: unknown) => never = address => {
 };
 const hash = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex');
 const binding = (p: ParticipantV1 | null | undefined) => [p?.sessionRef, p?.metadata?.nativeLaunchId, p?.metadata?.sessionId];
+
+export interface LegacyLaunchBinding {
+  ref: string; record: string; launchId: string; deferTaskBinding?: boolean; previousParticipant?: ParticipantV1 | null;
+}
+
+export function ownsLegacyLaunch(home: string, task: string, address: string, expected: LegacyLaunchBinding) {
+  const record = JSON.parse(readFileSync(expected.record, 'utf8')) as NativeRecord | null;
+  if (!record || typeof record.home !== 'string' || !sameStoreHome(record.home, home) || record.task !== task
+    || record.address !== address || record.ref !== expected.ref || record.launchId !== expected.launchId) return false;
+  if (!taskExists(home, task)) return expected.deferTaskBinding === true;
+  const meta = readTask(home, task), participant = participantOf(meta, address);
+  if (expected.deferTaskBinding && Object.hasOwn(expected, 'previousParticipant')) {
+    return meta.status === 'active' && isDeepStrictEqual(participant, expected.previousParticipant);
+  }
+  return meta.status === 'active' && participant?.harness === 'claude' && participant.sessionRef === expected.ref
+    && participant.metadata.sessionRecord === expected.record && !participant.metadata.nativeLaunchId && !participant.metadata.nativeStop;
+}
 
 export function requireCurrentNativeLaunch(current: NativeLaunchView | null | undefined, expected: NativeLaunchView | null | undefined) {
   if (!native(current) && !native(expected) && !current?.metadata?.nativeLaunchId && !current?.metadata?.nativeStop) return;
@@ -201,8 +218,10 @@ export function persistNativeParticipant(home: string, task: string, reserved: P
 
 export function persistLegacyParticipant(home: string, task: string, participant: ParticipantV1) {
   return withTaskLock(home, task, () => {
-    const current = participantOf(readTask(home, task), addressOf(participant));
-    if (native(current) || current?.metadata.nativeLaunchId || current?.metadata.nativeStop) refuse(participant.id);
+    const meta = readTask(home, task), current = participantOf(meta, addressOf(participant));
+    if (meta.status !== 'active' || !current || current.harness !== participant.harness || current.sessionRef !== participant.sessionRef
+      || native(current) || current.metadata.nativeLaunchId || current.metadata.nativeStop
+      || (participant.metadata.sessionRecord && current.metadata.sessionRecord !== participant.metadata.sessionRecord)) refuse(participant.id);
     return upsertParticipant(home, task, participant);
   });
 }

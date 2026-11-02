@@ -39,7 +39,7 @@ export async function serviceControl(paths: ServicePaths, input: object): Promis
   if (!recordOf(owner) || typeof owner.token !== 'string' || !/^[a-f0-9]{64}$/.test(owner.token)) throw new Error('Shared service owner credential is invalid');
   const body = JSON.stringify(input);
   return new Promise<unknown>((resolve, reject) => {
-    const call = request({ socketPath: paths.controlSocket, path: '/control', method: 'POST',
+    const call = request({ socketPath: paths.controlSocket, path: '/control', method: 'POST', agent: false,
       headers: { host: 'promptobus.local', authorization: `Bearer ${owner.token}`, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } }, response => {
       let text = '';
       response.setEncoding('utf8');

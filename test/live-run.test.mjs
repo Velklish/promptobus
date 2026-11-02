@@ -321,9 +321,19 @@ process.stdout.write('ready\\n');
     }, { timeoutMs: 10_000 });
     if (!spawned?.pid) throw new Error('stop descendant identity missing');
     descendant = processTable().find((p) => p.pid === spawned.pid);
+    let descendantAlive = null, standPresent = null;
+    const retained = !!descendant && (descendantAlive = samePid(descendant.pid)) && !result.safe && (standPresent = existsSync(dir))
+      && result.failures.some((reason) => reason.includes('ancestry'));
+    let failure = '';
+    if (!retained) {
+      const details = { result, spawned, descendant, descendantAlive, standPresent,
+        parent: { pid: parent.pid, exitCode: parent.exitCode, signalCode: parent.signalCode } };
+      try { details.record = JSON.parse(readFileSync(path.join(dir, LIVE_RECORD), 'utf8')); }
+      catch (error) { details.recordReadError = error.code ?? error.message; }
+      failure = JSON.stringify(details);
+    }
     check(`${mode} cannot grant deletion after a real detached descendant escapes`,
-      !!descendant && samePid(descendant.pid) && !result.safe && existsSync(dir)
-      && result.failures.some((reason) => reason.includes('ancestry')), JSON.stringify(result));
+      retained, failure);
     check(`${mode} uncertainty remains held by the previous-run sweep`, priorRunIsLive(dir));
   } finally {
     if (!descendant) {

@@ -116,7 +116,7 @@ fs.writeFileSync(marker('contender'),JSON.stringify(result));
 import cp from 'node:child_process';
 const run=cp.spawnSync, read=fs.readFileSync;
 const pid=${JSON.stringify(unknownProof.pid)};
-cp.spawnSync=(command,args,...rest)=>command==='ps'&&args[1]===String(pid)?{status:1,stdout:''}:run(command,args,...rest);
+cp.spawnSync=(command,args,...rest)=>command==='/bin/ps'&&JSON.stringify(args)===JSON.stringify(['-p',String(pid),'-o','stat=','-o','lstart='])?{status:1,stdout:''}:run(command,args,...rest);
 fs.readFileSync=(file,...args)=>{if(file==='/proc/'+pid+'/stat')throw Error('fixture observation unavailable');return read(file,...args)};
 syncBuiltinESMExports();
 const {acquireServiceLock,processState}=await import(${JSON.stringify(moduleUrl)});

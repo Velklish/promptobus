@@ -1,26 +1,33 @@
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { replaceLaunchMcpConfig } from './driver-runtime.js';
+import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { fail, info, warn } from './util.js';
-import { run } from './exec.js';
+import { createHash, randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
+import { info, warn } from './util.js';
+import { run, wouldResolve } from './exec.js';
 import { PROMPTOBUS_SERVER } from './contract.js';
 import { selectedNativeFiles, selectedNativePrompt } from './native-participant-context.js';
-import { foreignSession, wakeAddressOf, writeWake } from './store.js';
+import { foreignSession, participantOf, readTask, taskExists, wakeAddressOf, withTaskLock, writeWake } from './store.js';
 import {
   binInDir, CURSOR_TMUX_SERVER, dropSession, findSession, injectText, liftSession,
-  mcpRuntimeNeedles, patchSession, readParticipantMcp, readSession, readTmuxSessionsAsync, searchPath, SESSION_ENV_VAR,
+  mcpRuntimeNeedles, markInjected, patchSession, readParticipantMcp, readSession, readTmuxSessions, readTmuxSessionsAsync, searchPath, SESSION_ENV_VAR,
   sessionFile, sessionRevision, silentIsStall, stopSession, STOP_TIMEOUT_MS, TMUX_NOT_FOUND, tmuxBin, toolKidsOf, turnIdleMs, turnState,
   worktreeTouchedMs, writeSession,
 } from './cursor-persist.js';
 import { cursorAvailability } from './model-routing/adapter-cursor.js';
-import { APPROVER, liftWords, registryOf, REVIEWER, WORKER } from '../dist/index.js';
+import { APPROVER, GateError, liftWords, registryOf, REVIEWER, WORKER } from '../dist/index.js';
 import { PARENT_SESSION_ENV, WARDEN_ENV_VARS } from './session-env.js';
 import { launchProvenance, provenanceLine } from './provenance.js';
 import { orderBody as commonOrderBody } from './notification.js';
-import { readRecordAt, sayForeignWrite as commonSayForeignWrite, sessionEnvFor, versionLess } from './driver-common.js';
+import { readRecordAt, revokeFailedManagedLaunch, sayForeignWrite as commonSayForeignWrite, sessionEnvFor, versionLess } from './driver-common.js';
 import { bindBeforeLaunch } from './liftoff.js';
 import { judgeHookRecords, TRUST_CONFIG, trustRule } from './project-hooks.js';
+import { processIdentity, processState, readPrivate, recordOf, recordVersion, sameRecordVersion } from './service-state.js';
+
+import { processExecutable, processHasOpenFile } from './root-process.js';
+import type { RecordVersion } from './service-state.js';
 
 import type { DriverPhrases, DriverDenyTool, LaunchFile, Notification, NotificationMessage, SessionView, WakeProbe, ActivationTarget, ActivateResult } from '../dist/index.js';
 import type { LibDriver, LibLaunchPlan, LibPrepareContext, LibSpawnContext, LibSpawnResult, LibStall, LibMcpConfig, LibMcpServer, LibToolBin } from './driver-runtime.js';
@@ -280,7 +287,7 @@ const GUARD_HOOK_EVENT = 'stop';
 const HOOKS_VERSION = 1;
 
 function hooksFile(guardCommand: string | undefined, accepted: { key: string; command: string }[] = []) {
-  const hooks: Record<string, { command: string | undefined }[]> = { [GUARD_HOOK_EVENT]: [{ command: guardCommand }] };
+  const hooks: Record<string, { command: string | undefined }[]> = { [GUARD_HOOK_EVENT]: [{ command: guardCommand }], sessionStart: [{ command: guardCommand }] };
   for (const { key, command } of accepted) (hooks[key] ??= []).push({ command });
   return { version: HOOKS_VERSION, hooks };
 }
@@ -357,6 +364,7 @@ function prepare({
       cwd: sessionDir, model, effort, permissionMode, addDirs: [...new Set([...dirs, ...bootstrap.addDirs])], prompt: bootstrap.argument,
     }),
     mcpConfig: cfg,
+    mcpConfigPath: path.join(configDir, CURSOR_DIR, 'mcp.json'),
     settings,
     ...(bootstrap.files.length ? { prompt } : {}),
     cwd: sessionDir,
@@ -365,6 +373,12 @@ function prepare({
     files,
     skillsNote: selectedContext ? `${selectedContext.skills.length} selected skills → ${dest}` : skillsNoteOf({ src, dest, count }),
   };
+}
+
+function replaceMcpServers(plan: LibLaunchPlan, servers: Record<string, LibMcpServer>): void {
+  const former = plan.mcpConfig as LibMcpConfig;
+  const { reviewer_files: previousFiles, ...kept } = former.mcpServers;
+  replaceLaunchMcpConfig(plan, { ...former, mcpServers: { ...kept, ...servers } });
 }
 
 const sessionEnv = sessionEnvFor(SESSION_ENV_DROP);
@@ -396,19 +410,21 @@ export function registerWake(home: string, task: string, addr: string, env = pro
     if (!session) return null;
     const file = String(env?.[SESSION_ENV_VAR] ?? '').trim();
     if (!file) return null;
-    const record = readRecordAt<CursorSessionRecord>(file);
-    if (!record?.ref) return null;
-    // Address-ownership gate: the address is bound to a session, and a foreign one
-    // writes nothing for it.
-    const held = foreignSession(home, task, addr, session);
-    if (held) {
-      sayForeignWrite(home, task, addr, held, session, 'contact-point handoff');
-      return false;
-    }
-    const turns = (Number(record.turns) || 0) + 1;
-    patchSession(record.ref, { turns, last: { endedAt: new Date().toISOString(), session } }, env);
-    const at = wakeAddressOf(home, task, addr);
-    return writeWake(home, at.task, at.address, { socket: `${file}#${turns}`, token: null, session });
+    return withTaskLock(home, task, () => {
+      const record = readRecordAt<CursorSessionRecord>(file);
+      if (!record?.ref) return null;
+      // Address-ownership gate: the address is bound to a session, and a foreign one
+      // writes nothing for it.
+      const held = foreignSession(home, task, addr, session);
+      if (held) {
+        sayForeignWrite(home, task, addr, held, session, 'contact-point handoff');
+        return false;
+      }
+      const turns = (Number(record.turns) || 0) + 1;
+      patchSession(record.ref, { turns, last: { endedAt: new Date().toISOString(), session } }, env);
+      const at = wakeAddressOf(home, task, addr);
+      return writeWake(home, at.task, at.address, { socket: `${file}#${turns}`, token: null, session });
+    });
   } catch {
     // The safety net must not drop a bus-tool call or the loop guard.
     return null;
@@ -475,7 +491,7 @@ export async function activate(target: ActivationTarget, notification: Notificat
   if (!sent.ok) return { ok: false, error: sent.error };
   // Injection mark — the window where the turn has started and the transcript is still silent
   // (`turnState`). The window closes itself on the first transcript line.
-  patchSession(ref, { injectedAt: new Date().toISOString() });
+  if (!markInjected(record)) return { ok: false, error: 'Cursor activation changed its exact native generation before activity publication' };
   return { ok: true };
 }
 
@@ -646,8 +662,10 @@ async function spawn(plan: LibLaunchPlan, {
   const sessionDir = plan.cwd ?? cwd;
   const configDir = plan.configDir ?? sessionDir;
   if (configDir !== cwd) initGit(configDir);
-  approveOwnServer(bin, configDir, env);
-  writeSession({
+  const launchId = plan.service?.launchId ?? plan.launchId ?? randomUUID();
+  const locked = <T>(fn: () => T): T => taskExists(runtimeHome, runtimeTask) ? withTaskLock(runtimeHome, runtimeTask, fn) : fn();
+  locked(() => writeSession({
+    launchId,
     ref,
     cwd: sessionDir,
     bin,
@@ -679,41 +697,222 @@ async function spawn(plan: LibLaunchPlan, {
     // Lift argv is laid in the record: a human sees what the session was lifted with,
     // and cleanup sees what to stop.
     argv: plan.argv,
-  }, env);
+  }, env));
   const undo = bindBeforeLaunch(runtimeHome, runtimeTask, runtimeAddress, plan.prelaunchBinding);
-  let lifted;
+  const recordFile = sessionFile(ref, env);
+  const publishOwned = (patch: Partial<CursorSessionRecord>, version: RecordVersion) => locked(() => {
+    const current = readSession(ref, env);
+    const owner = taskExists(runtimeHome, runtimeTask) ? participantOf(readTask(runtimeHome, runtimeTask), runtimeAddress) : null;
+    if (!current || current.ref !== ref || current.launchId !== launchId || current.home !== runtimeHome || current.task !== runtimeTask
+      || current.address !== runtimeAddress || !sameRecordVersion(version)
+      || (owner && (owner.harness !== CURSOR || owner.sessionRef !== ref || owner.metadata.sessionRecord !== recordFile
+        || (owner.metadata.nativeLaunchId !== undefined && owner.metadata.nativeLaunchId !== launchId)))) {
+      throw new GateError('Cursor native creation/publication changed its exact owner generation');
+    }
+    writeSession({ ...current, ...patch }, env);
+  });
+  let lifted: Awaited<ReturnType<typeof liftSession>> | null = null;
+  let nativeBin = bin, nativeArgv = plan.argv, nativeCwd = sessionDir, creationIssued = false, admitted = !plan.service;
+  let launchEnv: NodeJS.ProcessEnv = { ...sessionEnv(env), [SESSION_ENV_VAR]: recordFile };
+  let nativeId: string | null = null;
+  let acceptSession: Parameters<typeof liftSession>[0]['acceptSession'];
   try {
+    await plan.service?.beforeStart(sessionFile(ref, env));
+    approveOwnServer(bin, configDir, env);
+    if (plan.service) {
+      const selected = wouldResolve(bin, launchEnv, sessionDir);
+      if (!selected) throw new GateError('Cursor managed launch has no selected native wrapper');
+      const launcher = recordVersion(realpathSync(selected)), directory = path.dirname(launcher.file);
+      const wrapper = readFileSync(launcher.file, 'utf8');
+      if (!wrapper.includes('NODE_BIN="$SCRIPT_DIR/node"') || !wrapper.includes('exec -a "$0" "$NODE_BIN" "$SCRIPT_DIR/index.js" "$@"')) {
+        throw new GateError('Cursor managed launch requires its approved bundled runtime entry');
+      }
+      const executable = recordVersion(realpathSync(path.join(directory, 'node'))), bundle = recordVersion(realpathSync(path.join(directory, 'index.js')));
+      const configured = launchEnv.CURSOR_CONFIG_DIR?.trim() ? launchEnv.CURSOR_CONFIG_DIR
+        : launchEnv.XDG_CONFIG_HOME?.trim() ? path.join(launchEnv.XDG_CONFIG_HOME, 'cursor')
+        : launchEnv.HOME ? path.join(launchEnv.HOME, '.cursor') : null;
+      if (!configured || !path.isAbsolute(configured)) throw new GateError('Cursor managed launch requires its actual absolute native configuration root');
+      const nativeRoot = realpathSync(configured);
+      launchEnv = { ...launchEnv, CURSOR_CONFIG_DIR: nativeRoot };
+      nativeBin = launcher.file; nativeCwd = realpathSync(sessionDir);
+      const command = { launcher, executable, bundle, cwd: nativeCwd, argv: ['create-chat'], nativeEnvironment: { CURSOR_CONFIG_DIR: nativeRoot } };
+      publishOwned({ nativeCommand: command, nativeCreationPending: { command: 'create-chat' } }, recordVersion(recordFile));
+      const creatorVersion = recordVersion(recordFile);
+      creationIssued = true;
+      const created = run(nativeBin, ['create-chat'], { cwd: nativeCwd, env: launchEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      const id = typeof created.stdout === 'string' ? created.stdout.trim() : null;
+      if (created.error || created.status !== 0 || typeof id !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id)
+        || !sameRecordVersion(launcher) || !sameRecordVersion(executable) || !sameRecordVersion(bundle)) {
+        throw new GateError('Cursor create-chat did not confirm its actual owned native ID/image');
+      }
+      nativeId = id;
+      nativeArgv = ['persist', '--resume', id, ...plan.argv.slice(1)];
+      plan.argv = nativeArgv;
+      const persistedCommand = { ...command, argv: nativeArgv };
+      const creatorEvidence = { kind: 'cursor-create-chat', nativeId: id, launcher, cwd: nativeCwd, exitCode: created.status };
+      publishOwned({ chatId: id, argv: nativeArgv, nativeCommand: persistedCommand, nativeCreationPending: undefined,
+        nativeCreationEvidence: creatorEvidence,
+        nativeAdmissionUnknown: { harness: 'cursor', nativeId: id, reason: 'active pane/hook/durable native database proof is pending' } }, creatorVersion);
+      acceptSession = async observed => {
+        const version = recordVersion(recordFile), current = readSession(ref, env);
+        const owner = taskExists(runtimeHome, runtimeTask) ? participantOf(readTask(runtimeHome, runtimeTask), runtimeAddress) : null;
+        if (observed.chatId !== nativeId || !observed.panePid || !current || !recordOf(current.nativeStartEvidence)
+          || current.nativeStartEvidence.harness !== 'cursor' || current.nativeStartEvidence.nativeId !== nativeId) return false;
+        if (!isDeepStrictEqual(current.nativeCommand, persistedCommand) || !isDeepStrictEqual(current.nativeCreationEvidence, creatorEvidence)) {
+          throw new GateError('Cursor native command or creator changed before active publication');
+        }
+        const process = processIdentity(observed.panePid);
+        if (!process || !isDeepStrictEqual(current.nativeStartEvidence.process, process)
+          || await processExecutable(process) !== executable.file || !sameRecordVersion(launcher)
+          || !sameRecordVersion(executable) || !sameRecordVersion(bundle)) return false;
+        const file = path.join(nativeRoot, 'chats', createHash('md5').update(path.resolve(nativeCwd)).digest('hex'), nativeId!, 'store.db');
+        try {
+          let walk = nativeRoot;
+          for (const part of path.relative(nativeRoot, file).split(path.sep)) {
+            walk = path.join(walk, part);
+            const entry = lstatSync(walk);
+            if (entry.isSymbolicLink() || (globalThis.process.getuid && entry.uid !== globalThis.process.getuid()) || (entry.mode & 0o022) !== 0) return false;
+          }
+          const database = lstatSync(file);
+          if (!database.isFile() || database.size < 16 || realpathSync(file) !== file) return false;
+          const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+          try {
+            const opened = fstatSync(fd);
+            if (opened.dev !== database.dev || opened.ino !== database.ino) return false;
+            const header = Buffer.alloc(16);
+            if (readSync(fd, header, 0, 16, 0) !== 16 || header.toString('binary') !== 'SQLite format 3\0') return false;
+          } finally { closeSync(fd); }
+          if (!await processHasOpenFile(process, file) || processState(process) !== 'alive') return false;
+          return locked(() => {
+            const publicationVersion = recordVersion(recordFile), latest = readSession(ref, env);
+            const latestOwner = taskExists(runtimeHome, runtimeTask) ? participantOf(readTask(runtimeHome, runtimeTask), runtimeAddress) : null;
+            // A completed turn changes only these observational fields; every admission/owner field stays fenced.
+            if (!latest || !isDeepStrictEqual({ ...current, turns: undefined, last: undefined }, { ...latest, turns: undefined, last: undefined })
+              || !!owner !== !!latestOwner || owner?.id !== latestOwner?.id || owner?.metadata.sessionId !== latestOwner?.metadata.sessionId
+              || owner?.metadata.nativeLaunchId !== latestOwner?.metadata.nativeLaunchId) {
+              throw new GateError('Cursor native creation/publication changed its exact owner generation');
+            }
+            let walk = nativeRoot;
+            for (const part of path.relative(nativeRoot, file).split(path.sep)) {
+              walk = path.join(walk, part);
+              const entry = lstatSync(walk);
+              if (entry.isSymbolicLink() || (globalThis.process.getuid && entry.uid !== globalThis.process.getuid()) || (entry.mode & 0o022) !== 0) return false;
+            }
+            const latestDatabase = lstatSync(file);
+            if (!latestDatabase.isFile() || latestDatabase.dev !== database.dev || latestDatabase.ino !== database.ino
+              || latestDatabase.size < 16 || realpathSync(file) !== file || processState(process) !== 'alive'
+              || !sameRecordVersion(launcher) || !sameRecordVersion(executable) || !sameRecordVersion(bundle)) return false;
+            publishOwned({ nativeAdmission: { harness: 'cursor', nativeStore: file, nativeId, process },
+              nativeAdmissionEvidence: { kind: 'cursor-create-chat', method: 'create-chat', source: 'sessionStart', nativeStore: file, nativeId,
+                process, executable, launcher, bundle }, nativeAdmissionUnknown: undefined }, publicationVersion);
+            return true;
+          });
+        } catch (error) {
+          if (error instanceof GateError || !sameRecordVersion(version)) throw error;
+          return false;
+        }
+      };
+    }
     lifted = await liftSession({
       ref,
-      bin,
-      argv: plan.argv,
-      cwd: sessionDir,
+      bin: nativeBin,
+      argv: nativeArgv,
+      cwd: nativeCwd,
       env,
       // The session mark goes into the session's own environment, and AFTER the strip:
       // `SESSION_ENV_VAR` is in the drop list, so an ancestor's mark would otherwise survive it.
-      launchEnv: { ...sessionEnv(env), [SESSION_ENV_VAR]: sessionFile(ref, env) },
+      launchEnv,
+      ...(acceptSession ? { acceptSession, expectedChatId: nativeId! } : {}),
       task: runtimeTask,
       address: runtimeAddress,
       // The `awaitOptions` wait form is one contract — `{tries, delayMs}`: the seam comes from the
       // caller, and a second form of our own would silently ignore a foreign one.
       ...(awaitOptions ?? {}),
     });
+    const observed = lifted.session;
+    const publishNativeObservation = () => {
+      const version = recordVersion(sessionFile(ref, env));
+      const current = readSession(ref, env);
+      if (current?.ref !== ref || current.home !== runtimeHome || current.task !== runtimeTask || current.address !== runtimeAddress
+        || current.launchId !== launchId) {
+        throw new GateError(`Cursor launch ${ref} changed ownership before native publication`);
+      }
+      const publishObservation = (patch: Partial<CursorSessionRecord>) => {
+        if (!sameRecordVersion(version)) throw new GateError(`Cursor launch ${ref} record changed before native observation publication`);
+        writeSession({ ...current, ...patch }, env);
+      };
+      if (observed) {
+        if (plan.service && (!current.chatId || current.chatId !== observed.chatId)) {
+          publishObservation({ failedNativeObservation: observed });
+          throw lifted!.failure ?? new GateError(`Cursor launch ${ref} did not confirm its observed chat through the owned native hook`);
+        }
+        publishObservation({ sessionName: observed.name, chatId: observed.chatId, panePid: observed.panePid,
+          workspaceHash: observed.hash, launchPane: lifted!.launchPane,
+          ...(!current.nativeAdmission ? { nativeAdmissionUnknown: { harness: 'cursor', nativeId: observed.chatId,
+            reason: 'persist observation does not establish the native account store or captured process birth' } } : {}) });
+      } else publishObservation({ launchPane: lifted!.launchPane });
+    };
+    if (taskExists(runtimeHome, runtimeTask)) withTaskLock(runtimeHome, runtimeTask, publishNativeObservation); else publishNativeObservation();
+    if (!lifted.ok) throw lifted.failure ?? new GateError(`${bin}: persist session did not lift (${lifted.error}) — nothing to lift ${who} with.${launchFailNote}${deadNote}`);
+    const { name, chatId } = observed!;
+    persist(name, 'alive', chatId);
+    if (plan.service) {
+      if (!chatId) throw new GateError('Cursor did not name the actual native chat id for its shared HTTP client');
+      await plan.service.realize(chatId);
+      const client = readPrivate(plan.service.credentialFile);
+      admitted = recordOf(client) && recordOf(client.nativeBinding) && client.nativeBinding.kind === 'cursor'
+        && client.nativeBinding.state === 'bound' && client.nativeBinding.sessionId === chatId;
+      if (!admitted) throw new GateError('Cursor owned native client is still pending; no replacement credential or spawn is permitted');
+    }
+    return { output: `persist session ${name} · chat ${chatId}`, session: name, seen: lifted };
   } catch (error) {
-    undo();
-    dropSession(ref, env);
-    throw error;
+    return revokeFailedManagedLaunch(plan, error, async () => {
+      if (plan.service && creationIssued && !admitted) throw new GateError(`Cursor native creation/admission is unresolved; retained primary record and owned pane: ${recordFile}`);
+      const participantState = () => {
+        const p = taskExists(runtimeHome, runtimeTask) ? participantOf(readTask(runtimeHome, runtimeTask), runtimeAddress) : null;
+        return [p?.harness, p?.sessionRef, p?.metadata.sessionRecord, p?.metadata.nativeLaunchId, p?.metadata.sessionId];
+      };
+      const { current, version, participant } = locked(() => {
+        const version = recordVersion(sessionFile(ref, env)), current = readSession(ref, env);
+        const participant = participantState();
+        if (current?.ref !== ref || current.home !== runtimeHome || current.task !== runtimeTask || current.address !== runtimeAddress
+          || current.launchId !== launchId || !sameRecordVersion(version)
+          || (plan.service && taskExists(runtimeHome, runtimeTask) && (participant[0] !== CURSOR || participant[1] !== ref
+            || participant[2] !== sessionFile(ref, env)))) throw new GateError(`Cursor launch ${ref} changed ownership before cleanup`);
+        return { current, version, participant };
+      });
+      if (lifted?.paneStarted) {
+        const observed = lifted.session;
+        if (!observed || !current.sessionName || !current.chatId || current.chatId !== observed.chatId) {
+          throw new GateError(`Cursor launch ${ref} has no confirmed owned native identity; cleanup is unknown`);
+        }
+        const fresh = readTmuxSessions({ server: current.tmuxServer || CURSOR_TMUX_SERVER, env });
+        if (fresh.missing) throw new GateError(fresh.missing);
+        const native = fresh.sessions!.find(session => session.name === current.sessionName);
+        if (native && (native.chatId !== current.chatId || native.panePid !== current.panePid || native.hash !== current.workspaceHash)) {
+          throw new GateError(`Cursor launch ${ref} native identity changed; no cleanup issued`);
+        }
+        if (native) {
+          const stopped = await stopSession(current, { bin: liveBin(current.bin, { env }), env });
+          if (!stopped.stopped) {
+            const reason = stopped.missing ?? ('said' in stopped ? stopped.said : null) ?? 'stop refused';
+            throw new GateError(`Cursor launch ${ref} did not confirm native cleanup: ${reason}`);
+          }
+        }
+        const after = readTmuxSessions({ server: current.tmuxServer || CURSOR_TMUX_SERVER, env });
+        if (after.missing || after.sessions!.some(session => session.name === current.sessionName)) {
+          throw new GateError(`Cursor launch ${ref} native exit is unknown: ${after.missing ?? 'session still present'}`);
+        }
+      }
+      locked(() => {
+        if (!sameRecordVersion(version) || !isDeepStrictEqual(participantState(), participant)) {
+          throw new GateError(`Cursor launch ${ref} changed ownership during native cleanup; replacement retained`);
+        }
+        undo();
+        dropSession(ref, env);
+      });
+    });
   }
-  if (!lifted.ok) {
-    undo();
-    dropSession(ref, env);
-    fail(`${bin}: persist session did not lift (${lifted.error}) — nothing to lift ${who} with.${launchFailNote}${deadNote}`);
-  }
-  const { name, chatId, panePid } = lifted.session!;
-  patchSession(ref, { sessionName: name, chatId, panePid }, env);
-  // The record carries the persist session NAME for a person — `attach` and `stop` use it. The full
-  // id is the chat: the turn-end hook brings the same one, and address ownership checks against it.
-  persist(name, 'alive', chatId);
-  return { output: `persist session ${name} · chat ${chatId}`, session: name, seen: lifted };
 }
 
 /** Binary path as of NOW. Lift pins the version by resolving the symlink, but the binary updates
@@ -846,6 +1045,7 @@ export const cursorDriver = {
   // different lifetime, so it lives in its own module. The tool name is handed to it, not repeated.
   availability: cursorAvailability(CURSOR_TOOL),
   prepare,
+  replaceMcpServers,
   normalizeTool,
   spawn,
   saidLiftoff,

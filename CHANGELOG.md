@@ -9,18 +9,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add explicit standalone root-profile planning with native helper references, pending process-owned admission, kernel executable checks and concrete-ID recovery transitions. This adds `approveStandaloneRootProfile` and its public types to the integration entry, plus explicit same-process `service preflight` recovery that retains uncertain mutation receipts.
+
+- Add an approved BB Codex profile preflight and one-shot POSIX `promptobus-root` handoff, with a pure dry-run and no permanent Node proxy. The helper and ordered native hook retain root authorization; shell PID and environment do not issue a capability. A supplied root descriptor optionally selects that single start hook in the pure install plan, while the consumer retains native MCP configuration ownership.
+- Ship the owner-only `promptobus-bb-root` profile preparation command with exact project/environment validation, bounded prompt input and owned HTTP/hook files. Ordinary BB creation through this entry remains blocked: no public provider-owned effective Codex home/launch-context proof is available before creation. Return exit 2 with `ready:false`, `reason:"provider-context-unavailable"` and `creation:"notAttempted"` before a native trust probe or creation callback, without an approve-probe-home instruction. Retain existing library-owned creation records and trusted consumer callback/CAS routes unchanged.
+
+- Bind managed native SessionStart payloads before the ordinary loop guard, keeping deferred owners pending until their actual task publication.
+
+- Coordinate private pending HTTP grants for every native harness, with scoped root environment snapshots, owned launch barriers and separate credentials for additional task connections. Generated configs carry native environment references instead of bearer bytes.
+
 - Add private owner transactions for explicitly approved native root profiles and managed BB launch exclusion. One canonical workspace/store lock covers complete owner lookup, root realization and intent publication; unresolved intents retain their block after crashes, and completed BB thread exclusions are permanent. Native guard, BB SDK wiring and profile activation remain separate integration work.
 - Add `service ensure`, `service status` and `service stop` for a shared workspace HTTP owner, with separate bus and reviewer-file connections, scoped client credentials, retained endpoint recovery and idle shutdown. Consumer CLI entries provide `createHost({ cwd, env })` when routing the internal `service run` command. Managed harness configuration follows separately.
 - Allow private owner-created Codex HTTP grants to remain pending through initialization and discovery, then bind once to an owner-established native thread. Bus and reviewer-file calls require matching actual thread metadata before dispatch or saved mutation replay; revoked or replaced grants cannot recover authority through a deferred Host factory. Native eligibility and launch activation remain owner responsibilities.
 
 ### Changed
 
-- Admit the BB 0.48.0 / Plugin SDK 0.6.94 integration profile and read Git through the bundled Git plugin's public RPC, preserving revision-bound patches, cancellation and the two-read snapshot checks. Historical live observations retain their original profiles; current type and fixture checks do not establish live lifecycle behavior.
+- Publish managed OpenCode creation from its controlled filesystem database and own serve response, and Cursor creation from its owned create-chat response, asynchronous hook/pane and durable SQLite descriptor. Preserve pending clients and unknown primary records instead of replacing credentials or deleting unresolved native state.
+
+- Publish managed Claude first native admission from its actual startup hook, owned command/account directory and current native process image/birth. Keep actual-ID publication separate from tool admission; missing proof retains unresolved state.
+
+- Require current-version captured native bindings for managed Codex resume. Remove birthless legacy adoption without rewriting old records, native history or account state.
+- Validate owned OpenCode database/create-response and Cursor creator/hook/pane/SQLite proof for first managed binding. Require current file-descriptor evidence for Cursor durable storage and recheck native lifetime after the admission-lock wait.
+
+- Consume managed Claude owned startup/command/store/process proof for first admission. Preserve the original approved BB profile revision across readiness and native preflight, rejecting replacement before callback invocation or grant realization.
+
+- Select version-2 native/root admission state without legacy migration or historical refresh. Unknown concrete resume IDs and birthless old managed records refuse; first standalone admission requires exact approved NEW dispatch plus actual native proof, while ordinary BB creation uses an optional trusted callback on existing profile approval with SDK spawn outside the owner lock, CAS binding and retained early-hook preflight. Known new bindings retain death, generation and mutation-outcome fences.
+- Keep the BB managed admission bridge limited to owner scope, launch intent and completion. Drop the unreleased historical refresh API; new-state initialization never proves fresh native genesis or empty account history.
+
+- Finalize managed HTTP credentials on actual participant launches after the final plan rebuild, preserving native identity, external MCP entries and tool denials. Publish owned native-start binding through the private registry without turn-end wake effects; retain actual owner creation and separate root-task grants.
+
+- Admit the BB 0.48.1 / Plugin SDK 0.6.104 integration profile and read Git through the bundled Git plugin's public RPC, preserving revision-bound patches, cancellation and the two-read snapshot checks. Historical live observations retain their original profiles; current type and fixture checks do not establish live lifecycle behavior.
 - Run task warden loops in one Worker inside the shared workspace process, retaining separate task seats, native ownership and journal recovery. Background provider inspection uses the bound common account context and leaves HTTP/root process checks responsive. New task demands survive completion of the previous generation; replacement waits for its cleanup.
 - Compile all maintained runtime and CLI source with strict TypeScript after the core build, including executable CLI output from a fresh checkout. Package entry names and emitted JavaScript paths stay the same; the tarball contains runtime JavaScript and declarations without authored TypeScript. Tests and development scripts remain JavaScript.
 - Run CI tests with the job-owned temporary directory, matching the explicit fixture-root conditions used for local acceptance. Product root-alias handling remains a separate compatibility boundary.
 
 ### Fixed
+
+- Admit standalone Codex exec sessions with their actual `exec` SessionMeta source, matching each new source to its exact approved command while retaining known resume and editor exclusions.
+- Keep a fresh standalone Claude root pending when its startup hook arrives before the session transcript exists, then realize it on the first authenticated tool call after the owned same-ID transcript appears. The captured candidate grants discovery only and never extends the original preflight deadline for an unobserved launch.
+- Preserve the approved owner's default Claude account route in standalone root plans, pinning its home and removing actor account overrides while retaining explicit and custom store selection.
+- Retain exact pending managed launch credentials until native discovery can establish their lifetime, while retiring replaced launch tuples. Keep deferred Claude handovers behind their captured participant and preserve identical startup evidence across repeated hooks.
+- Keep Cursor turn-state observation read-only so transcript discovery cannot invalidate the native ownership revision being checked.
+- Preserve completed-turn wake metadata during Cursor native admission under the task lock, while refusing changes to native proof or participant ownership.
+- Keep Cursor activation grace in a generation-bound activity sidecar so delivery completion cannot invalidate a fast turn's HTTP ownership proof.
+- Serialize standalone start-hook observation and publication so concurrent copies of the same hook retain idempotent binding without weakening native identity checks.
+- Acknowledge authenticated standalone client revocation when the exact credential file has already been removed by owner cleanup, while retaining refusal for malformed files and symlinks.
+- Resolve standalone HTTP headers through the verified current native launch when Codex filters the launcher's custom environment, preserving explicit-reference refusal and native admission guards.
 
 - Route every durable task-demand write failure through the shared Worker's fatal close path. Publish coordinator memory only after persistence returns, retain possibly committed intent without rollback, and recover its actual generation instead of scheduling rejected memory-only work.
 - Await all Cursor Stop observations and the named tmux fallback within the original remaining allowance, fencing registry revision across awaits. Expired or unconfirmed observation/fallback retains recovery state without a later mutation; post-confirmation reaping remains a separate residual.
@@ -32,6 +66,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Give normal mixed cleanup one shared 5s native Stop allowance and start both Stops before awaiting either. A signal reuses already-started Stops. Preserve its owned sandbox and participant home after unconfirmed cleanup, including process exit and the next automatic sweep; native and service failures are retained together.
 - Refuse Cursor Stop when fresh native name/chat/PID/workspace identity differs from its recorded binding, including replacement during asynchronous process preflight or before the named fallback kill. An unreadable or changed binding retains the record.
 - Keep both native participant stop attempts independent of shared-service inspection during mixed-run abort cleanup, share one service-close outcome and retain the sandbox when a signal interrupts normal closure, and use the declared external mechanism root for the owned service fixture and CLI alike. Arm cleanup before cold service startup and deliver a queued signal before the first native lift.
+- Pin the BB runtime schema dependency to patched Zod 4.6.6, including the compatible SDK dependency graph.
+- Lock development schema tooling to the patched fast-uri 3.1.9 transitive dependency, correcting URI normalization advisories.
+- Refuse nonprimitive enum values in retained native admission and mutation receipts, preserving corrupt evidence instead of coercing it into valid authority state.
+
+- Preserve missing, null or ambiguous initialized native history as unknown instead of creating an empty owner. Separate equal native IDs in proved distinct stores, and require comparable versioned process observations for captured-lifetime exit and reclamation; earlier unreleased candidate birth layouts remain retained and refuse admission with new-session/recreate guidance.
+
+- Let a standalone library call given a root cold-start the package-owned CLI with its manifest version. The default launcher no longer treats the Node executable as a JavaScript entry.
+
+- Refuse complete BB root lookup when another inventoried Codex thread has no latest identity. Route Cursor sessionStart through start handling after native binding, without advancing its turn.
+- Recognize a positively observed exited zombie in synchronous and asynchronous service lifetime checks. Unavailable process observations remain unknown; native Stop and descendant drain still require their own proof.
 - Preserve the registry element type in `driverFor`, so public driver declarations expose their options without requiring or promising full driver operations. Accept `null` as an unread `HostToolBin.version` alongside strings and omission. These declaration corrections leave runtime values and lookup behavior unchanged.
 - Serialize shared service lock acquisition and release through the same short core gate, so release cannot erase owner proof during a contender's read. Preserve synchronous release, replacement generations and refusal of genuinely missing or corrupt proof.
 - Make startup verification wait for listener readiness and require durable Stop confirmation before certifying fixture cleanup.
@@ -61,8 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing; `--yes` applies the preview. The preview's delete line names that closed
   task (`done --task <id> --older-than <days> --yes`). Without the flag, `done` still
   removes journals closed more than 14 days ago. The `prune` command is gone.
-- Keep generated consumed Codex schema contracts for the minimum and proven versions. The 0.164.0 contract comes from the installed binary, the 0.158.0 contract from its historical capture. `npm run codex-schema` compares the installed generator's consumed output with the committed contract; dated live evidence keeps its versioned paths.
-- Record live worker, reviewer and approver SessionStart and Stop hooks on that binary, plus a hidden-model turn, MCP child environment and a rate-limit notification carrying a window duration. The request-missing fallback remains unmeasured.
+- Keep generated consumed Codex schema contracts for the minimum and proven versions. The 0.166.0 contract comes from the installed binary, the 0.158.0 contract from its historical capture. Detached review delivery is removed; the finite inline witness remains valid. `npm run codex-schema` compares the installed generator's consumed output with the committed contract; dated live evidence keeps its versioned paths.
+- Record live worker, reviewer and approver SessionStart and Stop hooks on codex-cli 0.164.0, plus a hidden-model turn, MCP child environment and a rate-limit notification carrying a window duration. The request-missing fallback remains unmeasured.
 - Refuse a repository path that resolves outside the install root before spawn
   turns it into a namespace path. The refusal names that location and the
   install root. `resolveRepo`, `inWorkspace` and `cloneOf` share one comparison

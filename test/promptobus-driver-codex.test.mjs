@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { check, skip } from './check.mjs';
 import { processProbe } from './process-probe.mjs';
 import Ajv from 'ajv';
-import { listenTestSocket, makeSandbox, writeHostConfig } from './sandbox.mjs';
+import { listenTestSocket, makeSandbox, ownedServiceFixture, writeHostConfig } from './sandbox.mjs';
 import { buildWorkspace, cli, store } from './scenario.mjs';
 import {
   APPROVAL_VAR, CODEX_HOME_VAR, CURRENT_TIME_VAR, ELICIT_HANG_VAR, ELICIT_OVERLAP_VAR, ELICIT_TOOL_LATE, ELICIT_TOOL_VAR, ELICIT_VAR, FAIL_TURN_VAR, FIRST_DELAY_VAR,
@@ -874,7 +874,7 @@ const previousCodexHome = process.env.PROMPTOBUS_CODEX_HOME;
 delete process.env.PROMPTOBUS_CODEX_HOME;
 bindHarnessHomes({ harnessStateHome: (harness) => harness === 'codex' ? hostSessionsHome : null });
 check(': Codex sessions phrase follows the host-selected registry home',
-  PHRASES.sessions === `participant threads — ${path.join(hostSessionsHome, 'sessions')}`,
+  PHRASES.sessions === `participant threads — ${path.join(store.canonicalPath(hostSessionsHome), 'sessions')}`,
   PHRASES.sessions);
 bindHarnessHomes(null);
 check(': without a host home, Codex sessions phrase names its source',
@@ -1716,8 +1716,8 @@ const appThread = await awaitThread(record?.threadId);
 check('PB-161: the holder app-server runs in the participant home, not the caller CODEX_HOME',
   appThread?.appServerEnv?.CODEX_HOME === participantHome
     && appThread?.appServerEnv?.CODEX_HOME !== callerCodexHome
-    && record?.codexHome === participantHome
-    && appThread?.appServerEnv?.PROMPTOBUS_CODEX_HOME === stateHome,
+    && record?.codexHome === realpathSync(participantHome)
+    && appThread?.appServerEnv?.PROMPTOBUS_CODEX_HOME === realpathSync(stateHome),
   JSON.stringify({ env: appThread?.appServerEnv ?? null, record: record?.codexHome, want: participantHome }));
 
 // What the app-server found in that home at `thread/start`: the mechanism's MCP
@@ -1868,13 +1868,16 @@ writeSession({
   argv: ['app-server', '--stdio'],
   turns: 0,
 }, env);
-startHolder(unknownModelRef, env);
+const unknownModelHolder = startHolder(unknownModelRef, env);
 const unknownModelReady = await waitReady(unknownModelRef, env, 20000);
 check('PB-187.2: a lift naming a model the stand does not list at all is still refused',
   unknownModelReady.ok === false
     && /model «ghost-model-not-on-account» is unknown to app-server \(model\/list\)/.test(unknownModelReady.error ?? ''),
   JSON.stringify({ ready: unknownModelReady }));
-await reapHolder(unknownModelRef, env);
+const unknownModelNative = readSession(unknownModelRef, env);
+if (!await waitFor(() => !pidAlive(unknownModelHolder.pid) && !pidAlive(unknownModelNative?.appPid), { timeoutMs: 10000 })) {
+  throw new Error('Unknown-model fixture did not finish its owned failure exit');
+}
 dropSession(unknownModelRef, env);
 
 const SECOND_TITLE = 'Second Codex named slice';
@@ -2012,8 +2015,12 @@ const queued = await codexDriver.activate({ ref }, {
   kind: 'unread', task: TASK, address: WORKER, unread: 2,
   messages: [{ type: 'task', from: 'orchestrator', ts: 'now', body: 'steer' }],
 });
+let queuedFailureLog = '';
+if (!queued.ok) {
+  try { queuedFailureLog = readFileSync(holderLogFile(ref, env), 'utf8').slice(-5000); } catch { /* retained raw names the missing holder */ }
+}
 check('step 4: activate during a turn queues a later turn, not a refusal',
-  queued.ok === true, JSON.stringify(queued));
+  queued.ok === true, JSON.stringify({ queued, holderLog: queuedFailureLog }));
 
 const secondSent = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
   .find((m) => String(m.body ?? '').includes(STEERED)) ?? null, { timeoutMs: 20000 });
@@ -2094,11 +2101,12 @@ check('PB-161.2: the trust record names the reviewer directory, never the tree u
     && /trust_level = "trusted"/.test(revThread.codexHome.config),
   JSON.stringify({ dir: revThread?.codexHome?.dir, config: String(revThread?.codexHome?.config).slice(-300), timedOut: revThread?.__timedOut }));
 
-check('reviewer thread disables execution and carries a bounded local file reader',
+const reviewerFiles = parseHomeToml(revThread?.codexHome?.config).mcp_servers?.[codexMcpName('reviewer_files', PREFIX)];
+check('reviewer thread disables execution and carries its own bounded HTTP file reader',
   revThread?.config?.['features.shell_tool'] === false
     && revThread?.config?.['features.unified_exec'] === false
-    && revThread?.codexHome?.config.includes('reviewer-files.js')
-    && revThread.codexHome.config.includes('PROMPTOBUS_REVIEW_READ_ROOTS'),
+    && /^http:\/\/127\.0\.0\.1:\d+\/mcp\/reviewer_files$/.test(reviewerFiles?.url ?? '')
+    && reviewerFiles.bearer_token_env_var === 'PROMPTOBUS_CLIENT_TOKEN' && reviewerFiles.command === undefined,
   JSON.stringify({ config: revThread?.config, home: revThread?.codexHome?.config?.slice(-700) }));
 
 // Read the way the binary reads it: without the key, codex_apps and its account write tools
@@ -2594,10 +2602,12 @@ const started = (() => {
 })();
 const busKey = codexMcpName('promptobus', PREFIX);
 const httpKey = codexMcpName('probe-http', PREFIX);
-check('PB-161: in the home config the url-server is in url form, the bus in stdio form',
+check('PB-161: the home config preserves the url-server fields and the owned HTTP bus descriptor',
   Object.keys(started[httpKey] ?? {}).sort().join(',') === 'bearer_token_env_var,disabled_tools,env_http_headers,http_headers,url'
   && started[httpKey].http_headers.api_key === 'PROBE-TOKEN'
-  && Object.keys(started[busKey] ?? {}).sort().join(',') === 'args,command,env',
+  && Object.keys(started[busKey] ?? {}).sort().join(',') === 'bearer_token_env_var,url'
+  && started[busKey].bearer_token_env_var === 'PROMPTOBUS_CLIENT_TOKEN'
+  && /^http:\/\/127\.0\.0\.1:\d+\/mcp\/bus$/.test(started[busKey].url),
   JSON.stringify(started));
 check(': the private-home config read at thread/start retains HTTP auth references and disabled tools',
   started[httpKey]?.bearer_token_env_var === 'CODEX_MCP_TOKEN_REF'
@@ -2697,13 +2707,14 @@ planParticipant(HARNESS, 'worker:reap', {
 // holder is logging inside the window the watch has yet to close.
 const reapHome = path.join(SB, 'reap-state');
 const reapEnv = { ...env, PROMPTOBUS_CODEX_HOME: reapHome, [PROBE_VAR]: 'stderr-loop' };
+ownedServiceFixture(reapEnv);
 const reapUp = cli(['spawn', '--repo', repo, '--brief', brief, '--task', TASK,
   '--worker', 'reap', '--harness', 'codex'], { cwd: ws, env: reapEnv });
 const reapRef = store.participantOf(store.readTask(home, TASK), 'worker:reap')?.sessionRef;
 const reapRec = readSession(reapRef ?? '', reapEnv);
 check(': the participant whose registry is about to go is up, with a holder and an app-server',
   reapUp.status === 0 && pidAlive(reapRec?.holderPid) && pidAlive(reapRec?.appPid),
-  `${reapUp.status} · holder ${reapRec?.holderPid} app ${reapRec?.appPid}`);
+  `${reapUp.status} · holder ${reapRec?.holderPid} app ${reapRec?.appPid} · ${reapUp.out}`);
 
 rmSync(reapHome, { recursive: true, force: true });
 const reaped = await waitFor(() => !pidAlive(reapRec?.holderPid) && !pidAlive(reapRec?.appPid),

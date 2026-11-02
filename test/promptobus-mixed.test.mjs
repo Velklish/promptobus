@@ -36,7 +36,7 @@
 // **The file runs in a serial runner group** — for the same reason as its stub-Claude
 // twin: the knock loop runs between processes over real sockets and tmux panes, and under
 // pool load those thresholds either go red on working code or go green on nothing.
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { check, skip } from './check.mjs';
 import { listenTestSocket, makeSandbox, makeSockPath, writeHostConfig } from './sandbox.mjs';
@@ -75,7 +75,7 @@ check('live-mixed reviewer matcher finds a reviewer result sent through the v1 s
 const binDir = path.join(SB, 'bin');
 // The stand homes are created by the stands themselves and OUTSIDE the file sandbox:
 // the sandbox hook removes its directory before the stand has time to kill its processes.
-const cursorHarness = await cursorStub.installHarness({ binDir });
+const cursorHarness = await cursorStub.installHarness({ binDir, bundledRuntime: true });
 const codexHarness = await codexStub.installHarness({ binDir });
 
 // The caller prepares the workspace: `--harness` refuses a tool that is not in
@@ -211,7 +211,10 @@ check('both stub stands played turns of one loop — worker with the agent binar
 // all its doors, and it is diverted the same way the live run diverts it. Checking
 // mtime of `~/.cursor` would be illegal — a live human session running beside us writes
 // there, and the verdict would go red from it.
-const inside = (p, home) => String(p).startsWith(String(home));
+const inside = (p, home) => {
+  const relative = path.relative(realpathSync(home), realpathSync(p));
+  return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
+};
 check('both harness homes were diverted into the stand sandboxes — the run did not write to the human home',
   inside(cursorSession.cursorStateHome(), cursorHarness.home)
   && inside(cursorSession.cursorUserHome(), cursorHarness.home)

@@ -277,7 +277,9 @@ let codexStateBeforeCleanup = [];
 // there is nothing to copy at all: it is copied at once, while it is alive.
 function rememberTranscript() {
   try {
-    const from = workerRef ? cursorPersist.transcriptOf(cursorPersist.readSession(workerRef) ?? {}) : null;
+    const record = workerRef ? cursorPersist.readSession(workerRef) : null;
+    const from = record?.transcript && existsSync(record.transcript)
+      ? record.transcript : cursorPersist.findTranscript(record?.chatId);
     if (from) transcriptPath = from;
   } catch {
     // No session record — the transcript path cannot be restored, that does not cancel the run.

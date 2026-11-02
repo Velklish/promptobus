@@ -69,7 +69,8 @@ stand: {
 
   const again = spawnWorker('relift');
   check('stand: the relift succeeds, and the stub --bg ignored --session-id with the warning 2.1.284 prints',
-    again.status === 0 && again.out.includes(BG_SESSION_ID_WARNING), again.out.slice(-600));
+    again.status === 0 && again.out.includes(BG_SESSION_ID_WARNING), JSON.stringify({ output: again.out, trace: readTrace(HARNESS, WORKER),
+      sessions: harnessSessions(HARNESS).map(session => ({ ...session, log: readLog(HARNESS, session.id, 20) })) }));
   const s2 = liveSession(WORKER);
   const sent = cli(['send', WORKER, '--task', TASK, '--type', 'task', '--body', 'mail after the relift'],
     { cwd: ws, env: orchEnv });
@@ -91,8 +92,8 @@ stand: {
   check('relift: the contact point names the new session',
     store.readWake(HOME, TASK, WORKER)?.session === s2?.sessionId, JSON.stringify(store.readWake(HOME, TASK, WORKER)));
   const before = notesOf(WORKER, s2?.id, 'wake-before-handshake')[0];
-  check('relift: the dead session\'s contact point was gone before the new session\'s handshake',
-    !!before && before.held === null, JSON.stringify(before));
+  check('relift: verified SessionStart replaced the dead contact before the HTTP handshake',
+    !!before && before.held === s2?.sessionId, JSON.stringify(before));
 
   // Past the spawn grace a point held by another session reads as a deaf channel; the stand
   // moves `started` back rather than wait out the grace.
@@ -107,7 +108,8 @@ stand: {
   const noid = spawnWorker('noid');
   const s3 = liveSession(NOID);
   check('no-id harness: the lift succeeds when claude agents names no session id',
-    noid.status === 0 && !!s3, noid.out.slice(-600));
+    noid.status === 0 && !!s3, JSON.stringify({ output: noid.out, trace: readTrace(HARNESS, NOID),
+      sessions: harnessSessions(HARNESS).map(session => ({ ...session, log: readLog(HARNESS, session.id, 20) })) }));
   check('no-id harness: the record is bound to the session\'s own id from its handshake',
     !!s3?.sessionId && recordOf(NOID)?.metadata?.sessionId === s3.sessionId
     && store.readWake(HOME, TASK, NOID)?.session === s3.sessionId,

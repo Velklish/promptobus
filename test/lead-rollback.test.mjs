@@ -19,12 +19,13 @@ const host = hostOf(root);
 const brief = path.join(root, 'brief.md');
 writeFileSync(brief, '# Protected launch\nPreserve another launch on rollback.\n');
 const plan = await planLead(host, { brief, task: 'lead-rollback-t20261001-000001', permissionMode: 'full-access' });
-let replacement, refused = '';
+let original, replacement, refused = '';
 try {
   await codexDriver.spawn(plan.launch, { tool: { ok: true, bin: 'codex', version: '0.159.2' },
     host, home: host.promptobusHome(), task: plan.task, address: 'orchestrator', cwd: root,
     env, ref: plan.name, role: 'orchestrator', persist: () => {
-      replacement = { ...readSession(plan.name, env), launchId: 'replacement-launch', prompt: 'Different authorized assignment' };
+      original = readSession(plan.name, env);
+      replacement = { ...original, launchId: 'replacement-launch', prompt: 'Different authorized assignment' };
       writeSession(replacement, env);
       throw new Error('controlled binding failure');
     },
@@ -37,6 +38,9 @@ check('failed original binding cannot remove or restore a replacement launch rec
   && pidAlive(replacement.holderPid) && pidAlive(replacement.appPid), refused);
 check('replacement launch credentials remain intact after another launch rollback',
   readFileSync(path.join(replacement.codexHome, 'auth.json'), 'utf8') === '{"stub":"credentials"}');
+if (JSON.stringify(readSession(plan.name, env)) !== JSON.stringify(replacement)) throw new Error('Owned rollback fixture changed before teardown');
+// Reconcile only this synthetic replacement after assertions; the live holder still owns the original launch.
+writeSession(original, env);
 await reapHolder(plan.name, env);
 await codexDriver.stop(plan.name);
 harness.restore();

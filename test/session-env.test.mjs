@@ -44,6 +44,15 @@ const drivers = {
   opencode: (await lib('driver-opencode.js')).opencodeDriver,
 };
 
+for (const [name, driver] of Object.entries(drivers)) {
+  test(`${name}: a managed child drops every root launch key and retains the private owner bootstrap reference`, () => {
+    const output = driver.sessionEnv({ PROMPTOBUS_ROOT_LAUNCH_FILE: '/private/root-launch', PROMPTOBUS_ROOT_PROFILE: 'parent-profile',
+      PROMPTOBUS_OWNER_ENV_FILE: '/private/owner-environment' }, { PROMPTOBUS_ROOT_FUTURE_KEY: 'caller-root-only' });
+    assert.deepEqual(Object.keys(output).filter(key => key.startsWith('PROMPTOBUS_ROOT_')), []);
+    assert.equal(output.PROMPTOBUS_OWNER_ENV_FILE, '/private/owner-environment');
+  });
+}
+
 const OPENCODE_PARENT = {
   PROMPTOBUS_OPENCODE_SESSION: '/parent/opencode-session.json',
   OPENCODE_SERVER_PASSWORD: 'PARENT-PASSWORD',

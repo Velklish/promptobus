@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { chmodSync, readFileSync, readdirSync, realpathSync, rmSync } from 'node:fs';
+import { chmodSync, lstatSync, readFileSync, readdirSync, realpathSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import type { ParticipantV1, PromptobusHost, SessionSnapshot } from '../dist/index.js';
@@ -24,24 +24,34 @@ import {
   recordOf, recordVersion, requireProcess, runtimeIdentity, processStateAsync, sameRecordVersion, servicePaths, writePrivate,
 } from './service-state.js';
 import type { ProcessIdentity, RecordVersion, ServiceDiscovery, ServicePaths } from './service-state.js';
+import { claimStandaloneIdentity, claudeStartupTranscript, prepareStandaloneResume, requireStartupCandidateFence, publishStandaloneClient, requireStandaloneRoot, revokeStandaloneRoot,
+  readStandaloneLaunch, readStandaloneProfile, standaloneClientRevoked, standaloneExpired, standaloneReference } from './standalone-root-state.js';
+import type { StandaloneRootReference } from './standalone-root-state.js';
+import { nativeStoreForServiceClient, requireKnownNativeOutcomes, requireManagedNativeBinding, reserveManagedNativeIdentity, standaloneBindingForRecovery } from './native-admission.js';
 
 export type ServiceHostFactory = (context: { cwd: string; env: Readonly<NodeJS.ProcessEnv> }) => PromptobusHost | Promise<PromptobusHost>;
 export type ServiceClientLifetime =
   | { kind: 'reservation'; expiresAt: number }
   | { kind: 'process'; process: ProcessIdentity }
   | { kind: 'managed'; task: string; address: string; ref: string; launchId: string; record: string };
+export type ServiceNativeHarness = 'claude' | 'cursor' | 'codex' | 'opencode';
 export type ServiceNativeBinding =
-  | { kind: 'codex'; state: 'pending' }
-  | { kind: 'codex'; state: 'bound'; threadId: string };
+  | { kind: ServiceNativeHarness; state: 'pending' }
+  | { kind: 'codex'; state: 'bound'; threadId: string }
+  | { kind: Exclude<ServiceNativeHarness, 'codex'>; state: 'bound'; sessionId: string };
 export interface ServiceClientInput {
   cwd: string; env: NodeJS.ProcessEnv; pollEnv?: NodeJS.ProcessEnv; lifetime?: ServiceClientLifetime;
   files?: { roots: string[]; canonicalFiles?: string[] };
   nativeBinding?: ServiceNativeBinding;
+  rootLaunch?: StandaloneRootReference;
+  bbRootNonce?: string;
 }
 export interface ServiceClientGrant {
   schemaVersion: 1; id: string; token: string; runtime: string; cwd: string; env: NodeJS.ProcessEnv; pollEnv: NodeJS.ProcessEnv;
   lifetime: ServiceClientLifetime; files: { roots: string[]; canonicalFiles: string[] } | null;
   nativeBinding?: ServiceNativeBinding;
+  rootLaunch?: StandaloneRootReference;
+  bbRootNonce?: string;
 }
 export interface ServiceClientCredential { clientId: string; token: string; credentialFile: string; busUrl: string; filesUrl: string | null }
 export interface ServiceStatus extends ServiceDiscovery {
@@ -101,27 +111,32 @@ const nativeThreadId = (value: unknown): value is string => typeof value === 'st
 
 function nativeBindingOf(value: unknown): ServiceNativeBinding | undefined {
   if (value === undefined) return undefined;
-  if (recordOf(value) && value.kind === 'codex') {
-    if (value.state === 'pending' && value.threadId === undefined) return { kind: 'codex', state: 'pending' };
-    if (value.state === 'bound' && nativeThreadId(value.threadId)) return { kind: 'codex', state: 'bound', threadId: value.threadId };
+  if (recordOf(value) && (value.kind === 'claude' || value.kind === 'cursor' || value.kind === 'codex' || value.kind === 'opencode')) {
+    if (value.state === 'pending' && value.threadId === undefined && value.sessionId === undefined) return { kind: value.kind, state: 'pending' };
+    if (value.state === 'bound' && value.kind === 'codex' && nativeThreadId(value.threadId)) return { kind: 'codex', state: 'bound', threadId: value.threadId };
+    if (value.state === 'bound' && value.kind !== 'codex' && nativeThreadId(value.sessionId)) return { kind: value.kind, state: 'bound', sessionId: value.sessionId };
   }
-  throw new HttpFailure(400, 'Invalid Codex native binding');
+  throw new HttpFailure(400, 'Invalid native binding');
 }
 
 function clientEnvironment(grant: ServiceClientGrant): Readonly<NodeJS.ProcessEnv> {
   const env = { ...grant.env };
   if (grant.nativeBinding) {
-    if (grant.nativeBinding.state !== 'bound') throw new HttpFailure(403, 'Codex native binding is pending owner realization');
-    for (const name of actorIdentityVariables()) delete env[name];
-    if (grant.lifetime.kind === 'managed') env[REGISTRY.drivers.codex.options.mcpIdentity!.recordVar] = grant.lifetime.record;
-    env.CODEX_THREAD_ID = grant.nativeBinding.threadId;
+    if (grant.nativeBinding.state !== 'bound') throw new HttpFailure(403, 'Native binding is pending owner realization');
+    for (const name of [...actorIdentityVariables(), 'OPENCODE_SESSION_ID']) delete env[name];
+    const driver = REGISTRY.drivers[grant.nativeBinding.kind]!;
+    const recordVar = driver.options.mcpIdentity?.recordVar ?? (driver.id === 'claude' ? 'PROMPTOBUS_CLAUDE_SESSION' : null);
+    if (grant.lifetime.kind === 'managed' && recordVar) env[recordVar] = grant.lifetime.record;
+    if (driver.options.identityVar) env[driver.options.identityVar] = grant.nativeBinding.kind === 'codex'
+      ? grant.nativeBinding.threadId : grant.nativeBinding.sessionId;
   }
   return Object.freeze(env);
 }
 
 function requireNativeCall(grant: ServiceClientGrant, message: JsonRpcMessage) {
   if (!grant.nativeBinding || message.method !== 'tools/call') return;
-  if (grant.nativeBinding.state !== 'bound') throw new HttpFailure(403, 'Codex native binding is pending owner realization');
+  if (grant.nativeBinding.state !== 'bound') throw new HttpFailure(403, 'Native binding is pending owner realization');
+  if (grant.nativeBinding.kind !== 'codex') return;
   const meta = message.params?._meta;
   if (!recordOf(meta) || !nativeThreadId(meta.threadId) || meta.threadId !== grant.nativeBinding.threadId) {
     throw new HttpFailure(403, 'Codex tool call requires the bound native thread id in params._meta.threadId');
@@ -145,9 +160,12 @@ function grantOf(value: unknown): ServiceClientGrant {
     || !field(value.token) || !field(value.runtime) || !field(value.cwd)) throw new Error('Invalid shared service client grant');
   const lifetime = lifetimeOf(value.lifetime);
   if (!lifetime) throw new Error('Invalid shared service client lifetime');
+  if (value.bbRootNonce !== undefined && (typeof value.bbRootNonce !== 'string' || !CLIENT_ID.test(value.bbRootNonce))) throw new Error('Invalid BB root request generation');
   return { schemaVersion: 1, id: value.id, token: String(value.token), runtime: String(value.runtime), cwd: String(value.cwd),
     env: environmentOf(value.env), pollEnv: environmentOf(value.pollEnv ?? value.env), lifetime, files: filesOf(value.files),
-    ...(value.nativeBinding === undefined ? {} : { nativeBinding: nativeBindingOf(value.nativeBinding) }) };
+    ...(value.nativeBinding === undefined ? {} : { nativeBinding: nativeBindingOf(value.nativeBinding) }),
+    ...(value.rootLaunch === undefined ? {} : { rootLaunch: standaloneReference(value.rootLaunch) }),
+    ...(value.bbRootNonce === undefined ? {} : { bbRootNonce: value.bbRootNonce }) };
 }
 
 function connectionOf(value: unknown): ConnectionRecord | null {
@@ -191,14 +209,22 @@ function lifetimeState(grant: ServiceClientGrant, home: string, observe: Lifetim
   const proof = grant.lifetime;
   if (proof.kind === 'reservation') return Date.now() < proof.expiresAt ? 'alive' : 'dead';
   if (proof.kind === 'process') {
-    try { process.kill(proof.process.pid, 0); }
-    catch (error) { if (recordOf(error) && error.code === 'ESRCH') return 'dead'; }
     return observe.process(grant);
   }
   try {
     const participant = managedParticipant(proof, home);
-    return participant ? observe.managed(grant, participant) : 'dead';
+    if (!participant) return 'dead';
+    if (grant.nativeBinding?.state === 'pending') return 'unknown';
+    return observe.managed(grant, participant);
   } catch { return 'unknown'; }
+}
+
+function requireManagedNativeIdentity(grant: ServiceClientGrant, nativeId: string, status: number) {
+  if (grant.lifetime.kind !== 'managed' || !grant.nativeBinding) return;
+  const record: unknown = JSON.parse(readFileSync(grant.lifetime.record, 'utf8'));
+  const driver = REGISTRY.drivers[grant.nativeBinding.kind]!;
+  const idField = driver.options.mcpIdentity?.idField ?? 'sessionId';
+  if (!recordOf(record) || record[idField] !== nativeId) throw new HttpFailure(status, 'Native identity does not match the owned launch record');
 }
 
 function requireLifetime(grant: ServiceClientGrant, home: string, observe: LifetimeObservations, status = 409) {
@@ -206,6 +232,8 @@ function requireLifetime(grant: ServiceClientGrant, home: string, observe: Lifet
     try {
       if (!managedParticipant(grant.lifetime, home)) throw new Error('mismatched participant');
     } catch { throw new HttpFailure(status, 'Managed lifetime has no matching task, participant and launch record'); }
+    if (grant.nativeBinding?.state === 'bound') requireManagedNativeIdentity(grant, grant.nativeBinding.kind === 'codex'
+      ? grant.nativeBinding.threadId : grant.nativeBinding.sessionId, status);
   }
   if (lifetimeState(grant, home, observe) === 'dead') throw new HttpFailure(status, 'Client lifetime is already expired or replaced');
 }
@@ -258,14 +286,14 @@ function receiptOf(value: unknown): RequestReceipt | null {
   return { digest: value.digest, state: value.state, readOnly: value.readOnly, ...(value.response === undefined ? {} : { response: value.response }) };
 }
 
-function dispatch(paths: ServicePaths, session: ConnectionRecord, message: JsonRpcMessage, connection: Connection) {
+function dispatch(paths: ServicePaths, session: ConnectionRecord, message: JsonRpcMessage, connection: Connection, rootNonce?: string) {
   if (message.method !== 'tools/call' || message.id === undefined || message.id === null) return connection.handle(message);
   const key = createHash('sha256').update(JSON.stringify(message.id)).digest('hex');
   const digest = createHash('sha256').update(JSON.stringify(message)).digest('hex');
   const readOnly = session.endpoint === 'reviewer_files'
     && typeof message.params?.name === 'string' && REPLAYABLE_READS.has(message.params.name)
     && REVIEW_FILE_TOOLS.some(tool => tool.name === message.params?.name && tool.annotations.readOnlyHint === true);
-  const directory = path.join(paths.requests, session.id);
+  const directory = rootNonce ? path.join(paths.requests, `root-${rootNonce}`, session.id) : path.join(paths.requests, session.id);
   privateDirectory(directory);
   const file = path.join(directory, `${key}.json`), previous = readPrivate(file);
   if (previous !== null) {
@@ -280,6 +308,11 @@ function dispatch(paths: ServicePaths, session: ConnectionRecord, message: JsonR
   const response = connection.handle(message);
   writePrivate(file, { digest, state: 'completed', readOnly, ...(readOnly ? {} : { response }) });
   return response;
+}
+
+function requireKnownRootOutcomes(paths: ServicePaths, nonce: string) {
+  try { requireKnownNativeOutcomes(paths, nonce); }
+  catch (error) { throw new HttpFailure(409, error instanceof Error ? error.message : 'Native request outcomes are unavailable'); }
 }
 
 async function bodyOf(request: IncomingMessage): Promise<unknown> {
@@ -359,15 +392,18 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
           () => sameRecordVersion(revision) && Boolean(managedParticipant(proof, paths.home)));
       },
     };
-    const requireProcessLifetime = async (grant: ServiceClientGrant, status = 409) => {
+    const requireProcessLifetime = async (grant: ServiceClientGrant, status = 409, registration = false) => {
+      try { await requireStandaloneRoot(grant, paths, registration, { host, env: grant.pollEnv }); }
+      catch (error) { throw new HttpFailure(status, error instanceof Error ? error.message : 'Standalone root proof is unavailable'); }
       if (grant.lifetime.kind !== 'process') return;
       const state = await processStateAsync(grant.lifetime.process);
       observed.set(grant.id, { key: JSON.stringify(grant.lifetime), at: Date.now(), pending: false, state });
       if (state === 'dead') throw new HttpFailure(status, 'Client lifetime is already expired or replaced');
-      if (state === 'unknown') throw new HttpFailure(status, 'Client process birth identity is unavailable; retry after owner diagnostics');
+      if (state === 'unknown') throw new HttpFailure(status, 'Client process birth identity is unavailable or incomparable; retained owner state requires diagnostics');
     };
     const contexts = new Map<string, ClientContext>();
     const connections = new Map<string, { context: ClientContext; connection: Connection }>();
+    const rootMutations = new Map<string, number>();
     let discovery: ServiceDiscovery;
     let closing = false, requests = 0, idleSince = Date.now();
     const idleMs = Number(env.PROMPTOBUS_SERVICE_IDLE_MS ?? 30_000);
@@ -386,6 +422,8 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
       connections.delete(id);
     };
     const removeClient = (id: string) => {
+      const value = readPrivate(clientFile(paths, id));
+      if (value !== null) revokeStandaloneRoot(grantOf(value), paths);
       rmSync(clientFile(paths, id), { force: true });
       observed.delete(id);
       contexts.delete(id);
@@ -403,7 +441,9 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
       }
       for (const grant of values) {
         if (grant.runtime !== runtime) continue;
-        const life = lifetimeState(grant, paths.home, managedState);
+        let expired = false, unknownRoot = false;
+        try { expired = standaloneExpired(grant, paths); } catch { unknownRoot = true; }
+        const life = unknownRoot ? 'unknown' : expired ? 'dead' : lifetimeState(grant, paths.home, managedState);
         if (life === 'dead') { removeClient(grant.id); continue; }
         clients += 1;
         if (grant.lifetime.kind === 'reservation') reservations += 1;
@@ -436,13 +476,15 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
     const currentGrant = (grant: ServiceClientGrant) => {
       const value = readPrivate(clientFile(paths, grant.id));
       const current = value === null ? null : grantOf(value);
-      if (!current || !tokenEquals(current.token, grant.token) || current.runtime !== runtime || !isDeepStrictEqual(current, grant)) {
+      if (!current || !tokenEquals(current.token, grant.token) || current.runtime !== runtime || !isDeepStrictEqual(current, grant)
+        || (current.rootLaunch && standaloneClientRevoked(paths, current.id))) {
         throw new HttpFailure(401, 'Client binding is absent or expired');
       }
       return current;
     };
     const authorizeCurrent = (grant: ServiceClientGrant, proof: ManagedAuthorization | null = null) => {
       const current = currentGrant(grant);
+      if (standaloneExpired(current, paths)) throw new HttpFailure(401, 'Standalone root admission expired or was revoked');
       if (current.lifetime.kind !== 'managed') {
         requireLifetime(current, paths.home, unavailableObservations, 401); return;
       }
@@ -466,10 +508,14 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         } catch { throw new HttpFailure(401, 'Managed lifetime has no matching task, participant and launch record'); }
         if (!participant) throw new HttpFailure(401, 'Managed lifetime has no matching task, participant and launch record');
         proof = { revision, participant };
+      }
+      await requireManagedNativeBinding(paths, current, { host, env: current.pollEnv });
+      authorizeCurrent(grant, proof);
+      if (proof) {
         let snapshot: SessionSnapshot = null;
-        try { snapshot = await warden.observe([participant], [revision]); } catch { /* no observation is no authority */ }
+        try { snapshot = await warden.observe([proof.participant], [proof.revision]); } catch { /* no observation is no authority */ }
         authorizeCurrent(grant, proof);
-        const state = participantSession(participant, snapshot);
+        const state = participantSession(proof.participant, snapshot);
         if (state === 'dead') throw new HttpFailure(401, 'Client lifetime is already expired or replaced');
         if (state !== 'alive') throw new HttpFailure(503, 'Managed lifetime observation is unavailable; retry after owner diagnostics');
       }
@@ -502,6 +548,74 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
       return connection;
     };
 
+    const realizeClient = async (grant: ServiceClientGrant, nativeId: unknown) => {
+      const id = grant.id;
+      if (!nativeThreadId(nativeId)) throw new HttpFailure(400, 'Invalid native thread id');
+      if (!grant.nativeBinding) throw new HttpFailure(409, 'This client has no native binding');
+      await requireProcessLifetime(grant, 401);
+      const latestValue = readPrivate(clientFile(paths, id)), latest = latestValue === null ? null : grantOf(latestValue);
+      let binding = latest?.nativeBinding;
+      let current = currentGrant(grant.nativeBinding.state === 'pending' && binding?.state === 'bound'
+        ? { ...grant, nativeBinding: binding } : grant);
+      requireLifetime(current, paths.home, managedState, 401);
+      requireManagedNativeIdentity(current, nativeId, 409);
+      const boundId = binding?.state === 'bound' ? binding.kind === 'codex' ? binding.threadId : binding.sessionId : null;
+      if (boundId && boundId !== nativeId) throw new HttpFailure(409, 'Client is already bound to another native thread id');
+      if (current.lifetime.kind === 'managed') await reserveManagedNativeIdentity(paths, current, nativeId, { host, env: current.pollEnv });
+      if (current.rootLaunch) {
+        const launch = readStandaloneLaunch(paths, current.runtime, current.rootLaunch);
+        const nativeStore = readStandaloneProfile(paths, current.runtime, launch.profile).nativeStore;
+        if (grants().some(other => {
+          const otherBinding = other.nativeBinding;
+          return other.id !== current.id && otherBinding?.state === 'bound' && otherBinding.kind === binding?.kind
+            && (otherBinding.kind === 'codex' ? otherBinding.threadId : otherBinding.sessionId) === nativeId
+            && (nativeStoreForServiceClient(paths, other, nativeId) ?? nativeStore) === nativeStore;
+        })) {
+          throw new HttpFailure(409, 'Available native client already binds this actual identity');
+        }
+        await claimStandaloneIdentity(current, paths, nativeId, { host, env: current.pollEnv });
+      }
+      if (current.rootLaunch || current.lifetime.kind === 'managed') {
+        const finalValue = readPrivate(clientFile(paths, id)), finalGrant = finalValue === null ? null : grantOf(finalValue);
+        const finalBinding = finalGrant?.nativeBinding;
+        const finalId = finalBinding?.state === 'bound' ? finalBinding.kind === 'codex' ? finalBinding.threadId : finalBinding.sessionId : null;
+        current = currentGrant(binding?.state === 'pending' && finalId === nativeId ? { ...current, nativeBinding: finalBinding } : current);
+        binding = current.nativeBinding;
+      }
+      if (binding?.state === 'pending') writePrivate(clientFile(paths, id), { ...current, nativeBinding: binding.kind === 'codex'
+        ? { kind: 'codex', state: 'bound', threadId: nativeId }
+        : { kind: binding.kind, state: 'bound', sessionId: nativeId } });
+    };
+    const finalizeStandaloneStartup = async (grant: ServiceClientGrant) => {
+      const reference = grant.rootLaunch;
+      if (!reference || grant.nativeBinding?.state !== 'pending') return;
+      const lock = `${reference.file}.lock`, deadline = Date.now() + 5000;
+      let release = await acquireServiceLock(lock);
+      while (!release) {
+        if (Date.now() >= deadline) throw new HttpFailure(503, 'Standalone native generation is already being realized; retry the tool call');
+        await new Promise(resolve => setTimeout(resolve, 20));
+        release = await acquireServiceLock(lock);
+      }
+      try {
+        const current = currentGrant(grant), launch = readStandaloneLaunch(paths, current.runtime, reference), candidate = launch.startupCandidate;
+        if (!candidate || launch.phase !== 'pending' || launch.nativeId !== null) return;
+        await requireProcessLifetime(current, 401);
+        const profile = readStandaloneProfile(paths, current.runtime, launch.profile);
+        try { requireStartupCandidateFence(paths, launch, profile); }
+        catch (error) { throw new HttpFailure(409, error instanceof Error ? error.message : 'Standalone startup fence changed'); }
+        currentGrant(current);
+        if (!isDeepStrictEqual(readStandaloneLaunch(paths, current.runtime, reference), launch)) throw new HttpFailure(409, 'Standalone launch changed during native observation');
+        try {
+          const transcript = claudeStartupTranscript(profile.nativeStore, candidate.sessionId, candidate.transcript, true);
+          if (!transcript) return;
+          writePrivate(reference.file, { ...launch, nativeId: candidate.sessionId, nativeStart: { source: 'startup', transcript } });
+          await realizeClient(current, candidate.sessionId);
+        } catch (error) {
+          removeClient(current.id);
+          throw error instanceof HttpFailure ? error : new HttpFailure(403, error instanceof Error ? error.message : 'Standalone startup realization failed');
+        }
+      } finally { release(); }
+    };
     const control = async (input: unknown) => {
       if (closing) throw new HttpFailure(503, 'Shared service is stopping');
       if (!recordOf(input) || typeof input.operation !== 'string') throw new HttpFailure(400, 'Invalid service control operation');
@@ -516,6 +630,112 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         if (state().clients || activeWork() || requests > 1) throw new HttpFailure(409, 'Shared service still has live clients or active work');
         lifecycle.stop?.();
         return { stopped: true };
+      }
+      if (input.operation === 'standalone-preflight') {
+        if (typeof input.profile !== 'string' || !nativeThreadId(input.nativeId)) throw new HttpFailure(400, 'Standalone recovery requires a profile and explicit native id');
+        const lock = path.join(paths.directory, 'root-admission.lock'), deadline = Date.now() + 5000;
+        let unlock = await acquireServiceLock(lock);
+        while (!unlock) {
+          if (Date.now() >= deadline) throw new HttpFailure(409, 'Standalone owner preflight is already in progress');
+          await new Promise(resolve => setTimeout(resolve, 20));
+          unlock = await acquireServiceLock(lock);
+        }
+        let reserved: ServiceClientGrant | null = null;
+        let recoveryFile: string | null = null;
+        try {
+          const binding = standaloneBindingForRecovery(paths, runtime, input.profile, input.nativeId);
+          const reference = { file: path.join(paths.directory, `standalone-launch-${binding.nonce}.json`), nonce: binding.nonce };
+          const launch = readStandaloneLaunch(paths, runtime, reference), profile = readStandaloneProfile(paths, runtime, input.profile);
+          if (launch.identityInvalid || launch.phase !== 'bound' || launch.nativeId !== input.nativeId
+            || launch.profile !== profile.id || profile.harness !== binding.harness || profile.nativeStore !== binding.nativeStore
+            || binding.ownerKey !== launch.nonce || !isDeepStrictEqual(launch.process, binding.process) || !launch.clientId) {
+            throw new HttpFailure(409, 'Standalone recovery cannot change the immutable native generation');
+          }
+          const hookFile = path.join(paths.directory, `standalone-hook-${launch.nonce}.json`), hookVersion = recordVersion(hookFile), hook = readPrivate(hookFile);
+          if (!recordOf(hook) || hook.schemaVersion !== 1 || hook.root !== paths.root || hook.home !== paths.home
+            || !isDeepStrictEqual(hook.binding, binding)) throw new HttpFailure(409, 'Standalone recovery requires a trusted durable owner hook receipt');
+          const template = grantOf(hook.client);
+          if (!isDeepStrictEqual(template.rootLaunch, reference) || template.runtime !== runtime || template.cwd !== launch.cwd
+            || template.lifetime.kind !== 'process' || !isDeepStrictEqual(template.lifetime.process, launch.process)
+            || template.nativeBinding?.kind !== profile.harness) throw new HttpFailure(409, 'Owner hook receipt belongs to another native process');
+          const knownOutcomes = () => {
+            if (rootMutations.get(launch.nonce)) throw new HttpFailure(409, 'Standalone mutation is still in flight; wait for its original outcome');
+            requireKnownRootOutcomes(paths, launch.nonce);
+          };
+          recoveryFile = path.join(paths.directory, `standalone-recovery-${launch.nonce}.json`);
+          const previous = readPrivate(recoveryFile);
+          if (previous === null) {
+            try { lstatSync(recoveryFile); throw new HttpFailure(409, 'Existing standalone recovery state is corrupt, not absent'); }
+            catch (error) { if (!recordOf(error) || error.code !== 'ENOENT') throw error; }
+          }
+          let pending: ServiceClientGrant | null = null;
+          if (previous !== null) {
+            if (!recordOf(previous) || previous.root !== paths.root || previous.home !== paths.home || previous.runtime !== runtime
+              || previous.nonce !== launch.nonce || typeof previous.phase !== 'string' || !['pending', 'completed'].includes(previous.phase)
+              || typeof previous.previousClientId !== 'string' || !CLIENT_ID.test(previous.previousClientId)) {
+              throw new HttpFailure(409, 'Standalone recovery state is corrupt; preserve it for owner inspection');
+            }
+            const candidate = grantOf(previous.client);
+            if (!isDeepStrictEqual(candidate.rootLaunch, reference) || candidate.runtime !== runtime || candidate.cwd !== launch.cwd
+              || candidate.lifetime.kind !== 'process' || !isDeepStrictEqual(candidate.lifetime.process, launch.process)
+              || candidate.nativeBinding?.kind !== profile.harness) throw new HttpFailure(409, 'Standalone recovery state changed its immutable binding');
+            if (previous.phase === 'pending' && !standaloneClientRevoked(paths, candidate.id)
+              && (launch.clientId === candidate.id || launch.clientId === previous.previousClientId)) pending = candidate;
+          }
+          const currentValue = readPrivate(clientFile(paths, launch.clientId));
+          const current = currentValue === null ? null : grantOf(currentValue);
+          if (current && (!isDeepStrictEqual(current.rootLaunch, reference) || current.runtime !== runtime || current.cwd !== launch.cwd
+            || current.lifetime.kind !== 'process' || !isDeepStrictEqual(current.lifetime.process, launch.process))) {
+            throw new HttpFailure(409, 'Current standalone capability belongs to another native binding');
+          }
+          if ((!pending || pending.id === current?.id) && current?.nativeBinding?.state === 'bound'
+            && !launch.revoked && !standaloneClientRevoked(paths, current.id)) {
+            await requireProcessLifetime(current, 409);
+            currentGrant(current);
+            knownOutcomes();
+            if (!sameRecordVersion(hookVersion)) throw new HttpFailure(409, 'Owner hook receipt changed during recovery');
+            if (pending && recordOf(previous)) writePrivate(recoveryFile, { ...previous, phase: 'completed',
+              reason: 'Existing same-process capability completed before owner restart', client: current });
+            return { profile: input.profile, nativeId: input.nativeId, recovered: false };
+          }
+          // No await from the in-flight check through the durable old-token fence and new pending reservation.
+          knownOutcomes();
+          reserved = pending ?? { ...template, id: randomUUID(), token: randomBytes(32).toString('hex'),
+            nativeBinding: { kind: profile.harness, state: 'pending' } };
+          const previousClientId = pending && recordOf(previous) ? String(previous.previousClientId) : launch.clientId;
+          writePrivate(recoveryFile, { root: paths.root, home: paths.home, runtime, nonce: launch.nonce,
+            previousClientId, phase: 'pending', reason: 'Owner native proof pending', client: reserved });
+          if (launch.clientId !== reserved.id) {
+            revokeStandaloneRoot({ ...template, id: launch.clientId }, paths);
+            removeClient(launch.clientId);
+          }
+          writePrivate(reference.file, { ...launch, clientId: reserved.id, revoked: false });
+          if (standaloneClientRevoked(paths, reserved.id)) throw new HttpFailure(409, 'Reserved standalone capability was already revoked');
+          const saved = readPrivate(clientFile(paths, reserved.id));
+          if (saved !== null && !isDeepStrictEqual(grantOf(saved), reserved)) throw new HttpFailure(409, 'Reserved standalone capability changed');
+          writePrivate(clientFile(paths, reserved.id), reserved);
+          await requireProcessLifetime(reserved, 409);
+          currentGrant(reserved);
+          standaloneBindingForRecovery(paths, runtime, input.profile, input.nativeId);
+          if (!sameRecordVersion(hookVersion)) throw new HttpFailure(409, 'Owner hook receipt changed during recovery');
+          knownOutcomes();
+          if (closing) throw new HttpFailure(503, 'Shared service is stopping');
+          const bound: ServiceClientGrant = { ...reserved, nativeBinding: profile.harness === 'codex'
+            ? { kind: 'codex', state: 'bound', threadId: input.nativeId }
+            : { kind: profile.harness, state: 'bound', sessionId: input.nativeId } };
+          writePrivate(clientFile(paths, bound.id), bound);
+          writePrivate(recoveryFile, { root: paths.root, home: paths.home, runtime, nonce: launch.nonce,
+            previousClientId, phase: 'completed', reason: 'Same native binding proved by owner', client: bound });
+          return { profile: input.profile, nativeId: input.nativeId, recovered: true };
+        } catch (error) {
+          if (recoveryFile && reserved) {
+            const saved = readPrivate(recoveryFile);
+            if (recordOf(saved) && recordOf(saved.client) && saved.client.id === reserved.id && saved.phase === 'pending') {
+              writePrivate(recoveryFile, { ...saved, reason: error instanceof Error ? error.message : 'Owner proof unavailable; repeat explicit preflight' });
+            }
+          }
+          throw error;
+        } finally { unlock(); }
       }
       if (input.operation === 'register') {
         if (!recordOf(input.client) || typeof input.client.cwd !== 'string' || !path.isAbsolute(input.client.cwd)) throw new HttpFailure(400, 'Client cwd must be absolute');
@@ -533,10 +753,16 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
           files.roots = files.roots.map(root => realpathSync(root));
         }
         const grant: ServiceClientGrant = { schemaVersion: 1, id: randomUUID(), token: randomBytes(32).toString('hex'), runtime,
-          cwd: canonicalPath(input.client.cwd), env: requestedEnv, pollEnv, lifetime, files, ...(nativeBinding ? { nativeBinding } : {}) };
+          cwd: canonicalPath(input.client.cwd), env: requestedEnv, pollEnv, lifetime, files, ...(nativeBinding ? { nativeBinding } : {}),
+          ...(input.client.rootLaunch === undefined ? {} : { rootLaunch: standaloneReference(input.client.rootLaunch) }) };
+        if (input.client.bbRootNonce !== undefined) {
+          if (typeof input.client.bbRootNonce !== 'string' || !CLIENT_ID.test(input.client.bbRootNonce)
+            || lifetime.kind !== 'process' || nativeBinding?.kind !== 'codex' || grant.rootLaunch) throw new HttpFailure(400, 'BB root receipt generation requires its own Codex process client');
+          grant.bbRootNonce = input.client.bbRootNonce;
+        }
         if (lifetime.kind === 'managed' && (requestedEnv.PROMPTOBUS_TASK !== lifetime.task || requestedEnv.PROMPTOBUS_ROLE !== lifetime.address)) throw new HttpFailure(400, 'Managed lifetime does not match the client task/address');
         const validateRegistration = async () => {
-          await requireProcessLifetime(grant);
+          await requireProcessLifetime(grant, 409, true);
           requireLifetime(grant, paths.home, managedState);
         };
         await validateRegistration();
@@ -545,6 +771,13 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         await validateRegistration();
         if (closing) throw new HttpFailure(503, 'Shared service is stopping');
         requireLifetime(grant, paths.home, managedState);
+        publishStandaloneClient(grant, paths);
+        if (grant.rootLaunch) {
+          const previousRootClient = await prepareStandaloneResume(grant, paths, { host, env: pollEnv });
+          if (previousRootClient) removeClient(previousRootClient);
+          await validateRegistration();
+          if (closing) throw new HttpFailure(503, 'Shared service is stopping');
+        }
         writePrivate(clientFile(paths, grant.id), grant);
         if (context) contexts.set(grant.id, context);
         return { clientId: grant.id, token: grant.token, credentialFile: clientFile(paths, grant.id),
@@ -554,20 +787,17 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         const id = typeof input.clientId === 'string' ? input.clientId : '';
         if (!CLIENT_ID.test(id)) throw new HttpFailure(400, 'Invalid client id');
         const value = readPrivate(clientFile(paths, id));
+        if (value === null && input.operation === 'revoke') {
+          try { lstatSync(clientFile(paths, id)); }
+          catch (error) {
+            if (recordOf(error) && error.code === 'ENOENT') return { clientId: id, operation: input.operation };
+            throw error;
+          }
+        }
         if (value === null) throw new HttpFailure(404, 'Client binding not found');
         const grant = grantOf(value);
         if (input.operation === 'realize') {
-          if (!nativeThreadId(input.threadId)) throw new HttpFailure(400, 'Invalid Codex native thread id');
-          if (!grant.nativeBinding) throw new HttpFailure(409, 'This client has no Codex native binding');
-          await requireProcessLifetime(grant, 401);
-          const latestValue = readPrivate(clientFile(paths, id)), latest = latestValue === null ? null : grantOf(latestValue);
-          const binding = latest?.nativeBinding;
-          const current = currentGrant(grant.nativeBinding.state === 'pending' && binding?.state === 'bound'
-            ? { ...grant, nativeBinding: binding } : grant);
-          requireLifetime(current, paths.home, managedState, 401);
-          if (binding?.state === 'bound' && binding.threadId !== input.threadId) throw new HttpFailure(409, 'Codex client is already bound to another native thread id');
-          if (binding?.state === 'pending') writePrivate(clientFile(paths, id), { ...current,
-            nativeBinding: { kind: 'codex', state: 'bound', threadId: input.threadId } });
+          await realizeClient(grant, input.threadId);
           return { clientId: id, operation: input.operation };
         }
         if (input.operation === 'bind') {
@@ -590,6 +820,7 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
     const server = http = createServer(async (request, response) => {
       requests += 1;
       idleSince = Date.now();
+      let mutationNonce: string | null = null;
       try {
         if (closing) throw new HttpFailure(503, 'Shared service is stopping');
         const expected = new URL(discovery.url);
@@ -598,7 +829,7 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         if (url.origin !== expected.origin) throw new HttpFailure(403, 'Foreign HTTP request target');
         const endpoint: Endpoint | null = url.pathname === '/mcp/bus' ? 'bus' : url.pathname === '/mcp/reviewer_files' ? 'reviewer_files' : null;
         if (!endpoint) throw new HttpFailure(404, 'Endpoint not found');
-        const { grant, authorize } = await authenticateClient(request.headers.authorization);
+        let { grant, authorize } = await authenticateClient(request.headers.authorization);
         authorize();
         if (endpoint === 'reviewer_files' && !grant.files) throw new HttpFailure(403, 'This client has no reviewer file grant');
         const header = request.headers['mcp-session-id'];
@@ -625,6 +856,15 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         const accepts = (request.headers.accept ?? '').split(',').map(type => type.split(';')[0]?.trim().toLowerCase());
         if (!accepts.includes('application/json') || !accepts.includes('text/event-stream')) throw new HttpFailure(406, 'MCP client must accept JSON and event streams');
         const message = jsonRpc(await bodyOf(request));
+        if (message.method === 'tools/call' && grant.rootLaunch && grant.nativeBinding?.state === 'pending') {
+          await finalizeStandaloneStartup(grant);
+          ({ grant, authorize } = await authenticateClient(request.headers.authorization));
+          authorize();
+        }
+        if ((grant.rootLaunch || grant.bbRootNonce) && message.method === 'tools/call') {
+          mutationNonce = grant.rootLaunch?.nonce ?? grant.bbRootNonce!;
+          rootMutations.set(mutationNonce, (rootMutations.get(mutationNonce) ?? 0) + 1);
+        }
         const authorizeBody = await authorizeGrant(grant);
         authorizeBody();
         requireNativeCall(grant, message);
@@ -658,7 +898,9 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
             authorizeDispatch();
             if (closing) throw new HttpFailure(503, 'Shared service is stopping');
             contexts.set(grant.id, context);
-            const invoke = () => dispatch(paths, record, message, connectionFor(record, context));
+            const receiptNonce = grant.rootLaunch?.nonce ?? grant.bbRootNonce;
+            if (receiptNonce) requireKnownRootOutcomes(paths, receiptNonce);
+            const invoke = () => dispatch(paths, record, message, connectionFor(record, context), receiptNonce);
             if (grant.lifetime.kind !== 'managed') result = invoke();
             else {
               const task = grant.lifetime.task;
@@ -682,7 +924,13 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
       } catch (error) {
         const status = error instanceof HttpFailure ? error.status : 500;
         reply(response, status, { error: error instanceof Error ? error.message : 'Shared service request failed' });
-      } finally { requests -= 1; }
+      } finally {
+        if (mutationNonce) {
+          const count = (rootMutations.get(mutationNonce) ?? 1) - 1;
+          if (count) rootMutations.set(mutationNonce, count); else rootMutations.delete(mutationNonce);
+        }
+        requests -= 1;
+      }
     });
     server.headersTimeout = 10_000;
     server.requestTimeout = 30_000;

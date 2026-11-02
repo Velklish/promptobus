@@ -14,7 +14,7 @@ import { openEngine, openParticipant } from '../dist/index.js';
 import { REGISTRY } from '../lib/drivers.js';
 import { codexDriver } from '../lib/driver-codex.js';
 import { commandReceipts, readStopConfirmation } from '../lib/codex-command-receipts.js';
-import { sessionFile, sessionKey, writeSession } from '../lib/codex-session.js';
+import { codexStateHome, sessionFile, sessionKey, writeSession } from '../lib/codex-session.js';
 import { persistNativeParticipant, reserveNativeParticipant, retainNativeStop } from '../lib/native-lifecycle.js';
 import { bindBeforeLaunch } from '../lib/liftoff.js';
 
@@ -41,7 +41,7 @@ async function terminalFixture() {
   const record = { ref: p.sessionRef, home: f.home, task: f.task, address: 'worker:one',
     launchId: 'terminal-launch', threadId: 'actual-thread', holderPid: 2147483646, appPid: 2147483645,
     stopConfirmed: true, state: 'dead' };
-  const receiptFile = path.join(process.env.PROMPTOBUS_CODEX_HOME, 'receipts', sessionKey(record.ref), sessionKey(record.launchId) + '.jsonl');
+  const receiptFile = path.join(codexStateHome(process.env), 'receipts', sessionKey(record.ref), sessionKey(record.launchId) + '.jsonl');
   const receipts = commandReceipts(receiptFile, { format: 1, ...record });
   const deadlineAt = Date.now() + 5000;
   receipts.append('stop/requested', { threadId: record.threadId, deadlineAt });

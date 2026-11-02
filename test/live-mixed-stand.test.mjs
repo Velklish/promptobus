@@ -22,7 +22,7 @@ const SB = makeSandbox('promptobus-promptobus-live-mixed-stand-');
 const binDir = path.join(SB, 'bin');
 // The stand homes stay OUTSIDE the file sandbox: its exit hook removes the directory before
 // the stands have killed their panes and holders (the mixed suite file does the same).
-const cursorHarness = await cursorStub.installHarness({ binDir });
+const cursorHarness = await cursorStub.installHarness({ binDir, bundledRuntime: true });
 const codexHarness = await codexStub.installHarness({ binDir });
 
 function start(args = [], env = {}) {
@@ -173,12 +173,16 @@ if (process.argv.includes('list-sessions') && existsSync(barrier + '.armed') && 
 }
 await tmuxMain(process.argv.slice(2), { ...process.env, ${cursorStub.CURSOR_HOME_VAR}: ${JSON.stringify(cursorHarness.home)} });
 `);
+const cutTraceStart = cursorStub.readTrace(cursorHarness.home, WORKER).length;
 const cut = start([], { PROMPTOBUS_E2E_ROOT: externalMechanism });
-const bothUp = await waitFor(() => (/✔ step 4: the reviewer thread landed in the Codex registry/.test(cut.out) ? true : null), { timeoutMs: 180000 });
+const cutFailures = () => cursorStub.readTrace(cursorHarness.home, WORKER).slice(cutTraceStart)
+  .filter(row => ['action-failed', 'turn-failed'].includes(row.kind));
+const bothUp = (await waitFor(() => /✔ step 4: the reviewer thread landed in the Codex registry/.test(cut.out) ? 'ready'
+  : cut.exit || cutFailures().length ? 'failed' : null, { timeoutMs: 180000 })) === 'ready';
 const sandbox = line(cut.out, /^▸ sandbox: (\S+) ·/m);
 const storeHome = line(cut.out, /^▸ sandbox: \S+ · store: (\S+)$/m);
 const task = line(cut.out, /^▸ task: (\S+)$/m);
-const taskView = bothUp && storeHome && task ? store.readTask(storeHome, task) : null;
+const taskView = storeHome && task && store.taskExists(storeHome, task) ? store.readTask(storeHome, task) : null;
 const workerRef = taskView ? store.participantOf(taskView, WORKER)?.sessionRef ?? '' : '';
 const reviewerRef = taskView ? store.participantOf(taskView, REVIEWER)?.sessionRef ?? '' : '';
 const workerRecord = workerRef ? cursorSession.readSession(workerRef) : null;
@@ -194,7 +198,7 @@ check('cut: before the signal both participants are up — the worker pane and t
   && Number.isInteger(workerPid) && pidAlive(workerPid)
   && reviewerPids.length === 2 && reviewerPids.every(pidAlive),
   `${cut.out.slice(-800)} · workerRef ${workerRef} pane ${workerPid}`
-  + ` · reviewerRef ${reviewerRef} ${JSON.stringify(reviewerPids)}`);
+  + ` · reviewerRef ${reviewerRef} ${JSON.stringify(reviewerPids)} · scenario errors ${JSON.stringify(cutFailures())}`);
 
 writeFileSync(stopBarrier + '.enabled', JSON.stringify({ receipt: reviewerRecord?.commandReceiptFile, launchId: reviewerRecord?.launchId }));
 cut.child.kill('SIGTERM');
@@ -259,12 +263,16 @@ if (!exit) cut.child.kill('SIGKILL');
 // --- a cut-off run whose worker's `persist stop` outlasts every budget -----------------------------
 // The stub stop outlasts the budget; reviewer and warden must still receive cleanup.
 
+const hangTraceStart = cursorStub.readTrace(cursorHarness.home, WORKER).length;
 const hang = start([], { [cursorStub.STOP_HANG_VAR]: '60000', PROMPTOBUS_E2E_ROOT: externalMechanism });
-const hangBothUp = await waitFor(() => (/✔ step 4: the reviewer thread landed in the Codex registry/.test(hang.out) ? true : null), { timeoutMs: 180000 });
+const hangFailures = () => cursorStub.readTrace(cursorHarness.home, WORKER).slice(hangTraceStart)
+  .filter(row => ['action-failed', 'turn-failed'].includes(row.kind));
+const hangBothUp = (await waitFor(() => /✔ step 4: the reviewer thread landed in the Codex registry/.test(hang.out) ? 'ready'
+  : hang.exit || hangFailures().length ? 'failed' : null, { timeoutMs: 180000 })) === 'ready';
 const hangSandbox = line(hang.out, /^▸ sandbox: (\S+) ·/m);
 const hangStoreHome = line(hang.out, /^▸ sandbox: \S+ · store: (\S+)$/m);
 const hangTask = line(hang.out, /^▸ task: (\S+)$/m);
-const hangView = hangBothUp && hangStoreHome && hangTask ? store.readTask(hangStoreHome, hangTask) : null;
+const hangView = hangStoreHome && hangTask && store.taskExists(hangStoreHome, hangTask) ? store.readTask(hangStoreHome, hangTask) : null;
 const hangWorkerRef = hangView ? store.participantOf(hangView, WORKER)?.sessionRef ?? '' : '';
 const hangReviewerRef = hangView ? store.participantOf(hangView, REVIEWER)?.sessionRef ?? '' : '';
 const hangWorkerRecord = hangWorkerRef ? cursorSession.readSession(hangWorkerRef) : null;
@@ -279,7 +287,12 @@ check('hang: before the signal both participants are up — the worker\'s stop c
   !!hangBothUp && !!hangWorkerRef && !!hangReviewerRef
   && Number.isInteger(hangWorkerPid) && pidAlive(hangWorkerPid)
   && hangReviewerPids.length === 2 && hangReviewerPids.every(pidAlive),
-  `${hang.out.slice(-500)} · worker ${hangWorkerRef} pane ${hangWorkerPid} · reviewer ${hangReviewerRef} ${JSON.stringify(hangReviewerPids)}`);
+  `${hang.out.slice(-500)} · worker ${hangWorkerRef} pane ${hangWorkerPid} · reviewer ${hangReviewerRef} ${JSON.stringify(hangReviewerPids)} · scenario errors ${JSON.stringify(hangFailures())}`);
+const nativeReady = cursorStub.readTrace(cursorHarness.home, WORKER).filter(row => row.kind === 'native-ready');
+check('hang: each new Cursor pane acknowledges its actual native binding despite the continued script turn index',
+  nativeReady.length === 2 && nativeReady.every((row, turn) => row.turn === turn && row.chatId && row.clientId)
+  && new Set(nativeReady.map(row => row.chatId)).size === 2 && new Set(nativeReady.map(row => row.clientId)).size === 2,
+  JSON.stringify(nativeReady));
 check('hang: the declared external mechanism starts the task warden before either participant',
   hang.out.includes(`▸ mechanism: ${externalMechanism}\n`)
   && hang.out.includes('✔ step 1: the task warden is up as a real process'), hang.out.slice(0, 1500));

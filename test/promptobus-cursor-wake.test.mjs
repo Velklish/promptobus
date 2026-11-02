@@ -29,12 +29,12 @@ import { makeSandbox, makeSockDir, writeHostConfig } from './sandbox.mjs';
 import { taskServiceFixture } from './task-service-fixture.mjs';
 import { processState } from '../lib/service-state.js';
 import { PROMPTOBUS_BIN, buildWorkspace, cli, store } from './scenario.mjs';
-import { diagnoseTrace, installHarness, planParticipant, serverDir } from './harness-cursor.mjs';
+import { diagnoseTrace, installHarness, planParticipant, readTrace, serverDir } from './harness-cursor.mjs';
 import { waitFor } from './harness.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SB = makeSandbox('promptobus-cursor-wake-');
-const { home: HARNESS, restore } = await installHarness({ binDir: path.join(SB, 'bin') });
+const { home: HARNESS, restore } = await installHarness({ binDir: path.join(SB, 'bin'), bundledRuntime: true });
 
 const { cursorDriver } = await import(path.join(here, '..', 'lib', 'driver-cursor.js'));
 const {
@@ -171,7 +171,7 @@ const woken = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
   .find((m) => String(m.body ?? '').includes(MARK.second)) ?? null, { timeoutMs: 60000 });
 check('step 4: the warden woke the idle session — the text arrived by injection',
   !!woken,
-  `${JSON.stringify(woken)} · warden journal: ${store.tailWardenLog(home, TASK).slice(-6).join(' | ')}`);
+  `${JSON.stringify(woken)} · warden journal: ${store.tailWardenLog(home, TASK).slice(-6).join(' | ')} · ${diagnoseTrace(HARNESS, WORKER)}`);
 
 check('step 4: the wake happened WITHOUT a new process — the session pane is the same',
   readSession(ref, env)?.panePid === panePid && tmuxSessions({ env })
@@ -232,6 +232,11 @@ check('step 6: this turn also ran in the same session — the process did not ch
 const wakeAfter = store.readWake(home, TASK, WORKER);
 check('step 6: each end of turn rewrites the fingerprint — the turn counter grew',
   wakeAfter?.socket !== wake0?.socket, `${wake0?.socket} → ${wakeAfter?.socket}`);
+const busSessions = readTrace(HARNESS, WORKER).filter(entry => entry.kind === 'mcp-session');
+check('step 6: all three turns use the same actual HTTP MCP session in the owned pane',
+  busSessions.length === 3 && busSessions.every((entry, turn) => entry.turn === turn
+    && typeof entry.sessionId === 'string' && entry.sessionId.length > 0 && entry.sessionId === busSessions[0].sessionId),
+  JSON.stringify(busSessions));
 
 // --- cleanup -----------------------------------------------------------------------
 

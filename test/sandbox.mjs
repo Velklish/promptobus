@@ -46,6 +46,7 @@
 // was unified onto one language to avoid.
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -292,4 +293,22 @@ export function listenTestSocket(server, socketPath) {
       resolve({ ok: true, reason: null });
     });
   });
+}
+
+export function ownedServiceFixture(env = process.env) {
+  const previous = env.PROMPTOBUS_SERVICE_HOME;
+  const directory = realpathSync(mkdtempSync(path.join(realpathSync('/tmp'), 'pb-owned-service-')));
+  env.PROMPTOBUS_SERVICE_HOME = directory;
+  const script = fileURLToPath(new URL('./owned-service-cleanup.mjs', import.meta.url));
+  process.prependOnceListener('exit', () => {
+    const cleaned = spawnSync(process.execPath, [script, directory], { encoding: 'utf8', timeout: 15000 });
+    if (cleaned.status !== 0) {
+      process.stderr.write(`owned shared-service cleanup refused: ${cleaned.stderr || cleaned.error?.message || cleaned.status}\n`);
+      process.exitCode = 1;
+    } else rmSync(directory, { recursive: true, force: true });
+  });
+  return { directory, restore() {
+    if (previous === undefined) delete env.PROMPTOBUS_SERVICE_HOME;
+    else env.PROMPTOBUS_SERVICE_HOME = previous;
+  } };
 }

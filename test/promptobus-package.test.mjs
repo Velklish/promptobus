@@ -1,6 +1,6 @@
 // Package packing gates for the public promptobus repo. Does not recurse into npm test.
 import {
-  chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync,
+  chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -960,11 +960,14 @@ const [copyContract, copyDrivers, copyStatus, copyWorktree, copyInstall, copyCli
 const PRIVATE_SPECIFIERS = [
   'lib/contract.js', 'lib/drivers.js', 'lib/status.js', 'lib/worktree.js', 'lib/install.js', 'lib/integration.js',
   'lib/model-routing/validate.js', 'lib/model-routing/cache.js', 'lib/models.js', 'dist/index.js', 'package.json',
+  'lib/root-launch.js', 'lib/root-admission.js', 'lib/root-native.js', 'lib/launch-exec.js',
+  'lib/standalone-root.js', 'lib/standalone-root-state.js', 'lib/root-process.js', 'lib/native-admission.js',
+  'lib/bb-host.js',
 ].map((rel) => `promptobus/${rel}`);
 const INTEGRATION_NAMES = [
   'BRANCH_CHANGED_MARK', 'DRIVER_DECLARATIONS', 'INSTALL_TARGETS', 'KNOCK_TEXT_MAX', 'MAILBOX_UNREAD_MARK',
   'PACKAGE_VERSION', 'PROMPTOBUS_TOOLS', 'PROTOCOL_VERSIONS', 'PRUNE_DEFAULT_DAYS', 'SKILL_OWNERSHIP_MARKER',
-  'WORKTREE_BRANCH_TEMPLATE', 'checkWake', 'npmCiCommand', 'packageSkills', 'planHookInstall', 'routingDiagnosis',
+  'WORKTREE_BRANCH_TEMPLATE', 'approveCodexRootProfile', 'approveStandaloneRootProfile', 'checkWake', 'npmCiCommand', 'packageSkills', 'planHookInstall', 'routingDiagnosis',
 ];
 const hostReference = readFileSync(path.join(REPO, 'docs', 'reference', '02-host.md'), 'utf8');
 const integrationTable = hostReference.split('\n## The host integration entry point\n')[1]?.split('\n### ')[0] ?? '';
@@ -973,8 +976,8 @@ const undocumented = INTEGRATION_NAMES.filter((name) => !new RegExp(`^\\| \`${na
 check('02-host names every host integration export in its table',
   integrationTable !== '' && undocumented.length === 0, undocumented.join(', ') || 'section not found');
 const fixtureSandbox = path.join(SB, 'host-integration');
-const fixtureHome = path.join(fixtureSandbox, 'home');
-mkdirSync(fixtureHome, { recursive: true });
+const fixtureHome = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-host-consumer-'));
+process.on('exit', () => rmSync(fixtureHome, { recursive: true, force: true }));
 const fixtureInput = path.join(SB, 'host-integration.json');
 writeFileSync(fixtureInput, JSON.stringify({
   sandbox: fixtureSandbox,
@@ -1003,10 +1006,14 @@ writeFileSync(fixtureInput, JSON.stringify({
     privateSpecifiers: PRIVATE_SPECIFIERS,
   },
 }));
-const HOST_INTEGRATION_VERDICTS = 15;
+const HOST_INTEGRATION_VERDICTS = 20;
+const runtimeFixture = path.join(target, 'consumer.mjs');
+cpSync(path.join(here, 'fixtures', 'host-integration', 'consumer.mjs'), runtimeFixture);
+const fixtureEnv = { ...env, HOME: fixtureHome, USERPROFILE: fixtureHome };
+delete fixtureEnv.PROMPTOBUS_SERVICE_HOME;
 const fixtureRun = installed.status === 0
-  ? spawnSync(process.execPath, [path.join(here, 'fixtures', 'host-integration', 'consumer.mjs'), fixtureInput], {
-    cwd: target, encoding: 'utf8', env: { ...env, HOME: fixtureHome, USERPROFILE: fixtureHome },
+  ? spawnSync(process.execPath, [runtimeFixture, fixtureInput], {
+    cwd: target, encoding: 'utf8', env: fixtureEnv,
   })
   : { status: 1, stdout: '', stderr: 'tarball was not installed' };
 let fixtureVerdicts = [];

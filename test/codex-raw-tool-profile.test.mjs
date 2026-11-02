@@ -13,6 +13,8 @@ import { persistNativeParticipant, requireNativeTerminal, reserveNativeParticipa
 import { done } from '../lib/done.js';
 import { spawn as spawnParticipant } from '../lib/spawn.js';
 import { REGISTRY } from '../lib/drivers.js';
+import { processState, requireProcess } from '../lib/service-state.js';
+import { waitFor } from './harness.mjs';
 
 const root = makeSandbox('promptobus-codex-');
 process.env.CLAUDE_CODE_SESSION_ID = 'raw-profile-owner';
@@ -67,6 +69,7 @@ for (const kind of ['default','selected','selected-recovery','missing-original']
   const env = { ...process.env, PROMPTOBUS_CODEX_HOME: registry, PROMPTOBUS_CODEX_OWNER_HOME: owner,
     PROMPTOBUS_CODEX_RAW_TOOL_RECEIPTS: selected ? '1' : '', PROMPTOBUS_CODEX_LIMIT_MS:'20', FIXTURE_TRACE:path.join(root,kind+'.jsonl'), FIXTURE_MISSING:missing?'1':'' };
   const ref = kind;
+  let ownedApp, ownedHolder;
   const {record:reserved}=reserveNativeParticipant(store,'profile',
     participantRecord(`worker:${ref}`,{harness:'codex',sessionRef:ref}),null,REGISTRY);
   const home = participantCodexHome({ task:'profile', address:`worker:${ref}` }, env);
@@ -81,6 +84,8 @@ for (const kind of ['default','selected','selected-recovery','missing-original']
     const trace=readFileSync(env.FIXTURE_TRACE,'utf8').trim().split('\n').map(JSON.parse);
     const config = readFileSync(path.join(home, 'config.toml'), 'utf8');
     const record = readSession(ref, env);
+    ownedApp = requireProcess(record.appPid);
+    ownedHolder = requireProcess(record.holderPid);
     check(`raw profile: production ${ref} launch writes only its selected presentation`,
       config.includes(direct) === selected && record?.rawToolReceipts === selected, JSON.stringify({config,record}));
     check(`raw profile: production ${ref} keeps requested sandbox/approval and fixture identity`,
@@ -150,7 +155,17 @@ for (const kind of ['default','selected','selected-recovery','missing-original']
       } finally { if(before===undefined) delete process.env.PROMPTOBUS_CODEX_HOME; else process.env.PROMPTOBUS_CODEX_HOME=before; }
     }
   } finally {
-    await reapHolder(ref, env);
+    if (missing && ownedApp && ownedHolder) {
+      // Missing command output deliberately prevents native Stop; fixture teardown confirms only owned physical exit.
+      if (processState(ownedApp) === 'alive') process.kill(ownedApp.pid, 'SIGTERM');
+      if (!await waitFor(() => processState(ownedApp) === 'dead', { timeoutMs: 10000 })) {
+        throw new Error('Raw receipt fixture could not confirm its exact owned app-server exit');
+      }
+      if (processState(ownedHolder) === 'alive') process.kill(ownedHolder.pid, 'SIGKILL');
+      if (!await waitFor(() => processState(ownedApp) === 'dead' && processState(ownedHolder) === 'dead', { timeoutMs: 10000 })) {
+        throw new Error('Raw receipt fixture could not confirm its exact owned process exit');
+      }
+    } else await reapHolder(ref, env);
     dropSession(ref, env);
     rmSync(home, {recursive:true,force:true});
   }

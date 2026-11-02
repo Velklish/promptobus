@@ -140,6 +140,12 @@ repository's AGENTS.md in its own checkout; if that document requires generated 
 adapters outside the repository's generator declaration, the approver runs that step
 before gates.
 
+Managed Claude HTTP plans put an explicit private credential-file reference in
+the per-launch `headersHelper` and owned `SessionStart` hook. Both validate the
+staged generation independently of the reused daemon environment; config files
+contain no bearer bytes. Other SessionStart hooks and the ordinary Stop guard
+remain unchanged.
+
 Claude Code continues to take its MCP and settings files from the task store. Its normal
 background worktree isolation now permits writes in the approver worktree, so the driver
 does not set worktree.bgIsolation to none. Cursor and Codex place their project layer
@@ -354,10 +360,10 @@ After the session is seen, and before the launch pane is stopped, `liftSession` 
 `@promptobus_task` and `@promptobus_address`. Each `set-option` is checked by its exit
 code and then read back with `show-options -v`. The call is tried twice. A mark that
 still does not match refuses the lift: `ok: false`, and the error names the option
-(`@promptobus_task did not take on persist session <name>: … — the persist session was
-stopped`). The driver prints that inside `persist session did not lift (…)`, so the
-spawn line is where the miss shows, and the persist session is killed rather than left
-unmarked on the shared server. A session list taken after a successful lift is a
+and the observed session. The driver retains its actual name, chat id, pane pid and
+workspace hash. It revokes the owned grants before native cleanup; unreadable or
+replaced native identity retains the record instead of authorizing a kill.
+A session list taken after a successful lift is a
 different reading: the lift does not return until the read-back matches, so a list that
 lacks the mark was not how the miss was detected.
 
@@ -386,6 +392,10 @@ A missing registry-home declaration propagates through direct `inspect`, `stop` 
 `activate` calls; the aggregate session snapshot degrades driver errors to `unknown`,
 and `registerWake` keeps its safety catch. `null` means the named registry was opened
 and held no readable record.
+
+Cursor turn-state observation reads or discovers its transcript without rewriting
+the registry. An observation must not invalidate its own native ownership proof;
+explicit transcript caching remains a separate operation.
 
 Every number and shape below was taken from live spike runs (2026-09-03, `agent`
 2026.09.02-c22c1a3, tmux 3.6b), not inferred from documentation: Cursor has no docs
@@ -594,6 +604,14 @@ see it, the injection does not interrupt the turn, a second parallel turn does n
 appear. There is no longer a reason to refuse “a turn is running” here — the
 message is not lost, it waits.
 
+After successful delivery, the activation grace mark lives in a private activity
+sidecar bound to the exact session reference, launch generation and native chat.
+It does not change the ownership record: a fast next turn can authenticate its
+first HTTP request while delivery finishes. A late activation cannot mark a
+replacement generation. Turn-state observation only reads matching activity;
+the existing session cleanup removes its owned sidecar. Native ownership and
+exact-revision HTTP authorization checks remain unchanged.
+
 ### Launch directories a driver claims
 
 Source: `src/driver.ts`.
@@ -652,6 +670,146 @@ journal and hooks-file evidence is in [hooks and trust](../guides/hooks-and-trus
 
 ### Shared HTTP native binding
 
+Actual worker, reviewer, approver, reporter, teamlead and lead launches finalize
+one prepared plan after their final rebuild and before writing launch files.
+The private registry replaces the owned MCP entries on that same plan, preserving
+native launch identity, serialized files, external servers and tool denials.
+Planning and dry runs neither start the owner nor reserve credentials.
+The managed owner snapshot drops `PROMPTOBUS_ROOT_*` and `PROMPTOBUS_CLIENT_*`
+capability references while retaining the trusted account environment.
+
+Each managed launch stages its own private record before native start. Claude
+and OpenCode worker records remain mode `0600` in ordinary task directories;
+staging does not change those directories' permissions. Claude
+`SessionStart` and Cursor `sessionStart` use the same ordered guard command as
+the ordinary stop guard. The registry validates the staged home, task, address,
+ref and launch generation before publishing the actual native id. Claude's
+requested UUID is a launch hint; the owned native payload supplies its actual id,
+and an already bound actual id cannot change. Its managed native readback also
+checks the exact launch generation and current participant under the task lock
+before the caller's real persist callback writes. Native publication changes no turn counter and
+hands over no wake contact.
+
+Claude first admission additionally requires actual `SessionStart.source=startup`.
+The owned launch captures its selected executable revision, exact background argv
+and canonical account directory. The staged owner snapshot must resolve the same
+native directory as the effective child launch; an actor config override cannot
+supply it. The real hook must correlate its same-ID regular transcript inside
+that store and its direct native parent (or one observed `/bin/sh` command child)
+with the captured executable and current process birth. The registry rechecks the
+original record revision, ref, launch ID, executable and immutable native tuple
+under the existing task lock before publishing. Missing or changed observations
+retain an unresolved actual ID without first tool admission. This source route
+still requires installed native startup/transcript/order verification.
+
+The shared service constructs every managed tool context from the actual trusted
+client binding, replacing inherited harness identity variables. Claude's bearer
+header contains no native session-ID hint. A requested launch UUID cannot replace
+the actual bound ID; the existing grant realization publishes that actual ID
+before tool dispatch.
+
+OpenCode first admission uses its actual owned `serve --port 0 --hostname
+127.0.0.1` child, captured executable/birth, authenticated endpoint and successful
+`session/create` response before sending the first prompt. The child receives an
+explicit absolute filesystem `OPENCODE_DB`, preserving an existing absolute
+override or selecting `<actual XDG data home>/opencode/opencode.db`; this prevents
+compiled channel selection from changing the claimed database. Channel-specific
+stores require their explicit absolute override. `:memory:`, relative databases
+and truthy simulation refuse. Its existing native data root is canonicalized;
+config directories are not data proof. The created ID is recorded unresolved
+before asynchronous database/process verification. Each publication CASes the
+same owner generation and original phase revision. Unresolved creation or grant
+admission retains its primary record and owned holder after the revoke attempt.
+
+Cursor first obtains an actual ID from its own successful `create-chat`, then
+starts persist with that same ID. It captures the controlled native
+`CURSOR_CONFIG_DIR`, canonical cwd and approved wrapper/bundled-node/bundle
+identity; its private launch script replaces inherited tmux environment and keeps
+no root capability references. The native chat-store MD5 is distinct from the
+persist workspace hash and from transcript/data paths. The actual asynchronous
+`sessionStart` supplies only its real conversation ID and observed native process;
+no transcript field is invented. Within the existing appearance budget, owner
+publication matches that hook birth to the actual pane, verifies the canonical
+owned SQLite file and confirms that this native process currently holds it open.
+A path or initialized-looking file alone cannot hide native memory fallback.
+Linux uses the verified process's file descriptors; Darwin uses bounded own-PID
+file observation with `/usr/sbin/lsof`. Unavailable evidence stays unresolved.
+
+A completed-turn wake may overlap that native proof. Admission and wake updates
+publish under the task lock, preserving concurrent `turns` and `last` metadata.
+Every other session field and the participant ownership must still match the
+captured generation; process, store and native image checks remain mandatory.
+
+Cursor discovery may precede its fire-and-forget hook. Tool calls remain refused
+while pending; owner publication realizes the same client/token once proof is
+complete. No second spawn, fresh bearer injection or automatic mutation replay
+is used to hide that ordering. Unknown creation/admission retains the primary
+record, pane and workspace until scoped lifecycle reconciliation. These native
+producer and first-tool/order guarantees still require ordinary installed-profile
+verification; private packet fixtures do not establish them.
+
+Codex and OpenCode retain their native API barriers.
+A future lead or teamlead keeps a reservation until its actual id creates the
+owner; it never constructs an early actor. An existing closed task refuses
+before native-record or journal writes, including a launch with deferred binding. The published owner keeps the exact
+session-record pointer, and a Codex root-task connection has a distinct grant.
+Launch failure revokes its grants before deleting the owned record. A revocation
+failure retains that record and reports both causal messages and its exact path
+when known; the caller preserves the handled failure without repeating revocation.
+A record-cleanup failure also preserves the launch cause. Native launch state
+remains unknown and requires inspection before retrying.
+Codex cleanup requires an accepted shutdown and confirmed holder exit; an unknown
+Stop never falls back to raw recorded pid kills. OpenCode signals require its
+observed process birth and confirmed exit. Physical process death is not a native
+Stop receipt. Failed cleanup retains the primary record and exact references;
+already removed sidecars or home contents may be partial.
+Preparation rollback attempts every grant registered by that launch once. If
+revocation fails, the error preserves the preparation cause and every failed
+client id and private credential path; the caller does not retry those grants.
+This handled failure also prevents caller reservation cleanup when finalization
+failed before the completed service object was attached. Worker, reviewer,
+approver and reporter reservations are released only after confirmed revocation;
+their cleanup errors remain alongside the preparation cause. Cursor and OpenCode
+retirement recheck the captured record versions, generation and participant
+pointer under the task lock after awaited native cleanup; replacements remain.
+If partial teamlead reservation rollback fails before grants or native start,
+both reservation and rollback causes remain in the error. That branch does not
+claim an unknown grant outcome: registration has not started yet.
+
+Managed native admission is separate from the package registry and the owner's
+credentials. Codex publishes its canonical private `CODEX_HOME`, actual thread id
+and captured app-server PID/birth after the correlated `thread/start` or
+`thread/resume` reply on that child’s own pipes. The exact record version,
+home/task/address/ref and launch generation must still match. This owned API
+proof precedes first-turn tools; it does not wait for a rollout that may not exist
+yet. Root-alias sidecars copy the same tuple and reference the primary generation.
+
+Explicit managed root resume captures the previous record and launcher reservation
+before installing the new reservation. Only current-version records with captured
+holder/app births, owned native API evidence and exact owner pointers can resume.
+Birthless legacy records are unsupported even when their PIDs are absent. Missing
+fields, unproved death of the exact captured process lifetime, unreadable locks
+and permission errors refuse without rewriting retained state; a trustworthy
+comparable different birth proves only the old lifetime ended and grants no
+right to signal the new occupant. Start a new native session rather than importing old
+records or inventing a birth or Stop receipt. The same private home/history of a
+known new binding is resumed by the new owned child before its generation changes.
+The previous owner is validated before its launcher reservation changes.
+Root publication keeps the actual current launch generation and validated launcher
+reservation until admission completes. Failed resume restores the previous record
+and owner generation only after confirmed revocation and native cleanup, under
+task and session locks; unknown cleanup retains the current generation instead.
+
+Native paths, session IDs and hook names alone do not establish fresh admission.
+The harness-specific proofs above establish the actual native store, creation
+and captured process lifetime. Missing proof retains an unresolved binding and
+refuses actor tools; a configured path or endpoint cannot fill the gap.
+See the native [Claude configuration](https://code.claude.com/docs/en/env-vars)
+and [hook input](https://code.claude.com/docs/en/hooks), and Cursor
+[configuration](https://cursor.com/docs/cli/reference/configuration) and
+[nullable transcript input](https://cursor.com/docs/hooks).
+
+
 A shared HTTP bearer identifies a client grant, while one Codex app-server may
 host several native threads. A native grant binds to one exact actual thread ID
 through trusted private owner control. `tools/call` metadata verifies this binding;
@@ -680,7 +838,11 @@ The reviewer thread sets `features.shell_tool = false` and `features.unified_exe
 These flags remove native command execution tools; the read-only filesystem sandbox and
 write-approval denials remain. Workers, approvers, teamleads, root owners and reporters
 keep their own profiles. A reviewer cannot read local files through a native Read tool,
-so the mechanism also supplies `reviewer_files`, a dependency-free stdio MCP server.
+so the mechanism also supplies `reviewer_files`.
+
+Managed Codex reviewer launches use the shared service's authenticated HTTP
+`/mcp/reviewer_files` route. Pure driver preparation retains the stdio descriptor;
+the launch coordinator replaces it before starting the native process.
 
 Its `read_file`, `read_files`, `list_files` and literal `search_text` tools accept only declared absolute
 paths inside the reviewed tree, exact rule files, canonical and visible personal skill
@@ -689,15 +851,17 @@ The workspace's exact `.agents/skills-index.md` file is granted when present; it
 directory is not. An index or parent symlink is not granted. Its canonical path and
 regular-file type are checked again when the MCP server starts, so a replaced index
 refuses startup. The grant remains an exact file for the server's lifetime.
-`PROMPTOBUS_REVIEW_CANONICAL_FILES` carries that file constraint without changing
-the declared roots. `read_files` accepts one to eight file/range requests, with the same
+Pure preparation carries that file constraint in `PROMPTOBUS_REVIEW_CANONICAL_FILES`;
+managed launch stores it in the private client grant without changing the declared
+roots. `read_files` accepts one to eight file/range requests, with the same
 line metadata and restrictions as `read_file`. A batch permits at most 2000 requested
 lines and 256 KiB of serialized UTF-8 output, including JSON escaping and metadata.
 An invalid or excessive batch returns an error without partial file content; request
 smaller ranges. Independent reads can therefore share one model tool call.
 Reads and search output are bounded; listings skip Git, dependency and build directories.
-`PROMPTOBUS_REVIEW_READ_ROOTS` carries the JSON root list to this one server. It never
-includes the authentication home. Rule-file parent directories, the shared workspace
+`PROMPTOBUS_REVIEW_READ_ROOTS` carries the JSON root list in the pure descriptor;
+managed launch keeps the same roots in its private file grant. Neither includes
+the authentication home. Rule-file parent directories, the shared workspace
 ancestor and the private configuration directory are not read roots. The isolated canonical
 skill copy is granted separately from its configuration directory. The review prompt still forbids builds, tests and
 analyzers and names the MCP reads. Existing bus and classified external read tools remain.
@@ -969,11 +1133,15 @@ must not fall over its own log.
 
 ### Codex protocol versions
 
-The committed contract covers codex-cli 0.158.0, the minimum, and 0.164.0, the proven
+The committed contract covers codex-cli 0.158.0, the minimum, and 0.166.0, the proven
 version. Each version has 52 consumed schemas with the local definition closure.
-The 0.164.0 contract was generated from the installed stable binary on 2026-10-28;
+The 0.166.0 contract was generated from the installed stable binary on 2026-11-02;
 the minimum was derived from its historical full capture. [Live measurements](../../test/fixtures/codex-app-server/0.164.0/README.md)
 retain the binary version and date. Full historical captures remain in Git history.
+
+The current contract removes detached review delivery; the finite `inline` review
+witness remains valid. Generic holder RPC forwarding does not certify arbitrary
+review parameters or establish native workflow readiness.
 
 Native harness version labels are telemetry. The local schema gate validates the committed
 contract before any installed-binary skip, then performs bounded no-model schema generation,
@@ -1112,6 +1280,12 @@ the guard takes the child and session locks; an asynchronous sweep does not reta
 its own parent lock synchronously. A copied child proof without that alias is not
 parent terminal evidence. The parent alias owns no additional private home, so its
 driver cleanup removes none; the shared launch's owned home retires with Stop.
+The same hook deliberately skips native-home removal for freshly dead abandonment
+and an exact never-invoked generation. Public terminal/dead/alias guards precede
+these dispositions. Allowed task-local sidecars and merged worktrees can still be
+cleaned; a false hook result is neither a new native Stop nor a refusal of those
+local removals. An abandoned native primary/home remains retained, and missing
+registry state alone never establishes a never-invoked generation.
 
 A same-slug native teamlead relift validates the previous terminal proof before
 reserving a new launch. Both seats retain that proof and record
@@ -1300,11 +1474,23 @@ through its home. `inspect` and `stop` arrive ref-only and resolve the record th
 the registry — the teamlead's `orchestrator` slot has no file stem of its own, so the record
 path falls back to the lift ref; `sweepParticipant` reaps registry records matching both task and
 participant address, record, log and entry together. An unnamed participant removes nothing.
+The selected ref and native id must still match the listed generation before any
+native work; a stale selection retains the replacement. Empty-record Stop also
+rereads its registry entry under the lock before removing it.
 Single-participant `sweep` awaits the cleanup hook under the journal lock before removing
-participant files or reporting completion; rejected hooks produce the cleanup warning.
+participant files or reporting completion; a rejected hook refuses and retains those files
+and the worktree. The installed OpenCode hook borrows only the exact held home/task lock;
+`done` supplies its exact private home/task scope without borrowing a lock; direct cleanup
+calls acquire it themselves. An empty scan returns zero only after the selected registry
+entry and exact primary are both absent, using the legacy worker path when no journal
+pointer exists. Present, unreadable or mismatched files retain evidence and throw.
+Replacement or unknown cleanup throws rather
+than returning a successful zero count that would let the caller delete retained evidence.
 `done` awaits cleanup for each dead participant of a closed task. Live or unknown participants
 with a cleanup hook keep the sweep pending, even without a worktree; a later `done` reaps them
-after their sessions are gone. The lift starts `serve --port 0`, reads the listening
+after their sessions are gone. A failed hook also keeps cleanup pending: the task stays closed,
+but its worktree, secrets and journal are excluded from further deletion and retention in
+that pass, and `worktreesSwept` is not set. The lift starts `serve --port 0`, reads the listening
 port off the holder log, waits for an answered session list, creates a session by title and
 posts the first turn. The measured holder API (basic auth `opencode:<password>`):
 `GET /api/session`, `POST /api/session` (`{"title"}`), `POST /api/session/:id/prompt`
@@ -1314,8 +1500,10 @@ outcome ends the wait), `GET /api/session/:id/permission`, `POST /api/session/:i
 on the config `model` default, which the plan writes. Auth failures fail the lift loudly; no
 login verdict is probed. The record lands before the first holder call (pid first, then url,
 then session id and the declared roots), so a crash past lift keeps a handle `stop` reaps by; a failed lift
-reaps the holder exactly once and removes record, log and registry entry, preserving the original
-failure even when session creation or the first prompt rejects its HTTP request. The next
+attempts credential revocation once and retires record, log and registry entry only after
+confirmed owned holder exit. Unknown revocation, exit or ownership retains references and
+preserves the original failure together with cleanup errors, including rejected session
+creation or first-prompt HTTP requests. The next
 attempt opens a fresh log. The deterministic stub-holder check is
 `node test/promptobus-opencode-lift-failure.test.mjs`. The bound lift
 points the bus MCP entry and the holder env at the session record. Reviewer and approver
@@ -1440,21 +1628,25 @@ Source: `lib/driver-codex.ts`, `sweepParticipantHomes`.
 
 The homes root is one directory, `$TMPDIR/promptobus-codex-homes`. A home is a direct child of it.
 `removeParticipantHome` still refuses anything that is not: the owner's `~/.codex`, a nested path,
-the root itself. The directory name ends with `_` and the sha1 of `path.resolve` of
+the root itself. Its lexical parent must match the declared root or that root's canonical spelling;
+arbitrary parent aliases are not followed, and removing a leaf symlink does not remove its target.
+The directory name ends with `_` and the sha1 of `path.resolve` of
 `harnessStateHome('codex', env)` — the environment variable first, otherwise the bound host's
 answer. `participantCodexHome`, `makeParticipantHome`, `sweepParticipantHomes` and
 `sweepParticipant` all take that suffix from one function. The readable head and the task-address
 hash are unchanged. `--dry-run` and a real lift both call `participantCodexHome`, so the printed
 path is the path that will be built. A sweep deletes a child only when that suffix is its own and
-no session record names the path. `makeParticipantHome` refuses a directory that does not carry it.
+no session record names its canonical path. Directory aliases in a record or in the homes root
+therefore preserve the same referenced home. `makeParticipantHome` refuses a directory that does not carry it.
 The plan's home is named from the environment the lift will pass — the process environment
 overlaid with the host's extra environment.
 
 A second registry has a different suffix in the same directory. A lift under it reads that root and
 leaves the first registry's names in place, because the suffix is not its own. The same task and
-address under two registries are two directories. The key is `path.resolve` of the registry home,
-not its realpath: two spellings that do not fold are two registries, and neither sweep removes the
-other's homes.
+address under two registries are two directories. The key is `path.resolve` of the canonical
+registry home selected by `harnessStateHome`: filesystem aliases select the same registry,
+while distinct registry directories retain distinct suffixes. Homes with an unmatched suffix
+are left in place, including suffixes written from an older spelling.
 
 A home an older version left is a direct child of that same root with no `_` in the name: the older
 slug replaces every non-alphanumeric with `-`, so it cannot carry this suffix. A sweep cannot prove

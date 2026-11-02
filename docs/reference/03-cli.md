@@ -1725,6 +1725,33 @@ That last case is the one this exists for. A cleanup hook reaps a holder only wh
 | `service status [--json]` | Read discovery and query the existing owner; it does not start a listener. |
 | `service stop [--json]` | Refuse live clients, startup reservations, in-flight requests or attached work; otherwise request shutdown and confirm physical process exit. |
 | `service run` | Internal detached entry, requiring the consumer-owned Host factory in `runPromptobus` options. |
+| `service profile --standalone --id <id> --harness codex\|claude --native-store <path> --executable <absolute-file>` | Approve a separate process-owned native profile and return credential-free HTTP/start-hook descriptors. |
+| `service exec-plan --profile <id> [--service-home <path>] [--dry-run] -- <native-command> [args...]` | Private wrapper transport: ensure the approved owner and return a one-shot POSIX plan. Standalone admission stays pending until actual native proof; dry-run only prints a pure summary. |
+| `service preflight --standalone --profile <id> --native-id <actual-id> [--service-home <path>]` | Explicit owner recovery for the same proved native PID/birth/nonce/store. A trusted owner hook receipt is required; the old client stays revoked. Pending recovery can be repeated explicitly. In-flight or uncertain mutations refuse. Prints only the scoped result, then the native MCP server must reconnect. |
+
+`promptobus-root` is the package's POSIX handoff wrapper for `service exec-plan`.
+It takes the same flags and command separator, sources the private plan and
+replaces itself with the native command. An approved profile, a matching runtime
+and the native headers-helper/ordered-hook path are still required. See
+[BB Codex root profiles](02-host.md#bb-codex-root-profiles) for the consumer's
+configuration responsibilities, and [standalone root profiles](02-host.md#standalone-root-profiles)
+for explicit process-owned native routes and recovery boundaries. The private
+plan path is captured by the launcher; it is not a diagnostic to print or log.
+
+The separate installed `promptobus-bb-root` command validates an owner profile
+and its owned project files, then exits 2 with `ready: false`,
+`reason: "provider-context-unavailable"` and `creation: "notAttempted"`.
+It cannot prove the selected BB provider's effective Codex home before creation,
+so it makes no native probe or public BB spawn and gives no probe-home approval
+instruction. This is a blocked shipping entry, not ordinary BB readiness. Saved
+library creation operations and trusted consumer callbacks are unchanged; see
+[Shipped BB root invocation](02-host.md#shipped-bb-root-invocation).
+
+New owner/profile initialization selects version-2 state without importing old
+history. Fresh standalone admission requires the approved exact NEW dispatch
+and actual native proof described in the host reference; a descriptor/exec plan
+is not a readiness claim. Concrete resume accepts only a known current-version binding. Old or unknown
+IDs, missing initialized state and incomparable death proof refuse without reset.
 
 The service key contains the canonical Host workspace and store; the store may
 be outside the workspace. The retained discovery contains root/home, runtime
@@ -1733,9 +1760,25 @@ prints one JSON value; the other display is formatted JSON. An incompatible
 runtime owner or foreign listener on the retained port refuses instead of
 creating another owner.
 
+Actual participant launches reserve scoped HTTP credentials before the harness
+starts; a preview keeps its pure prepared configuration. Credential values stay
+in the launch environment, while generated configs carry native environment
+references. The [driver contract](05-drivers.md#shared-http-native-binding)
+describes native publication and deferred owner creation.
+
 The MCP listener serves `/mcp/bus` and `/mcp/reviewer_files` on loopback in the
 same physical process. Clients retain separate credentials and connection state;
 each logical route enforces its grant and file ceiling.
+
+The [Codex reviewer contract](05-drivers.md#execution-free-codex-review) describes
+how its prepared entry becomes the managed route:
+
+<!-- quote:05-drivers.md -->
+Managed Codex reviewer launches use the shared service's authenticated HTTP
+`/mcp/reviewer_files` route. Pure driver preparation retains the stdio descriptor;
+the launch coordinator replaces it before starting the native process.
+<!-- /quote -->
+
 Owner control uses a private local socket, so its credentials are never sent to
 an unrelated process that acquired the retained TCP port after a crash. A client
 bearer cannot register or rebind another client. Reviewer grants that contain the
@@ -2259,10 +2302,17 @@ refuses while that asynchronous lock is held; another process waits for it and t
 with the journal-busy refusal if cleanup has not finished. The destructive stretch returns
 a Promise, so callers await `sweep` before reporting completion.
 
-An asynchronous hook rejection uses the same warning as a synchronous cleanup exception:
-`could not clear the harness state of participant <address>: <error>`. Participant files
-are then removed and the lock is released. The exit code still follows the tree-removal
-outcome; a cleanup warning alone does not change it. The deterministic delayed/rejected
+A synchronous or asynchronous hook failure refuses the sweep with
+`could not clear the harness state of participant <address>: <error>; participant files retained`.
+The worktree and participant files stay in place, the lock is released, and the command
+fails. A later confirmed cleanup can retry. The installed OpenCode hook borrows only this
+exact home/task lock for its record retirement; custom hooks keep their public arguments,
+and unrelated callers still acquire their own lock. `done` passes the same private scope
+without permission to borrow a lock. If the registry scan is empty, the installed hook
+checks both the exact selected entry and the owned primary path, including the legacy
+worker path without `metadata.sessionRecord`. Only confirmed absence returns zero;
+a present, unreadable or mismatched record refuses and stays in place.
+The deterministic delayed/rejected
 hook and concurrent re-lift checks are `node test/promptobus-sweep-async.test.mjs`.
 
 The lock is there for one race: `spawn` writes a participant record through that same lock,

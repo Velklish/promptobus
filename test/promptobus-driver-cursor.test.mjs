@@ -18,7 +18,7 @@
 // wall-clock time — the warden loop, a pause inside a turn — and therefore runs in a
 // serial runner group. Here everything that is judged without a clock.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,7 +37,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_PATH = path.join(here, '..', 'package.json');
 const PACKAGE_VERSION = JSON.parse(readFileSync(PACKAGE_PATH, 'utf8')).version;
 const SB = makeSandbox('promptobus-cursor-');
-const { home: HARNESS, stateHome, restore } = await installHarness({ binDir: path.join(SB, 'bin') });
+const { home: HARNESS, stateHome, restore } = await installHarness({ binDir: path.join(SB, 'bin'), bundledRuntime: true });
 
 const DIAGNOSE_ADDRESS = 'worker:diagnose';
 const diagnosisTrace = [
@@ -61,7 +61,7 @@ const {
 const {
   ADDRESS_OPT, dropSession, injectText, launchScript, TASK_OPT, tmuxSessions, readSession, readTmuxSessions, readTranscript, sessionFile, SESSION_ENV_VAR,
   sessionKey, silentIsStall, isRuntimeCmd, mcpRuntimeNeedles, BUS_MCP_NEEDLE, toolKidsOf, tmux, transcriptOf,
-  turnState,
+  turnState, injectionActivityFile, markInjected, INJECT_GRACE_MS,
   workspaceHash, writeSession, searchPath,
 } = await import(path.join(here, '..', 'lib', 'cursor-persist.js'));
 const { liftDriver, REGISTRY } = await import(path.join(here, '..', 'lib', 'drivers.js'));
@@ -69,6 +69,7 @@ const { liftHarness, skillsNote, writeLaunchFiles } = await import(path.join(her
 const { approverLayer } = await import(path.join(here, '..', 'lib', 'approver.js'));
 const { guardHookCommand } = await import(path.join(here, '..', 'dist', 'hooks.js'));
 const { APPROVER } = await import(path.join(here, '..', 'dist', 'index.js'));
+const { readPrivate, writePrivate, recordVersion, sameRecordVersion } = await import(path.join(here, '..', 'lib', 'service-state.js'));
 
 const TASK = 'cursorbus-t20260903-000000';
 const WORKER = 'worker:cur';
@@ -666,7 +667,7 @@ const mergedHooks = JSON.parse(readFileSync(path.join(hooksWt, '.cursor', 'hooks
 const mergedPorc = gitAt(hooksWt, 'status', '--porcelain');
 check(': a tracked .cursor/hooks.json — the guard stands beside the trusted tracker records, a foreign record is kept out',
   mergedHooks.hooks.stop.map((r) => r.command).join('|') === `${ctx.guardCommand}|${trackerCli} hook stop --harness cursor`
-  && mergedHooks.hooks.sessionStart.map((r) => r.command).join('|') === `${trackerCli} hook session-start --harness cursor`
+  && mergedHooks.hooks.sessionStart.map((r) => r.command).join('|') === `${ctx.guardCommand}|${trackerCli} hook session-start --harness cursor`
   && !JSON.stringify(mergedHooks).includes('echo foreign-record')
   && mergeWarns.includes('echo foreign-record') && mergeWarns.includes('"trustedHooks.cursor.stop"'),
   `${JSON.stringify(mergedHooks)} · ${mergeWarns}`);
@@ -713,7 +714,7 @@ const undeclaredLift = trustClone('undeclared-hooks-clone', {
 });
 check(': tracker records beside a tracker config naming its cli, with no trust declaration, are kept out with a warning',
   undeclaredLift.merged.hooks.stop.map((r) => r.command).join('|') === ctx.guardCommand
-  && undeclaredLift.merged.hooks.sessionStart === undefined
+  && undeclaredLift.merged.hooks.sessionStart.length === 1 && undeclaredLift.merged.hooks.sessionStart[0].command === ctx.guardCommand
   && undeclaredLift.warned.includes(`${trackerCli} hook stop --harness cursor`)
   && undeclaredLift.warned.includes('promptobus.json'),
   `${JSON.stringify(undeclaredLift.merged)} · ${undeclaredLift.warned}`);
@@ -723,7 +724,7 @@ const editedTrustLift = trustClone('edited-trust-clone', {
 }, { onDisk: { 'promptobus.json': trackerTrust } });
 check(': an uncommitted edit of promptobus.json does not trust committed records — the declaration is read from the index',
   editedTrustLift.merged.hooks.stop.map((r) => r.command).join('|') === ctx.guardCommand
-  && editedTrustLift.merged.hooks.sessionStart === undefined
+  && editedTrustLift.merged.hooks.sessionStart.length === 1 && editedTrustLift.merged.hooks.sessionStart[0].command === ctx.guardCommand
   && editedTrustLift.warned.includes(`${trackerCli} hook stop --harness cursor`),
   `${JSON.stringify(editedTrustLift.merged)} · ${editedTrustLift.warned}`);
 // A host whose guard argv names no promptobus: its installed guard, listed, still is not a second guard.
@@ -850,6 +851,15 @@ check(': the script does not put TMUX back after -u — otherwise persist sees a
   && !/\bTMUX_PANE=/.test(scriptFromTmux)
   && /FOO=ok/.test(scriptFromTmux),
   scriptFromTmux);
+
+const isolatedLaunch = launchScript({ bin: process.execPath,
+  argv: ['-e', 'process.stdout.write(JSON.stringify({root:process.env.PROMPTOBUS_ROOT_FORGED??null,foreign:process.env.PROMPTOBUS_CLIENT_FOREIGN??null,own:process.env.PROMPTOBUS_CURSOR_SESSION}))'],
+  env: { PATH: '/usr/bin:/bin', PROMPTOBUS_CURSOR_SESSION: '/state/own.json', PROMPTOBUS_ROOT_FORGED: 'must-be-dropped' },
+});
+const isolatedRun = spawnSync('/bin/sh', ['-c', isolatedLaunch], { encoding: 'utf8',
+  env: { ...process.env, PROMPTOBUS_ROOT_FORGED: 'foreign-root', PROMPTOBUS_CLIENT_FOREIGN: 'foreign-client' } });
+check(': the actual launch script replaces a foreign tmux environment and keeps only its own managed references',
+  isolatedRun.status === 0 && JSON.stringify(JSON.parse(isolatedRun.stdout)) === JSON.stringify({ root: null, foreign: null, own: '/state/own.json' }), isolatedRun.stderr);
 
 // Reviewer: its own sandbox, the reviewed directory on read, deny in the permissions
 // file.
@@ -1126,7 +1136,7 @@ check(': --dry-run names the source, the skill count and where they will land',
 const spawned = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
   '--worker', 'cur', '--harness', 'cursor'], { cwd: ws, env });
 check('step 1: promptobus spawn --harness cursor lifted the participant',
-  spawned.status === 0 && /worker worker:cur lifted/.test(spawned.out), spawned.out.slice(-500));
+  spawned.status === 0 && /worker worker:cur lifted/.test(spawned.out), spawned.out);
 
 const wp = store.participantOf(store.readTask(home, TASK), WORKER);
 check('step 1: the participant record carries harness cursor and a snapshot of its capabilities',
@@ -1282,6 +1292,68 @@ check('PB-153: status uses the recorded Cursor turn count, not transcript marker
 check('step 3: the chat transcript was found by its id and written into the registry',
   !!transcriptOf(readSession(ref, env), env) && readSession(ref, env)?.transcript?.includes(record?.chatId),
   String(readSession(ref, env)?.transcript));
+
+const cachedTranscriptRecord = readSession(ref, env);
+for (const cache of ['absent', 'deleted']) {
+  let observed = null, turn = null, unchanged = false;
+  if (cachedTranscriptRecord) {
+    const uncached = { ...cachedTranscriptRecord,
+      transcript: cache === 'absent' ? undefined : path.join(SB, 'deleted-transcript.jsonl') };
+    writeSession(uncached, env);
+    const file = sessionFile(ref, env), before = readFileSync(file), version = recordVersion(file);
+    turn = turnState(uncached, env);
+    observed = cursorDriver.inspect(ref);
+    unchanged = sameRecordVersion(version) && readFileSync(file).equals(before);
+    writeSession(cachedTranscriptRecord, env);
+  }
+  check(`step 3: inspection with ${cache} transcript cache leaves its registry proof unchanged`,
+    !!cachedTranscriptRecord?.transcript && turn?.transcript === cachedTranscriptRecord.transcript
+    && turn?.busy === false && turn?.ended > 0 && observed?.state === 'alive' && observed?.busy === false && unchanged,
+    JSON.stringify({ cache, turn, observed, unchanged }));
+}
+
+const activityRecord = { ...readSession(ref, env), ref: 'owned injection activity controls',
+  launchId: 'activity-generation-one', chatId: 'activity-chat-one', transcript: path.join(SB, 'activity.jsonl') };
+writeFileSync(activityRecord.transcript, JSON.stringify({ type: 'turn_ended', status: 'success' }) + '\n');
+writeSession(activityRecord, env);
+const activityFile = injectionActivityFile(activityRecord.ref, env), activityRegistry = sessionFile(activityRecord.ref, env);
+const ownershipBytes = readFileSync(activityRegistry), ownershipVersion = recordVersion(activityRegistry);
+const markedActivity = markInjected(activityRecord, env);
+check('injection activity: delayed transcript keeps its grace without changing native ownership bytes or revision',
+  markedActivity && turnState(activityRecord, env).busy === true && sameRecordVersion(ownershipVersion)
+  && readFileSync(activityRegistry).equals(ownershipBytes) && (statSync(activityFile).mode & 0o777) === 0o600
+  && (statSync(path.dirname(activityFile)).mode & 0o777) === 0o700,
+  JSON.stringify({ markedActivity, state: turnState(activityRecord, env), directoryMode: statSync(path.dirname(activityFile)).mode & 0o777 }));
+const activity = readPrivate(activityFile);
+writePrivate(activityFile, { ...activity, injectedAt: new Date(Date.now() - INJECT_GRACE_MS - 1000).toISOString() });
+check('injection activity: expired grace does not make an ended turn busy', turnState(activityRecord, env).busy === false);
+writeFileSync(activityRecord.transcript, JSON.stringify({ role: 'user', message: { content: [] } }) + '\n');
+check('injection activity: an actual queued turn remains busy after its injection grace expires', turnState(activityRecord, env).busy === true);
+writeFileSync(activityRecord.transcript, JSON.stringify({ type: 'turn_ended', status: 'success' }) + '\n');
+for (const field of ['ref', 'launchId', 'chatId']) {
+  writePrivate(activityFile, { ...activity, [field]: 'foreign-generation' });
+  check(`injection activity: foreign ${field} cannot mark this native generation busy`, turnState(activityRecord, env).busy === false);
+}
+const replacementActivity = { ...activityRecord, launchId: 'activity-generation-two', chatId: 'activity-chat-two' };
+writeSession(replacementActivity, env);
+markInjected(replacementActivity, env);
+const replacementBytes = readFileSync(activityFile);
+check('injection activity: a late old activation cannot replace the new generation activity',
+  markInjected(activityRecord, env) === false && readFileSync(activityFile).equals(replacementBytes)
+  && turnState(activityRecord, env).busy === false && turnState(replacementActivity, env).busy === true);
+const foreignActivityFile = path.join(realpathSync(SB), 'foreign-injection');
+writePrivate(foreignActivityFile, readPrivate(activityFile));
+const foreignActivityBytes = readFileSync(foreignActivityFile), foreignActivityVersion = recordVersion(foreignActivityFile);
+rmSync(activityFile);
+symlinkSync(foreignActivityFile, activityFile);
+check('injection activity: a leaf symlink is not read as a busy mark', turnState(replacementActivity, env).busy === false);
+check('injection activity: atomic publication replaces only the owned leaf without following its symlink',
+  markInjected(replacementActivity, env) && !lstatSync(activityFile).isSymbolicLink()
+  && sameRecordVersion(foreignActivityVersion) && readFileSync(foreignActivityFile).equals(foreignActivityBytes));
+dropSession(activityRecord.ref, env);
+check('injection activity: owned drop removes its sidecar and preserves other records and the symlink target',
+  !existsSync(activityFile) && !existsSync(activityRegistry) && !!readSession(ref, env)
+  && sameRecordVersion(foreignActivityVersion) && readFileSync(foreignActivityFile).equals(foreignActivityBytes));
 
 check('step 3: the stall route calls a human into the session with a persist command',
   cursorDriver.stallRoute({ kind: 'unknown', address: WORKER, repoAbs: wt }, record?.sessionName)

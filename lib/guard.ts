@@ -4,11 +4,11 @@ import path from 'node:path';
 import process from 'node:process';
 import {
   activeTasks, addrDir, addressOf, boundTaskId, countMailbox, foreignSession, holdsSession,
-  bus, clearWardenExit, identityLabel, lastTurnAt, liveWarden, mailboxOf, markTranscript, markTurn, nameOfArtifact,
+  bus, canonicalPath, clearWardenExit, identityLabel, lastTurnAt, liveWarden, mailboxOf, markTranscript, markTurn, nameOfArtifact,
   orchestratedTasks, ORCHESTRATOR, outboundMessages, ownership, participantOf, readHealth,
   readTask, readWake,
   readWardenExit, readWardenGeneration, resolveIdentity, sameOwnerSession, sessionIdentity,
-  taskDir, taskExists, taskOwner, writeJsonAtomic,
+  taskDir, taskExists, taskOwner, withTaskLock, writeJsonAtomic,
 } from './store.js';
 import { ANSWER_EXPECTED, answerOwedSince } from './answers.js';
 import { isGateRecordName, isHandoverRecordName } from './handoff.js';
@@ -27,7 +27,7 @@ export interface GuardInput {
   isTTY?: boolean; setEncoding(encoding: BufferEncoding): unknown; destroy?(): unknown;
   [Symbol.asyncIterator](): AsyncIterator<unknown>;
 }
-interface GuardArgs { role?: unknown; task?: unknown; home?: unknown; host?: PromptobusHost | null }
+interface GuardArgs { role?: unknown; task?: unknown; home?: unknown; rootProfile?: string; standaloneProfile?: string; serviceHome?: string; clientFile?: string; host?: PromptobusHost | null }
 type Identity = ReturnType<typeof resolveIdentity>;
 type GuardMark = { key?: unknown; count?: unknown };
 interface HintItem { id: string; key: string; line: string }
@@ -571,9 +571,36 @@ async function decide(args: GuardArgs, env: NodeJS.ProcessEnv, cwd: string, even
 }
 
 export async function guard(args: GuardArgs = {}, env = process.env, cwd = process.cwd(), stdin: GuardInput = process.stdin) {
+  const event = await readEvent(stdin);
+  if (args.clientFile) {
+    if (!args.host || args.rootProfile || args.standaloneProfile) throw new Error('Managed hook requires one owned client reference');
+    const scoped = { ...env, PROMPTOBUS_CLIENT_FILE: args.clientFile,
+      ...(args.serviceHome ? { PROMPTOBUS_SERVICE_HOME: args.serviceHome } : {}) };
+    const { readManagedServiceHookContext } = await import('./service-launch.js');
+    const context = readManagedServiceHookContext(args.host, args.clientFile, { env: scoped });
+    if (context.harness !== 'claude' || typeof args.home !== 'string' || canonicalPath(args.home) !== context.home
+      || args.task !== context.task || args.role !== context.address) throw new Error('Managed hook scope does not match its client');
+    const published = await (await import('./native-start.js')).authorizeManagedNativeStart(args.host, event, scoped, cwd);
+    if (published) withTaskLock(context.home, context.task, () => {
+      readManagedServiceHookContext(args.host!, args.clientFile!, { env: scoped });
+      const current = participantOf(readTask(context.home, context.task), context.address);
+      if (current?.harness !== 'claude' || current.sessionRef !== context.ref || current.metadata.sessionRecord !== context.record) return;
+      driverOrLift(current).registerWake!(context.home, context.task, context.address, env, String(event.session_id));
+    });
+  } else if (args.host && env.PROMPTOBUS_CLIENT_FILE) {
+    await (await import('./native-start.js')).authorizeManagedNativeStart(args.host, event, env, cwd);
+  } else if (args.host && args.rootProfile) {
+    await (await import('./root-launch.js')).authorizeCodexRootStart(args.host, args.rootProfile, event,
+      args.serviceHome ? { ...env, PROMPTOBUS_SERVICE_HOME: args.serviceHome } : env);
+  } else if (args.host && args.standaloneProfile) {
+    await (await import('./standalone-root.js')).authorizeStandaloneRootStart(args.host, args.standaloneProfile, event,
+      args.serviceHome ? { ...env, PROMPTOBUS_SERVICE_HOME: args.serviceHome } : env);
+  }
+  const ordinaryEvent = event.hook_event_name === 'sessionStart'
+    ? { ...event, hook_event_name: GUARD_START_EVENT, session_id: event.conversation_id } : event;
   let out = null;
   try {
-    out = await decide(args, env, cwd, await readEvent(stdin));
+    out = await decide(args, env, cwd, ordinaryEvent);
   } catch {
     // The guard must not stop a session from living: a launch outside the workspace, a bad
     // role, a broken journal — none of them is a reason to return the turn.

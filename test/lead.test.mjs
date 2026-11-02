@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync, symlinkSync, unlinkSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { homedir } from 'node:os';
@@ -14,6 +14,7 @@ import { runPromptobus, helpText } from '../lib/cli.js';
 import { dropSession, readSession, writeSession, threadStartConfig, recoveryPrompt } from '../lib/codex-session.js';
 import { codexDriver, participantCodexHome } from '../lib/driver-codex.js';
 import { reviewerFiles } from '../lib/reviewer-files.js';
+import { requireProcess } from '../lib/service-state.js';
 
 const root = makeSandbox('promptobus-lead-');
 writeHostConfig(root, { tools: ['codex'] });
@@ -104,10 +105,25 @@ clearWarden(host.promptobusHome(), existing.id);
 
 const privateHome = participantCodexHome({ task: opts.task, address: 'orchestrator' });
 mkdirSync(privateHome, { recursive: true });
+const [oldHolder, oldApp] = await Promise.all([0, 1].map(async () => {
+  const child = spawn(process.execPath, ['-e', 'process.send("ready");process.once("message",()=>process.exit(0));'], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+  await new Promise(resolve => child.once('message', resolve));
+  const identity = requireProcess(child.pid), closed = new Promise(resolve => child.once('close', resolve));
+  child.send('exit');
+  return { ...identity, status: await closed };
+}));
+check('current-version resume planning fixture captures two native births before actual exit', oldHolder.status === 0 && oldApp.status === 0
+  && Number.isSafeInteger(oldHolder.pid) && Number.isSafeInteger(oldApp.pid) && oldHolder.pid !== oldApp.pid);
+// Private known current-version state exercises resume planning, not native genesis.
 const retained = { ref: 'existing-owner', threadId: 'fixture-owner', role: 'orchestrator',
+  launchId: 'retained-current-generation', nativeAdmissionSchema: 1,
   task: opts.task, address: 'orchestrator', home: host.promptobusHome(), cwd: root,
   codexHome: privateHome, sandbox: 'danger-full-access', model: 'gpt-6-astra',
-  holderPid: null, appPid: null, state: 'dead', turns: 3 };
+  holderPid: oldHolder.pid, appPid: oldApp.pid,
+  holderProcess: { pid: oldHolder.pid, birth: oldHolder.birth }, appProcess: { pid: oldApp.pid, birth: oldApp.birth },
+  nativeAdmission: { harness: 'codex', nativeStore: realpathSync(privateHome), nativeId: 'fixture-owner', process: { pid: oldApp.pid, birth: oldApp.birth } },
+  nativeAdmissionEvidence: { kind: 'codex-thread-api', method: 'thread/start', nativeStore: realpathSync(privateHome),
+    nativeId: 'fixture-owner', process: { pid: oldApp.pid, birth: oldApp.birth } }, state: 'dead', turns: 3 };
 writeSession(retained);
 const resumeOpts = { task: opts.task, resume: true, dryRun: true };
 const resumed = await planLead(host, resumeOpts);
@@ -127,9 +143,9 @@ check('resume CLI dry run preserves the owner and retained history record',
 const resumeRefusal = async () => {
   try { await planLead(host, resumeOpts); return ''; } catch (error) { return error.message; }
 };
-writeSession({ ...retained, holderPid: process.pid });
+writeSession({ ...retained, holderPid: process.pid, holderProcess: requireProcess() });
 check('resume refuses an active holder instead of starting another owner',
-  /live Codex holder/.test(await resumeRefusal()));
+  /Managed Codex resume has incomplete or live native process proof/.test(await resumeRefusal()));
 writeSession({ ...retained, threadId: 'another-thread' });
 check('resume refuses a thread that does not match the task owner',
   /no matching.*managed Codex root owner/.test(await resumeRefusal()));
@@ -147,7 +163,7 @@ upsertParticipant(host.promptobusHome(), opts.task, { ...originalOwner, metadata
   ...originalOwner.metadata, launcherPid: process.pid,
 } });
 check('resume refuses a concurrent launcher while the holder is not ready',
-  /live Codex holder/.test(await resumeRefusal()));
+  /live Codex launcher/.test(await resumeRefusal()));
 upsertParticipant(host.promptobusHome(), opts.task, originalOwner);
 engine.closeTask(opts.task);
 check('resume refuses a closed task rather than reopen its journal', /no matching/.test(await resumeRefusal()));

@@ -5,7 +5,7 @@ import { hostOf } from '../lib/host.js';
 import * as store from '../lib/store.js';
 import { commandReceipts, readStopConfirmation } from '../lib/codex-command-receipts.js';
 import { retainNativeStop, requireNativeIdle } from '../lib/native-lifecycle.js';
-import { sessionKey } from '../lib/codex-session.js';
+import { codexStateHome, sessionKey } from '../lib/codex-session.js';
 
 const root = makeSandbox('promptobus-codex-');
 writeHostConfig(root, { tools: ['codex'] });
@@ -17,7 +17,7 @@ const record = { home, task, address: 'worker:one', ref: 'implicit-fixture', lau
 store.upsertParticipant(home, task, store.participantRecord(record.address, {
   harness: 'codex', mode: 'managed', sessionRef: record.ref, sessionId: record.threadId, nativeLaunchId: record.launchId,
 }));
-const file = path.join(process.env.PROMPTOBUS_CODEX_HOME, 'receipts', sessionKey(record.ref), sessionKey(record.launchId) + '.jsonl');
+const file = path.join(codexStateHome(process.env), 'receipts', sessionKey(record.ref), sessionKey(record.launchId) + '.jsonl');
 const receipts = commandReceipts(file, { format: 1, ...record });
 receipts.context?.('thread/accepted', { launchId: record.launchId, threadId: record.threadId, cwd: root, profile: 'fixed-single-local' });
 receipts.context?.('turn/accepted', { launchId: record.launchId, threadId: record.threadId, turnId: 'turn' });

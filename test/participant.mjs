@@ -5,15 +5,10 @@
 // ([harness.mjs](harness.mjs)), it lives until `stop` and does exactly what the
 // mechanism expects of a participant session ([13]):
 //
-//   1. it learns who it is from `--mcp-config` — spawn puts the address, the task and
-//      the bus home in the `env` of the `promptobus` record of that file (spawn.js). They
-//      are not in the session's OWN environment at all
-//     : that environment comes from the daemon and belongs to a foreign spawn;
-//   2. it starts a real `promptobus mcp` as its child process and talks to it with
-//      line-delimited JSON-RPC — the same transport as Claude Code. The contact point is
-//      not handed over by the participant by hand, but by the server's `onJoin` — on the
-//      handshake: the socket address and the token arrive in its environment
-//      (`registerWake`);
+//   1. script coordinates come from stdio config or HTTP SessionStart arguments;
+//      the actual hook and authenticated scoped reply establish HTTP access;
+//   2. it uses the configured stdio or HTTP MCP transport; HTTP runs the configured
+//      native SessionStart before initialization, tools and the scripted turns;
 //   3. it listens on its messaging socket by the driver's wire protocol: an auth line,
 //      then the injection JSON (`dial`/`knockSocket` in driver-claude.js);
 //   4. on a knock it plays the next turn of its script — it calls `promptobus_mailbox`,
@@ -33,6 +28,7 @@ import { mkdirSync, appendFileSync, readFileSync, writeFileSync, rmSync } from '
 import path from 'node:path';
 import process from 'node:process';
 import { waitDelivered } from './delivery-wait.mjs';
+import { openScriptedHttp, scriptedHttpScope } from './participant-http.mjs';
 import {
   HARNESS_HOME_VAR, claudeConfigDir, handshakeMark, readSession, scriptFile, traceFile, writeSession,
 } from './harness.mjs';
@@ -57,9 +53,9 @@ const mcpConfigPath = argValue('--mcp-config');
 const settingsPath = argValue('--settings');
 const cfg = JSON.parse(readFileSync(mcpConfigPath, 'utf8'));
 const bus = cfg.mcpServers?.promptobus;
-const address = bus?.env?.PROMPTOBUS_ROLE;
-const task = bus?.env?.PROMPTOBUS_TASK;
-const busHome = bus?.env?.PROMPTOBUS_HOME;
+const settings = bus?.url ? JSON.parse(readFileSync(settingsPath, 'utf8')) : null;
+const { address, task, home: busHome } = bus?.url ? scriptedHttpScope(settings)
+  : { address: bus?.env?.PROMPTOBUS_ROLE, task: bus?.env?.PROMPTOBUS_TASK, home: bus?.env?.PROMPTOBUS_HOME };
 // The Stop-hook command is FROM THE PARTICIPANT SETTINGS FILE, the one that went out
 // with the `--settings` flag
 //. Building it here ourselves would mean testing the stand: the real
@@ -108,16 +104,17 @@ function mark(patch) {
 
 // The server is started ONCE for the participant's whole life, not per call: that is
 // how Claude Code talks to it, and the server resolves process identity once, at start.
-const mcp = spawn(bus.command, bus.args, {
+const mcp = bus?.url ? null : spawn(bus.command, bus.args, {
   cwd: process.cwd(),
   env: { ...process.env, ...bus.env },
   stdio: ['pipe', 'pipe', 'pipe'],
 });
+let remote = null;
 const pending = new Map();
 let seq = 0;
 let buf = '';
-mcp.stdout.setEncoding('utf8');
-mcp.stdout.on('data', (chunk) => {
+mcp?.stdout.setEncoding('utf8');
+mcp?.stdout.on('data', (chunk) => {
   buf += chunk;
   for (;;) {
     const nl = buf.indexOf('\n');
@@ -142,10 +139,11 @@ mcp.stdout.on('data', (chunk) => {
     }
   }
 });
-mcp.stderr.setEncoding('utf8');
-mcp.stderr.on('data', (chunk) => note({ kind: 'mcp-stderr', text: String(chunk).trim() }));
+mcp?.stderr.setEncoding('utf8');
+mcp?.stderr.on('data', (chunk) => note({ kind: 'mcp-stderr', text: String(chunk).trim() }));
 
 function rpc(method, params) {
+  if (remote) return remote.rpc(method, params);
   const rid = (seq += 1);
   const answer = new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`no reply to ${method}`)), 30000);
@@ -369,30 +367,46 @@ function wakeSession() {
   }
 }
 
-function farewell(code) {
+let closing = false;
+async function farewell(code, exitCode = 0) {
+  if (closing) return;
+  closing = true;
   try { server.close(); } catch { /* already closed */ }
   try { rmSync(socketPath, { force: true }); } catch { /* the socket may not have existed */ }
-  try { mcp.kill('SIGTERM'); } catch { /* the child is already dead */ }
+  try { mcp?.kill('SIGTERM'); } catch { /* the child is already dead */ }
+  if (remote) {
+    try { note({ kind: 'mcp-close', status: await remote.close() }); }
+    catch (error) { note({ kind: 'mcp-close-failed', error: error.message }); }
+  }
   note({ kind: 'stopped', code });
-  process.exit(0);
+  process.exit(exitCode);
 }
 
 for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(sig, () => farewell(sig));
 
 server.listen(socketPath, async () => {
+  try {
   note({ kind: 'up', address, task, home: busHome, socket: socketPath, prompt: (prompt ?? '').length });
   // Which session the contact point named when this one came up — a relift stand reads it.
-  note({ kind: 'wake-before-handshake', held: wakeSession() });
+  if (!bus?.url) note({ kind: 'wake-before-handshake', held: wakeSession() });
   // The handshake is the same as Claude Code's: `initialize`, then a ready
   // notification. With it the participant also hands over its contact point (the
   // server's `onJoin`), and without it there would be nothing to wake it with.
-  const hello = await rpc('initialize', {
+  const hello = bus?.url ? (remote = await openScriptedHttp(bus, {
+    settings, env: process.env, cwd: process.cwd(), nativeId: sessionId,
+    afterSessionStart: () => note({ kind: 'wake-before-handshake', held: wakeSession() }),
+  })).hello : await rpc('initialize', {
     protocolVersion: '2025-06-18',
     capabilities: {},
     clientInfo: { name: 'promptobus-e2e-participant', version: '1' },
   });
+  if (remote) note({ kind: 'http-scope', address: remote.scope.address, task: remote.scope.task, home: remote.scope.home });
   note({ kind: 'initialize', protocol: hello?.result?.protocolVersion ?? null, server: hello?.result?.serverInfo?.name ?? null });
   try { writeFileSync(handshakeMark(home, id), new Date().toISOString()); } catch { /* the mark only paces `--bg` */ }
-  mcp.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+  if (mcp) mcp.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
   await playTurn('start');
+  } catch (error) {
+    note({ kind: 'startup-failed', error: error.message });
+    await farewell('startup-failed', 1);
+  }
 });

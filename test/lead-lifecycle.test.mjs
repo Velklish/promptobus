@@ -3,13 +3,14 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from '
 import path from 'node:path';
 import { check } from './check.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
-import { installHarness, planParticipant, HANG_FIRST_VAR } from './harness-codex.mjs';
+import { installHarness, planParticipant, readTrace, HANG_FIRST_VAR } from './harness-codex.mjs';
 import { waitFor } from './harness.mjs';
 import { hostOf } from '../lib/host.js';
 import { bus, participantOf } from '../lib/store.js';
 import { ownerOf } from '../dist/index.js';
 import { codexDriver } from '../lib/driver-codex.js';
 import { holderAsk, holderAlive, pidAlive, readSession, writeSession } from '../lib/codex-session.js';
+import { processState } from '../lib/service-state.js';
 
 const root = makeSandbox('promptobus-lead-lifecycle-');
 writeHostConfig(root, { tools: ['codex'] });
@@ -59,6 +60,10 @@ const first = ref ? await waitFor(() => {
   return record?.turns >= 1 && record.busy === false ? record : null;
 }, { timeoutMs: 15000 }) : null;
 check('managed root completes its first task-metadata turn', first?.lastTurn?.status === 'completed');
+const firstTools = readTrace(harness.home, 'orchestrator');
+check('managed root task reads cross HTTP with its own native authority',
+  firstTools.some(entry => entry.kind === 'tool' && entry.tool === 'promptobus_task' && !entry.isError && entry.text.includes(task)),
+  JSON.stringify(firstTools.filter(entry => ['tool', 'action-failed'].includes(entry.kind))));
 const initialHistory = first?.threadId
   ? await readJson(path.join(harness.home, 'threads', first.threadId + '.json')) : null;
 check('new root persists its original assignment as a user message before binding without duplicate first input',
@@ -67,8 +72,17 @@ check('new root persists its original assignment as a user message before bindin
   initialHistory ? '' : `TIMEOUT after 10000 ms waiting for the thread file of ${first?.threadId ?? 'no thread'}`);
 
 const creation = (await metaOf(task))?.created;
+const liveResume = cli(['lead', '--resume', '--task', task]);
+check('managed resume refuses an old native holder still alive without changing its generation or private history',
+  liveResume.status === 1 && /Managed Codex resume has incomplete or live native process proof/.test(`${liveResume.stdout}${liveResume.stderr}`)
+    && readSession(ref, env)?.launchId === first.launchId && readSession(ref, env)?.threadId === first.threadId
+    && existsSync(first.codexHome), `${liveResume.status} ${liveResume.stdout}${liveResume.stderr}`);
 if (ref) await holderAsk(ref, 'shutdown', {}, env);
 if (ref) await waitFor(() => !holderAlive(ref, env) && !pidAlive(readSession(ref, env)?.appPid), { timeoutMs: 10000 });
+const terminal = readSession(ref, env);
+check('the actual retained root writer preserves both native lifecycle PIDs after terminal exit',
+  Number.isSafeInteger(terminal?.holderPid) && terminal.holderPid > 0 && Number.isSafeInteger(terminal?.appPid)
+    && terminal.appPid > 0 && terminal.holderPid !== terminal.appPid && !pidAlive(terminal.holderPid) && !pidAlive(terminal.appPid));
 unlinkSync(brief);
 const resumed = cli(['lead', '--resume', '--task', task]);
 check('resume succeeds without the original assignment file', resumed.status === 0,
@@ -80,6 +94,16 @@ const second = ref ? await waitFor(() => {
 check('resume preserves the original native owner and journal creation',
   second?.threadId === first?.threadId && second?.turns === 2
   && ownerOf(await owner()) === ownerOf(originalOwner) && (await metaOf(task))?.created === creation);
+check('managed resume transitions exact old provenance once and confirms the same native history on a new own child',
+  second?.nativeAdmissionTransition?.kind === 'managed-root-resume'
+    && second.nativeAdmissionTransition.previousLaunchId === first.launchId
+    && second.nativeAdmissionTransition.previous.nativeId === first.threadId
+    && second.nativeAdmission.nativeStore === first.nativeAdmission.nativeStore
+    && second.nativeAdmission.nativeId === first.nativeAdmission.nativeId && second.launchId !== first.launchId
+    && second.nativeAdmission.process.pid !== first.nativeAdmission.process.pid
+    && second.nativeAdmissionEvidence.method === 'thread/resume' && processState(first.nativeAdmission.process) === 'dead'
+    && second.nativeAdmissionTransition.launcherReservation.current === second.launcherPid
+    && second.nativeAdmissionTransition.launcherReservation.previous === null);
 if (ref) await holderAsk(ref, 'shutdown', {}, env);
 if (ref) await waitFor(() => !holderAlive(ref, env) && !pidAlive(readSession(ref, env)?.appPid), { timeoutMs: 10000 });
 const nativeThreadFile = path.join(harness.home, 'threads', `${first?.threadId ?? 'missing'}.json`);

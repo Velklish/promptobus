@@ -1,3 +1,4 @@
+import { finalizeManagedServiceLaunch, revokeFailedManagedLaunch } from './service-launch.js';
 import { persistLegacyParticipant, persistNativeParticipant, releaseNativeReservation, requireNativeTerminal, reserveNativeParticipant } from './native-lifecycle.js';
 import { renderTeamleadInstructions, renderWorkerInstructions } from './prompts/roles.js';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -85,7 +86,7 @@ export interface TeamleadPlan {
   childMeta: TaskV1 | null; address: string; slug: string; title: string; brief: string;
   former: SpawnParticipant | null; pendingRebind: boolean; selectedContext: Selection;
   driver: LibDriver; name: string; model: string; effort: string | null; permissionMode: string | null;
-  rules: string[]; ruleDirs: string[]; pluginDir: string | null; env: NodeJS.ProcessEnv;
+  rules: string[]; ruleDirs: string[]; pluginDir: string | null; env: NodeJS.ProcessEnv; commonEnv: NodeJS.ProcessEnv;
   mcpConfigPath: string; settingsPath: string; guardCommand: string; mcpNote: McpNote;
   launch: LibLaunchPlan; prompt: string; routing: Routed['metadata'] | null; decision: Routed['decision'] | null;
   routingSkipped: string | null; briefStem: string; taskId: string;
@@ -99,7 +100,7 @@ export interface SpawnPlan {
   mcpConfigPath: string; mcpNote: McpNote; retitle: Retitle | null; titleKept: string | null; driver: LibDriver;
   routing: Routed['metadata'] | null; decision: Routed['decision'] | null; routingSkipped: string | null;
   launch: LibLaunchPlan; argv: string[]; mcpConfig: unknown; settings: unknown; rules: string[]; ruleDirs: string[];
-  module: HostModuleNote; prompt: string; env: NodeJS.ProcessEnv; repoSkills: RepoSkillsState;
+  module: HostModuleNote; prompt: string; env: NodeJS.ProcessEnv; commonEnv: NodeJS.ProcessEnv; repoSkills: RepoSkillsState;
   worktreeDeps: WorktreeDepsState;
   rebuild: (repoSkills: RepoSkillsState, worktreeDeps?: WorktreeDepsState) => { prompt: string; launch: LibLaunchPlan };
   knownBaseSha: string | null; cwd: string;
@@ -706,7 +707,16 @@ function reserveTeamleadRelift(plan: TeamleadPlan, launchId: string) {
     try {
       upsertParticipant(plan.home, plan.rootTask, { ...lead!, metadata: { ...lead!.metadata, nativePendingLaunchId: launchId } });
       upsertParticipant(plan.home, plan.childTask, { ...owner!, metadata: { ...owner!.metadata, nativePendingLaunchId: launchId } });
-    } catch (error) { clearTeamleadReservation(plan, launchId); throw error; }
+    } catch (error) {
+      try { clearTeamleadReservation(plan, launchId); }
+      catch (cleanupError) {
+        const original = error instanceof Error ? error.message : String(error);
+        const cleanup = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+        throw new AggregateError([error, cleanupError], `${original}; teamlead reservation cleanup failed: ${cleanup}`,
+          { cause: error });
+      }
+      throw error;
+    }
     return { launchId,
       oldRoot: nativeTeamleadState(participantOf(readTask(plan.home, plan.rootTask), plan.address)),
       oldChild: nativeTeamleadState(participantOf(readTask(plan.home, plan.childTask), ORCHESTRATOR)) };
@@ -872,7 +882,8 @@ export async function planTeamlead(rootOrHost: unknown, opts: SpawnOptions): Pro
   const settingsPath = participantSettingsPath(home, rootTask, address);
   const guardCommand = guardHookCommand(host, { address, taskId: rootTask, home }, process.platform);
   const pluginDir = selectedContext ? null : participantPluginDir(host);
-  const env = sessionEnv(driver, process.env, host);
+  const commonEnv = { ...process.env, ...host.extraEnv() };
+  const env = driver.sessionEnv(commonEnv);
   const mcp = participantMcp(host, { address: ORCHESTRATOR, taskId: childTask, home, reportTaskId: rootTask }, driver);
   const siblings = (rootMeta.participants ?? []).filter((p) => p.role === 'teamlead' && addressOf(p) !== address)
     .map(addressOf);
@@ -895,7 +906,7 @@ export async function planTeamlead(rootOrHost: unknown, opts: SpawnOptions): Pro
   });
   return {
     host, home, root, rootTask, childTask, rootMeta, childMeta, address, slug, title, brief, former, pendingRebind, selectedContext,
-    driver, name, model, effort, permissionMode, rules, ruleDirs, pluginDir, env, mcpConfigPath,
+    driver, name, model, effort, permissionMode, rules, ruleDirs, pluginDir, env, commonEnv, mcpConfigPath,
     settingsPath, guardCommand, mcpNote: mcpNote(mcp, 'teamlead'), launch, prompt,
     routing: routed?.metadata ?? null, decision: routed?.decision ?? null,
     routingSkipped: former && opts.strategy ? `${address}: --strategy is ignored on a relift` : null,
@@ -1222,7 +1233,8 @@ export async function planSpawn(rootOrHost: unknown, opts: SpawnOptions): Promis
   // If it does not take a plugin — do not count it and do not warn about absence: a
   // warning about something unused reads as a break.
   const pluginDirPath = !selectedContext && driver.options.skillsDir ? participantPluginDir(host, repoAbs) : null;
-  const env = sessionEnv(driver, process.env, host);
+  const commonEnv = { ...process.env, ...host.extraEnv() };
+  const env = driver.sessionEnv(commonEnv);
   const mcpConfigPath = participantMcpPath(home, taskId, address);
   const mcp = participantMcp(host, { address, taskId, home, repoDir: repoAbs }, driver);
 
@@ -1317,7 +1329,7 @@ export async function planSpawn(rootOrHost: unknown, opts: SpawnOptions): Promis
     mcpConfigPath, mcpNote: mcpNote(mcp, 'participant'), retitle, titleKept, driver,
     routing: routed?.metadata ?? null, decision: routed?.decision ?? null, routingSkipped,
     launch, argv: launch.argv, mcpConfig: launch.mcpConfig, settings: launch.settings,
-    rules, ruleDirs, module, prompt, env, host,
+    rules, ruleDirs, module, prompt, env, commonEnv, host,
     // The repository's generator and dependency install: what was declared, their
     // forecasts, and the door for `spawn` to put the real outcomes into the preamble once
     // the worktree exists.
@@ -1705,8 +1717,18 @@ export async function spawnTeamlead(rootOrHost: unknown, opts: SpawnOptions): Pr
   const nativeLaunchId = plan.driver.id === 'codex' ? randomUUID() : null;
   const nativeReservation = nativeLaunchId && plan.former ? reserveTeamleadRelift(plan, nativeLaunchId) : null;
   if (nativeLaunchId) plan.launch.launchId = nativeLaunchId;
-  try { writeLaunchFiles(plan.launch.files, plan.driver.options.launchDirs); }
-  catch (error) { if (nativeReservation) clearTeamleadReservation(plan, nativeLaunchId); throw error; }
+  try {
+    plan.env = (await finalizeManagedServiceLaunch(plan.host, {
+      ...plan, task: plan.childTask, address: ORCHESTRATOR, ref: plan.name, cwd: plan.root,
+      env: { ...plan.env, PROMPTOBUS_ROOT_TASK: plan.rootTask }, deferTaskBinding: true,
+    })).env;
+    writeLaunchFiles(plan.launch.files, plan.driver.options.launchDirs);
+  }
+  catch (error) {
+    return revokeFailedManagedLaunch(plan.launch, error, () => {
+      if (nativeReservation) clearTeamleadReservation(plan, nativeLaunchId);
+    });
+  }
   const formerTokenLogs = tokenLogHistoryOf(plan.host, plan.home, plan.rootTask, plan.former);
   const formerChildTokenLogs = plan.childMeta
     ? tokenLogHistoryOf(plan.host, plan.home, plan.childTask, participantOf(plan.childMeta, ORCHESTRATOR)) : [];
@@ -1725,6 +1747,7 @@ export async function spawnTeamlead(rootOrHost: unknown, opts: SpawnOptions): Pr
       const nextLead = participantRecord(plan.address, {
         ...nativeContextMetadata(plan.selectedContext),
         childTask: plan.childTask, harness: plan.driver.id, mode: 'managed',
+        ...(plan.launch.service ? { sessionRecord: plan.launch.rootSessionRecord ?? plan.launch.sessionRecord } : {}),
         ...(nativeLaunchId ? { nativeLaunchId } : {}),
         name: plan.name, sessionRef: plan.name, session: id ?? null, sessionId: full,
         model: plan.model, ...(plan.effort ? { effort: plan.effort } : {}),
@@ -1742,6 +1765,7 @@ export async function spawnTeamlead(rootOrHost: unknown, opts: SpawnOptions): Pr
         const firstOwner = participantRecord(ORCHESTRATOR, {
           ...nativeContextMetadata(plan.selectedContext),
           owner: full, sessionId: full, session: id ?? null, name: plan.name, sessionRef: plan.name,
+          ...(plan.launch.service ? { sessionRecord: plan.launch.sessionRecord } : {}),
           harness: plan.driver.id, mode: 'attached', mechanismVersion: plan.host.version,
           ...(nativeLaunchId ? { nativeLaunchId } : {}),
         }, registryOf(plan.host));
@@ -1763,6 +1787,7 @@ export async function spawnTeamlead(rootOrHost: unknown, opts: SpawnOptions): Pr
         ...(nativeLaunchId ? childMetadata : childOwner.metadata), owner: full, sessionId: full, mode: 'attached',
         ...(nativeLaunchId ? { nativeLaunchId } : {}),
         session: id ?? null, name: plan.name, sessionRef: plan.name,
+        ...(plan.launch.service ? { sessionRecord: plan.launch.sessionRecord } : {}),
         tokenLogHistory: formerChildTokenLogs,
       }, registryOf(plan.host));
       const file = teamleadRebindFile(plan.home, plan.rootTask, plan.address);
@@ -1788,15 +1813,15 @@ export async function spawnTeamlead(rootOrHost: unknown, opts: SpawnOptions): Pr
         throw new GateError(`${plan.address} rebind changed while this lift started; retry spawn to recover the current intent`);
       }
     },
-  });
-  if (plan.driver.id === 'codex' && plan.launch.rootSessionRecord) {
+  }).catch(error => revokeFailedManagedLaunch(plan.launch, error));
+  if (plan.driver.id === 'codex' && plan.launch.rootSessionRecord && !plan.launch.service) {
     writeJsonAtomic(plan.launch.rootSessionRecord, {
       home: plan.home, task: plan.rootTask, address: plan.address, threadId: session,
     }, { mode: 0o600 });
   }
   if (plan.driver.id === 'codex' && plan.launch.sessionRecord) {
     plan.driver.registerWake!(plan.home, plan.rootTask, plan.address, {
-      ...plan.env, [plan.driver.options.mcpIdentity!.recordVar]: plan.launch.sessionRecord,
+      ...plan.env, [plan.driver.options.mcpIdentity!.recordVar]: plan.launch.rootSessionRecord ?? plan.launch.sessionRecord,
     }, session);
   }
   ensureRootRecord(plan.home, plan.childTask);
@@ -1932,7 +1957,7 @@ export async function spawn(rootOrHost: unknown, opts: SpawnOptions): Promise<Sp
     binaryPath: provenance.binaryPath,
     binaryVersion: provenance.binaryVersion,
   }, registryOf(plan.host)), plan.participant, REGISTRY);
-  let reserved;
+  let reserved: ReturnType<typeof reserve> | undefined;
   if (plan.driver.id === 'codex') {
     if (plan.createNew) createTask(plan.home, plan.createNew);
     reserved = reserve();
@@ -2023,6 +2048,9 @@ export async function spawn(rootOrHost: unknown, opts: SpawnOptions): Promise<Sp
     plan.prompt = rebuilt.prompt;
     plan.launch = rebuilt.launch;
     if (plan.driver.id === 'codex') plan.launch.launchId = record.metadata.nativeLaunchId as string;
+    plan.env = (await finalizeManagedServiceLaunch(plan.host, {
+      ...plan, task: plan.taskId, ref: plan.name, cwd: plan.cwd,
+    })).env;
     plan.argv = rebuilt.launch.argv;
     plan.mcpConfig = rebuilt.launch.mcpConfig;
     plan.settings = rebuilt.launch.settings;
@@ -2042,9 +2070,9 @@ export async function spawn(rootOrHost: unknown, opts: SpawnOptions): Promise<Sp
     }
 
   } catch (error) {
-    try { if (reserved) releaseNativeReservation(plan.home, plan.taskId, reserved.record); }
-    catch (releaseError) { warn('native reservation release refused: ' + (releaseError as Error).message); }
-    throw error;
+    return revokeFailedManagedLaunch(plan.launch, error, () => {
+      if (reserved) releaseNativeReservation(plan.home, plan.taskId, reserved.record);
+    });
   }
 
   // Lift goes through the driver taken from the registry. On Windows a multiline argv
@@ -2073,12 +2101,18 @@ export async function spawn(rootOrHost: unknown, opts: SpawnOptions): Promise<Sp
       + ' There will be no messages from this address — waiting for them is pointless.',
     unboundNote: ` Stop it — its record is the only handle: ${plan.host.busCommand(['stop', plan.address, `--task ${plan.taskId}`])},`
       + ' then repeat spawn with the same command.',
-    persist: (id, _state, sessionId) => plan.driver.id === 'codex'
-      ? persistNativeParticipant(plan.home, plan.taskId, record, { session: id ?? null, ...(sessionId ? { sessionId } : {}) })
-      : persistLegacyParticipant(plan.home, plan.taskId,
-        { ...record, metadata: { ...record.metadata, session: id ?? null, ...(sessionId ? { sessionId } : {}) } }),
+    persist: (id, _state, sessionId) => {
+      if (plan.driver.id === 'codex') return persistNativeParticipant(plan.home, plan.taskId, record, {
+        session: id ?? null, ...(sessionId ? { sessionId } : {}),
+      });
+      const sessionRecord = participantOf(readTask(plan.home, plan.taskId), plan.address)?.metadata.sessionRecord;
+      return persistLegacyParticipant(plan.home, plan.taskId, { ...record, metadata: {
+        ...record.metadata, session: id ?? null, ...(sessionId ? { sessionId } : {}),
+        ...(sessionRecord ? { sessionRecord } : {}),
+      } });
+    },
     awaitOptions: opts.awaitOptions,
-  });
+  }).catch(error => revokeFailedManagedLaunch(plan.launch, error));
   ok(`worker ${plan.address} lifted in ${plan.nsPath}, branch ${plan.branch}${session ? ` (session ${session})` : ''}`);
   // The warden is lifted right after the participant. Spawn does not hand over its own
   // contact point — each participant hands it over itself, from its own bus process.

@@ -343,6 +343,7 @@ async function scenarioPostcardCase(abort) {
   let firstStatus = false;
   let context;
   let releaseCards = false;
+  let scenarioFailure;
   const complete = new Error('scenario fixture complete');
   const harness = {
     scripted: true, sock, spawnFlags: [], reviewFlags: [],
@@ -375,10 +376,10 @@ async function scenarioPostcardCase(abort) {
       if (name.startsWith('step 3: the first worker status')) firstStatus = true;
       if (name.startsWith('step 5: the worker fetched the mailbox')) throw complete;
     },
-  }).then((report) => ({ report }), (error) => ({ error }));
+  }).then((report) => ({ report }), (error) => { scenarioFailure = error; return { error }; });
   try {
     const ready = await waitFor(() => firstStatus && held.length > 0, { timeoutMs: 30_000 });
-    if (!ready) throw new Error('scenario never held its step 3 postcard');
+    if (!ready) throw scenarioFailure ?? new Error('scenario never held its step 3 postcard');
     const worktree = context.participants().find((p) => store.addressOf(p) === 'worker:e2e')?.metadata.worktree;
     const note = path.join(worktree, 'e2e/note.md');
     const before = existsSync(note);

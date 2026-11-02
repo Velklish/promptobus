@@ -1,3 +1,4 @@
+import { finalizeManagedServiceLaunch, revokeFailedManagedLaunch } from './service-launch.js';
 import { renderReporterInstructions } from './prompts/roles.js';
 import path from 'node:path';
 import { assertNativeContextDriver, contextRules, nativeContextMetadata, nativeContextPrompt, prepareNativeContext } from './native-participant-context.js';
@@ -16,7 +17,7 @@ import { run } from './exec.js';
 import {
   contactsSection, dryRunToolNote, guardHookNote, liftHarness, mcpNote, mcpServerLines, normalizeLaunchTool,
   optionRefusal, participantMcp, participantPluginDir, PROMPTOBUS_SERVER, resolveEffort,
-  resolvePermissionMode, sayMcp, sayTool, sessionEnv, sessionEnvNote, shortTitle,
+  resolvePermissionMode, sayMcp, sayTool, sessionEnvNote, shortTitle,
   skillSettings, skillsNote, toolName, withToolVersion, writeLaunchFiles,
 } from './spawn.js';
 import { reviewerDenyTools } from './review.js';
@@ -42,7 +43,7 @@ interface ReportPlan extends ReporterPromptPlan {
   meta: TaskV1; former: ParticipantV1 | null; formerSessions: SessionSnapshot; name: string; model: string;
   effort: ReturnType<typeof resolveEffort>; permissionMode: ReturnType<typeof resolvePermissionMode>;
   addDirs: string[]; selectedContext: ReturnType<typeof prepareNativeContext>;
-  mcpConfigPath: string; settingsPath: string; guardCommand: string; env: NodeJS.ProcessEnv;
+  mcpConfigPath: string; settingsPath: string; guardCommand: string; env: NodeJS.ProcessEnv; commonEnv: NodeJS.ProcessEnv;
   denyTools: DriverDenyTool[]; pluginDir: string | null; mcpNote: ReturnType<typeof mcpNote>;
   routing: ReportRouting['metadata'] | null; decision: ReportRouting['decision'] | null;
   routingSkipped: string | null; prompt: string; launch: LibLaunchPlan;
@@ -129,7 +130,8 @@ export async function planReport(rootOrHost: unknown, opts: ReportOptions = {}):
   const mcpConfigPath = participantMcpPath(home, task, REPORTER);
   const settingsPath = participantSettingsPath(home, task, REPORTER);
   const guardCommand = guardHookCommand(host, { address: REPORTER, taskId: task, home }, process.platform);
-  const env = sessionEnv(driver, process.env, host);
+  const commonEnv = { ...process.env, ...host.extraEnv() };
+  const env = driver.sessionEnv(commonEnv);
   const mcp = participantMcp(host, { address: REPORTER, taskId: task, home }, driver);
   const declaredServers = Object.keys(mcp.descriptor.servers ?? {})
     .filter((server) => server !== PROMPTOBUS_SERVER);
@@ -139,7 +141,7 @@ export async function planReport(rootOrHost: unknown, opts: ReportOptions = {}):
   const plan = {
     host, home, root, task, meta, former, formerSessions: sessions, driver, name, model, effort,
     permissionMode, rules, addDirs, selectedContext,
-    mcpConfigPath, settingsPath, guardCommand, env, denyTools,
+    mcpConfigPath, settingsPath, guardCommand, env, commonEnv, denyTools,
     pluginDir: selectedContext ? null : participantPluginDir(host), mcpNote: mcpNote(mcp, 'reporter'),
     routing: routed?.metadata ?? null, decision: routed?.decision ?? null,
     routingSkipped: former && opts.strategy ? 'reporter: --strategy is ignored on a relift' : null,
@@ -207,6 +209,7 @@ export async function report(rootOrHost: unknown, opts: ReportOptions = {}): Pro
     ({ record } = reserveNativeParticipant(plan.home, plan.task, participantRecord(REPORTER, {
       ...nativeContextMetadata(plan.selectedContext),
       harness: plan.driver.id, mode: 'managed', name: plan.name, sessionRef: plan.name,
+      ...(plan.driver.id === 'codex' ? { sessionRecord: plan.launch.sessionRecord } : {}),
       session: null, model: plan.model, ...(plan.effort ? { effort: plan.effort } : {}),
       ...(plan.routing ? { [ROUTING_FIELD]: plan.routing } : {}),
       started: new Date().toISOString(), pending: true, launchPid: process.pid, launchToken,
@@ -218,11 +221,16 @@ export async function report(rootOrHost: unknown, opts: ReportOptions = {}): Pro
     }, registryOf(plan.host)), current, REGISTRY));
   });
   if (plan.driver.id === 'codex') plan.launch.launchId = record!.metadata.nativeLaunchId as string;
-  try { writeLaunchFiles(plan.launch.files, plan.driver.options.launchDirs); }
+  try {
+    plan.env = (await finalizeManagedServiceLaunch(plan.host, {
+      ...plan, address: REPORTER, ref: plan.name, cwd: plan.root,
+    })).env;
+    writeLaunchFiles(plan.launch.files, plan.driver.options.launchDirs);
+  }
   catch (error) {
-    try { releaseNativeReservation(plan.home, plan.task, record!); }
-    catch (releaseError) { warn('native reservation release refused: ' + (releaseError as Error).message); }
-    throw error;
+    return revokeFailedManagedLaunch(plan.launch, error, () => {
+      releaseNativeReservation(plan.home, plan.task, record!);
+    });
   }
   let lostSession: string | null = null;
   let launched: Awaited<ReturnType<NonNullable<LibDriver['spawn']>>>;
@@ -258,20 +266,21 @@ export async function report(rootOrHost: unknown, opts: ReportOptions = {}): Pro
           },
         });
       }),
-    });
+    }).catch(error => revokeFailedManagedLaunch(plan.launch, error));
   } catch (error) {
-    if (lostSession) {
-      if (plan.driver.id === 'codex') {
-        const stopped = await plan.driver.stop!(plan.name);
-        if (!stopped.ok) throw new GateError(`${(error as Error).message}; Codex stop ${lostSession} failed: ${stopped.note}`);
-      } else {
-        const stopped = run(tool.bin!, ['stop', lostSession], { cwd: plan.root, env: plan.env, encoding: 'utf8' });
-        if (stopped.error || stopped.status !== 0) {
-          throw new GateError(`${(error as Error).message}; claude stop ${lostSession} failed: ${stopped.error?.message ?? stopped.stderr ?? stopped.status}`);
+    return revokeFailedManagedLaunch(plan.launch, error, async () => {
+      if (lostSession) {
+        if (plan.driver.id === 'codex') {
+          const stopped = await plan.driver.stop!(plan.name);
+          if (!stopped.ok) throw new GateError(`Codex stop ${lostSession} failed: ${stopped.note}`);
+        } else {
+          const stopped = run(tool.bin!, ['stop', lostSession], { cwd: plan.root, env: plan.env, encoding: 'utf8' });
+          if (stopped.error || stopped.status !== 0) {
+            throw new GateError(`claude stop ${lostSession} failed: ${stopped.error?.message ?? stopped.stderr ?? stopped.status}`);
+          }
         }
       }
-    }
-    throw error;
+    });
   }
   const { output, session, seen } = launched;
   handOverContactPoints(plan.home, { env: process.env });

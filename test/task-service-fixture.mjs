@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,7 +20,7 @@ export async function taskServiceFixture({ workspace, home, task, socketDirector
     import(path.join(mechanismRoot, 'lib/service-client.js')),
   ]);
   const version = JSON.parse(readFileSync(path.join(mechanismRoot, 'package.json'), 'utf8')).version;
-  const host = createStandaloneHost({ cwd: workspace, binPath: path.join(mechanismRoot, 'bin/promptobus.js'), version });
+  const host = createStandaloneHost({ cwd: workspace, binPath: realpathSync(path.join(mechanismRoot, 'bin/promptobus.js')), version });
   const ownedEnv = { ...env, PROMPTOBUS_HOME: home,
     PROMPTOBUS_SERVICE_HOME: path.join(realpathSync(socketDirectory), 'service') };
   const options = { cwd: workspace, env: ownedEnv };
@@ -36,7 +36,29 @@ export async function taskServiceFixture({ workspace, home, task, socketDirector
       const status = await client.workspaceServiceStatus(host, options);
       if (!status.running) return { stopped: false, process: null };
       await client.abortTaskWarden(host, task, options);
-      await client.stopWorkspaceService(host, options);
+      const [{ readPrivate, servicePaths }, { canonicalPath }] = await Promise.all([
+        import(path.join(mechanismRoot, 'lib/service-state.js')), import(path.join(mechanismRoot, 'lib/store.js')),
+      ]);
+      const paths = servicePaths(host, ownedEnv);
+      for (const name of readdirSync(paths.clients)) {
+        if (!/^[a-f0-9-]{36}\.json$/.test(name)) throw new Error('Owned task cleanup found an invalid credential filename');
+        const grant = readPrivate(path.join(paths.clients, name));
+        if (!grant) continue;
+        if (`${grant.id}.json` !== name) throw new Error('Owned task cleanup credential identity changed');
+        if (grant.runtime !== status.runtime || !grant.env?.PROMPTOBUS_HOME
+          || canonicalPath(grant.env.PROMPTOBUS_HOME) !== paths.home
+          || grant.lifetime?.kind !== 'managed' || grant.lifetime.task !== task) continue;
+        await client.revokeServiceClient(host, grant.id, options);
+      }
+      const deadline = Date.now() + 5000;
+      let beforeStop = await client.workspaceServiceStatus(host, options);
+      while (beforeStop.running && beforeStop.clients === 0 && beforeStop.warden.observations > 0) {
+        if (Date.now() >= deadline) throw new Error(`Owned task observations did not settle: ${JSON.stringify(beforeStop)}`);
+        await new Promise(resolve => setTimeout(resolve, 25));
+        beforeStop = await client.workspaceServiceStatus(host, options);
+      }
+      try { await client.stopWorkspaceService(host, options); }
+      catch (error) { throw new Error(`${error.message}; owned task cleanup status: ${JSON.stringify(beforeStop)}`, { cause: error }); }
       return { stopped: true, process: status.process };
     },
   };

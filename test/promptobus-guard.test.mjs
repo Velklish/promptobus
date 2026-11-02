@@ -188,7 +188,7 @@ const mixedMeta = JSON.parse(readFileSync(mixedFile, 'utf8'));
 mixedMeta.participants[0].metadata.mechanismVersion = '0.6.0';
 mixedMeta.participants[0].brandNewField = true;
 writeFileSync(mixedFile, JSON.stringify(mixedMeta, null, 2) + '\n');
-const mixedHost = createStandaloneHost({ cwd: MIXED_ROOT, binPath: BIN });
+const mixedHost = createStandaloneHost({ cwd: MIXED_ROOT, binPath: BIN, version: '0.5.0' });
 await runPromptobus(['guard'], {
   host: mixedHost,
   cwd: MIXED_ROOT,

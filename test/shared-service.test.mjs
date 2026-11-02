@@ -1,5 +1,7 @@
 import { check, skip } from './check.mjs';
 import { spawn } from 'node:child_process';
+import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
 import { createHash } from 'node:crypto';
 import { createServer, request } from 'node:http';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync, writeSync } from 'node:fs';
@@ -8,8 +10,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { bindServiceClient, ensureWorkspaceService, registerServiceClient, revokeServiceClient, serviceControl, stopWorkspaceService, workspaceServiceStatus } from '../lib/service-client.js';
-import { processState, readDiscovery, requireProcess, runtimeIdentity, servicePaths } from '../lib/service-state.js';
-import { bindSessionIdentity, bus, createTask, participantRecord, strictTaskFacts, upsertParticipant, withIdentityEnvironment, sessionIdentity } from '../lib/store.js';
+import { processIdentity, processState, readDiscovery, requireProcess, runtimeIdentity, servicePaths } from '../lib/service-state.js';
+import { bindSessionIdentity, bus, createTask, GateError, participantRecord, strictTaskFacts, upsertParticipant, withIdentityEnvironment, sessionIdentity } from '../lib/store.js';
+import { lockHolder } from '../dist/fs/lock.js';
+import { pidAlive } from '../dist/fs/proc.js';
+import { run } from '../lib/exec.js';
 import { REGISTRY, resolveSessionIdentity } from '../lib/drivers.js';
 import { bindServiceHarnessContext, pollEnvironmentOf, requireServiceHarnessContext, serviceHarnessContext } from '../lib/harness-home.js';
 import { sessionFile as codexSessionFile } from '../lib/codex-session.js';
@@ -27,20 +32,38 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   const TASK = 'shared-root-t20261030-000000';
   const env = { ...process.env, PROMPTOBUS_SERVICE_HOME: PRIVATE, PROMPTOBUS_SERVICE_IDLE_MS: '1000',
     PROMPTOBUS_SERVICE_RESERVATION_MS: '2500', PROMPTOBUS_HOME: HOME, PROMPTOBUS_WARDEN: 'off' };
-  const owned = new Map();
+  const owned = new Map(), ownedChildren = new Map();
+  const originalSpawn = childProcess.spawn;
+  childProcess.spawn = function(command, args, options) {
+    const child = originalSpawn.call(this, command, args, options);
+    if (command === process.execPath && JSON.stringify(args) === JSON.stringify([ENTRY, 'service', 'run'])
+      && options?.cwd === ROOT && options.env?.PROMPTOBUS_SERVICE_HOME === PRIVATE) {
+      const entry = { child, identity: null, reaped: false };
+      child.once('close', () => { entry.reaped = true; });
+      ownedChildren.set(child.pid, entry);
+    }
+    return child;
+  };
+  syncBuiltinESMExports();
   let fakePort = null;
-  let lifetimeChild = null;
+  let lifetimeChild = null, managedJournalFailure = null;
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
   async function until(predicate, timeout = 5000) {
     const end = Date.now() + timeout;
     while (!await predicate()) { if (Date.now() >= end) return false; await wait(25); }
     return true;
   }
-  const remember = discovery => { owned.set(discovery.process.pid, discovery.process); return discovery; };
+  const remember = discovery => {
+    owned.set(discovery.process.pid, discovery.process);
+    const child = ownedChildren.get(discovery.process.pid);
+    if (child) child.identity = discovery.process;
+    return discovery;
+  };
   process.once('exit', () => {
     for (const identity of owned.values()) if (processState(identity) !== 'dead') {
       try { process.kill(identity.pid, 'SIGTERM'); } catch {}
     }
+    childProcess.spawn = originalSpawn; syncBuiltinESMExports();
     rmSync(PRIVATE, { recursive: true, force: true });
   });
   writeHostConfig(ROOT, { tools: [] });
@@ -298,14 +321,23 @@ if(code) process.exitCode=code;
       && !existsSync(path.join(paths.requests, firstFiles.session)) && !existsSync(first.credentialFile));
     lifetimeChild = spawn(process.execPath, ['-e', 'process.stdin.resume()'], { stdio: ['pipe', 'ignore', 'ignore'] });
     await new Promise((resolve, reject) => { lifetimeChild.once('spawn', resolve); lifetimeChild.once('error', reject); });
+    const processLifetime = { kind: 'process', process: requireProcess(lifetimeChild.pid) };
     const processClient = await registerServiceClient(host, { cwd: ROOT, env: clientEnv('worker:one', 'worker-one'),
-      lifetime: { kind: 'process', process: requireProcess(lifetimeChild.pid) } }, options);
+      lifetime: processLifetime }, options);
     const processConnection = await initialize(processClient);
     await tool(processClient, processConnection, 'promptobus_task');
     const childExit = new Promise(resolve => lifetimeChild.once('close', resolve));
     lifetimeChild.stdin.end(); await childExit; lifetimeChild = null;
-    check('native process exit releases the client and its persisted protocol resources', await until(() => !existsSync(processClient.credentialFile)
-      && !existsSync(path.join(paths.sessions, `${processConnection.session}.json`)) && !existsSync(path.join(paths.requests, processConnection.session))));
+    const processCleanupStarted = Date.now();
+    const processResourcesReleased = await until(() => !existsSync(processClient.credentialFile)
+      && !existsSync(path.join(paths.sessions, `${processConnection.session}.json`)) && !existsSync(path.join(paths.requests, processConnection.session)));
+    check('native process exit releases the client and its persisted protocol resources', processResourcesReleased,
+      processResourcesReleased ? '' : JSON.stringify({ elapsedMs: Date.now() - processCleanupStarted,
+        exists: { credential: existsSync(processClient.credentialFile),
+          session: existsSync(path.join(paths.sessions, `${processConnection.session}.json`)),
+          requests: existsSync(path.join(paths.requests, processConnection.session)) },
+        owner: current.process, child: processLifetime.process, childCloseObserved: true,
+        ownerState: 'notObserved', childState: 'notObserved' }));
     const absent = await initialize(processClient);
     check('an exited native process cannot reinitialize with its former bearer', absent.status === 401);
     const binding = await registerServiceClient(host, { cwd: ROOT, env: clientEnv('worker:one', 'worker-one') }, options);
@@ -360,14 +392,38 @@ if(code) process.exitCode=code;
       && beforeCrash.receipt.key === expectedReceipt.key;
     check('the managed successful completion gate retains its exact started receipt and live owned PID/birth proofs', ownedCrash, JSON.stringify(beforeCrash));
     if (!ownedCrash) throw new Error('Managed fixture refused an unproven owner crash');
+    const crashChild = ownedChildren.get(crashOwner.pid);
+    if (!crashChild || crashChild.identity?.pid !== crashOwner.pid || crashChild.identity.birth !== crashOwner.birth) {
+      throw new Error('Managed fixture has no exact owned child close acknowledgement');
+    }
     process.kill(crashOwner.pid, 'SIGKILL');
     await managedPending;
-    const observedOwnerDead = await until(() => processState(crashOwner) === 'dead');
+    const deathDeadline = Date.now() + 5000;
+    const observedOwnerDead = await until(() => processState(crashOwner) === 'dead', Math.max(0, deathDeadline - Date.now()));
     writeSync(1, `  · managed-crash-proof: ${JSON.stringify({ ...beforeCrash, observedOwnerDead })}\n`);
     check('the exact owned managed service lifetime is observed dead before any journal read or successor', observedOwnerDead);
     if (!observedOwnerDead) throw new Error('Managed fixture owner death remained unconfirmed');
+    // The same lifetime can already be a zombie; yield for this exact child's close before a synchronous lock read.
+    const ownerReaped = await until(() => crashChild.reaped, Math.max(0, deathDeadline - Date.now()));
+    check('the exact owned managed child close is acknowledged within the existing death allowance before journal recovery',
+      ownerReaped && crashChild.reaped, JSON.stringify({ crashOwner, reaped: crashChild.reaped }));
+    if (!ownerReaped || !crashChild.reaped) throw new Error('Managed fixture owned child close remained unconfirmed');
+    let afterManagedCrash;
+    try { afterManagedCrash = strictTaskFacts(HOME, TASK); }
+    catch (error) {
+      const stat = run('/bin/ps', ['-p', String(crashOwner.pid), '-o', 'stat=', '-o', 'lstart='],
+        { encoding: 'utf8', timeout: 2000, env: { ...process.env, LC_ALL: 'C', LANG: 'C', TZ: 'UTC' } });
+      const parent = run('/bin/ps', ['-p', String(crashOwner.pid), '-o', 'ppid='], { encoding: 'utf8', timeout: 2000 });
+      const child = ownedChildren.get(crashOwner.pid);
+      writeSync(1, `  · managed-journal-lock: ${JSON.stringify({ lock: lockHolder(path.join(HOME, 'tasks', TASK, '.lock')),
+        crashOwner, currentIdentity: processIdentity(crashOwner.pid), oldLifetime: processState(crashOwner), pidPresent: pidAlive(crashOwner.pid),
+        fixturePid: process.pid, child: child ? { identity: child.identity, reaped: child.reaped, exitCode: child.child.exitCode, signalCode: child.child.signalCode } : null,
+        stat: { status: stat.status, stdout: stat.stdout, stderr: stat.stderr }, parent: { status: parent.status, stdout: parent.stdout, stderr: parent.stderr } })}\n`);
+      if (error instanceof GateError && new RegExp(`^task ${TASK} journal is busy: waited [0-9]+ ms$`).test(error.message)) managedJournalFailure = error;
+      throw error;
+    }
     check('the managed request reaches its real post-journal callback with its holder alive', ownedCrash
-      && strictTaskFacts(HOME, TASK).messages.filter(message => message.type === 'question').length === questionsBeforeManaged + 1);
+      && afterManagedCrash.messages.filter(message => message.type === 'question').length === questionsBeforeManaged + 1);
     rmSync(managedGate);
     current = remember(await ensureWorkspaceService(host, options));
     const managedUncertain = await tool(managed, managedConnection, 'promptobus_ask', managedUncertainArgs, managedUncertainId);
@@ -507,6 +563,10 @@ if(code) process.exitCode=code;
     check('native session, contact and private config variables are excluded from common polling without mutating input', !nativeMismatch
       && Object.keys(nativeOnly).filter(key => /^(CLAUDE_CODE_(SESSION_ID|HOST_SESSION_ID|MESSAGING_SOCKET|MESSAGING_TOKEN)|CODEX_THREAD_ID|CODEX_HOME|OPENCODE_CONFIG)$/.test(key)).every(key => !(key in projected))
       && nativeOnly.CLAUDE_CODE_MESSAGING_TOKEN === 'foreign-token');
+  } catch (error) {
+    if (!managedJournalFailure || error !== managedJournalFailure) throw error;
+    check('the managed request reaches its real post-journal callback with its holder alive', false, error.stack);
+    writeSync(1, '  · later recovery assertions notRun after the named strict-journal refusal; existing owned cleanup follows\n');
   } finally {
     if (lifetimeChild) lifetimeChild.kill('SIGTERM');
     if (fakePort) await new Promise(resolve => fakePort.close(resolve));
@@ -514,6 +574,7 @@ if(code) process.exitCode=code;
       try { process.kill(identity.pid, 'SIGTERM'); } catch {}
     }
     await until(() => [...owned.values()].every(identity => processState(identity) === 'dead'));
+    childProcess.spawn = originalSpawn; syncBuiltinESMExports();
     rmSync(PRIVATE, { recursive: true, force: true });
   }
 }

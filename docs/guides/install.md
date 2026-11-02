@@ -148,6 +148,16 @@ An orchestrator entry created by hand has no participant session-record pointer.
 
 ## 4. Project hooks
 
+For an approved BB Codex or standalone HTTP profile, the consumer passes the descriptor as
+`{ rootProfile }` to `planHookInstall` from `promptobus/integration`. This pure
+plan selects its single ordered SessionStart command and keeps ordinary Stop
+and the other harness hooks. The consumer writes the descriptor's `server`
+through its existing native MCP configuration writer, applies the hook plan and
+requires reconnect. Hook planning neither approves a profile nor starts a
+service, and it does not merge an existing Codex TOML config. See
+[BB Codex root profiles](../reference/02-host.md#bb-codex-root-profiles) and
+[standalone root profiles](../reference/02-host.md#standalone-root-profiles).
+
 ```text
 promptobus install --harnesses claude,cursor,codex
 promptobus install --check

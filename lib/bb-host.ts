@@ -42,6 +42,40 @@ import { hostDenyClassification, requireStepResults } from './review.js';
 import type { DenyEntry } from './review.js';
 import { registryOf, roleEntry, REVIEWER } from '../dist/index.js';
 import { DEFAULT_PIPELINE, pipelineOf, pipelineSteps } from '../dist/pipeline.js';
+import { createRootAdmission } from './root-admission.js';
+import { canonicalPath } from './store.js';
+
+interface BbOwnerScope { root: string; home: string }
+
+export function createBbManagedAdmission(resolveOwnerHost: (root: string) => PromptobusHost | Promise<PromptobusHost>, env = process.env) {
+  const ownerEnv = { ...env };
+  const ownerHost = async (root: string, expected?: BbOwnerScope) => {
+    if (!path.isAbsolute(root) || path.dirname(root) === root) throw new Error('Canonical owner workspace is required');
+    const executionPath = realpathSync(root);
+    const host = await resolveOwnerHost(executionPath);
+    if (!path.isAbsolute(host.workspaceRoot()) || !path.isAbsolute(host.promptobusHome())) throw new Error('Owner Host requires an absolute workspace and store');
+    const scope = { root: canonicalPath(host.workspaceRoot()), home: canonicalPath(host.promptobusHome()) };
+    if (scope.root !== executionPath && !host.inWorkspace(executionPath)) throw new Error('Owner Host resolves another canonical workspace');
+    if (expected && (scope.root !== expected.root || scope.home !== expected.home)) throw new Error('Canonical owner workspace or store changed during admission');
+    return { host, scope };
+  };
+  return {
+    async scope(root: string) {
+      return (await ownerHost(root)).scope;
+    },
+    async begin(root: string, intent: string) {
+      const { host, scope } = await ownerHost(root);
+      await createRootAdmission(host, { env: ownerEnv }).beginManagedLaunch(intent);
+      return scope;
+    },
+    async complete(root: string, intent: string, threadId: string, expected: BbOwnerScope) {
+      if (!expected || typeof expected.root !== 'string' || typeof expected.home !== 'string') throw new Error('Managed completion requires its persisted owner scope');
+      const { host, scope } = await ownerHost(root, expected);
+      await createRootAdmission(host, { env: ownerEnv }).completeManagedLaunch(intent, threadId);
+      return scope;
+    },
+  };
+}
 
 const readText = (file: string) => {
   const canonical = realpathSync(file);

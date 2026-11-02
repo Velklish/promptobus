@@ -182,6 +182,8 @@ coverage/
 /lib/review.d.ts
 /bin/promptobus.js
 /bin/promptobus.d.ts
+/bin/promptobus-bb-root.js
+/bin/promptobus-bb-root.d.ts
 /lib/service-state.js
 /lib/service-state.d.ts
 /lib/service-client.js
@@ -194,6 +196,22 @@ coverage/
 /lib/service-warden.d.ts
 /lib/warden-worker.js
 /lib/warden-worker.d.ts
+/lib/launch-exec.js
+/lib/launch-exec.d.ts
+/lib/root-native.js
+/lib/root-native.d.ts
+/lib/native-start.js
+/lib/native-start.d.ts
+/lib/root-launch.js
+/lib/root-launch.d.ts
+/lib/native-admission.js
+/lib/native-admission.d.ts
+/lib/root-process.js
+/lib/root-process.d.ts
+/lib/standalone-root-state.js
+/lib/standalone-root-state.d.ts
+/lib/standalone-root.js
+/lib/standalone-root.d.ts
 
 # Per-run gate records written beside the worktree during a bus task — task artifacts, not source.
 /gates-*-t*-*.json
@@ -203,3 +221,6 @@ coverage/
 .cursor/rules/backslop-*
 .agents/skills/backslop-*
 # backslop:end
+
+/lib/service-launch.js
+/lib/service-launch.d.ts

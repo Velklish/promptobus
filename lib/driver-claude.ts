@@ -1,5 +1,7 @@
+import { shellQuote } from '../dist/fs/shell.js';
+import { replaceLaunchMcpConfig } from './driver-runtime.js';
 import { randomUUID } from 'node:crypto';
-import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync } from 'node:fs';
+import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync, realpathSync } from 'node:fs';
 import { connect } from 'node:net';
 import { homedir, userInfo } from 'node:os';
 import path from 'node:path';
@@ -8,8 +10,10 @@ import { PROMPTOBUS_SERVER } from './contract.js';
 import { assertNativePluginManifest, selectedNativeFiles, selectedNativePrompt } from './native-participant-context.js';
 import {
   canonicalPath, foreignSession, participantOf, participantSessionPath, readTask, readWake, upsertParticipant, wakeAddressOf,
-  withTaskLock, writeJsonAtomic, writeWake,
+  taskExists, withTaskLock, workersDir, writeJsonAtomic, writeWake,
 } from './store.js';
+import { wouldResolve } from './exec.js';
+import { recordVersion } from './service-state.js';
 import { PARENT_SESSION_ENV } from './session-env.js';
 import {
   bgSessions, findSession, liftoffParticipant, readBgSessions, resetBgSessionsCache, runClaude, sayLiftoff,
@@ -23,7 +27,7 @@ import {
 } from '../dist/index.js';
 import { orderBody as commonOrderBody } from './notification.js';
 import {
-  readRecordAt, sayForeignWrite as commonSayForeignWrite, sessionEnvFor,
+  readRecordAt, revokeFailedManagedLaunch, sayForeignWrite as commonSayForeignWrite, sessionEnvFor,
 } from './driver-common.js';
 
 import type { Socket } from 'node:net';
@@ -31,11 +35,15 @@ import type { DriverPhrases, HostMcpTool, Notification, NotificationMessage, Ses
 import type { RawBgSession } from './liftoff.js';
 import type { LibDriver, LibLaunchPlan, LibPrepareContext, LibSpawnContext, LibStall, LibMcpConfig, LibMcpServer } from './driver-runtime.js';
 
+interface ClaudeLaunchPlan extends LibLaunchPlan { claudeStartHook: { command: string | null | undefined; settingsPath: string } }
+
 interface ClaudePrepareContext extends Omit<LibPrepareContext, 'role'> {
   role?: string | null;
 }
 interface ClaudeBindingRecord {
-  home?: string; task?: string; address?: string; sessionId?: string | null; refused?: { session?: string }[];
+  [key: string]: unknown;
+  home?: string; task?: string; address?: string; ref?: string; launchId?: string;
+  sessionId?: string | null; expectedSessionId?: string | null; refused?: { session?: string }[];
 }
 interface TranscriptBlock { type?: unknown; name?: unknown; id?: unknown; tool_use_id?: unknown }
 
@@ -503,7 +511,8 @@ export function registerWake(home: string, task: string, addr: string, env = pro
 
 // The handshake binds the session's own id once through the lift's pointer; a later id is refused
 // and kept in the session record. `bound`, `refused` or `null`: 02-host § Session identity.
-export function bindHandshake(home: string, task: string, addr: string, env = process.env, session: string | null = null) {
+export function bindHandshake(home: string, task: string, addr: string, env = process.env, session: string | null = null,
+  expected: { ref: string; launchId: string } | null = null) {
   try {
     const file = String(env?.[SESSION_RECORD_VAR] ?? '').trim();
     const who = session ?? env?.CLAUDE_CODE_SESSION_ID?.trim() ?? null;
@@ -512,9 +521,11 @@ export function bindHandshake(home: string, task: string, addr: string, env = pr
       const record = readRecordAt<ClaudeBindingRecord>(file);
       if (typeof record?.home !== 'string' || canonicalPath(record.home) !== canonicalPath(home)
         || record.task !== task || record.address !== addr) return null;
-      const participant = participantOf(readTask(home, task), addr);
+      const meta = readTask(home, task), participant = participantOf(meta, addr);
       if (!participant || participant.harness === 'codex' || participant.metadata?.nativeLaunchId
         || participant.metadata?.nativeStop || participant.metadata?.sessionRecord !== file) return null;
+      if (expected && (meta.status !== 'active' || record.ref !== expected.ref || record.launchId !== expected.launchId
+        || participant.harness !== CLAUDE || participant.sessionRef !== expected.ref)) return 'refused';
       const at = new Date().toISOString();
       if (record.sessionId && record.sessionId !== who) {
         const refused = (Array.isArray(record.refused) ? record.refused : []).filter((r) => r?.session !== who);
@@ -605,7 +616,7 @@ function settingsFile({
     disableRemoteControl: true,
     ...(bypassesPrompts(permissionMode) ? { crossSessionInbound: 'accept' } : {}),
     viewMode: 'focus',
-    hooks: { [GUARD_HOOK_EVENT]: [{ hooks: [{ type: 'command', command: guardCommand }] }] },
+    hooks: Object.fromEntries([GUARD_HOOK_EVENT, 'SessionStart'].map(event => [event, [{ hooks: [{ type: 'command', command: guardCommand }] }]])),
     ...extraSettings,
   };
 }
@@ -616,7 +627,7 @@ function prepare({
   ref, role = null, mcp, prompt, model, effort = null, permissionMode = null,
   addDirs = [], pluginDir = null, selectedContext = null, mcpConfigPath, settingsPath,
   guardCommand, denyTools = null, extraSettings = {}, sessionId = randomUUID(),
-}: ClaudePrepareContext): LibLaunchPlan {
+}: ClaudePrepareContext): ClaudeLaunchPlan {
   const pointer = sessionRecordFor(role, mcp);
   const cfg = mcpConfig(mcp, pointer);
   const settings = settingsFile({
@@ -634,8 +645,10 @@ function prepare({
       model, effort, permissionMode, prompt: bootstrap.argument,
       sessionId,
     }),
+    claudeStartHook: { command: guardCommand, settingsPath },
     prelaunchBinding: { sessionId, ...(pointer ? { sessionRecord: pointer } : {}) },
     mcpConfig: cfg,
+    mcpConfigPath,
     settings,
     ...(bootstrap.files.length ? { prompt } : {}),
     ...(selectedContext ? { skillsNote: `${selectedContext.skills.length} selected skills → ${selectedPlugin}` } : {}),
@@ -650,6 +663,25 @@ function prepare({
       ...(record ? [{ path: pointer!, text: `${JSON.stringify(record, null, 2)}\n`, secret: true }] : []),
     ],
   };
+}
+
+function replaceMcpServers(plan: LibLaunchPlan, servers: Record<string, LibMcpServer>): void {
+  if (plan.service) {
+    const owned = (plan as ClaudeLaunchPlan).claudeStartHook;
+    const settings = plan.settings as ReturnType<typeof settingsFile>;
+    const groups = settings.hooks?.SessionStart;
+    const file = owned && plan.files.find(entry => entry.path === owned.settingsPath);
+    const hooks = groups?.flatMap(group => group.hooks).filter(hook => hook.type === 'command' && hook.command === owned?.command);
+    if (!owned?.command || !file || hooks?.length !== 1 || !plan.env?.PROMPTOBUS_SERVICE_HOME) {
+      throw new Error('Managed Claude launch requires its owned SessionStart hook');
+    }
+    hooks[0]!.command += ' ' + ['--client-file', plan.service.credentialFile,
+      '--service-home', plan.env.PROMPTOBUS_SERVICE_HOME].map(shellQuote).join(' ');
+    file.text = `${JSON.stringify(settings, null, 2)}\n`;
+  }
+  const former = plan.mcpConfig as LibMcpConfig;
+  const { reviewer_files: previousFiles, ...kept } = former.mcpServers;
+  replaceLaunchMcpConfig(plan, { ...former, mcpServers: { ...kept, ...servers } });
 }
 
 const sessionEnv = sessionEnvFor(SESSION_ENV_DROP);
@@ -708,16 +740,53 @@ function inspect(ref: string, sessions: unknown[] | null | undefined = undefined
 // role ([liftoff.js](liftoff.js)); argv comes from the plan, because the plan is what runs.
 async function spawn(plan: LibLaunchPlan, { tool, ref, role, cwd, env, home, task, address, launchFailNote, deadNote, unboundNote,
   persist, awaitOptions, host, noun, requireFullSession, requireLaunchMatch }: LibSpawnContext) {
-  return liftoffParticipant({
-    tool, argv: plan.argv, cwd, env, name: ref, role, registry: registryOf(host), launchFailNote, deadNote, unboundNote, persist,
-    awaitOptions, home, task, address,
-    preboundSessionId: role === 'teamlead' ? null : plan.prelaunchBinding?.sessionId,
-    preboundSessionRecord: role === 'teamlead' ? null : plan.prelaunchBinding?.sessionRecord ?? null,
-    noun, requireFullSession, requireLaunchMatch,
-    // The late-start hook. `host` names the availability cache; a caller that hands none simply
-    // gets no mark, and the lift behaves exactly as before.
-    sayLimit: (output) => markLimitAtStart(host, output),
-  });
+  const pointer = plan.service ? plan.prelaunchBinding?.sessionRecord ?? path.join(workersDir(home, task), 'orchestrator.session.json') : null;
+  let launchTool = tool;
+  try {
+    const previousParticipant = role === 'teamlead' && taskExists(home, task)
+      ? withTaskLock(home, task, () => structuredClone(participantOf(readTask(home, task), address) ?? null)) : undefined;
+    if (pointer) {
+      const previous = readRecordAt<ClaudeBindingRecord>(pointer);
+      if (previous) delete previous.expectedSessionId;
+      if (previous) {
+        for (const key of ['nativeAdmission', 'nativeAdmissionEvidence', 'nativeStartEvidence', 'nativeAdmissionUnknown']) delete (previous as Record<string, unknown>)[key];
+      }
+      const selected = wouldResolve(tool.bin!, env, cwd);
+      if (!selected) throw new GateError('Claude managed launch has no resolved native executable');
+      const store = claudeHome(env);
+      if (!path.isAbsolute(store)) throw new GateError('Claude managed native account store must be absolute');
+      const executable = realpathSync(selected), nativeStore = realpathSync(store);
+      launchTool = { ...tool, bin: executable };
+      writeJsonAtomic(pointer, { ...previous, ref, home, task, address, launchId: plan.service!.launchId,
+        sessionId: null, nativeCommand: { executable: recordVersion(executable), argv: [...plan.argv], nativeStore } }, { mode: 0o600 });
+      plan.sessionRecord = pointer;
+    }
+    return await liftoffParticipant({
+      tool: launchTool, argv: plan.argv, cwd, env, name: ref, role, registry: registryOf(host), launchFailNote, deadNote, unboundNote, persist,
+      awaitOptions, home, task, address,
+      preboundSessionId: role === 'teamlead' ? null : plan.prelaunchBinding?.sessionId,
+      preboundSessionRecord: role === 'teamlead' ? null : plan.prelaunchBinding?.sessionRecord ?? null,
+      noun, requireFullSession, requireLaunchMatch,
+      ...(plan.service ? {
+        launch: plan,
+        expectedBinding: { ref, record: pointer!, launchId: plan.service.launchId, deferTaskBinding: role === 'teamlead',
+          ...(previousParticipant !== undefined ? { previousParticipant } : {}) },
+        beforeStart: () => plan.service!.beforeStart(pointer!),
+        afterBind: async (id: string) => {
+          if (bindHandshake(home, task, address, { ...env, [SESSION_RECORD_VAR]: pointer! }, id,
+            { ref, launchId: plan.service!.launchId }) !== 'bound') {
+            throw new GateError('Claude native session did not bind its owned launch record');
+          }
+          await plan.service!.realize(id);
+        },
+      } : {}),
+      // The late-start hook. `host` names the availability cache; a caller that hands none simply
+      // gets no mark, and the lift behaves exactly as before.
+      sayLimit: (output) => markLimitAtStart(host, output),
+    });
+  } catch (error) {
+    return revokeFailedManagedLaunch(plan, error);
+  }
 }
 
 // Ceiling for waiting on session death, and the poll step — both measured, not chosen:
@@ -834,6 +903,7 @@ export const claudeDriver = {
   // Translating harness-neutral context into a lift plan has no capability of its own: without it
   // there is no `spawn`, and declaring it separately would declare half an operation.
   prepare,
+  replaceMcpServers,
   mcpDenyTools,
   spawn,
   saidLiftoff: sayLiftoff,

@@ -1,12 +1,14 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
-import { makeSandbox, stubCommand, writeHostConfig } from './sandbox.mjs';
+import { makeSandbox, ownedServiceFixture, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture } from './console.mjs';
 
+ownedServiceFixture();
+mkdirSync(process.env.CLAUDE_CONFIG_DIR, { recursive: true });
 const ROOT = makeSandbox('promptobus-report-');
 const HOME = path.join(ROOT, '.promptobus');
 const BIN = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'promptobus.js');
@@ -260,6 +262,8 @@ if (args[0] === '--bg') {
   }
   appendFileSync(launches, name + '\\n');
   writeFileSync(file, JSON.stringify({ name, sessionId }));
+  const { publishOwnedClaudeFixtureStart } = await import(${JSON.stringify(new URL('./harness.mjs', import.meta.url).href)});
+  await publishOwnedClaudeFixtureStart({ nativeId: sessionId, argv: args, pid: ${process.pid} });
   console.log(name.includes(${JSON.stringify(UNKNOWN_ID_TASK)}) ? 'backgrounded' : 'backgrounded · deadbeef');
   process.exit(0);
 }

@@ -220,13 +220,14 @@ const lift = async ({ named, handshake }) => {
 bindHandshake(${JSON.stringify(HOME)}, ${JSON.stringify(TASK)}, ${JSON.stringify(addr)}, { ${SESSION_RECORD_VAR}: ${JSON.stringify(pointer)}, CLAUDE_CODE_SESSION_ID: ${JSON.stringify(handshake)} });
 process.stdout.write('backgrounded · ${(named ?? handshake).slice(0, 8)} · ${addr}\\n');`);
   const persisted = [];
-  const ran = await expectFail(() => liftoffParticipant({
+  let error;
+  const ran = await expectFail(async () => { try { return await liftoffParticipant({
     tool: { bin: path.join(BIN, 'claude') }, argv: ['--bg'], cwd: SB, env: process.env, name: addr, role: 'worker',
     home: HOME, task: TASK, address: addr, preboundSessionId: CHOSEN, preboundSessionRecord: pointer,
     persist: (id, state, full) => persisted.push({ id, state, full }),
     awaitOptions: { tries: 1, delayMs: 0, sessions: () => [{ name: addr, id: (named ?? handshake).slice(0, 8), pid: process.pid, ...(named ? { sessionId: named } : {}) }] },
-  }));
-  return { ...ran, persisted, record: store.participantOf(store.readTask(HOME, TASK), addr)?.metadata };
+  }); } catch (caught) { error = caught; throw caught; } });
+  return { ...ran, error, persisted, record: store.participantOf(store.readTask(HOME, TASK), addr)?.metadata };
 };
 const agree = await lift({ named: OWN, handshake: OWN });
 check('the persist confirms a handshake binding the harness names too',
@@ -236,8 +237,8 @@ check('a harness that names no id leaves the handshake binding standing, not the
   !silent.failed && silent.persisted.length === 1 && silent.persisted[0].full === OWN, JSON.stringify(silent));
 const clash = await lift({ named: LATER, handshake: OWN });
 check('a harness id that contradicts the handshake binding fails the lift with both ids named',
-  clash.failed && clash.persisted.length === 0 && clash.out.includes(LATER) && clash.out.includes(OWN),
+  clash.failed && clash.persisted.length === 0 && clash.error?.message.includes(LATER) && clash.error.message.includes(OWN),
   JSON.stringify(clash));
-check('and the refused lift clears its binding: the record keeps neither the handshake id nor the session record',
-  clash.failed && clash.record?.sessionId === undefined && clash.record?.sessionRecord === undefined,
+check('the refused lift removes only its staged pointer and retains the ambiguous actual identity without publication',
+  clash.failed && clash.persisted.length === 0 && clash.record?.sessionId === OWN && clash.record?.sessionRecord === undefined,
   JSON.stringify(clash.record));

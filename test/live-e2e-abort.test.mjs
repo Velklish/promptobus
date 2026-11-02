@@ -35,9 +35,11 @@ child.stderr.on('data', (chunk) => { output += chunk; });
 }
 const own = [];
 if (child) try {
+  let observedRuns = [];
   const launched = await waitFor(() => {
     const sessions = harnessSessions(harness.home);
     const dirs = readdirSync(runs).filter((name) => name.startsWith('promptobus-live-e2e-'));
+    observedRuns = dirs;
     if (!sessions.length || !dirs.length) return null;
     const dir = path.join(runs, dirs[0]);
     try {
@@ -45,8 +47,26 @@ if (child) try {
       return { dir, record, sessions };
     } catch { return null; }
   }, { timeoutMs: 30_000 });
+  const launchedOwnParticipants = !!launched && launched.sessions.every((s) => s.cwd.startsWith(realpathSync(SB)));
+  let launchFailure = '';
+  if (!launchedOwnParticipants) {
+    const dir = launched?.dir ?? (observedRuns.length ? path.join(runs, observedRuns[0]) : null);
+    const details = { output: output.slice(-1000), dir,
+      child: { pid: child.pid, exitCode: child.exitCode, signalCode: child.signalCode,
+        exitObserved: child.exitCode !== null || child.signalCode !== null } };
+    if (dir) {
+      try { details.record = JSON.parse(readFileSync(path.join(dir, LIVE_RECORD), 'utf8')); }
+      catch (error) { details.recordReadError = error.code ?? error.message; }
+      try {
+        details.wardenTail = readFileSync(path.join(dir, 'warden.out'), 'utf8').split('\n')
+          .map(line => /bearer|authorization|token|api[_-]?key|secret/i.test(line) ? '[redacted credential line]'
+            : line.replace(/\b(?:[a-f\d]{64}|sk-[a-z\d_-]+)\b/gi, '[redacted]')).join('\n').slice(-1500);
+      } catch (error) { details.wardenReadError = error.code ?? error.message; }
+    }
+    launchFailure = JSON.stringify(details);
+  }
   check('actual live-e2e starts only stub participants in the private stand',
-    !!launched && launched.sessions.every((s) => s.cwd.startsWith(realpathSync(SB))), output.slice(-1000));
+    launchedOwnParticipants, launchFailure);
   if (launched) {
     own.push(...launched.record.processes, ...processTable().filter((p) => launched.sessions.some((s) => s.pid === p.pid)));
     child.kill('SIGTERM');
@@ -55,9 +75,14 @@ if (child) try {
     const result = lines.length ? JSON.parse(lines.at(-1).split(': ').slice(1).join(': ')) : null;
     check('actual live-e2e abort awaits cleanup and reports held ancestry',
       exited && child.exitCode === 143 && result?.safe === false && result.livePids.length === 0 && result.failures.some((reason) => reason.includes('ancestry')), output.slice(-1500));
+    const standPresent = existsSync(launched.dir);
+    const sessionsAfter = harnessSessions(harness.home);
+    const ownProcessesAfter = processTable().filter((p) => own.some((record) => record.pid === p.pid && record.birth === p.birth));
     check('actual live-e2e preserves the stand after recorded session and process death',
-      existsSync(launched.dir) && harnessSessions(harness.home).length === 0
-      && !processTable().some((p) => own.some((record) => record.pid === p.pid && record.birth === p.birth)), output.slice(-1500));
+      standPresent && sessionsAfter.length === 0 && ownProcessesAfter.length === 0,
+      JSON.stringify({ standPresent, sessionCount: sessionsAfter.length,
+        sessions: sessionsAfter.map(({ id, sessionId, name, pid }) => ({ id, sessionId, name, pid })),
+        ownProcesses: ownProcessesAfter.map(({ pid, birth }) => ({ pid, birth })), output: output.slice(-1500) }));
   }
 } finally {
   if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');

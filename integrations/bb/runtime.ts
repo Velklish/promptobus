@@ -23,6 +23,7 @@ import type { CommandGrant } from './control-schema.js';
 import { digest, evidenceManifestSchema, validateReviewEvidence } from './review-evidence.js';
 import type { EvidenceArtifact } from './review-evidence.js';
 import { readBbGitStatus } from './git-reads.js';
+import { lookupBbRoot } from './root-lookup.js';
 export { REVIEWER_PROVIDER } from './routing.js';
 
 export function registerRuntime(bb: BbPluginApi) {
@@ -295,7 +296,7 @@ export function registerRuntime(bb: BbPluginApi) {
     if (!provision) await admit(b);
     const prepare = provision || b.providerId === 'acp-cursor' || b.providerId === 'acp-opencode';
     const { model, reasoningLevel } = b.execution!;
-    const intent = { attemptId: randomUUID(), assignment, model, reasoningLevel, ...(baseBranch ? { baseBranch } : {}),
+    const intent = { attemptId: randomUUID(), assignment, model, reasoningLevel, ownerScope: undefined as { root: string; home: string } | undefined, ...(baseBranch ? { baseBranch } : {}),
       ...(environmentPath ? { environmentPath } : {}), status: 'requested' as const };
     store.launch(b, intent);
     const delivery = () => createBbInstructionDelivery(b.role, { taskId: b.task, address: b.participant, environmentId: b.environmentId,
@@ -310,6 +311,12 @@ export function registerRuntime(bb: BbPluginApi) {
       const scope = b.launchContext!.grant.scope;
       await currentControl(provision ? { ...b, environmentPath: scope.repository, branch: scope.branch, baseSha: scope.base } : b);
       if (b.role === REVIEWER) await checkEvidence(b, store.task(b.task)!, undefined, !provision);
+      const ownerScope = await host.call('rootLaunch', { operation: 'begin', root: b.root, intent: intent.attemptId }, { hostId: b.hostId });
+      intent.ownerScope = ownerScope;
+      store.launch(b, intent);
+      await checkStep(b);
+      if (b.role === REVIEWER) await checkEvidence(b, store.task(b.task)!, undefined, !provision);
+      await currentControl(provision ? { ...b, environmentPath: scope.repository, branch: scope.branch, baseSha: scope.base } : b);
       const thread = await bb.sdk.threads.spawn({ projectId: b.projectId, environment: baseBranch
         ? { type: 'host', hostId: b.hostId, workspace: { type: 'managed-worktree', baseBranch: { kind: 'named', name: baseBranch } } }
         : environmentPath ? { type: 'host', hostId: b.hostId, workspace: { type: 'unmanaged', path: environmentPath } }
@@ -322,6 +329,7 @@ export function registerRuntime(bb: BbPluginApi) {
       store.save(b);
       recorded = true;
       store.launch(b, { ...intent, status: 'recorded' });
+      await host.call('rootLaunch', { operation: 'complete', root: b.root, intent: intent.attemptId, threadId: thread.id, ownerScope }, { hostId: b.hostId });
       if (b.parentThreadId && thread.parentNotifications !== 'stuck') throw new Error('BB child parent notifications were not confirmed');
       if (prepare) {
         b.phase = 'provisioning'; store.save(b);
@@ -411,6 +419,21 @@ export function registerRuntime(bb: BbPluginApi) {
   };
   const archiving = new Set<string>();
   bb.cli.register(defineCli({ name: 'promptobus', summary: 'Local engine-backed BB task participants.', commands: {
+    'root lookup': cliCommand({ summary: 'Resolve one ordinary native root from latest public identities and complete managed launch history.', options: {
+      root: { type: 'string', required: true, description: 'Canonical owner workspace approved for the root profile.' },
+      'native-thread': { type: 'string', required: true, description: 'Actual native thread from the first owned transcript record.' },
+    }, async run({ options }, context) {
+      const local = (await bb.sdk.system.config({ signal: context.signal })).primaryHostId;
+      if (!local) throw new Error('Root lookup requires the local host');
+      const scope = await host.call('rootScope', { root: options.root }, { hostId: local, signal: context.signal });
+      if (scope.root !== options.root) throw new Error('Root lookup canonical workspace changed');
+      const result = await lookupBbRoot(bb, store, { root: scope.root, home: scope.home,
+        nativeThreadId: options['native-thread'], hostId: local, signal: context.signal,
+        resolveOwnerScope: executionPath => host.call('rootScope', { root: executionPath }, { hostId: local, signal: context.signal }) });
+      const current = await host.call('rootScope', { root: options.root }, { hostId: local, signal: context.signal });
+      if (current.root !== scope.root || current.home !== scope.home) throw new Error('Canonical owner workspace or store changed during root lookup');
+      return { exitCode: 0, stdout: JSON.stringify({ ...result, root: scope.root, home: scope.home }) };
+    } }),
     'control publish': cliCommand({ summary: 'Explicitly initialize or revision-check owner current authority; never grants BB permissions.', options: {
       task: createOptions.task,
       input: { type: 'string', required: true, stdin: true, description: 'Complete owner-declared reference, confirmation, flags and active grants JSON; at most 1 MiB.' },

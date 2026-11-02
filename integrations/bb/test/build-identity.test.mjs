@@ -14,9 +14,9 @@ function fixture(t) {
   mkdirSync(path.join(root, 'skills'));
   writeFileSync(path.join(root, 'skills/SKILL.md'), 'Shipped instruction');
   writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'bb-plugin-promptobus', version: '0.1.0',
-    engines: { bb: '0.48.0', bbPluginSdk: '0.6.94' },
+    engines: { bb: '0.48.1', bbPluginSdk: '0.6.104' },
     bb: { server: './.runtime/source/server.ts', host: './.runtime/source/host.ts', skills: ['.runtime/skills'] },
-    dependencies: { promptobus: '1.0.0' }, devDependencies: { '@get-bb/plugin-sdk': '0.6.94' } }));
+    dependencies: { promptobus: '1.0.0' }, devDependencies: { '@get-bb/plugin-sdk': '0.6.104' } }));
   writeFileSync(path.join(root, 'package-lock.json'), '{"lockfileVersion":3}');
   writeFileSync(path.join(root, 'tsconfig.json'), '{}');
   writeFileSync(path.join(root, 'server.ts'), 'server input');
@@ -24,7 +24,7 @@ function fixture(t) {
   writeFileSync(path.join(root, 'build-identity.ts'), `export const encoded = '${marker}';\n`);
   for (const name of ['promptobus', '@get-bb/plugin-sdk']) {
     const directory = path.join(root, 'node_modules', name); mkdirSync(directory, { recursive: true });
-    writeFileSync(path.join(directory, 'package.json'), JSON.stringify({ name, version: name === 'promptobus' ? '1.0.0' : '0.6.94', main: './index.js', files: ['index.js'] }));
+    writeFileSync(path.join(directory, 'package.json'), JSON.stringify({ name, version: name === 'promptobus' ? '1.0.0' : '0.6.104', main: './index.js', files: ['index.js'] }));
     writeFileSync(path.join(directory, 'index.js'), `export const name = ${JSON.stringify(name)};`);
   }
   return root;
@@ -115,7 +115,7 @@ test('build embeds one invocation identity and binds final artifacts without cha
   const captured = JSON.parse(readFileSync(path.join(installed, 'package.json')));
   assert.deepEqual(captured.engines,
     JSON.parse(readFileSync(path.join(root, 'package.json'))).engines, 'captured packages must preserve the declared compatibility pair');
-  assert.equal(captured.devDependencies['@get-bb/plugin-sdk'], '0.6.94');
+  assert.equal(captured.devDependencies['@get-bb/plugin-sdk'], '0.6.104');
   assert.equal(captured.dependencies['@get-bb/plugin-sdk'], undefined);
   assert.deepEqual(readFileSync(path.join(installed, 'node_modules/@get-bb/plugin-sdk/index.js')),
     readFileSync(path.join(root, 'node_modules/@get-bb/plugin-sdk/index.js')), 'provider bridge build input remains frozen');

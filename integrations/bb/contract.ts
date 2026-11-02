@@ -21,7 +21,14 @@ export const engineInput = z.discriminatedUnion('operation', [
   z.object({ ...bound, operation: z.literal('uploadEvidence'), file: z.string().min(1), to: z.string().min(1) }).strict(),
 ]);
 
+const ownerScope = z.object({ root: z.string().min(1), home: z.string().min(1) }).strict();
+
 export const hostContract = defineRpcContract({
+  rootScope: { input: z.object({ root: z.string().min(1) }).strict(), output: ownerScope },
+  rootLaunch: { input: z.discriminatedUnion('operation', [
+    z.object({ operation: z.literal('begin'), root: z.string().min(1), intent: z.string().uuid() }).strict(),
+    z.object({ operation: z.literal('complete'), root: z.string().min(1), intent: z.string().uuid(), threadId: z.string().min(1), ownerScope }).strict(),
+  ]), output: ownerScope },
   runtimeDescribe: { input: emptySchema, output: z.object({ identity: buildIdentitySchema.nullable() }).strict() },
   messageOrderRebuild: { input: z.object({ root: z.string().min(1) }).strict(), output: z.object({
     root: z.string(), home: z.string(), head: z.string().nullable(), messages: z.number().int().nonnegative(),

@@ -2,7 +2,18 @@ import { createRegistry, driverFor, openParticipant } from '../dist/index.js';
 import type { Driver, Registry, LaunchPlan, SpawnContext, WakeProbe, ParticipantV1, PromptobusHost, HostToolBin, StepKind, HostMcpTool, StalledParticipant, DriverDenyTool } from '../dist/index.js';
 import type { RoutingAdapter } from './model-routing/adapter-common.js';
 
+export interface ManagedServiceLaunch {
+  launchId: string; clientId: string; credentialFile: string;
+  beforeStart(record: string): Promise<void>;
+  realize(nativeId: string): Promise<void>;
+  revoke(): Promise<void>;
+}
 export interface LibLaunchPlan extends LaunchPlan {
+  service?: ManagedServiceLaunch;
+  serviceScopes?: { server: string; task: string; address: string; record: string }[];
+  serviceFiles?: { roots: string[]; canonicalFiles?: string[] };
+  env?: NodeJS.ProcessEnv;
+  mcpConfigPath?: string;
   prelaunchBinding?: { sessionId?: string; sessionRecord?: string };
   sessionRecord?: string | null;
   launchId?: string;
@@ -64,6 +75,7 @@ export interface LibDriver extends Omit<Driver,
   'availability' | 'prepare' | 'spawn' | 'checkWake' | 'saidLiftoff' | 'sessionEnv' | 'stallRoute' |
   'registerWake' | 'bindHandshake' | 'optionRefusal' | 'sweepParticipant' | 'normalizeTool' | 'resumeState' | 'refuseForeignProjectLayer' | 'shadowedUserServers'> {
   readonly availability?: RoutingAdapter;
+  replaceMcpServers?(plan: LibLaunchPlan, servers: Record<string, LibMcpServer>): void;
   resumeState?(ref: string, context: Parameters<NonNullable<Driver['resumeState']>>[1]): { threadId?: string | null; sandbox?: string };
   normalizeTool?(tool: LibToolBin, context?: { env?: NodeJS.ProcessEnv }): LibToolBin;
   refuseForeignProjectLayer?(lookupDir: string, writtenDir: string, tool?: LibToolBin | null, guardCommand?: string | null): void;
@@ -77,7 +89,8 @@ export interface LibDriver extends Omit<Driver,
   bindHandshake?(home: string, task: string, address: string, env?: NodeJS.ProcessEnv, session?: string | null): unknown;
   optionRefusal: (options: { effort?: string | null; statusCommand?: string | null }, tool: LibToolBin) => string | null;
   shadowedUserServers: (names: string[]) => string[];
-  sweepParticipant?(participant: ParticipantV1, taskId: string): unknown;
+  sweepParticipant?(participant: ParticipantV1, taskId: string, env?: NodeJS.ProcessEnv,
+    context?: { home: string; task: string; taskLocked?: true }): unknown;
   mcpDenyTools?(tools: readonly HostMcpTool[]): DriverDenyTool[];
 }
 export interface LibRegistry extends Omit<Registry, 'drivers'> {
@@ -119,4 +132,12 @@ export function libOpenParticipant(home: string, task: string, participant: Part
     = openParticipant(home, task, participant, coreRegistry(registry), options);
   // openParticipant returns the registry driver without replacing it (src/driver.ts).
   return opened as Omit<ReturnType<typeof openParticipant>, 'driver'> & { driver: LibDriver };
+}
+
+export function replaceLaunchMcpConfig(plan: LibLaunchPlan, config: unknown): void {
+  plan.mcpConfig = config;
+  if (!plan.mcpConfigPath) return;
+  const file = plan.files.find(entry => entry.path === plan.mcpConfigPath);
+  if (!file) throw new Error('The launch plan has no file for its MCP configuration');
+  file.text = `${JSON.stringify(config, null, 2)}\n`;
 }

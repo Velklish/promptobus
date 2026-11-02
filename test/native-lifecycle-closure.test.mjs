@@ -4,7 +4,7 @@ import test from 'node:test';
 import path from 'node:path';
 import { mkdirSync, readFileSync, writeFileSync, existsSync, realpathSync, symlinkSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { makeSandbox, stubCommand, writeHostConfig } from './sandbox.mjs';
+import { makeSandbox, ownedServiceFixture, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { expectFail, quiet } from './console.mjs';
 import { hostOf } from '../lib/host.js';
 import * as store from '../lib/store.js';
@@ -25,6 +25,7 @@ import { sweep } from '../lib/sweep.js';
 import { createRegistry } from '../dist/index.js';
 import { sessionLogOf } from '../lib/model-routing/telemetry.js';
 
+ownedServiceFixture();
 process.env.CLAUDE_CODE_SESSION_ID = 'closure-owner';
 process.env.PROMPTOBUS_WARDEN = 'off';
 let sequence = 0;

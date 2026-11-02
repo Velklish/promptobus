@@ -5,6 +5,8 @@ import { makeSandbox } from './sandbox.mjs';
 import * as store from '../lib/store.js';
 import { opencodeDriver, registrySessionKey } from '../lib/driver-opencode.js';
 import { pidAlive, reapHolder } from '../lib/opencode-session.js';
+import { processState } from '../lib/service-state.js';
+import { waitFor } from './harness.mjs';
 
 const SB = makeSandbox('promptobus-driver-opencode-');
 const home = path.join(SB, 'bus');
@@ -22,6 +24,7 @@ try {
     const entry = path.join(process.env.PROMPTOBUS_OPENCODE_HOME, 'sessions', `${registrySessionKey(ref)}.json`);
     const failure = new Error(`connection rejected at ${mode}`);
     let pid = null;
+    let holderProcess;
     let terminations = 0;
     const calls = [];
     process.kill = (target, signal) => {
@@ -29,7 +32,9 @@ try {
       return originalKill(target, signal);
     };
     globalThis.fetch = async (url, options) => {
-      pid = JSON.parse(readFileSync(file, 'utf8')).holderPid;
+      const record = JSON.parse(readFileSync(file, 'utf8'));
+      pid = record.holderPid;
+      holderProcess = record.holderProcess;
       const route = `${options.method} ${new URL(url).pathname}`;
       calls.push(route);
       if (route === 'POST /api/session' && mode === 'create-reject') throw failure;
@@ -50,6 +55,8 @@ try {
         persist: () => { if (mode === 'persist-reject') throw failure; },
       });
     } catch (caught) { error = caught; }
+    const beforePhysicalReap = holderProcess ? { identity: holderProcess, state: processState(holderProcess), alive: pidAlive(pid) } : null;
+    if (beforePhysicalReap?.state === 'dead') await waitFor(() => !pidAlive(pid), { timeoutMs: 5000 });
     if (mode === 'success') {
       check(': successful OpenCode lift registers the holder and sends one first prompt',
         result?.session === 'fixture-session' && pidAlive(pid) && existsSync(entry)
@@ -62,9 +69,10 @@ try {
         JSON.stringify({ error: error?.message, expected: failure.message }));
       check(`: OpenCode ${mode} reaps once and removes holder record log and registry`,
         !pidAlive(pid) && terminations === 1 && [file, log, entry].every((at) => !existsSync(at)),
-        JSON.stringify({ pid, alive: pidAlive(pid), terminations, files: [file, log, entry].map(existsSync) }));
+        JSON.stringify({ pid, beforePhysicalReap,
+          alive: pidAlive(pid), terminations, files: [file, log, entry].map(existsSync) }));
     }
-    await reapHolder(pid);
+    await reapHolder(pid, { identity: holderProcess });
     for (const at of [file, log, entry]) {
       if (existsSync(at)) rmSync(at, { force: true });
     }

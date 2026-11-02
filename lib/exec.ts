@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import type { SpawnOptions, SpawnSyncOptions, SpawnSyncOptionsWithStringEncoding, SpawnSyncReturns } from 'node:child_process';
 import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -122,16 +123,16 @@ function failure({ code, message }: Pick<RunRefusal, 'code' | 'message'>): Async
 // Resolve trace, off unless this variable names a file: the suite's sealed-PATH gate reads it.
 const TRACE_VAR = 'PROMPTOBUS_EXEC_TRACE';
 
-// Where PATH would find `cmd`, for the trace only — `run` on POSIX hands the bare name to
-// the kernel. The execute bit is REQUIRED here, by the same test the seal builds with.
-function wouldResolve(cmd: string, env: NodeJS.ProcessEnv) {
+// Resolve a captured launch image or trace through its actual child PATH. Ordinary `run`
+// still passes bare names to the kernel. The execute bit is required by the PATH seal.
+export function wouldResolve(cmd: string, env: NodeJS.ProcessEnv, cwd = process.cwd()) {
   if (process.platform === 'win32') return resolveCommand(cmd, { platform: process.platform, env });
-  if (cmd.includes(path.sep) || path.isAbsolute(cmd)) return cmd;
+  if (cmd.includes(path.sep) || path.isAbsolute(cmd)) return path.resolve(cwd, cmd);
   for (const dir of String(env.PATH ?? '').split(path.delimiter)) {
     if (!dir) continue;
-    const file = path.join(dir.replace(/^"|"$/g, ''), cmd);
+    const file = path.resolve(cwd, dir.replace(/^"|"$/g, ''), cmd);
     try {
-      if (existsSync(file) && (statSync(file).mode & 0o111)) return file;
+      if (existsSync(file) && statSync(file).isFile() && (statSync(file).mode & 0o111)) return file;
     } catch {
       // Vanished between the two calls, or unreadable — the next directory answers.
     }
@@ -139,12 +140,36 @@ function wouldResolve(cmd: string, env: NodeJS.ProcessEnv) {
   return null;
 }
 
-function trace(cmd: string, options: { env?: NodeJS.ProcessEnv }) {
+const DARWIN_IMAGE_SHA256 = '0eb8dd0083cd4f8eb379f99f891ccb87783fc4fd412ab412ca8da323d61778a1';
+const kernelPid = (value: string | undefined) => typeof value === 'string' && /^[1-9]\d{0,9}$/.test(value) && Number(value) <= 0x7fffffff;
+const kernelFile = (value: string | undefined) => typeof value === 'string' && Buffer.byteLength(value) <= 4096
+  && value !== '/' && path.posix.isAbsolute(value) && path.posix.normalize(value) === value && !value.endsWith('/') && !/[\x00-\x1f\x7f-\x9f\u2028\u2029]/.test(value);
+
+function kernelReadMetadata(cmd: string, args: readonly string[], resolved: string | null) {
+  if (process.platform !== 'darwin' || cmd !== resolved || !Array.isArray(args)) return null;
+  const base = { version: 1, platform: 'darwin' };
+  if (cmd === '/usr/bin/osascript' && args.length === 5 && args[0] === '-l' && args[1] === 'JavaScript' && args[2] === '-e'
+    && typeof args[3] === 'string' && Buffer.byteLength(args[3]) <= 4096
+    && kernelPid(args[4]) && createHash('sha256').update(args[3]).digest('hex') === DARWIN_IMAGE_SHA256) {
+    return { ...base, shape: 'process-image', pid: args[4], bodySha256: DARWIN_IMAGE_SHA256 };
+  }
+  if (cmd === '/bin/ps' && args.length === 4 && args[0] === '-p' && kernelPid(args[1]) && args[2] === '-o' && args[3] === 'ppid=') {
+    return { ...base, shape: 'process-parent', pid: args[1] };
+  }
+  if (cmd === '/bin/ps' && args.length === 6 && args[0] === '-p' && kernelPid(args[1]) && args[2] === '-o' && args[3] === 'stat='
+    && args[4] === '-o' && args[5] === 'lstart=') return { ...base, shape: 'process-lifetime', pid: args[1] };
+  if (cmd === '/usr/sbin/lsof' && args.length === 5 && args[0] === '-a' && args[1] === '-p' && kernelPid(args[2])
+    && args[3] === '-Fpn' && kernelFile(args[4])) return { ...base, shape: 'process-file', pid: args[2], file: args[4] };
+  return null;
+}
+
+function trace(cmd: string, args: readonly string[], options: { env?: NodeJS.ProcessEnv }) {
   const file = process.env[TRACE_VAR];
   if (!file) return;
   const env = options.env ?? process.env;
   try {
-    appendFileSync(file, `${cmd}\t${wouldResolve(String(cmd), env) ?? '(unresolved)'}\n`);
+    const resolved = wouldResolve(String(cmd), env), metadata = kernelReadMetadata(cmd, args, resolved);
+    appendFileSync(file, `${cmd}\t${resolved ?? '(unresolved)'}${metadata ? `\t${JSON.stringify(metadata)}` : ''}\n`);
   } catch {
     // No trace file, or it went with the run directory — tracing is never a refusal.
   }
@@ -153,7 +178,7 @@ function trace(cmd: string, options: { env?: NodeJS.ProcessEnv }) {
 export function run(cmd: string, args: readonly string[] | undefined, options: SpawnSyncOptionsWithStringEncoding): SpawnSyncReturns<string> | AsyncRunResult<string>;
 export function run(cmd: string, args?: readonly string[], options?: SpawnSyncOptions): SpawnSyncReturns<string | Buffer> | AsyncRunResult<string>;
 export function run(cmd: string, args: readonly string[] = [], options: SpawnSyncOptions = {}) {
-  trace(cmd, options);
+  trace(cmd, args, options);
   const plan = planRun(cmd, args, { env: options.env ?? process.env });
   if (!plan.ok) return failure(plan);
   return spawnSync(plan.file, plan.args, {
@@ -170,7 +195,7 @@ export function run(cmd: string, args: readonly string[] = [], options: SpawnSyn
 export function runAsync(cmd: string, args: readonly string[] | undefined, options: AsyncRunOptions & { encoding: BufferEncoding }): Promise<AsyncRunResult<string>>;
 export function runAsync(cmd: string, args?: readonly string[], options?: AsyncRunOptions): Promise<AsyncRunResult>;
 export function runAsync(cmd: string, args: readonly string[] = [], options: AsyncRunOptions = {}): Promise<AsyncRunResult> {
-  trace(cmd, options);
+  trace(cmd, args, options);
   const plan = planRun(cmd, args, { env: options.env ?? process.env });
   if (!plan.ok) return Promise.resolve(failure(plan));
   if (plan.verbatim) return Promise.resolve(failure({

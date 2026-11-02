@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { proveStandIsolation, STUB_BIN } from '../scripts/live-entry.mjs';
 import { makeSandbox } from './sandbox.mjs';
-import { HANG_AFTER_START_VAR, installHarness, parseHomeToml, pidAlive, planParticipant, PROBE_VAR } from './harness-codex.mjs';
+import { HANG_AFTER_START_VAR, installHarness, parseHomeToml, pidAlive, planParticipant, PROBE_VAR, readTrace } from './harness-codex.mjs';
 import { waitFor } from './harness.mjs';
 import { store } from './scenario.mjs';
 import { MIN_AGE_MS, RUN_OWNER_FILE } from '../scripts/canary-runs.mjs';
@@ -18,7 +18,10 @@ const SCRIPT = path.join(here, '..', 'scripts', 'live-codex.mjs');
 const SB = makeSandbox('promptobus-promptobus-live-codex-stand-');
 const { home: HARNESS, restore } = await installHarness({ binDir: path.join(SB, 'bin') });
 const WORKER = 'worker:live';
-const HELLO_TURN = { do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'LIVE-CODEX-HELLO from the stand' } }] };
+const HELLO_TURN = { do: [
+  { tool: 'promptobus_task' },
+  { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'LIVE-CODEX-HELLO from the stand' } },
+] };
 // Each raised session consumes one turn of the plan, and several runs share one stand.
 planParticipant(HARNESS, WORKER, { turns: [HELLO_TURN, HELLO_TURN, HELLO_TURN, HELLO_TURN] });
 
@@ -46,13 +49,16 @@ function start(args = [], env = {}) {
 }
 const line = (out, re) => re.exec(out)?.[1] ?? null;
 const passed = (out, name) => out.split('\n').some((l) => l.startsWith(`✔ ${name}`));
-const taskOfThread = () => readdirSync(path.join(HARNESS, 'threads')).map((n) => {
+const busOfThread = () => readdirSync(path.join(HARNESS, 'threads')).flatMap((n) => {
   try {
     const thread = JSON.parse(readFileSync(path.join(HARNESS, 'threads', n), 'utf8'));
     return Object.values(parseHomeToml(thread.codexHome?.config).mcp_servers ?? {})
-      .map((s) => s?.env).find((e) => e?.PROMPTOBUS_ROLE === WORKER)?.PROMPTOBUS_TASK ?? null;
-  } catch { return null; }
-}).filter(Boolean);
+      .filter((server) => server?.bearer_token_env_var === 'PROMPTOBUS_CLIENT_TOKEN');
+  } catch { return []; }
+});
+const tasksFromBus = () => readTrace(HARNESS, WORKER)
+  .filter((event) => event.kind === 'tool' && event.tool === 'promptobus_task' && !event.isError)
+  .map((event) => /^task (\S+) ·/u.exec(event.text)?.[1]).filter(Boolean);
 
 // --- a refused model: the binary catalog is asked before anything is raised ------------------------
 
@@ -97,8 +103,12 @@ check('stand: the live Codex scenario closes its loop on the stub — spawn, sta
   steps.every((name) => passed(whole.out, name)), whole.out.slice(-1500));
 check('stand: the whole run names the model it verified from the binary catalog',
   /^▸ model: gpt-5\.4-mini ·/m.test(whole.out), whole.out.slice(-500));
-check('stand: the run names its own task id, and its participant\'s bus server carries that same id',
-  /^livecodex-[a-f0-9]{8}-t\d{8}-\d{6}$/.test(task ?? '') && taskOfThread().includes(task), `${task} · threads ${JSON.stringify(taskOfThread())}`);
+const buses = busOfThread();
+check('stand: the authenticated HTTP participant reads the same task id the run names',
+  /^livecodex-[a-f0-9]{8}-t\d{8}-\d{6}$/.test(task ?? '') && tasksFromBus().includes(task)
+  && buses.length === 1 && buses.every((server) => /^http:\/\/127\.0\.0\.1:\d+\/mcp\/bus$/u.test(server.url)
+    && !server.command && !server.env),
+  `${task} · returned tasks ${JSON.stringify(tasksFromBus())} · servers ${JSON.stringify(buses)}`);
 const sandbox = line(whole.out, /^▸ sandbox: (\S+) ·/m);
 check('stand: the whole run leaves no sandbox', !!sandbox && !existsSync(sandbox), sandbox);
 

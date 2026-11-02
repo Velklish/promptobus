@@ -1,3 +1,4 @@
+import { finalizeManagedServiceLaunch, revokeFailedManagedLaunch } from './service-launch.js';
 import { persistLegacyParticipant, persistNativeParticipant, releaseNativeReservation, requireCurrentNativeLaunch, reserveNativeParticipant } from './native-lifecycle.js';
 import { renderReviewerInstructions, renderReviewProcedure } from './prompts/roles.js';
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
@@ -20,7 +21,7 @@ import {
   contactsSection, dryRunToolNote, guardHookNote, liftHarness, memoryRule, mcpNote, mcpServerLines, normalizeLaunchTool,
   optionRefusal, participantMcp, participantPluginDir, participantSkillsRoot, PROMPTOBUS_SERVER, resolveEffort, resolvePermissionMode,
   withToolVersion,
-  sayMcp, sayModule, sayTool, sessionEnv, sessionEnvNote, sessionName, skillSettings, skillsNote,
+  sayMcp, sayModule, sayTool, sessionEnvNote, sessionName, skillSettings, skillsNote,
   toolName, writeLaunchFiles,
 } from './spawn.js';
 import { participantSession, unknownWhy } from './status.js';
@@ -101,7 +102,7 @@ export interface ReviewPlan extends ReviewPromptInput {
   mcpConfigPath: string; mcpNote: ReturnType<typeof mcpNote>; launch: LibLaunchPlan; argv: string[]; mcpConfig: unknown; settings: unknown;
   model: string; effort: string | null; permissionMode: string | null; refusal: string | null;
   routing: RoutedLift['metadata'] | null; decision: RoutedLift['decision'] | null; routingSkipped: string | null;
-  env: NodeJS.ProcessEnv;
+  env: NodeJS.ProcessEnv; commonEnv: NodeJS.ProcessEnv;
 }
 interface HarnessGeneration extends Record<string, unknown> { harness: string }
 interface ClosedGeneration {
@@ -628,7 +629,8 @@ export function planReview(rootOrHost: unknown, { target, base, task, title, mod
   // The lift plan is assembled by the driver, as with worker spawn: same settings plus stripped
   // tools, the same loop-guard command, default permission mode, and the driver's default model.
   const resolvedModel = routed?.model ?? model ?? driver.options.defaultModel;
-  const liftEnv = sessionEnv(driver, process.env, host);
+  const commonEnv = { ...process.env, ...host.extraEnv() };
+  const liftEnv = driver.sessionEnv(commonEnv);
   const launch = driver.prepare!({
     ref: name,
     address,
@@ -668,7 +670,7 @@ export function planReview(rootOrHost: unknown, { target, base, task, title, mod
     routing: routed?.metadata ?? null, decision: routed?.decision ?? null, routingSkipped,
     // Environment is a plan field: `--dry-run` prints what the real start executes. No bus identity
     // in it — that reaches the reviewer as arguments of the Stop-hook command.
-    env: liftEnv,
+    env: liftEnv, commonEnv,
     host,
   };
 }
@@ -987,21 +989,26 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
       }
     }
 
-    // Config rights 0600 are the same as for the worker: the substituted tokens are the same.
-    writeLaunchFiles(plan.launch.files, plan.driver.options.launchDirs);
-
     // The participant is written to the journal BEFORE the lift, the same order as for the worker, and
     // the record is laid by the registry: an unknown-harness refusal arrives before the journal entry.
     if (!plan.reuse) clearThroughputSidecar(plan.home, plan.taskId, plan.address);
     ({ record } = reserved ?? reserve());
     if (plan.driver.id === 'codex') plan.launch.launchId = record.metadata.nativeLaunchId as string;
+    const grantResources = plan.driver.id === 'codex'
+      ? plan.launch.files.filter(file => file.path !== plan.launch.mcpConfigPath) : [];
+    if (grantResources.length) writeLaunchFiles(grantResources, plan.driver.options.launchDirs);
+    plan.env = (await finalizeManagedServiceLaunch(plan.host, {
+      ...plan, task: plan.taskId, ref: plan.name, cwd: plan.repoDir,
+    })).env;
+    plan.mcpConfig = plan.launch.mcpConfig;
+    writeLaunchFiles(plan.launch.files.filter(file => !grantResources.includes(file)), plan.driver.options.launchDirs);
 
     tool = harnessTool();
 
   } catch (error) {
-    try { if (reserved) releaseNativeReservation(plan.home, plan.taskId, reserved.record); }
-    catch (releaseError) { warn('native reservation release refused: ' + (releaseError as Error).message); }
-    throw error;
+    return revokeFailedManagedLaunch(plan.launch, error, () => {
+      if (reserved) releaseNativeReservation(plan.home, plan.taskId, reserved.record);
+    });
   }
 
   // Start and the "session lifted" check — a helper shared with the worker inside the driver.
@@ -1046,7 +1053,7 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
       });
     },
     awaitOptions: opts.awaitOptions,
-  });
+  }).catch(error => revokeFailedManagedLaunch(plan.launch, error));
   ok(`reviewer ${plan.address} started in ${plan.nsPath}${session ? ` (session ${session})` : ''}`);
   // The warden is started right after the participant: without it the reviewer would not learn about
   // a message — it fetches the mailbox only on its own turn.

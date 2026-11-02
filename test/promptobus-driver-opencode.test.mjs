@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { listenTestSocket, makeSandbox } from './sandbox.mjs';
+import { participantRecord } from '../lib/store.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SB = makeSandbox('promptobus-driver-opencode-');
@@ -238,19 +239,26 @@ import { mkdirSync, readdirSync, writeFileSync as writeFile } from 'node:fs';
 const sweepState = path.join(SB, 'state', 'sessions');
 mkdirSync(sweepState, { recursive: true });
 const sweepRecord = path.join(SB, 'sweep-session.json');
-writeFile(sweepRecord, JSON.stringify({ holderPid: 4194304, url: null, sessionId: null, log: `${sweepRecord}.holder.log` }));
+const sweepRef = 'worker:gone', sweepLaunch = 'owned-empty-sweep-generation';
+writeFile(sweepRecord, JSON.stringify({ ref: sweepRef, launchId: sweepLaunch, home: 'h', task: 't-sweep', address: sweepRef,
+  holderPid: 4194304, url: null, sessionId: null, log: `${sweepRecord}.holder.log` }));
 writeFile(`${sweepRecord}.holder.log`, 'stale log\n');
 writeFile(path.join(sweepState, `${registrySessionKey('worker:gone')}.json`), JSON.stringify({
-  ref: 'worker:gone', recordPath: sweepRecord,
-  sessionId: null, home: 'h', task: 't-sweep', address: 'worker:gone',
+  ref: sweepRef, launchId: sweepLaunch, recordPath: sweepRecord,
+  sessionId: null, home: 'h', task: 't-sweep', address: sweepRef,
 }));
-const swept = await opencodeDriver.sweepParticipant({ metadata: { address: 'worker:gone' } }, 't-sweep');
+const selected = participantRecord(sweepRef, { harness: 'opencode', sessionRef: sweepRef, sessionId: null,
+  nativeLaunchId: sweepLaunch, sessionRecord: sweepRecord });
+let unrelatedRefusal;
+try { await opencodeDriver.sweepParticipant(selected, 't-other'); }
+catch (error) { unrelatedRefusal = error; }
+const swept = await opencodeDriver.sweepParticipant(selected, 't-sweep');
 check(': sweep reaps the dead registry entries of the closed task and nothing else',
   swept.swept === 1
   && readdirSync(sweepState).length === 0
   && !readdirSync(SB).includes('sweep-session.json')
   && !readdirSync(SB).some((n) => n.endsWith('.holder.log'))
-  && (await opencodeDriver.sweepParticipant({ metadata: { address: 'worker:gone' } }, 't-other')).swept === 0,
+  && /cannot prove the owned primary record absent without its task scope/.test(unrelatedRefusal?.message ?? ''),
   JSON.stringify(swept));
 
 // --- holder protocol against a stub -----------------------------------------

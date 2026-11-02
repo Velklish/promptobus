@@ -8,7 +8,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
-  appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync,
+  appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -19,6 +19,8 @@ import { protocolThread, protocolThreadResponse, protocolTurn } from './codex-co
 import { waitDelivered } from './delivery-wait.mjs';
 import { diagnoseTrace as formatTraceDiagnosis } from './harness-shared.mjs';
 import { DEFAULT_MODEL, PROVEN_CODEX_VERSION } from '../lib/driver-codex.js';
+import { TURN_STARTED_TIMEOUT_MS } from '../lib/codex-session.js';
+import { readPrivate } from '../lib/service-state.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // The directory is named off the constant, not spelled again: a bumped `PROVEN_CODEX_VERSION`
@@ -237,6 +239,12 @@ export async function installHarness({ binDir, env = process.env } = {}) {
   const { stubCommand, withStubPath } = await import('./sandbox.mjs');
   const home = mkdtempSync(path.join(os.tmpdir(), 'promptobus-codex-'));
   armCleanup(home);
+  const previousServiceHome = env.PROMPTOBUS_SERVICE_HOME;
+  if (!previousServiceHome) {
+    const serviceHome = realpathSync(mkdtempSync(path.join(realpathSync('/tmp'), 'pb-codex-service-')));
+    serviceHomes.add(serviceHome);
+    env.PROMPTOBUS_SERVICE_HOME = serviceHome;
+  }
   for (const dir of ['scripts', 'trace', 'threads', 'state']) {
     mkdirSync(path.join(home, dir), { recursive: true });
   }
@@ -255,6 +263,8 @@ export async function installHarness({ binDir, env = process.env } = {}) {
     restore: () => {
       restore();
       delete env[CODEX_HOME_VAR];
+      if (previousServiceHome === undefined) delete env.PROMPTOBUS_SERVICE_HOME;
+      else env.PROMPTOBUS_SERVICE_HOME = previousServiceHome;
       if (was === undefined) delete env.PROMPTOBUS_CODEX_HOME;
       else env.PROMPTOBUS_CODEX_HOME = was;
     },
@@ -262,6 +272,7 @@ export async function installHarness({ binDir, env = process.env } = {}) {
 }
 
 const armed = new Set();
+const serviceHomes = new Set();
 let hooked = false;
 const exit0 = process.exit;
 
@@ -291,6 +302,13 @@ function armCleanup(home) {
         }
       }
       rmSync(dir, { recursive: true, force: true });
+    }
+    for (const base of serviceHomes) {
+      const stopped = spawnSync(process.execPath, [path.join(here, 'owned-service-cleanup.mjs'), base], { encoding: 'utf8', timeout: 15000 });
+      if (stopped.status !== 0) {
+        process.stderr.write(`owned shared-service cleanup refused: ${stopped.stderr || stopped.error?.message || stopped.status}\n`);
+        process.exitCode = 1;
+      } else { rmSync(base, { recursive: true, force: true }); serviceHomes.delete(base); }
     }
   };
   process.on('exit', clean);
@@ -366,6 +384,18 @@ async function appServer() {
     process.exit(2);
   }
   const probe = probesOf();
+  const nativeClients = new Map();
+  // Native Codex shuts MCP clients down best-effort: a failed close is logged, not an exit status.
+  process.stdin.once('end', async () => {
+    const clients = [...nativeClients.entries()];
+    nativeClients.clear();
+    await Promise.all(clients.map(async ([thread, entry]) => {
+      const client = await entry.client;
+      try { await client.close(); } catch (error) {
+        note(home, entry.address, { kind: 'native-mcp-close-failed', thread, status: error.status ?? null, error: error.message });
+      }
+    }));
+  });
   if (probe.has('stderr')) process.stderr.write(`${STDERR_NOISE}\n`);
   // `unref` so the noise is never the reason this process is alive: stdin is.
   if (probe.has('stderr-loop')) setInterval(() => process.stderr.write(`${STDERR_NOISE}\n`), 200).unref();
@@ -567,6 +597,12 @@ async function appServer() {
       return;
     }
     if (method === 'thread/start') {
+      if (probe.has('thread-start-error') || probe.has('thread-start-null')) {
+        note(home, process.env.PROMPTOBUS_ROLE, { kind: 'native-api-refusal', method, response: probe.has('thread-start-error') ? 'error' : 'null' });
+        if (probe.has('thread-start-error')) fail(id, -32000, 'fixture native thread/start refused');
+        else reply(id, { thread: null, id: 'unowned-null-thread-envelope-id' });
+        return;
+      }
       await new Promise((resolve) => setTimeout(resolve, Number(process.env[THREAD_DELAY_VAR] ?? 0)));
       const t = writeThread(home, {
         id: newId(),
@@ -607,12 +643,26 @@ async function appServer() {
       return;
     }
     if (method === 'thread/resume') {
+      const previousClient = nativeClients.get(params.threadId);
+      if (previousClient) {
+        nativeClients.delete(params.threadId);
+        await (await previousClient.client).close();
+      }
       const t = readThread(home, params.threadId);
       if (!t || !t.rollout) {
         fail(id, -32600, `no rollout found for thread id ${params.threadId}`);
         return;
       }
-      reply(id, protocolThreadResponse(t, !params.excludeTurns));
+      if (probe.has('thread-resume-held')) {
+        note(home, process.env.PROMPTOBUS_ROLE, { kind: 'native-api-held', method, threadId: t.id });
+        const release = path.join(home, 'resume-release', t.id), deadline = Date.now() + 15000;
+        while (!existsSync(release) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
+        if (!existsSync(release)) { fail(id, -32000, 'fixture native resume barrier was not released'); return; }
+      }
+      if (probe.has('thread-resume-wrong-id')) {
+        note(home, process.env.PROMPTOBUS_ROLE, { kind: 'native-api-refusal', method, response: 'wrong-id' });
+        reply(id, protocolThreadResponse({ ...t, id: 'foreign-native-id' }, !params.excludeTurns));
+      } else reply(id, protocolThreadResponse(t, !params.excludeTurns));
       return;
     }
     if (method === 'thread/inject_items') {
@@ -656,6 +706,11 @@ async function appServer() {
         fail(id, -32602, 'thread not loaded');
         return;
       }
+      if (probe.has('turn-start-error')) {
+        note(home, process.env.PROMPTOBUS_ROLE, { kind: 'native-api-refusal', method, threadId: t.id });
+        fail(id, -32000, 'fixture native turn/start refused');
+        return;
+      }
       const turnId = newId();
       if (t.busy) {
         t.pending = [...(t.pending ?? []), { turnId, params }];
@@ -673,7 +728,7 @@ async function appServer() {
       writeThread(home, t);
       reply(id, { turn: protocolTurn({ id: turnId, status: 'inProgress' }),
           ...(method === 'review/start' ? { reviewThreadId: threadId } : {}) });
-      setTimeout(() => playTurn(home, t, turnId, params, ask, notify), 40);
+      setTimeout(() => playTurn(home, t, turnId, params, ask, notify, nativeClients), 40);
       return;
     }
     if (method === 'turn/steer') {
@@ -780,7 +835,8 @@ function mechanismServerKey(configText) {
   }
   for (const [name, cfg] of Object.entries(servers)) {
     const env = cfg?.env;
-    if (env && typeof env === 'object' && (env.PROMPTOBUS_ROLE || env.PROMPTOBUS_ADDRESS)) return name;
+    if ((env && typeof env === 'object' && (env.PROMPTOBUS_ROLE || env.PROMPTOBUS_ADDRESS))
+      || (cfg?.url && cfg.bearer_token_env_var === 'PROMPTOBUS_CLIENT_TOKEN')) return name;
   }
   return '';
 }
@@ -796,18 +852,19 @@ function busServer(thread) {
   if (!servers || typeof servers !== 'object') return null;
   for (const cfg of Object.values(servers)) {
     const env = cfg?.env;
-    if (!env || typeof env !== 'object') continue;
-    if (env.PROMPTOBUS_ROLE || env.PROMPTOBUS_ADDRESS) return cfg;
+    if ((env && typeof env === 'object' && (env.PROMPTOBUS_ROLE || env.PROMPTOBUS_ADDRESS))
+      || (cfg?.url && cfg.bearer_token_env_var === 'PROMPTOBUS_CLIENT_TOKEN')) return cfg;
   }
   return null;
 }
 
 function addressOf(thread) {
-  const env = busServer(thread)?.env;
+  const server = busServer(thread);
+  const env = server?.env ?? (server?.url ? process.env : null);
   return env?.PROMPTOBUS_ROLE ?? env?.PROMPTOBUS_ADDRESS ?? null;
 }
 
-async function playTurn(home, started, turnId, params, ask, notify) {
+async function playTurn(home, started, turnId, params, ask, notify, nativeClients) {
   const hang = process.env[HANG_FIRST_VAR] === '1';
   const delay = Number(process.env[FIRST_DELAY_VAR]);
   if (Number.isFinite(delay) && delay > 0) {
@@ -821,6 +878,7 @@ async function playTurn(home, started, turnId, params, ask, notify) {
   t.turnStarted = true;
   t.turnId = turnId;
   writeThread(home, t);
+  const turnStartedAt = Date.now();
   notify('thread/status/changed', { type: 'active', activeFlags: [] });
   notify('turn/started', { id: turnId, status: 'inProgress' });
   if (process.env[HANG_AFTER_START_VAR] === '1' && !t.rollout) {
@@ -1006,7 +1064,7 @@ async function playTurn(home, started, turnId, params, ask, notify) {
     ?? params.target?.instructions
     ?? '';
   note(home, address, { kind: 'turn-start', turnId, text: String(input).slice(0, 80), sandbox });
-  await runScript({ home, address, thread: t, sandbox });
+  await runScript({ home, address, thread: t, sandbox, nativeClients, turnStartedAt });
   const live = readThread(home, t.id) ?? t;
   live.busy = false;
   live.turnStarted = false;
@@ -1032,11 +1090,11 @@ async function playTurn(home, started, turnId, params, ask, notify) {
     live.turnId = next.turnId;
     live.status = 'active';
     writeThread(home, live);
-    setTimeout(() => playTurn(home, live, next.turnId, next.params, ask, notify), 40);
+    setTimeout(() => playTurn(home, live, next.turnId, next.params, ask, notify, nativeClients), 40);
   }
 }
 
-async function runScript({ home, address, thread, sandbox }) {
+async function runScript({ home, address, thread, sandbox, nativeClients, turnStartedAt }) {
   if (!address) return;
   let script = { turns: [] };
   try {
@@ -1057,10 +1115,35 @@ async function runScript({ home, address, thread, sandbox }) {
   if (!plan) return;
   const cfg = busServer(thread);
   let bus = null;
-  if (cfg && (plan.do ?? []).some((a) => a.tool)) bus = await openBus(cfg);
+  if (cfg && (plan.do ?? []).some((a) => a.tool)) {
+    if (cfg.url && process.env.PROMPTOBUS_CLIENT_FILE) {
+      const client = readPrivate(process.env.PROMPTOBUS_CLIENT_FILE), proof = client.lifetime;
+      const expected = readPrivate(proof.record), edge = turnStartedAt + TURN_STARTED_TIMEOUT_MS;
+      for (;;) {
+        const record = readPrivate(proof.record);
+        if (proof.kind !== 'managed' || record.launchId !== proof.launchId || record.ref !== proof.ref
+          || record.threadId !== thread.id || record.home !== expected.home
+          || record.task !== proof.task || record.address !== proof.address) throw new Error('Codex fixture turn changed its owned native generation');
+        // The scripted model follows its own holder notification; authenticated HTTP remains the authority.
+        if (record.currentTurnId === thread.turnId && record.busy === true && record.state === 'alive') break;
+        const remaining = edge - Date.now();
+        if (remaining <= 0) throw new Error('Codex fixture holder did not acknowledge its own turn within the existing start allowance');
+        await new Promise(resolve => setTimeout(resolve, Math.min(10, remaining)));
+      }
+    }
+    const scope = JSON.stringify([cfg, process.env.CODEX_HOME, process.env.PROMPTOBUS_CLIENT_FILE,
+      cfg.bearer_token_env_var ? process.env[cfg.bearer_token_env_var] : null]);
+    let entry = nativeClients.get(thread.id);
+    if (entry && entry.scope !== scope) throw new Error('Codex fixture native MCP client changed its exact launch scope');
+    if (!entry) {
+      entry = { scope, address, client: openBus(cfg, thread.id) };
+      nativeClients.set(thread.id, entry);
+    }
+    bus = await entry.client;
+  }
   for (const action of plan.do ?? []) {
     if (action.untilDelivered) {
-      const marked = await waitDelivered(cfg?.env?.PROMPTOBUS_HOME, cfg?.env?.PROMPTOBUS_TASK, address, action.untilDelivered);
+      const marked = await waitDelivered(cfg?.env?.PROMPTOBUS_HOME ?? process.env.PROMPTOBUS_HOME, cfg?.env?.PROMPTOBUS_TASK ?? process.env.PROMPTOBUS_TASK, address, action.untilDelivered);
       note(home, address, { kind: 'untilDelivered', ms: action.untilDelivered, deliveredAt: marked.deliveredAt, timeout: marked.note });
       continue;
     }
@@ -1097,10 +1180,10 @@ async function runScript({ home, address, thread, sandbox }) {
       }
     }
   }
-  if (bus) await bus.close();
 }
 
-async function openBus(cfg) {
+async function openBus(cfg, nativeId) {
+  if (cfg.url) return openHttpBus(cfg, nativeId);
   const child = spawn(cfg.command, cfg.args, { env: { ...process.env, ...cfg.env }, stdio: ['pipe', 'pipe', 'pipe'] });
   const pending = new Map();
   let seq = 0;
@@ -1137,4 +1220,31 @@ async function openBus(cfg) {
   };
   await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'codex-stub', version: '1' } });
   return { rpc, close: () => new Promise((r) => { child.on('close', r); child.stdin.end(); }) };
+}
+
+async function openHttpBus(cfg, nativeId) {
+  const token = process.env[cfg.bearer_token_env_var];
+  if (!token || !nativeId) throw new Error('codex-stub HTTP MCP requires its own bearer and actual thread id');
+  let session = null, sequence = 0;
+  const rpc = async (method, params, notify = false) => {
+    const response = await fetch(cfg.url, { method: 'POST', signal: AbortSignal.timeout(30000), headers: {
+      authorization: `Bearer ${token}`, accept: 'application/json, text/event-stream', 'content-type': 'application/json',
+      ...(session ? { 'mcp-session-id': session, 'mcp-protocol-version': '2025-06-18' } : {}),
+    }, body: JSON.stringify({ jsonrpc: '2.0', ...(notify ? {} : { id: ++sequence }), method,
+      params: method === 'tools/call' ? { ...params, _meta: { ...params?._meta, threadId: nativeId } } : params }) });
+    if (!response.ok) throw new Error(`codex-stub HTTP MCP ${method}: ${response.status} ${await response.text()}`);
+    session = response.headers.get('mcp-session-id') ?? session;
+    return response.status === 202 ? null : response.json();
+  };
+  await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'codex-stub', version: '1' } });
+  await rpc('notifications/initialized', {}, true);
+  return { rpc, close: async () => {
+    if (!session) return;
+    const response = await fetch(cfg.url, { method: 'DELETE', signal: AbortSignal.timeout(5000), headers: {
+      authorization: `Bearer ${token}`, 'mcp-session-id': session, 'mcp-protocol-version': '2025-06-18',
+    } });
+    if (!response.ok && response.status !== 404 && response.status !== 401) {
+      throw Object.assign(new Error(`codex-stub HTTP MCP close: ${response.status}`), { status: response.status });
+    }
+  } };
 }

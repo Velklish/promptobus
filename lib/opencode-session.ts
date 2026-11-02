@@ -2,6 +2,8 @@ import { spawn as spawnProcess } from 'node:child_process';
 import { closeSync, openSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { run } from './exec.js';
+import { processIdentity, processState } from './service-state.js';
+import type { ProcessIdentity } from './service-state.js';
 
 interface HolderResponse { status: number; data: unknown }
 type HolderFetch = (url: string, password: string, method: string, path: string, body?: unknown, timeoutMs?: number) => Promise<HolderResponse>;
@@ -71,6 +73,8 @@ export async function waitReady(
   }
 }
 
+const ownedHolders = new Map<number, ProcessIdentity>();
+
 /** Start the holder detached with its log; the caller waits readiness separately. */
 export function startHolder(bin: string, argv: string[], { cwd, env, log }: { cwd?: string; env?: NodeJS.ProcessEnv; log?: string | null }) {
   const out = log ? openSync(log, 'w', 0o600) : 'ignore';
@@ -89,26 +93,43 @@ export function startHolder(bin: string, argv: string[], { cwd, env, log }: { cw
     } catch { /* the child holds its own copy */ }
   }
   child.unref();
+  child.once('spawn', () => {
+    const identity = processIdentity(child.pid!);
+    if (identity) ownedHolders.set(child.pid!, identity);
+  });
   return child;
 }
 
-/** Stop the holder: SIGTERM, a grace wait, then SIGKILL to the group. */
-export async function reapHolder(pid: number, { graceMs = 5000, stepMs = 100 } = {}) {
+/** Stop an owned holder and confirm exit within the existing cleanup budget. */
+export async function reapHolder(pid: number, { graceMs = 5000, stepMs = 100, identity = ownedHolders.get(pid) }:
+  { graceMs?: number; stepMs?: number; identity?: ProcessIdentity | null } = {}) {
+  if (!Number.isInteger(pid) || pid <= 0) throw new Error('OpenCode holder pid is missing; cleanup is unknown');
   if (!pidAlive(pid)) return;
-  try {
-    process.kill(-pid, 'SIGTERM');
-  } catch {
-    try { process.kill(pid, 'SIGTERM'); } catch { return; }
-  }
-  const edge = Date.now() + graceMs;
-  while (pidAlive(pid) && Date.now() < edge) {
-    await new Promise((r) => { setTimeout(r, stepMs); });
-  }
-  if (pidAlive(pid)) {
-    try { process.kill(-pid, 'SIGKILL'); } catch {
-      try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ }
+  if (!identity || identity.pid !== pid) throw new Error(`OpenCode holder ${pid} has no owned process birth identity; cleanup is unknown`);
+  const state = () => processState(identity);
+  const signal = (name: NodeJS.Signals) => {
+    const current = state();
+    if (current === 'dead') return;
+    if (current !== 'alive') throw new Error(`OpenCode holder ${pid} process identity is unreadable; no ${name} issued`);
+    try { process.kill(-pid, name); }
+    catch {
+      if (state() === 'dead') return;
+      if (state() !== 'alive') throw new Error(`OpenCode holder ${pid} process identity changed before ${name}`);
+      process.kill(pid, name);
     }
+  };
+  const edge = Date.now() + graceMs;
+  signal('SIGTERM');
+  const termEdge = edge - Math.min(stepMs, graceMs / 2);
+  while (state() === 'alive' && Date.now() < termEdge) {
+    await new Promise((r) => { setTimeout(r, Math.min(stepMs, Math.max(1, termEdge - Date.now()))); });
   }
+  if (state() !== 'dead') signal('SIGKILL');
+  while (state() === 'alive' && Date.now() < edge) {
+    await new Promise((r) => { setTimeout(r, Math.min(stepMs, Math.max(1, edge - Date.now()))); });
+  }
+  if (state() !== 'dead') throw new Error(`OpenCode holder ${pid} exit is unconfirmed; cleanup is unknown`);
+  ownedHolders.delete(pid);
 }
 
 export function pidAlive(pid: number) {
@@ -116,8 +137,8 @@ export function pidAlive(pid: number) {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
   }
 }
 

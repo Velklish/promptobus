@@ -14,9 +14,10 @@ import { cursorDriver } from '../lib/driver-cursor.js';
 import { processState } from '../lib/service-state.js';
 
 const PACKAGE = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-for (const boundary of ['early normal', 'delayed abort', 'unknown abort', 'unknown normal']) {
+for (const boundary of ['early normal', 'delayed abort', 'unknown abort', 'unknown normal', 'foreign task', 'foreign home']) {
+  const foreign = boundary.startsWith('foreign');
   const ROOT = makeSandbox('promptobus-promptobus-live-cursor-cleanup-');
-  const bins = path.join(ROOT, 'bin'), harness = await cursorStub.installHarness({ binDir: bins });
+  const bins = path.join(ROOT, 'bin'), harness = await cursorStub.installHarness({ binDir: bins, bundledRuntime: true });
   const mechanism = path.join(ROOT, 'mechanism');
   for (const name of ['bin', 'dist', 'lib', 'models', 'schemas', 'skills', 'scripts', 'test', 'package.json']) cpSync(path.join(PACKAGE, name), path.join(mechanism, name), { recursive: true });
   symlinkSync(path.join(PACKAGE, 'node_modules'), path.join(mechanism, 'node_modules'), 'dir');
@@ -28,11 +29,30 @@ for (const boundary of ['early normal', 'delayed abort', 'unknown abort', 'unkno
   const anchor = boundary === 'early normal' ? '  // --- step 2: raise a Cursor participant' : "  ref = wp?.sessionRef ?? '';";
   if (source.split(anchor).length !== 2) throw new Error(`live Cursor fixture lost the ${boundary} boundary`);
   const injection = `
-    const {requireProcess: fixtureProcess} = await import('../lib/service-state.js');
+    const {requireProcess: fixtureProcess, servicePaths: fixturePaths, readPrivate: fixtureRead, writePrivate: fixtureWrite} = await import('../lib/service-state.js');
     const fixtureMark = store.liveWarden(home,TASK), fixtureNative = ref ? readSession(ref) : null;
+    let fixtureCredentials = null;
+    ${foreign ? `
+    const {createStandaloneHost: fixtureHost} = await import('../dist/host-index.js');
+    const {randomUUID: fixtureUuid} = await import('node:crypto');
+    const fixtureClients = fixturePaths(fixtureHost({cwd:ws, binPath:path.join(MECHANISM_ROOT,'bin','promptobus.js'),
+      version:JSON.parse(readFileSync(path.join(MECHANISM_ROOT,'package.json'),'utf8')).version}),env).clients;
+    const fixtureOwned = readdirSync(fixtureClients).map(name=>({file:path.join(fixtureClients,name),grant:fixtureRead(path.join(fixtureClients,name))}))
+      .find(row=>row.grant?.lifetime?.kind==='managed' && row.grant.lifetime.task===TASK);
+    if(!fixtureOwned) throw new Error('Foreign cleanup boundary has no actual owned grant');
+    const fixtureOther = structuredClone(fixtureOwned.grant); fixtureOther.id=fixtureUuid();
+    ${boundary === 'foreign task' ? "fixtureOther.lifetime.task='foreign-'+TASK;" : `
+    fixtureOther.env.PROMPTOBUS_HOME=path.join(SB,'foreign-home');mkdirSync(fixtureOther.env.PROMPTOBUS_HOME);
+    // Keep the foreign transport unresolved independently of the owned native Stop.
+    fixtureOther.nativeBinding={kind:fixtureOther.nativeBinding.kind,state:'pending'};
+    `}
+    const fixtureForeignFile=path.join(fixtureClients,fixtureOther.id+'.json');
+    fixtureWrite(fixtureForeignFile,fixtureOther);
+    fixtureCredentials={owned:fixtureOwned.file,foreign:fixtureForeignFile};
+    ` : ''}
     writeFileSync(${JSON.stringify(raisedFile)}, JSON.stringify({ref:ref||null,pane:fixtureNative?.panePid?fixtureProcess(fixtureNative.panePid):null,
-      owner:fixtureMark?.pid?fixtureProcess(fixtureMark.pid):null,sandbox:SB,ws,home,task:TASK,serviceHome:env.PROMPTOBUS_SERVICE_HOME}));
-    ${boundary === 'early normal' ? '' : `while(!existsSync(${JSON.stringify(release)})) await new Promise(resolve=>setTimeout(resolve,10));`}
+      owner:fixtureMark?.pid?fixtureProcess(fixtureMark.pid):null,sandbox:SB,ws,home,task:TASK,serviceHome:env.PROMPTOBUS_SERVICE_HOME,credentials:fixtureCredentials}));
+    while(!existsSync(${JSON.stringify(release)})) await new Promise(resolve=>setTimeout(resolve,10));
     throw new Error('owned live Cursor fixture failure: ${boundary}');
   `;
   source = boundary === 'early normal' ? source.replace(anchor, injection + anchor) : source.replace(anchor, anchor + injection);
@@ -97,7 +117,12 @@ if(process.argv.includes('list-sessions')&&existsSync(${JSON.stringify(armed)}))
     check(`live Cursor ${boundary}: cleanup is awaited and the original scenario or signal outcome remains unsuccessful`,
       exit?.code === (signal ? 143 : 1) && out.includes(signal ? 'run cut off by SIGTERM' : `owned live Cursor fixture failure: ${boundary}`),
       JSON.stringify({ exit, stopped, out }));
-    check(`live Cursor ${boundary}: the same physical shared owner exits and releases its task seat before teardown`,
+    if (foreign) check(`live Cursor ${boundary}: only owned task transport is revoked and a foreign credential refuses service stop`,
+      !!raised?.credentials && !existsSync(raised.credentials.owned) && existsSync(raised.credentials.foreign)
+      && processState(raised.owner) === 'alive' && stopped?.result?.stopped === true && !record
+      && !!sandbox && existsSync(sandbox) && !removed && out.includes('Shared service still has live clients or active work'),
+      JSON.stringify({ raised, stopped, removed, out }));
+    else check(`live Cursor ${boundary}: the same physical shared owner exits and releases its task seat before teardown`,
       !!raised?.owner && processState(raised.owner) === 'dead'
       && (unknown ? !!sandbox && existsSync(sandbox) : removed?.ownerState === 'dead' && removed?.seat === null && removed?.sandboxPresent === true),
       JSON.stringify({ raised, removed, out }));

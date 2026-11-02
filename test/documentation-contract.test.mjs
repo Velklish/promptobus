@@ -30,6 +30,29 @@ const section = (document, heading) => {
 const decision = (document, label, nextLabel) => section(document, '## Decision')
   .split(`**${label}.**`)[1]?.split(`**${nextLabel}.**`)[0] ?? '';
 
+check('docs: native admission requires actual proof and Cursor observation preserves its registry revision',
+  has(read('docs/reference/05-drivers.md'), 'Missing proof retains an unresolved binding and refuses actor tools;')
+  && has(read('docs/reference/05-drivers.md'), 'Cursor turn-state observation reads or discovers its transcript without rewriting the registry.')
+  && !has(read('docs/reference/05-drivers.md'), 'These bindings remain explicitly unresolved, without disabling their ordinary routes'));
+
+check('docs: Cursor admission preserves concurrent wake metadata without accepting ownership changes',
+  has(read('docs/reference/05-drivers.md'), 'Admission and wake updates publish under the task lock, preserving concurrent `turns` and `last` metadata.')
+  && has(read('docs/reference/05-drivers.md'), 'Every other session field and the participant ownership must still match the captured generation;'));
+
+check('docs: standalone consumer launch preserves its owner entry and direct POSIX parent',
+  has(read('docs/reference/02-host.md'), 'A custom consumer Host requires its own POSIX wrapper using the returned `execPlanCommand` prefix.')
+  && has(read('docs/reference/02-host.md'), 'Append `--launcher-pid "$$" -- <executable> [args...]`')
+  && has(read('docs/reference/02-host.md'), 'source that plan in the same launcher.'));
+
+check('docs: removed detached review delivery is distinct from finite inline protocol proof',
+  has(read('docs/reference/05-drivers.md'), 'The current contract removes detached review delivery; the finite `inline` review witness remains valid.')
+  && has(read('docs/reference/05-drivers.md'), 'Generic holder RPC forwarding does not certify arbitrary review parameters or establish native workflow readiness.')
+  && has(read('CHANGELOG.md'), 'SessionStart and Stop hooks on codex-cli 0.164.0, plus a hidden-model turn'));
+
+check('docs: standalone workflows remain required while ordinary BB creation is optional',
+  has(read('docs/reference/02-host.md'), 'Ordinary BB creation is optional for release; this entrypoint remains unsupported.')
+  && has(read('docs/reference/02-host.md'), 'Standalone ordinary workflows remain required.'));
+
 check('docs: declined Stop evidence preserves the non-start outcome and null exit',
   has(section(read('docs/reference/05-drivers.md'), '### Codex holder shutdown'),
     'The retained outcome remains `declined` with a null exit; it proves no command or test execution.')
@@ -380,7 +403,8 @@ check('docs: Codex Stop sends no signal fallback, and managed-root resume is gua
   '03-cli or 05-drivers ties managed-root resume to a confirmed Stop, which retires the record resume needs, or keeps the old SIGKILL stop');
 const readme = read('README.md');
 check('docs: the README resumes a managed root after its processes exit and names the native observer package',
-  has(readme, 'A retained managed root whose holder and app-server have both exited uses `lead --resume` to start a new app-server.')
+  has(readme, 'A retained managed root whose holder and app-server have both exited uses `lead --resume` to start a new app-server only when its current-version native binding and captured process births are retained.')
+  && has(readme, 'Legacy birthless records refuse without migration or state deletion.')
   && !has(readme, 'uses `lead --resume` after confirmed Stop')
   && has(readme, 'A second optional package, `integrations/bb-native-observer/`, is a read-only BB dashboard for native Promptobus tasks.'),
   'the README ties managed-root resume to a confirmed Stop or omits the native observer package');

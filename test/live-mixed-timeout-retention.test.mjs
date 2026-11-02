@@ -17,7 +17,7 @@ import { processState } from '../lib/service-state.js';
 const PACKAGE = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 for (const mode of ['abort cleanup', 'normal cleanup transfer']) {
   const ROOT = makeSandbox('promptobus-promptobus-mixed-timeout-retention-'), bins = path.join(ROOT, 'bin');
-  const cursor = await cursorStub.installHarness({ binDir: bins }), codex = await codexStub.installHarness({ binDir: bins });
+  const cursor = await cursorStub.installHarness({ binDir: bins, bundledRuntime: true }), codex = await codexStub.installHarness({ binDir: bins });
   const mechanism = path.join(ROOT, 'mechanism');
   for (const name of ['bin', 'dist', 'lib', 'models', 'schemas', 'skills', 'scripts', 'test', 'package.json']) cpSync(path.join(PACKAGE, name), path.join(mechanism, name), { recursive: true });
   symlinkSync(path.join(PACKAGE, 'node_modules'), path.join(mechanism, 'node_modules'), 'dir');

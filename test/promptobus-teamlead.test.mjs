@@ -1,11 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { captureSplit, quiet } from './console.mjs';
-import { stubCommand, writeHostConfig } from './sandbox.mjs';
+import { ownedServiceFixture, stubCommand, writeHostConfig } from './sandbox.mjs';
 import * as store from '../lib/store.js';
 import { hostOf } from '../lib/host.js';
 import { planTeamlead, recoverTeamleadRebind, spawnTeamlead } from '../lib/spawn.js';
@@ -19,6 +19,8 @@ import { wardenRound } from '../lib/warden.js';
 import { blockedParticipants } from '../dist/index.js';
 import { taskHash, telemetryRecords } from '../lib/model-routing/telemetry.js';
 
+ownedServiceFixture();
+mkdirSync(process.env.CLAUDE_CONFIG_DIR, { recursive: true });
 const scratch = mkdtempSync(path.join(os.tmpdir(), 'promptobus-test-teamlead-'));
 const root = path.join(scratch, 'install');
 const brief = path.join(scratch, 'group.md');
@@ -167,7 +169,12 @@ import { appendFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 if (args[0] === '--version') { process.stdout.write('2.1.280\\n'); process.exit(0); }
 if (args[0] === 'agents') { process.stdout.write(${JSON.stringify(JSON.stringify(sessions))}); process.exit(0); }
-if (args[0] === '--bg') { appendFileSync(${JSON.stringify(marker)}, 'x'); }
+if (args[0] === '--bg') {
+  appendFileSync(${JSON.stringify(marker)}, 'x');
+  const nativeId = ${JSON.stringify(sessions)}.find(row => row.id === ${JSON.stringify(launchId)})?.sessionId;
+  const { publishOwnedClaudeFixtureStart } = await import(${JSON.stringify(new URL('./harness.mjs', import.meta.url).href)});
+  await publishOwnedClaudeFixtureStart({ nativeId: nativeId, argv: args, pid: ${process.pid} });
+}
 process.stdout.write('backgrounded · ${launchId}\\n');
 `);
 const sid1 = '11111111-1111-1111-1111-111111111111';

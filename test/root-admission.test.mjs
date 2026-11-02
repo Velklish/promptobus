@@ -5,7 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
 import { createRootAdmission } from '../lib/root-admission.js';
-import { contained, readPrivate, requireProcess, runtimeIdentity, servicePaths } from '../lib/service-state.js';
+import { contained, readPrivate, requireProcess, runtimeIdentity, servicePaths, writePrivate } from '../lib/service-state.js';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 
 if (!['darwin', 'linux'].includes(process.platform)) {
@@ -101,6 +101,15 @@ const wait=async predicate=>{const end=Date.now()+10000;while(!predicate()){if(D
     check('unavailable authoritative lookup refuses realization',
       !!await refusal(() => owner.realizeRoot(request, async () => { throw new Error('authoritative lookup unavailable'); }, realize))
       && realizations === 0);
+    check('an approved correspondence without known native genesis remains refused',
+      !!await refusal(() => owner.realizeRoot(request, lookup, realize)) && realizations === 0);
+    const seedKnown = (targetEnv, known = generation, bbThreadId = 'thr_root_one') => {
+      const target = servicePaths(host, targetEnv), file = path.join(target.directory, 'native-admission.json'), ledger = readPrivate(file);
+      writePrivate(file, { ...ledger, bindings: [...ledger.bindings, { harness: 'codex', nativeStore, nativeId: known.nativeThreadId,
+        source: 'bb', runtime: runtimeIdentity(host), ownerKey: bbThreadId, process: known.appServer, nonce: known.nonce, profile: 'ordinary' }] });
+    };
+    // These owner-transaction cases start from a fixture-seeded known binding.
+    seedKnown(env);
     check('an approved complete eligible correspondence runs owner realization',
       await owner.realizeRoot(request, lookup, realize) === 'thr_root_one' && realizations === 1);
     await owner.realizeRoot(request, lookup, realize);
@@ -111,7 +120,9 @@ const wait=async predicate=>{const end=Date.now()+10000;while(!predicate()){if(D
     const queryEntered = path.join(base, 'query-entered'), releaseQuery = path.join(base, 'release-query');
     const realizeEntered = path.join(base, 'realize-entered'), releaseRealize = path.join(base, 'release-realize');
     const managedStarted = path.join(base, 'managed-started'), managedPublished = path.join(base, 'managed-published');
-    const rootActor = actor(`await owner.realizeRoot(${JSON.stringify({ ...request, generation: { ...generation, nonce: 'concurrent-root' } })},async()=>{
+    const concurrentGeneration = { ...generation, nativeThreadId: 'native-root-concurrent', nonce: 'concurrent-root' };
+    seedKnown(env, concurrentGeneration, 'thr_concurrent_root');
+    const rootActor = actor(`await owner.realizeRoot(${JSON.stringify({ ...request, generation: concurrentGeneration })},async()=>{
 writeFileSync(${JSON.stringify(queryEntered)},'entered');await wait(()=>existsSync(${JSON.stringify(releaseQuery)}));
 return {complete:true,eligibility:'eligible',bbThreadId:'thr_concurrent_root'}},async()=>{
 writeFileSync(${JSON.stringify(realizeEntered)},'entered');await wait(()=>existsSync(${JSON.stringify(releaseRealize)}));});`);
@@ -168,6 +179,7 @@ await owner.beginManagedLaunch('concurrent-launch');writeFileSync(${JSON.stringi
     check('an orphan intent blocks another approved account profile in the same workspace and store',
       !!await refusal(() => crashed.owner.realizeRoot(otherProfile, lookup, realize)));
     await crashed.owner.completeManagedLaunch('crash-launch', 'thr_crashed_managed');
+    seedKnown(crashed.env);
     check('owned recovery can finish an exact intent while retaining its permanent deny',
       await crashed.owner.realizeRoot(request, lookup, realize) === 'thr_root_one'
       && !!await refusal(() => crashed.owner.realizeRoot({ ...request, generation: { ...generation, nonce: 'recovered-managed' } },
@@ -175,6 +187,7 @@ await owner.beginManagedLaunch('concurrent-launch');writeFileSync(${JSON.stringi
 
     const uncertain = fresh('uncertain-root');
     await uncertain.owner.approveProfile({ id: 'ordinary', nativeStore });
+    seedKnown(uncertain.env);
     check('a failed owner realization retains the root classification for an ambiguous callback outcome',
       !!await refusal(() => uncertain.owner.realizeRoot(request, lookup, async () => { throw new Error('realization result unavailable'); }))
       && readPrivate(uncertain.state).roots[0].bbThreadId === 'thr_root_one');

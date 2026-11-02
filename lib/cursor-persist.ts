@@ -10,16 +10,22 @@ import { run, runAsync } from './exec.js';
 import { shellQuote } from '../dist/fs/shell.js';
 import { GateError } from '../dist/index.js';
 import { createHarnessRegistry } from './harness-registry.js';
+import { readPrivate, recordOf, writePrivate } from './service-state.js';
+import { taskExists, withTaskLock } from './store.js';
 import { PROMPTOBUS_SERVER } from './contract.js';
 import type { HarnessSessionRecord } from './harness-registry.js';
 
 interface CursorSessionRecord extends HarnessSessionRecord {
   sessionName?: string | null; tmuxServer?: string; cwd?: string; chatId?: string | null; transcript?: string;
-  injectedAt?: string; panePid?: number | null; workspaceHash?: string | null;
+  panePid?: number | null; workspaceHash?: string | null;
 }
 interface TmuxSession {
   name: string; attached: number; created: number; panePid: number | null; managed: boolean;
   hash: string | null; chatId: string | null; task: string | null; address: string | null;
+}
+interface LiftSessionResult {
+  ok: boolean; session: TmuxSession | null; paneStarted: boolean; launchPane: string;
+  error?: string; failure?: unknown;
 }
 interface TmuxOptions { server?: string; env?: NodeJS.ProcessEnv; input?: string | Buffer | null }
 interface TmuxContext { server: string; env: NodeJS.ProcessEnv }
@@ -109,7 +115,7 @@ export function lockFile(ref: string, env = process.env): string {
 
 const cursorRegistry = createHarnessRegistry<CursorSessionRecord>({
   harness: CURSOR_HARNESS,
-  sidecars: (ref, env): string[] => [launchScriptFile(ref, env), lockFile(ref, env), bufferFile(ref, env)],
+  sidecars: (ref, env): string[] => [launchScriptFile(ref, env), lockFile(ref, env), bufferFile(ref, env), injectionActivityFile(ref, env)],
 });
 
 export const cursorStateHome = cursorRegistry.stateHome;
@@ -121,6 +127,34 @@ export const writeSession = cursorRegistry.writeSession;
 export const patchSession = cursorRegistry.patchSession;
 export const dropSession = cursorRegistry.dropSession;
 export const pidAlive = cursorRegistry.pidAlive;
+
+export function injectionActivityFile(ref: string, env = process.env): string {
+  return path.join(sessionsDir(env), sessionKey(ref) + '.injection');
+}
+
+/** Activity is separate from the native ownership record; a queued turn must not invalidate its proof. */
+export function markInjected(record: CursorSessionRecord, env = process.env): boolean {
+  if (typeof record.home !== 'string' || typeof record.task !== 'string' || !taskExists(record.home, record.task)
+    || typeof record.launchId !== 'string' || !record.launchId || !record.chatId) return false;
+  return withTaskLock(record.home, record.task, () => {
+    const current = readSession(record.ref, env);
+    if (!current || current.ref !== record.ref || current.launchId !== record.launchId || current.chatId !== record.chatId
+      || current.home !== record.home || current.task !== record.task || current.address !== record.address
+      || current.sessionName !== record.sessionName) return false;
+    writePrivate(injectionActivityFile(record.ref, env), { ref: record.ref, launchId: record.launchId,
+      chatId: record.chatId, injectedAt: new Date().toISOString() });
+    return true;
+  });
+}
+
+function injectedAt(record: CursorRecord, env: NodeJS.ProcessEnv): number {
+  if (!record?.ref || !record.launchId || !record.chatId) return NaN;
+  try {
+    const activity = readPrivate(injectionActivityFile(record.ref, env));
+    return recordOf(activity) && activity.ref === record.ref && activity.launchId === record.launchId
+      && activity.chatId === record.chatId && typeof activity.injectedAt === 'string' ? Date.parse(activity.injectedAt) : NaN;
+  } catch { return NaN; }
+}
 
 export function sessionRevision(ref: string, env = process.env): string | null {
   try {
@@ -326,10 +360,7 @@ function stampMark(name: string, opt: string, value: string, env: NodeJS.Process
       ? `set-option exited 0 and ${opt} was absent (${read.detail})`
       : `set-option exited 0 and ${opt} was ${read.detail ? `unreadable (${read.detail})` : `not ${JSON.stringify(value)}`}`;
   }
-  const stopped = optionWriteError(tmux(['kill-session', '-t', name], { env }))
-    ? 'the persist session was not stopped'
-    : 'the persist session was stopped';
-  return `${opt} did not take on persist session ${name}: ${why} — ${stopped}`;
+  return `${opt} did not take on persist session ${name}: ${why} — native cleanup belongs to the owned launch`;
 }
 
 /** One session by name, or `null` when the server does not have it. A tmux that could not be run
@@ -392,10 +423,10 @@ const LAUNCH_UNSET = ['TMUX', 'TMUX_PANE'];
 export function launchScript({ bin, argv, env }: { bin: string; argv: string[]; env?: NodeJS.ProcessEnv }) {
   const drop = new Set(LAUNCH_UNSET);
   const assignments = Object.entries(env ?? {})
-    .filter(([k, v]) => v !== undefined && v !== null && !drop.has(k))
+    .filter(([k, v]) => v !== undefined && v !== null && !drop.has(k) && !k.startsWith('PROMPTOBUS_ROOT_'))
     .map(([k, v]) => `${k}=${shellQuote(String(v))}`);
   const unsetFlags = LAUNCH_UNSET.map((n) => `-u ${n}`).join(' ');
-  return `#!/bin/sh\nexec env ${unsetFlags} ${assignments.join(' ')} \\\n  ${shellQuote(bin)} `
+  return `#!/bin/sh\nexec env ${unsetFlags} -i ${assignments.join(' ')} \\\n  ${shellQuote(bin)} `
     + `${argv.map(shellQuote).join(' ')}\n`;
 }
 
@@ -403,15 +434,18 @@ export function launchScript({ bin, argv, env }: { bin: string; argv: string[]; 
  * recognised by three marks at once — directory hash, non-empty chat id, and creation time. */
 export async function liftSession({
   ref, bin, argv, cwd, env = process.env, launchEnv = null, task = null, address = null,
-  tries = LIFT_TRIES, delayMs = LIFT_STEP_MS,
-}: { ref: string; bin: string; argv: string[]; cwd: string; env?: NodeJS.ProcessEnv; launchEnv?: NodeJS.ProcessEnv | null; task?: string | null; address?: string | null; tries?: number; delayMs?: number }) {
+  tries = LIFT_TRIES, delayMs = LIFT_STEP_MS, acceptSession, expectedChatId,
+}: { ref: string; bin: string; argv: string[]; cwd: string; env?: NodeJS.ProcessEnv; launchEnv?: NodeJS.ProcessEnv | null; task?: string | null; address?: string | null; tries?: number; delayMs?: number; acceptSession?: (session: TmuxSession) => Promise<boolean>; expectedChatId?: string }): Promise<LiftSessionResult> {
   const script = launchScriptFile(ref, env);
   mkdirSync(path.dirname(script), { recursive: true });
   // The SESSION environment and the environment of our tmux calls are different things: the first is
   // materialised in the script, the second is needed only to find the server socket.
-  writeFileSync(script, launchScript({ bin, argv, env: launchEnv ?? env }), { mode: 0o700 });
+  writeFileSync(script, launchScript({ bin, argv, env: launchEnv ?? env }), { mode: 0o600 });
+  chmodSync(script, 0o600);
   const hash = workspaceHash(cwd);
-  const known = new Set(tmuxSessions({ env }).map((s) => s.name));
+  const before = readTmuxSessions({ env });
+  if (before.missing) throw new GateError(before.missing);
+  const known = new Set(before.sessions!.map((s) => s.name));
   const startedAt = Math.floor(Date.now() / 1000);
   const pane = `promptobus-${sessionKey(ref)}`;
   // Pane width is set explicitly: `capture-pane` reads what is drawn, and a narrow pane would break
@@ -421,36 +455,38 @@ export async function liftSession({
   if (started.error || started.status !== 0) {
     rmSync(script, { force: true });
     const why = started.error?.message ?? (String(started.stderr ?? '').trim() || `code ${started.status}`);
-    return { ok: false, error: `pty provider pane did not lift: ${why}` };
+    return { ok: false, error: `pty provider pane did not lift: ${why}`, session: null, paneStarted: false, launchPane: pane };
   }
-  let seen = null;
-  for (let i = 0; i < tries; i += 1) {
-    seen = tmuxSessions({ env }).find((s) => s.hash === hash && s.chatId && !known.has(s.name)
-      && s.created >= startedAt - 2) ?? null;
-    if (seen) break;
-    if (i < tries - 1) await settle(delayMs);
+  let seen: TmuxSession | null = null, failure: unknown, accepted = false;
+  try {
+    for (let i = 0; i < tries; i += 1) {
+      const snapshot = readTmuxSessions({ env });
+      if (snapshot.missing) throw new GateError(snapshot.missing);
+      seen = snapshot.sessions!.find((s) => s.hash === hash && s.chatId && (!expectedChatId || s.chatId === expectedChatId) && !known.has(s.name)
+        && s.created >= startedAt - 2) ?? null;
+      if (seen && (!acceptSession || await acceptSession(seen))) { accepted = true; break; }
+      if (i < tries - 1) await settle(delayMs);
+    }
+    if (!seen) throw new GateError('persist session did not appear in the tmux list; native launch state is unknown');
+    if (!accepted) throw new GateError('persist session did not finish its owned native identity proof; native launch state is unknown');
+    const markError = (task && stampMark(seen.name, TASK_OPT, task, env))
+      || (address && stampMark(seen.name, ADDRESS_OPT, address, env));
+    if (markError) throw new GateError(markError);
+  } catch (error) { failure = error; }
+  // Keep the discovered native identity even if marking or pty cleanup fails.
+  try {
+    tmux(['kill-session', '-t', pane], { server: LAUNCH_TMUX_SERVER, env });
+    const after = readTmuxSessions({ server: LAUNCH_TMUX_SERVER, env });
+    if (after.missing || after.sessions!.some(session => session.name === pane)) {
+      throw new GateError(`pty provider pane ${pane} exit is unknown: ${after.missing ?? 'still present'}`);
+    }
+    rmSync(script, { force: true });
+  } catch (error) {
+    failure = failure === undefined ? error : new AggregateError([failure, error],
+      `${failure instanceof Error ? failure.message : String(failure)}; pty cleanup failed: ${error instanceof Error ? error.message : String(error)}`, { cause: failure });
   }
-  let markError = null;
-  if (seen) {
-    // A mark that did not take refuses the lift: an unmarked session on this
-    // server cannot be told from a foreign one. See reference/05-drivers.md.
-    if (task) markError = stampMark(seen.name, TASK_OPT, task, env);
-    if (!markError && address) markError = stampMark(seen.name, ADDRESS_OPT, address, env);
-  }
-  // The pane is stopped in both branches: the persist session outlives it (REPORT §2),
-  // and a failed lift has no right to leave a process behind.
-  tmux(['kill-session', '-t', pane], { server: LAUNCH_TMUX_SERVER, env });
-  rmSync(script, { force: true });
-  if (markError) return { ok: false, error: markError };
-  if (!seen) {
-    return {
-      ok: false,
-      error: 'persist session did not appear in the tmux list. That is how a binary refuse before start looks '
-        + '(wrong model id, expired login), and a launch from inside a foreign TMUX — then persist silently '
-        + 'lifts an ordinary non-persistent agent',
-    };
-  }
-  return { ok: true, session: seen };
+  return { ok: failure === undefined, session: seen, paneStarted: true, launchPane: pane,
+    ...(failure === undefined ? {} : { failure, error: failure instanceof Error ? failure.message : String(failure) }) };
 }
 
 // --- input --------------------------------------------------------------------------
@@ -599,10 +635,11 @@ export function readTranscript(file: string) {
 /** Whether a session turn is running, and whether it has been silent past the threshold. An injection
  * counts as a turn before the transcript says so, or the warden would wake twice on one unread. */
 export function turnState(record: CursorRecord, env = process.env) {
-  const file = transcriptOf(record, env);
+  const file = record?.transcript && existsSync(record.transcript)
+    ? record.transcript : findTranscript(record?.chatId, env);
   const seen = file ? readTranscript(file) : null;
-  const injectedAt = Date.parse(record?.injectedAt ?? '');
-  const fresh = Number.isFinite(injectedAt) && Date.now() - injectedAt < INJECT_GRACE_MS
+  const injected = injectedAt(record, env);
+  const fresh = Number.isFinite(injected) && Date.now() - injected < INJECT_GRACE_MS
     && !seen?.busy;
   const busy = !!seen?.busy || fresh;
   const idleMs = seen?.touchedAt ? Date.now() - seen.touchedAt : null;

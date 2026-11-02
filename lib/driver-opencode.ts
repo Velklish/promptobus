@@ -1,21 +1,27 @@
-import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
+import { replaceLaunchMcpConfig } from './driver-runtime.js';
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
 import { PROMPTOBUS_SERVER } from './contract.js';
 import { selectedNativeFiles } from './native-participant-context.js';
-import { addressOf, participantSessionPath, workersDir, writeJsonAtomic } from './store.js';
+import { addressOf, canonicalPath, participantOf, participantSessionPath, readTask, taskExists, withTaskLock, workersDir, writeJsonAtomic } from './store.js';
 import { PARENT_SESSION_ENV } from './session-env.js';
 import { harnessBin } from './harness-home.js';
-import { run } from './exec.js';
+import { run, wouldResolve } from './exec.js';
 import { info } from './util.js';
 import { createHarnessRegistry } from './harness-registry.js';
 import { orderBody as commonOrderBody } from './notification.js';
 import { opencodeAvailability } from './model-routing/adapter-opencode.js';
 import { GateError } from '../dist/index.js';
+import { processIdentity, processState, readPrivate, recordOf, recordVersion, sameRecordVersion } from './service-state.js';
+import { processExecutable } from './root-process.js';
+import type { ProcessIdentity, RecordVersion } from './service-state.js';
 import {
   foreignSession, wakeAddressOf, writeWake,
 } from './store.js';
-import { readRecordAt, sayForeignWrite as commonSayForeignWrite, sessionEnvFor } from './driver-common.js';
+import { bindBeforeLaunch, readRecordAt, revokeFailedManagedLaunch, sayForeignWrite as commonSayForeignWrite, sessionEnvFor } from './driver-common.js';
 import {
   createSession, deleteSession, holderPassword, holderRequestSync, holderUrl, idleOutcome,
   listPermissions, parsePermissionList, pidAlive, portOfLog, readMessages, reapHolder,
@@ -33,10 +39,19 @@ type OpenCodeLaunchResult = LibSpawnResult<{
 }>;
 interface OpenCodeRecord {
   url: string | null; password: string | null; sessionId: string | null; holderPid?: number;
+  holderProcess?: ProcessIdentity | null;
+  nativeAdmissionUnknown?: { harness: 'opencode'; nativeId: string; reason: string };
+  nativeCommand?: { executable: RecordVersion; argv: string[]; nativeEnvironment: { XDG_DATA_HOME: string; OPENCODE_DB: string; OPENCODE_SIMULATE?: string } };
+  nativeCreationPending?: { endpoint: string };
+  nativeAdmission?: { harness: 'opencode'; nativeStore: string; nativeId: string; process: ProcessIdentity };
+  nativeAdmissionEvidence?: { kind: 'opencode-session-api'; method: 'session/create'; nativeStore: string; nativeId: string;
+    process: ProcessIdentity; endpoint: string; executable: RecordVersion };
+
+
   log?: string | null; cwd?: string; roots?: string[]; started: string;
-  home?: string | null; task?: string | null; address?: string | null;
+  home?: string | null; task?: string | null; address?: string | null; ref?: string; launchId?: string;
 }
-interface OpenCodeEntry extends HarnessSessionRecord { recordPath?: string | null; sessionId?: string; home?: string; task?: string; address?: string }
+interface OpenCodeEntry extends HarnessSessionRecord { recordPath?: string | null; sessionId?: string; home?: string; task?: string; address?: string; launchId?: string }
 interface OpenCodePlan extends LibLaunchPlan {
   prompt?: string; env?: NodeJS.ProcessEnv; roots?: string[]; addDirs?: string[];
   holder?: { password?: string; title?: string }; permissionPollMs?: number;
@@ -324,6 +339,7 @@ export function prepare({
       ...(pointer ? { [SESSION_RECORD_VAR]: pointer } : {}),
     },
     mcpConfig: cfg,
+    mcpConfigPath,
     settings: cfg,
     files: [
       { path: mcpConfigPath!, text: `${JSON.stringify(cfg, null, 2)}\n`, secret: true },
@@ -331,6 +347,13 @@ export function prepare({
       ...(selectedContext ? selectedNativeFiles(selectedContext, skillsDest) : []),
     ],
   };
+}
+
+function replaceMcpServers(plan: LibLaunchPlan, servers: Record<string, LibMcpServer>): void {
+  const former = plan.mcpConfig as { mcp: Record<string, McpEntry> };
+  const { reviewer_files: previousFiles, ...kept } = former.mcp;
+  replaceLaunchMcpConfig(plan, { ...former, mcp: { ...kept, ...mcpConfig({ servers }).mcp } });
+  plan.settings = plan.mcpConfig;
 }
 
 const sessionEnv = sessionEnvFor(SESSION_ENV_DROP);
@@ -404,10 +427,46 @@ function opencodeBin(tool?: Pick<HostToolBin, 'bin'> | null) {
 
 const APPEAR_TIMEOUT_MS = 30_000;
 
+function underRecordTask<T>(record: Pick<OpenCodeRecord, 'home' | 'task'>, fn: () => T, taskLocked?: { home: string; task: string }): T {
+  const home = record.home ? canonicalPath(record.home) : null;
+  if (taskLocked && home === canonicalPath(taskLocked.home) && taskLocked.task === record.task) return fn();
+  return home && record.task && taskExists(home, record.task) ? withTaskLock(home, record.task, fn) : fn();
+}
+
+function captureRetirement(ref: string, file: string, record: OpenCodeRecord, env = process.env, taskLocked?: { home: string; task: string }) {
+  return underRecordTask(record, () => {
+    const version = recordVersion(file), entry = opencodeRegistry.readSession(ref, env);
+    const entryVersion = entry ? recordVersion(opencodeRegistry.sessionFile(ref, env)) : null;
+    const participantState = () => {
+      const p = record.home && record.task && taskExists(record.home, record.task) ? participantOf(readTask(record.home, record.task), record.address!) : null;
+      return [p?.harness, p?.sessionRef, p?.metadata.sessionRecord, p?.metadata.nativeLaunchId, p?.metadata.sessionId];
+    };
+    const participant = participantState();
+    const current = readRecordAt<OpenCodeRecord>(file);
+    if (!current || current.ref !== record.ref || current.launchId !== record.launchId || current.sessionId !== record.sessionId
+      || current.holderPid !== record.holderPid || !isDeepStrictEqual(current.holderProcess, record.holderProcess)
+      || current.home !== record.home || current.task !== record.task || current.address !== record.address
+      || (entry && (entry.recordPath !== file || entry.launchId !== record.launchId || entry.sessionId !== record.sessionId))
+      || (participant[0] !== undefined && (participant[0] !== OPENCODE || participant[1] !== ref
+        || (participant[2] !== undefined && participant[2] !== file)
+        || (record.sessionId && participant[4] !== undefined && participant[4] !== record.sessionId)))
+      || !sameRecordVersion(version) || (entryVersion && !sameRecordVersion(entryVersion))) {
+      throw new GateError(`OpenCode launch ${ref} changed ownership before native cleanup: ${file}`);
+    }
+    return (cleanup: () => void) => underRecordTask(record, () => {
+      if (!sameRecordVersion(version) || !isDeepStrictEqual(participantState(), participant)
+        || (entryVersion ? !sameRecordVersion(entryVersion) : existsSync(opencodeRegistry.sessionFile(ref, env)))) {
+        throw new GateError(`OpenCode launch ${ref} changed ownership during native cleanup; replacement retained: ${file}`);
+      }
+      cleanup();
+    }, taskLocked);
+  }, taskLocked);
+}
+
 // Lift a worker session from its plan: holder up, session created, first turn sent. The record
 // binds holder port, password, holder pid and session id before the turn runs.
 async function spawn(rawPlan: LibLaunchPlan, {
-  tool, home, task, address, cwd, env, ref,
+  tool, home, task, address, cwd, env, ref, role,
   launchFailNote = '', persist = null,
 }: Omit<LibSpawnContext, 'persist'> & { persist?: LibSpawnContext['persist'] | null }): Promise<OpenCodeLaunchResult> {
   const plan = rawPlan as OpenCodePlan;
@@ -417,25 +476,63 @@ async function spawn(rawPlan: LibLaunchPlan, {
   if (dir) mkdirSync(dir, { recursive: true });
   const log = file ? `${file}.holder.log` : null;
   const runEnv = { ...(plan.env ?? env ?? {}) };
-  let child: ReturnType<typeof startHolder>;
-  try {
-    child = startHolder(bin, plan.argv, { cwd: plan.cwd ?? cwd, env: runEnv, log });
-    const started = await new Promise<Error | null>((resolve) => {
-      child.once('error', resolve);
-      child.once('spawn', () => resolve(null));
-    });
-    if (started) throw started;
-  } catch (caught) {
-    const error = caught as Error;
-    throw new GateError(`opencode serve did not start: ${error.message ?? error}.${launchFailNote}`);
-  }
-  if (child.pid === undefined) throw new GateError(`opencode serve did not start.${launchFailNote}`);
-  try {
-    const record = holderRecord({
-      home, task, address, password: plan.holder?.password ?? runEnv.OPENCODE_SERVER_PASSWORD ?? null,
-      pid: child.pid, log, cwd: plan.cwd ?? cwd,
-    });
+  const record: OpenCodeRecord = {
+    ...holderRecord({ home, task, address, password: plan.holder?.password ?? runEnv.OPENCODE_SERVER_PASSWORD ?? null,
+      log, cwd: plan.cwd ?? cwd }),
+    ref, launchId: plan.service?.launchId ?? plan.launchId ?? randomUUID(),
+  };
+  if (file) underRecordTask(record, () => writeJsonAtomic(file, record, { mode: 0o600 }));
+  const ownsRecord = () => !file || (() => {
+    const current = readRecordAt<OpenCodeRecord>(file);
+    return current?.ref === ref && current.launchId === record.launchId
+      && current.home === home && current.task === task && current.address === address;
+  })();
+  const publishRecord = (expected?: RecordVersion | null) => underRecordTask(record, () => {
+    if (!ownsRecord() || (expected && !sameRecordVersion(expected))) throw new GateError(`OpenCode launch ${ref} changed its owned record`);
     if (file) writeJsonAtomic(file, record, { mode: 0o600 });
+  });
+  const initialVersion = file ? recordVersion(file) : null;
+  if (plan.service) plan.sessionRecord = file;
+  const undo = plan.service && file && role !== 'teamlead' ? bindBeforeLaunch(home, task, address, { sessionRecord: file }) : () => {};
+  let child: ReturnType<typeof startHolder> | null = null;
+  let admitted = !plan.service;
+  let nativeBin = bin;
+  try {
+    if (plan.service) {
+      if (!file) throw new GateError('OpenCode shared HTTP launch requires its owned record');
+      const selected = wouldResolve(bin, runEnv, plan.cwd ?? cwd);
+      if (!selected || !isDeepStrictEqual(plan.argv, ['serve', '--port', '0', '--hostname', '127.0.0.1'])) {
+        throw new GateError('OpenCode shared launch requires its owned local serve command');
+      }
+      if (runEnv.OPENCODE_SIMULATE) throw new GateError('OpenCode managed native admission does not support simulation');
+      const dataHome = runEnv.XDG_DATA_HOME || (runEnv.HOME ? path.join(runEnv.HOME, '.local', 'share') : null);
+      if (!dataHome || !path.isAbsolute(dataHome)) throw new GateError('OpenCode managed launch requires its actual absolute native data root');
+      const nativeDataHome = realpathSync(dataHome);
+      const database = runEnv.OPENCODE_DB ?? path.join(nativeDataHome, 'opencode', 'opencode.db');
+      if (!path.isAbsolute(database) || database === ':memory:') throw new GateError('OpenCode managed native admission requires an absolute filesystem database');
+      const databaseParent = path.dirname(database);
+      const nativeDatabase = existsSync(databaseParent) ? path.join(realpathSync(databaseParent), path.basename(database)) : database;
+      runEnv.XDG_DATA_HOME = nativeDataHome;
+      runEnv.OPENCODE_DB = nativeDatabase;
+      nativeBin = realpathSync(selected);
+      record.nativeCommand = { executable: recordVersion(nativeBin), argv: [...plan.argv],
+        nativeEnvironment: { XDG_DATA_HOME: nativeDataHome, OPENCODE_DB: nativeDatabase,
+          ...(runEnv.OPENCODE_SIMULATE !== undefined ? { OPENCODE_SIMULATE: runEnv.OPENCODE_SIMULATE } : {}) } };
+      publishRecord(initialVersion);
+      await plan.service.beforeStart(file);
+    }
+    const stagedVersion = plan.service && file ? recordVersion(file) : null;
+    child = startHolder(nativeBin, plan.argv, { cwd: plan.cwd ?? cwd, env: runEnv, log });
+    const started = await new Promise<Error | null>((resolve) => {
+      child!.once('error', resolve);
+      child!.once('spawn', () => resolve(null));
+    });
+    if (started) throw new GateError(`opencode serve did not start: ${started.message}.${launchFailNote}`);
+    if (child.pid === undefined) throw new GateError(`opencode serve did not start.${launchFailNote}`);
+    record.holderPid = child.pid;
+    record.holderProcess = processIdentity(child.pid);
+    publishRecord(stagedVersion);
+    const holderVersion = plan.service && file ? recordVersion(file) : null;
     const fail: (note: string) => never = note => { throw new GateError(`${note}.${launchFailNote}`); };
     const url = await waitHolderUrl(child.pid, log);
     if (!url) fail('the holder never printed its listening port');
@@ -444,16 +541,54 @@ async function spawn(rawPlan: LibLaunchPlan, {
       fail('the holder never answered its session list');
     }
     record.url = url;
-    if (file) writeJsonAtomic(file, record, { mode: 0o600 });
+    publishRecord(holderVersion);
+    const endpointVersion = plan.service && file ? recordVersion(file) : null;
+    if (plan.service && (!record.holderProcess || processState(record.holderProcess) !== 'alive'
+      || !record.nativeCommand || await processExecutable(record.holderProcess) !== record.nativeCommand.executable.file
+      || !sameRecordVersion(record.nativeCommand.executable))) fail('the owned serve process/image is not current');
+    if (plan.service) { record.nativeCreationPending = { endpoint: url }; publishRecord(endpointVersion); }
+    const creationVersion = plan.service && file ? recordVersion(file) : null;
     const created = await createSession(url, password, plan.holder?.title ?? ref);
     const sessionId = (created?.data as { data?: { id?: string } } | null)?.data?.id ?? null;
-    if (created?.status !== 200 || !sessionId) fail(`session create answered ${created?.status ?? 'nothing'}`);
-    const sent = await sendPrompt(url, password, sessionId, plan.prompt!);
-    if (sent?.status !== 200) fail(`the first turn answered ${sent?.status ?? 'nothing'}`);
+    if (created?.status !== 200 || typeof sessionId !== 'string' || !/^\S+$/u.test(sessionId)) fail(`session create answered ${created?.status ?? 'nothing'} without its actual native ID`);
+    if (!ownsRecord() || (creationVersion && !sameRecordVersion(creationVersion))
+      || (record.holderProcess && processState(record.holderProcess) !== 'alive')) fail('the owned session creation record or process changed before publication');
     const roots = declaredRoots(plan.cwd ?? cwd, [...(plan.roots ?? []), ...(plan.addDirs ?? [])]);
     record.sessionId = sessionId;
     record.roots = roots;
-    if (file) writeJsonAtomic(file, record, { mode: 0o600 });
+    delete record.nativeCreationPending;
+    if (plan.service) {
+      record.nativeAdmissionUnknown = { harness: 'opencode', nativeId: sessionId, reason: 'native store/process admission proof is pending' };
+      publishRecord(creationVersion);
+    }
+    const proofVersion = plan.service && file ? recordVersion(file) : null;
+    if (plan.service) {
+      const command = record.nativeCommand!, process = record.holderProcess!, nativeStore = command.nativeEnvironment.OPENCODE_DB;
+      const database = lstatSync(nativeStore);
+      if (!database.isFile() || database.isSymbolicLink() || (globalThis.process.getuid && database.uid !== globalThis.process.getuid())
+        || (database.mode & 0o022) !== 0 || realpathSync(nativeStore) !== nativeStore || database.size === 0
+        || processState(process) !== 'alive' || await processExecutable(process) !== command.executable.file
+        || !sameRecordVersion(command.executable) || (proofVersion && !sameRecordVersion(proofVersion))) {
+        fail('the actual filesystem database or owned serve generation is unavailable after create');
+      }
+      record.nativeAdmission = { harness: 'opencode', nativeStore, nativeId: sessionId, process };
+      record.nativeAdmissionEvidence = { kind: 'opencode-session-api', method: 'session/create', nativeStore, nativeId: sessionId,
+        process, endpoint: url, executable: command.executable };
+      delete record.nativeAdmissionUnknown;
+    } else record.nativeAdmissionUnknown = { harness: 'opencode', nativeId: sessionId,
+      reason: 'this legacy launch has no managed native-store publication' };
+    publishRecord(proofVersion);
+    if (plan.service) {
+      underRecordTask(record, () => opencodeRegistry.writeSession({ ref, recordPath: file, sessionId, home, task, address, launchId: record.launchId }, env));
+      persist?.(sessionId, 'alive', sessionId);
+      await plan.service.realize(sessionId);
+      const client = readPrivate(plan.service.credentialFile);
+      admitted = recordOf(client) && recordOf(client.nativeBinding) && client.nativeBinding.kind === 'opencode'
+        && client.nativeBinding.state === 'bound' && client.nativeBinding.sessionId === sessionId;
+      if (!admitted) fail('the exact native grant remains pending; the first prompt was not sent');
+    }
+    const sent = await sendPrompt(url, password, sessionId, plan.prompt!);
+    if (sent?.status !== 200) fail(`the first turn answered ${sent?.status ?? 'nothing'}`);
     try {
       await settlePermissionAsks({
         url, password, sessionId, roots, pollMs: plan.permissionPollMs ?? PERMISSION_POLL_MS,
@@ -463,20 +598,27 @@ async function spawn(rawPlan: LibLaunchPlan, {
       if (error instanceof GateError) fail(error.message);
       throw error;
     }
-    opencodeRegistry.writeSession({
-      ref, recordPath: file, sessionId, home, task, address,
-    });
-    persist?.(sessionId, 'alive', sessionId);
+    if (!plan.service) {
+      underRecordTask(record, () => opencodeRegistry.writeSession({ ref, recordPath: file, sessionId, home, task, address, launchId: record.launchId }, env));
+      persist?.(sessionId, 'alive', sessionId);
+    }
     return { output: '', session: sessionId, seen: { state: 'alive', session: { id: sessionId, sessionId }, ghost: null } };
   } catch (caught) {
     const error = caught as Error;
-    try { await reapHolder(child.pid); } catch { /* preserve the lift failure */ }
-    for (const gone of [file, log]) {
-      if (!gone) continue;
-      try { unlinkSync(gone); } catch { /* already gone */ }
-    }
-    try { opencodeRegistry.dropSession(ref); } catch { /* preserve the lift failure */ }
-    throw error;
+    return revokeFailedManagedLaunch(plan, error, async () => {
+      if (record.nativeCreationPending || (plan.service && record.sessionId && !admitted)) {
+        throw new GateError(`OpenCode native creation/admission is unresolved; retained its primary record and owned holder: ${file}`);
+      }
+      if (!ownsRecord()) throw new GateError(`OpenCode launch ${ref} changed ownership before cleanup`);
+      const retire = file ? captureRetirement(ref, file, record, env) : (cleanup: () => void) => cleanup();
+      if (child?.pid) await reapHolder(child.pid, { identity: record.holderProcess });
+      retire(() => {
+        undo();
+        if (log) rmSync(log, { force: true });
+        opencodeRegistry.dropSession(ref, env);
+        if (file) rmSync(file, { force: true });
+      });
+    });
   }
 }
 
@@ -596,51 +738,91 @@ async function stop(ref: string) {
   const entry = opencodeRegistry.readSession(ref);
   const record = entry?.recordPath ? readRecordAt<OpenCodeRecord>(entry.recordPath) : null;
   if (!record) {
-    opencodeRegistry.dropSession(ref);
+    if (entry) {
+      const version = recordVersion(opencodeRegistry.sessionFile(ref));
+      underRecordTask(entry, () => {
+        if (!sameRecordVersion(version) || !isDeepStrictEqual(opencodeRegistry.readSession(ref), entry)
+          || (entry.recordPath && existsSync(entry.recordPath))) throw new GateError(`OpenCode launch ${ref} changed before empty retirement`);
+        opencodeRegistry.dropSession(ref);
+      });
+    }
     return { ok: true, stopped: false, note: `no opencode session record for «${ref}»` };
   }
+  const retire = captureRetirement(ref, entry!.recordPath!, record);
   if (record.url && record.sessionId) {
     try {
       await deleteSession(record.url!, record.password!, record.sessionId);
     } catch { /* holder already gone; the reap below is the cleanup */ }
   }
-  await reapHolder(record.holderPid!);
-  for (const gone of [entry!.recordPath, record.log]) {
-    try {
-      if (gone) unlinkSync(gone);
-    } catch { /* already gone */ }
-  }
-  opencodeRegistry.dropSession(ref);
+  await reapHolder(record.holderPid!, { identity: record.holderProcess });
+  retire(() => {
+    if (record.log) rmSync(record.log, { force: true });
+    opencodeRegistry.dropSession(ref);
+    if (entry!.recordPath) rmSync(entry!.recordPath, { force: true });
+  });
   return { ok: true, stopped: true, note: `session ${record.sessionId} stopped` };
 }
 
 // Sweep only this participant's harness state; done walks a closed task participant by participant.
 // The task and address must both match before a holder, record, log or registry entry is removed.
-export async function sweepParticipant(participant: ParticipantV1, taskId: string, env = process.env) {
+export async function sweepParticipant(participant: ParticipantV1, taskId: string, env = process.env,
+  context?: { home: string; task: string; taskLocked?: true }) {
   const address = addressOf(participant);
   if (!address || !taskId) return { swept: 0 };
+  const scope = context ? { home: canonicalPath(context.home), task: context.task } : null;
+  if (scope && scope.task !== taskId) throw new GateError('OpenCode cleanup context names a different task');
+  const taskLocked = context?.taskLocked ? scope! : undefined;
   const records = opencodeRegistry.registrySessions(env)
     .filter((r) => r?.task === taskId && r?.address === address);
-  for (const r of records) {
-    try {
-      const record = r?.recordPath ? readRecordAt<OpenCodeRecord>(r.recordPath) : null;
-      if (record?.url && record?.sessionId) {
-        try {
-          await deleteSession(record.url!, record.password!, record.sessionId);
-        } catch { /* already gone */ }
+  if (!records.length) {
+    if (!scope) throw new GateError(`OpenCode cleanup cannot prove the owned primary record absent without its task scope: ${participant.sessionRef}`);
+    return underRecordTask(scope, () => {
+      const current = participantOf(readTask(scope.home, taskId), address);
+      if (!current || current.harness !== OPENCODE || current.sessionRef !== participant.sessionRef
+        || current.metadata.sessionId !== participant.metadata.sessionId
+        || current.metadata.sessionRecord !== participant.metadata.sessionRecord
+        || current.metadata.nativeLaunchId !== participant.metadata.nativeLaunchId) {
+        throw new GateError(`OpenCode cleanup selected participant changed before proving absence: ${participant.sessionRef}`);
       }
-      await reapHolder(record?.holderPid!);
-    } catch { /* one record never blocks the rest */ }
-    for (const gone of [r?.recordPath, r?.recordPath ? `${r.recordPath}.holder.log` : null]) {
-      try {
-        if (gone) unlinkSync(gone);
-      } catch { /* already gone */ }
-    }
-    try {
-      opencodeRegistry.dropSession(r?.ref, env);
-    } catch { /* already gone */ }
+      const primary = safeRecordPath(scope.home, taskId, address, participant.sessionRef ?? null);
+      if (!primary) throw new GateError(`OpenCode cleanup has no exact owned primary path: ${participant.sessionRef}`);
+      const selected = participant.sessionRef ? opencodeRegistry.sessionFile(participant.sessionRef, env) : null;
+      for (const file of new Set([selected, primary, participant.metadata.sessionRecord].filter(Boolean))) {
+        try { lstatSync(file as string); }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+          throw new GateError(`OpenCode cleanup cannot read its selected record; cleanup is unknown: ${file}`);
+        }
+        throw new GateError(`OpenCode cleanup has a selected record without a matching registry entry; retained: ${file}`);
+      }
+      return { swept: 0 };
+    }, taskLocked);
   }
-  return { swept: records.length };
+  let swept = 0;
+  for (const r of records) {
+    const record = r.recordPath ? readRecordAt<OpenCodeRecord>(r.recordPath) : null;
+    if (!record || !r.recordPath) throw new GateError(`OpenCode launch ${r.ref} has no readable owned record; cleanup is unknown: ${r.recordPath}`);
+    if (scope && (!record.home || canonicalPath(record.home) !== scope.home || record.task !== scope.task)) {
+      throw new GateError(`OpenCode launch ${r.ref} belongs to another task scope; retained: ${r.recordPath}`);
+    }
+    if (participant.sessionRef !== r.ref || participant.metadata.sessionId !== record.sessionId
+      || record.launchId !== r.launchId || record.sessionId !== r.sessionId) {
+      throw new GateError(`OpenCode launch ${r.ref} changed its selected native identity before cleanup: ${r.recordPath}`);
+    }
+    const retire = captureRetirement(r.ref, r.recordPath, record, env, taskLocked);
+    if (record.url && record.sessionId) {
+      try { await deleteSession(record.url, record.password!, record.sessionId); }
+      catch { /* The captured holder still requires confirmed reap. */ }
+    }
+    await reapHolder(record.holderPid!, { identity: record.holderProcess });
+    retire(() => {
+      if (r.recordPath) rmSync(`${r.recordPath}.holder.log`, { force: true });
+      opencodeRegistry.dropSession(r.ref, env);
+      if (r.recordPath) rmSync(r.recordPath, { force: true });
+    });
+    swept += 1;
+  }
+  return { swept };
 }
 
 /** Contact point of an opencode participant: the session-record path. The record holds url,
@@ -771,6 +953,7 @@ export const opencodeDriver: LibDriver = {
   phrases: PHRASES,
   availability: opencodeAvailability(),
   prepare,
+  replaceMcpServers,
   mcpDenyTools,
   spawn,
   saidLiftoff,

@@ -46,7 +46,10 @@ import Ajv2020 from 'ajv/dist/2020.js';
 
 import { captureSplit, quiet } from './console.mjs';
 import { adapterMap, answeringStub, counter, throwingStub, unauthenticatedStub } from './routing-stubs.mjs';
-import { stubCommand, writeHostConfig } from './sandbox.mjs';
+import { ownedServiceFixture, stubCommand, writeHostConfig } from './sandbox.mjs';
+
+ownedServiceFixture();
+mkdirSync(process.env.CLAUDE_CONFIG_DIR, { recursive: true });
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const {
@@ -98,9 +101,21 @@ writeFileSync(BRIEF, '# Route this worker\n\nA brief.\n');
 const BIN = path.join(SB, 'bin');
 mkdirSync(BIN, { recursive: true });
 process.env.PATH = `${BIN}${path.delimiter}${process.env.PATH}`;
-const claudeSays = (sessions) => stubCommand(BIN, 'claude', `const args = process.argv.slice(2);
+const claudeSays = (sessions) => stubCommand(BIN, 'claude', `import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+const live = ${JSON.stringify(path.join(BIN, 'claude-live.json'))};
 if (args[0] === '--version') { process.stdout.write('2.1.237 (Claude Code)\\n'); process.exit(0); }
-if (args[0] === 'agents') { process.stdout.write(${JSON.stringify(JSON.stringify(sessions))}); process.exit(0); }
+if (args[0] === 'agents') { process.stdout.write(existsSync(live) ? readFileSync(live, 'utf8') : ${JSON.stringify(JSON.stringify(sessions))}); process.exit(0); }
+if (args[0] === '--bg') {
+  const nativeId = args[args.indexOf('--session-id') + 1], name = args[args.indexOf('--name') + 1];
+  const { publishOwnedClaudeFixtureStart } = await import(${JSON.stringify(new URL('./harness.mjs', import.meta.url).href)});
+  await publishOwnedClaudeFixtureStart({ nativeId, argv: args, pid: ${process.pid} });
+  const prior = existsSync(live) ? JSON.parse(readFileSync(live, 'utf8')) : [];
+  writeFileSync(live, JSON.stringify([...prior.filter(row => row.name !== name),
+    { id: nativeId, sessionId: nativeId, name, state: 'working', pid: ${process.pid} }]));
+  process.stdout.write('backgrounded · ' + nativeId + '\\n');
+  process.exit(0);
+}
 process.stdout.write('backgrounded · sess-0001\\n');
 process.exit(0);`);
 

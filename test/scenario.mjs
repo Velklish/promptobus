@@ -37,6 +37,7 @@
 // verdict count would diverge across runs — while the brief requires the opposite
 // (three runs in a row with the same number). Hence `waitFor`, which returns the last
 // probe instead of failing on timeout.
+import { scriptedHttpHelperBinary } from './participant-http.mjs';
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 import { spawn, spawnSync } from 'node:child_process';
@@ -484,6 +485,17 @@ export function freshScenarioIdentity(slug = 'e2ebus', now = new Date()) {
  * [check.mjs](check.mjs) helper, in a live run — its own report collector.
  */
 
+function notificationCount(home, task, addr) {
+  return store.tailWardenLog(home, task, Number.MAX_SAFE_INTEGER)
+    .filter(line => line.includes(` notification ${addr}:`)).length;
+}
+
+export function notificationMark(home, task, addr) {
+  const participant = store.participantOf(store.readTask(home, task), addr);
+  return { count: notificationCount(home, task, addr),
+    session: store.sessionIdOf(participant) ?? store.readWake(home, task, addr)?.session ?? null };
+}
+
 export async function runScenario({
   check, harness, sandbox, workspace = null, timeouts = {}, trace = () => {}, reviewRounds = 1, listenSocket = null,
 }) {
@@ -610,9 +622,6 @@ export async function runScenario({
   // capabilities snapshot.
   const fieldsOf = (addr) => participantOf(addr)?.metadata ?? {};
   const healthOf = (addr) => (store.readHealth(home, TASK) ?? {})[addr] ?? {};
-  const notificationCount = addr => store.tailWardenLog(home, TASK, Number.MAX_SAFE_INTEGER)
-    .filter(line => line.includes(` notification ${addr}:`)).length;
-  const notificationMark = addr => ({ count: notificationCount(addr), session: store.readWake(home, TASK, addr)?.session ?? null });
   const notified = (addr, id, before) => {
     if (!id) return false;
     const h = healthOf(addr);
@@ -621,7 +630,7 @@ export async function runScenario({
       || (endpoint.session ?? null) !== before.session) return false;
     const covered = h.coveredUnread?.some(key => key[0] === TASK && key[1] === store.addrDir(addr) && key[2] === id);
     const taken = existsSync(path.join(store.historyDir(home, TASK, addr), `${id}.json`));
-    return covered || (taken && notificationCount(addr) > before.count);
+    return covered || (taken && notificationCount(home, TASK, addr) > before.count);
   };
   const postcard = (line) => inbox.seen.find((p) => String(p.body ?? '').includes(line)) ?? null;
   const timings = [];
@@ -669,7 +678,7 @@ export async function runScenario({
     // intent, this line is a fact. The canary checks the same path against its install
     // tree and takes it from the report: the scenario has nowhere to know where
     // «correct» is.
-    // ONE field is read: the rest hold substituted tokens of canonical servers.
+    // Only the emitted entry point is reported; credential-bearing fields stay private.
     //
     // The verdict runs on a harness that gets mcp-config as a FILE on the store path:
     // on Cursor the same binary path sits in the project `.cursor/mcp.json` of the
@@ -712,7 +721,7 @@ export async function runScenario({
     check('step 4: after the header read the body came by its id',
       opened.isError === false && opened.text.includes(status?.body), tail(opened.text));
     harness.assertRunning?.();
-    const answerBefore = notificationMark(WORKER);
+    const answerBefore = notificationMark(home, TASK, WORKER);
     const sent = await mcp.tool('promptobus_send', { to: WORKER, type: 'answer', body: `${MARK.answer}: edit only ${NOTE_FILE}` });
     const answerName = linkedNames(home, TASK, WORKER).find(name => messageBody(home, TASK, WORKER, name).includes(MARK.answer));
     check('step 4: the orchestrator answer went to the worker',
@@ -1113,7 +1122,7 @@ export async function runScenario({
     writeFileSync(artifact, `# ${MARK.fan}\n\nOne and the same file goes out twice.\n`);
     // Snapshot each recipient before sending: stale health or a successful activation
     // of only one participant cannot prove both new notifications.
-    const knockedWas = Object.fromEntries([WORKER, REVIEWER].map(a => [a, notificationMark(a)]));
+    const knockedWas = Object.fromEntries([WORKER, REVIEWER].map(a => [a, notificationMark(home, TASK, a)]));
     const fanned = [];
     for (const addr of [WORKER, REVIEWER]) {
       harness.assertRunning?.();
@@ -1370,12 +1379,13 @@ function messageBody(home, task, addr, name) {
 
 /**
  * Path of the binary the started process named as ITS OWN — from the participant
- * mcp-config. One field is read: the rest hold substituted tokens of canonical servers,
- * and they must not go into the report or a verdict detail.
+ * mcp-config, either the stdio argument or the known managed HTTP helper shape.
+ * No credential-bearing fields go into the report or a verdict detail.
  */
 function readSelfBin(file) {
   try {
-    return JSON.parse(readFileSync(file, 'utf8')).mcpServers?.promptobus?.args?.[0] ?? null;
+    const config = JSON.parse(readFileSync(file, 'utf8')).mcpServers?.promptobus;
+    return config?.args?.[0] ?? scriptedHttpHelperBinary(config);
   } catch {
     return null;
   }

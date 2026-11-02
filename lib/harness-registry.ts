@@ -60,10 +60,11 @@ export function createHarnessRegistry<T extends HarnessSessionRecord = HarnessSe
 
   function dropSession(ref: string, env = process.env) {
     const record = readSession(ref, env);
-    for (const file of [sessionFile(ref, env), ...sidecars(ref, env)]) {
+    for (const file of sidecars(ref, env)) {
       rmSync(file, { force: true });
     }
     if (record) onDrop(record, env);
+    rmSync(sessionFile(ref, env), { force: true });
   }
 
   function registrySessions(env = process.env): T[] {

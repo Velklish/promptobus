@@ -122,6 +122,7 @@ export async function stopManaged(home: string, id: string, { registry = REGISTR
 
 async function sweepWorktrees(home: string, snapshot: SnapshotReader, host: PromptobusHost, tasks: TaskV1[]) {
   const prune = new Set<string>();
+  const pending = new Set<string>();
   for (const meta of tasks) {
     if (meta.status !== 'done') continue;
     if (meta.adapter?.bb) continue;
@@ -139,11 +140,20 @@ async function sweepWorktrees(home: string, snapshot: SnapshotReader, host: Prom
       // Optional, and absent on every driver that keeps nothing outside the worktree.
       if (state === 'dead') {
         try {
-          await driverOrLift(p).sweepParticipant?.(p, meta.id);
+          const driver = driverOrLift(p);
+          if (driver.sweepParticipant === REGISTRY.drivers.opencode.sweepParticipant) {
+            await driver.sweepParticipant?.(p, meta.id, undefined, { home, task: meta.id });
+          } else {
+            await driver.sweepParticipant?.(p, meta.id);
+          }
         } catch (e) {
-          warn(`could not clear the harness state of participant ${addressOf(p)}: ${(e as Error).message}`);
+          warn(`could not clear the harness state of participant ${addressOf(p)}: ${(e as Error).message}; task cleanup remains pending`);
+          pending.add(meta.id);
+          left += 1;
+          continue;
         }
       } else if (driverOrLift(p).sweepParticipant) {
+        pending.add(meta.id);
         left += 1;
       }
       const { worktree, repoAbs } = p.metadata;
@@ -184,14 +194,16 @@ async function sweepWorktrees(home: string, snapshot: SnapshotReader, host: Prom
     if (!left) markWorktreesSwept(home, meta.id);
   }
   for (const repoAbs of prune) pruneWorktrees(repoAbs);
+  return pending;
 }
 
 // Two secrets of a closed task: a participant mcp-config with substituted tokens, removed
 // only for a dead session, and the contact point, removed for all — nobody is left to knock.
-function sweepParticipantSecrets(home: string, snapshot: SnapshotReader, tasks: TaskV1[]) {
+function sweepParticipantSecrets(home: string, snapshot: SnapshotReader, tasks: TaskV1[], pending: ReadonlySet<string>) {
   for (const meta of tasks) {
     if (meta.status !== 'done') continue;
     if (meta.adapter?.bb) continue;
+    if (pending.has(meta.id)) continue;
     // Over participants of this task, for the same reason as the worktree walk. A second
     // snapshot is not a second harness poll — the parsed list is remembered until reset.
     const sessions = snapshot(meta.participants);
@@ -365,13 +377,13 @@ export async function done(rootOrHost: unknown, opts: DoneOptions = {}) {
   // One parse of every task.json, shared across the three sweeps below instead of one
   // walk each — a broken-task warning fires once per done(), not up to three times.
   const tasks = listTasks(home);
-  await sweepWorktrees(home, snapshot, host, tasks);
-  sweepParticipantSecrets(home, snapshot, tasks);
+  const pending = await sweepWorktrees(home, snapshot, host, tasks);
+  sweepParticipantSecrets(home, snapshot, tasks, pending);
   // Bindings that lost liveness with the task. They do not bother the mechanism —
   // `liveBinding` does not return a dead one — but the directory would grow a file per run.
   const dropped = sweepBindings(home);
   if (dropped) info(`session bindings dropped: ${dropped} — their tasks are closed`);
   // At the 14-day default the task just closed is young and stays. `--older-than 0`
   // counts it. A cleanup refusal does not roll the close back — it is a warning.
-  retainJournals(host, home, id, opts, tasks);
+  retainJournals(host, home, id, opts, tasks.filter(meta => !pending.has(meta.id)));
 }

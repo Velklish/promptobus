@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { check } from './check.mjs';
@@ -50,6 +50,17 @@ try {
     root, task: childTask, guardCommand: 'guard', env: process.env };
   const planned = codexDriver.prepare({ ...ctx, ref: 'teamlead-proof', role: 'teamlead',
     cwd: root, address: 'orchestrator', rootTask: task, rootAddress });
+  mkdirSync(planned.codexHome, { recursive: true, mode: 0o700 });
+  const sidecar = path.join(realpathSync(planned.codexHome), 'teamlead-root-session.json');
+  const auth = path.join(ownerHome, 'auth.json'), authBytes = readFileSync(auth, 'utf8');
+  symlinkSync(auth, sidecar);
+  try {
+    const linked = codexDriver.prepare({ ...ctx, ref: 'teamlead-proof', role: 'teamlead',
+      cwd: root, address: 'orchestrator', rootTask: task, rootAddress });
+    check('Codex alias preparation preserves a literal leaf inside its canonical home and never selects a symlink target',
+      linked.rootSessionRecord === sidecar && linked.serviceScopes.every(scope => scope.record === sidecar)
+        && readFileSync(auth, 'utf8') === authBytes);
+  } finally { unlinkSync(sidecar); }
   const fullAccess = codexDriver.prepare({ ...ctx, ref: 'teamlead-full', role: 'teamlead',
     cwd: root, address: 'orchestrator', rootTask: task, rootAddress,
     permissionMode: 'full-access' });

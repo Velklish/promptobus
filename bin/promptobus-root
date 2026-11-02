@@ -1,0 +1,21 @@
+#!/bin/sh
+case ${1-} in
+  -h|--help)
+    printf '%s\n' 'Usage: promptobus-root --profile <approved-profile> [--service-home <path>] [--dry-run] -- <approved-native-command> [args...]' \
+      'Preflight and POSIX exec only; native root authorization still requires the approved headers helper and ordered hook.'
+    exit 0
+    ;;
+esac
+
+entry=$0
+case $entry in */*) ;; *) entry=$(command -v "$entry") || exit $? ;; esac
+entry=$(node -e 'process.stdout.write(require("node:fs").realpathSync(process.argv[1]))' "$entry") || exit $?
+directory=${entry%/*}
+dry_run=0
+for argument in "$@"; do
+  case $argument in --) break ;; --dry-run) dry_run=1 ;; esac
+done
+if [ "$dry_run" -eq 1 ]; then exec node "$directory/promptobus.js" service exec-plan "$@"; fi
+plan=$(exec node "$directory/promptobus.js" service exec-plan --launcher-pid "$$" "$@") || exit $?
+case $plan in /*) ;; *) printf '%s\n' 'Root preflight did not return an absolute private exec plan' >&2; exit 1 ;; esac
+. "$plan"

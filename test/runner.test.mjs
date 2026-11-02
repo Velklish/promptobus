@@ -101,6 +101,7 @@ check('file timeout in the roomy copy is swapped — the watchdog probe is not r
 function plant(dir, source, { watchdog = false } = {}) {
   writeFileSync(path.join(dir, 'run.mjs'), source);
   copyFileSync(path.join(here, 'hygiene.mjs'), path.join(dir, 'hygiene.mjs'));
+  copyFileSync(path.join(here, 'kernel-read-shapes.mjs'), path.join(dir, 'kernel-read-shapes.mjs'));
   writeFileSync(path.join(dir, 'home.mjs'), watchdog ? homeCopy : homeSrc);
   copyFileSync(path.join(here, 'check.mjs'), path.join(dir, 'check.mjs'));
   writeFileSync(path.join(dir, 'tmpdir-sweep.mjs'), sweepCopy);
@@ -135,19 +136,9 @@ writeFileSync(path.join(SB, 'b-zhivoy.test.mjs'), "console.log('live file reache
 // take-down reaches the file's children. That is right for the runner
 // and it opens one hole here — the path this deadline exists for, a
 // runner whose own file timeout is broken, is exactly the path on
-// which the hung fixture would now survive the group kill. So the
-// sweep below finishes the job. It is scoped by the SANDBOX PATH in
-// the argv, which this probe alone owns: a second `npm test` on the
-// machine is the normal state, and `node` is the commonest name on it.
-function sweepStrays(dir) {
-  const listed = spawnSync('ps', ['-eo', 'pid=,args='], { encoding: 'utf8' });
-  for (const line of (listed.stdout ?? '').split('\n')) {
-    if (!line.includes(dir)) continue;
-    const pid = Number(line.trim().split(/\s+/)[0]);
-    if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) continue;
-    try { process.kill(pid, 'SIGKILL'); } catch { /* gone already */ }
-  }
-}
+// which the hung fixture could survive the group kill. We have no owned
+// identity for that separate group: the timeout stays a failure and its
+// cleanup stays unknown, without enumerating unrelated processes.
 
 async function runCopy(dir, env = {}) {
   const log = path.join(dir, 'run.log');
@@ -157,7 +148,7 @@ async function runCopy(dir, env = {}) {
   const code = await new Promise((resolve) => {
     const timer = setTimeout(() => {
       try { process.kill(-child.pid, 'SIGKILL'); } catch { /* group already dead */ }
-      sweepStrays(dir);
+      console.error(`runner fixture timeout: cleanup UNKNOWN after owned group kill; fixture ${dir} may be removed by the outer runner`);
       resolve(null);
     }, 60_000);
     child.on('exit', (c) => { clearTimeout(timer); resolve(c); });
@@ -293,6 +284,7 @@ writeFileSync(path.join(SB2, 'c-nested.test.mjs'),
 const FOREIGN_AMBIENT = {
   FOREIGN_SERVICE_STOP_GATE: '0',
   FOREIGN_SERVICE_HOME: '/net/takogo/servisa',
+  PROMPTOBUS_SERVICE_HOME: '/net/takogo/shared-service',
   PROMPTOBUS_CURSOR_USER_HOME: '/net/takogo/kursora/.cursor',
   GIT_DIR: '/net/takogo/repo/.git',
   npm_config_userconfig: '/net/takogo/.npmrc',
@@ -686,15 +678,18 @@ check(': the marked child really did start — otherwise "nothing is left" check
   Number.isInteger(kidPid) && kidPid > 0, `pid file: ${kidPid ?? '(absent)'}`);
 // The system needs a moment to reap the group before the process table is honest.
 await new Promise((r) => { setTimeout(r, 1500); });
-const kidLines = (spawnSync('ps', ['-eo', 'pid=,ppid=,args='], { encoding: 'utf8' }).stdout ?? '')
+const kidRead = Number.isInteger(kidPid) && kidPid > 0
+  ? spawnSync('ps', ['-p', String(kidPid), '-o', 'pid=,ppid=,args='], { encoding: 'utf8' }) : null;
+const kidLines = (kidRead?.stdout ?? '')
   .split('\n').filter((l) => l.includes(KID_MARK));
 check(': and its child goes with it — nothing is left at PPID 1',
-  kidLines.length === 0, kidLines.join(' · ') || '(none)');
+  !!kidRead && !kidRead.error && !kidRead.stderr?.trim() && [0, 1].includes(kidRead.status) && kidLines.length === 0,
+  kidLines.join(' · ') || `status=${kidRead?.status} error=${kidRead?.error?.message ?? kidRead?.stderr ?? '(none)'}`);
 // Whatever survived is this probe's own litter: leaving it would be the very leak
 // under test. Nothing to kill on sound code — the check above is already green.
 for (const line of kidLines) {
   const pid = Number(line.trim().split(/\s+/)[0]);
-  if (Number.isInteger(pid) && pid > 0) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
+  if (pid === kidPid) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
 }
 
 // --- the watchdog in the shared helper ------------------------------------------------

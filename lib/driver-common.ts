@@ -1,6 +1,32 @@
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
-import { logWarden } from './store.js';
+import { dropStaleWake, logWarden, participantOf, readTask, upsertParticipant, withTaskLock } from './store.js';
+import { requireCurrentNativeLaunch } from './native-lifecycle.js';
+import { fail } from './util.js';
+import type { LibLaunchPlan } from './driver-runtime.js';
+
+const managedCleanupFailures = new WeakMap<LibLaunchPlan, AggregateError>();
+
+export async function revokeFailedManagedLaunch(launch: LibLaunchPlan, error: unknown, afterRevoke?: () => void | Promise<void>,
+  revokeRegistered?: () => Promise<void>): Promise<never> {
+  const handled = managedCleanupFailures.get(launch);
+  if (handled && error === handled) throw error;
+  let stage = 'credential revocation';
+  try {
+    await (revokeRegistered ? revokeRegistered() : launch.service?.revoke());
+    stage = 'native launch cleanup';
+    await afterRevoke?.();
+  } catch (cleanupError) {
+    const first = error instanceof Error ? error.message : String(error);
+    const second = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+    const record = launch.sessionRecord ?? launch.prelaunchBinding?.sessionRecord;
+    const failure = new AggregateError([error, ...(cleanupError instanceof AggregateError ? cleanupError.errors : [cleanupError])], `${first}; ${stage} failed: ${second}. Native launch state is unknown; `
+      + `inspect ${record ?? 'the retained native launch record'} before retrying`, { cause: error });
+    managedCleanupFailures.set(launch, failure);
+    throw failure;
+  }
+  throw error;
+}
 
 export function parseVersion(value: unknown) {
   const raw = String(value ?? '');
@@ -27,7 +53,9 @@ export function versionParseRefusal(name: string, value: unknown) {
 export function sessionEnv(dropList: readonly string[] | null | undefined, base = process.env, extra: NodeJS.ProcessEnv = {}) {
   const env = { ...base };
   for (const name of dropList ?? []) delete env[name];
-  return { ...env, ...extra };
+  const own = { ...env, ...extra };
+  for (const name of Object.keys(own)) if (name.startsWith('PROMPTOBUS_ROOT_')) delete own[name];
+  return own;
 }
 
 export function sessionEnvFor(dropList: readonly string[] | null | undefined) {
@@ -51,4 +79,28 @@ export function sayForeignWrite(home: string, task: string, addr: string, held: 
   foreignWrites.add(key);
   logWarden(home, task, `${what} for address ${addr} is refused: the address is bound to session ${held}, `
     + `and ${session} is writing — the owner's records were left untouched`);
+}
+
+export function bindBeforeLaunch(home: string | null, task: string | null, address: string | null, binding: Record<string, unknown> = {}, expected: Parameters<typeof requireCurrentNativeLaunch>[1] = null) {
+  if (!home || !task || !address || !Object.keys(binding).length) return () => {};
+  const record = withTaskLock(home, task, () => {
+    const found = participantOf(readTask(home, task), address);
+    if (!found) return null;
+    requireCurrentNativeLaunch(found, expected);
+    upsertParticipant(home, task, { ...found, metadata: { ...found.metadata, ...binding } });
+    dropStaleWake(home, task, address, binding.sessionId as string | null);
+    return found;
+  });
+  if (!record) fail(`participant ${address} of task ${task} disappeared before its session launch`);
+  return () => withTaskLock(home, task, () => {
+    const current = participantOf(readTask(home, task), address);
+    if (!current) return;
+    try { requireCurrentNativeLaunch(current, record); }
+    catch { return; }
+    const metadata = { ...current.metadata };
+    for (const [key, value] of Object.entries(binding)) {
+      if (metadata[key] === value || metadata[key] === record!.metadata?.[key]) delete metadata[key];
+    }
+    upsertParticipant(home!, task!, { ...current, metadata });
+  });
 }

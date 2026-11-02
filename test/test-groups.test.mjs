@@ -127,7 +127,7 @@ test('invalid explicit Git base refuses before running tests', () => {
 
 function runnerCopy() {
   const dir = makeSandbox('promptobus-runner-');
-  for (const name of ['run.mjs', 'hygiene.mjs', 'home.mjs', 'check.mjs']) {
+  for (const name of ['run.mjs', 'hygiene.mjs', 'home.mjs', 'check.mjs', 'kernel-read-shapes.mjs']) {
     copyFileSync(path.join(here, name), path.join(dir, name));
   }
   const sweep = readFileSync(path.join(here, 'tmpdir-sweep.mjs'), 'utf8')
@@ -195,7 +195,7 @@ test('local command executes its selected scope and propagates the dependent fai
   const dir = runnerCopy();
   mkdirSync(path.join(dir, 'test'));
   mkdirSync(path.join(dir, 'scripts'));
-  for (const name of ['run.mjs', 'hygiene.mjs', 'home.mjs', 'check.mjs', 'tmpdir-sweep.mjs']) {
+  for (const name of ['run.mjs', 'hygiene.mjs', 'home.mjs', 'check.mjs', 'tmpdir-sweep.mjs', 'kernel-read-shapes.mjs']) {
     copyFileSync(path.join(dir, name), path.join(dir, 'test', name));
   }
   copyFileSync(path.join(here, 'groups.mjs'), path.join(dir, 'test/groups.mjs'));

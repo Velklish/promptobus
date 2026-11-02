@@ -23,6 +23,8 @@ import {
 import { CLAUDE_SKILLS_REL, CURSOR_SKILLS_REL, CODEX_SKILLS_REL } from './drivers.js';
 
 import type { PromptobusHost } from '../dist/index.js';
+import type { CodexRootProfileDescriptor } from './root-launch.js';
+import type { StandaloneRootProfileDescriptor } from './standalone-root.js';
 
 export type InstallHarness = 'claude' | 'cursor' | 'codex';
 export interface InstallTarget { readonly hooksRel: string; readonly skillsRel: string }
@@ -35,6 +37,7 @@ export interface InstallPlan {
   writes: InstallWrite[]; owned: Record<InstallHarness, string[]>;
   ownedSkills: Record<InstallHarness, string[]>; unproven: string[];
 }
+export interface InstallPlanOptions { rootProfile?: CodexRootProfileDescriptor | StandaloneRootProfileDescriptor }
 interface InstallOptions {
   env?: NodeJS.ProcessEnv; cwd?: string; harnesses?: unknown; check?: boolean; dryRun?: boolean; skillsDir?: string;
 }
@@ -540,8 +543,15 @@ function isSkillFileOwned(abs: string, rel: string, prevOwnedSet: Set<string>) {
 }
 
 export function planHookInstall(
-  host: InstallPlanHost, root: string, wanted: readonly InstallHarness[], { check = false, dryRun = false, skillsDir = PACKAGE_SKILLS_DIR } = {},
+  host: InstallPlanHost, root: string, wanted: readonly InstallHarness[],
+  { check = false, dryRun = false, skillsDir = PACKAGE_SKILLS_DIR, rootProfile }:
+    { check?: boolean; dryRun?: boolean; skillsDir?: string } & InstallPlanOptions = {},
 ) {
+  const rootHarness = rootProfile && 'harness' in rootProfile ? rootProfile.harness : 'codex';
+  if (rootProfile && (!wanted.includes(rootHarness) || !rootProfile.profile
+    || rootProfile.startHook.type !== 'command' || !rootProfile.startHook.command.trim())) {
+    throw new GateError('Root hook planning requires the supplied approved profile and its selected native harness');
+  }
   const unproven: string[] = [];
   const hookHost = hookHostOf(host, root);
   const platform = platformOf();
@@ -567,6 +577,9 @@ export function planHookInstall(
       owned[name] = [];
     } else {
       const ourEvents = selected ? spec.events(guardCmd) : {};
+      if (selected && name === rootHarness && rootProfile) {
+        ourEvents[GUARD_START_EVENT] = [nestedGroup(rootProfile.startHook.command)];
+      }
       const merged = mergeHookEvents(existing.doc.hooks, ourEvents, {
         style: spec.style,
         prevIds,

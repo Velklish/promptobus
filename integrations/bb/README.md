@@ -6,9 +6,12 @@ The native Promptobus CLI and harness registry keep their existing entry points.
 
 ## Setup
 
-Use BB 0.48.0 and Plugin SDK 0.6.94 on one local host. The manifest admits
+Use BB 0.48.1 and Plugin SDK 0.6.104 on one local host. The manifest admits
 that exact app/SDK pair; adjacent and future versions require a separate
 compatibility check. Older live profiles below remain historical observations.
+The runtime schema dependency is pinned to patched Zod 4.6.6; the SDK's declared
+range uses that same resolved version. Security auditing remains a separate
+`npm audit` check from source compatibility and the package publicity audit.
 Install Codex CLI
 and sign in with `codex`. The provider verifies the required runtime restrictions,
 without an exact or maximum numeric Codex version requirement.
@@ -138,8 +141,8 @@ turns do not wake their parent; failures, interruptions, and approval or questio
 blockers retain BB's notifications. Children send final results and questions
 through the canonical bus. Parenting and lifecycle ownership stay unchanged.
 
-The public `bb guide threads` documents this policy for the BB 0.48.0 / Plugin
-SDK 0.6.94 profile. `off` would also suppress attention and is not used. The
+The public `bb guide threads` documents this policy for the BB 0.48.1 / Plugin
+SDK 0.6.104 profile. `off` would also suppress attention and is not used. The
 adapter confirms the spawn response; a child whose policy is not confirmed is
 retained as an orphan and stopped. Existing threads keep their recorded policy;
 this change does not update global settings or retrofit existing children.
@@ -701,6 +704,89 @@ rule discovery, canonical skills, reviewer classification and server declaration
 Its `listTools` / `invokeTool` callbacks own canonical transport and argument
 validation. Server configuration and credentials stay host-side. Reporter and
 reviewer roles both require complete write classification.
+
+Root admission also requires `resolveOwnerHost(canonicalRoot)` in that source
+module. It returns the full owner Host for the canonical workspace and store;
+the participant environment's Host is not an owner-store resolver. The generated
+entry passes it explicitly to `createHostEntry`. A custom participant integration
+without that resolver refuses managed launch admission before native spawn.
+
+Immediately before each managed SDK spawn, the host records a durable intent
+under the shared canonical workspace/store admission lock. Once the SDK returns,
+the actual BB thread is retained and permanently excluded from ordinary-root
+admission before environment provisioning or assignment delivery. A failed
+publication keeps an orphan binding and the unresolved intent; it does not erase
+the returned thread or permit retrying the spawn.
+
+The root helper calls `bb promptobus root lookup --root <canonicalRoot>
+--native-thread <nativeId>` while it holds that same admission lock. This reads
+both active and archived public thread pages, including hidden threads, and only
+each thread's latest typed `thread/identity` event. Two matching inventories,
+one unique native correspondence, the current canonical environment, and a
+complete unfiltered read of retained managed bindings and intents are required.
+An archived managed binding remains excluded. Unknown legacy launch intents,
+missing events, changing inventories and ambiguous identities refuse admission;
+origin, parent and plugin metadata labels never authorize it.
+Missing latest identity on any inventoried Codex thread, including an unrelated
+or archived one, leaves that thread unknown and prevents a complete result.
+
+Success returns JSON `{complete:true,eligibility:"eligible",bbThreadId,root,home}`.
+The helper must compare both canonical `root` and `home` with its approved scope
+before accepting the result. This lookup classifies the correspondence; the
+native hook still proves the transcript, process birth and credential generation.
+These SDK fixtures do not establish a live native workflow or plugin installation.
+
+The new-state contract does not migrate legacy owner records or reconstruct
+all-ever native history. Explicit owner initialization selects the current policy;
+it does not establish that an account has no old sessions. First native admission
+still requires trusted creation evidence, separately from BB thread creation and
+canonical lookup. Unknown old IDs refuse. Same-version known-binding recovery
+keeps its death, generation and mutation-outcome fences. Ordinary BB creation
+uses the separate approved-profile operation below; no reset or history deletion
+is a supported way around missing proof.
+
+Ordinary root owner code first calls `approveCodexRootProfile(host,
+{ id, nativeStore }, env)` and applies its returned native server and ordered
+hook through the consumer's existing configuration/install writer. To create a
+new ordinary root, call that same function with the same profile and an explicit
+trusted `createRoot` callback in its options. Its fixed owner code uses the
+ordinary public route, for example:
+
+```ts
+createRoot: () => bb.sdk.threads.spawn({
+  projectId: owner.projectId,
+  environment: { type: 'reuse', environmentId: owner.environmentId },
+  providerId: 'codex',
+  permissionMode: owner.permissionMode,
+  prompt: owner.prompt,
+  title: owner.title,
+})
+```
+
+These values come from approved consumer owner configuration, never a root
+actor's claimed BB ID or freshness field. Omit source/origin/resume/fork inputs.
+The callback returns the actual response with its `id`; it runs outside the
+owner lock. One operation is reserved per profile. Repeating a pending, uncertain
+or bound operation never invokes it again; profile reconfiguration alone never
+creates a thread. A separate profile deliberately creates another ordinary root.
+Partial failures retain the unknown operation rather than adopting an existing ID.
+
+SDK201 and `creation.state="bound"` prove only BB row creation/binding. Actual
+same-ID hook/transcript/process proof and complete host-wide lookup still gate
+native capability. If the hook precedes SDK completion, its verified private
+proof stays pending. After binding, owner preflight realizes that same proof
+without another spawn or a repeated one-time hook. Repeating explicit approval
+with the trusted callback retries preflight only. Changed owner/profile/operation,
+revoked proof or incomplete inventory keeps refusal. Managed `begin/complete`
+permanently excludes its BB ID from ordinary root admission.
+
+An execution path may be a checkout below the canonical owner workspace. The
+explicit consumer resolver selects its full owner Host; the bridge preserves
+the execution path and uses the resolved workspace/store for the admission lock.
+The launch intent saves that pair before SDK spawn. Completion checks it again,
+including after a reload, and refuses a changed owner or store before acquiring
+another scope's lock. Root lookup resolves the candidate environment through
+the same owner resolver and requires the approved workspace and store.
 
 Generate a new plugin directory from this canonical source package:
 

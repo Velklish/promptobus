@@ -4,12 +4,14 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { Writable } from 'node:stream';
+import { fileURLToPath } from 'node:url';
 
 const { expected, sandbox } = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const integration = await import('promptobus/integration');
 const { COMMANDS, runPromptobus } = await import('promptobus/cli');
 const { BUS_SERVER } = await import('promptobus/hooks');
 const { createStandaloneHost } = await import('promptobus/host');
+const { createBbManagedAdmission } = await import('promptobus/bb-host');
 
 const verdicts = [];
 async function verdict(name, fn) {
@@ -52,6 +54,15 @@ function project(name, config) {
     cwd: dir, commandName: 'consumer', version: '0.0.0', binPath: path.join(dir, 'bin.js'), nodePath: process.execPath,
   });
 }
+
+await verdict('host integration: public imports resolve inside the installed package', () => {
+  const packageRoot = path.join(process.cwd(), 'node_modules', 'promptobus');
+  const foreign = ['integration', 'cli', 'hooks', 'host', 'bb-host'].filter(name => {
+    const resolved = fileURLToPath(import.meta.resolve(`promptobus/${name}`));
+    return !resolved.startsWith(`${packageRoot}${path.sep}`);
+  });
+  return same(foreign, []);
+});
 
 await verdict('host integration: PACKAGE_VERSION is the installed manifest version', () => same(
   integration.PACKAGE_VERSION, expected.version,
@@ -174,6 +185,112 @@ await verdict('host integration: runPromptobus runs a command for the host it is
   const host = { kind: 'promptobus-host', commandName: 'consumer', version: '9.9.9' };
   const code = await runPromptobus(['--version'], { host, cwd: sandbox, env: {}, output });
   return same([code, out], [0, 'consumer 9.9.9\n']);
+});
+
+await verdict('host integration: root profile API and CLI agree with the default service home', async () => {
+  const root = path.join(sandbox, 'root-profile'), nativeStore = path.join(root, 'native-account');
+  mkdirSync(nativeStore, { recursive: true });
+  writeFileSync(path.join(root, 'promptobus.json'), '{"tools":[]}\n');
+  const bb = path.join(root, 'bb');
+  writeFileSync(bb, '#!/bin/sh\nexit 93\n', { mode: 0o700 });
+  const host = createStandaloneHost({ cwd: root });
+  const env = { ...process.env, BB_CLI: bb };
+  const input = { id: 'packed-owner', nativeStore };
+  const command = async (args) => {
+    let text = '';
+    const output = new Writable({ write(chunk, _enc, done) { text += chunk; done(); } });
+    const code = await runPromptobus(args, { host, cwd: root, env, output });
+    return { code, text };
+  };
+  try {
+    const api = await integration.approveCodexRootProfile(host, input, env);
+    const cli = await command(['service', 'profile', '--id', input.id, '--native-store', nativeStore]);
+    let creates = 0;
+    const executionScope = Object.freeze({ project: 'packed-project', environment: 'packed-environment' });
+    const createRoot = async descriptor => { creates += 1; return { id: `thr_${descriptor.profile}` }; };
+    const created = await integration.approveCodexRootProfile(host, { ...input, executionScope, createRoot }, env);
+    const repeated = await integration.approveCodexRootProfile(host, { ...input, executionScope, createRoot }, env);
+    let omittedScopeRefused = false;
+    try { await integration.approveCodexRootProfile(host, input, env); }
+    catch (error) { omittedScopeRefused = /execution scope/.test(error.message); }
+    const profiles = filesUnder(path.join(process.env.HOME, '.promptobus', 'services'))
+      .filter(name => name.endsWith('root-profile-packed-owner.json'));
+    return all(
+      same(env.PROMPTOBUS_SERVICE_HOME, undefined),
+      same([api.profile, api.root, api.home], [input.id, host.workspaceRoot(), host.promptobusHome()]),
+      same(cli.code, 0), same(JSON.parse(cli.text), api), same(profiles.length, 1),
+      same(creates, 1), same(omittedScopeRefused, true), same(created.creation, { state: 'bound', bbThreadId: `thr_${input.id}` }), same(repeated.creation, created.creation),
+      same([api.server.required, api.server.url === api.busUrl, api.server.http_headers_helper.includes('--profile'),
+        api.startHook.command.includes('--root-profile'), api.execPlanCommand.includes('service exec-plan'), JSON.stringify(api).includes('Bearer')], [true, true, true, true, true, false]),
+    );
+  } finally {
+    const stop = await command(['service', 'stop', '--json']);
+    if (stop.code !== 0) throw new Error(`Packed root service cleanup failed: ${stop.text}`);
+  }
+});
+
+await verdict('host integration: installed standalone API CLI and pure supplied-descriptor planning agree', async () => {
+  const root = path.join(sandbox, 'standalone-profile'), nativeStore = path.join(root, 'native-account');
+  mkdirSync(nativeStore, { recursive: true }); writeFileSync(path.join(root, 'promptobus.json'), '{"tools":[]}\n');
+  const host = createStandaloneHost({ cwd: root }), env = { ...process.env };
+  for (const name of Object.keys(env)) if (/^(BB_|PROMPTOBUS_(CLIENT_|ROOT_|OWNER_ENV_FILE$|ROLE$|TASK$|.*_SESSION$))/.test(name)) delete env[name];
+  const command = async args => {
+    let text = ''; const output = new Writable({ write(chunk, _enc, done) { text += chunk; done(); } });
+    return { code: await runPromptobus(args, { host, cwd: root, env, output }), text };
+  };
+  try {
+    const api = await integration.approveStandaloneRootProfile(host, { id: 'packed-native', harness: 'claude', nativeStore, executable: process.execPath }, env);
+    const cli = await command(['service', 'profile', '--standalone', '--id', 'packed-native', '--harness', 'claude', '--native-store', nativeStore, '--executable', process.execPath]);
+    const before = filesUnder(root);
+    const plan = integration.planHookInstall(host, root, ['claude'], { rootProfile: api });
+    const hooks = JSON.parse(plan.writes.find(write => write.rel === path.join('.claude', 'settings.json')).text).hooks;
+    return all(same(cli.code, 0), same(JSON.parse(cli.text), api), same(filesUnder(root), before),
+      same(Object.keys(plan).sort(), ['owned', 'ownedSkills', 'unproven', 'writes']),
+      same(hooks.SessionStart[0].hooks[0].command, api.startHook.command),
+      same([api.mode, api.harness, api.server.type, api.server.headersHelper.includes('--standalone'), api.execPlanCommand.includes('service exec-plan'),
+        JSON.stringify(api).includes('Bearer')], ['standalone', 'claude', 'http', true, true, false]));
+  } finally { const stopped = await command(['service', 'stop', '--json']); if (stopped.code !== 0) throw new Error('Packed standalone cleanup failed'); }
+});
+
+await verdict('host integration: installed recovery CLI refuses native-id without a trusted actual binding', async () => {
+  const root = path.join(sandbox, 'standalone-recovery'), nativeStore = path.join(root, 'native-account');
+  mkdirSync(nativeStore, { recursive: true }); writeFileSync(path.join(root, 'promptobus.json'), '{"tools":[]}\n');
+  const host = createStandaloneHost({ cwd: root }), id = 'packed-recovery';
+  const env = { ...process.env };
+  for (const name of Object.keys(env)) if (/^(BB_|PROMPTOBUS_(CLIENT_|ROOT_|OWNER_ENV_FILE$|ROLE$|TASK$|.*_SESSION$))/.test(name)) delete env[name];
+  let text = ''; const output = new Writable({ write(chunk, _enc, done) { text += chunk; done(); } });
+  try {
+    const approved = await integration.approveStandaloneRootProfile(host, { id, harness: 'claude', nativeStore, executable: process.execPath }, env);
+    const child = spawnSync(process.execPath, [host.binPath(), 'service', 'preflight', '--standalone', '--profile', id, '--native-id', 'unproved-id'],
+      { cwd: root, env, encoding: 'utf8' });
+    return all(same([approved.mode, approved.harness, approved.profile, approved.root, approved.home],
+      ['standalone', 'claude', id, host.workspaceRoot(), host.promptobusHome()]),
+    same(child.status, 1), same(child.signal, null), same(/Recovery requires exactly one owner-realized native binding/.test(child.stderr), true),
+    same(/not approved|Bearer|credentialFile|PROMPTOBUS_ROOT_LAUNCH_FILE/.test(`${child.stdout}${child.stderr}`), false));
+  } finally {
+    const code = await runPromptobus(['service', 'stop', '--json'], { host, cwd: root, env, output });
+    if (code !== 0) throw new Error('Packed recovery refusal cleanup failed');
+  }
+});
+
+await verdict('host integration: BB managed admission preserves its explicit owner scope', async () => {
+  const root = path.join(sandbox, 'managed-admission');
+  mkdirSync(root, { recursive: true });
+  writeFileSync(path.join(root, 'promptobus.json'), '{"tools":[]}\n');
+  const host = createStandaloneHost({ cwd: root });
+  const paths = [];
+  const admission = createBbManagedAdmission(executionPath => { paths.push(executionPath); return host; }, process.env);
+  const expectedScope = { root: host.workspaceRoot(), home: host.promptobusHome() };
+  const scoped = await admission.scope(root);
+  const started = await admission.begin(root, 'packed-managed-intent');
+  let changedScope;
+  try { await admission.complete(root, 'packed-managed-intent', 'thr_packed_owned', { ...started, home: `${started.home}-foreign` }); }
+  catch (error) { changedScope = error; }
+  const completed = await admission.complete(root, 'packed-managed-intent', 'thr_packed_owned', started);
+  return all(same(scoped, expectedScope), same(started, expectedScope), same(completed, expectedScope),
+    same(Object.keys(admission).sort(), ['begin', 'complete', 'scope']),
+    same(changedScope?.message, 'Canonical owner workspace or store changed during admission'),
+    same(paths.every(executionPath => executionPath === host.workspaceRoot()), true));
 });
 
 await verdict('host integration: the runtime entry exports exactly the documented names', () =>

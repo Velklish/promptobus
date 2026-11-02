@@ -85,6 +85,7 @@ export type CommandBinding = Pick<Binding, 'task' | 'participant' | 'role' | 'pr
 export const launchSchema = z.object({
   attemptId: z.string().uuid(), assignment: z.string(), model: z.string(), reasoningLevel: reasoningSchema.optional(), baseBranch: z.string().optional(),
   environmentPath: z.string().min(1).optional(),
+  ownerScope: z.object({ root: z.string().min(1), home: z.string().min(1) }).strict().optional(),
   status: z.enum(['prepared', 'requested', 'recorded', 'ready', 'unknown']),
 }).strict();
 export const deliverySchema = z.object({

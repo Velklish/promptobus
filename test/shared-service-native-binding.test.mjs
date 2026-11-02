@@ -12,10 +12,10 @@ import { registryOf } from '../dist/index.js';
 import { mcpTools } from '../dist/mcp/tools.js';
 import { runWorkspaceService } from '../lib/service.js';
 import { registerServiceClient, revokeServiceClient, serviceControl } from '../lib/service-client.js';
-import { readDiscovery, readPrivate, requireProcess, runtimeIdentity, servicePaths, writePrivate } from '../lib/service-state.js';
+import { readDiscovery, readPrivate, recordVersion, requireProcess, runtimeIdentity, servicePaths, writePrivate } from '../lib/service-state.js';
 import { bus, createTask, participantRecord, readWake, strictTaskFacts, upsertParticipant } from '../lib/store.js';
 import { resolveSessionIdentity } from '../lib/drivers.js';
-import { sessionFile as codexSessionFile } from '../lib/codex-session.js';
+import { publishCodexNativeAdmission, readSession, sessionFile as codexSessionFile, writeSession } from '../lib/codex-session.js';
 import { REVIEW_FILE_TOOLS } from '../lib/reviewer-files.js';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 
@@ -30,13 +30,13 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
   const env = { ...process.env, PROMPTOBUS_SERVICE_HOME: privateHome, PROMPTOBUS_HOME: home,
     PROMPTOBUS_SERVICE_IDLE_MS: '60000', PROMPTOBUS_WARDEN: 'off' };
-  const options = { cwd: root, env }, clients = [], factories = [], validations = [], gates = new Map();
+  const options = { cwd: root, env }, clients = [], factories = [], validations = [], gates = new Map(), nativeApps = [];
   const originalSpawn = childProcess.spawn, originalReadFile = fsPromises.readFile;
   let birthGate = null;
   childProcess.spawn = function(command, args, ...rest) {
     const child = originalSpawn.call(this, command, args, ...rest);
     const held = birthGate;
-    if (held && command === 'ps' && args?.[0] === '-p' && args[1] === String(process.pid)) {
+    if (held && command === '/bin/ps' && JSON.stringify(args) === JSON.stringify(['-p', String(process.pid), '-o', 'stat=', '-o', 'lstart='])) {
       const emit = child.emit;
       child.emit = function(event, ...values) {
         if (event === 'close' && !held.entered) {
@@ -234,10 +234,24 @@ if (!['darwin', 'linux'].includes(process.platform)) {
     const managedAddress = 'worker:owned-native', managedRef = 'owned-native-launch';
     const managedRecord = codexSessionFile(managedRef, { ...env, PROMPTOBUS_CODEX_HOME: host.harnessStateHome('codex') });
     const managedProof = { kind: 'managed', task, address: managedAddress, ref: managedRef, record: managedRecord, launchId: 'owned-launch-one' };
+    const nativeStore = path.join(root, 'owned-native-store'); mkdirSync(nativeStore);
+    // This owned child models only the correlated thread/start API edge, not native CLI creation.
+    const app = childProcess.spawn(process.execPath, ['-e', "const {createInterface}=require('node:readline');\ncreateInterface({input:process.stdin}).once('line',line=>{\n  const request=JSON.parse(line);\n  if(request.id!==1||request.method!=='thread/start') throw new Error('Unexpected owned unit API request');\n  process.stdout.write(JSON.stringify({id:request.id,result:{thread:{id:process.argv[1]}}})+'\\n');\n});", nativeId], {
+      env: { ...process.env, CODEX_HOME: nativeStore }, stdio: ['pipe', 'pipe', 'inherit'],
+    });
+    nativeApps.push(app);
+    const reply = new Promise((resolve, reject) => { app.once('error', reject); app.stdout.once('data', bytes => resolve(JSON.parse(String(bytes)))); });
+    app.stdin.write(`${JSON.stringify({ id: 1, method: 'thread/start', params: {} })}\n`);
+    const nativeStarted = await reply;
+    if (nativeStarted.id !== 1 || nativeStarted.result?.thread?.id !== nativeId) throw new Error('Owned unit thread/start response did not correlate');
+    const appProcess = requireProcess(app.pid);
     const launch = { ref: managedRef, home, task, address: managedAddress, threadId: nativeId, launchId: managedProof.launchId,
-      holderPid: process.pid, state: 'idle', rpcSocket: path.join(root, 'owned-native.sock'), turns: 3 };
-    mkdirSync(path.dirname(managedRecord), { recursive: true });
-    writeFileSync(managedRecord, JSON.stringify(launch));
+      holderPid: process.pid, holderProcess: requireProcess(), appPid: app.pid, appProcess, nativeAdmissionSchema: 1,
+      codexHome: nativeStore, state: 'idle', rpcSocket: path.join(root, 'owned-native.sock'), turns: 3 };
+    const codexEnv = { ...env, PROMPTOBUS_CODEX_HOME: host.harnessStateHome('codex') };
+    writeSession(launch, codexEnv);
+    publishCodexNativeAdmission(managedRef, { version: recordVersion(managedRecord), launchId: managedProof.launchId,
+      home, task, address: managedAddress, nativeStore, nativeId, process: appProcess, method: 'thread/start' }, codexEnv);
     upsertParticipant(home, task, participantRecord(managedAddress, { harness: 'codex', sessionRef: managedRef, sessionId: nativeId,
       sessionRecord: managedRecord, nativeLaunchId: managedProof.launchId }));
     const managed = await register({ PROMPTOBUS_ROLE: managedAddress }, readRoot, managedProof);
@@ -245,7 +259,8 @@ if (!['darwin', 'linux'].includes(process.platform)) {
     const managedRoute = await initialize(managed);
     check('pending managed discovery does not join or hand over a contact point', factories.length === managedFactories
       && state() === managedBefore && readWake(home, task, managedAddress) === null);
-    await realize(managed, nativeId);
+    const managedRealized = await realize(managed, nativeId);
+    if (managedRealized.error) throw new Error(`Owned managed realization refused: ${managedRealized.error}`);
     const managedPage = await tool(managed, managedRoute, 'promptobus_task');
     const managedActor = factories.at(-1), wake = readWake(home, task, managedAddress);
     check('managed native context derives its owned launch record from lifetime proof and keeps the exact bound thread', managedActor?.env.CODEX_THREAD_ID === nativeId
@@ -253,9 +268,10 @@ if (!['darwin', 'linux'].includes(process.platform)) {
     check('ordinary owned Codex bus join hands over the matching managed launch contact point', managedPage.status === 200 && !managedPage.json.result?.isError
       && wake?.session === nativeId && wake.socket === `${launch.rpcSocket}#3`, JSON.stringify(wake));
     const managedState = state();
-    writeFileSync(managedRecord, JSON.stringify({ ...launch, launchId: 'replaced-launch' }));
+    const publishedLaunch = readSession(managedRef, codexEnv);
+    writeFileSync(managedRecord, JSON.stringify({ ...publishedLaunch, launchId: 'replaced-launch' }));
     const managedReplaced = await tool(managed, managedRoute, 'promptobus_send', { to: 'orchestrator', type: 'status', body: 'replaced managed launch must not commit' });
-    writeFileSync(managedRecord, JSON.stringify(launch));
+    writeFileSync(managedRecord, JSON.stringify(publishedLaunch));
     check('replaced managed lifetime proof refuses even with matching native metadata and cached context', managedReplaced.status === 401
       && state() === managedState, managedReplaced.text);
     for (const [name, replace] of [['revoked', false], ['replaced', true]]) {
@@ -336,6 +352,10 @@ if (!['darwin', 'linux'].includes(process.platform)) {
     }
     if (!serviceError) await owner({ operation: 'stop' });
     await service;
+    for (const app of nativeApps) {
+      if (app.exitCode !== null) continue;
+      const closed = new Promise(resolve => app.once('close', resolve)); app.stdin.end(); await closed;
+    }
     rmSync(privateHome, { recursive: true, force: true });
   }
   if (serviceError) throw serviceError;

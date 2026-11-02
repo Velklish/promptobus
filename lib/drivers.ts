@@ -1,14 +1,18 @@
 import path from 'node:path';
-import { APPROVER, hasFeature, harnessOf, holdsSession, snapshotSessions } from '../dist/index.js';
-import { bindSessionIdentity, canonicalPath, participantOf, readTask } from './store.js';
+import { APPROVER, hasFeature, harnessOf, holdsSession, sessionRefOf, snapshotSessions } from '../dist/index.js';
+import { bindSessionIdentity, canonicalPath, GateError, participantOf, readTask, taskExists, upsertParticipant, withTaskLock, writeJsonAtomic } from './store.js';
 import { readRecordAt } from './driver-common.js';
+import { processState, readPrivate, recordOf, recordVersion, sameRecordVersion } from './service-state.js';
+import { isDeepStrictEqual } from 'node:util';
+import type { ProcessIdentity, RecordVersion } from './service-state.js';
+import { realpathSync } from 'node:fs';
 import { CLAUDE, CLAUDE_SKILLS_REL, REPORTER_DENY, SESSION_RECORD_VAR, claudeDriver } from './driver-claude.js';
 import { CURSOR, CURSOR_SKILLS_REL, cursorDriver } from './driver-cursor.js';
 import { CODEX, CODEX_SKILLS_REL, codexDriver } from './driver-codex.js';
 import { OPENCODE, opencodeDriver } from './driver-opencode.js';
 import { verdict } from './model-routing/adapter-common.js';
 import { createLibRegistry as createRegistry, libDriverFor as driverFor, coreDriver, coreRegistry } from './driver-runtime.js';
-import type { LibDriver } from './driver-runtime.js';
+import type { LibDriver, LibLaunchPlan, LibMcpServer } from './driver-runtime.js';
 import type { ActivationTarget, ActivateResult, Notification, ParticipantV1, PromptobusHost, StalledParticipant } from '../dist/index.js';
 
 interface IdentityScope { home: string; task: string | null; address: string | null }
@@ -28,6 +32,87 @@ export const REGISTRY = createRegistry({
   fallback: CLAUDE,
 });
 export { REPORTER_DENY };
+
+export function replaceManagedMcpServers(driver: LibDriver, launch: LibLaunchPlan, servers: Record<string, LibMcpServer>): void {
+  if (!driver.replaceMcpServers) throw new Error('Harness cannot replace its prepared MCP configuration');
+  driver.replaceMcpServers(launch, servers);
+}
+
+export interface ManagedNativeStart {
+  harness: 'claude' | 'cursor' | 'codex' | 'opencode';
+  home: string; task: string; address: string; ref: string; record: string; launchId: string; nativeId: string;
+  deferTaskBinding?: boolean;
+  transcript?: unknown;
+  nativeProcessEvidence?: { version: RecordVersion; process: ProcessIdentity; executable: RecordVersion };
+  nativeProof?: { version: RecordVersion;
+    binding: { harness: 'claude'; nativeStore: string; nativeId: string; process: ProcessIdentity };
+    evidence: { kind: 'native-session-start'; source: 'startup'; nativeStore: string; nativeId: string;
+      process: ProcessIdentity; transcript: string; executable: RecordVersion } };
+}
+
+export function bindManagedNativeStart(input: ManagedNativeStart): { published: boolean } {
+  const { harness, home, task, address, ref, record: file, launchId, nativeId, deferTaskBinding = false } = input;
+  if (!/^\S+$/u.test(nativeId) || !path.isAbsolute(file)) throw new GateError('Managed native start has no owned native identity');
+  const bind = () => {
+    const version = recordVersion(file);
+    const record = readPrivate(file);
+    if (!recordOf(record) || typeof record.home !== 'string' || canonicalPath(record.home) !== canonicalPath(home)
+      || record.task !== task || record.address !== address || record.ref !== ref || record.launchId !== launchId) {
+      throw new GateError('Managed native start does not match its owned launch record');
+    }
+    const meta = taskExists(home, task) ? readTask(home, task) : null;
+    if (meta && meta.status !== 'active') throw new GateError('Managed native start task is not active');
+    const participant = meta ? participantOf(meta, address) : null;
+    const published = participant?.harness === harness && sessionRefOf(participant) === ref
+      && participant.metadata.sessionRecord === file
+      && (!deferTaskBinding || participant.metadata.sessionId === nativeId);
+    if (!published && !deferTaskBinding) throw new GateError('Managed native start has no matching published participant');
+    const idField = driverByHarness(harness).options.mcpIdentity?.idField ?? 'sessionId';
+    const nativeProof = input.nativeProof;
+    const observed = input.nativeProcessEvidence;
+    if (observed && (harness !== 'cursor' || observed.version.file !== file || !sameRecordVersion(observed.version)
+      || !recordOf(record.nativeCommand) || !isDeepStrictEqual(record.nativeCommand.executable, observed.executable)
+      || !sameRecordVersion(observed.executable) || processState(observed.process) !== 'alive')) {
+      throw new GateError('Cursor hook physical process evidence changed its exact owned generation');
+    }
+    if (nativeProof && (harness !== 'claude' || nativeProof.binding.harness !== harness || nativeProof.binding.nativeId !== nativeId
+      || !sameRecordVersion(nativeProof.version) || nativeProof.version.file !== file
+      || !sameRecordVersion(nativeProof.evidence.executable) || processState(nativeProof.binding.process) !== 'alive'
+      || !recordOf(record.nativeCommand) || !isDeepStrictEqual(record.nativeCommand.executable, nativeProof.evidence.executable)
+      || (record.nativeAdmission !== undefined && !isDeepStrictEqual(record.nativeAdmission, nativeProof.binding)))) {
+      throw new GateError('Managed native proof changed its owned record, executable or process generation');
+    }
+    if (record[idField] && record[idField] !== nativeId) {
+      throw new GateError('Managed native start disagrees with the owned native identity');
+    }
+    if (harness === 'codex' || harness === 'opencode') {
+      if (record[idField] !== nativeId) throw new GateError('Managed native start precedes the owned native API binding');
+    } else {
+      let transcript: string | null = null;
+      if (typeof input.transcript === 'string' && path.isAbsolute(input.transcript)) {
+        try { transcript = realpathSync(input.transcript); } catch { /* A missing transcript is not native-store proof. */ }
+      }
+      const previousStart = recordOf(record.nativeStartEvidence) ? record.nativeStartEvidence : null;
+      if (harness === 'claude' && input.transcript === undefined && previousStart?.kind === 'native-hook'
+        && previousStart.harness === harness && previousStart.nativeId === nativeId && typeof previousStart.transcript === 'string') {
+        transcript = previousStart.transcript;
+      }
+      if (!sameRecordVersion(version)) throw new GateError('Managed native start record changed before publication');
+      const next: Record<string, unknown> = { ...record, [idField]: nativeId, boundAt: record.boundAt ?? new Date().toISOString(),
+        nativeStartEvidence: { kind: 'native-hook', harness, nativeId, transcript, ...(observed ? { process: observed.process } : {}) },
+        ...(nativeProof ? { nativeAdmission: nativeProof.binding, nativeAdmissionEvidence: nativeProof.evidence } : {}),
+        ...(!record.nativeAdmission && !nativeProof ? { nativeAdmissionUnknown: { harness, nativeId,
+          reason: 'actual native store and process birth require owned launch readback' } } : {}) };
+      if (nativeProof) delete next.nativeAdmissionUnknown;
+      if (!isDeepStrictEqual(record, next)) writeJsonAtomic(file, next, { mode: 0o600 });
+      if (published && participant!.metadata.sessionId !== nativeId) {
+        upsertParticipant(home, task, { ...participant!, metadata: { ...participant!.metadata, sessionId: nativeId } });
+      }
+    }
+    return { published };
+  };
+  return taskExists(home, task) ? withTaskLock(home, task, bind) : bind();
+}
 
 /** Availability adapter of a harness — the one door from the routing preflight to drivers.
  * No adapter means `unknown` / `probe_failed`, which the resolver penalises, never blocks. */

@@ -10,7 +10,10 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { captureSplit } from './console.mjs';
-import { makeSandbox, resetCliCaches, stubCommand, withStubPath, writeHostConfig } from './sandbox.mjs';
+import { makeSandbox, ownedServiceFixture, resetCliCaches, stubCommand, withStubPath, writeHostConfig } from './sandbox.mjs';
+
+ownedServiceFixture();
+mkdirSync(process.env.CLAUDE_CONFIG_DIR, { recursive: true });
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = path.join(ROOT, 'bin', 'promptobus.js');
@@ -185,14 +188,18 @@ if (args[0] === '--version') { process.stdout.write('2.1.280\\n'); process.exit(
 if (args[0] === '--bg') {
   const name = args[args.indexOf('--name') + 1];
   appendFileSync(${JSON.stringify(launched)}, JSON.stringify(args) + '\\n');
-  const names = existsSync(${JSON.stringify(live)}) ? JSON.parse(readFileSync(${JSON.stringify(live)}, 'utf8')) : [];
-  writeFileSync(${JSON.stringify(live)}, JSON.stringify([...names, name]));
-  process.stdout.write('backgrounded · cafe34 · ' + name + '\\n');
+  const nativeId = args[args.indexOf('--session-id') + 1];
+  const sessions = existsSync(${JSON.stringify(live)}) ? JSON.parse(readFileSync(${JSON.stringify(live)}, 'utf8')) : [];
+  writeFileSync(${JSON.stringify(live)}, JSON.stringify([...sessions.filter(row => row.name !== name),
+    { id: nativeId, sessionId: nativeId, name, status: 'running', pid: ${process.pid} }]));
+  const { publishOwnedClaudeFixtureStart } = await import(${JSON.stringify(new URL('./harness.mjs', import.meta.url).href)});
+  await publishOwnedClaudeFixtureStart({ nativeId: nativeId, argv: args, pid: ${process.pid} });
+  process.stdout.write('backgrounded · ' + nativeId + ' · ' + name + '\\n');
   process.exit(0);
 }
 if (args[0] === 'agents') {
   const names = existsSync(${JSON.stringify(live)}) ? JSON.parse(readFileSync(${JSON.stringify(live)}, 'utf8')) : [];
-  process.stdout.write(JSON.stringify(names.map((name, i) => ({ id: 'sess-' + i, name, status: 'running' }))));
+  process.stdout.write(JSON.stringify(names));
   process.exit(0);
 }
 process.exit(0);`);

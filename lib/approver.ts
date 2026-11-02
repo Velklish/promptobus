@@ -1,3 +1,4 @@
+import { finalizeManagedServiceLaunch, revokeFailedManagedLaunch } from './service-launch.js';
 import { persistLegacyParticipant, persistNativeParticipant, releaseNativeReservation, reserveNativeParticipant } from './native-lifecycle.js';
 import { renderApproverInstructions } from './prompts/roles.js';
 import { createHash } from 'node:crypto';
@@ -17,7 +18,7 @@ import {
   contactsSection, dryRunToolNote, guardHookNote, keepBrief, liftHarness, machineName, memoryRule, mcpNote, mcpServerLines,
   normalizeLaunchTool, optionRefusal, participantMcp, participantPluginDir, participantSkillsRoot, PROMPTOBUS_SERVER,
   readBrief, repoGenerator, repoSkillsLine, runRepoGenerator, sayRepoSkills, sayWorktreeDeps, withToolVersion,
-  resolveEffort, resolvePermissionMode, sayMcp, sayModule, sayTool, sessionEnv, sessionEnvNote,
+  resolveEffort, resolvePermissionMode, sayMcp, sayModule, sayTool, sessionEnvNote,
   sessionName, skillSettings, skillsNote, toolName, worktreeDepsLine, writeLaunchFiles,
 } from './spawn.js';
 import { participantSession } from './status.js';
@@ -76,7 +77,7 @@ export interface ApproverPlan {
   guardCommand: string; mcpConfigPath: string; mcpNote: ReturnType<typeof mcpNote>; launch: LibLaunchPlan; argv: string[];
   mcpConfig: unknown; settings: unknown; model: string; effort: string | null; permissionMode: string | null;
   driver: LibDriver; refusal: string | null; routing: RoutedLift['metadata'] | null; decision: RoutedLift['decision'] | null;
-  routingSkipped: string | null; env: NodeJS.ProcessEnv; repoSkills: RepoSkillsState; worktreeDeps: WorktreeDepsState;
+  routingSkipped: string | null; env: NodeJS.ProcessEnv; commonEnv: NodeJS.ProcessEnv; repoSkills: RepoSkillsState; worktreeDeps: WorktreeDepsState;
   rebuild(repoSkills?: RepoSkillsState, worktreeDeps?: WorktreeDepsState): { prompt: string; launch: LibLaunchPlan };
   host: PromptobusHost;
 }
@@ -364,7 +365,8 @@ export function planApprover(rootOrHost: unknown, {
     launch.prompt = prompt;
     return { prompt, launch };
   };
-  const liftEnv = sessionEnv(driver, process.env, host);
+  const commonEnv = { ...process.env, ...host.extraEnv() };
+  const liftEnv = driver.sessionEnv(commonEnv);
   const { prompt, launch } = buildLaunch();
   driver.refuseForeignProjectLayer?.(cloneRoot, worktreePath, null, guardCommand);
   return {
@@ -378,7 +380,7 @@ export function planApprover(rootOrHost: unknown, {
     model: resolvedModel, effort, permissionMode, driver,
     refusal: harnessRefusal ?? deny.refusal,
     routing: routed?.metadata ?? null, decision: routed?.decision ?? null, routingSkipped,
-    env: liftEnv, repoSkills: plannedSkills, worktreeDeps: plannedDeps, rebuild: buildLaunch,
+    env: liftEnv, commonEnv, repoSkills: plannedSkills, worktreeDeps: plannedDeps, rebuild: buildLaunch,
     host,
   };
 }
@@ -597,6 +599,10 @@ export async function approverLift(rootOrHost: unknown, opts: ApproverOptions): 
     plan.worktreeDeps = worktreeDeps;
     plan.driver.refuseForeignProjectLayer?.(plan.worktreePath, plan.worktreePath, null, plan.guardCommand);
     approverLayer(plan.launch, plan.worktreePath, priorLayer);
+    plan.env = (await finalizeManagedServiceLaunch(plan.host, {
+      ...plan, task: plan.taskId, ref: plan.name, cwd: plan.worktreePath,
+    })).env;
+    plan.mcpConfig = plan.launch.mcpConfig;
     writeLaunchFiles(plan.launch.files, plan.driver.options.launchDirs);
     record = {
       ...record,
@@ -610,9 +616,9 @@ export async function approverLift(rootOrHost: unknown, opts: ApproverOptions): 
     });
     else persistLegacyParticipant(plan.home, plan.taskId, record);
   } catch (error) {
-    try { if (reserved) releaseNativeReservation(plan.home, plan.taskId, reserved.record); }
-    catch (releaseError) { warn('native reservation release refused: ' + (releaseError as Error).message); }
-    throw error;
+    return revokeFailedManagedLaunch(plan.launch, error, () => {
+      if (reserved) releaseNativeReservation(plan.home, plan.taskId, reserved.record);
+    });
   }
 
   const { output, session, seen } = await plan.driver.spawn!(plan.launch, {
@@ -646,7 +652,7 @@ export async function approverLift(rootOrHost: unknown, opts: ApproverOptions): 
       });
     },
     awaitOptions: opts.awaitOptions,
-  });
+  }).catch(error => revokeFailedManagedLaunch(plan.launch, error));
   ok(`approver ${plan.address} started in ${plan.nsPath}${session ? ` (session ${session})` : ''}`);
   await ensureWarden(plan.home, plan.taskId, { host: plan.host });
   if (plan.brief) keepBrief(plan as ApproverPlan & { brief: string });

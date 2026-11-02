@@ -18,12 +18,16 @@ import { check } from './check.mjs';
 import { commandReceipts, readStopConfirmation } from '../lib/codex-command-receipts.js';
 import { codexStateHome, sessionKey } from '../lib/codex-session.js';
 import { retainNativeStop } from '../lib/native-lifecycle.js';
-import { stubCommand, writeHostConfig } from './sandbox.mjs';
+import { ownedServiceFixture, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture, expectThrow } from './console.mjs';
+import { shellQuote } from '../lib/util.js';
 import {
   ATTACHMENT_CONTRACT, GATE_LINE_COUNTS, GATE_LINE_VERIFICATION,
   GATE_RECORD_SCHEMA, HANDOVER_CHECKS, HANDOVER_RECORD_SCHEMA, RESULT_BODY_MAX,
 } from '../lib/handoff.js';
+
+ownedServiceFixture();
+mkdirSync(process.env.CLAUDE_CONFIG_DIR, { recursive: true });
 
 function rulesBlock(text, role, expectedFiles) {
   const lines = String(text).split('\n');
@@ -726,14 +730,21 @@ const BG_ARGV = path.join(SB, 'bg-argv.txt');
 // (`claudeSays`, `claudeFails`) resets the previous raise — otherwise it would carry
 // over into the next branch of the test.
 const BG_RAISED = path.join(SB, 'bg-raised.txt');
-const claudeStub = (body) => {
+const BG_NATIVE_ID = path.join(SB, 'bg-native-id.txt');
+const claudeStub = (body, succeeds = true) => {
   stubCommand(BIN, 'claude', `import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 if (args[0] === '--bg') {
   writeFileSync(${JSON.stringify(BG_ARGV)}, args.join('\\n'));
   // STUB_SILENT_FAIL — a silent daemon failure: "backgrounded", code 0, no session.
   // Observed live and is the sole reason the raise check was set up at all.
-  if (!process.env.STUB_SILENT_FAIL) writeFileSync(${JSON.stringify(BG_RAISED)}, args[args.indexOf('--name') + 1] ?? '');
+  if (!process.env.STUB_SILENT_FAIL && !process.env.STUB_HIDE_SESSION) writeFileSync(${JSON.stringify(BG_RAISED)}, args[args.indexOf('--name') + 1] ?? '');
+  if (${succeeds} && !process.env.STUB_SILENT_FAIL && !process.env.STUB_GHOST) {
+    const nativeId = args[args.indexOf('--session-id') + 1];
+    writeFileSync(${JSON.stringify(BG_NATIVE_ID)}, nativeId);
+  const { publishOwnedClaudeFixtureStart } = await import(${JSON.stringify(new URL('./harness.mjs', import.meta.url).href)});
+  await publishOwnedClaudeFixtureStart({ nativeId: nativeId, argv: args, pid: ${process.pid} });
+  }
 }
 if (args[0] === 'agents' && existsSync(${JSON.stringify(BG_RAISED)})) {
   const raised = readFileSync(${JSON.stringify(BG_RAISED)}, 'utf8');
@@ -742,7 +753,7 @@ if (args[0] === 'agents' && existsSync(${JSON.stringify(BG_RAISED)})) {
   // (sessionLiveness self-calibration).
   process.stdout.write(JSON.stringify(process.env.STUB_GHOST
     ? [{ id: 'ghost1', name: raised, state: 'blocked' }, { id: 'alive9', name: 'Worker: foreign', pid: 4242 }]
-    : [{ id: 'sess-live', name: raised, status: 'running' }]));
+    : [{ id: 'sess-live', name: raised, status: 'running', sessionId: readFileSync(${JSON.stringify(BG_NATIVE_ID)}, 'utf8') }]));
   process.exit(0);
 }
 ${body}`);
@@ -750,7 +761,7 @@ ${body}`);
   process.env.PATH = `${BIN}${path.delimiter}${PATH0}`;
 };
 const claudeSays = (out) => claudeStub(`process.stdout.write(${JSON.stringify(out)});`);
-const claudeFails = () => claudeStub('process.exit(1);');
+const claudeFails = () => claudeStub('process.exit(1);', false);
 const bgArgv = () => (existsSync(BG_ARGV) ? readFileSync(BG_ARGV, 'utf8') : '');
 
 const home = path.join(WS, '.promptobus');
@@ -877,7 +888,8 @@ check('dry-run on a record before launch: says the reviewer was not raised, not 
 // silently raise a second reviewer onto the live session: a bug mirroring the one just
 // closed (second review-round note).
 claudeSays('[]');
-await capture(() => review(WS, { tool: TOOL, target: REPO, task: pendingTask.id }));
+let relaunchedPlan;
+await capture(async () => { relaunchedPlan = await review(WS, { tool: TOOL, target: REPO, task: pendingTask.id }); });
 const relaunched = store.participantOf(store.readTask(home, pendingTask.id), 'reviewer:orders-api')?.metadata;
 check(`: a successful launch clears pending — the record becomes an ordinary reviewer`,
   !!relaunched && !('pending' in relaunched) && typeof relaunched.assignmentAfterId === 'string', JSON.stringify(relaunched));
@@ -897,8 +909,12 @@ check(`: the reviewer's settings carry the loop-warden Stop hook — the same co
   reviewerGuard?.type === 'command'
   && reviewerGuard?.command === guardHookCommand(hostOf(WS), reviewerIdentity),
   JSON.stringify(reviewerSettings.hooks ?? null));
-check(`no SessionStart is placed on the participant — the detector looks at the workspace root`,
-  reviewerSettings.hooks?.SessionStart === undefined,
+check(`the reviewer's SessionStart carries its scoped guard and exact owned service credential`,
+  reviewerSettings.hooks?.SessionStart?.length === 1 && reviewerSettings.hooks.SessionStart[0].hooks?.length === 1
+  && reviewerSettings.hooks.SessionStart[0].hooks[0].type === 'command'
+  && reviewerSettings.hooks.SessionStart[0].hooks[0].command === guardHookCommand(hostOf(WS), reviewerIdentity)
+    + ' ' + ['--client-file', relaunchedPlan.env.PROMPTOBUS_CLIENT_FILE,
+      '--service-home', relaunchedPlan.env.PROMPTOBUS_SERVICE_HOME].map(shellQuote).join(' '),
   JSON.stringify(reviewerSettings.hooks ?? null));
 // : the address in the hook command is the reviewer's, not the worker's. This is
 // exactly what used to drift while the identity came from the environment: two
@@ -1395,11 +1411,11 @@ const unverifiedTask = store.createTask(home, { id: 't20260829-103000', title: '
 // non-zero code, and the fake doesn't set the raise mark — otherwise the check would
 // see it instead of the unparsed list.
 claudeStub("if (args[0] === 'agents') process.exit(1);\nprocess.stdout.write('backgrounded · abc123');");
-process.env.STUB_SILENT_FAIL = '1';
+process.env.STUB_HIDE_SESSION = '1';
 const unverified = await capture(() => review(WS, {
   tool: TOOL, target: REPO, task: unverifiedTask.id, awaitOptions: { tries: 2, delayMs: 1 },
 }));
-delete process.env.STUB_SILENT_FAIL;
+delete process.env.STUB_HIDE_SESSION;
 check(': the session list isn\'t parsed — not a refusal, but an unconfirmed state named out loud',
   /reviewer reviewer:orders-api started/.test(unverified)
   && /lift of session .* is not confirmed/.test(unverified), unverified);
@@ -1409,7 +1425,7 @@ claudeStub("if (args[0] === 'agents') process.exit(1);\nprocess.stdout.write('ba
 const unboundTask = store.createTask(home, { id: 't20260926-110000', title: 'a review without a session id' });
 const unboundLift = liftoffRun(
   { target: REPO, task: unboundTask.id, awaitOptions: { tries: 2, delayMs: 1 } },
-  { STUB_SILENT_FAIL: '1' },
+  { STUB_HIDE_SESSION: '1' },
 );
 const unboundPart = store.participantOf(store.readTask(home, unboundTask.id), 'reviewer:orders-api')?.metadata;
 const unboundSend = expectThrow(() => store.senderFor(home, unboundTask.id, {
@@ -2825,6 +2841,10 @@ const args = process.argv.slice(2);
 if (args[0] === '--bg') {
   writeFileSync(${JSON.stringify(ALT_ARGV)}, args.join(' '));
   writeFileSync(${JSON.stringify(BG_RAISED)}, args[args.indexOf('--name') + 1] ?? '');
+  const nativeId = args[args.indexOf('--session-id') + 1];
+  writeFileSync(${JSON.stringify(BG_NATIVE_ID)}, nativeId);
+  const { publishOwnedClaudeFixtureStart } = await import(${JSON.stringify(new URL('./harness.mjs', import.meta.url).href)});
+  await publishOwnedClaudeFixtureStart({ nativeId: nativeId, argv: args, pid: ${process.pid} });
 }
 process.stdout.write('[]');`);
 const ALT_BIN = path.join(ALT, process.platform === 'win32' ? 'claude.cmd' : 'claude');

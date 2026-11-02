@@ -3,8 +3,9 @@ import { lstatSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { openEngine } from 'promptobus';
 import { createStandaloneHost } from 'promptobus/host';
-import { createBbHostIntegration } from 'promptobus/bb-host';
+import { createBbHostIntegration, createBbManagedAdmission } from 'promptobus/bb-host';
 import type { BbHostIntegration } from 'promptobus/bb-host';
+import type { PromptobusHost } from 'promptobus';
 import type { Binding } from './protocol.js';
 import { reviewerFiles } from 'promptobus/bb-reviewer';
 import { hostContract } from './contract.js';
@@ -17,8 +18,24 @@ function participantTask(b: Binding) {
   return b.contextPurpose ? { task: { id: b.task, purpose: b.contextPurpose, ...(b.contextDeclaration ? { context: b.contextDeclaration } : {}) } } : {};
 }
 
-export function createHostEntry(integration: BbHostIntegration = createBbHostIntegration({ resolveHost: root => createStandaloneHost({ cwd: root }) })) {
+export function createHostEntry(integration?: BbHostIntegration, resolveOwnerHost?: (root: string) => PromptobusHost | Promise<PromptobusHost>) {
+  const standalone = (root: string) => createStandaloneHost({ cwd: root });
+  const selected = integration ?? createBbHostIntegration({ resolveHost: standalone });
+  const ownerResolver = resolveOwnerHost ?? (integration ? undefined : standalone);
+  const admission = () => {
+    if (!ownerResolver) throw new Error('A canonical owner Host resolver is required for BB root admission');
+    return createBbManagedAdmission(ownerResolver);
+  };
   return experimental_defineHostEntry({ contract: hostContract, handlers: {
+    rootScope: async ({ root }, context) => {
+      context.signal.throwIfAborted();
+      return admission().scope(root);
+    },
+    rootLaunch: async (input, context) => {
+      context.signal.throwIfAborted();
+      return input.operation === 'begin' ? admission().begin(input.root, input.intent)
+        : admission().complete(input.root, input.intent, input.threadId, input.ownerScope);
+    },
     runtimeDescribe: async (_input, context) => {
       context.signal.throwIfAborted();
       return { identity: BUILD_IDENTITY };
@@ -44,22 +61,22 @@ export function createHostEntry(integration: BbHostIntegration = createBbHostInt
     engine: async (input, context) => {
       context.signal.throwIfAborted();
       const result = await engineOperation(input);
-      if (input.operation === 'step') await integration.checkStep({ ...result as Parameters<BbHostIntegration['checkStep']>[0], signal: context.signal });
+      if (input.operation === 'step') await selected.checkStep({ ...result as Parameters<BbHostIntegration['checkStep']>[0], signal: context.signal });
       return result;
     },
-    prepareContext: async ({ binding: b }, context) => integration.prepare({ root: b.environmentPath, role: b.role,
+    prepareContext: async ({ binding: b }, context) => selected.prepare({ root: b.environmentPath, role: b.role,
       ...participantTask(b), signal: context.signal }),
     hostContext: async ({ binding: b, args }, context) => {
       context.signal.throwIfAborted();
       await engineOperation({ binding: b, operation: 'check' });
       const input = { root: b.environmentPath, role: b.role, preparedContext: b.hostContext,
         ...participantTask(b), signal: context.signal };
-      return args.mode === 'inspect' ? integration.collect(input) : integration.read({ ...input, ...args });
+      return args.mode === 'inspect' ? selected.collect(input) : selected.read({ ...input, ...args });
     },
     canonical: async ({ binding: b, args }, context) => {
       context.signal.throwIfAborted();
       await engineOperation({ binding: b, operation: 'check' });
-      return integration.invoke({ root: b.environmentPath, role: b.role, ...args, preparedContext: b.hostContext,
+      return selected.invoke({ root: b.environmentPath, role: b.role, ...args, preparedContext: b.hostContext,
         ...participantTask(b),
         actor: { task: b.task, participant: b.participant }, signal: context.signal });
     },

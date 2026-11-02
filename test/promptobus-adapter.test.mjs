@@ -1063,6 +1063,9 @@ for (const [rel, file] of adapterFiles) {
     if (rel === sourceRel('lib/bb-reviewer.js') && statement === "import { CodexRpc } from './codex-rpc.js'") continue;
     if (rel === sourceRel('lib/report-channel.js') && statement === "import { holderAlive, holderAsk, readSession } from './codex-session.js'") continue;
     if (rel === sourceRel('lib/native-lifecycle.js') && statement === "import { codexStateHome, pidAlive, sessionFile, sessionKey, sessionsDir, withSessionLaunch } from './codex-session.js'") continue;
+    // Private owner resume and installed owner hook status retain their existing native seams.
+    if (rel === sourceRel('lib/lead.js') && statement === "import { managedCodexResumeDeath, readSession } from './codex-session.js'") continue;
+    if (rel === sourceRel('bin/promptobus-bb-root.js') && statement.trim() === "const { CodexRpc } = await import('../lib/codex-rpc.js'") continue;
     crossings.push(`${rel} → ${m[2]} (line ${text.slice(0, m.index).split('\n').length})`);
   }
 }

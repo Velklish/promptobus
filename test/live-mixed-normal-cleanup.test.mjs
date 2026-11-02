@@ -19,7 +19,7 @@ async function runCase(unread) {
   const label = unread ? 'mixed normal unknown' : 'mixed normal failure';
   const SB = makeSandbox('promptobus-promptobus-mixed-normal-cleanup-');
   const binDir = path.join(SB, 'bin');
-  const cursorHarness = await cursorStub.installHarness({ binDir });
+  const cursorHarness = await cursorStub.installHarness({ binDir, bundledRuntime: true });
   const codexHarness = await codexStub.installHarness({ binDir });
   const mechanism = path.join(SB, 'mechanism');
   for (const name of ['bin', 'dist', 'lib', 'models', 'schemas', 'skills', 'scripts', 'test', 'package.json']) {

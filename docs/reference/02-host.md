@@ -332,6 +332,14 @@ The spawn path chooses a readable participant session name from the work-slice t
 
 ## Session identity
 
+The command and stdio identity rules in this section remain separate from
+[managed HTTP admission](#managed-http-launch-environment). The README states
+the tool-access boundary:
+
+<!-- quote:../../README.md -->
+Managed participant HTTP tools require the owner-realized actual native ID; a planned UUID or session-record pointer alone grants no tool access.
+<!-- /quote -->
+
 At the native child boundary, all four drivers remove inherited `BB_THREAD_ID`,
 `BB_ENVIRONMENT_ID`, `BB_PROJECT_ID` and `BB_THREAD_STORAGE` using the shared
 `PARENT_SESSION_ENV` list. These identify the parent, not the child.
@@ -431,7 +439,9 @@ A host that embeds the bus renders its own install, diagnoses its workspace and 
 | `INSTALL_TARGETS` | — | `{ claude, cursor, codex }`, each `{ hooksRel, skillsRel }`: where `install` writes that harness's hook file and the package skills, relative to the project root, with the platform's separator. |
 | `SKILL_OWNERSHIP_MARKER` | — | The line that marks a skill file the package wrote. |
 | `packageSkills()` | — | The shipped skills sorted by name, `{ name, files: { rel, abs, buffer, text }[] }[]`. A missing or empty skills directory, or a symlink in it, throws `GateError`. |
-| `planHookInstall(host, root, harnesses)` | A host with `nodePath`, `guardArgv`, `busHookRel` and `installManifestRel`; the project root; the harnesses to install for | `{ writes, owned, ownedSkills, unproven }`, below. |
+| `planHookInstall(host, root, harnesses, options?)` | A host with `nodePath`, `guardArgv`, `busHookRel` and `installManifestRel`; the project root; the harnesses to install for; optional `{ rootProfile }` from the approval below | `{ writes, owned, ownedSkills, unproven }`, below. |
+| `approveCodexRootProfile(host, { id, nativeStore }, env?)` | A full owner Host, a scoped profile ID and an absolute native account-session directory; `process.env` when omitted | A promise of `{ profile, root, home, busUrl, server, startHook, execPlanCommand }`, scoped to the canonical workspace, store and runtime. Approves private owner state and ensures the service. `server` contains an HTTP URL and headers-helper command; `startHook` is the ordered command; `execPlanCommand` is the owner-preflight command prefix. No bearer is returned. See [BB Codex root profiles](#bb-codex-root-profiles). |
+| `approveStandaloneRootProfile(host, { id, harness, nativeStore, executable }, env?)` | A full owner Host, scoped profile ID, `codex` or `claude`, absolute native store and direct native executable | An additive process-owned profile descriptor with `mode: 'standalone'`, `harness`, canonical scope, HTTP `server`, ordered `startHook` and `execPlanCommand`. It returns references without a bearer; see [standalone root profiles](#standalone-root-profiles). |
 | `routingDiagnosis(host, { now? })` | A full host; the clock, `Date.now()` when omitted | A promise of the routing report, below. |
 
 ### `planHookInstall`: what `install` would write, without writing
@@ -446,6 +456,15 @@ A host that embeds the bus renders its own install, diagnoses its workspace and 
 `owned` and `ownedSkills` give, for each of the three harnesses, the hook group ids and the skill files the package owns after the plan. The plan reads both fields from the JSON at `installManifestRel()` to recognise what an earlier install wrote, so a host that applies the plan itself keeps them there. `unproven` names the Cursor hook events the planned file holds that are known from one Cursor build's inventory and were never seen firing; `install` prints them as a warning.
 
 A hook file that is not a JSON object, an unknown Cursor hook event and a skill file on disk that the package does not own each throw `GateError` before anything is written. The plan does not write the `harnesses` field of the host file or the install manifest: `promptobus install` writes those, and a host that applies the plan records the same facts its own way.
+
+The optional `InstallPlanOptions.rootProfile` supplies an approved BB Codex or
+standalone descriptor. With that native harness selected, the plan installs its single
+ordered `startHook` instead of that harness's ordinary SessionStart command. Stop
+and the other harnesses retain their ordinary guards. The plan keeps the same
+four return fields and performs no approval, service startup or writes. A
+consumer applies `rootProfile.server` through its own native MCP configuration
+writer, applies the hook plan, and requires a native reconnect. The hook plan
+does not merge or adopt an existing `.codex/config.toml`.
 
 ### `routingDiagnosis`: routing readiness without probes
 
@@ -498,6 +517,10 @@ refusal that names both of them:
      needs no variable and notices nothing;
   3. neither — `GateError`, naming the variable and the method.
 
+Selection resolves existing filesystem aliases in the chosen directory before constructing
+registry paths, retaining any nonexistent descendant suffix. It does not rewrite configuration
+or account data; publication still requires private owned records and refuses symlink records.
+
 That refusal is not an empty registry result: registry readers and direct driver
 `inspect`, `stop` and `activate` calls rethrow it. The aggregate `snapshotSessions`
 path deliberately degrades driver errors to `unknown`; wake-side `registerWake` and
@@ -534,6 +557,11 @@ implementation.
 ### The standalone host
 
 Source: `src/standalone.ts`.
+
+Without explicit `binPath` or `version`, the standalone Host uses this package's
+CLI entry and manifest version. A library call given a root can therefore
+reconstruct the same Host when it cold-starts the shared owner. Explicit Host
+options retain their values.
 
 Standalone host: a workspace from cwd, Git, and promptobus.json. There is no
 foreign-mechanism layout, no remote namespaces, and no memory servers here —
@@ -681,7 +709,7 @@ remain intact.
 For the orchestrator, the recovery revision counts actionable unread IDs only;
 new progress cannot reset the pending message activation budget.
 
-The BB 0.48.0 / Plugin SDK 0.6.94 profile exposes the public
+The BB 0.48.1 / Plugin SDK 0.6.104 profile exposes the public
 `parentNotifications` lifecycle option on thread spawn. The public
 `bb guide threads` documents `auto` as reporting completed, failed, and interrupted
 turns and blockers; `stuck` skips completed turns while preserving failures,
@@ -1099,12 +1127,35 @@ not measured input, cache, output or tool tokens.
 
 ## BB Host context delivery
 
-`promptobus/bb-host` exports `createBbHostIntegration` and
-`renderBbHostContext`, with [public types](../../lib/bb-host.ts). The consumer
+`promptobus/bb-host` exports `createBbHostIntegration`, `renderBbHostContext`
+and the additive `createBbManagedAdmission`, with [public types](../../lib/bb-host.ts). The consumer
 supplies `resolveHost(root)`, optional `prepareEnvironment({root, role, signal})`,
 and `listTools` / `invokeTool` when canonical servers are declared. The default
 plugin resolves the standalone Host and refuses declared servers without those
 adapters. Hosts without a selector retain existing unselected delivery.
+
+`createBbManagedAdmission(resolveOwnerHost, env?)` is the consumer's managed-launch
+admission bridge. The explicit resolver receives a canonical execution path and
+returns its trusted owner Host. Its canonical `workspaceRoot()` and
+`promptobusHome()` pair is authority; an authorized nested checkout keeps its
+actual execution path. `env` defaults to `process.env` and is captured once.
+
+`scope(executionPath)` reads that pair. `begin(executionPath, intent)` durably
+records the managed intent under the owner admission lock and returns the pair;
+the consumer persists it before SDK spawn. After the actual BB thread ID is
+returned, `complete(executionPath, intent, bbThreadId, expectedScope)` records its
+permanent managed classification before provisioning or readiness. Completion
+requires the exact pair returned by begin and re-resolves it before acquiring
+any different owner's lock. Changed owner/store, missing intent or missing
+scope refuses; no native identity or root eligibility is inferred by this bridge.
+
+The bridge has only `scope`, `begin` and `complete`; it does not import or refresh
+legacy native history. New-version owner state and actual native creation are
+separate prerequisites. Neither an absent ledger nor a newly returned BB thread
+ID proves a fresh native session. Known new bindings retain their supported
+resume/reconnect path; unknown old IDs refuse without rewriting account history.
+Ordinary BB roots use a separate owner-approved ordinary create operation and
+actual same-ID native proof; this managed-thread bridge does not supply either.
 
 Without a selector, collection preserves `collectRules(root)` order, highest precedence first,
 and embeds each complete rule file and `skillsDir(root)` skill body in the initial
@@ -1339,3 +1390,461 @@ host bundle has no root `dist/` or root dependency requirement. Source tests and
 clean-bundle fixtures are separate from actual BB visual verification. An installed bundle may also provide owner notifications; replacing
 that service is a separate installation decision. See the integration's live
 verification checklist before accepting the UI.
+
+## Managed HTTP launch environment
+
+Managed HTTP preparation happens after the final native launch plan is built and
+before its files or provider process are started. The private launch coordinator
+replaces the MCP entries on that same plan; it does not prepare a second native
+session. Pending grants allow protocol initialization and tool discovery without
+constructing an actor Host, joining a task or handing over contact points. Actual
+tools require owner realization of the native ID from the owned launch record.
+Codex additionally requires the matching actual Core tool-call thread metadata.
+
+An owned record carries canonical store, task, address, ref and launch generation
+before native startup. A future lead task retains a pending reservation until
+the actual native session has been published as its owner; it does not create a
+placeholder owner. Additional task connections receive separate grants and
+credentials even when the native process and session are shared. Replacing a
+record generation or its native ID invalidates the old binding.
+
+`PROMPTOBUS_OWNER_ENV_FILE` names an owned private snapshot scoped to the
+canonical workspace, store and runtime. It captures the common root account
+environment before participant preparation. A managed caller must inherit that
+reference; relabelling its own private environment as common does not authorize
+a cold owner startup. Snapshot files and client credentials require mode `0600`
+and refuse foreign ownership, symbolic links and a different service scope.
+The full bootstrap snapshot is separate from the finite Worker poll projection.
+
+Generated native configs contain credential references, while the actual native
+process receives its own credential reference. Claude uses a per-launch
+[`headersHelper`](https://code.claude.com/docs/en/mcp#dynamic-headers) invoking
+`service headers --client-file <owned-file> --service-home <base>`. This read-only
+helper validates the runtime, staged record and actor scope; it does not start
+the service or write credentials. Its JSON stdout supplies the bearer header.
+Cursor uses [`${env:NAME}` interpolation](https://cursor.com/docs/mcp#config-interpolation),
+and OpenCode uses [`{env:NAME}` substitution](https://opencode.ai/docs/config/#env-vars)
+with remote OAuth explicitly disabled. Codex uses its bearer environment-variable
+reference. Literal bearer bytes do not enter task or project configuration.
+The private `service-launch` functions support this ordering; native launcher and
+hook activation must also preserve the owned-record barrier.
+
+Claude’s generated SessionStart command carries the same explicit client-file
+and service-home reference, so a reused native daemon environment cannot select
+a previous launch. The hook also checks its home, task and role against the
+staged client; conflicting root profiles or foreign references refuse. After
+successful owner realization, that hook registers the actual native contact
+point before the first turn. Unpublished or foreign starts cannot transfer it;
+child messaging socket/token values are never copied into the service actor env.
+
+While native binding is pending, an unchanged task/participant/record/launch
+tuple remains unknown: an absent prelaunch native session is not proof of death.
+Pure discovery remains available, while actor tools require realization. A
+replaced tuple retires normally.
+
+The managed SessionStart handler binds the actual hook payload before running
+the ordinary loop guard. Claude supplies `session_id`; Cursor supplies
+`conversation_id`. Inherited native identity variables are never a substitute.
+A future owner may publish its native record while its task is still absent;
+that operation keeps the HTTP grant pending until the launcher publishes the
+actual owner. A missing or disabled hook cannot authorize an unbound tool call.
+
+### Shipped BB root invocation
+
+The installed `promptobus-bb-root` is an owner-only profile preparation entry.
+Ordinary BB creation through it is blocked: the public BB invocation does not
+supply trusted provider-owned proof of the selected Codex home and launch
+context before creation. A separately initialized app-server and its trusted
+hook hashes do not establish the effective context of the BB provider.
+
+```bash
+promptobus-bb-root --root /absolute/workspace --profile ordinary-owner \
+  --native-store /absolute/native-account-store \
+  --project prj_owner --environment env_owner < ./owner-prompt.md
+```
+
+Node 20+, macOS or Linux, the public BB CLI and matching optional plugin are
+required for this preparation. The binary constructs `createStandaloneHost`
+from the canonical explicit workspace, its own package version, Node executable
+and matching CLI. It validates explicit selectors and at most 64 KiB of UTF-8
+prompt input. `bb environment show <id> --json` must confirm the project,
+environment and canonical path. `--native-store` is an existing native account
+store, not a configuration or proof of the BB provider. No account, native trust
+or global configuration is changed.
+
+Callback-free profile approval retains the existing owner scope, runtime,
+account-store and creation-operation checks. The bin-private preparatory writer
+accepts only the exact approved HTTP server descriptor and the ordered
+`planHookInstall(..., {rootProfile})` hook plan. New files are exclusive owner-only
+writes. Existing configuration needs the exact owner marker, canonical fields
+and hook bytes; unowned, linked, replaced, changed or partial files refuse. A
+same-profile update can change only the owned service port while preserving the
+helper and hook bytes. Verification detects later replacement instead of
+rewriting it. The existing service lock serializes this preparation.
+
+After confirming these files, the shipped command exits 2 with JSON
+`ready: false`, `reason: "provider-context-unavailable"` and
+`creation: "notAttempted"`. It does not call the isolated native trust reader,
+provide a hook-approval operator instruction, invoke a creation callback or
+request a public BB spawn. Trusting a probe home cannot unlock this route.
+No bound, completed, native-ready or first-tool claim follows from preparation.
+Ordinary BB creation is optional for release; this entrypoint remains unsupported.
+Standalone ordinary workflows remain required.
+
+`creation: "notAttempted"` applies only to the current command. Callback-free
+library descriptors do not expose the saved creation field, so their shape is
+not evidence that an operation is absent. Existing library-owned pending,
+uncertain and bound records remain byte-exact when the command refuses. The
+original project/environment tuple is still checked, including scoped/unscoped
+mismatches. The library's trusted consumer callback, CAS binding, known native
+bindings and recovery routes below are unchanged; this refusal adds no reset,
+retry, deletion, history adoption or replacement route.
+
+The existing bin-private renderer, scope readers, configuration verification
+and isolated native status helper retain their focused tests. An isolated
+status result describes only its own app-server; it never establishes the
+selected BB provider's launch context. The packed `bin` directory and existing
+npm mapping ship the command without adding a package export.
+
+### BB Codex root profiles
+
+`approveCodexRootProfile(host, { id, nativeStore }, env)` on
+`promptobus/integration`, also exposed as `service profile --id <id>
+--native-store <path>`, approves the exact canonical workspace, store, runtime
+and existing native account-session directory. It requires a root account
+environment and a public `bb` CLI; a managed participant cannot approve one.
+The result contains the bus HTTP descriptor and the single ordered SessionStart
+command. The consumer writes `server` through its existing native configuration
+writer and supplies the same descriptor as `{ rootProfile }` to `planHookInstall`.
+Its managed install/sync applies that plan and requires reconnect. The helper
+requires native Codex `http_headers_helper` support.
+
+Owner code may explicitly pass `createRoot` in the same options object. This
+trusted callback receives the profile descriptor and invokes the ordinary public
+`bb.sdk.threads.spawn` with fixed owner configuration: Codex provider, the approved
+execution environment and no origin/source/resume/fork input. It returns that
+call's actual `{ id }`; actor-supplied IDs and freshness hints are not accepted
+creation adapters. No callback means no spawn.
+
+The owner reserves one operation for that exact profile before calling it, then
+releases the admission lock for the asynchronous SDK call. It reacquires the
+original scope and CAS-binds only its returned BB ID. The original coherent
+profile/snapshot revision is captured before asynchronous readiness and rechecked
+under the owner lock; preflight carries that same revision through realization.
+It never adopts a later profile revision as a baseline for an older owner object.
+Repeating a pending,
+uncertain or completed operation never calls the callback again; approve a
+separate profile for a deliberately new ordinary root. A changed owner/profile
+or operation refuses late publication. Partial creation failures remain uncertain
+without automatic retry or old-ID adoption. `creation.state="bound"` reports BB
+ID binding, not a native capability or successful first tool.
+
+A native hook may arrive before the SDK response. It records its actual
+process/session/transcript proof while the grant remains pending and tools
+refuse. After BB binding, the same approval invocation rechecks that retained
+proof and authoritative host-wide correspondence before realization. Repeating
+the explicit approval with its trusted callback performs this owner preflight
+without spawning again; the one-time hook need not run twice. A hook arriving
+after binding uses the same realization path. Missing/revoked/incomparable proof
+retains refusal; no earlier failed hook or SDK201 alone creates authority.
+
+The optional POSIX package launcher is `promptobus-root --profile <id> --
+<native-command> [args...]`. It uses the matching package CLI to ensure the
+approved profile's owner and writes a private one-shot shell plan. The shell
+removes that plan before `exec`, so the native command retains the launcher PID
+and no per-root Node proxy remains. Node 20 is the minimum runtime; the profile
+must have been approved with the same Node and consumer entry. Windows and
+other platforms without the implemented process observer refuse this path.
+
+Consumers can use the returned `execPlanCommand` prefix through their own CLI
+entry instead. Append `-- <native-command> [args...]` as separately quoted
+arguments, capture the private plan path, then source it in the POSIX launcher.
+`service exec-plan --profile <id> --dry-run -- <native-command> [args...]` only
+reads approval state and prints a plan summary: it neither ensures the owner,
+writes an exec plan nor starts the native command.
+
+This preflight issues no client credential and does not authorize a root from
+the shell PID or inherited environment. The native headers helper and ordered
+hook below still establish actual app-server lifetime and BB correspondence.
+Executing a command through this wrapper is not evidence of native root
+readiness. A missing BB correspondence cannot fall back to the separately
+approved standalone authority below. OpenCode shell-root identity remains
+unimplemented.
+
+`service headers --profile <id>` ensures the owner before native initialization
+and emits its own process-scoped bearer only to the native helper channel.
+It does not read native IDs from environment variables. SessionStart reads the
+first regular SessionMeta under the approved account store and requires the
+same observed app-server PID, birth and private generation. The canonical root
+admission lock spans public BB lookup and realization. Lookup must be complete,
+unique and eligible and name the same canonical workspace and store. Unknown,
+managed and archived managed bindings refuse; native Core tool metadata must
+still match the bound thread on every call.
+
+Identity uniqueness covers every Codex thread on the local host, including
+hidden and archived threads in other workspaces and stores. A missing latest
+typed identity anywhere in that inventory refuses this root. The consumer's
+owner resolver establishes execution-path authority; it does not establish the
+origin of a native ID. Filtering another owner's environment before reading its
+identity could hide a duplicate resume of the same native session.
+
+For an incomplete identity, inspect that thread's public identity events and
+have its owner recover the identity through the supported BB/provider path.
+Retry only after a complete stable inventory is available. Archiving does not
+exclude a thread. If supported recovery is unavailable, this root profile
+remains blocked pending BB repair; neither first/stale identity fallback nor
+closing or modifying unrelated sessions is part of this recovery procedure.
+
+BB execution paths and owner authority stay separate. The explicit
+`resolveOwnerHost` may map different checkouts to one Host workspace/store when
+the Host authorizes those execution paths. Begin and completion persist and
+recheck that resolved pair; root lookup uses the same resolver for the candidate
+environment. A resolver changing owner or store refuses before using another
+admission lock.
+
+Native helper output contains a credential and is never a diagnostic command.
+A stopped or missing native hook leaves tools pending. After a listener crash,
+the owner preflight must ensure service readiness before native reconnect; the
+helper is not a universal reconnect trigger. Root configuration does not turn
+static HTTP into a process launcher for other native profiles.
+
+OS lifetime observation treats an explicitly observed zombie as exited even while
+its parent has not reaped the PID. Unavailable birth observations, permission
+refusals and incomplete output remain unknown. An exited zombie and a reaped,
+absent PID are distinct cleanup observations; neither proves a native Stop
+receipt or the exit of descendants.
+
+Captured births are private versioned observations. Linux captures require a
+verified procfs self-PID view, boot identity and PID namespace; Darwin observations
+use a full parsed `ps lstart` in the C locale and UTC. Only comparable observations
+can prove that a recorded lifetime ended. Old unversioned candidate records,
+malformed births and a different observer namespace remain unknown, including
+for lock or discovery reclamation. They are retained even if a PID-only probe
+would return `ESRCH`. This private-format change does not provide live upgrade
+or automatic migration of earlier unreleased HTTP candidates; use their exact
+owner runtime to establish an owned shutdown and preserve the records. Legacy
+state migration and birthless released-record resume are unsupported.
+
+BB root generation succession uses its existing authoritative SessionStart and
+fresh complete host-wide eligible correspondence for the same canonical BB
+thread, native ID and approved profile/store. The previous captured native
+lifetime must be positively ended. A reliably observed different birth in the
+same verified view proves that old lifetime ended without waiting for or
+signalling the PID's new occupant. Same-birth live and unknown or incomparable
+observations refuse. One owner
+transaction reserves one successor before realization, retains uncertain
+callback state, and does not restore the old credential. Exact repeats of that
+same new generation are idempotent. Unknown earlier mutation receipts continue
+to block succession; this does not waive managed history or inventory guards.
+
+### Standalone root profiles
+
+`approveStandaloneRootProfile(host, { id, harness, nativeStore, executable }, env)`
+is an additive `promptobus/integration` runtime export, with exported
+`StandaloneRootProfileInput` and `StandaloneRootProfileDescriptor` types.
+It approves a separate process-owned profile for a direct `codex` or `claude`
+executable. `nativeStore` and `executable` are absolute, existing canonical paths;
+the profile retains the executable's file identity. The profile ID cannot change
+mode, harness, owner workspace/store, runtime or native account. Managed and BB
+actor markers refuse this standalone approval/preflight.
+
+The result contains `mode`, `harness`, `profile`, `busUrl`, canonical `root` and
+`home`, a native `server` descriptor, one ordered `startHook` and the private
+`execPlanCommand` transport prefix. Codex uses `http_headers_helper`; Claude
+uses its native [`headersHelper`](https://code.claude.com/docs/en/mcp#dynamic-headers).
+Neither configuration contains a literal bearer. The consumer writes `server`
+through its native configuration writer, passes the same descriptor to
+`planHookInstall(..., { rootProfile })`, applies the ordered hook and reconnects.
+The hook plan remains pure and preserves ordinary Stop and other harness hooks.
+
+Codex filters custom environment variables from HTTP headers helpers. If that
+removes the launcher reference, the standalone headers path resolves only one
+current private client for the observed native parent lifetime, approved profile
+and owner runtime. It rechecks that generation before returning headers. An
+explicit invalid reference still refuses without lookup. This read-only lookup
+does not create native identity or admission; the ordered start hook must still
+prove the actual session. The approved profile supplies the native account store,
+not a default inferred from the helper's `HOME`.
+
+For a package-owned profile, run the approved absolute binary through
+`promptobus-root --profile <id> -- <executable> [args...]`. A custom consumer Host
+requires its own POSIX wrapper using the returned `execPlanCommand` prefix.
+Append `--launcher-pid "$$" -- <executable> [args...]` with separately quoted
+arguments, execute the prefix directly with `exec` in command substitution,
+require an absolute returned plan path and source that plan in the same launcher.
+The package wrapper selects its adjacent package CLI; it cannot substitute for
+the consumer entry that approved the profile. All descriptor commands retain
+the same full owner Host and runtime identity. An extra intermediary process
+cannot replace the required direct POSIX launcher parent.
+
+This profile accepts explicit `--no-daemon` as the first
+Codex TUI/resume argument, or an in-process `exec` command. It does not inject a
+flag or adopt a shared daemon. Shared-daemon/remote Codex and background/cloud
+Claude routes need a separate native lifetime proof and refuse this profile.
+The standalone source rule is shared with [ADR-040](../adr/adr-040-shared-workspace-service.md#portable-native-roots-and-recovery):
+
+<!-- quote:../adr/adr-040-shared-workspace-service.md -->
+New Codex `exec -- <prompt>` requires first SessionMeta source `exec`; the accepted
+new `--no-daemon` TUI forms require source `cli`. An explicit resume of an already
+known current-version binding retains its creation source (`exec` or `cli`),
+including when an exec-created session is later resumed through the TUI.
+Editor sources and unknown unbound identities remain unsupported.
+<!-- /quote -->
+
+Cursor's shell-to-bundled-Node origin and OpenCode shell-root identity are not
+implemented by this interface. Each claimed native route still requires an
+installed-package subscription workflow; a descriptor or source fixture alone
+does not establish native compatibility.
+
+For Claude, an owner snapshot without `CLAUDE_CONFIG_DIR` retains the default
+account route only when the approved store is the canonical owner `HOME/.claude`.
+The plan pins that trusted `HOME` and unsets any actor `CLAUDE_CONFIG_DIR`.
+An explicit owner selector, including the same default path, or a nondefault
+store keeps the canonical `CLAUDE_CONFIG_DIR` injection. Codex continues to use
+the approved `CODEX_HOME`.
+
+Preflight observes the actual direct POSIX launcher parent and creates a private
+pending generation with a deadline. The one-shot plan deletes itself and execs
+the approved native image with the same PID and execution cwd; it strips ancestor
+actor/client/root references and adds only the current private owner/launch
+references. Native discovery cannot create an actor while pending. SessionStart
+must originate from the observed native process or its checked `/bin/sh` hook
+child and supply the actual ID. Codex also requires the first regular CLI
+SessionMeta inside the approved store, and every tool retains Core thread-ID
+checking. Every use rechecks process birth, kernel executable image, current
+launch reference and owner identity reservation. Unavailable observations refuse.
+On Darwin, `/bin/sh` may execute the protected `/bin/bash` system image without
+changing its PID or birth. Launcher and hook checks accept only kernel-observed,
+fully canonical, root-owned regular `/bin/sh` or `/bin/bash` images without group
+or world write bits;
+names in argv, actor PATH entries and actor-owned copies do not qualify. Other
+platforms retain the canonical `/bin/sh` image rule. Shell approval never grants
+native authority before exec. Native file identity comparisons retain exact
+BigInt device/inode values through initial, descriptor and final observations.
+First binding also requires a supported NEW dispatch. The private launch records
+the exact structured command actually exec'd. For Codex rust-v0.165.0, accepted
+NEW argv is `exec -- <nonempty prompt>`, `--no-daemon`, or
+`--no-daemon -- <nonempty prompt>`: their in-process ordinary branch invokes
+`thread/start`, never a resume/fork target. The actual same-process CLI
+SessionStart/transcript ID completes the correlation. Other selectors cannot
+turn an unknown ID into a fresh session.
+
+Claude NEW mode is the foreground executable with no arguments and an actual
+`SessionStart.source="startup"`. Its actual absolute transcript must be an
+owned regular same-ID `.jsonl` file beneath the approved account store, without
+symlinks or foreign write access. The official hook contract distinguishes this
+from resume/clear/compact/fork; init-only, attach, picker and background selectors
+are outside the accepted NEW argv. These source-backed modes still require
+installed-version parser/producer and ordinary first-tool verification. Known
+current-version bindings retain their separate exact resume/reconnect route.
+
+Claude fires the startup hook before it publishes the session transcript. When a
+component beneath the approved store is absent (ENOENT, every existing ancestor
+owned, non-symlink and without foreign write access), the hook records a pending
+startup candidate instead of `nativeStart`: actual session ID, transcript path,
+capture time and the owner profile and owner-environment revisions read before
+the hook's asynchronous root checks. Every request, the realization write and the
+ledger publication compare those original revisions; a change refuses discovery
+and realization and retains the pending record.
+
+Only an approved fresh launch (pending, no-argument foreground
+executable, no resume, no bound ID) can record it, and only before the original
+preflight deadline after the full current root, ancestor, kernel and profile
+checks. The candidate is not native authority: it creates no ledger binding,
+`nativeStart` or actor, and never extends `expiresAt`. It lets the live owned
+generation outlive that deadline for discovery while every request still passes
+the current process birth, executable, profile and launch checks; `tools/call`
+refuses with the pending-realization 403.
+
+The first authenticated `tools/call`
+after the same-ID owned regular transcript exists repeats the startup transcript
+proof under the launch lock, records `nativeStart` and runs the ordinary owner
+realization. A still-absent file keeps the refusal without revocation; a
+transcript or realization failure revokes the generation. A preflight without a
+candidate captured inside its deadline keeps the original expiry.
+
+Standalone uniqueness covers accessible bindings under the canonical owner
+workspace/store and approved native store, keyed by harness plus actual ID.
+It is not account-global or host-global. Accessible corrupt or potentially
+matching unknown managed provenance is not an empty or foreign binding. The
+existing BB root profile keeps its separate host-wide inventory requirement;
+missing BB integration is not a negative BB lookup.
+
+Two bindings with the same harness and ID can coexist when trusted publication
+proves different canonical native stores. A raw environment store hint is not
+that proof. An unknown store still blocks a potentially matching identity.
+The native ledger and root-admission state use version 2. Explicit owner/profile
+initialization selects this policy before publishing new bindings; it does not
+assert an empty native account history. Missing initialized state, JSON `null`,
+corrupt state and older versions refuse without resetting or migrating evidence.
+An unmarked retained ledger is not silently adopted. Independent Claude use
+still requires native-ledger integrity; BB keeps its separate host-wide guards.
+
+Historical BB refresh/import is not part of this contract. First managed Codex
+admission uses a successful correlated `thread/start` on the actual owned
+app-server/store. A first `thread/resume`, a native hook ID, an absent ledger or a
+new BB thread ID alone cannot authorize an unknown identity. Ordinary BB roots
+require the controlled creation operation above and actual same-ID proof; known root successors
+retain positive predecessor death, owner/profile/store identity and generation
+CAS. No account/config/credential/history reset supplies missing creation proof.
+
+If a proved native process survives owner RPC loss or service restart, retain
+its immutable binding. An unrevoked capability reconnects after the same proof.
+After capability revocation, run `promptobus service preflight --standalone
+--profile <id> --native-id <actual-id>` for that same owner, then reconnect the
+native MCP server so its headers helper reads the replacement capability. The
+ID selects the binding; it is not proof. Owner preflight requires the exact
+PID/birth/nonce/store, the current approved native image and a durable owner hook
+receipt. It permanently fences the old client ID and reserves one new pending
+client. Unknown observation is a temporary refusal; explicitly repeating owner
+preflight resumes the same pending reservation. The helper itself does not
+rotate or realize credentials after a 401/403.
+
+In-flight mutations refuse recovery. An uncertain mutation receipt survives
+client removal, MCP reconnect and owner restart and blocks both capability
+replacement and a later process resume. Resolve the original outcome before
+continuing; a new client or native session cannot reset that uncertainty.
+Changed native identity or provenance excludes that generation, and a missing
+first hook has no trusted receipt from which to recover: repair the hook and
+restart through the approved launcher.
+
+A new process cannot inherit an old capability. Concrete recovery intent uses
+`codex --no-daemon resume UUID`, `codex exec resume UUID`, `claude --resume UUID`
+or `claude -r UUID` through the approved launcher. The captured old lifetime and
+retained matching historical lifetimes must be positively ended using comparable
+birth observations; bound and pending generations follow the same rule. The
+owner atomically reserves one new pending generation, then the new
+actual exec/hook must prove that same ID. Revoke, deadline and failed observation
+do not prove death. Picker/latest/continue, names and other option ordering are
+not classified as concrete-ID transition intent; `--fork-session` is a new
+identity. An interrupted pending transition remains durably owned and can be
+retried explicitly after that pending process is positively dead. Unlinking an
+exec plan does not revoke a credential or release the identity reservation.
+Birthless legacy managed records and unknown concrete resume IDs are unsupported.
+Resume only a known current-version binding with its exact captured predecessor;
+missing or incomparable proof remains refusal, without adoption or state repair.
+
+#### New-state support boundary
+
+| Route | First-binding creation proof | Known new binding |
+| --- | --- | --- |
+| Managed Codex | Own correlated successful `thread/start`, exact child/store/process | Explicit `thread/resume` after predecessor death and generation CAS |
+| Managed Claude | Owned captured command/account directory, actual startup source, same-ID regular transcript and exact native kernel image/birth | Existing immutable binding and lifecycle fences remain required |
+| Managed Cursor | Own create-chat response; exact same-ID hook/pane image/birth; canonical initialized SQLite held by that process under actual native config root | Known current binding, no unknown-ID adoption or credential replacement |
+| Managed OpenCode | Own authenticated createSession response; actual controlled filesystem DB and captured serve image/birth | Known current binding; unresolved outcomes retain the primary record/holder |
+| Standalone Codex | Approved exact NEW exec/TUI argv, actual same-process CLI hook/transcript/store | Concrete known-ID resume and exact same-process reconnect |
+| Standalone Claude | Approved foreground no-argument launch, actual startup source and owned same-ID transcript/store | Concrete known-ID resume and exact same-process reconnect |
+| Ordinary BB root | Trusted owner ordinary create, exact returned BB ID/profile operation, actual same-ID native proof; managed completion is not root creation | Host-wide uniqueness, death and current-generation guards remain |
+
+Acceptance still requires ordinary positive launch/first-tool proof on each installed
+mode, early and late hook ordering, no duplicate callback on pending/uncertain
+creation, scope/revision drift refusal and known-binding recovery. These are
+source boundaries, not installed/native acceptance results. Cursor's real
+sessionStart is asynchronous: pending discovery may succeed while tools refuse;
+owner realization makes that same client ready without another spawn or bearer.
+Unknown mutation outcomes are never automatically replayed. Durable Cursor file
+proof needs the actual native process descriptor (own-PID lsof on Darwin), not a
+path/ID or a forged synchronous hook. OpenCode explicitly controls its child DB
+path and excludes simulation/memory/relative-DB routes.
+ Old records
+are retained unsupported. A newly initialized ledger never licenses an old ID.

@@ -35,8 +35,8 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import {
-  appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync,
-  renameSync, rmSync, writeFileSync,
+  appendFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync,
+  renameSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -45,6 +45,8 @@ import { fileURLToPath } from 'node:url';
 import { waitDelivered } from './delivery-wait.mjs';
 import { diagnoseTrace as formatTraceDiagnosis } from './harness-shared.mjs';
 import { KNOWN_HOOK_EVENTS, PROVEN_CURSOR_VERSION } from '../lib/driver-cursor.js';
+import { LIFT_TRIES, LIFT_STEP_MS, SESSION_ENV_VAR } from '../lib/cursor-persist.js';
+import { readPrivate } from '../lib/service-state.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -265,8 +267,9 @@ export function pidAlive(pid) {
  * `claude`: the sandbox hook removes its directory before the stand has a chance to
  * clean up after itself.
  */
-export async function installHarness({ binDir, env = process.env } = {}) {
-  const { stubCommand, withStubPath } = await import('./sandbox.mjs');
+export async function installHarness({ binDir, env = process.env, bundledRuntime = false } = {}) {
+  const { ownedServiceFixture, stubCommand, withStubPath } = await import('./sandbox.mjs');
+  const serviceFixture = env.PROMPTOBUS_SERVICE_HOME ? null : ownedServiceFixture(env);
   const home = mkdtempSync(path.join(os.tmpdir(), 'promptobus-cursor-'));
   armCleanup(home);
   for (const dir of ['scripts', 'trace', 'turns', 'approvals', 'state', 'queue', 'tmux', 'cursor']) {
@@ -284,21 +287,32 @@ export async function installHarness({ binDir, env = process.env } = {}) {
   stubCommand(binDir, 'agent', agentStub);
   stubCommand(binDir, 'cursor', agentStub);
   stubCommand(binDir, 'cursor-agent', agentStub);
+  if (bundledRuntime) {
+    symlinkSync(realpathSync(process.execPath), path.join(binDir, 'node'));
+    writeFileSync(path.join(binDir, 'package.json'), '{"type":"module"}\n');
+    writeFileSync(path.join(binDir, 'index.js'), `import { agentMain } from ${JSON.stringify(path.join(here, 'harness-cursor.mjs'))};\n`
+      + `await agentMain(process.argv.slice(2), { ...process.env, ${CURSOR_HOME_VAR}: ${JSON.stringify(home)}, PROMPTOBUS_E2E_CURSOR_BUNDLED: ${JSON.stringify(home)} });\n`);
+    for (const name of ['agent', 'cursor', 'cursor-agent']) writeFileSync(path.join(binDir, name),
+      '#!/bin/bash\nSCRIPT_DIR="${0%/*}"\nNODE_BIN="$SCRIPT_DIR/node"\nexec -a "$0" "$NODE_BIN" "$SCRIPT_DIR/index.js" "$@"\n', { mode: 0o755 });
+  }
   stubCommand(binDir, 'tmux', `import { tmuxMain } from ${JSON.stringify(path.join(here, 'harness-cursor.mjs'))};\n`
     + `await tmuxMain(process.argv.slice(2), { ...process.env, ${CURSOR_HOME_VAR}: ${JSON.stringify(home)} });\n`);
   const restore = withStubPath(binDir);
-  const was = { state: env.PROMPTOBUS_CURSOR_HOME, user: env.PROMPTOBUS_CURSOR_USER_HOME };
+  const was = { state: env.PROMPTOBUS_CURSOR_HOME, user: env.PROMPTOBUS_CURSOR_USER_HOME, native: env.CURSOR_CONFIG_DIR };
   env[CURSOR_HOME_VAR] = home;
   env.PROMPTOBUS_CURSOR_HOME = path.join(home, 'state');
   env.PROMPTOBUS_CURSOR_USER_HOME = path.join(home, 'cursor');
+  if (bundledRuntime) env.CURSOR_CONFIG_DIR = realpathSync(path.join(home, 'cursor'));
   return {
     home,
     stateHome: path.join(home, 'state'),
     userHome: path.join(home, 'cursor'),
     restore: () => {
       restore();
+      serviceFixture?.restore();
       delete env[CURSOR_HOME_VAR];
-      for (const [name, value] of [['PROMPTOBUS_CURSOR_HOME', was.state], ['PROMPTOBUS_CURSOR_USER_HOME', was.user]]) {
+      for (const [name, value] of [['PROMPTOBUS_CURSOR_HOME', was.state], ['PROMPTOBUS_CURSOR_USER_HOME', was.user],
+        ['CURSOR_CONFIG_DIR', was.native]]) {
         if (value === undefined) delete env[name];
         else env[name] = value;
       }
@@ -708,6 +722,10 @@ export async function agentMain(argv, env = process.env) {
     return;
   }
   if (argv[0] !== 'persist') {
+    if (argv[0] === 'create-chat') {
+      process.stdout.write(`${randomUUID()}\n`);
+      return;
+    }
     process.stderr.write(`stub agent: subcommand «${argv[0] ?? ''}» is not supported\n`);
     process.exitCode = 1;
     return;
@@ -822,11 +840,11 @@ async function persistUp(home, argv, env) {
   const model = argValue(argv, '--model') ?? 'composer-2.5';
   const prompt = argv[argv.length - 1];
   const cfg = readBusConfig(workspace);
-  const address = cfg?.env?.PROMPTOBUS_ROLE ?? null;
-  const chatId = randomUUID();
+  const address = cfg?.env?.PROMPTOBUS_ROLE ?? (cfg?.url ? env.PROMPTOBUS_ROLE : null) ?? null;
+  const chatId = argValue(argv, '--resume') ?? randomUUID();
   const name = sessionName(workspace);
   const plan = {
-    home, workspace, chatId, model, name, address, prompt,
+    home, workspace, chatId, model, name, address, prompt, nativeCwd: process.cwd(),
     userHome: env.PROMPTOBUS_CURSOR_USER_HOME ?? path.join(home, 'cursor'),
   };
   // **The `TMUX` trap** (REPORT §4.2): inside a foreign tmux session `persist` SILENTLY
@@ -876,12 +894,29 @@ async function sessionMain(plan, env = process.env) {
   } = plan;
   const cfg = readBusConfig(workspace);
   const transcript = transcriptFile(userHome, workspace, chatId);
+  if (env.PROMPTOBUS_E2E_CURSOR_BUNDLED === home && env.CURSOR_CONFIG_DIR && plan.nativeCwd) {
+    const database = path.join(env.CURSOR_CONFIG_DIR, 'chats',
+      createHash('md5').update(path.resolve(plan.nativeCwd)).digest('hex'), chatId, 'store.db');
+    mkdirSync(path.dirname(database), { recursive: true, mode: 0o700 });
+    writeFileSync(database, 'SQLite format 3\0', { mode: 0o600 });
+    // The owned unit pane keeps its exact native-store file open through the real hook/admission check.
+    openSync(database, 'r+');
+  }
   mkdirSync(path.dirname(transcript), { recursive: true });
   const ctx = {
-    home, address, cfg, chatId, workspace, transcript, model, name, env,
+    home, address, cfg, chatId, workspace, transcript, model, name, env, busState: {},
   };
-  await playTurn({ ...ctx, text: prompt, persistent: true });
-  await serveQueue(ctx);
+  const start = fireStopHook(workspace, { chatId, model, outcome: 'started', transcript }, 'sessionStart');
+  if (cfg?.url && start?.status !== 0) {
+    note(home, address, { kind: 'native-start-refused', status: start?.status, stderr: start?.stderr });
+    throw new Error('Cursor fixture native SessionStart did not complete its owned binding');
+  }
+  try {
+    await playTurn({ ...ctx, text: prompt, persistent: true });
+    await serveQueue(ctx);
+  } finally {
+    if (ctx.busState.client) await (await ctx.busState.client).close();
+  }
 }
 
 /** Live session loop: wait for a message on the queue and play each as a separate turn. */
@@ -918,7 +953,7 @@ function setBusy(home, name, busy) {
 
 /** Turn: user message into the transcript, actions from the script, `turn_ended` and the hook. */
 async function playTurn({
-  home, address, cfg, chatId, workspace, transcript, model, text, name, persistent, env,
+  home, address, cfg, chatId, workspace, transcript, model, text, name, persistent, env, busState,
 }) {
   if (persistent) setBusy(home, name, true);
   appendFileSync(transcript, `${JSON.stringify({
@@ -932,7 +967,13 @@ async function playTurn({
   // cuts it. A live tool child (a long gate) is a separate flag.
   spawnWorkerServer(home);
   if (env[HANG_CHILD_VAR] || !(env[HANG_VAR] || env[HANG_WRITE_VAR])) spawnToolChild();
-  const outcome = await runScript({ home, address, cfg, turn, chatId, workspace, transcript, env });
+  let outcome;
+  try {
+    outcome = await runScript({ home, address, cfg, turn, chatId, workspace, transcript, env, busState });
+  } catch (error) {
+    note(home, address, { kind: 'turn-failed', turn, error: error?.stack ?? String(error) });
+    throw error;
+  }
   if (outcome === 'hang') {
     // Hang: the turn does not end, the transcript does not grow. Exactly the sign the
     // watchdog uses to judge silence — and the process is alive, as it is in a live hang.
@@ -989,7 +1030,7 @@ function nextTurn(home, address) {
 
 // Turn from the script: the same actions the scripted participant of the stub `claude`
 // plays ([participant.mjs](participant.mjs)).
-async function runScript({ home, address, cfg, turn, workspace, env }) {
+async function runScript({ home, address, cfg, turn, chatId, workspace, env, busState }) {
   if (env[HANG_VAR] || env[HANG_CHILD_VAR] || env[HANG_WRITE_VAR]) return 'hang';
   let script = { turns: [] };
   try {
@@ -1009,17 +1050,42 @@ async function runScript({ home, address, cfg, turn, workspace, env }) {
     note(home, address, { kind: 'no-bus', workspace });
     return 'error';
   }
-  const bus = await openBus(cfg);
+  const firstConnection = !busState?.client;
+  const bus = await (busState ? busState.client ??= openBus(cfg, env) : openBus(cfg, env));
+  if (cfg.url) note(home, address, { kind: 'mcp-session', turn, sessionId: bus.sessionId });
+  if (cfg.url && firstConnection && env.PROMPTOBUS_E2E_CURSOR_BUNDLED === home) {
+    const file = env[SESSION_ENV_VAR], clientFile = env.PROMPTOBUS_CLIENT_FILE;
+    const expected = readPrivate(file), credential = readPrivate(clientFile);
+    const started = Date.parse(expected.startedAt), edge = started + LIFT_TRIES * LIFT_STEP_MS;
+    if (!Number.isFinite(started) || expected.chatId !== chatId || !expected.launchId) throw new Error('Cursor fixture has no exact owned startup tuple');
+    for (;;) {
+      const record = readPrivate(file), client = readPrivate(clientFile), lifetime = client.lifetime;
+      if (record.ref !== expected.ref || record.launchId !== expected.launchId || record.home !== expected.home
+        || record.task !== expected.task || record.address !== expected.address || record.chatId !== chatId
+        || record.nativeStartEvidence?.process?.pid !== process.pid || client.id !== credential.id
+        || client.runtime !== credential.runtime || client.token !== credential.token || client.env.PROMPTOBUS_HOME !== record.home
+        || lifetime.kind !== 'managed' || lifetime.ref !== record.ref || lifetime.launchId !== record.launchId
+        || lifetime.task !== record.task || lifetime.address !== record.address || lifetime.record !== file
+        || client.nativeBinding?.kind !== 'cursor') throw new Error('Cursor fixture owner realization changed its exact startup scope');
+      // Pacing after the actual hook/initialize; this ACK never replaces authenticated HTTP admission.
+      if (client.nativeBinding.state === 'bound' && client.nativeBinding.sessionId === chatId) break;
+      const remaining = edge - Date.now();
+      if (client.nativeBinding.state !== 'pending' || remaining <= 0) throw new Error('Cursor fixture owner realization was not acknowledged within its launch allowance');
+      await new Promise(resolve => setTimeout(resolve, Math.min(20, remaining)));
+    }
+    note(home, address, { kind: 'native-ready', turn, chatId, clientId: credential.id });
+  }
   for (const action of plan.do ?? []) {
     await act({ home, address, bus, action, workspace, cfg });
   }
-  await bus.close();
+  if (!busState) await bus.close();
   return 'done';
 }
 
 // A real `promptobus mcp` as a child process and line-delimited JSON-RPC — the same
 // transport live Cursor uses to talk to it.
-async function openBus(cfg) {
+async function openBus(cfg, env) {
+  if (cfg.url) return openHttpBus(cfg, env);
   const child = spawn(cfg.command, cfg.args, { env: { ...process.env, ...cfg.env }, stdio: ['pipe', 'pipe', 'pipe'] });
   const pending = new Map();
   let seq = 0;
@@ -1062,7 +1128,7 @@ async function act({
   home, address, bus, action, workspace, cfg,
 }) {
   if (action.untilDelivered) {
-    const marked = await waitDelivered(cfg?.env?.PROMPTOBUS_HOME, cfg?.env?.PROMPTOBUS_TASK, address, action.untilDelivered);
+    const marked = await waitDelivered(cfg?.env?.PROMPTOBUS_HOME ?? process.env.PROMPTOBUS_HOME, cfg?.env?.PROMPTOBUS_TASK ?? process.env.PROMPTOBUS_TASK, address, action.untilDelivered);
     note(home, address, { kind: 'untilDelivered', ms: action.untilDelivered, deliveredAt: marked.deliveredAt, timeout: marked.note });
     return;
   }
@@ -1112,7 +1178,7 @@ async function act({
  * stand repeats this literally: a driver that appended a misspelled event loses the
  * loop guard and the wake channel at once — and the run goes red in the same place.
  */
-function fireStopHook(workspace, { chatId, model, outcome, transcript }) {
+function fireStopHook(workspace, { chatId, model, outcome, transcript }, event = 'stop') {
   let hooks = null;
   try {
     hooks = JSON.parse(readFileSync(path.join(workspace, '.cursor', 'hooks.json'), 'utf8'));
@@ -1121,7 +1187,7 @@ function fireStopHook(workspace, { chatId, model, outcome, transcript }) {
   }
   const names = Object.keys(hooks?.hooks ?? {});
   if (!names.length || names.some((n) => !KNOWN_HOOK_EVENTS.includes(n))) return;
-  const command = hooks?.hooks?.stop?.[0]?.command ?? null;
+  const command = hooks?.hooks?.[event]?.[0]?.command ?? null;
   if (!command) return;
   const payload = {
     conversation_id: chatId,
@@ -1132,14 +1198,38 @@ function fireStopHook(workspace, { chatId, model, outcome, transcript }) {
     input_tokens: 57240,
     output_tokens: 184,
     session_id: chatId,
-    hook_event_name: 'stop',
+    hook_event_name: event,
     cursor_version: HARNESS_VERSION,
     workspace_roots: [workspace],
     transcript_path: transcript,
   };
   // `shell: true` — the hooks file holds a STRING of the command, and the shell parses
   // it: that is how the real binary runs it, and the quotes around paths are for it.
-  spawnSync(command, {
+  return spawnSync(command, {
     cwd: workspace, env: process.env, shell: true, input: JSON.stringify(payload), encoding: 'utf8',
   });
+}
+
+export async function openHttpBus(cfg, env) {
+  const authorization = cfg.headers?.Authorization?.replace(/\$\{env:([^}]+)\}/g, (_, key) => env[key] ?? '');
+  if (!authorization?.startsWith('Bearer ') || authorization.includes('${')) throw new Error('Cursor fixture HTTP MCP requires its own resolved bearer');
+  let session = null, sequence = 0;
+  const rpc = async (method, params, notify = false) => {
+    const response = await fetch(cfg.url, { method: 'POST', signal: AbortSignal.timeout(30000), headers: {
+      authorization, accept: 'application/json, text/event-stream', 'content-type': 'application/json',
+      ...(session ? { 'mcp-session-id': session, 'mcp-protocol-version': '2025-06-18' } : {}),
+    }, body: JSON.stringify({ jsonrpc: '2.0', ...(notify ? {} : { id: ++sequence }), method, params }) });
+    if (!response.ok) throw new Error(`Cursor fixture HTTP MCP ${method}: ${response.status} ${await response.text()}`);
+    session = response.headers.get('mcp-session-id') ?? session;
+    return response.status === 202 ? null : response.json();
+  };
+  await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'cursor-stub', version: '1' } });
+  await rpc('notifications/initialized', {}, true);
+  return { rpc, get sessionId() { return session; }, close: async () => {
+    if (!session) return;
+    const response = await fetch(cfg.url, { method: 'DELETE', signal: AbortSignal.timeout(5000), headers: {
+      authorization, 'mcp-session-id': session, 'mcp-protocol-version': '2025-06-18',
+    } });
+    if (!response.ok && response.status !== 404 && response.status !== 401) throw new Error(`Cursor fixture HTTP MCP close: ${response.status}`);
+  } };
 }

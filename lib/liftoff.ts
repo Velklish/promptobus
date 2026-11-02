@@ -1,13 +1,16 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { liftWords, PromptobusError, SHIPPED_REGISTRY, WORKER } from '../dist/index.js';
-import { info, warn, fail } from './util.js';
+import { GateError, liftWords, PromptobusError, SHIPPED_REGISTRY, WORKER } from '../dist/index.js';
+import { info, warn } from './util.js';
 import { run } from './exec.js';
 import { commonPollEnvironment, harnessBin } from './harness-home.js';
-import { dropStaleWake, participantOf, readTask, upsertParticipant, withTaskLock } from './store.js';
-import { requireCurrentNativeLaunch } from './native-lifecycle.js';
+import { participantOf, readTask, taskExists, withTaskLock } from './store.js';
+import { ownsLegacyLaunch, requireCurrentNativeLaunch } from './native-lifecycle.js';
+import { bindBeforeLaunch, revokeFailedManagedLaunch } from './driver-common.js';
 
 import type { HostToolBin, RoleRegistry } from '../dist/index.js';
+import type { LibLaunchPlan } from './driver-runtime.js';
+import type { LegacyLaunchBinding } from './native-lifecycle.js';
 
 export interface BgSession {
   id?: string; sessionId?: string; name?: string; pid?: number;
@@ -21,34 +24,14 @@ interface LiftoffInput {
   tool: Pick<HostToolBin, 'bin'>; argv: readonly string[]; cwd: string; env: NodeJS.ProcessEnv; name: string; role: string;
   registry?: RoleRegistry; launchFailNote?: string; deadNote?: string; unboundNote?: string;
   persist: (session: string | null, state: AwaitSeen['state'], full: string | null) => unknown;
+  beforeStart?: () => Promise<void>; afterBind?: (id: string) => Promise<void>;
   awaitOptions?: AwaitSessionOptions; sayLimit?: ((output: string) => string | null) | null;
   home?: string | null; task?: string | null; address?: string | null; preboundSessionId?: string | null;
   preboundSessionRecord?: string | null; noun?: string | null; requireFullSession?: boolean; requireLaunchMatch?: boolean;
+  launch?: LibLaunchPlan; expectedBinding?: LegacyLaunchBinding;
 }
 
-export function bindBeforeLaunch(home: string | null, task: string | null, address: string | null, binding: Record<string, unknown> = {}, expected: Parameters<typeof requireCurrentNativeLaunch>[1] = null) {
-  if (!home || !task || !address || !Object.keys(binding).length) return () => {};
-  const record = withTaskLock(home, task, () => {
-    const found = participantOf(readTask(home, task), address);
-    if (!found) return null;
-    requireCurrentNativeLaunch(found, expected);
-    upsertParticipant(home, task, { ...found, metadata: { ...found.metadata, ...binding } });
-    dropStaleWake(home, task, address, binding.sessionId as string | null);
-    return found;
-  });
-  if (!record) fail(`participant ${address} of task ${task} disappeared before its session launch`);
-  return () => withTaskLock(home, task, () => {
-    const current = participantOf(readTask(home, task), address);
-    if (!current) return;
-    try { requireCurrentNativeLaunch(current, record); }
-    catch { return; }
-    const metadata = { ...current.metadata };
-    for (const [key, value] of Object.entries(binding)) {
-      if (metadata[key] === value || metadata[key] === record!.metadata?.[key]) delete metadata[key];
-    }
-    upsertParticipant(home!, task!, { ...current, metadata });
-  });
-}
+export { bindBeforeLaunch } from './driver-common.js';
 
 // Lift a bus participant and the registry of their sessions; both live here or spawn.js and
 // review.js would import each other. One lift per role — line-by-line copies had drifted.
@@ -58,7 +41,8 @@ export function bindBeforeLaunch(home: string | null, task: string | null, addre
 export async function liftoffParticipant({
   tool, argv, cwd, env, name, role, registry = SHIPPED_REGISTRY, launchFailNote = '', deadNote = '', unboundNote = '', persist,
   awaitOptions, sayLimit = null, home = null, task = null, address = null, preboundSessionId = null,
-  preboundSessionRecord = null, noun = null, requireFullSession = false, requireLaunchMatch = false,
+  preboundSessionRecord = null, noun = null, requireFullSession = false, requireLaunchMatch = false, beforeStart, afterBind,
+  launch = { argv: [], files: [], mcpConfig: null, settings: null, sessionRecord: preboundSessionRecord }, expectedBinding,
 }: LiftoffInput): Promise<LaunchResult> {
   const who = noun ? { nom: noun, acc: `the ${noun}` } : liftWords(registry, role) ?? liftWords(registry, WORKER)!;
   const pointer = preboundSessionId && home && task && address ? preboundSessionRecord : null;
@@ -66,9 +50,16 @@ export async function liftoffParticipant({
     ? bindBeforeLaunch(home, task, address, {
       sessionId: preboundSessionId, ...(pointer ? { sessionRecord: pointer } : {}),
     }) : () => {};
-  const refuse = (message: string) => { undo(); fail(message); };
-  let succeeded = false;
+  const undoOwned = () => {
+    if (!expectedBinding || !home || !task || !address) return undo();
+    if (!taskExists(home, task)) return;
+    return withTaskLock(home, task, () => {
+      if (ownsLegacyLaunch(home, task, address, expectedBinding)) undo();
+    });
+  };
+  const refuse = (message: string): never => { throw new GateError(message); };
   try {
+    await beforeStart?.();
     // The shared minute bounds this `--bg` registration call, not the session's
     // lifetime; session appearance is retried separately by awaitSession below.
     const r = run(tool.bin!, argv, {
@@ -104,22 +95,22 @@ export async function liftoffParticipant({
     const state = unbound ? 'dead' : seen.state;
     // A handshake binding stands; only the id the harness itself names can contradict it.
     let disagreement = null;
-    if (pointer && state !== 'dead') {
-      disagreement = withTaskLock(home!, task!, () => {
+    const publish = () => {
+      if (expectedBinding && home && task && address && !ownsLegacyLaunch(home, task, address, expectedBinding)) {
+        throw new GateError(`Claude launch ${name} changed its owned generation, ref or participant before native publication`);
+      }
+      if (pointer && state !== 'dead') {
         requireCurrentNativeLaunch(participantOf(readTask(home!, task!), address), null);
         const bound = handshakeBinding(pointer);
         if (bound && named && bound !== named) {
-          // The handshake's id goes back to the prelaunch one, so the refusal's undo clears it.
-          const current = participantOf(readTask(home!, task!), address);
-          if (current?.metadata?.sessionId === bound) {
-            upsertParticipant(home!, task!, { ...current, metadata: { ...current.metadata, sessionId: preboundSessionId } });
-          }
           return bound;
         }
         persist(session, state, bound ?? full);
         return null;
-      });
-    } else persist(session, state, full);
+      } else persist(session, state, full);
+      return null;
+    };
+    disagreement = home && task && taskExists(home, task) ? withTaskLock(home, task, publish) : publish();
     if (disagreement) {
       if (output) info(output);
       refuse(`session "${name}" is alive, but claude agents names it ${named} while its own MCP handshake bound `
@@ -142,10 +133,14 @@ export async function liftoffParticipant({
       refuse(`session "${name}" is alive and working, but ${missing} — so ${who.nom}'s record is bound to no session and nothing it sends will be taken: `
         + `it cannot report. This lift is refused.${unboundNote}`);
     }
-    succeeded = true;
+    if (afterBind) {
+      const confirmed = named ?? (pointer ? handshakeBinding(pointer) : null) ?? launchId;
+      if (!confirmed) refuse(`session "${name}" has not confirmed its actual native id for shared HTTP.${unboundNote}`);
+      await afterBind(confirmed!);
+    }
     return { output, session, seen };
-  } finally {
-    if (!succeeded) undo();
+  } catch (error) {
+    return revokeFailedManagedLaunch(launch, error, undoOwned);
   }
 }
 

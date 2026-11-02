@@ -67,18 +67,18 @@ if(process.argv.includes('kill-session')) {
   try {
     for (const mode of ['fallback-delayed', 'fallback-positive']) {
       const current = await actor(mode, mode), began = Date.now(), edge = began + 1500;
-      let settled = false;
-      const pending = cursorDriver.stop(current.name, { timeoutMs: Math.max(0, edge - Date.now()) }).then(value => { settled = true; return value; });
+      let settled = false, settledAt = null;
+      const pending = cursorDriver.stop(current.name, { timeoutMs: Math.max(0, edge - Date.now()) }).then(value => { settled = true; settledAt = Date.now(); return value; });
       await waitFor(() => rows().some(row => row.name === current.name && row.kind === 'fallback/requested'), { timeoutMs: 5000 });
       const requested = rows().find(row => row.name === current.name && row.kind === 'fallback/requested');
       let fallbackIdentity = null;
       try { if (requested) fallbackIdentity = requireProcess(requested.pid); } catch {}
       if (mode === 'fallback-delayed') check('a delayed native fallback yields while its exact child is still alive', !settled
         && !!fallbackIdentity && processState(fallbackIdentity) === 'alive' && Date.now() < edge,
-      JSON.stringify({ settled, fallbackIdentity, requested, edge }));
+      JSON.stringify({ settled, settledAt, fallbackIdentity, requested, began, edge }));
       const result = await pending, returned = Date.now();
       if (mode === 'fallback-delayed' && requested) await wait(Math.max(0, requested.at + 3700 - Date.now()));
-      const trace = { mode, edge, returned, result, pane: current.identity, paneState: processState(current.identity),
+      const trace = { mode, began, edge, settledAt, returned, result, pane: current.identity, paneState: processState(current.identity),
         fallbackIdentity, fallbackState: fallbackIdentity ? processState(fallbackIdentity) : 'not observed alive',
         recordPresent: !!readSession(current.name), homePresent: existsSync(path.dirname(sessionFile(current.name))),
         nativePresent: existsSync(current.native), rows: rows().filter(row => row.name === current.name) };
@@ -94,18 +94,20 @@ if(process.argv.includes('kill-session')) {
     for (const mode of ['observation-exhausted', 'observation-replaced']) {
       const first = await actor(mode, mode), second = await actor(`${mode}-second`, 'native-positive');
       const edge = Date.now() + (mode === 'observation-exhausted' ? 1800 : 5000);
-      let firstSettled = false;
-      const pending = cursorDriver.stop(first.name, { timeoutMs: Math.max(0, edge - Date.now()) }).then(value => { firstSettled = true; return value; });
+      let firstSettled = false, firstSettledAt = null;
+      const pending = cursorDriver.stop(first.name, { timeoutMs: Math.max(0, edge - Date.now()) }).then(value => { firstSettled = true; firstSettledAt = Date.now(); return value; });
       await waitFor(() => rows().some(row => row.name === first.name && row.kind === 'observation/held'), { timeoutMs: 5000 });
       const held = rows().find(row => row.name === first.name && row.kind === 'observation/held');
       let observerIdentity = null;
       try { if (held) observerIdentity = requireProcess(held.pid); } catch {}
-      const otherResult = await cursorDriver.stop(second.name, { timeoutMs: Math.max(0, edge - Date.now()) });
+      const otherBegan = Date.now(), otherTimeoutMs = Math.max(0, edge - Date.now());
+      const otherResult = await cursorDriver.stop(second.name, { timeoutMs: otherTimeoutMs });
+      const otherSettledAt = Date.now();
       const otherConfirmedBeforeRelease = !existsSync(first.release) && !firstSettled && otherResult.ok === true && otherResult.stopped === true
         && processState(second.identity) === 'dead' && rows().some(row => row.name === second.name && row.kind === 'native/confirmed')
         && !rows().some(row => row.name === first.name && row.kind === 'observation/expired');
       check('another owned participant initiates and confirms native Stop while post-native observation remains held', otherConfirmedBeforeRelease,
-        JSON.stringify({ mode, otherResult, firstSettled, observerIdentity, held, otherPaneState: processState(second.identity), edge }));
+        JSON.stringify({ mode, otherResult, firstSettled, firstSettledAt, observerIdentity, held, otherPaneState: processState(second.identity), edge, otherBegan, otherTimeoutMs, otherSettledAt }));
       if (mode === 'observation-replaced') {
         const file = sessionFile(first.name);
         if (existsSync(file)) writeFileSync(file, readFileSync(file));
@@ -114,7 +116,7 @@ if(process.argv.includes('kill-session')) {
       }
       const result = await pending;
       if (mode === 'observation-exhausted' && held) await wait(Math.max(0, held.at + 3700 - Date.now()));
-      const trace = { mode, edge, result, firstPane: first.identity, firstPaneState: processState(first.identity), observerIdentity,
+      const trace = { mode, edge, firstSettledAt, otherBegan, otherTimeoutMs, otherSettledAt, result, firstPane: first.identity, firstPaneState: processState(first.identity), observerIdentity,
         observerState: observerIdentity ? processState(observerIdentity) : 'not observed alive', otherConfirmedBeforeRelease,
         recordPresent: !!readSession(first.name), nativePresent: existsSync(first.native), rows: rows().filter(row => row.name === first.name) };
       writeSync(1, `  · bounded-observation-receipt: ${JSON.stringify(trace)}\n`);

@@ -89,6 +89,8 @@
 // (`withStubPath` in [sandbox.mjs](sandbox.mjs)), and suite files that compose their
 // own `${BIN}${delimiter}${PATH}` compose it from the sealed one they were handed, so
 // one seal covers every file without an edit in any of them.
+// Four exact Darwin kernel reads use protected absolute binaries. The runner requires
+// their bounded exec-generated shape metadata; no system-tool basename bypasses the seal.
 
 import { existsSync, mkdirSync, statSync, symlinkSync } from 'node:fs';
 import path from 'node:path';

@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
-import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs';
+import { readFile, readlink } from 'node:fs/promises';
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readlinkSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { createConnection } from 'node:net';
 import path from 'node:path';
@@ -9,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import type { PromptobusHost } from '../dist/index.js';
 import { withDirLock } from '../dist/fs/lock.js';
 import { canonicalPath, writeJsonAtomic } from './store.js';
-import { runAsync } from './exec.js';
+import { run, runAsync } from './exec.js';
 
 export interface ProcessIdentity { pid: number; birth: string }
 export interface RecordVersion { file: string; version: string }
@@ -37,23 +36,101 @@ export const recordOf = (value: unknown): value is Record<string, unknown> =>
 export const contained = (root: string, file: string) => file === root
   || (!path.relative(root, file).startsWith(`..${path.sep}`) && path.relative(root, file) !== '..' && !path.isAbsolute(path.relative(root, file)));
 
-export function processIdentity(pid: number): ProcessIdentity | null {
+interface ProcessObservation { scope: string; identity: ProcessIdentity | null; zombie: boolean }
+const LINUX_BOOT = '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}';
+const DARWIN_SCOPE = 'v2:darwin:utc-c';
+const darwinObservationEnv = () => ({ ...process.env, LC_ALL: 'C', LANG: 'C', TZ: 'UTC' });
+
+function darwinStart(source: string): string | null {
+  const value = source.trim().replace(/\s+/g, ' ');
+  const match = /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) ([1-9]|[12]\d|3[01]) ([01]\d|2[0-3]):([0-5]\d):([0-5]\d) ([1-9]\d{3})$/.exec(value);
+  if (!match) return null;
+  const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(match[2]!);
+  const date = new Date(Date.UTC(Number(match[7]), month, Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6])));
+  return date.getUTCMonth() === month && date.getUTCDate() === Number(match[3])
+    && ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getUTCDay()] === match[1] ? value : null;
+}
+
+function birthScope(birth: string): string | null {
+  const linux = new RegExp(`^(v2:linux:${LINUX_BOOT}:[1-9]\\d*):(0|[1-9]\\d*)$`).exec(birth);
+  if (linux) return linux[1]!;
+  if (birth.startsWith(`${DARWIN_SCOPE}:`) && darwinStart(birth.slice(DARWIN_SCOPE.length + 1)) === birth.slice(DARWIN_SCOPE.length + 1)) return DARWIN_SCOPE;
+  return null;
+}
+
+function linuxStat(pid: number, source: string) {
+  if (!source.startsWith(`${pid} (`) || source.lastIndexOf(')') < source.indexOf('(')) return null;
+  const fields = source.slice(source.lastIndexOf(')') + 2).trim().split(/\s+/);
+  return /^[RSDZTtWXxKPI]$/.test(fields[0] ?? '') && /^(0|[1-9]\d*)$/.test(fields[19] ?? '')
+    ? { state: fields[0]!, ticks: fields[19]! } : null;
+}
+
+function linuxView(boot: string, namespace: string, ownStat: string, ownStatus: string) {
+  const id = /^pid:\[([1-9]\d*)\]$/.exec(namespace), bootId = boot.trim();
+  const statusPid = /^Pid:[ \t]+(\d+)[ \t]*$/m.exec(ownStatus);
+  const namespacePids = /^NSpid:[ \t]+(\d+(?:[ \t]+\d+)*)[ \t]*$/m.exec(ownStatus)?.[1]?.trim().split(/[ \t]+/);
+  if (!new RegExp(`^${LINUX_BOOT}$`).test(bootId) || !id || !linuxStat(process.pid, ownStat)
+    || Number(statusPid?.[1]) !== process.pid || namespacePids?.length !== 1 || Number(namespacePids[0]) !== process.pid) return null;
+  return `v2:linux:${bootId}:${id[1]}`;
+}
+
+function darwinObservation(pid: number, status: number | null, stdout: string, stderr: string): ProcessObservation {
+  const match = status === 0 && !stderr.trim() && /^\s*(\S+)\s+(.+?)\s*$/.exec(stdout);
+  const start = match ? darwinStart(match[2]!) : null;
+  return { scope: DARWIN_SCOPE, identity: match && /^[DIRSTUXZ][+<>LNlsEJVTWX-]*$/.test(match[1]!) && start
+    ? { pid, birth: `${DARWIN_SCOPE}:${start}` } : null, zombie: Boolean(match && start && match[1]!.startsWith('Z')) };
+}
+
+function observeProcess(pid: number): ProcessObservation | null {
   if (!Number.isSafeInteger(pid) || pid <= 0) return null;
   try {
     if (process.platform === 'linux') {
-      const source = readFileSync(`/proc/${pid}/stat`, 'utf8');
-      const fields = source.slice(source.lastIndexOf(')') + 2).split(' ');
-      if (fields[0] === 'Z' || !fields[19]) return null;
-      return { pid, birth: `${readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim()}:${fields[19]}` };
+      const scope = linuxView(readFileSync('/proc/sys/kernel/random/boot_id', 'utf8'), readlinkSync('/proc/self/ns/pid'),
+        readFileSync('/proc/self/stat', 'utf8'), readFileSync('/proc/self/status', 'utf8'));
+      if (!scope) return null;
+      let stat: ReturnType<typeof linuxStat> = null;
+      try { stat = linuxStat(pid, readFileSync(`/proc/${pid}/stat`, 'utf8')); } catch {}
+      return { scope, identity: stat ? { pid, birth: `${scope}:${stat.ticks}` } : null, zombie: stat?.state === 'Z' };
     }
     if (process.platform === 'darwin') {
-      const result = spawnSync('ps', ['-p', String(pid), '-o', 'stat=', '-o', 'lstart='], { encoding: 'utf8', timeout: 2000 });
-      const match = result.status === 0 && /^\s*(\S+)\s+(.+?)\s*$/.exec(result.stdout);
-      if (!match || match[1]!.startsWith('Z')) return null;
-      return { pid, birth: match[2]! };
+      const result = run('/bin/ps', ['-p', String(pid), '-o', 'stat=', '-o', 'lstart='], { encoding: 'utf8', timeout: 2000, env: darwinObservationEnv() });
+      return darwinObservation(pid, result.status, result.stdout ?? '', result.stderr ?? '');
     }
-  } catch { return null; }
+  } catch {}
   return null;
+}
+
+async function observeProcessAsync(pid: number): Promise<ProcessObservation | null> {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+  try {
+    if (process.platform === 'linux') {
+      const [boot, namespace, ownStat, ownStatus] = await Promise.all([
+        readFile('/proc/sys/kernel/random/boot_id', 'utf8'), readlink('/proc/self/ns/pid'),
+        readFile('/proc/self/stat', 'utf8'), readFile('/proc/self/status', 'utf8'),
+      ]);
+      const scope = linuxView(boot, namespace, ownStat, ownStatus);
+      if (!scope) return null;
+      let stat: ReturnType<typeof linuxStat> = null;
+      try { stat = linuxStat(pid, await readFile(`/proc/${pid}/stat`, 'utf8')); } catch {}
+      return { scope, identity: stat ? { pid, birth: `${scope}:${stat.ticks}` } : null, zombie: stat?.state === 'Z' };
+    }
+    if (process.platform === 'darwin') {
+      const result = await runAsync('/bin/ps', ['-p', String(pid), '-o', 'stat=', '-o', 'lstart='],
+        { encoding: 'utf8', timeoutMs: 2000, env: darwinObservationEnv() });
+      return darwinObservation(pid, result.status, result.stdout, result.stderr);
+    }
+  } catch {}
+  return null;
+}
+
+export function processIdentity(pid: number): ProcessIdentity | null {
+  const observed = observeProcess(pid);
+  return observed && !observed.zombie ? observed.identity : null;
+}
+
+export async function processIdentityAsync(pid: number): Promise<ProcessIdentity | null> {
+  const observed = await observeProcessAsync(pid);
+  return observed && !observed.zombie ? observed.identity : null;
 }
 
 export function sameProcess(identity: ProcessIdentity) {
@@ -61,8 +138,13 @@ export function sameProcess(identity: ProcessIdentity) {
 }
 
 export function processState(identity: ProcessIdentity): 'alive' | 'dead' | 'unknown' {
-  const current = processIdentity(identity.pid);
-  if (current) return current.birth === identity.birth ? 'alive' : 'dead';
+  return compareProcess(identity, observeProcess(identity.pid));
+}
+
+function compareProcess(identity: ProcessIdentity, observed: ProcessObservation | null): 'alive' | 'dead' | 'unknown' {
+  const scope = birthScope(identity.birth);
+  if (!scope || !observed || observed.scope !== scope || !Number.isSafeInteger(identity.pid) || identity.pid <= 0) return 'unknown';
+  if (observed.identity) return observed.zombie || observed.identity.birth !== identity.birth ? 'dead' : 'alive';
   try { process.kill(identity.pid, 0); } catch (error) {
     if (recordOf(error) && error.code === 'ESRCH') return 'dead';
   }
@@ -73,24 +155,8 @@ const processObservations = new Map<string, Promise<'alive' | 'dead' | 'unknown'
 export function processStateAsync(identity: ProcessIdentity): Promise<'alive' | 'dead' | 'unknown'> {
   const key = JSON.stringify(identity), existing = processObservations.get(key);
   if (existing) return existing;
-  const pending = (async (): Promise<'alive' | 'dead' | 'unknown'> => {
-    try {
-      if (process.platform === 'linux') {
-        const source = await readFile(`/proc/${identity.pid}/stat`, 'utf8');
-        const fields = source.slice(source.lastIndexOf(')') + 2).split(' ');
-        if (fields[0] !== 'Z' && fields[19]) {
-          const birth = `${(await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim()}:${fields[19]}`;
-          return birth === identity.birth ? 'alive' : 'dead';
-        }
-      } else if (process.platform === 'darwin') {
-        const result = await runAsync('ps', ['-p', String(identity.pid), '-o', 'stat=', '-o', 'lstart='], { encoding: 'utf8', timeoutMs: 2000 });
-        const match = result.status === 0 && /^\s*(\S+)\s+(.+?)\s*$/.exec(result.stdout);
-        if (match && !match[1]!.startsWith('Z')) return match[2] === identity.birth ? 'alive' : 'dead';
-      }
-    } catch {}
-    try { process.kill(identity.pid, 0); } catch (error) { if (recordOf(error) && error.code === 'ESRCH') return 'dead'; }
-    return 'unknown';
-  })().finally(() => { processObservations.delete(key); });
+  const pending = observeProcessAsync(identity.pid).then(observed => compareProcess(identity, observed))
+    .finally(() => { processObservations.delete(key); });
   processObservations.set(key, pending);
   return pending;
 }

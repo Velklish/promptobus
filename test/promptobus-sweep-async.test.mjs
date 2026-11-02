@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
-import { capture } from './console.mjs';
+import { capture, expectFail } from './console.mjs';
 import * as store from '../lib/store.js';
 import { createRegistry } from '../dist/index.js';
 import { opencodeDriver } from '../lib/driver-opencode.js';
@@ -29,10 +29,11 @@ const entered = new Promise((resolve) => { enter = resolve; });
 let finished = false;
 let hookLock = false;
 let hook;
+const hookArguments = [];
 const registry = createRegistry({ drivers: { opencode: {
   ...opencodeDriver,
   inspect: () => ({ state: 'gone', busy: false, stall: null, id: null }),
-  sweepParticipant: (...args) => hook(...args),
+  sweepParticipant: (...args) => { hookArguments.push(args); return hook(...args); },
 } }, fallback: 'opencode' });
 const cacheRead = (reader, title) => reader.withTaskCache(() => {
   reader.readTask(home, task);
@@ -76,17 +77,27 @@ check(': completed public sweep removes participant files and releases its lock'
   JSON.stringify({ code, finished, sidecar: existsSync(sidecar), lock: existsSync(lock) }));
 
 writeFileSync(sidecar, 'reject fixture');
+const rejectedParticipant = JSON.stringify(store.participantOf(store.readTask(home, task), address));
 const unhandled = [];
 const onUnhandled = (error) => { unhandled.push(error.message); };
 process.on('unhandledRejection', onUnhandled);
 hook = async () => { throw new Error('fixture cleanup rejected'); };
-const warning = await capture(async () => { code = await sweep(SB, { task, address }, { registry }); });
+const rejection = await expectFail(() => sweep(SB, { task, address }, { registry }));
 await new Promise((resolve) => setImmediate(resolve));
 process.off('unhandledRejection', onUnhandled);
-check(': rejected asynchronous sweep hook follows the cleanup warning path without an unhandled rejection',
-  code === 0 && warning.includes('could not clear the harness state of participant worker:accepted: fixture cleanup rejected')
-  && unhandled.length === 0 && !existsSync(lock) && !existsSync(sidecar),
-  JSON.stringify({ code, warning, unhandled, lock: existsSync(lock), sidecar: existsSync(sidecar) }));
+check(': rejected asynchronous sweep hook refuses and retains exact participant files and pointer without an unhandled rejection',
+  rejection.failed && rejection.out.includes('could not clear the harness state of participant worker:accepted: fixture cleanup rejected; participant files retained')
+  && unhandled.length === 0 && !existsSync(lock) && readFileSync(sidecar, 'utf8') === 'reject fixture'
+  && JSON.stringify(store.participantOf(store.readTask(home, task), address)) === rejectedParticipant
+  && store.readTask(home, task).status === 'active' && !store.readTask(home, task).adapter.worktreesSwept,
+  JSON.stringify({ rejection, unhandled, lock: existsSync(lock), sidecar: existsSync(sidecar) }));
+hook = async () => {};
+await capture(async () => { code = await sweep(SB, { task, address }, { registry }); });
+check(': a later confirmed hook allows cleanup of the retained participant files',
+  code === 0 && !existsSync(sidecar) && !existsSync(lock), JSON.stringify({ code, sidecar: existsSync(sidecar), lock: existsSync(lock) }));
+check(': public custom cleanup hooks receive no private task-lock context',
+  hookArguments.every((args) => args.length === 2 && args[0].sessionRef === 'dead-fixture' && args[1] === task),
+  JSON.stringify(hookArguments.map((args) => ({ length: args.length, task: args[1] }))));
 
 const other = 'async-sweep-other-t20261013-140000';
 store.createTask(home, { id: other, title: 'overlapping lock fixture', owner: 'fixture-owner' });

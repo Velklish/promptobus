@@ -72,16 +72,18 @@ test('Stop refuses idle queued work and missing queue evidence', async () => {
 
 test('Stop awaits SDK settlement before reading its confirmation snapshot', async () => {
   const s = sdk('active');
-  const entered = Promise.withResolvers(), release = Promise.withResolvers();
+  let entered, release;
+  const enteredPromise = new Promise(resolve => { entered = resolve; });
+  const releasePromise = new Promise(resolve => { release = resolve; });
   let reads = 0, settled = false;
   s.bb.sdk.threads.get = async () => { reads++; return s.thread; };
-  s.bb.sdk.threads.stop = async () => { entered.resolve(); await release.promise; return { ok: true }; };
+  s.bb.sdk.threads.stop = async () => { entered(); await releasePromise; return { ok: true }; };
   const pending = stopBbParticipant(s.bb, binding).then(result => { settled = true; return result; });
-  await entered.promise;
+  await enteredPromise;
   assert.equal(settled, false);
   assert.equal(reads, 1, 'No confirmation snapshot may be read while SDK Stop is unresolved');
   s.thread.status = s.thread.runtime.displayStatus = 'idle';
-  release.resolve();
+  release();
   assert.equal((await pending).confirmed, true);
   assert.equal(reads, 2);
 });

@@ -6,6 +6,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 import {
   HOST_KIND, HostResolveError, homeOfRoot,
 } from './host.js';
@@ -19,6 +20,7 @@ import type {
 
 export const HOST_CONFIG = 'promptobus.json';
 const DEFAULT_COMMAND = 'promptobus';
+const DEFAULT_VERSION = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 
 // Model-routing file names of the standalone host. Names, not paths: the two homes they hang off
 // differ, and one name serves both overlays because a layer is told apart by its id and its home.
@@ -179,10 +181,10 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
   const config: HostFile = { ...found.config, ...(options.config ?? {}) };
   const root = canonicalPath(found.root);
   const commandName = options.commandName ?? config.commandName ?? DEFAULT_COMMAND;
-  const version = options.version ?? config.version ?? '0.0.0';
+  const version = options.version ?? config.version ?? DEFAULT_VERSION;
   const locale = options.locale ?? config.locale ?? 'en';
   const nodePath = options.nodePath ?? process.execPath;
-  const binPath = options.binPath ?? nodePath;
+  const binPath = options.binPath ?? fileURLToPath(new URL('../bin/promptobus.js', import.meta.url));
   const extra = { ...(options.extraEnv ?? {}) };
   const home = options.home ?? homeOfRoot(root);
   const tools = Array.isArray(config.tools) ? config.tools.map(String) : [];

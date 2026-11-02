@@ -29,8 +29,9 @@ import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { check } from './check.mjs';
-import { resetCliCaches, stubCommand, writeHostConfig } from './sandbox.mjs';
+import { ownedServiceFixture, resetCliCaches, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture, quiet } from './console.mjs';
+import { scriptedHttpHelperBinary } from './participant-http.mjs';
 import {
   ATTACHMENT_CONTRACT,
   GATE_LINE_COUNTS, GATE_LINE_VERIFICATION,
@@ -45,6 +46,8 @@ import { provenanceFromRecord, provenanceLine } from '../lib/provenance.js';
 // means not checking it at all (review note). The whole spawn is also run on a path
 // with a space.
 const SB = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'promptobus-promptobus spawn-')));
+const nativeStore = path.join(SB, 'native-account'); mkdirSync(nativeStore, { mode: 0o700 });
+process.env.CLAUDE_CONFIG_DIR = nativeStore;
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_PATH = path.join(here, '..', 'package.json');
 const PACKAGE_VERSION = JSON.parse(readFileSync(PACKAGE_PATH, 'utf8')).version;
@@ -53,6 +56,64 @@ const {
   liftHarness, participantPluginDir, planSpawn, skillsNote, spawn: spawnRaw, repoSkillsLine,
   runRepoGenerator, sayRepoSkills, sayWorktreeDeps, writeSecret, SKILL_KEYS, skillSettings, withToolVersion,
 } = await import(spawnUrl);
+ownedServiceFixture();
+const NATIVE_SESSIONS = path.join(SB, 'native-sessions.json');
+const nativeSessionFixture = (sessions, bgStatus = 0) => `
+import * as nativeFs from 'node:fs';
+const nativeArgs = process.argv.slice(2);
+const nativeFile = ${JSON.stringify(NATIVE_SESSIONS)};
+let nativeMap = {};
+try { nativeMap = JSON.parse(nativeFs.readFileSync(nativeFile, 'utf8')); } catch {}
+const nativeList = ${JSON.stringify(sessions)};
+const nativeName = nativeArgs[nativeArgs.indexOf('--name') + 1];
+const nativeId = nativeArgs[nativeArgs.indexOf('--session-id') + 1];
+if (nativeArgs[0] === '--bg' && nativeList.some(entry => entry.name === nativeName)) {
+  if (!nativeArgs.includes('--session-id') || !/^[0-9a-f-]{36}$/.test(nativeId)) throw new Error('Fixture launch has no authoritative UUID');
+  nativeMap[nativeName] = {id:nativeId,alias:nativeList.find(entry=>entry.name===nativeName).id}; nativeFs.writeFileSync(nativeFile, JSON.stringify(nativeMap));
+  if (${bgStatus === 0} && process.env.PROMPTOBUS_CLIENT_FILE) {
+    const [{bindManagedNativeStart},{observeRootProcess,processExecutable},{readPrivate,recordVersion,sameRecordVersion},{taskExists,withTaskLock,writeJsonAtomic},nativePath] = await Promise.all([
+      import(${JSON.stringify(pathToFileURL(path.join(here, '..', 'lib/drivers.js')).href)}),
+      import(${JSON.stringify(pathToFileURL(path.join(here, '..', 'lib/root-process.js')).href)}),
+      import(${JSON.stringify(pathToFileURL(path.join(here, '..', 'lib/service-state.js')).href)}),
+      import(${JSON.stringify(pathToFileURL(path.join(here, '..', 'lib/store.js')).href)}),
+      import('node:path'),
+    ]);
+    const client = readPrivate(process.env.PROMPTOBUS_CLIENT_FILE);
+    const context = readPrivate(nativePath.join(nativePath.dirname(nativePath.dirname(process.env.PROMPTOBUS_CLIENT_FILE)), 'launch-' + client.id + '.json'));
+    if (context.runtime !== client.runtime || context.harness !== 'claude' || context.home !== client.env.PROMPTOBUS_HOME
+      || context.task !== client.env.PROMPTOBUS_TASK || context.address !== client.env.PROMPTOBUS_ROLE
+      || context.ref !== nativeName || !['managed','reservation'].includes(client.lifetime.kind)
+      || (client.lifetime.kind === 'reservation' && context.deferTaskBinding !== true) || (client.lifetime.kind === 'managed' && (client.lifetime.record !== context.record
+        || client.lifetime.ref !== context.ref || client.lifetime.launchId !== context.launchId))) throw new Error('Owned unit producer has no exact staged client context');
+    const file = context.record, before = recordVersion(file);
+    const record = JSON.parse(nativeFs.readFileSync(file,'utf8'));
+    const store = nativeFs.realpathSync(process.env.CLAUDE_CONFIG_DIR);
+    const processIdentity = await observeRootProcess(${process.pid});
+    const image = processIdentity && await processExecutable(processIdentity);
+    if (!image || record.ref !== nativeName || record.home !== context.home || record.task !== context.task
+      || record.address !== context.address || record.launchId !== context.launchId || record.nativeCommand?.nativeStore !== store
+      || record.nativeLaunchProvenance?.state !== 'candidate' || record.nativeLaunchProvenance.nativeStore !== store
+      || record.nativeCommand.argv[0] !== '--bg' || JSON.stringify(record.nativeCommand.argv) !== JSON.stringify(nativeArgs)) throw new Error('Owned unit producer lacks its exact staged launch tuple');
+    const executable = recordVersion(image), transcript = store + '/' + nativeId + '.jsonl';
+    nativeFs.writeFileSync(transcript,JSON.stringify({sessionId:nativeId})+'\\n',{mode:0o600});
+    const publish = () => {
+      if (!sameRecordVersion(before) || !sameRecordVersion(executable)) throw new Error('Owned unit producer generation changed');
+      writeJsonAtomic(file,{...record,nativeCommand:{...record.nativeCommand,executable}},{mode:0o600});
+      const binding = {harness:'claude',nativeStore:store,nativeId,process:processIdentity};
+      // This verified unit producer models spawn wiring, not a native CLI creation or a dead test process.
+      bindManagedNativeStart({harness:'claude',home:record.home,task:record.task,address:record.address,ref:record.ref,record:file,
+        launchId:record.launchId,nativeId,transcript,deferTaskBinding:!taskExists(record.home,record.task),
+        nativeProof:{version:recordVersion(file),binding,evidence:{kind:'native-session-start',source:'startup',...binding,transcript,executable}}});
+    };
+    if (taskExists(record.home,record.task)) withTaskLock(record.home,record.task,publish); else publish();
+  }
+}
+if (nativeArgs[0] === 'agents') {
+  process.stdout.write(JSON.stringify(nativeList.map(entry => { const own = nativeMap[entry.name]; return own && [own.alias,own.id].includes(entry.id) ? {...entry,id:own.id,sessionId:own.id,pid:${process.pid}} : entry; })));
+  process.exit(0);
+}
+`;
+const actualNativeId = name => JSON.parse(readFileSync(NATIVE_SESSIONS, 'utf8'))[name]?.id;
 const stubClaude = () => path.join(BIN, process.platform === 'win32' ? 'claude.cmd' : 'claude');
 const spawnWorker = (root, opts = {}) => spawnRaw(root, {
   tool: { ok: true, bin: stubClaude() },
@@ -182,7 +243,8 @@ const PATH0 = process.env.PATH;
 // (`resolveCommand` walks PATH × PATHEXT), and the test would go red there on
 // working code.
 const claudeSays = (sessions, bgStatus = 0, version = '2.1.237 (Claude Code)', warning = '') => {
-  stubCommand(BIN, 'claude', `const args = process.argv.slice(2);
+  stubCommand(BIN, 'claude', `${nativeSessionFixture(sessions, bgStatus)}
+const args = process.argv.slice(2);
 if (args[0] === '--version') { process.stdout.write(${JSON.stringify(`${version}\n`)}); process.exit(0); }
 if (args[0] === 'agents') { process.stdout.write(${JSON.stringify(JSON.stringify(sessions))}); process.exit(0); }
 process.stderr.write(${JSON.stringify(warning)});
@@ -233,10 +295,13 @@ check('prompt: the worker receives an opt-in machine lease with its own address 
   && plan.prompt.includes('not required for ordinary full suites or gates')
   && !readFileSync(BRIEF, 'utf8').includes('lease'),
   plan.prompt.slice(plan.prompt.indexOf('## Machine lease'), plan.prompt.indexOf('## Machine lease') + 400));
-const SESSION_ID = 'sess-0001';
+let SESSION_ID = 'sess-0001';
 claudeSays([{ id: SESSION_ID, name: plan.name, state: 'working', pid: 4242 }]);
 
-const lifted = await capture(() => spawnWorker(WS, opts));
+let actualLift;
+const lifted = await capture(async () => { actualLift = await spawnWorker(WS, opts); });
+const actualCredential = JSON.parse(readFileSync(actualLift.env.PROMPTOBUS_CLIENT_FILE, 'utf8'));
+SESSION_ID = actualNativeId(plan.name);
 
 // Mechanism fields live in the v1 record `metadata`: the adapter writes them and
 // reads them.
@@ -406,8 +471,14 @@ if (process.platform !== 'win32') {
 const modeOf = (f) => statSync(f).mode & 0o777;
 check(`: the worker's mcp-config is created with 0600 permissions`,
   modeOf(plan.mcpConfigPath) === 0o600, modeOf(plan.mcpConfigPath).toString(8));
-check(': the config really carries what the permissions are closed for — the participant bus env',
-  JSON.parse(readFileSync(plan.mcpConfigPath, 'utf8')).mcpServers['promptobus'].env.PROMPTOBUS_TASK === TASK);
+const workerHttp = JSON.parse(readFileSync(plan.mcpConfigPath, 'utf8')).mcpServers.promptobus;
+const workerServiceArgs = ['--client-file', actualLift.env.PROMPTOBUS_CLIENT_FILE,
+  '--service-home', actualLift.env.PROMPTOBUS_SERVICE_HOME];
+check(': the config carries an HTTP credential reference without bearer bytes',
+  workerHttp.headers === undefined && scriptedHttpHelperBinary(workerHttp) === plan.host.binPath()
+  && workerHttp.headersHelper === [plan.host.nodePath(), ...plan.host.busArgv(['service', 'headers', ...workerServiceArgs])].map(shellQuote).join(' ')
+  && !readFileSync(plan.mcpConfigPath, 'utf8').includes(actualLift.env.PROMPTOBUS_CLIENT_TOKEN)
+  && actualCredential.env.PROMPTOBUS_TASK === TASK);
 // Rewrite is checked by the write itself, not by a second spawn: a repeat spawn
 // of a live worker is a refusal, and it never reaches the config write.
 chmodSync(plan.mcpConfigPath, 0o644);
@@ -449,8 +520,11 @@ check(': the participant settings file carries the loop-guard Stop hook — the 
   guardGroup?.type === 'command'
   && guardGroup?.command === guardHookCommand(wsHost, guardIdentity),
   JSON.stringify(written426.hooks ?? null));
-check('SessionStart is not put on the participant — the detector looks at the workspace root',
-  written426.hooks?.SessionStart === undefined,
+check('SessionStart uses one ordered handler for native binding and the ordinary guard',
+  written426.hooks?.SessionStart?.length === 1
+  && written426.hooks.SessionStart[0].hooks?.length === 1
+  && written426.hooks.SessionStart[0].hooks[0].type === 'command'
+  && written426.hooks.SessionStart[0].hooks[0].command === `${guardHookCommand(wsHost, guardIdentity)} ${workerServiceArgs.map(shellQuote).join(' ')}`,
   JSON.stringify(written426.hooks ?? null));
 check(': the participant hook command carries their identity as arguments, the layout hook does not',
   guardGroup?.command?.includes(` --role ${shellQuote(plan.address)} --task ${shellQuote(plan.taskId)}`
@@ -877,10 +951,12 @@ store.createTask(HOME, {
 });
 const foundPlan = await planSpawn(WS, { repo: 'orders-api', brief: BRIEF, task: FOUND_TASK, worker: 'naydennyy' });
 const offPathBin = path.join(SB, 'off-path');
-stubCommand(offPathBin, 'claude', `const args = process.argv.slice(2);
+claudeSays([{ id: 'sess-0003', name: foundPlan.name, state: 'working', pid: 4244 }]);
+stubCommand(offPathBin, 'claude', `${nativeSessionFixture([{id:'sess-0003', name:foundPlan.name, state:'working',pid:4244}])}
+const args = process.argv.slice(2);
 if (args[0] === '--version') { process.stdout.write('2.1.237 (Claude Code)\\n'); process.exit(0); }
 if (args[0] === 'agents') { process.stdout.write(${JSON.stringify(JSON.stringify([{ id: 'sess-0003', name: foundPlan.name, state: 'working', pid: 4244 }]))}); process.exit(0); }
-process.stdout.write('backgrounded · 5e550003\\n');`);
+process.stdout.write('backgrounded · ' + nativeId + '\\n');`);
 const foundBin = path.join(offPathBin, process.platform === 'win32' ? 'claude.cmd' : 'claude');
 const foundNote = `claude not found in PATH — taken from ${offPathBin}`;
 const foundRun = spawnSync(process.execPath, ['--input-type=module', '-e',
@@ -990,6 +1066,7 @@ const drySessions = JSON.stringify([{ id: 'sess-dry', name: dryPlan.name, state:
 stubCommand(BIN, 'claude', `import { appendFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 appendFileSync(${JSON.stringify(PROBE_MARK)}, args.join(' ') + '\\n');
+${nativeSessionFixture(JSON.parse(drySessions))}
 if (args[0] === '--version') { process.stdout.write('2.1.237 (Claude Code)\\n'); process.exit(0); }
 if (args[0] === 'agents') { process.stdout.write(${JSON.stringify(drySessions)}); process.exit(0); }
 process.stdout.write('backgrounded · sess-dry\\n');`);
@@ -1179,23 +1256,16 @@ check(': --dry-run prints the same session name and the same future task title',
 
 // --- : bus identity in the environment of the participant session ITSELF ----------------------
 //
-// The three variables also sit in the bus-record `env` inside `--mcp-config`,
-// but they go to the MCP-server process. The loop-guard Stop hook is called by
-// the harness as a child of the SESSION and reads its environment — without
-// these three the participant would resolve as address `orchestrator`, their
-// bind would not be found, and the guard would not hold a turn for them even
-// once.
-//
-// A FACT is checked, not an intent: the stubbed binary writes the received
-// environment to a file, and the match is against it. `plan.env` next to it is
-// what will go into `--dry-run` and to the driver.
+// Actual HTTP launches receive their own scoped identity and credential references.
+// The pure preview does not reserve that environment; hooks retain exact scope arguments.
 const TASK426 = 'storozh-t20260902-140000';
 store.createTask(HOME, { id: TASK426, title: 'participant guard', slug: 'storozh', stamp: 't20260902-140000' });
 const ENV_MARK = path.join(SB, 'seen-env.json');
 const opts426 = { repo: 'orders-api', brief: BRIEF, task: TASK426, worker: 'storozh' };
 const plan426 = await planSpawn(WS, opts426);
 const sessions426 = JSON.stringify([{ id: 'sess-0426', name: plan426.name, state: 'working', pid: 4426 }]);
-stubCommand(BIN, 'claude', `import { writeFileSync } from 'node:fs';
+stubCommand(BIN, 'claude', `${nativeSessionFixture(JSON.parse(sessions426))}
+import { writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 if (args[0] === '--version') { process.stdout.write('2.1.251 (Claude Code)\\n'); process.exit(0); }
 if (args[0] === 'agents') { process.stdout.write(${JSON.stringify(sessions426)}); process.exit(0); }
@@ -1209,13 +1279,13 @@ process.env.PATH = `${BIN}${path.delimiter}${PATH0}`;
 resetCliCaches();
 await quiet(() => spawnWorker(WS, opts426));
 const seenEnv = existsSync(ENV_MARK) ? JSON.parse(readFileSync(ENV_MARK, 'utf8')) : null;
-check(': the participant session is lifted WITHOUT bus identity in the environment',
-  seenEnv !== null && seenEnv.role === null && seenEnv.task === null && seenEnv.home === null,
-  `${JSON.stringify(seenEnv)} · the session environment must not carry the triple`);
-check(': the same is not in the plan either — --dry-run prints it and it is given to the driver',
+check(': the actual participant session receives its own scoped HTTP launch identity',
+  seenEnv !== null && seenEnv.role === plan426.address && seenEnv.task === TASK426 && seenEnv.home === HOME,
+  JSON.stringify(seenEnv));
+check(': the pure preview plan carries no actual HTTP launch identity',
   IDENTITY_VARS.every((name) => !(name in plan426.env)),
   JSON.stringify(Object.fromEntries(IDENTITY_VARS.map((n) => [n, plan426.env[n] ?? null]))));
-check(': identity went into the settings-file hook command, not into the environment',
+check(': the ordered participant hook command carries the same scoped identity',
   JSON.parse(readFileSync(plan426.settingsPath, 'utf8'))
     .hooks?.[GUARD_HOOK_EVENT]?.[0]?.hooks?.[0]?.command
     ?.includes(` --role ${shellQuote(plan426.address)} --task ${shellQuote(TASK426)}`
@@ -1403,7 +1473,7 @@ resetCliCaches();
 await quiet(() => spawnRaw(contractHost, contractOpts));
 const contractRec = store.participantOf(store.readTask(HOME, CONTRACT_TASK), 'worker:binonly');
 check('HostToolBin: resolveToolBin returning only `bin` launches the worker',
-  contractRec?.metadata?.session === 'sess-bin', JSON.stringify(contractRec?.metadata));
+  contractRec?.metadata?.session === actualNativeId(contractPlan.name), JSON.stringify(contractRec?.metadata));
 
 // --- PB-8: the repository declares how to restore its generated process skills ------
 //

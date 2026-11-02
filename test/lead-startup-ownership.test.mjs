@@ -1,10 +1,10 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
-import { installHarness, THREAD_DELAY_VAR } from './harness-codex.mjs';
+import { installHarness } from './harness-codex.mjs';
 import { waitFor } from './harness.mjs';
 import { hostOf } from '../lib/host.js';
 import { bus, participantRecord, taskExists } from '../lib/store.js';
@@ -35,8 +35,28 @@ const path = require('node:path');
 const { Server } = require('node:net');
 const file = process.argv[2], launchId = process.argv[3];
 if (process.argv[1] !== ${JSON.stringify(path.resolve('lib/codex-hold.js'))}
-  || path.dirname(file) !== ${JSON.stringify(path.join(harness.stateHome, 'sessions'))}
+  || path.dirname(file) !== ${JSON.stringify(path.join(realpathSync(harness.stateHome), 'sessions'))}
   || JSON.parse(readFileSync(file, 'utf8')).launchId !== launchId) throw new Error('unowned holder barrier');
+const cp = require('node:child_process');
+const { syncBuiltinESMExports } = require('node:module');
+const spawn = cp.spawn;
+cp.spawn = (...args) => {
+  const record = JSON.parse(readFileSync(file, 'utf8'));
+  const child = spawn(...args);
+  if (args[0] === record.bin && args[1]?.includes('app-server')) {
+    const release = path.join(${JSON.stringify(root)}, record.task + '.fork-release');
+    const marker = path.join(${JSON.stringify(root)}, record.task + '.forked');
+    writeFileSync(marker + '.tmp', JSON.stringify({ ref: record.ref, launchId, appPid: child.pid }));
+    renameSync(marker + '.tmp', marker);
+    const until = Date.now() + 10000, pause = new Int32Array(new SharedArrayBuffer(4));
+    while (!existsSync(release)) {
+      if (Date.now() >= until) throw new Error('owned app fork barrier was not released');
+      Atomics.wait(pause, 0, 0, 10);
+    }
+  }
+  return child;
+};
+syncBuiltinESMExports();
 const listen = Server.prototype.listen;
 Server.prototype.listen = function (...args) {
   const record = JSON.parse(readFileSync(file, 'utf8'));
@@ -83,15 +103,20 @@ for (const [index, title] of ['Startup root', 'Different startup root', 'Unbound
   const task = `lead-startup-t20261001-00000${index + 1}`;
   const args = ['lead', '--permission-mode', 'full-access', '--brief', brief, '--task', task];
   const launched = spawnSync(process.execPath, [child, ...args], {
-    cwd: root, env: { ...env, [THREAD_DELAY_VAR]: '3000' }, encoding: 'utf8', timeout: 15000,
+    cwd: root, env, encoding: 'utf8', timeout: 15000,
   });
   const retained = await waitFor(() => {
-    const record = registrySessions(env).find(value => value.task === task);
-    if (!record || !existsSync(holderLogFile(record.ref, env))) return null;
-    const log = readFileSync(holderLogFile(record.ref, env), 'utf8');
-    const appPid = Number(log.match(/app-server pid (\d+)/)?.[1]);
-    return pidAlive(appPid) ? { record, appPid } : null;
+    const marker = path.join(root, task + '.forked');
+    if (!existsSync(marker)) return null;
+    const fork = JSON.parse(readFileSync(marker, 'utf8'));
+    const record = readSession(fork.ref, env);
+    return record?.launchId === fork.launchId && pidAlive(fork.appPid) ? { record, appPid: fork.appPid } : null;
   }, { timeoutMs: 10000 });
+  if (!retained) {
+    check(`${title}: owned holder reaches its app-server startup barrier`, false,
+      `${launched.status} ${launched.stdout}${launched.stderr}`);
+    break;
+  }
   const before = retained.record;
   check(`${title}: launcher exits after fork before either holder PID is published`,
     launched.status === 0 && before.holderPid === null && before.appPid === null
@@ -105,6 +130,7 @@ for (const [index, title] of ['Startup root', 'Different startup root', 'Unbound
     && after?.launchId === before.launchId && after?.prompt === before.prompt
     && registrySessions(env).filter(value => value.task === task).length === 1,
     `${retry.status} ${retry.stdout}${retry.stderr}`);
+  writeFileSync(path.join(root, task + '.fork-release'), 'release\n');
   const published = await waitFor(() => {
     const file = path.join(root, task + '.listening');
     return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;

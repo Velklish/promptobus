@@ -21,6 +21,8 @@ for (const scenario of ['busy dead', 'cached alive but dead', 'unknown', 'revisi
     HttpFailure, isDeepStrictEqual, paths: { home: '/owned' },
     currentGrant: value => { if (!validGrant) throw new HttpFailure(401, 'Client binding is absent or expired'); return value; },
     requireProcessLifetime: async () => {},
+    // This extracted unit controls the observation/revision fence; real native admission is covered by service fixtures.
+    requireManagedNativeBinding: async () => {}, standaloneExpired: () => false, host: {},
     requireLifetime: (_grant, _home, observe) => {
       if (observe.managed(grant, participant) === 'dead') throw new HttpFailure(401, 'Client lifetime is already expired or replaced');
     },

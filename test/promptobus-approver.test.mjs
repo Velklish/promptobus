@@ -6,7 +6,10 @@ import os from 'node:os';
 import { mkdtempSync, realpathSync } from 'node:fs';
 import { check } from './check.mjs';
 import { capture, expectFail } from './console.mjs';
-import { stubCommand, writeHostConfig } from './sandbox.mjs';
+import { ownedServiceFixture, stubCommand, writeHostConfig } from './sandbox.mjs';
+
+ownedServiceFixture();
+mkdirSync(process.env.CLAUDE_CONFIG_DIR, { recursive: true });
 
 function thrown(fn) {
   try {
@@ -758,17 +761,20 @@ const args = process.argv.slice(2);
 if (args[0] === '--version') { process.stdout.write('stub 1.0.0\\n'); process.exit(0); }
 if (args[0] === '--bg') {
   const name = args[args.indexOf('--name') + 1] ?? '';
-  writeFileSync(${JSON.stringify(LIVE_BG)}, name);
+  const nativeId = args[args.indexOf('--session-id') + 1];
+  writeFileSync(${JSON.stringify(LIVE_BG)}, JSON.stringify({ name, nativeId }));
+  const { publishOwnedClaudeFixtureStart } = await import(${JSON.stringify(new URL('./harness.mjs', import.meta.url).href)});
+  await publishOwnedClaudeFixtureStart({ nativeId: nativeId, argv: args, pid: ${process.pid} });
   process.stdout.write('backgrounded · cafe34 · ' + name + '\\n');
   process.exit(0);
 }
 if (args[0] === 'agents' && existsSync(${JSON.stringify(LIVE_BG)})) {
-  const raised = readFileSync(${JSON.stringify(LIVE_BG)}, 'utf8');
+  const raised = JSON.parse(readFileSync(${JSON.stringify(LIVE_BG)}, 'utf8'));
   process.stdout.write(JSON.stringify([{
     id: 'sess-live',
-    name: raised,
+    name: raised.name,
     status: 'running',
-    sessionId: '00000000-0000-4000-8000-000000000001',
+    sessionId: raised.nativeId,
   }]));
   process.exit(0);
 }
@@ -917,8 +923,8 @@ const args = process.argv.slice(2);
 if (args[0] === '--version') { process.stdout.write('stub 1.0.0\\n'); process.exit(0); }
 if (args[0] === '--bg') { process.stderr.write('launch refused\\n'); process.exit(1); }
 if (args[0] === 'agents' && existsSync(${JSON.stringify(LIVE_BG)})) {
-  const raised = readFileSync(${JSON.stringify(LIVE_BG)}, 'utf8');
-  process.stdout.write(JSON.stringify([{ id: 'sess-live', name: raised, status: 'running', sessionId: '00000000-0000-4000-8000-000000000001' }]));
+  const raised = JSON.parse(readFileSync(${JSON.stringify(LIVE_BG)}, 'utf8'));
+  process.stdout.write(JSON.stringify([{ id: 'sess-live', name: raised.name, status: 'running', sessionId: raised.nativeId }]));
   process.exit(0);
 }
 process.exit(0);`);
@@ -963,7 +969,7 @@ const mcpOrchestrator = await mcpSend('approver:warden', { to: 'orchestrator', t
   home: LIVE_HOME,
   task: LIVE_TASK,
   cwd: LIVE_WS,
-  env: { CLAUDE_CODE_SESSION_ID: '00000000-0000-4000-8000-000000000001' },
+  env: { CLAUDE_CODE_SESSION_ID: liveApprover.metadata.sessionId },
 });
 check(': live approver MCP mail reaches the orchestrator with a bus message id',
   mcpOrchestrator.status === 0
@@ -975,7 +981,7 @@ const mcpToWorker = await mcpSend('approver:warden', { to: 'worker:warden', type
   home: LIVE_HOME,
   task: LIVE_TASK,
   cwd: LIVE_WS,
-  env: { CLAUDE_CODE_SESSION_ID: '00000000-0000-4000-8000-000000000001' },
+  env: { CLAUDE_CODE_SESSION_ID: liveApprover.metadata.sessionId },
 });
 check(': live approver MCP mail reaches the worker with a bus message id',
   mcpToWorker.status === 0
@@ -1066,12 +1072,16 @@ const args = process.argv.slice(2);
 if (args[0] === '--version') { process.stdout.write('2.1.280\\n'); process.exit(0); }
 if (args[0] === '--bg') {
   const name = args[args.indexOf('--name') + 1] ?? '';
-  writeFileSync(${JSON.stringify(RETRY_BG)}, name);
+  const nativeId = args[args.indexOf('--session-id') + 1];
+  writeFileSync(${JSON.stringify(RETRY_BG)}, JSON.stringify({ name, nativeId }));
+  const { publishOwnedClaudeFixtureStart } = await import(${JSON.stringify(new URL('./harness.mjs', import.meta.url).href)});
+  await publishOwnedClaudeFixtureStart({ nativeId: nativeId, argv: args, pid: ${process.pid} });
   process.stdout.write('backgrounded · cafe34 · ' + name + '\\n');
   process.exit(0);
 }
 if (args[0] === 'agents' && existsSync(${JSON.stringify(RETRY_BG)})) {
-  process.stdout.write(JSON.stringify([{ id: 'sess-retry', name: readFileSync(${JSON.stringify(RETRY_BG)}, 'utf8'), status: 'running', sessionId: '00000000-0000-4000-8000-0000000000aa' }]));
+  const raised = JSON.parse(readFileSync(${JSON.stringify(RETRY_BG)}, 'utf8'));
+  process.stdout.write(JSON.stringify([{ id: 'sess-retry', name: raised.name, status: 'running', sessionId: raised.nativeId }]));
   process.exit(0);
 }
 if (args[0] === 'stop') { rmSync(${JSON.stringify(RETRY_BG)}, { force: true }); process.exit(0); }
@@ -1216,12 +1226,16 @@ const args = process.argv.slice(2);
 if (args[0] === '--version') { process.stdout.write('2.1.280\\n'); process.exit(0); }
 if (args[0] === '--bg') {
   const name = args[args.indexOf('--name') + 1] ?? '';
-  writeFileSync(${JSON.stringify(GEN_BG)}, name);
+  const nativeId = args[args.indexOf('--session-id') + 1];
+  writeFileSync(${JSON.stringify(GEN_BG)}, JSON.stringify({ name, nativeId }));
+  const { publishOwnedClaudeFixtureStart } = await import(${JSON.stringify(new URL('./harness.mjs', import.meta.url).href)});
+  await publishOwnedClaudeFixtureStart({ nativeId: nativeId, argv: args, pid: ${process.pid} });
   process.stdout.write('backgrounded · cafe35 · ' + name + '\\n');
   process.exit(0);
 }
 if (args[0] === 'agents' && existsSync(${JSON.stringify(GEN_BG)})) {
-  process.stdout.write(JSON.stringify([{ id: 'sess-gen', name: readFileSync(${JSON.stringify(GEN_BG)}, 'utf8'), status: 'running', sessionId: '00000000-0000-4000-8000-0000000000cc' }]));
+  const raised = JSON.parse(readFileSync(${JSON.stringify(GEN_BG)}, 'utf8'));
+  process.stdout.write(JSON.stringify([{ id: 'sess-gen', name: raised.name, status: 'running', sessionId: raised.nativeId }]));
   process.exit(0);
 }
 process.stdout.write('[]');`);

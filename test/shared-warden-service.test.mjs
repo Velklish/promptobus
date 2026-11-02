@@ -5,10 +5,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
-import { readWardenMark } from '../dist/sidecar.js';
+import { readHealth, readWardenMark } from '../dist/sidecar.js';
 import { makeSandbox, makeSockPath, listenTestSocket, writeHostConfig } from './sandbox.mjs';
 import { bus, createTask, participantRecord, readInbox, readWake, readWardenExit, readWardenGeneration, sendMessage, upsertParticipant, wakeFile, writeWake, WARDEN_BEAT_SEC } from '../lib/store.js';
-import { abortTaskWarden, ensureTaskWarden, ensureWorkspaceService, registerServiceClient, revokeServiceClient, stopWorkspaceService, workspaceServiceStatus } from '../lib/service-client.js';
+import { abortTaskWarden, bindServiceClient, ensureTaskWarden, ensureWorkspaceService, registerServiceClient, revokeServiceClient, stopWorkspaceService, workspaceServiceStatus } from '../lib/service-client.js';
 import { processState, recordVersion, requireProcess, servicePaths } from '../lib/service-state.js';
 import { ServiceWarden } from '../lib/service-warden.js';
 import { REGISTRY } from '../lib/drivers.js';
@@ -31,9 +31,9 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   const EMPTY = 'shared-empty-t20261030-020000';
   const FORMATTED = path.join(ROOT, 'formatted-commands.jsonl');
   const NATURAL_GATE = path.join(ROOT, 'natural-gate'), NATURAL_HELD = path.join(ROOT, 'natural-held'), NATURAL_RELEASE = path.join(ROOT, 'natural-release');
-  const PROBE_BIN = path.join(ROOT, 'probe-bin'), PROBE_UNAVAILABLE = path.join(ROOT, 'birth-unavailable');
+  const PROBE_UNAVAILABLE = path.join(ROOT, 'birth-unavailable');
   const SESSION = 'owned-root-session';
-  const env = { ...process.env, PATH: `${PROBE_BIN}${path.delimiter}${process.env.PATH ?? ''}`,
+  const env = { ...process.env,
     PROMPTOBUS_SERVICE_HOME: PRIVATE, PROMPTOBUS_SERVICE_IDLE_MS: '200', PROMPTOBUS_WARDEN: 'off' };
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
   const until = async (predicate, timeout = 5000) => {
@@ -44,14 +44,6 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   const owned = new Map(), sockets = [], endpoints = [], connections = new Set();
   let holder = null, startupCredential = null, freshCredential = null, coordinator = null, workerFailure = null;
   writeHostConfig(ROOT, { tools: [] });
-  mkdirSync(PROBE_BIN);
-  writeFileSync(path.join(PROBE_BIN, 'ps'), `#!${process.execPath}
-const {existsSync}=require('node:fs');
-const {spawnSync}=require('node:child_process');
-if(existsSync(${JSON.stringify(PROBE_UNAVAILABLE)})) process.exit(0);
-const result=spawnSync('/bin/ps',process.argv.slice(2),{stdio:'inherit'});
-process.exit(result.status??1);
-`, { mode: 0o755 });
   writeFileSync(FAKE, `#!${process.execPath}
 import {existsSync,readFileSync,writeFileSync} from 'node:fs';
 if(process.argv.includes('--version')) console.log('2.1.284');
@@ -66,6 +58,21 @@ else {
   writeFileSync(LIST, JSON.stringify(TASKS.map((task, index) => ({ name: `ref-${index}`, id: `native-${index}`, sessionId: `native-${index}`, pid: process.pid, state: 'idle' }))));
   writeFileSync(ENTRY, `import {isMainThread,Worker} from 'node:worker_threads';
 import {appendFileSync,existsSync,writeFileSync} from 'node:fs';
+import childProcess from 'node:child_process';
+import {syncBuiltinESMExports} from 'node:module';
+// Withhold only this owned process-observer delivery; the fixed system executable still runs.
+const spawn=childProcess.spawn;
+childProcess.spawn=function(command,args,...options){
+  const child=spawn.call(this,command,args,...options);
+  if(command==='/bin/ps' && args?.length===6 && args[0]==='-p' && /^\\d+$/.test(args[1])
+    && JSON.stringify(args.slice(2))===JSON.stringify(['-o','stat=','-o','lstart='])
+    && existsSync(${JSON.stringify(PROBE_UNAVAILABLE)})) {
+    const emit=child.stdout.emit;
+    child.stdout.emit=function(event,...values){ return event==='data' ? true : emit.call(this,event,...values); };
+  }
+  return child;
+};
+syncBuiltinESMExports();
 import {createStandaloneHost} from ${JSON.stringify(pathToFileURL(path.join(PACKAGE, 'dist/host-index.js')).href)};
 import {runPromptobus} from ${JSON.stringify(pathToFileURL(path.join(PACKAGE, 'lib/cli.js')).href)};
 if(!isMainThread) throw new Error('consumer entry must not be replayed by the warden worker');
@@ -143,6 +150,48 @@ if(code) process.exitCode=code;
     await wait(450);
     check('a real startup client retains the owner beyond idle while ordinary CLI demands are still being prepared', processState(current.process) === 'alive'
       && (await workspaceServiceStatus(host, options)).clients === 1);
+    const pendingTask = 'pending-native-t20261101-150000', pendingAddress = 'worker:pending', pendingRef = 'not-yet-launched';
+    const pendingRecord = path.join(ROOT, 'pending-launch.json');
+    const pendingTuple = { home: HOME, task: pendingTask, address: pendingAddress, ref: pendingRef, launchId: 'pending-generation-one' };
+    createTask(HOME, { id: pendingTask, title: 'native launch has not run', owner: SESSION });
+    upsertParticipant(HOME, pendingTask, participantRecord(pendingAddress, { harness: 'claude', sessionRef: pendingRef,
+      sessionRecord: pendingRecord, pending: true }));
+    writeFileSync(pendingRecord, JSON.stringify(pendingTuple), { mode: 0o600 });
+    const pending = await registerServiceClient(host, { cwd: ROOT,
+      env: { ...env, PROMPTOBUS_TASK: pendingTask, PROMPTOBUS_ROLE: pendingAddress },
+      nativeBinding: { kind: 'claude', state: 'pending' } }, options);
+    writeFileSync(GATE, 'hold the prelaunch observation of an absent session');
+    await bindServiceClient(host, pending.clientId, { kind: 'managed', ...pendingTuple, record: pendingRecord }, options);
+    const prelaunchView = await workspaceServiceStatus(host, options);
+    if (prelaunchView.warden.observations > 0) {
+      check('prelaunch observation reaches the owned absent-session barrier', await until(() => existsSync(ENTERED)));
+      releaseInspect();
+      check('prelaunch observation settles after its owned barrier is released', await until(async () =>
+        (await workspaceServiceStatus(host, options)).warden.observations === 0));
+    }
+    const beforeNative = await workspaceServiceStatus(host, options);
+    const pendingBytes = existsSync(pending.credentialFile) ? readFileSync(pending.credentialFile) : null;
+    check('an exact pending native launch retains its credential as unknown before the session exists',
+      beforeNative.clients === 2 && beforeNative.unknownManaged === 1 && pendingBytes !== null,
+      JSON.stringify({ clients: beforeNative.clients, unknownManaged: beforeNative.unknownManaged, credentialRetained: pendingBytes !== null }));
+    releaseInspect(); rmSync(GATE, { force: true });
+    const originalSessions = readFileSync(LIST);
+    writeFileSync(LIST, JSON.stringify([...JSON.parse(originalSessions),
+      { name: pendingRef, id: 'pending-native', sessionId: 'pending-native', pid: process.pid, state: 'idle' }]));
+    const pendingJournal = readFileSync(path.join(HOME, 'tasks', pendingTask, 'task.json'));
+    const pendingConnection = await initialize(pending);
+    const pendingTool = await rpc(pending, pendingConnection.session, 'tools/call', { name: 'promptobus_send',
+      arguments: { to: 'orchestrator', type: 'status', body: 'must remain undispatched' } });
+    check('pending native discovery grants no actor tool authority or journal mutation', pendingConnection.status === 200
+      && pendingTool.status === 403 && /pending/.test(pendingTool.text)
+      && readFileSync(path.join(HOME, 'tasks', pendingTask, 'task.json')).equals(pendingJournal),
+      JSON.stringify({ initializeStatus: pendingConnection.status, toolStatus: pendingTool.status, text: pendingTool.text }));
+    writeFileSync(pendingRecord, JSON.stringify({ ...pendingTuple, launchId: 'replacement-generation' }));
+    const replacedPending = await workspaceServiceStatus(host, options);
+    check('a replaced pending launch still retires its old credential without waiting for a native session',
+      replacedPending.clients === 1 && !existsSync(pending.credentialFile));
+    if (existsSync(pending.credentialFile)) await revokeServiceClient(host, pending.clientId, options);
+    writeFileSync(LIST, originalSessions);
     const raised = await Promise.all(TASKS.map(task => cli(['warden', '--task', task])));
     check('ordinary CLI warden commands demand two task loops without replaying the consumer entry on a Worker', raised.every(result => result.code === 0), raised.map(result => result.stderr).join(' | '));
     check('two active tasks have distinct journal seats and the same physical service PID', await until(() => TASKS.every(task => readWardenMark(HOME, task)?.pid === current.process.pid)));
@@ -155,6 +204,15 @@ if(code) process.exitCode=code;
     check('ordinary CLI sends keep existing shared task demands working', sent.every(result => result.code === 0));
     check('each task receives its own real wake and token', await until(() => received.length === 2)
       && TASKS.every((task, index) => received.some(item => item.task === task && item.text.includes(`"token":"token-${index}"`) && item.text.includes(task))));
+    let initialHealth;
+    const durableKnocks = await until(() => {
+      initialHealth = TASKS.map(task => readHealth(HOME, task)['worker:fixture']);
+      return initialHealth.every((health, index) => health?.knocks === 1
+        && typeof health.knockedAt === 'string' && health.wakeSession === `native-${index}`);
+    });
+    check('the crash control observes both actual durable successful knocks before owner death', durableKnocks,
+      JSON.stringify({ received: received.length, initialHealth }));
+    if (!durableKnocks) throw new Error('owned crash fixture has no durable successful knock baseline');
     const crashed = current, beforeCrash = TASKS.map(task => readWardenGeneration(HOME, task));
     process.kill(crashed.process.pid, 'SIGKILL');
     if (!await until(() => processState(crashed.process) === 'dead')) throw new Error('owned crashed service did not physically exit');
@@ -165,7 +223,9 @@ if(code) process.exitCode=code;
     await wait(450);
     check('active task work alone retains the service beyond idle without any client grant', processState(current.process) === 'alive'
       && (await workspaceServiceStatus(host, options)).clients === 0);
-    check('recovered task seats retain the previous successful knock instead of duplicating unread delivery', received.length === 2);
+    check('recovered task seats retain the previous successful knock instead of duplicating unread delivery', received.length === 2,
+      JSON.stringify({ received: received.map(({ task }) => task), initialHealth,
+        recoveredHealth: TASKS.map(task => readHealth(HOME, task)['worker:fixture']) }));
     await abortTaskWarden(host, TASKS[0], options);
     readInbox(HOME, TASKS[1], 'worker:fixture');
     sendMessage(HOME, TASKS[1], { from: 'orchestrator', to: 'worker:fixture', type: 'task', body: 'second independent wake' });
@@ -201,8 +261,11 @@ if(code) process.exitCode=code;
     releaseInspect(); await fresh; await aborted;
     check('a successor starts only after old cleanup and its same-PID seat survives', await until(() => readWardenGeneration(HOME, TASKS[0]) > previousGeneration
       && readWardenMark(HOME, TASKS[0])?.pid === current.process.pid) && readWardenMark(HOME, TASKS[1])?.pid === current.process.pid);
+    const differentBirth = process.platform === 'darwin'
+      ? freshProcess.birth.replace(/:(\d{2}) (\d{4})$/, (_match, seconds, year) => `:${String((Number(seconds) + 1) % 60).padStart(2, '0')} ${year}`)
+      : freshProcess.birth.replace(/:(\d+)$/, (_match, ticks) => `:${BigInt(ticks) + 1n}`);
     const wrongBirth = await registerServiceClient(host, { cwd: ROOT, env: { ...env, PROMPTOBUS_TASK: TASKS[1], PROMPTOBUS_ROLE: 'orchestrator', CLAUDE_CODE_SESSION_ID: SESSION },
-      lifetime: { kind: 'process', process: { ...freshProcess, birth: `${freshProcess.birth}-wrong` } } }, options)
+      lifetime: { kind: 'process', process: { ...freshProcess, birth: differentBirth } } }, options)
       .then(() => null, error => error.message);
     check('the fresh process path verifies OS birth rather than treating an existing PID as its proof', /expired or replaced/.test(wrongBirth ?? ''), wrongBirth ?? 'incorrect birth was admitted');
     if (process.platform === 'darwin') {
@@ -212,7 +275,8 @@ if(code) process.exitCode=code;
         lifetime: { kind: 'process', process: freshProcess } }, options).then(() => null, error => error.message);
       const denied = await initialize(freshCredential), retained = await workspaceServiceStatus(host, options);
       check('unavailable OS birth refuses root admission and requests while retaining the existing unknown client', /birth identity is unavailable/.test(unavailable ?? '')
-        && denied.status === 401 && retained.clients === 1 && retained.unknownClients === 1 && existsSync(freshCredential.credentialFile));
+        && denied.status === 401 && retained.clients === 1 && retained.unknownClients === 1 && existsSync(freshCredential.credentialFile),
+      JSON.stringify({ unavailable, denied, retained, credentialRetained: existsSync(freshCredential.credentialFile) }));
       rmSync(PROBE_UNAVAILABLE);
       check('restored OS birth proof returns the same root credential to service without identity replacement', (await initialize(freshCredential)).status === 200);
     }
@@ -240,7 +304,8 @@ if(code) process.exitCode=code;
     check('a replaced launch generation is denied before a stale contact pair can cross the actor boundary', oldContact.status === 401 && readFileSync(contactFile).equals(contactBytes));
     const retiredContact = await workspaceServiceStatus(host, options);
     check('a replaced launch grant retires while the independent root client stays usable', retiredContact.clients === 1
-      && !existsSync(contactCredential.credentialFile) && (await initialize(freshCredential)).status === 200);
+      && !existsSync(contactCredential.credentialFile) && (await initialize(freshCredential)).status === 200,
+    JSON.stringify({ retiredContact, contactRetained: existsSync(contactCredential.credentialFile), rootRetained: existsSync(freshCredential.credentialFile) }));
 
     check('the existing heartbeat naturally ends a no-work loop before main handles its settled event', await until(() => existsSync(NATURAL_HELD)
       && readWardenExit(HOME, EMPTY)?.reason === 'no live participants remain' && readWardenMark(HOME, EMPTY) === null, (WARDEN_BEAT_SEC + 5) * 1000));

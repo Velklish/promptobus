@@ -64,7 +64,7 @@ const LIVE_ARGS = finishLiveArgs(parseLiveArgs(process.argv.slice(2), LIVE_FLAGS
 
 const { cursorDriver, reviewSandbox } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-cursor.js'));
 const {
-  cursorStateHome, readTmuxSessions, tmuxSessions, readSession, reapOrphans, sessionMarker, tmux, transcriptOf, pidAlive,
+  cursorStateHome, readTmuxSessions, tmuxSessions, readSession, reapOrphans, sessionMarker, tmux, findTranscript, pidAlive,
   LAUNCH_TMUX_SERVER,
 } = await import(path.join(MECHANISM_ROOT, 'lib', 'cursor-persist.js'));
 const { processState } = await import(path.join(MECHANISM_ROOT, 'lib', 'service-state.js'));
@@ -234,7 +234,8 @@ const transcripts = new Map();
 function rememberTranscript(addr) {
   try {
     const kept = store.participantOf(store.readTask(home, TASK), addr)?.sessionRef;
-    const from = kept ? transcriptOf(readSession(kept) ?? {}) : null;
+    const record = kept ? readSession(kept) : null;
+    const from = record?.transcript && existsSync(record.transcript) ? record.transcript : findTranscript(record?.chatId);
     if (from) transcripts.set(addr, from);
     return from;
   } catch {
@@ -403,7 +404,8 @@ try {
   // the shell itself, and the store message would look the same. There is no
   // `stream-json` stream under persist at all, so the transcript is read.
   const toolCalls = () => {
-    const file = transcriptOf(readSession(ref) ?? {});
+    const record = readSession(ref);
+    const file = record?.transcript && existsSync(record.transcript) ? record.transcript : findTranscript(record?.chatId);
     if (!file || !existsSync(file)) return [];
     return readFileSync(file, 'utf8').split('\n').filter(Boolean).flatMap((line) => {
       let event;

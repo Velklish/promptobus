@@ -377,14 +377,19 @@ async function takePiece(host: PromptobusHost, home: string, id: string, address
   const ownerTrees = (meta.participants ?? [])
     .filter((participant) => participant.role === pipeline[0].name)
     .map((participant) => participant.metadata?.worktree).filter(Boolean);
-  const tree = sweepTree(p, host, address, kind, ownerTrees);
   // Harness state can live OUTSIDE the worktree: a Codex reviewer has no worktree at all and
   // still has an isolated home holding a copy of the owner's credentials.
   try {
-    await driverAt(p!, registry).sweepParticipant?.(p, id);
+    const driver = driverAt(p!, registry);
+    if (driver.sweepParticipant === REGISTRY.drivers.opencode.sweepParticipant) {
+      await driver.sweepParticipant?.(p, id, undefined, { home, task: id, taskLocked: true });
+    } else {
+      await driver.sweepParticipant?.(p, id);
+    }
   } catch (e) {
-    warn(`could not clear the harness state of participant ${address}: ${(e as Error).message}`);
+    return { code: 1, refused: `could not clear the harness state of participant ${address}: ${(e as Error).message}; participant files retained` };
   }
+  const tree = sweepTree(p, host, address, kind, ownerTrees);
   for (const at of sweepParticipantFiles(home, id, address, kept)) {
     info(`${address}: ${at} removed — the session is dead, and the file is the lift's, not the repository's`);
   }

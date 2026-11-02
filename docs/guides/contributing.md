@@ -193,6 +193,36 @@ Git input, the actual runner and a selected dependent assertion that fails.
 
 ## Suite isolation
 
+Native Codex fixtures use the generated HTTP configuration with their own bearer
+and actual thread metadata. A completed turn alone does not prove its bus action:
+the fixture checks the successful tool response in its trace. Managed launch
+fixtures own a separate short private service directory. Teardown revokes only
+its grants, aborts its task seats and requests owner shutdown; a refused cleanup
+fails the file. It runs before exit removes a direct-file home and its sealed
+PATH, so process observers remain available until shutdown is confirmed.
+[test/owned-service-cleanup.test.mjs](../../test/owned-service-cleanup.test.mjs)
+checks this order with an actual owned service. Fixture teardown is not a native
+Stop receipt.
+
+Scripted Claude participants retain their stdio path and read generated HTTP
+descriptors through [participant-http.mjs](../../test/participant-http.mjs).
+HTTP startup executes the configured SessionStart commands with the native input
+before MCP initialization and tools. Hook arguments select a test script; an
+authenticated mailbox reply must independently match its home, task and address.
+Neither those coordinates nor `config.env` supply bearer or native authority.
+The daemon environment stays hostile and may retain a previous launch's bearer.
+
+For explicit `--mcp-config`, the configured `headersHelper` command runs in the
+primary session directory, with the supplied session environment; its JSON
+headers override static values. This follows the
+[Claude dynamic-header contract](https://code.claude.com/docs/en/mcp#dynamic-headers).
+The fixture does not establish the installed background daemon's config-load or
+environment timing. Parser/protocol tests are in
+[participant-http.test.mjs](../../test/participant-http.test.mjs); the controlled
+native-hook test in
+[participant-http-native.test.mjs](../../test/participant-http-native.test.mjs)
+also requires a pending owner to deny tools when SessionStart is omitted.
+
 The suite runs on a machine that is not its own: a person's binaries and sessions are there, and a second `npm test` — a worker run by tracks puts one per worktree — may be going at the same moment. The rules below keep a run from reading or touching anything but itself. Each is enforced by a check, because each was broken in silence first.
 
 **Every sandbox and socket prefix is on the sweep list.** A run that is cut off — Ctrl-C, a file taken down at the file timeout, a crash — never reaches its own cleanup, and the leftovers are removed by the sweep at the start of the next run ([test/tmpdir-sweep.mjs](../../test/tmpdir-sweep.mjs)). Suite sandboxes use the hand-built `SUITE_PREFIXES` list in `$TMPDIR`; a two-way sentinel in `tmpdir-sweep.test.mjs` greps `test/` for every `makeSandbox('…')` and every `mkdtemp` of a temp directory, requires every literal to be covered, and rejects every list entry that covers no literal. The grep takes both spellings of the directory — `os.tmpdir()` and an imported `tmpdir()`, `path.join` and a bare `join` — because while it demanded the qualified one, a file that imported `tmpdir` was invisible to it and its prefix leaked past the sweep with the check green. The same walk also refuses a `mkdtemp` whose first argument is a BARE prefix, by name and file: that is not a temp path at all — Node resolves it against `process.cwd()`, so the directory is made in the checked-out tree, and a bus participant, whose shell cannot write its own worktree, gets `EPERM` and no verdicts from that file. A literal beginning with `/` is an absolute path and passes. The check exists because the fixtures of `tmpdir-sweep.test.mjs` itself did this while the file asserted the opposite of production code four lines above; being absent today is not being impossible. **That sentinel is built in three parts on purpose, and each part is a place it went blind.** The pattern is lifted out of the walk into a named constant, because the walk's own floor comes from the two neighbouring greps: a drift in this one alone would leave the verdict green having examined nothing. The rule that decides a literal IS a defect is lifted out beside it for the same reason — left inline in the loop, no sample can arrive at it, and inverting the predicate emptied the list with the check still green (measured on the shape before that change). And the samples that exercise both are assembled from fragments rather than written out, because this file is itself inside the walk and a sample written whole would be caught by the very sentinel it exists to prove — the technique [scripts/audit-public.mjs](../../scripts/audit-public.mjs) uses on itself. Its verdict carries no floor of its own by design: zero calls examined is the lawful answer today, and the floor is the sample check. Test harness sockets have short paths, so their directories live directly under shared `/tmp`; the runner sweeps their `SOCK_PREFIXES` after the same one-hour cutoff. It writes an owner marker with the run pid as a second line of defence, then probes each aged socket; a live listener or any unknown probe result holds the directory instead of deleting it. Adding a sandbox or socket with a new prefix means adding the prefix; the sentinels say so on the next run.
@@ -432,6 +462,7 @@ every JSON document without `$schema`. Keep dated live
 evidence at its versioned path; schema captures no longer belong in the working tree.
 Shared holder/mock shape witnesses retain independent actual-emission tests. Mutation probes
 must break a consumed schema and make a named verdict red.
+The current consumed contract comes from the [0.166.0 schema capture](../../test/fixtures/codex-app-server/0.166.0/README.md).
 Native evidence is version-scoped. The [0.164.0 capture record](../../test/fixtures/codex-app-server/0.164.0/README.md)
 also records live worker, reviewer and approver hook events, a named hidden-model turn,
 an MCP child environment probe and the full rate-limit notification payload. Historical

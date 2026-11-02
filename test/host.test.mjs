@@ -35,7 +35,7 @@ test('createStandaloneHost lifts two independent hosts in one process', async ()
   assert.deepEqual(a.participantDenyTools('approver'), { tools: [], complete: true });
   assert.equal(b.toolsManifestRel(), 'promptobus.json');
   assert.notEqual(a.workspaceRoot(), b.workspaceRoot());
-  assert.equal(a.version, '0.0.0');
+  assert.equal(a.version, JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version);
   assert.equal(a.locale, 'en');
   assert.equal(a.inWorkspace(dirA), true);
   assert.equal(a.inWorkspace(dirB), false);

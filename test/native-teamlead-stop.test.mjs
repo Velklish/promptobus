@@ -4,18 +4,19 @@ import test from 'node:test';
 import path from 'node:path';
 import fs, { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
-import { makeSandbox, writeHostConfig } from './sandbox.mjs';
+import { makeSandbox, ownedServiceFixture, writeHostConfig } from './sandbox.mjs';
 import { expectFail, quiet } from './console.mjs';
 import { hostOf } from '../lib/host.js';
 import * as store from '../lib/store.js';
 import { recoverTeamleadRebind, spawnTeamlead } from '../lib/spawn.js';
 import { codexDriver } from '../lib/driver-codex.js';
 import { commandReceipts } from '../lib/codex-command-receipts.js';
-import { sessionFile, sessionKey, writeSession } from '../lib/codex-session.js';
+import { codexStateHome, sessionFile, sessionKey, writeSession } from '../lib/codex-session.js';
 import { done } from '../lib/done.js';
 import { sweep } from '../lib/sweep.js';
 import { requireNativeTerminal } from '../lib/native-lifecycle.js';
 
+ownedServiceFixture();
 process.env.PROMPTOBUS_WARDEN = 'off';
 let sequence = 0;
 async function fixture() {
@@ -45,7 +46,7 @@ async function fixture() {
   const record = { ref: plan.name, home, task: plan.childTask, address: 'orchestrator', role: 'teamlead',
     threadId: 'native-thread', launchId, holderPid: 2147483646, appPid: 2147483645,
     state: 'dead', stopConfirmed: true };
-  const file = path.join(process.env.PROMPTOBUS_CODEX_HOME, 'receipts', sessionKey(record.ref), sessionKey(record.launchId) + '.jsonl');
+  const file = path.join(codexStateHome(process.env), 'receipts', sessionKey(record.ref), sessionKey(record.launchId) + '.jsonl');
   const ledger = commandReceipts(file, { format: 1, ...record });
   const deadlineAt = Date.now() + 5000;
   ledger.append('stop/requested', { threadId: record.threadId, deadlineAt });
@@ -100,7 +101,7 @@ async function relift(f, options = {}) {
 }
 function nextTerminal(f, actual) {
   const record = { ...f.record, ...actual, threadId: 'native-thread-2' };
-  const file = path.join(process.env.PROMPTOBUS_CODEX_HOME, 'receipts', sessionKey(record.ref), sessionKey(record.launchId) + '.jsonl');
+  const file = path.join(codexStateHome(process.env), 'receipts', sessionKey(record.ref), sessionKey(record.launchId) + '.jsonl');
   const ledger = commandReceipts(file, { format: 1, ...record }), deadlineAt = Date.now() + 5000;
   ledger.append('stop/requested', { threadId: record.threadId, deadlineAt });
   ledger.append('app-server/close', { code: 0, signal: null });

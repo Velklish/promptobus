@@ -15,7 +15,7 @@ The bus does not know your workspace. Every call receives a host that answers fo
 - **On-disk task store.** One directory per task: `task.json`, per-participant inboxes and history, artifacts as hard links to their blobs, and a `files/` folder a person can open. A task may have a root parent; `status` shows its children and `done` waits for each child to close. Seven message types — `task`, `status`, `question`, `answer`, `artifact`, `result`, `review` — and a JSON schema for every record shape.
 - **Task digest.** `digest` prints the root and child tasks, each participant's latest status first line, questions and their age across linked roots, answer debts, and pieces by their current pipeline step. Peer messages record their origin task, so a later same-slug link cannot answer an older root's question. A legacy question whose origin is unknown is marked `UNRESOLVED PROVENANCE`. `--json` carries the same page for scripts without starting a harness.
 - **Governance routes.** Registered teamleads of the same root exchange `question`, `answer`, `status` and `artifact` directly. `link` registers two root tasks as peers; a send to one peer enters the other root's orchestrator mailbox under the source peer address. `user` asks a root or child orchestrator by `question`, receives `answer` or `status`, and `reporter` never sends as itself. Its restricted ask tool writes as `user`. Other traffic follows the root orchestrator. The [route table](https://github.com/Velklish/promptobus/blob/v0.31.0/docs/reference/04-protocol.md#addresses) gives each decision; `ask` registers `user` on first use.
-- **Workers in worktrees.** `promptobus spawn` starts a session in an isolated git worktree of the target repository, hands it the brief and the bus, and leaves the main tree untouched. All four native drivers drop inherited parent session state, including OpenCode contact, session id, holder password and config paths; the child keeps its own launch values. A failed OpenCode lift reaps its holder and removes its record, log and registry entry, including rejected HTTP requests. An OpenCode lift grants `external_directory` for the session directory and `addDirs`, and replies `once` if an ask for those roots is still pending. A filesystem root is not granted and is not answered. Any other pending ask fails the lift, and `viewOf` reports it as `permission ask pending`. OpenCode wake posts only after a valid message tail proves idle; unreadable or busy state waits for retry. OpenCode cleanup matches both task and participant address; `sweep` awaits the selected participant's cleanup under the journal lock; `done` awaits each dead participant's cleanup. Live or unknown participants with a cleanup hook keep the sweep pending, even without a worktree.
+- **Workers in worktrees.** `promptobus spawn` starts a session in an isolated git worktree of the target repository, hands it the brief and the bus, and leaves the main tree untouched. All four native drivers drop inherited parent session state, including OpenCode contact, session id, holder password and config paths; the child keeps its own launch values. A failed OpenCode lift removes its record, log and registry entry only after confirmed credential revocation and owned holder exit; unknown cleanup retains its references. An OpenCode lift grants `external_directory` for the session directory and `addDirs`, and replies `once` if an ask for those roots is still pending. A filesystem root is not granted and is not answered. Any other pending ask fails the lift, and `viewOf` reports it as `permission ask pending`. OpenCode wake posts only after a valid message tail proves idle; unreadable or busy state waits for retry. OpenCode cleanup matches both task and participant address; `sweep` awaits the selected participant's cleanup under the journal lock; `done` awaits each dead participant's cleanup. Live or unknown participants with a cleanup hook keep the sweep pending, even without a worktree. A failed cleanup retains the worktree and participant files for recovery.
 - **Codex Stop accounting.** Stop requires terminal turn/command evidence and app-server output closure within one deadline. A matched `declined` command with no process, exit or output can prove a non-start outcome; its null exit stays null. Unresolved stops retain their record and private home; selected lifecycle receipts remain outside it. Experimental direct-tool capture also requires original responses bound to their call IDs and accepted execution context. Native recovery, close and cleanup validate the retained launch proof, including a teamlead's verified parent/child alias. A same-slug relift retains prior proof until the actual new launch binds both seats; unresolved dispatch blocks close and another relift. See [Codex holder shutdown](https://github.com/Velklish/promptobus/blob/v0.31.0/docs/reference/05-drivers.md#codex-holder-shutdown) for the capture profile and live limitations.
 - **Managed Codex root owner.** `promptobus lead --brief ./task.md --permission-mode full-access` creates a new root task, binds its native thread before the first turn, and wakes it when mail arrives. It coordinates workers and reviews through the same journal; existing tasks retain their owner.
 - **Teamleads for child tasks.** `promptobus spawn --teamlead --brief ./group.md --task <root>` lifts a Claude Code, Codex or OpenCode orchestrator at the install root. It owns one child task, reports to the root as `teamlead:<slug>`, reads root mail in its child task's mailbox, and repairs an interrupted lift on retry. A relift updates both addresses to the new session; a dry-run leaves a pending repair untouched. A Codex teamlead completed worker lifts on all three harnesses and real Claude Code, Cursor and Codex reviews with `full-access`; their `workspace-write` lifts refused. Cursor teamleads remain refused.
@@ -23,7 +23,7 @@ The bus does not know your workspace. Every call receives a host that answers fo
 - **Declared gate lifts.** `promptobus step <name> <path> --task <id>` lifts a named gate of the declared pipeline. The first gate has no predecessor precondition; every later gate needs a result from the preceding gate's participant for the same subject, committed after its current causal assignment boundary. A `writes-main-tree` gate also needs the owner's result, under the same subject and currency condition, whether or not it is the first gate. `review` selects the first read-only gate; a repeat sends its participant a fresh snapshot.
 - **Addressed acceptance.** `review <path> --task <id> --approver` lifts the first `writes-main-tree` gate once the owner, and the preceding gate's participant when the pipeline declares one, have each committed a result for the same subject after their current causal assignment boundary. It accepts the piece in its own worktree and advances the clone root only with a fast-forward. Its registered address can talk directly to the owner step in that task while the calling session holds it through a session id or validated record pointer, and the canonical exchange stays in the task journal.
 - **Durable message order.** Store-local logical IDs order new commits through clock rollback and restart while timestamps remain wall-clock measurements. Initial prompts have causal assignment boundaries without synthetic messages. Strict committed facts refuse incomplete assignment evidence; wake hints track current unread identities, including delayed refs with older IDs.
-- **Four harnesses, one contract.** Drivers for Claude Code, Cursor, Codex and OpenCode; `promptobus.json` lists which of them a workspace may spawn. Supported roles and measured live coverage differ by harness; see the driver contracts.
+- **Four harnesses, one contract.** Drivers for Claude Code, Cursor, Codex and OpenCode; `promptobus.json` lists which of them a workspace may spawn. Supported roles and measured live coverage differ by harness; see the driver contracts. Managed HTTP admission requires actual owned native creation and storage/process proof: Claude startup, Cursor create-chat/pane/SQLite, or OpenCode createSession/database/serve. A requested ID, endpoint or path alone cannot authorize tools; installed native workflows remain separate verification.
 - **Reviewer replacement.** If a reviewer session is dead, `review` puts its last result unchanged in the replacement's initial prompt and asks it to check those findings for closure first. Without a prior result, the initial prompt is unchanged.
 - **MCP server and hooks.** `promptobus mcp` exposes six tools over stdio, including three restricted to a proven reporter session. `promptobus install` writes the Stop and SessionStart loop guard for Claude Code and Codex, and a stop guard for Cursor. The guard returns a turn while mail is unread or an answer is owed; a warden wakes the addressee when mail arrives. The native orchestrator waits on actionable mail: retained progress does not consume its silence or busy retry budget. An unavailable-owner contact hint requires explicit user direction before mailbox takeover; sharing a workspace grants no authority. Which types ask for an answer is a published table. `status` prints `UNANSWERED` after an ordinary participant's turn ends owing one, or as soon as an orchestrator receives a question from `user`.
 - **Model routing.** Name a strategy instead of a model and the resolver picks harness, model and effort from a rated catalog, intersected with what your accounts can run right now. Five strategies, overlay files for local overrides, and a calibration command that proposes overlay lines from your own telemetry.
@@ -68,6 +68,48 @@ node bin/promptobus.js --version
 
 The last command prints `promptobus` and the version from `package.json`.
 
+### Prepare a BB Codex root profile — creation unavailable
+
+The installed owner command `promptobus-bb-root` validates the selected BB
+workspace and prepares its owned profile and project configuration. Ordinary BB
+creation through this shipped entrypoint is unsupported: the public BB route does
+not provide trusted proof of the selected provider's effective Codex home and
+launch context before creation. A separate trusted Codex probe, even one whose
+`initialize` reply names a home, cannot establish the provider's context.
+
+The preparation needs Node.js 20+, macOS or Linux, the public `bb` CLI and the
+matching optional BB plugin. The explicit environment must already belong to
+the project and canonical workspace. `--native-store` names an existing account
+store; it does not configure or prove the BB provider's environment. The command
+changes no native trust, login, account or global configuration.
+
+```bash
+promptobus-bb-root --root /absolute/workspace --profile ordinary-owner \
+  --native-store /absolute/native-account-store \
+  --project prj_owner --environment env_owner < ./owner-prompt.md
+```
+
+The command validates at most 64 KiB of UTF-8 prompt input, creates a standalone
+Host, approves the scoped profile and prepares only its exact owned
+`.codex/config.toml` and `.codex/hooks.json`. Unowned, changed or partial files
+refuse without replacement. Then it exits 2 with:
+
+```json
+{"profile":"ordinary-owner","root":"/absolute/workspace","ready":false,"reason":"provider-context-unavailable","creation":"notAttempted"}
+```
+
+No native trust probe, creation callback or public BB spawn is attempted. There
+is no instruction to approve a separate probe home or repeat this command to
+unlock creation. `creation: "notAttempted"` describes this invocation; it does
+not assert that saved pending, uncertain or bound operations are absent. Those
+owned records remain intact, and changed project/environment selectors still
+refuse. This unsupported entrypoint does not establish ordinary BB readiness.
+
+The existing library's trusted consumer callback, known bindings and recovery
+rules remain separate. Standalone use does not require BB. Run
+`promptobus-bb-root --help` for the installed command's supported arguments;
+the `ready: false` boundary above still applies.
+
 ### 1. Declare the workspace
 
 Create `promptobus.json` at the workspace root. The standalone host walks up from the current directory to find it and keeps the store in `.promptobus/` beside it — add that directory to `.gitignore`. On the way up it passes over a repository's own `promptobus.json` that holds only `generate`, `trustedHooks` or both ([02-host § Standalone host](https://github.com/Velklish/promptobus/blob/v0.31.0/docs/reference/02-host.md#standalone-host)).
@@ -103,7 +145,7 @@ The installer edits `.claude/settings.json`, `.cursor/hooks.json` and `.codex/ho
 
 ### Quick start
 
-Write a brief — a Markdown file with the assignment — then:
+Write the assignment in a Markdown brief.
 
 For a managed Codex root, start coordination from the brief:
 
@@ -120,7 +162,9 @@ preserving the participant's home identity and refusing links inside its private
 Before model input, the holder refuses changed owner access and requires a fresh lift.
 If owner access expires, renew the normal owner login and perform a fresh lift.
 A retained managed root whose holder and app-server have both exited uses `lead --resume`
-to start a new app-server. Participants never receive the owner's refresh token. See [Lead](https://github.com/Velklish/promptobus/blob/v0.31.0/docs/reference/03-cli.md).
+to start a new app-server only when its current-version native binding and captured
+process births are retained. Legacy birthless records refuse without migration or
+state deletion. Participants never receive the owner's refresh token. See [Lead](https://github.com/Velklish/promptobus/blob/v0.31.0/docs/reference/03-cli.md).
 
 The managed root requires explicit `full-access`: `workspace-write` participant lifts are
 unsupported and refuse before launch. Each participant keeps its own permission profile.
@@ -157,7 +201,7 @@ Close the task when the work is accepted:
 promptobus done
 ```
 
-For native Codex participants, call `stop <address>` before `done`: active or unresolved native work refuses close before journal or cleanup changes, even with `--keep-sessions`. When that participant's harness already reports the session dead and there is no Stop receipt, the mailbox owner calls `abandon [<address>]` first, from whichever harness names this session. The journal records the missing receipt and does not invent a Stop receipt; a live session is refused. A repeated native close preserves the first stamps and does not repeat cleanup. Other harnesses retain stop-on-close behavior. A caught preparation failure before driver invocation releases only its exact never-invoked native reservation, retaining the worktree and mail for retry. Native reporter recovery and piece sweep require the same terminal proof as the worker and reviewer. After that check, `done` removes a mechanism-created worktree and its branch once the work is proven merged, and appends local telemetry records at close. It removes contact points for closed tasks and the files of dead, slugged participants; a sessionless `user` keeps its journal and mail without needing participant files.
+For native Codex participants, call `stop <address>` before `done`: active or unresolved native work refuses close before journal or cleanup changes, even with `--keep-sessions`. When that participant's harness already reports the session dead and there is no Stop receipt, the mailbox owner calls `abandon [<address>]` first, from whichever harness names this session. The journal records the missing receipt and does not invent a Stop receipt; a live session is refused. A repeated native close preserves the first stamps and does not repeat cleanup. Other harnesses retain stop-on-close behavior. A caught preparation failure before driver invocation releases only its exact never-invoked native reservation, retaining the worktree and mail for retry. Native reporter recovery and piece sweep require the same terminal proof as the worker and reviewer. After that check, `done` removes a mechanism-created worktree and its branch once the work is proven merged, and appends local telemetry records at close. It removes contact points for closed tasks and the files of dead, slugged participants; a failed or unresolved cleanup hook leaves that task closed with cleanup pending, preserves its files and worktree, and excludes its journal from retention deletion in that pass. A sessionless `user` keeps its journal and mail without needing participant files.
 
 At the core message boundary, closing refuses sends whose intent has not committed
 with `task-closed`. Earlier committed fan-out can still finish or recover on the
@@ -282,7 +326,9 @@ import { runPromptobus } from 'promptobus/cli';
 
 `openEngine` takes a store location (`root` or `home`) and a routing policy; it never searches the disk for a workspace. Package sources import only Node built-ins and never read `process.env` or write to stdout — diagnostics, session identity and the harness name arrive as arguments, so the environment and the output stay with the consumer. Details: [reference/01-overview.md](https://github.com/Velklish/promptobus/blob/v0.31.0/docs/reference/01-overview.md), [reference/02-host.md](https://github.com/Velklish/promptobus/blob/v0.31.0/docs/reference/02-host.md), [reference/04-protocol.md](https://github.com/Velklish/promptobus/blob/v0.31.0/docs/reference/04-protocol.md).
 
-For a participant's MCP child whose harness omits its session variable, the driver puts a session-record pointer in the generated bus entry and binds the participant to it before launch. The adapter accepts the pointer only when record and process resolve to the same physical home and name the exact task and address, even if the harness id is still null. Claude Code receives a preselected session UUID through `--session-id`. An orchestrator entry without a pointer has no session identity in the measured Codex and Cursor MCP child paths, so its mailbox call returns a copy and leaves the originals unread. See [02-host § Session identity](https://github.com/Velklish/promptobus/blob/v0.31.0/docs/reference/02-host.md#session-identity) and [ADR-019](https://github.com/Velklish/promptobus/blob/v0.31.0/docs/adr/adr-019-session-address-per-task-lands.md).
+Managed participant HTTP tools require the owner-realized actual native ID; a planned UUID or session-record pointer alone grants no tool access.
+
+For stdio configurations prepared directly by a driver, an MCP child whose harness omits its session variable receives a session-record pointer in the generated bus entry. The adapter accepts the pointer only when record and process resolve to the same physical home and name the exact task and address, even if the harness id is still null. Claude Code receives a preselected session UUID through `--session-id`; actual managed admission still requires its native startup proof. A manually registered orchestrator stdio entry without a pointer has no session identity in the measured Codex and Cursor MCP child paths, so its mailbox call returns a copy and leaves the originals unread. See [02-host § Session identity](https://github.com/Velklish/promptobus/blob/v0.31.0/docs/reference/02-host.md#session-identity) and [ADR-019](https://github.com/Velklish/promptobus/blob/v0.31.0/docs/adr/adr-019-session-address-per-task-lands.md).
 
 ## Development
 
@@ -333,6 +379,25 @@ A change is complete when the reference, the affected README and `CHANGELOG.md` 
 [MIT](LICENSE)
 
 ## BB plugin
+
+An explicitly approved BB Codex root profile can use `promptobus-root --profile
+<id> -- <native-command> [args...]` for owner preflight and a POSIX `exec`
+handoff. The transient preflight is not a Node proxy and issues no root
+credential; the native headers helper and ordered hook still establish the
+actual BB/native correspondence. A consumer applies the returned HTTP server
+descriptor through its own config writer and supplies the same profile to the
+pure hook plan before requiring reconnect.
+
+Standalone roots use a separate explicit `approveStandaloneRootProfile` on
+`promptobus/integration`, with an approved native executable/account store.
+The POSIX launcher keeps the native PID and cwd; its private pending grant admits
+tools after exact native hook/executable proof and a supported NEW command:
+Codex `exec -- <prompt>` or `--no-daemon [-- <prompt>]`, or foreground Claude
+with no arguments and actual startup transcript proof. These routes still need
+installed-version ordinary verification; a ledger or SessionStart alone is insufficient.
+The process-owned Codex TUI/resume route requires explicit `--no-daemon`; native
+exec runs in process, while Claude uses its native `headersHelper`. These modes
+do not fall back from missing BB correspondence or inherit a managed credential.
 
 The repository contains a separate source package, `integrations/bb/`,
 which supplies a constrained Codex read-only reviewer provider and local engine-backed

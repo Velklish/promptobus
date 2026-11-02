@@ -34,9 +34,9 @@ export function harnessHomeVar(harness: string) {
 export function harnessStateHome(harness: string, env: NodeJS.ProcessEnv = process.env) {
   const varName = harnessHomeVar(harness);
   const named = String(env[varName] ?? '').trim();
-  if (named) return named;
+  if (named) return canonicalPath(named);
   const fromHost = bound?.harnessStateHome(harness) ?? null;
-  if (fromHost) return String(fromHost);
+  if (fromHost) return canonicalPath(String(fromHost));
   throw new GateError(`no state home for harness ${harness}: set ${varName}, or answer`
     + ` harnessStateHome('${harness}') from the host. It is not guessed — a default under`
     + ` ${path.join(homedir(), '.promptobus', String(harness))} once had the registry writing to a`

@@ -168,8 +168,17 @@ State is stored below `servicePaths.base`, which existing reviewer grant checks
 exclude for directory, ancestor and exact-file grants. The module uses the same
 private directory/file checks, atomic record writes and process-lock machinery
 as the service. A missing state file in an initialized admission directory,
-malformed state or nonprivate/symlinked records refuse. Darwin process birth is
-the existing `ps lstart` observation at second precision. File modes and nonces
+malformed or literal `null` state or nonprivate/symlinked records refuse. Darwin
+process birth uses full parsed `ps lstart` at second precision with fixed C locale
+and UTC. Linux birth includes a versioned boot identity, PID namespace and start
+ticks, after checking procfs self stat/status PID and the single namespace PID
+against the observer's own PID. An ancestor-mounted procfs view is unknown.
+Sync and async observation share the same parser and comparison semantics.
+Only comparable captured observations can prove old lifetime exit; old private
+candidate layouts, invalid records and changed observer namespaces are retained
+as unknown for authority and reclamation, without a PID-only ESRCH fallback.
+There is no transparent live-upgrade or migration procedure for those earlier
+unreleased HTTP candidate states. File modes and nonces
 provide owner coordination, not cryptographic isolation from a same-UID shell.
 
 The later native guard must prove the first canonical SessionMeta, an explicitly
@@ -179,10 +188,149 @@ module. Its realization callback must commit the private native capability
 while the admission lock is held. The BB bridge must use the same canonical
 workspace/store and private service base for begin/completion, and include
 existing authoritative state in its complete lookup before activating profiles.
-Those integrations, native proofs, profile activation and SDK wiring are not
-implemented here; current launch paths are not protected by an unused module.
-Process fixtures establish the filesystem transaction only, not native workflow
-or physical Stop behavior.
+Native guards, SDK wiring and profile activation require their own workflow
+evidence. Process fixtures establish the filesystem transaction only, not native
+workflow or physical Stop behavior.
+
+### Portable native roots and recovery
+
+The package's POSIX `promptobus-root` and a consumer's existing launcher use a
+private one-shot exec plan. Preflight output is a pathname captured by the
+launcher, never a diagnostic or timeline record. The plan contains references,
+not a plaintext bearer, deletes itself before exec, retains cwd/literal argv and
+does not leave a Node proxy. Dry-run only reads supplied approval state. Managed
+children discard every inherited root/client reference before obtaining their
+own grant. Unlink does not revoke a grant; interrupted owned plans are removed
+only after positively observed process death, and unknown/foreign state remains.
+
+Standalone approval is a separate trust boundary from the BB profile. The
+additive `approveStandaloneRootProfile` export names a direct native executable,
+actual account store and harness. The immutable launch observes a registered
+POSIX shell's PID/birth crossing exec to the approved native image. Native
+SessionStart must originate from that process or its checked shell hook child.
+Before that hook, discovery stays pure and tools refuse. Codex requires the
+first SessionMeta in the approved store and actual thread metadata on every tool.
+New Codex `exec -- <prompt>` requires first SessionMeta source `exec`; the accepted
+new `--no-daemon` TUI forms require source `cli`. An explicit resume of an already
+known current-version binding retains its creation source (`exec` or `cli`),
+including when an exec-created session is later resumed through the TUI.
+Editor sources and unknown unbound identities remain unsupported.
+Image observation is asynchronous and bounded; Linux
+uses its kernel process executable link, Darwin the system JavaScript/ObjC
+libproc observer. Missing or unobservable proof refuses rather than trusting
+argv, process names, ancestor labels or inherited environment.
+
+Codex TUI/resume uses an explicitly supplied `--no-daemon`; `exec` uses its
+in-process native route. This profile does not inject hidden flags, adopt a
+shared daemon or implement remote/background lifetime. Claude uses its native
+`headersHelper` and ordered SessionStart. Cursor's script-to-Node chain and
+OpenCode shell-root identity need separate proofs. Installed ordinary workflows
+are required for each supported route before retiring its stdio entry.
+
+One private native ledger shares `root-admission.lock`; it adds no global
+registry. Its uniqueness claim covers accessible bindings for one canonical
+owner root/home and actual native store, keyed by harness and actual ID. A
+physical generation uses its immutable nonce/launch ID, independently of client
+capability IDs. Same-generation publication may refine missing provenance.
+Potentially matching unknown provenance refuses; unrelated harness/ID bindings
+remain independent. Accessible pre-ledger task/session/root history is read too.
+Different trusted canonical native stores remain independent even for one
+harness/ID. Service-client and available-record checks use exact owner publication
+and immutable generation provenance; raw account/env hints cannot establish a
+foreign store. Unknown stores conservatively conflict only with potentially
+matching identities. A same-generation writer cannot change an already known
+store or captured process.
+
+Explicit owner/profile approval initializes version-2 native and root state before
+new publication. Initialization selects the new-state policy, not empty native
+history. Missing initialized files, JSON `null`, corrupt or older state and an
+unmarked retained ledger refuse without replacement or migration. Generic owner
+presence, a nonce, timestamp or native session ID cannot supply native genesis.
+Managed Codex's store is the actual child's private `codexHome`, not its
+credential source `authOwnerHome`. Only the owned correlated `thread/start` can
+establish a first Codex binding; `thread/resume` requires a known predecessor.
+Sidecars retain the same immutable primary tuple while its filesystem revision
+may advance. Standalone NEW admission combines exact actually exec'd command
+mode with the actual native hook/transcript/store and current executable proof.
+Codex ordinary exec/embedded TUI use ThreadStart; foreground Claude also requires
+actual startup source and a same-ID owned regular transcript. Unknown selectors
+and old IDs refuse; installed-version ordinary verification remains separate.
+
+BB admission reserves this ledger inside its existing outer lookup/realization
+transaction. Service realization must not reacquire that lock for a BB callback.
+Managed and standalone control operations acquire it themselves; no caller
+supplies a `lockHeld` authority flag. BB successor intent is its actual native
+SessionStart and fresh complete eligible host-wide lookup for the same approved
+profile/store and canonical BB thread/native ID. The exact old captured lifetime
+must have positively ended. Reliable different birth in the same verified view
+or terminal Z can prove that exit; a new occupant is neither signalled nor awaited.
+Live same-birth, unknown and incomparable observations refuse. One successor is
+reserved before callback and exact repeats stay idempotent.
+
+Standalone concrete-ID native resume argv is explicit owner intent. Old process
+death and retained matching history use that same captured-lifetime policy for
+both bound and pending generations before one pending successor is reserved;
+the new actual exec/hook must prove the requested ID. Picker/latest,
+names and interactive selection are not silently reinterpreted as concrete-ID
+intent. Managed resume uses its existing owner-approved resume capsule, exact
+old record/scope/store/ID and captured old death. Birthless old records and
+unknown concrete resume IDs refuse without migration. A failed dead intermediate
+generation may reconcile an exact restored predecessor, retaining that lineage.
+
+Revocation is irreversible for a client ID, not an automatic corruption of its
+immutable native identity. Same-process recovery requires explicit owner
+`service preflight --standalone --profile ... --native-id ...`, current exact
+process/image/store proof and a trusted durable owner hook receipt. The ID is a
+selector. An actor launch file alone is not that receipt. Checking in-flight
+mutations, fencing the old token and reserving one new pending capability is
+atomic with respect to service dispatch. Recovery state survives interruption;
+an explicit repeat completes its existing pending reservation. Native helpers
+do not rotate capabilities after 401/403. A missing first hook requires fixing
+the hook and restarting through the launcher.
+
+Root request receipts live under the native generation and MCP session. Client
+revocation, session removal, owner restart and native resume do not erase an
+uncertain mutation. Such outcomes block recovery/succession until reconciled;
+completed outcomes do not revive an old token. This is still not a general
+exactly-once claim for arbitrary new operations.
+
+Historical all-ever BB reconstruction and legacy migration are outside this
+new-state contract. Their unpublished refresh callback is removed. Existing BB
+host-wide identity fences remain; a new BB thread alone is not native genesis.
+The optional trusted ordinary create callback on existing profile approval
+reserves an operation, runs the SDK outside the owner lock and CAS-binds its
+returned BB ID. An early actual native proof remains pending until that binding,
+then the same owner preflight rechecks it without another spawn or hook. Pending
+and uncertain operations never auto-spawn; known new bindings retain their
+explicit successor/reconnect protocol. Missing history
+never becomes empty history, and no reset, deletion or alternate credential path
+is an admission mechanism.
+
+The existing approval input also accepts optional
+`executionScope: { project, environment }`, copied as exact nonempty strings
+before its first await. The same creation record retains this pair with its
+operation revision. Every approval/repeat checks it under the owner lock before
+preflight: another project/environment or scoped/unscoped mismatch refuses,
+including callback-free approval. Omitting `createRoot` remains profile-only and
+cannot realize an existing operation. The original profile/owner, operation
+revision and execution scope fence SDK completion and retained early-hook
+recovery; no changed request retargets or respawns a root. This tuple selects
+execution intent, not native identity or creation proof. The SDK callback remains
+outside the owner lock and the existing third `env` argument is unchanged.
+
+Managed non-Codex first publication now uses each actual owned producer.
+Claude combines startup source with its captured command/store and actual hook
+process. OpenCode's own default serve child receives an absolute filesystem DB
+selection and excludes simulation; its actual create response is version/CAS
+bound to that child/endpoint before first prompt. Cursor's own create-chat result
+feeds only the same-ID persist route. Its asynchronous hook is correlated with
+the actual pane and source-selected SQLite store; a current process descriptor
+for the initialized file rules out path-only/memory-fallback claims. Native
+transcript/data roots and Cursor's persist hash are not this native store key.
+Pending tools refuse before realization of the same credential. Unknown creation,
+admission or mutation outcomes retain primary/native state without auto-spawn or
+mutation replay. These are source mechanisms awaiting ordinary native proof.
+
 ### Task loops and background observations
 
 One package-owned Worker thread runs all task loops and native provider

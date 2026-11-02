@@ -21,7 +21,7 @@
 // the three processes; separate files give each writer its own name, and no lock is
 // needed at all.
 import {
-  existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync,
 } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -180,7 +180,8 @@ export function pidAlive(pid) {
  * it substituted leaks into neighbouring branches of the same file.
  */
 export async function installHarness({ binDir, sock, env = process.env }) {
-  const { stubCommand, withStubPath } = await import('./sandbox.mjs');
+  const { ownedServiceFixture, stubCommand, withStubPath } = await import('./sandbox.mjs');
+  const serviceFixture = env.PROMPTOBUS_SERVICE_HOME ? null : ownedServiceFixture(env);
   const home = mkdtempSync(path.join(os.tmpdir(), 'promptobus-harness-'));
   armCleanup(home);
   for (const dir of ['sessions', 'scripts', 'trace', 'logs']) {
@@ -203,6 +204,7 @@ export async function installHarness({ binDir, sock, env = process.env }) {
     home,
     restore: () => {
       restore();
+      serviceFixture?.restore();
       delete env[HARNESS_HOME_VAR];
       delete env[SOCK_BASE_VAR];
       delete env.CLAUDE_CONFIG_DIR;
@@ -334,6 +336,57 @@ async function settle(ms) {
   await new Promise((r) => { setTimeout(r, ms); });
 }
 
+// Verified UNIT producer for scripted launch/HTTP wiring; this is not evidence of real Claude creation.
+export async function publishOwnedClaudeFixtureStart({ nativeId, argv, env = process.env, pid = process.pid }) {
+  if (!env.PROMPTOBUS_CLIENT_FILE) return { published: false };
+  const [{ bindManagedNativeStart }, { observeRootProcess, processExecutable },
+    { readPrivate, recordVersion, sameRecordVersion }, { taskExists, withTaskLock, writeJsonAtomic }] = await Promise.all([
+    import('../lib/drivers.js'), import('../lib/root-process.js'), import('../lib/service-state.js'), import('../lib/store.js'),
+  ]);
+  const client = readPrivate(env.PROMPTOBUS_CLIENT_FILE);
+  const context = readPrivate(path.join(path.dirname(path.dirname(env.PROMPTOBUS_CLIENT_FILE)), `launch-${client.id}.json`));
+  if (context.runtime !== client.runtime || context.harness !== 'claude' || context.home !== client.env.PROMPTOBUS_HOME
+    || context.task !== client.env.PROMPTOBUS_TASK || context.address !== client.env.PROMPTOBUS_ROLE
+    || !['managed', 'reservation'].includes(client.lifetime.kind)
+    || (client.lifetime.kind === 'reservation' && context.deferTaskBinding !== true)
+    || (client.lifetime.kind === 'managed' && (client.lifetime.record !== context.record
+      || client.lifetime.ref !== context.ref || client.lifetime.launchId !== context.launchId))) {
+    throw new Error('Owned Claude unit producer has no exact staged client context');
+  }
+  const file = context.record, before = recordVersion(file), record = readPrivate(file);
+  const nativeStore = realpathSync(env.CLAUDE_CONFIG_DIR), process = await observeRootProcess(pid);
+  const image = process && await processExecutable(process);
+  if (!image || typeof nativeId !== 'string' || !/^[0-9a-f-]{36}$/i.test(nativeId)
+    || record.ref !== context.ref || record.home !== context.home || record.task !== context.task
+    || record.address !== context.address || record.launchId !== context.launchId || record.nativeCommand?.nativeStore !== nativeStore
+    || record.nativeLaunchProvenance?.state !== 'candidate' || record.nativeLaunchProvenance.nativeStore !== nativeStore
+    || argv[0] !== '--bg' || JSON.stringify(record.nativeCommand.argv) !== JSON.stringify(argv)) {
+    throw new Error('Owned Claude unit producer lacks its observed process and exact launch tuple');
+  }
+  const executable = recordVersion(image), transcript = path.join(nativeStore, `${nativeId}.jsonl`);
+  writeFileSync(transcript, JSON.stringify({ sessionId: nativeId }) + '\n', { mode: 0o600 });
+  const publish = () => {
+    if (!sameRecordVersion(before) || !sameRecordVersion(executable)) throw new Error('Owned Claude unit producer generation changed');
+    writeJsonAtomic(file, { ...record, nativeCommand: { ...record.nativeCommand, executable } }, { mode: 0o600 });
+    const binding = { harness: 'claude', nativeStore, nativeId, process };
+    return bindManagedNativeStart({ harness: 'claude', home: record.home, task: record.task, address: record.address,
+      ref: record.ref, record: file, launchId: record.launchId, nativeId, transcript, deferTaskBinding: context.deferTaskBinding,
+      nativeProof: { version: recordVersion(file), binding,
+        evidence: { kind: 'native-session-start', source: 'startup', ...binding, transcript, executable } } });
+  };
+  return taskExists(record.home, record.task) ? withTaskLock(record.home, record.task, publish) : publish();
+}
+
+export async function startOwnedClaudeFixtureSession(argv) {
+  const owner = await new Promise(resolve => process.once('message', resolve));
+  await publishOwnedClaudeFixtureStart({ nativeId: process.env.CLAUDE_CODE_SESSION_ID, argv,
+    env: { ...process.env, PROMPTOBUS_CLIENT_FILE: owner.clientFile, CLAUDE_CONFIG_DIR: owner.nativeStore } });
+  process.send({ published: true });
+  process.disconnect();
+  process.argv = [process.execPath, path.join(here, 'participant.mjs'), ...argv];
+  await import('./participant.mjs');
+}
+
 // Wait for the process to die before removing the record: removing it under a live
 // participant would let that participant rewrite its file at the end of the turn, and
 // `agents --json` would show a killed session as alive.
@@ -446,10 +499,13 @@ export async function claudeMain(argv, env = process.env) {
   // `--mcp-config` ([13]), and its Stop hook from the arguments of the
   // command that the start wrote into its settings file: there is nothing to trust in
   // the session environment here.
-  const child = spawn(process.execPath, [path.join(here, 'participant.mjs'), ...argv], {
+  const managed = !!env.PROMPTOBUS_CLIENT_FILE;
+  const child = spawn(process.execPath, managed ? ['--input-type=module', '-e',
+    `import {startOwnedClaudeFixtureSession} from ${JSON.stringify(path.join(here, 'harness.mjs'))};await startOwnedClaudeFixtureSession(process.argv.slice(1));`, '--', ...argv]
+    : [path.join(here, 'participant.mjs'), ...argv], {
     cwd: process.cwd(),
     detached: true,
-    stdio: ['ignore', fd, fd],
+    stdio: managed ? ['ignore', fd, fd, 'ipc'] : ['ignore', fd, fd],
     env: {
       ...daemonEnv(home, env),
       CLAUDE_CODE_SESSION_ID: sessionId,
@@ -459,6 +515,12 @@ export async function claudeMain(argv, env = process.env) {
     },
   });
   child.unref();
+  const published = managed ? new Promise((resolve, reject) => {
+    child.once('message', value => value?.published === true ? resolve() : reject(new Error('Owned Claude unit producer did not publish')));
+    child.once('error', reject);
+    child.once('exit', code => reject(new Error(`Owned Claude unit producer exited ${code} before its startup acknowledgement`)));
+    child.send({ clientFile: env.PROMPTOBUS_CLIENT_FILE, nativeStore: env.CLAUDE_CONFIG_DIR });
+  }) : null;
   // Record form taken from `claude agents --json` 2.1.251 (measurement in
   // [12], «Test coverage boundary»), re-read unchanged on 2.1.263 (PB-34, a live
   // background participant): a bare array, fields
@@ -476,6 +538,7 @@ export async function claudeMain(argv, env = process.env) {
     status: 'busy',
     state: 'working',
   });
+  await published;
   // Output format — observed on 2.1.221 («backgrounded · <id> · <name>»): `parseSessionId`
   // parses it, and the start must be checked against the form the mechanism actually
   // reads.

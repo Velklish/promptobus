@@ -38,6 +38,7 @@ async function stand(t, options = {}) {
   const environments = new Map([environment, workerEnvironment, ...(options.environments ?? [])].map(e => [e.id, e]));
   const names = []; const spawns = [];
   const events = [];
+  const rootLaunches = [];
   const catalogs = new Map();
   const freezeCatalog = async thread => {
     const env = environments.get(thread.environmentId) ?? environment;
@@ -127,6 +128,11 @@ async function stand(t, options = {}) {
       },
       defaultExecutionOptions: async ({ threadId }) => executionOptions.get(threadId) ?? null,
       spawn: async args => {
+        assert.equal(rootLaunches.at(-1)?.operation, 'begin', 'The shared admission intent must be durable before SDK spawn');
+        const begin = rootLaunches.at(-1);
+        const owned = bindingStore(host.bb).list().find(binding => bindingStore(host.bb).launchIntent(binding)?.attemptId === begin.intent);
+        assert.deepEqual(bindingStore(host.bb).launchIntent(owned).ownerScope, { root: begin.root, home: path.join(begin.root, '.promptobus') },
+          'The resolved owner scope must be durable before SDK spawn');
         initialArgs = args; spawns.push(args);
         nativeCatalogCleared = false;
         const thread = makeThreadResponse({ id: `thr-${++next}`, projectId: args.projectId, environmentId: args.environment.type === 'reuse' ? args.environment.environmentId : null, providerId: args.providerId,
@@ -200,6 +206,13 @@ async function stand(t, options = {}) {
     },
   }, experimental_callHostRpc: async ({ method, input, hostId, signal }) => {
     assert.equal(hostId, 'local');
+    if (method === 'rootLaunch') {
+      if (options.failRootLaunch === input.operation) throw new Error(`Root admission ${input.operation} unavailable`);
+      await options.beforeRootLaunch?.(input);
+      rootLaunches.push(structuredClone(input));
+      return { root: input.root, home: path.join(input.root, '.promptobus') };
+    }
+    if (method === 'rootScope') return createHostEntry().handlers.rootScope(input, { signal: signal ?? new AbortController().signal });
     if (hostEntry && method !== 'engine') return hostEntry.handlers[method](input, { signal: new AbortController().signal });
     if (method === 'prepareContext') return options.hostContext?.(input.binding) ?? { rules: [], skills: [], tools: [] };
     if (method === 'controlPublish') return createHostEntry().handlers.controlPublish(input, { signal: signal ?? new AbortController().signal });
@@ -275,7 +288,7 @@ async function stand(t, options = {}) {
   const call = (id, name, input = {}, projectId = 'project') => host.harness.behavior.callAgentTool(name, input, { threadId: id, projectId });
   const control = (action, id) => host.harness.behavior.runCli(['participant', action, '--task', task, '--participant', id]);
   return { root, threads, environment, workerEnvironment, environments, names, spawns, events, get host() { return host; }, task, create, add, call, control, publish,
-    wakes, queues, interactions, append, executionOptions, catalogs, get initialArgs() { return initialArgs; },
+    wakes, queues, interactions, append, executionOptions, catalogs, rootLaunches, get initialArgs() { return initialArgs; },
     reconcile: () => host.harness.behavior.runCli(['recovery', 'run']),
     delivery: id => bindingStore(host.bb).delivery(id),
     updateDelivery: (id, update) => bindingStore(host.bb).updateDelivery(id, update),
@@ -285,6 +298,108 @@ async function stand(t, options = {}) {
     set headSha(value) { headSha = value; },
     async reload() { host = await host.harness.lifecycle.reload(plugin); } };
 }
+
+test('managed admission precedes SDK spawn and publishes its actual thread before readiness', async t => {
+  const s = await stand(t);
+  const result = await s.create();
+  assert.equal(result.exitCode, 0, result.stderr);
+  const [begin, complete] = s.rootLaunches;
+  assert.equal(s.rootLaunches.length, 2);
+  assert.deepEqual(begin, { operation: 'begin', root: s.root, intent: complete.intent });
+  assert.deepEqual(complete, { operation: 'complete', root: s.root, intent: begin.intent, threadId: 'thr-1',
+    ownerScope: { root: s.root, home: path.join(s.root, '.promptobus') } });
+  assert.equal(bindingStore(s.host.bb).task(s.task).phase, 'ready');
+});
+
+test('failed admission refuses SDK spawn while failed completion preserves the returned orphan', async t => {
+  for (const operation of ['begin', 'complete']) {
+    const s = await stand(t, { failRootLaunch: operation });
+    const result = await s.create();
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stderr, new RegExp(`Root admission ${operation} unavailable`));
+    assert.equal(s.spawns.length, operation === 'begin' ? 0 : 1);
+    const binding = bindingStore(s.host.bb).task(s.task);
+    assert.equal(binding.phase, 'orphan');
+    assert.equal(binding.threadId, operation === 'begin' ? null : 'thr-1');
+    assert.equal(bindingStore(s.host.bb).launchIntent(binding).status, operation === 'begin' ? 'unknown' : 'recorded');
+  }
+});
+
+for (const provision of [false, true]) for (const condition of ['STOP', 'ended']) {
+  test(`SDK spawn rechecks ${condition} after root admission (provision ${provision})`, { timeout: 10_000 }, async t => {
+    const entered = deferred(), release = deferred();
+    let held = false;
+    const s = await stand(t, { beforeRootLaunch: async input => {
+      if (held && input.operation === 'begin') { entered.resolve(); await release.promise; }
+    } });
+    assert.equal((await s.create()).exitCode, 0);
+    const before = s.spawns.length, rootCalls = s.rootLaunches.length;
+    held = true;
+    const launching = s.add('held-worker', 'worker', provision ? ['--new-environment', '--base-branch', 'main'] : []);
+    try {
+      await Promise.race([entered.promise, launching.then(result => { throw new Error(`Root admission was not held: ${result.stderr}`); })]);
+      const owner = bindingStore(s.host.bb).task(s.task);
+      await s.publish(null, condition === 'STOP' ? { STOP: true } : { grants: { orchestrator: owner.launchContext.grant } });
+    } finally { release.resolve(); }
+    const result = await launching;
+    assert.equal(result.exitCode, 1);
+    assert.equal(s.spawns.length, before, 'Revoked authority must refuse before the SDK creates a child');
+    assert.match(result.stderr, /STOP|grant-mismatch/);
+    assert.deepEqual(s.rootLaunches.slice(rootCalls).map(input => input.operation), ['begin']);
+    const store = bindingStore(s.host.bb), binding = store.participant(s.task, 'held-worker'), intent = store.launchIntent(binding);
+    assert.equal(binding.phase, 'orphan'); assert.equal(binding.threadId, null);
+    assert.equal(intent.status, 'unknown');
+    assert.deepEqual(intent.ownerScope, { root: s.root, home: path.join(s.root, '.promptobus') });
+    assert.equal(intent.attemptId, s.rootLaunches.at(-1).intent);
+  });
+}
+
+test('SDK spawn rechecks reviewer evidence after root admission', { timeout: 10_000 }, async t => {
+  const entered = deferred(), release = deferred();
+  let held = false;
+  const s = await stand(t, { beforeRootLaunch: async input => {
+    if (held && input.operation === 'begin') { entered.resolve(); await release.promise; }
+  } });
+  assert.equal((await s.create()).exitCode, 0);
+  const before = s.spawns.length;
+  held = true;
+  const launching = s.add('held-reviewer', 'reviewer');
+  try {
+    await Promise.race([entered.promise, launching.then(result => { throw new Error(`Root admission was not held: ${result.stderr}`); })]);
+    s.headSha = 'c'.repeat(40);
+  } finally { release.resolve(); }
+  const result = await launching;
+  assert.equal(result.exitCode, 1);
+  assert.equal(s.spawns.length, before, 'Changed review evidence must refuse before the SDK creates a child');
+  assert.match(result.stderr, /source|SHA|manifest/i);
+  assert.equal(bindingStore(s.host.bb).participant(s.task, 'held-reviewer').phase, 'orphan');
+});
+
+test('SDK spawn rechecks approver predecessors after root admission', { timeout: 10_000 }, async t => {
+  const entered = deferred(), release = deferred();
+  let held = false;
+  const s = await stand(t, { beforeRootLaunch: async input => {
+    if (held && input.operation === 'begin') { entered.resolve(); await release.promise; }
+  } });
+  assert.equal((await s.create()).exitCode, 0);
+  assert.equal((await s.add('alpha')).exitCode, 0);
+  assert.equal((await s.add('beta', 'reviewer')).exitCode, 0);
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }) });
+  await engine.send(s.task, { from: 'alpha', to: ['orchestrator'], type: 'result', body: 'Worker evidence' });
+  await engine.send(s.task, { from: 'beta', to: ['orchestrator'], type: 'result', body: 'Reviewer evidence' });
+  const before = s.spawns.length;
+  held = true;
+  const launching = s.add('held-approver', 'approver', ['--worker', 'alpha', '--reviewer', 'beta']);
+  try {
+    await Promise.race([entered.promise, launching.then(result => { throw new Error(`Root admission was not held: ${result.stderr}`); })]);
+    engine.assignParticipant(s.task, engine.readTask(s.task).participants.find(participant => participant.id === 'alpha'));
+  } finally { release.resolve(); }
+  const result = await launching;
+  assert.equal(result.exitCode, 1);
+  assert.equal(s.spawns.length, before, 'Changed predecessor evidence must refuse before the SDK creates a child');
+  assert.match(result.stderr, /requires a type=result/);
+  assert.equal(bindingStore(s.host.bb).participant(s.task, 'held-approver').phase, 'orphan');
+});
 
 const acceptReview = (s, resultId, reviewer = 'independent') => s.host.harness.behavior.runCli([
   'task', 'accept', '--task', s.task, '--reviewer', reviewer, '--result', resultId,

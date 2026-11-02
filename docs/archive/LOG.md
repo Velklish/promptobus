@@ -628,3 +628,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-416.9"></a>`PB-416.9-codex-http-native-binding` · 2026-10-30 · completed · — · Bind Codex HTTP clients to one owner-realized native thread
 - <a id="pb-416.13"></a>`PB-416.13-consumer-declaration-compatibility` · 2026-10-30 · completed · — · Align driver lookup and tool version declarations with existing consumer values
 - <a id="pb-416.3"></a>`PB-416.3-shared-warden-lifecycle` · 2026-11-01 · completed · — · Run task warden state machines inside the shared service
+- <a id="pb-416.4"></a>`PB-416.4-shared-service-launchers-configs` · 2026-11-02 · completed · — · Launch harness clients through authenticated shared HTTP configurations

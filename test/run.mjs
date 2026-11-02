@@ -50,6 +50,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { applyHygiene } from './hygiene.mjs';
+import { recognizeKernelRead } from './kernel-read-shapes.mjs';
 import {
   RUN_OWNER_FILE, runOwnerIsLive, sweepTestSandboxes, sweepTestSockets, sweptLine,
 } from './tmpdir-sweep.mjs';
@@ -611,7 +612,7 @@ if (interrupted) {
   // binaries [hygiene.mjs](hygiene.mjs) lists, and nothing else — so a tool name
   // nobody stubbed cannot resolve. This gate is what watches that the seal held:
   // every command `run` resolved was appended to the trace by the child that ran it,
-  // and every resolved path must be inside the run directory. Stub binaries are there
+  // and every ordinary resolved path must be inside the run directory. Stub binaries are there
   // (each file's sandbox lives in it) and so are the seal's symlinks; what is not
   // there is the operator's machine.
   //
@@ -633,13 +634,18 @@ if (interrupted) {
   const insideRun = [RUN_TMP, realpathSync(RUN_TMP)]
     .map((root) => `${root}${path.sep}`);
   let escaped = [];
+  const kernelReads = [];
   try {
     escaped = [...new Set(readFileSync(path.join(RUN_TMP, RESOLVED_LOG), 'utf8')
       .split('\n').filter(Boolean))]
-      .map((line) => line.split('\t'))
-      .filter(([, file]) => file && file !== '(unresolved)'
-        && !insideRun.some((root) => file.startsWith(root)))
-      .map(([cmd, file]) => `${cmd} → ${file}`)
+      .filter(line => {
+        const [cmd, file] = line.split('\t');
+        if (!file || file === '(unresolved)' || insideRun.some(root => file.startsWith(root))) return false;
+        const kernel = recognizeKernelRead(line);
+        if (kernel) { kernelReads.push(`${cmd} → ${file}: ${kernel.shape}, pid ${kernel.pid} (${kernel.reason})`); return false; }
+        return true;
+      })
+      .map(line => { const [cmd, file] = line.split('\t'); return `${cmd} → ${file}`; })
       .sort();
   } catch {
     // No trace — no command went through `run` at all. That is a broken run, and the
@@ -678,6 +684,10 @@ if (interrupted) {
     console.error(`\n✖ wardens were raised under this run (${raised.length}) — these processes outlive the run:`);
     for (const line of raised) console.error(`  ✖ ${line}`);
     console.error('  the PROMPTOBUS_WARDEN=off switch is in the shared hygiene.mjs list — the bus command did not read it');
+  }
+  if (kernelReads.length) {
+    console.log(`\n▸ ${kernelReads.length} distinct fixed Darwin kernel read trace(s) outside the run directory:`);
+    for (const line of kernelReads.sort()) console.log(`  ▸ ${line}`);
   }
   if (escaped.length) {
     console.error(`\n✖ ${escaped.length} command(s) started from outside the run directory — the PATH seal has a hole:`);

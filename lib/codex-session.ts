@@ -9,6 +9,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { GateError, REVIEWER } from '../dist/index.js';
 import { withDirLock } from '../dist/fs/lock.js';
 import { CodexRpc } from './codex-rpc.js';
@@ -17,6 +18,8 @@ import { foreignSession, logWarden, sameStoreHome, writeWake } from './store.js'
 import { provenanceFromRecord, provenanceLine } from './provenance.js';
 import { createParticipantAuthGuard } from './codex-participant-auth.js';
 import { commandReceipts } from './codex-command-receipts.js';
+import { processIdentity, processRecord, processState, readPrivate, recordVersion, sameRecordVersion, writePrivate } from './service-state.js';
+import type { ProcessIdentity, RecordVersion } from './service-state.js';
 
 import type { HarnessSessionRecord } from './harness-registry.js';
 import type { LibMcpServer } from './driver-runtime.js';
@@ -58,6 +61,7 @@ export interface CodexSessionRecord extends HarnessSessionRecord {
   codexHome?: string; authOwnerHome?: string; rpcSocket?: string | null; launchId?: string | null; threadId?: string | null;
   sandbox?: string; approvalPolicy?: string; model?: string | null; effort?: string | null; addDirs?: string[];
   holderPid?: number | null; appPid?: number | null; state?: string; busy?: boolean; error?: string | null;
+  holderProcess?: ProcessIdentity | null; appProcess?: ProcessIdentity | null; nativeAdmissionSchema?: 1;
   turns?: number; stopping?: boolean; stopConfirmed?: boolean; stopError?: string | null;
   rawToolReceipts?: boolean; commandReceiptFile?: string; canonicalSkillsDir?: string | null; resumeThreadId?: string | null;
   startedAt?: string; mcpPrefix?: string; initialPrompt?: string; initialAssignmentInjected?: boolean; bindBeforeFirstTurn?: boolean; rolloutPath?: string | null;
@@ -66,6 +70,70 @@ export interface CodexSessionRecord extends HarnessSessionRecord {
   rateLimits?: CodexRateLimits | null; nameSet?: boolean | null; methodsCalled?: string[];
   lastEvent?: string | null; lastEventAt?: string | null; currentTurnId?: string | null;
   lastTurn?: { id?: string | null; status?: string | null; at?: string; error?: string };
+  nativeAdmission?: { harness: 'codex'; nativeStore: string; nativeId: string; process: ProcessIdentity };
+  nativeAdmissionEvidence?: { kind: 'codex-thread-api'; method: 'thread/start' | 'thread/resume';
+    nativeStore: string; nativeId: string; process: ProcessIdentity };
+}
+
+interface CodexAdmissionPublication {
+  version: RecordVersion; launchId: string; home: string; task: string; address: string;
+  nativeStore: string; nativeId: string; process: ProcessIdentity; method: 'thread/start' | 'thread/resume';
+}
+
+export type ManagedCodexResumeDeath = { kind: 'process-birth'; holder: ProcessIdentity; process: ProcessIdentity };
+
+export function managedCodexResumeDeath(ref: string, record: CodexSessionRecord, env = process.env): ManagedCodexResumeDeath {
+  if (record.nativeAdmissionSchema !== 1) {
+    throw new GateError('Managed Codex resume requires a current-version native binding; start a new session without modifying the retained legacy state');
+  }
+  const refuse = (): never => { throw new GateError('Managed Codex resume has incomplete or live native process proof'); };
+  let lockPid: number | null = null;
+  try {
+    const lock = JSON.parse(readFileSync(lockFile(ref, env), 'utf8')) as { pid?: unknown };
+    if (!Number.isSafeInteger(lock?.pid) || Number(lock.pid) <= 0) refuse();
+    lockPid = Number(lock.pid);
+  } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') refuse(); }
+  const holder = processRecord(record.holderProcess), app = processRecord(record.appProcess);
+  const admission = record.nativeAdmission, evidence = record.nativeAdmissionEvidence;
+  if (!holder || !app || holder.pid === app.pid || holder.pid !== record.holderPid || app.pid !== record.appPid
+    || !admission || admission.harness !== 'codex' || admission.nativeId !== record.threadId
+    || !record.codexHome || admission.nativeStore !== realpathSync(record.codexHome)
+    || !isDeepStrictEqual(admission.process, app) || !evidence || evidence.kind !== 'codex-thread-api'
+    || !['thread/start', 'thread/resume'].includes(evidence.method) || evidence.nativeId !== admission.nativeId
+    || evidence.nativeStore !== admission.nativeStore || !isDeepStrictEqual(evidence.process, app)
+    || processState(holder) !== 'dead' || processState(app) !== 'dead') refuse();
+  // A reused PID or an unreaped zombie does not keep this captured lifetime alive.
+  // The pid-only lock can describe this holder, but cannot prove a foreign lifetime.
+  if (lockPid !== null && lockPid !== holder!.pid) refuse();
+  return { kind: 'process-birth', holder: holder!, process: app! };
+}
+
+// Called only while staging the approved successor under the task and session launch locks.
+export function retireCodexResumeHolderLock(ref: string, record: CodexSessionRecord, env = process.env) {
+  const version = recordVersion(sessionFile(ref, env));
+  if (record.ref !== ref || !isDeepStrictEqual(readSession(ref, env), record)) throw new GateError('Managed Codex resume changed its captured record before holder lock retirement');
+  managedCodexResumeDeath(ref, record, env);
+  if (!sameRecordVersion(version)) throw new GateError('Managed Codex resume changed its captured record during holder lock retirement');
+  rmSync(lockFile(ref, env), { force: true });
+}
+
+export function publishCodexNativeAdmission(ref: string, input: CodexAdmissionPublication, env = process.env) {
+  return withSessionLaunch(ref, env, () => {
+    if (input.version.file !== sessionFile(ref, env)) throw new GateError('Codex native provenance names another record');
+    const record = readPrivate(input.version.file) as CodexSessionRecord | null;
+    if (!sameRecordVersion(input.version)
+      || !record || record.ref !== ref || record.launchId !== input.launchId || record.home !== input.home
+      || record.task !== input.task || record.address !== input.address || record.threadId !== input.nativeId
+      || record.appPid !== input.process.pid || !record.codexHome || realpathSync(record.codexHome) !== input.nativeStore
+      || (record.nativeAdmissionSchema === 1 && !isDeepStrictEqual(record.appProcess, input.process))
+      || processState(input.process) !== 'alive') throw new GateError('Codex native provenance no longer owns its exact record and app-server');
+    const admission = { harness: 'codex' as const, nativeStore: input.nativeStore, nativeId: input.nativeId, process: input.process };
+    if (record.nativeAdmission && !isDeepStrictEqual(record.nativeAdmission, admission)) throw new GateError('Codex native provenance cannot replace its immutable native generation');
+    if (!sameRecordVersion(input.version)) throw new GateError('Codex native provenance record changed before publication');
+    writePrivate(input.version.file, { ...record, codexHome: admission.nativeStore, nativeAdmission: admission, nativeAdmissionUnknown: undefined,
+      nativeAdmissionEvidence: { kind: 'codex-thread-api', method: input.method, nativeStore: admission.nativeStore,
+        nativeId: admission.nativeId, process: admission.process } });
+  });
 }
 export interface CodexHolderResult extends Partial<CodexSessionRecord> {
   ok?: boolean; stopped?: boolean; attempted?: boolean; note?: string | null; receiptFile?: string;
@@ -434,30 +502,21 @@ export function tailLog(ref: string, env = process.env, n = 20) {
   }
 }
 
-function killRecordPids(record: CodexSessionRecord | null | undefined) {
-  for (const pid of [record?.holderPid, record?.appPid]) {
-    if (!Number.isInteger(pid) || pid! <= 0) continue;
-    try { process.kill(-pid!, 'SIGKILL'); } catch { /* no group or no permission */ }
-    try { process.kill(pid!, 'SIGKILL'); } catch { /* already gone */ }
-  }
-}
-
 /** Stop the holder of `ref`: ask `shutdown` (bounded by `timeoutMs`, the ask also at most 5 s),
- *  wait out its death on the same budget, and fall back to killing its pids. */
+ *  then confirm its exit. A declined or unreadable native Stop retains the owned record. */
 export async function reapHolder(ref: string, env = process.env, timeoutMs = STOP_TIMEOUT_MS) {
   const record = readSession(ref, env);
   if (!record) return;
-  if (!record.holderPid) record.holderPid = holderLockPid(ref, env);
+  const ownsLaunch = () => readSession(ref, env)?.launchId === record.launchId;
   if (holderAlive(ref, env)) {
-    try {
-      await holderAsk(ref, 'shutdown', {}, env, Math.min(5_000, timeoutMs));
-    } catch {
-      killRecordPids(record);
+    if (!ownsLaunch()) throw new GateError(`Codex launch ${ref} changed before cleanup`);
+    const stopped = await holderAsk(ref, 'shutdown', { launchId: record.launchId }, env, Math.min(5_000, timeoutMs));
+    if (!stopped.ok || !stopped.stopped) {
+      throw new GateError(`Codex launch ${ref} did not confirm native cleanup: ${stopped.note ?? 'shutdown refused'}`);
     }
-    await waitStopped(ref, env, timeoutMs);
-    return;
+    if (!await waitStopped(ref, env, timeoutMs)) throw new GateError(`Codex holder ${ref} did not confirm exit`);
   }
-  killRecordPids(record);
+  if (!ownsLaunch() || pidAlive(record.appPid)) throw new GateError(`Codex launch ${ref} has unknown cleanup ownership or app-server exit`);
 }
 
 export async function waitStopped(ref: string, env = process.env, timeoutMs = STOP_TIMEOUT_MS) {
@@ -1110,10 +1169,17 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
       process.exit(1);
     }
   }
+  const appEnvironment = { ...env };
   const child = spawn(record.bin!, PARTICIPANT_ARGV, {
     cwd: record.cwd,
-    env,
+    env: appEnvironment,
     stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let appProcess: ProcessIdentity | null = null;
+  child.once('spawn', () => {
+    appProcess = processIdentity(child.pid!);
+    if (record.nativeAdmissionSchema === 1) patchHeld(ref, { appProcess, appPid: child.pid,
+      holderPid: process.pid, holderProcess: processIdentity(process.pid) }, env);
   });
   log(`app-server pid ${child.pid} bin ${record.bin}`);
   child.stdin?.on('error', () => {});
@@ -1733,9 +1799,28 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
     const started = await rpc.request(startMethod, startParams, THREAD_START_TIMEOUT_MS) as CodexRpcMessage;
     if (started.error) throw new Error(started.error.message ?? JSON.stringify(started.error));
     state.threadId = started.result?.thread?.id ?? started.result?.id;
-    if (!state.threadId) throw new Error(`${startMethod} did not return a thread id`);
+    if (typeof state.threadId !== 'string' || !/^\S+$/u.test(state.threadId)) throw new Error(`${startMethod} did not return a thread id`);
+    if (record.nativeAdmissionSchema === 1 && started.result?.thread?.id !== state.threadId) {
+      throw new GateError(`${startMethod} did not return an owned native thread object`);
+    }
     if (record.resumeThreadId && state.threadId !== record.resumeThreadId) {
       throw new Error('thread/resume returned a different thread; refusing to replace the owner');
+    }
+    patchHeld(ref, { threadId: state.threadId, rolloutPath: started.result?.thread?.path ?? record.rolloutPath ?? null }, env);
+    let actualStore: string | null = null;
+    try {
+      if (record.codexHome && appEnvironment.CODEX_HOME && realpathSync(record.codexHome) === realpathSync(appEnvironment.CODEX_HOME)) actualStore = realpathSync(appEnvironment.CODEX_HOME);
+    } catch { /* Missing actual store provenance remains unresolved; the route is unchanged. */ }
+    if (record.nativeAdmissionSchema === 1 && actualStore && appProcess && record.launchId && record.home && record.task && record.address
+      && started.result?.thread?.id === state.threadId) {
+      if (child.exitCode !== null || child.signalCode !== null) throw new GateError('Codex native API process exited before provenance publication');
+      publishCodexNativeAdmission(ref, { version: recordVersion(file), launchId: record.launchId,
+        home: record.home, task: record.task, address: record.address, nativeStore: actualStore,
+        nativeId: state.threadId, process: appProcess, method: startMethod }, env);
+    } else if (record.nativeAdmissionSchema === 1) {
+      patchHeld(ref, { nativeAdmissionUnknown: { harness: 'codex', nativeId: state.threadId,
+        reason: 'owned app-server birth, actual CODEX_HOME or managed launch context is unavailable' } }, env);
+      throw new GateError('Managed Codex launch cannot prove its owned native API process and actual store');
     }
     verifyThreadProfile(record, started.result, log);
     if (startMethod === 'thread/start' && started.result?.cwd === record.cwd && path.isAbsolute(record.cwd!)

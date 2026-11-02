@@ -11,9 +11,12 @@ import { MAILBOX_UNREAD_MARK } from './status.js';
 import { BRANCH_CHANGED_MARK, WORKTREE_BRANCH_TEMPLATE, npmCiCommand } from './worktree.js';
 
 import type { DriverCapabilities, DriverOptions, PromptobusHost } from '../dist/index.js';
-import type { InstallPlan, InstallPlanHost, InstallHarness } from './install.js';
+import type { InstallPlan, InstallPlanHost, InstallHarness, InstallPlanOptions } from './install.js';
 import type { AvailabilityWindow } from './model-routing/cache.js';
-export type { InstallHarness, InstallTarget, PackageSkillFile, PackageSkill, InstallPlanHost, InstallWrite, InstallPlan } from './install.js';
+export type { InstallHarness, InstallTarget, PackageSkillFile, PackageSkill, InstallPlanHost, InstallWrite, InstallPlan, InstallPlanOptions } from './install.js';
+export { approveCodexRootProfile } from './root-launch.js';
+export { approveStandaloneRootProfile } from './standalone-root.js';
+export type { StandaloneRootProfileInput, StandaloneRootProfileDescriptor } from './standalone-root.js';
 
 export interface DriverDeclaration {
   readonly id: string;
@@ -105,8 +108,8 @@ export async function checkWake(harness: string | null = null, env = process.env
   return { harness: driver.id, ...(await driver.checkWake(env)) };
 }
 
-export function planHookInstall(host: InstallPlanHost, root: string, harnesses: readonly InstallHarness[]): InstallPlan {
-  const { writes, owned, ownedSkills, unproven } = planInstall(host, root, harnesses);
+export function planHookInstall(host: InstallPlanHost, root: string, harnesses: readonly InstallHarness[], options?: InstallPlanOptions): InstallPlan {
+  const { writes, owned, ownedSkills, unproven } = planInstall(host, root, harnesses, options);
   return { writes, owned, ownedSkills, unproven };
 }
 

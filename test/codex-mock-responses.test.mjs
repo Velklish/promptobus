@@ -1,5 +1,6 @@
 import { check } from './check.mjs';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import Ajv from 'ajv';
@@ -7,7 +8,7 @@ import { makeSandbox } from './sandbox.mjs';
 import { waitFor } from './harness.mjs';
 import { CodexRpc } from '../lib/codex-rpc.js';
 import { MIN_CODEX_VERSION, PROVEN_CODEX_VERSION } from '../lib/driver-codex.js';
-import { HANG_AFTER_START_VAR, PROBE_VAR, installHarness } from './harness-codex.mjs';
+import { HANG_AFTER_START_VAR, PROBE_VAR, installHarness, planParticipant, readTrace } from './harness-codex.mjs';
 
 const root = makeSandbox('promptobus-codex-');
 const harness = await installHarness({ binDir: path.join(root, 'bin') });
@@ -141,3 +142,60 @@ for (const [label, params] of [['omitted', {}], ['null', { cwd: null }]]) {
   });
 }
 check('actual mock response inventory includes omitted and null cwd lifecycle outputs', count === 38, `got ${count}`);
+
+const eofHome = path.join(root, 'eof-close');
+mkdirSync(eofHome, { recursive: true });
+for (const [label, deleteStatus] of [['accepted', 200], ['refused', 409]]) {
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    let body = '';
+    for await (const chunk of request) body += chunk;
+    const message = body ? JSON.parse(body) : null;
+    requests.push({ method: request.method, rpc: message?.method ?? null, session: request.headers['mcp-session-id'] ?? null });
+    if (request.method === 'DELETE') { response.writeHead(deleteStatus).end(); return; }
+    if (message.method === 'notifications/initialized') { response.writeHead(202).end(); return; }
+    const result = message.method === 'initialize'
+      ? { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'eof-fixture', version: '1' } }
+      : { content: [{ type: 'text', text: 'fixture status' }] };
+    response.writeHead(200, { 'content-type': 'application/json', 'mcp-session-id': 'eof-session' })
+      .end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = `worker:eof-${label}`;
+  writeFileSync(path.join(eofHome, 'config.toml'), `[mcp_servers.promptobus]\nurl = "http://127.0.0.1:${server.address().port}/mcp/bus"\n`
+    + 'bearer_token_env_var = "PROMPTOBUS_CLIENT_TOKEN"\n');
+  planParticipant(harness.home, address, { turns: [{ do: [{ tool: 'promptobus_status' }] }] });
+  const env = { ...process.env, CODEX_HOME: eofHome, PROMPTOBUS_ROLE: address, PROMPTOBUS_CLIENT_TOKEN: 'eof-fixture-token' };
+  delete env.PROMPTOBUS_CLIENT_FILE;
+  const child = spawn(path.join(root, 'bin', 'codex'), ['app-server', '--stdio'], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+  let stderr = '';
+  child.stderr.on('data', bytes => { stderr += bytes; });
+  const exited = new Promise(resolve => child.once('exit', (code, signal) => resolve({ code, signal })));
+  const rpc = CodexRpc({ stdin: child.stdin, stdout: child.stdout });
+  const events = [];
+  rpc.onNotification(msg => events.push(msg));
+  try {
+    await rpc.request('initialize', { clientInfo: { name: 'fixture', version: '1.0' } }, 3000);
+    const started = await rpc.request('thread/start', { cwd: root }, 3000);
+    const turn = await rpc.request('turn/start', { threadId: started.result.thread.id, input: [{ type: 'text', text: 'status' }] }, 3000);
+    await waitFor(() => events.some(msg => msg.method === 'turn/completed' && msg.params.id === turn.result.turn.id), { timeoutMs: 5000 });
+    child.stdin.end();
+    const exit = await exited;
+    const trace = readTrace(harness.home, address);
+    const failures = trace.filter(event => event.kind === 'native-mcp-close-failed');
+    const deleted = requests.filter(entry => entry.method === 'DELETE' && entry.session === 'eof-session').length === 1;
+    const evidence = JSON.stringify({ exit, stderr: stderr.slice(-600), requests, failures });
+    check(`input EOF after a scripted HTTP tool turn sends one real DELETE (${label} ${deleteStatus})`,
+      deleted && requests.some(entry => entry.rpc === 'tools/call') && trace.some(event => event.kind === 'tool' && !event.isError), evidence);
+    check(deleteStatus === 200
+      ? 'an accepted native MCP session close leaves a clean app-server exit and no close failure'
+      : 'a refused native MCP session close is recorded once without changing the app-server exit',
+    exit.code === 0 && exit.signal === null && !/HTTP MCP close/.test(stderr)
+      && (deleteStatus === 200 ? failures.length === 0
+        : failures.length === 1 && failures[0].status === deleteStatus && failures[0].thread === started.result.thread.id), evidence);
+  } finally {
+    rpc.close();
+    if (child.exitCode === null && child.signalCode === null) { child.kill('SIGKILL'); await exited; }
+    await new Promise(resolve => server.close(resolve));
+  }
+}

@@ -1,10 +1,40 @@
 // Execute the production scenario and abort block with a held hello and stop, without binaries.
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { check } from './check.mjs';
+import { makeSandbox } from './sandbox.mjs';
+import * as cursorPersist from '../lib/cursor-persist.js';
+import { recordVersion, sameRecordVersion } from '../lib/service-state.js';
 
 const source = readFileSync(new URL('../scripts/live-mixed.mjs', import.meta.url), 'utf8');
 const block = source.slice(source.indexOf('const ABORT_STOP_MS ='), source.indexOf('if (!aborted) {\n  // --- hygiene:'));
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+const transcriptStart = source.indexOf('function rememberTranscript() {');
+const transcriptEnd = source.indexOf('\n}', transcriptStart) + 2;
+if (transcriptStart < 0 || transcriptEnd <= transcriptStart) throw new Error('Mixed transcript bookkeeping boundary is missing');
+const rememberTranscript = new AsyncFunction('cursorPersist', 'workerRef', 'existsSync',
+  `let transcriptPath = null; ${source.slice(transcriptStart, transcriptEnd)}; return rememberTranscript();`);
+const transcriptRoot = makeSandbox('promptobus-promptobus-live-mixed-stand-');
+const transcriptEnv = { ...process.env, PROMPTOBUS_CURSOR_HOME: path.join(transcriptRoot, 'state'),
+  PROMPTOBUS_CURSOR_USER_HOME: path.join(transcriptRoot, 'user') };
+const chatId = 'owned-transcript', ref = 'owned transcript bookkeeping';
+const transcript = path.join(transcriptEnv.PROMPTOBUS_CURSOR_USER_HOME, 'projects', 'owned', 'agent-transcripts', chatId, `${chatId}.jsonl`);
+mkdirSync(path.dirname(transcript), { recursive: true });
+writeFileSync(transcript, JSON.stringify({ role: 'user', message: { content: [] } }) + '\n');
+const transcriptContext = {
+  readSession: owned => cursorPersist.readSession(owned, transcriptEnv),
+  transcriptOf: record => cursorPersist.transcriptOf(record, transcriptEnv),
+  findTranscript: id => cursorPersist.findTranscript(id, transcriptEnv),
+};
+for (const cache of ['known', 'absent', 'deleted']) {
+  cursorPersist.writeSession({ ref, chatId, transcript: cache === 'known' ? transcript
+    : cache === 'deleted' ? path.join(transcriptRoot, 'deleted.jsonl') : undefined }, transcriptEnv);
+  const file = cursorPersist.sessionFile(ref, transcriptEnv), before = readFileSync(file), revision = recordVersion(file);
+  const remembered = await rememberTranscript(transcriptContext, ref, existsSync);
+  check(`mixed transcript logs: ${cache} cache resolves the actual file without changing registry bytes or revision`,
+    remembered === transcript && sameRecordVersion(revision) && readFileSync(file).equals(before),
+    JSON.stringify({ cache, remembered, transcript, unchanged: sameRecordVersion(revision) }));
+}
 const deferred = () => {
   let resolve, reject;
   const promise = new Promise((done, fail) => { resolve = done; reject = fail; });

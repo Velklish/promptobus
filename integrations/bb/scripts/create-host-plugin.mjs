@@ -29,6 +29,6 @@ writeFileSync(path.join(destination, 'host.mjs'), [
   "import { createBbHostIntegration } from 'promptobus/bb-host';",
   `import options from ${JSON.stringify(relativeIntegration.startsWith('.') ? relativeIntegration : './' + relativeIntegration)};`,
   "export { experimental_providerBridge } from './reviewer-bridge.js';",
-  'export default createHostEntry(createBbHostIntegration(options));', '',
+  'export default createHostEntry(createBbHostIntegration(options), options.resolveOwnerHost);', '',
 ].join('\n'));
 console.log(`Generated Promptobus Host plugin in ${destination}`);
