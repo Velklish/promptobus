@@ -1417,7 +1417,8 @@ and observation. The participant harness, session and native launch stay pinned
 across those proofs. A changed identity, generation or credential refuses
 immediately; dead and unavailable observations keep their 401 and 503. Sustained
 record churn still ends in 409, and a refused request performs no effect. The
-409 text ends with a `[stage: …]` tag naming where the proof failed: `exhausted 3`,
+revision-drift and within-attempt identity refusals end with a `[stage: …]` tag
+naming where the proof failed: `exhausted 3`,
 `within-attempt participant identity`, or `returned fence: <caller>` for the
 synchronous recheck after authorization returns (`authenticate`, `finalize`,
 `body`, `dispatch`), with `: participant identity` when the identity moved.
@@ -1477,7 +1478,7 @@ promptobus-bb-root --root /absolute/workspace --profile ordinary-owner \
   --project prj_owner --environment env_owner < ./owner-prompt.md
 ```
 
-Node 20+, macOS or Linux, the public BB CLI and matching optional plugin are
+Node 26+, macOS or Linux, the public BB CLI and matching optional plugin are
 required for this preparation. The binary constructs `createStandaloneHost`
 from the canonical explicit workspace, its own package version, Node executable
 and matching CLI. It validates explicit selectors and at most 64 KiB of UTF-8
@@ -1566,7 +1567,7 @@ The optional POSIX package launcher is `promptobus-root --profile <id> --
 <native-command> [args...]`. It uses the matching package CLI to ensure the
 approved profile's owner and writes a private one-shot shell plan. The shell
 removes that plan before `exec`, so the native command retains the launcher PID
-and no per-root Node proxy remains. Node 20 is the minimum runtime; the profile
+and no per-root Node proxy remains. Node 26 is the minimum runtime; the profile
 must have been approved with the same Node and consumer entry. Windows and
 other platforms without the implemented process observer refuse this path.
 
