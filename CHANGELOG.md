@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Admit a standalone Codex `exec` with the closed set of invocation controls as a NEW session: read-only sandbox, model and effort, strict and user-config isolation, invocation-only hook trust, disabled foreign hooks, the launch cwd as the one trusted project and exact exposure and approval of bus tools. Each control appears at most once with its exact value shape; every other flag, key, duplicate or subcommand is still not NEW.
-- Refuse an unsupported standalone Codex `exec` in preflight and in its dry run, before the native process starts, instead of revoking its client after the first hook and returning HTTP 401 on the first tool call. Process, executable, hook-origin, SessionMeta and thread-ID checks are unchanged.
+- In preflight and its dry run, refuse a standalone Codex `exec` that is not NEW and has no `resume` or `fork` token before `--`. This refusal happens before the native process starts, instead of revoking its client after the first hook and returning HTTP 401 on the first tool call. Process, executable, hook-origin, SessionMeta and thread-ID checks are unchanged.
 
 ## [0.32.1] — 2026-11-02
 

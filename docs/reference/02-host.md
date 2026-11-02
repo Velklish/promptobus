@@ -1768,8 +1768,9 @@ and names a distinct key from this list:
 - `mcp_servers.promptobus.tools` — entries exactly
   `{approval_mode="approve"}` for enabled tools only.
 
-The prompt is the last token. It is not `-`, not option-like and not one of
-`resume`, `fork`, `review` or `help`, unless it follows `--`. Any other flag, key, value shape,
+The prompt is the last token and never `-`. Without a preceding `--`, it
+is neither option-like nor one of `resume`, `fork`, `review` or `help`.
+Any other flag, key, value shape,
 `=`-joined option, duplicate or subcommand is not NEW. Admitting a control as
 NEW grants nothing: hook trust, sandbox and tool policy remain the native
 invocation's own. Preflight applies the same classifier. It refuses a Codex

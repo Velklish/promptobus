@@ -20,16 +20,22 @@ if (['darwin', 'linux'].includes(process.platform)) {
   const root = realpathSync(makeSandbox('promptobus-root-process-'));
   const hook = path.join(root, 'owned-hook.mjs'), after = path.join(root, 'owned-after-exec.mjs'), shell = path.join(root, 'owned-launcher.sh');
   const module = new URL('../lib/root-process.js', import.meta.url).href;
-  writeFileSync(hook, `import{existsSync,writeFileSync}from'node:fs';
+  const publish = `async function publish(file,value){const pending=file+'.partial';writeFileSync(pending,'');writeFileSync(file+'.writing','writing');
+while(!existsSync(file+'.observed'))await new Promise(resolve=>setTimeout(resolve,10));
+writeFileSync(pending,JSON.stringify(value));renameSync(pending,file);writeFileSync(file+'.published','published');}
+`;
+  writeFileSync(hook, `import{existsSync,renameSync,writeFileSync}from'node:fs';
 import{observeRootProcess,requireNativeHookAncestor}from${JSON.stringify(module)};
+${publish}
 const[native,ready,release]=process.argv.slice(2);let allowed=false,error=null;
 try{await requireNativeHookAncestor(JSON.parse(native));allowed=true;}catch(caught){error=caught.message;}
-writeFileSync(ready,JSON.stringify({allowed,error,shell:await observeRootProcess(process.ppid)}));
+await publish(ready,{allowed,error,shell:await observeRootProcess(process.ppid)});
 while(!existsSync(release))await new Promise(resolve=>setTimeout(resolve,10));
 `);
-  writeFileSync(after, `import{existsSync,writeFileSync}from'node:fs';
+  writeFileSync(after, `import{existsSync,renameSync,writeFileSync}from'node:fs';
 import{observeRootProcess}from${JSON.stringify(module)};
-writeFileSync(process.argv[2],JSON.stringify(await observeRootProcess(process.pid)));
+${publish}
+await publish(process.argv[2],await observeRootProcess(process.pid));
 while(!existsSync(process.argv[3]))await new Promise(resolve=>setTimeout(resolve,10));
 `);
   writeFileSync(shell, '#!/bin/sh\n"$1" "$2" "$3" "$4" "$5" || exit $?\nexec "$1" "$6" "$7" "$8"\n');
@@ -52,8 +58,11 @@ while(!existsSync(process.argv[3]))await new Promise(resolve=>setTimeout(resolve
     let stderr = ''; child.stderr.on('data', chunk => { stderr += chunk; });
     const closed = new Promise(resolve => child.once('close', resolve));
     try {
-      await until(() => existsSync(ready) || child.exitCode !== null || child.signalCode !== null);
-      if (!existsSync(ready)) throw new Error(`Owned shell fixture exited before its actual hook observation: ${JSON.stringify({ executable, label,
+      await until(() => existsSync(ready + '.writing') || child.exitCode !== null || child.signalCode !== null);
+      check(`${label}: incomplete hook packet is not published as ready`, !existsSync(ready));
+      writeFileSync(ready + '.observed', 'observed incomplete packet');
+      await until(() => existsSync(ready + '.published') || child.exitCode !== null || child.signalCode !== null);
+      if (!existsSync(ready + '.published')) throw new Error(`Owned shell fixture exited before its actual hook observation: ${JSON.stringify({ executable, label,
         pid: child.pid, exitCode: child.exitCode, signalCode: child.signalCode, stderr })}`);
       const packet = JSON.parse(readFileSync(ready, 'utf8')), captured = await observeRootProcess(child.pid);
       check(`${label}: actual launcher and its own hook child follow the same protected shell policy`,
@@ -68,8 +77,11 @@ while(!existsSync(process.argv[3]))await new Promise(resolve=>setTimeout(resolve
         && !await isSupportedPosixShell({ ...captured, birth: priorBirth(captured.birth) })
         && await refused(() => requireNativeHookAncestor({ ...identity, birth: priorBirth(identity.birth) }, captured.pid)));
       writeFileSync(release, 'release own hook');
-      await until(() => existsSync(nativeReady) || child.exitCode !== null || child.signalCode !== null);
-      if (!existsSync(nativeReady)) throw new Error(`Owned shell fixture did not exec its Node image: ${JSON.stringify({ executable, label,
+      await until(() => existsSync(nativeReady + '.writing') || child.exitCode !== null || child.signalCode !== null);
+      check(`${label}: incomplete native packet is not published as ready`, !existsSync(nativeReady));
+      writeFileSync(nativeReady + '.observed', 'observed incomplete packet');
+      await until(() => existsSync(nativeReady + '.published') || child.exitCode !== null || child.signalCode !== null);
+      if (!existsSync(nativeReady + '.published')) throw new Error(`Owned shell fixture did not exec its Node image: ${JSON.stringify({ executable, label,
         pid: child.pid, exitCode: child.exitCode, signalCode: child.signalCode, stderr })}`);
       const executed = JSON.parse(readFileSync(nativeReady, 'utf8'));
       check(`${label}: same-PID exec keeps birth but removes shell and hook-child authority`, captured !== null
@@ -79,6 +91,7 @@ while(!existsSync(process.argv[3]))await new Promise(resolve=>setTimeout(resolve
       writeFileSync(nativeRelease, 'end owned native image');
       check(`${label}: owned fixture exits normally`, await closed === 0);
     } finally {
+      writeFileSync(ready + '.observed', 'fixture cleanup'); writeFileSync(nativeReady + '.observed', 'fixture cleanup');
       writeFileSync(release, 'fixture cleanup'); writeFileSync(nativeRelease, 'fixture cleanup');
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
       await closed;
@@ -101,8 +114,11 @@ process.exitCode=await new Promise((resolve,reject)=>{child.once('error',reject)
     let stderr = ''; child.stderr.on('data', chunk => { stderr += chunk; });
     const closed = new Promise(resolve => child.once('close', resolve));
     try {
-      await until(() => existsSync(ready) || child.exitCode !== null || child.signalCode !== null);
-      if (!existsSync(ready)) throw new Error(`Owned actor image exited before its hook observation: ${JSON.stringify({ pid: child.pid,
+      await until(() => existsSync(ready + '.writing') || child.exitCode !== null || child.signalCode !== null);
+      check('actor image: incomplete hook packet is not published as ready', !existsSync(ready));
+      writeFileSync(ready + '.observed', 'observed incomplete packet');
+      await until(() => existsSync(ready + '.published') || child.exitCode !== null || child.signalCode !== null);
+      if (!existsSync(ready + '.published')) throw new Error(`Owned actor image exited before its hook observation: ${JSON.stringify({ pid: child.pid,
         exitCode: child.exitCode, signalCode: child.signalCode, stderr })}`);
       const captured = await observeRootProcess(child.pid), packet = JSON.parse(readFileSync(ready, 'utf8'));
       check('an actual actor-owned image named bash cannot authorize its own hook child as a protected shell', captured !== null
@@ -119,6 +135,7 @@ process.exitCode=await new Promise((resolve,reject)=>{child.once('error',reject)
       writeFileSync(release, 'release actor hook');
       check('the owned actor image and its hook exit normally', await closed === 0);
     } finally {
+      writeFileSync(ready + '.observed', 'actor fixture cleanup');
       writeFileSync(release, 'actor fixture cleanup');
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
       await closed;
