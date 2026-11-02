@@ -70,10 +70,6 @@ interface ManagedAuthorization { revision: RecordVersion; participant: Participa
 class HttpFailure extends Error {
   constructor(readonly status: number, message: string) { super(message); }
 }
-class ManagedRevisionDrift extends HttpFailure {
-  constructor() { super(409, 'Managed lifetime changed after observation; retry with current owner proof'); }
-}
-const MANAGED_PROOF_ATTEMPTS = 3;
 const HTTP_PROTOCOLS = PROTOCOL_VERSIONS.filter(version => version !== '2024-11-05');
 const CLIENT_ID = /^[a-f0-9-]{36}$/;
 const MAX_BODY = 16 * 1024 * 1024;
@@ -498,6 +494,10 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
       }
       if (!sameRecordVersion(proof.revision)) throw new ManagedRevisionDrift();
     };
+    class ManagedRevisionDrift extends HttpFailure {
+      constructor() { super(409, 'Managed lifetime changed after observation; retry with current owner proof'); }
+    }
+    const MANAGED_PROOF_ATTEMPTS = 3;
     const managedIdentity = (participant: ParticipantV1) => [participant.harness, sessionIdOf(participant), participant.metadata?.nativeLaunchId];
     // Only same-identity record drift gets a fresh full proof; any other refusal ends authorization.
     const authorizeGrant = async (grant: ServiceClientGrant) => {
