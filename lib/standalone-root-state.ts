@@ -215,6 +215,74 @@ export function revokeStandaloneRoot(grant: RootGrant, paths: ServicePaths) {
   if (launch.plan && processState(launch.process) === 'dead' && existsSync(launch.plan)) rmSync(launch.plan);
 }
 
+const CODEX_EXEC_FLAGS = new Set(['--strict-config', '--ignore-user-config', '--dangerously-bypass-hook-trust', '--skip-git-repo-check', '--json']);
+const CODEX_EXEC_SUBCOMMANDS = new Set(['resume', 'fork', 'review', 'help']);
+const CODEX_EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'persistent']);
+const PLAIN_STRING = '"([^"\\\\\\u0000-\\u001f\\u007f]+)"';
+const BUS_TOOL = 'promptobus_[a-z_]+';
+
+function inlineEntries(value: string, entry: string): string[] | null {
+  const outer = new RegExp(`^\\{(${entry}(?:,${entry})*)\\}$`).exec(value);
+  if (!outer) return null;
+  const keys = [...outer[1]!.matchAll(new RegExp(entry, 'g'))].map(match => match[1]!);
+  return new Set(keys).size === keys.length ? keys : null;
+}
+
+/** Exact approved `exec [controls] [--] <prompt>` subset that rust-v0.166.0 dispatches to `thread/start`. */
+export function codexStandaloneNewExec(args: readonly string[], cwd: string): boolean {
+  if (args[0] !== 'exec') return false;
+  const seen = new Set<string>(), config = new Map<string, string>();
+  let prompt: string | null = null;
+  for (let index = 1; index < args.length; index += 1) {
+    const token = args[index]!;
+    if (token === '--') {
+      if (index !== args.length - 2) return false;
+      prompt = args[index + 1]!;
+      break;
+    }
+    if (CODEX_EXEC_FLAGS.has(token) || token === '--sandbox' || token === '--model' || token === '-c') {
+      if (token !== '-c' && seen.has(token)) return false;
+      seen.add(token);
+      if (CODEX_EXEC_FLAGS.has(token)) continue;
+      const value = args[++index];
+      if (value === undefined) return false;
+      if (token === '--sandbox' && value !== 'read-only') return false;
+      if (token === '--model' && !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value)) return false;
+      if (token === '-c') {
+        const split = value.indexOf('=');
+        if (split < 1 || config.has(value.slice(0, split))) return false;
+        config.set(value.slice(0, split), value.slice(split + 1));
+      }
+      continue;
+    }
+    if (index !== args.length - 1 || token.startsWith('-') || CODEX_EXEC_SUBCOMMANDS.has(token)) return false;
+    prompt = token;
+  }
+  if (!prompt || prompt === '-') return false;
+  let enabled: string[] | null = null;
+  const enabledValue = config.get('mcp_servers.promptobus.enabled_tools');
+  if (enabledValue !== undefined) {
+    const list = new RegExp(`^\\[("${BUS_TOOL}"(?:,"${BUS_TOOL}")*)\\]$`).exec(enabledValue);
+    enabled = list ? list[1]!.split(',').map(name => name.slice(1, -1)) : null;
+    if (!enabled || new Set(enabled).size !== enabled.length) return false;
+  }
+  for (const [key, value] of config) {
+    if (key === 'model_reasoning_effort') {
+      const effort = /^"([a-z]+)"$/.exec(value);
+      if (!effort || !CODEX_EFFORTS.has(effort[1]!)) return false;
+    } else if (key === 'projects') {
+      const trusted = inlineEntries(value, `${PLAIN_STRING}=\\{trust_level="trusted"\\}`);
+      if (!trusted || trusted.length !== 1 || trusted[0] !== cwd) return false;
+    } else if (key === 'hooks.state') {
+      if (!inlineEntries(value, `${PLAIN_STRING}=\\{enabled=false\\}`)) return false;
+    } else if (key === 'mcp_servers.promptobus.tools') {
+      const approved = inlineEntries(value, `(${BUS_TOOL})=\\{approval_mode="approve"\\}`);
+      if (!approved || !enabled || approved.some(name => !enabled!.includes(name))) return false;
+    } else if (key !== 'mcp_servers.promptobus.enabled_tools') return false;
+  }
+  return true;
+}
+
 export async function claimStandaloneIdentity(grant: RootGrant, paths: ServicePaths, nativeId: string, context: NativeAdmissionContext) {
   if (!grant.rootLaunch) return;
   const current = await requireStandaloneRoot(grant, paths);
@@ -234,7 +302,7 @@ export async function claimStandaloneIdentity(grant: RootGrant, paths: ServicePa
       source: 'standalone' as const, process: launch.process, nonce: launch.nonce, ownerKey: launch.nonce, profile: profile.id, phase: 'bound' as const };
     const command = launch.nativeCommand, args = command?.args ?? [];
     const codexNew = profile.harness === 'codex'
-      && ((launch.nativeStart?.source === 'exec' && args.length === 3 && args[0] === 'exec' && args[1] === '--' && args[2]!.length > 0)
+      && ((launch.nativeStart?.source === 'exec' && codexStandaloneNewExec(args, launch.cwd))
         || (launch.nativeStart?.source === 'cli' && args[0] === '--no-daemon'
           && (args.length === 1 || (args.length === 3 && args[1] === '--' && args[2]!.length > 0))));
     const claudeNew = profile.harness === 'claude' && launch.nativeStart?.source === 'startup' && args.length === 0;

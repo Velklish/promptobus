@@ -619,10 +619,10 @@ if(hook.code===0){
 }
 writeFileSync(${JSON.stringify(execOutput)},JSON.stringify(result));
 })().catch(error=>{process.stderr.write(error.stack);process.exitCode=1});`);
-  const execRoot = async (source, nativeId = randomUUID(), resume = false) => {
+  const execRoot = async (source, nativeId = randomUUID(), resume = false, controls = null) => {
     if (existsSync(execOutput)) unlinkSync(execOutput);
     const count = readPrivate(path.join(paths.directory, 'native-admission.json')).bindings.length, actorCount = factories.length;
-    const args = resume ? ['exec', 'resume', nativeId] : ['exec', '--', 'owned frozen fixture read'];
+    const args = controls ?? (resume ? ['exec', 'resume', nativeId] : ['exec', '--', 'owned frozen fixture read']);
     const exit = await run('/bin/sh', [wrapper, '--profile', 'codex-exec', '--service-home', base, '--', nativeExecutable, ...args],
       { PB_EXEC_SOURCE: source, PB_EXEC_NATIVE_ID: nativeId });
     const result = existsSync(execOutput) ? JSON.parse(readFileSync(execOutput)) : null;
@@ -654,6 +654,28 @@ writeFileSync(${JSON.stringify(execOutput)},JSON.stringify(result));
     && unknownExec.result === null && /known current-version native binding/.test(unknownExec.exit.err)
     && readPrivate(path.join(paths.directory, 'native-admission.json')).bindings.length === unknownExec.count
     && factories.length === unknownExec.actorCount, unknownExec.evidence);
+  const controls = ['exec', '--strict-config', '--ignore-user-config', '--dangerously-bypass-hook-trust', '--skip-git-repo-check',
+    '--sandbox', 'read-only', '--json', '--model', 'fixture-model', '-c', 'model_reasoning_effort="xhigh"',
+    '-c', `projects={${JSON.stringify(realpathSync(root))}={trust_level="trusted"}}`,
+    '-c', `hooks.state={${JSON.stringify(`${nativeStore}/hooks.json:stop:0:0`)}={enabled=false}}`,
+    '-c', 'mcp_servers.promptobus.tools={promptobus_status={approval_mode="approve"}}',
+    '-c', 'mcp_servers.promptobus.enabled_tools=["promptobus_status"]', 'owned frozen fixture read'];
+  const controlled = await execRoot('exec', randomUUID(), false, controls);
+  check('approved exec controls admit their first exec SessionMeta as NEW and the exposed tool call succeeds',
+    controlled.exit.code === 0 && controlled.result?.hook.code === 0 && JSON.stringify(controlled.result.args) === JSON.stringify(controls)
+      && controlled.result.launch.phase === 'bound' && controlled.result.launch.nativeStart.source === 'exec'
+      && controlled.result.binding.threadId === controlled.nativeId && controlled.result.tool.status === 200
+      && controlled.result.ledger.length === controlled.count + 1 && factories.length === controlled.actorCount + 1,
+    controlled.evidence);
+  const unsupported = await execRoot('exec', randomUUID(), false, ['exec', '--ephemeral', 'owned frozen fixture read']);
+  check('an unsupported NEW exec argv refuses in preflight before the native child starts or a grant appears', unsupported.exit.code !== 0
+    && unsupported.result === null && /not a supported NEW form or resume selection/.test(unsupported.exit.err)
+    && readPrivate(path.join(paths.directory, 'native-admission.json')).bindings.length === unsupported.count
+    && factories.length === unsupported.actorCount, unsupported.evidence);
+  const unsupportedPreview = await standaloneRootExecPlan(host, 'codex-exec', { file: nativeExecutable, args: ['exec', '--ephemeral', 'owned frozen fixture read'] },
+    { env, dryRun: true, cwd: root }).then(() => null, error => error);
+  check('the same unsupported exec argv also refuses in a dry run', /not a supported NEW form or resume selection/.test(String(unsupportedPreview?.message)),
+    String(unsupportedPreview?.message));
 } finally {
   await Promise.all([...children].map(child => new Promise(resolve => { child.once('close', resolve); child.kill('SIGTERM'); })));
   for (const name of existsSync(paths.clients) ? readdirSync(paths.clients) : []) {
