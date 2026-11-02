@@ -43,6 +43,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { waitDelivered } from './delivery-wait.mjs';
+import { waitFor } from './harness.mjs';
 import { diagnoseTrace as formatTraceDiagnosis } from './harness-shared.mjs';
 import { KNOWN_HOOK_EVENTS, PROVEN_CURSOR_VERSION } from '../lib/driver-cursor.js';
 import { LIFT_TRIES, LIFT_STEP_MS, SESSION_ENV_VAR } from '../lib/cursor-persist.js';
@@ -1127,6 +1128,12 @@ async function openBus(cfg, env) {
 async function act({
   home, address, bus, action, workspace, cfg,
 }) {
+  if (action.untilFile) {
+    const released = await waitFor(() => existsSync(action.untilFile), { timeoutMs: 30000 });
+    note(home, address, { kind: 'release-file', released });
+    if (!released) throw new Error('Owned turn release file was not published within 30000 ms');
+    return;
+  }
   if (action.untilDelivered) {
     const marked = await waitDelivered(cfg?.env?.PROMPTOBUS_HOME ?? process.env.PROMPTOBUS_HOME, cfg?.env?.PROMPTOBUS_TASK ?? process.env.PROMPTOBUS_TASK, address, action.untilDelivered);
     note(home, address, { kind: 'untilDelivered', ms: action.untilDelivered, deliveredAt: marked.deliveredAt, timeout: marked.note });
