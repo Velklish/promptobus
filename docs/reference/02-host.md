@@ -1416,7 +1416,11 @@ dispatch: current unchanged grant, process lifetime, native binding, participant
 and observation. The participant harness, session and native launch stay pinned
 across those proofs. A changed identity, generation or credential refuses
 immediately; dead and unavailable observations keep their 401 and 503. Sustained
-record churn still ends in 409, and a refused request performs no effect.
+record churn still ends in 409, and a refused request performs no effect. The
+409 text ends with a `[stage: …]` tag naming where the proof failed: `exhausted 3`,
+`within-attempt participant identity`, or `returned fence: <caller>` for the
+synchronous recheck after authorization returns (`authenticate`, `finalize`,
+`body`, `dispatch`), with `: participant identity` when the identity moved.
 
 `PROMPTOBUS_OWNER_ENV_FILE` names an owned private snapshot scoped to the
 canonical workspace, store and runtime. It captures the common root account

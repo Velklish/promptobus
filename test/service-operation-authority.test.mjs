@@ -47,7 +47,7 @@ for (const scenario of ['busy dead', 'cached alive but dead', 'unknown', 'revisi
   };
   const authorize = new Function(...Object.keys(dependencies), `${authorization}; return authorizeGrant;`)(...Object.values(dependencies));
   let completed = false, error, fence;
-  const pending = authorize(grant).then(value => { completed = true; fence = value; }, caught => { completed = true; error = caught; });
+  const pending = authorize(grant, 'body').then(value => { completed = true; fence = value; }, caught => { completed = true; error = caught; });
   await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
   const withheld = !completed;
   if (scenario === 'revision drift' || scenario === 'participant swap between attempts') revision += 1;
@@ -57,13 +57,17 @@ for (const scenario of ['busy dead', 'cached alive but dead', 'unknown', 'revisi
   if (scenario === 'participant drift before write') liveParticipant = { ...participant, metadata: { sessionId: 'replaced' } };
   if (scenario === 'owner claim during operation') liveParticipant = { ...participant, metadata: { ...participant.metadata, owner: 'new-owning-session' } };
   if (typeof fence === 'function') { try { fence(); } catch (caught) { error = caught; } }
-  if (scenario === 'fresh alive twice') { const next = await authorize(grant); if (typeof next === 'function') next(); }
+  if (scenario === 'fresh alive twice') { const next = await authorize(grant, 'body'); if (typeof next === 'function') next(); }
   const expected = scenario.includes('dead') || scenario === 'revoked during observation' ? 401
     : scenario === 'unknown' ? 503 : scenario !== 'revision drift' && (scenario.includes('drift') || scenario.includes('swap')) ? 409 : null;
+  const stage = { 'sustained revision drift': ' [stage: exhausted 3]', 'revision drift before write': ' [stage: returned fence: body]',
+    'participant drift before write': ' [stage: returned fence: body: participant identity]' }[scenario];
+  const expectedMessage = stage ? `Managed lifetime changed after observation; retry with current owner proof${stage}`
+    : scenario === 'participant swap between attempts' ? 'Managed participant identity changed during authorization' : null;
   const expectedObservations = { 'fresh alive twice': 2, 'revision drift': 2, 'sustained revision drift': 3 }[scenario] ?? 1;
   check(`operation authority: ${scenario} uses fresh proof and fences the same grant/record/participant`, withheld
     && (expected ? error?.status === expected : !error && typeof fence === 'function')
-    && (scenario !== 'participant swap between attempts' || /participant identity changed during authorization/.test(error?.message))
+    && (expectedMessage === null || error?.message === expectedMessage)
     && observations === expectedObservations,
   JSON.stringify({ withheld, observations, status: error?.status, error: error?.message, fence: typeof fence }));
 }
