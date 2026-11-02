@@ -8,15 +8,20 @@ on:
 
 jobs:
   check:
-    name: Node 22 Ubuntu targeted startup diagnostic
-    runs-on: ubuntu-latest
+    name: Node ${{ matrix.node }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: [26]
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
           cache: npm
 
       - name: Install and check tmux
@@ -45,15 +50,7 @@ jobs:
       - name: Test
         env:
           TMPDIR: ${{ runner.temp }}
-        run: |
-          first=0
-          node test/run.mjs --files promptobus-driver-cursor.test.mjs || first=$?
-          second=0
-          node test/run.mjs --files promptobus-driver-cursor.test.mjs || second=$?
-          printf 'Cursor diagnostic target exits: %s %s\n' "$first" "$second"
-          if [ "$first" -ne 0 ] || [ "$second" -ne 0 ]; then
-            exit 1
-          fi
+        run: npm test
 
       - name: Publicity audit
         run: npm run audit

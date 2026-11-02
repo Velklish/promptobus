@@ -4,7 +4,9 @@ Two steps. The first puts the package on disk. The second writes project-level h
 
 ## 1. Package
 
-Node.js 20 or newer.
+Node.js 26 or newer. Version 0.32.1 raises the minimum from Node.js 20; Node.js 20 and 22 are no longer supported.
+
+Before installing or upgrading the package, writing configuration, or migrating existing state, run `node --version` and verify that its major version is at least 26. Select a supported Node runtime before continuing. This manual preflight precedes every configuration or migration step below.
 
 From a clone:
 

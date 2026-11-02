@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Velklish/promptobus/actions/workflows/ci.yml/badge.svg)](https://github.com/Velklish/promptobus/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Node.js 20+](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](package.json)
+[![Node.js 26+](https://img.shields.io/badge/node-%3E%3D26-brightgreen.svg)](package.json)
 
 Harness-neutral bus for agent sessions: tasks, mailboxes, artifacts and participant sessions.
 
@@ -37,13 +37,15 @@ The optional plugin's constrained reviewer verifies the runtime restrictions wit
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 26 or newer
 - Git — worktrees, diffs and freshness checks
 - At least one harness CLI on `PATH` for `spawn` and `review`: Claude Code, Cursor (`cursor-agent`, plus `tmux`), Codex, or OpenCode
 - Participant sessions are lifted on macOS and Linux. Windows is outside the participant contract (owner decision, 2026-09-16): the Cursor participant is a tmux pane and the Codex holder is an app-server process measured on macOS only, and neither is adapted, probed or promised on Windows. The CLI itself, including the host layer, stays cross-platform. Asynchronous commands refuse Windows `.cmd`/`.bat` wrappers before launch because killing the wrapper cannot cancel its descendants; use a native `.exe`. Synchronous batch execution is unchanged.
 - For working on the package itself: `tmux` and `ast-grep` (see [Development](#development))
 
 ## Installation
+
+Before installing or upgrading Promptobus, changing configuration, or migrating state, run `node --version` and select Node.js 26 or newer. Version 0.32.1 raises the minimum from Node.js 20; Node.js 20 and 22 are no longer supported. Do this manual check before any configuration or migration command.
 
 The package is not on the npm registry. Install the current GitHub release as a local library dependency:
 
@@ -77,7 +79,7 @@ not provide trusted proof of the selected provider's effective Codex home and
 launch context before creation. A separate trusted Codex probe, even one whose
 `initialize` reply names a home, cannot establish the provider's context.
 
-The preparation needs Node.js 20+, macOS or Linux, the public `bb` CLI and the
+The preparation needs Node.js 26+, macOS or Linux, the public `bb` CLI and the
 matching optional BB plugin. The explicit environment must already belong to
 the project and canonical workspace. `--native-store` names an existing account
 store; it does not configure or prove the BB provider's environment. The command
@@ -357,7 +359,7 @@ The Cursor adapter's event-loop test uses a fixed 100 ms delay in each of its tw
 
 Socket-dependent groups probe their local listener before starting child processes. A sandbox refusal is a named skip only when the failure is the `listen` syscall with `EACCES` or `EPERM`; another error stays red. Skips never count as passes: the runner lists their checks and files, and its final summary calls out every file with zero passed checks so a wholly skipped suite cannot look fully exercised. Where local sockets are available, the probe succeeds and the original integration assertions run.
 
-CI runs the same steps on Node 20 and 22, on Ubuntu and macOS. Its test step uses the job-owned temporary directory. On macOS, local acceptance uses a canonical temporary root: `TMPDIR="$(node -p "require('node:fs').realpathSync(require('node:os').tmpdir())")" npm test`. Explicit link fixtures retain their checks; handling arbitrary root aliases in the product is a separate compatibility boundary.
+CI runs the same steps on Node 26, on Ubuntu and macOS. Its test step uses the job-owned temporary directory. On macOS, local acceptance uses a canonical temporary root: `TMPDIR="$(node -p "require('node:fs').realpathSync(require('node:os').tmpdir())")" npm test`. Explicit link fixtures retain their checks; handling arbitrary root aliases in the product is a separate compatibility boundary.
 
 ## Contributing
 

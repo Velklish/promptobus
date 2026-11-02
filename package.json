@@ -29,7 +29,7 @@
     "schema-skew": "node scripts/check-schema-skew.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=26"
   },
   "exports": {
     "./participant-context": {
