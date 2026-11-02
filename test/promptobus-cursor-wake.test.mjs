@@ -95,7 +95,7 @@ planParticipant(HARNESS, WORKER, {
       do: [
         { tool: 'promptobus_mailbox' },
         // The report goes BEFORE the pause on purpose: it is the sign "this turn already
-        // fetched the mailbox". Send the second message earlier — the same turn would
+        // attempted the mailbox fetch". Send the second message earlier — the same turn would
         // take it, and the gap this file exists for would stay untested.
         { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: `${MARK.second}: woken by the first message` } },
         { wait: TURN_HOLD_MS },
@@ -161,12 +161,12 @@ check('step 3: the first participant turn ended and reported — the loop is sta
 
 // --- message to an idle session: the warden pastes it into the live session ---------
 
-store.sendMessage(home, TASK, {
+const answerA = store.sendMessage(home, TASK, {
   from: 'orchestrator', to: WORKER, type: 'answer', body: `${MARK.answerA}: the session was idle`,
-});
+}).message.id;
 
-// The wake sign is THIS turn's report: it goes out right after the mailbox fetch, so it
-// proves both that the turn started and that it already handled its unread.
+// This turn's report follows the mailbox attempt. The harness continues after an RPC
+// failure, so the participant's history must separately prove the actual read below.
 const woken = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
   .find((m) => String(m.body ?? '').includes(MARK.second)) ?? null, { timeoutMs: 60000 });
 check('step 4: the warden woke the idle session — the text arrived by injection',
@@ -183,9 +183,9 @@ check('step 4: the wake happened WITHOUT a new process — the session pane is t
 // Send it STRICTLY after the woken turn's report: one that arrived earlier would be
 // taken by the same turn, and the gap this file exists for would stay untested.
 
-store.sendMessage(home, TASK, {
+const answerB = store.sendMessage(home, TASK, {
   from: 'orchestrator', to: WORKER, type: 'answer', body: `${MARK.answerB}: the answer arrived during a turn`,
-});
+}).message.id;
 
 // The step-4 wake still holds the inject lock under load, so the state is waited for and
 // asserted on its own line: contributing.md § Suite isolation.
@@ -222,9 +222,18 @@ const answered = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator
 check('step 6: the loop closed — a message that arrived during a turn was handled by the NEXT one',
   !!answered, `${JSON.stringify(answered)} · warden journal: ${store.tailWardenLog(home, TASK).slice(-14).join(' | ')} · ${diagnoseTrace(HARNESS, WORKER)}`);
 
-check('step 6: the participant fetched its own mailbox — it confirms delivery, not the warden',
-  await waitFor(() => store.countInbox(home, TASK, WORKER) === 0, { timeoutMs: 20000 }),
-  String(store.countInbox(home, TASK, WORKER)));
+// Other mail may arrive after the scripted fetch; require the two sent answers' read-acks.
+const readAnswers = await waitFor(() => {
+  const read = store.historyHeaders(home, TASK, WORKER).map(message => message.id);
+  return read.includes(answerA) && read.includes(answerB);
+}, { timeoutMs: 20000 });
+check('step 6: the participant fetched both sent answers — it confirms delivery, not the warden',
+  readAnswers,
+  readAnswers ? undefined : JSON.stringify({
+    expectedIds: [answerA, answerB],
+    mailbox: readTrace(HARNESS, WORKER).filter(entry => entry.tool === 'promptobus_mailbox' || entry.kind === 'action-failed'),
+    unread: store.glanceInbox(home, TASK, WORKER).map(({ id, type, sender, recipients }) => ({ id, type, sender, recipients })),
+  }));
 
 check('step 6: this turn also ran in the same session — the process did not change over the loop',
   readSession(ref, env)?.panePid === panePid, `${panePid} → ${readSession(ref, env)?.panePid}`);
