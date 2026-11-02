@@ -1,11 +1,8 @@
 // Controlled time at the production Stop boundaries; actual delayed-stub checks run separately.
 import { readFileSync } from 'node:fs';
-import * as module from 'node:module';
 import { check } from './check.mjs';
 
-const compiled = module.stripTypeScriptTypes
-  ? module.stripTypeScriptTypes(readFileSync(new URL('../lib/cursor-persist.ts', import.meta.url), 'utf8'), { mode: 'transform' })
-  : readFileSync(new URL('../lib/cursor-persist.js', import.meta.url), 'utf8');
+const compiled = readFileSync(new URL('../lib/cursor-persist.js', import.meta.url), 'utf8');
 const stopSource = compiled.slice(compiled.indexOf('export async function stopSession')).replace('export ', '');
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 for (const boundary of ['zero', 'preflight exhausted', 'native refusal exhausted', 'early native refusal', 'fallback timeout',

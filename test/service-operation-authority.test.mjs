@@ -1,12 +1,9 @@
 // Production admission control flow, with controlled observation barriers and no native process.
 import { readFileSync } from 'node:fs';
-import * as module from 'node:module';
 import { isDeepStrictEqual } from 'node:util';
 import { check } from './check.mjs';
 
-const source = module.stripTypeScriptTypes
-  ? module.stripTypeScriptTypes(readFileSync(new URL('../lib/service.ts', import.meta.url), 'utf8'), { mode: 'transform' })
-  : readFileSync(new URL('../lib/service.js', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../lib/service.js', import.meta.url), 'utf8');
 const start = source.indexOf('    const authorizeCurrent =');
 const authorization = source.slice(start, source.indexOf('    const authenticateClient =', start));
 class HttpFailure extends Error { constructor(status, message) { super(message); this.status = status; } }

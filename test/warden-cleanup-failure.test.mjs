@@ -1,13 +1,10 @@
-// Compile the production control flow in memory; these failure barriers launch no native process.
+// Evaluate the built production control flow in memory; these failure barriers launch no native process.
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import * as module from 'node:module';
 import { check } from './check.mjs';
 
-const compiled = (name) => module.stripTypeScriptTypes
-  ? module.stripTypeScriptTypes(readFileSync(new URL(`../lib/${name}.ts`, import.meta.url), 'utf8'), { mode: 'transform' })
-  : readFileSync(new URL(`../lib/${name}.js`, import.meta.url), 'utf8');
+const compiled = (name) => readFileSync(new URL(`../lib/${name}.js`, import.meta.url), 'utf8');
 const loopSource = compiled('warden').slice(compiled('warden').indexOf('export async function runTaskWarden')).replace('export ', '');
 const errorsOf = error => error instanceof AggregateError ? error.errors.flatMap(errorsOf) : [error];
 

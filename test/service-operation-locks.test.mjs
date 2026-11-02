@@ -1,12 +1,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import * as module from 'node:module';
 import path from 'node:path';
 import { check } from './check.mjs';
 import { makeSandbox } from './sandbox.mjs';
 
-const original = readFileSync(new URL('../src/fs/lock.ts', import.meta.url), 'utf8');
-const source = module.stripTypeScriptTypes ? module.stripTypeScriptTypes(original, { mode: 'transform' })
-  : readFileSync(new URL('../dist/fs/lock.js', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../dist/fs/lock.js', import.meta.url), 'utf8');
 const executable = source.replace("from './proc.js'", `from ${JSON.stringify(new URL('../dist/fs/proc.js', import.meta.url).href)}`);
 const locks = await import(`data:text/javascript;base64,${Buffer.from(executable).toString('base64')}`);
 const scope = locks.withSynchronousAuthority ?? ((_authorize, fn) => fn());
