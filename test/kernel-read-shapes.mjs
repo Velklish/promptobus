@@ -1,9 +1,5 @@
-import path from 'node:path';
-
 export const DARWIN_IMAGE_SHA256 = '0eb8dd0083cd4f8eb379f99f891ccb87783fc4fd412ab412ca8da323d61778a1';
 const pidOf = value => typeof value === 'string' && /^[1-9]\d{0,9}$/.test(value) && Number(value) <= 0x7fffffff;
-const fileOf = value => typeof value === 'string' && Buffer.byteLength(value) <= 4096 && value !== '/'
-  && path.posix.isAbsolute(value) && path.posix.normalize(value) === value && !value.endsWith('/') && !/[\x00-\x1f\x7f-\x9f\u2028\u2029]/.test(value);
 
 export function recognizeKernelRead(line, platform = process.platform) {
   if (platform !== 'darwin' || typeof line !== 'string' || Buffer.byteLength(line) > 16384) return null;
@@ -19,8 +15,8 @@ export function recognizeKernelRead(line, platform = process.platform) {
     keys = ['version', 'platform', 'shape', 'pid']; reason = 'exact single-process ppid read';
   } else if (fields[0] === '/bin/ps' && value.shape === 'process-lifetime') {
     keys = ['version', 'platform', 'shape', 'pid']; reason = 'exact single-process stat and lstart read';
-  } else if (fields[0] === '/usr/sbin/lsof' && value.shape === 'process-file' && fileOf(value.file)) {
-    keys = ['version', 'platform', 'shape', 'pid', 'file']; reason = 'exact single-process open-file read';
+  } else if (fields[0] === '/usr/sbin/lsof' && value.shape === 'process-files') {
+    keys = ['version', 'platform', 'shape', 'pid']; reason = 'exact single-process device and inode read';
   } else return null;
   if (Object.keys(value).length !== keys.length || Object.keys(value).some(key => !keys.includes(key))) return null;
   return { shape: value.shape, reason, pid: value.pid };

@@ -15,7 +15,7 @@ const common = { version: 1, platform: 'darwin', pid: '123' };
 const reads = [
   ['/usr/bin/osascript', ['-l', 'JavaScript', '-e', body, '123'], { ...common, shape: 'process-image', bodySha256: DARWIN_IMAGE_SHA256 }],
   ['/bin/ps', ['-p', '123', '-o', 'ppid='], { ...common, shape: 'process-parent' }],
-  ['/usr/sbin/lsof', ['-a', '-p', '123', '-Fpn', '/private/tmp/owned.db'], { ...common, shape: 'process-file', file: '/private/tmp/owned.db' }],
+  ['/usr/sbin/lsof', ['-b', '-p', '123', '-FpiD'], { ...common, shape: 'process-files' }],
   ['/bin/ps', ['-p', '123', '-o', 'stat=', '-o', 'lstart='], { ...common, shape: 'process-lifetime' }],
 ];
 const line = (cmd, resolved, metadata) => `${cmd}\t${resolved}\t${JSON.stringify(metadata)}`;
@@ -37,7 +37,7 @@ for (const [cmd, , metadata] of reads) {
   }
 }
 for (const file of ['relative.db', '/', '/private/tmp/../owned.db', '/private/tmp/owned.db/', '/private/tmp/x\n', '/private/tmp/x\t', '/private/tmp/x\0', '/private/tmp/x\x7f', '/private/tmp/x\x85', '/private/tmp/x\u2028', '/private/tmp/x\u2029', `/${'x'.repeat(4096)}`]) {
-  check('open-file metadata refuses noncanonical paths and control characters', !recognizeKernelRead(line('/usr/sbin/lsof', '/usr/sbin/lsof', { ...reads[2][2], file }), 'darwin'));
+  check('numeric FD metadata cannot carry an added path selector', !recognizeKernelRead(line('/usr/sbin/lsof', '/usr/sbin/lsof', { ...reads[2][2], file }), 'darwin'));
 }
 check('an altered JXA digest cannot claim the reviewed kernel reader', !recognizeKernelRead(line('/usr/bin/osascript', '/usr/bin/osascript', { ...reads[0][2], bodySha256: '0'.repeat(64) }), 'darwin'));
 
@@ -79,6 +79,12 @@ try {
     ['/bin/ps', ['-p', '123', '-o', 'stat=', '-o', 'args=']],
     ['/bin/ps', ['-p', '01', '-o', 'stat=', '-o', 'lstart=']],
     ['ps', ['-p', '123', '-o', 'stat=', '-o', 'lstart=']],
+    ['/usr/sbin/lsof', ['-p', '123', '-FpiD']],
+    ['/usr/sbin/lsof', ['-p', '123', '-FpiDn']],
+    ['/usr/sbin/lsof', ['-p', '123,456', '-FpiD']],
+    ['/usr/sbin/lsof', ['-p', '01', '-FpiD']],
+    ['/usr/sbin/lsof', ['-p', '123', '-FpiD', '/private/tmp/owned.db']],
+    ['lsof', ['-b', '-p', '123', '-FpiD']],
     ['/usr/sbin/lsof', ['-a', '-p', '123', '-Fpn', 'relative']],
     ['/usr/sbin/lsof', ['-a', '-p', '123', '-Fpn', '/private/tmp/x\n']],
     ['/usr/sbin/lsof', ['-a', '-p', '123', '-Fpn', '/private/tmp/x\x85']],

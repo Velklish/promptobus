@@ -92,10 +92,17 @@ export async function processHasOpenFile(identity: ProcessIdentity, file: string
         } catch {}
       }
     } else if (process.platform === 'darwin') {
-      const result = await runAsync('/usr/sbin/lsof', ['-a', '-p', String(identity.pid), '-Fpn', file],
+      const result = await runAsync('/usr/sbin/lsof', ['-b', '-p', String(identity.pid), '-FpiD'],
         { encoding: 'utf8', timeoutMs: 2000, env: { PATH: '/usr/bin:/bin:/usr/sbin' } });
-      const fields = result.stdout.split('\n');
-      opened = result.status === 0 && !result.error && fields.includes(`p${identity.pid}`) && fields.includes(`n${file}`);
+      const [processField, ...descriptors] = result.stdout.trimEnd().split('\nf');
+      opened = result.status === 0 && !result.error && processField === `p${identity.pid}` && !/\np/.test(result.stdout)
+        && descriptors.some(descriptor => {
+          const [fd, ...fields] = descriptor.split('\n');
+          const device = fields.find(field => /^D0x[\da-f]+$/i.test(field));
+          const inode = fields.find(field => /^i\d+$/.test(field));
+          return /^\d+$/.test(fd) && fields.length === 2 && device !== undefined && inode !== undefined
+            && BigInt(device.slice(1)) === target.dev && BigInt(inode.slice(1)) === target.ino;
+        });
     }
     const current = await stat(file, { bigint: true });
     return opened && current.dev === target.dev && current.ino === target.ino && await processStateAsync(identity) === 'alive';

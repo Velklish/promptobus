@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Compare Darwin native database descriptors by exact device and inode, without asking `lsof` to resolve file names through the mount table. Keep the two-second observation deadline, process-lifetime and path-replacement checks, and refusal of failed or timed-out output.
 - Read the Cursor startup record and participant together under their shared task lock, so an in-progress hook publication cannot look like a replacement generation. Process and database proofs remain outside the lock, followed by the unchanged final ownership check.
 - Refresh managed HTTP authorization at most three times when the same participant's session-record revision changes during observation. Every attempt rechecks the unchanged grant, native launch, process lifetime and binding, and requires its own stable live observation before dispatch. Persistent drift, identity changes and dead or unavailable observations still refuse; tool effects are never retried.
 - Preserve a completed death observation for the same process PID and birth so service ticks cannot repeatedly expire it before releasing the client's protocol resources. Alive, unknown and managed observations keep their existing freshness checks.

@@ -733,7 +733,11 @@ publication matches that hook birth to the actual pane, verifies the canonical
 owned SQLite file and confirms that this native process currently holds it open.
 A path or initialized-looking file alone cannot hide native memory fallback.
 Linux uses the verified process's file descriptors; Darwin uses bounded own-PID
-file observation with `/usr/sbin/lsof`. Unavailable evidence stays unresolved.
+file observation with `/usr/sbin/lsof -b -p PID -FpiD`. It compares the device and inode
+of one numeric file descriptor using exact integers, then rechecks the path and
+process lifetime. The `-b` option avoids blocking file-system lookups inside `lsof`;
+device and inode come from the kernel descriptor information. The observation keeps its two-second deadline; failed or timed-out output
+cannot establish admission. Unavailable evidence stays unresolved.
 
 A completed-turn wake may overlap that native proof. Admission and wake updates
 publish under the task lock, preserving concurrent `turns` and `last` metadata.
