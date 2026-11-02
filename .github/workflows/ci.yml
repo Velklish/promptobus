@@ -50,7 +50,17 @@ jobs:
       - name: Test
         env:
           TMPDIR: ${{ runner.temp }}
-        run: npm test
+        run: |
+          git fetch --no-tags --depth=1 origin 6f4f339db9e796f546ad4a8a4151ed20e437a87a
+          git diff HEAD 6f4f339db9e796f546ad4a8a4151ed20e437a87a -- test/sandbox.mjs | npm run probe -- test/sandbox.mjs --stdin-patch --run 'node test/run.mjs --files stub-command-replacement.test.mjs'
+          npm run probe -- lib/service.ts --mutate 's|!previous\.pending|previous.pending|' --run 'npm run build && node test/service-operation-authority.test.mjs'
+          npm run build
+          node test/run.mjs --files stub-command-replacement.test.mjs
+          node test/run.mjs --files service-operation-authority.test.mjs
+          node test/run.mjs --files promptobus-spawn.test.mjs
+          node test/run.mjs --files shared-service.test.mjs
+          node test/run.mjs --files promptobus-driver-cursor.test.mjs
+          git diff --exit-code
 
       - name: Publicity audit
         run: npm run audit
