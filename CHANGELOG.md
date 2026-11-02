@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.32.1] — 2026-11-02
+
+### Fixed
+
+- Refresh managed HTTP authorization at most three times when the same participant's session-record revision changes during observation. Every attempt rechecks the unchanged grant, native launch, process lifetime and binding, and requires its own stable live observation before dispatch. Persistent drift, identity changes and dead or unavailable observations still refuse; tool effects are never retried.
+- Give standalone test fixtures their own private native executable, isolate mocked cross-platform execution traces and wait for the owned holder to settle before failed-launch fixture cleanup.
+
 ## [0.32.0] — 2026-11-02
 
 ### Added
