@@ -382,8 +382,10 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
     const managedState: LifetimeObservations = {
       process: grant => {
         if (grant.lifetime.kind !== 'process') return 'unknown';
-        const proof = grant.lifetime;
-        return cachedObservation(grant.id, JSON.stringify(proof), () => processStateAsync(proof.process), () => true);
+        const proof = grant.lifetime, key = JSON.stringify(proof), previous = observed.get(grant.id);
+        // An exact pid and birth that was observed dead cannot return, so tick/cache aliasing must not discard it.
+        if (previous?.key === key && !previous.pending && previous.state === 'dead') return 'dead';
+        return cachedObservation(grant.id, key, () => processStateAsync(proof.process), () => true);
       },
       managed: (grant, participant) => {
         if (grant.lifetime.kind !== 'managed') return 'unknown';
