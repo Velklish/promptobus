@@ -50,17 +50,7 @@ jobs:
       - name: Test
         env:
           TMPDIR: ${{ runner.temp }}
-        run: |
-          first=0
-          node test/run.mjs --files promptobus-driver-cursor.test.mjs || first=$?
-          second=0
-          node test/run.mjs --files promptobus-driver-cursor.test.mjs || second=$?
-          affected=0
-          node test/run.mjs --files cursor-http-auth.test.mjs live-cursor-cleanup.test.mjs managed-launch-cleanup.test.mjs participant-http-native.test.mjs service-operation-authority.test.mjs shared-service-operation-authority.test.mjs shared-service-standalone-root.test.mjs || affected=$?
-          printf 'Node26 Cursor/affected target exits: %s %s %s\n' "$first" "$second" "$affected"
-          if [ "$first" -ne 0 ] || [ "$second" -ne 0 ] || [ "$affected" -ne 0 ]; then
-            exit 1
-          fi
+        run: npm test
 
       - name: Publicity audit
         run: npm run audit
