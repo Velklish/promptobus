@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { runPromptobus } from '../lib/cli.js';
+
+const nodeMajor = Number(process.versions.node.split('.')[0]);
+if (!Number.isInteger(nodeMajor) || nodeMajor < 26) {
+  process.stderr.write(`Promptobus requires Node.js >=26; current runtime is ${process.versions.node}. No configuration was changed.\n`);
+  process.exit(1);
+}
+const { runPromptobus } = await import('../lib/cli.js');
 
 const pkg: { version: string } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const argv = process.argv.slice(2);

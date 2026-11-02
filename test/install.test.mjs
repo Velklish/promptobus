@@ -55,6 +55,42 @@ function envOf(home) {
   return { ...process.env, HOME: home, USERPROFILE: home };
 }
 
+test('package CLI refuses unsupported Node before install writes and installs on the supported runtime', () => {
+  const { dir, home } = sandbox();
+  const preload = mkdtempSync(path.join(tmpdir(), 'promptobus-test-node-preflight-'));
+  temps.push(preload);
+  writeFileSync(path.join(dir, 'promptobus.json'), '{"tools":["claude"]}\n');
+  mkdirSync(path.join(dir, '.claude'));
+  writeFileSync(path.join(dir, '.claude', 'settings.json'), '{"env":{"FIXTURE":"retained"}}\n');
+  writeFileSync(path.join(home, 'retained.txt'), 'owned home sentinel\n');
+  const state = () => [dir, home].map(root => readdirSync(root, { recursive: true }).sort().map(rel => {
+    const file = path.join(root, rel);
+    return [rel, statSync(file).isDirectory() ? 'directory' : readFileSync(file).toString('hex')];
+  }));
+  const before = state();
+  for (const version of ['20.20.2', '22.23.4', '25.8.0']) {
+    const file = path.join(preload, `${version}.mjs`);
+    writeFileSync(file, `Object.defineProperty(process.versions, 'node', { value: ${JSON.stringify(version)} });\n`);
+    const result = spawnSync(process.execPath, ['--import', file, BIN, 'install', '--harnesses', 'claude'], {
+      cwd: dir, env: envOf(home), encoding: 'utf8', timeout: 10000,
+    });
+    assert.equal(result.status, 1, `Node ${version} must refuse before install: ${result.stderr}`);
+    assert.match(result.stderr, /Promptobus requires Node\.js >=26/);
+    assert.ok(result.stderr.includes(version));
+    assert.deepEqual(state(), before, `Node ${version} refusal must preserve all fixture files and directories`);
+  }
+  assert.ok(Number(process.versions.node.split('.')[0]) >= 26, 'positive install requires the actual supported runtime');
+  const result = spawnSync(process.execPath, [BIN, 'install', '--harnesses', 'claude'], {
+    cwd: dir, env: envOf(home), encoding: 'utf8', timeout: 10000,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.ok(existsSync(path.join(dir, '.promptobus', 'manifest.json')));
+  const settings = JSON.parse(readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8'));
+  assert.ok(settings.hooks.Stop[0].hooks[0].command.includes('promptobus guard'));
+  assert.equal(settings.env.FIXTURE, 'retained');
+  assert.equal(readFileSync(path.join(home, 'retained.txt'), 'utf8'), 'owned home sentinel\n');
+});
+
 function listRel(dir) {
   if (!existsSync(dir)) return [];
   const out = [];
