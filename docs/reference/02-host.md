@@ -1423,6 +1423,10 @@ naming where the proof failed: `exhausted 3`,
 synchronous recheck after authorization returns (`authenticate`, `finalize`,
 `body`, `dispatch`), with `: participant identity` when the identity moved.
 
+A completed death observation remains terminal for a process-scoped client with
+the same PID and birth, allowing cleanup to release its protocol resources.
+Alive, unknown and managed observations keep their existing freshness checks.
+
 `PROMPTOBUS_OWNER_ENV_FILE` names an owned private snapshot scoped to the
 canonical workspace, store and runtime. It captures the common root account
 environment before participant preparation. A managed caller must inherit that
