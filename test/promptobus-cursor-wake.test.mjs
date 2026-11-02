@@ -17,9 +17,8 @@
 // separate turn right after the current one, WITHOUT a new process. It still does not
 // enter the turn in progress — and the mechanism says so in words, not by silence.
 //
-// **The file runs in a serial runner group.** It measures wall-clock time: the participant
-// turn is held by a pause, the warden loop runs once a second, and under pool load those
-// thresholds either go red on working code or go green on nothing.
+// **The file runs in a serial runner group.** The participant turn stays held until the
+// test observes the queued notification and explicitly releases it.
 import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -38,7 +37,7 @@ const { home: HARNESS, restore } = await installHarness({ binDir: path.join(SB, 
 
 const { cursorDriver } = await import(path.join(here, '..', 'lib', 'driver-cursor.js'));
 const {
-  tmuxSessions, readSession, pidAlive, lockFile, CURSOR_TMUX_SERVER,
+  tmuxSessions, readSession, CURSOR_TMUX_SERVER,
 } = await import(path.join(here, '..', 'lib', 'cursor-persist.js'));
 
 // --- the run talks to ITS tmux, not to the machine's --------------------------------
@@ -72,10 +71,7 @@ const MARK = {
   answerA: 'WAKE-ANSWER-A', answerB: 'WAKE-ANSWER-B',
 };
 
-// The pause inside the woken turn is the subject, not decoration: while it runs, a
-// second message arrives. The warden loop is once a second, and eight seconds is enough
-// both for delivery into a busy session and for a verdict on it; the turn stays short.
-const TURN_HOLD_MS = 8000;
+const RELEASE_FILE = path.join(SB, 'release-woken-turn');
 
 const { ws, repo } = buildWorkspace(SB);
 writeHostConfig(ws, { tools: ['claude', 'cursor'] });
@@ -85,7 +81,7 @@ writeFileSync(brief, '# Cursor participant wake\n\nFollow the stand script.\n');
 
 // Three turns, and that is the price of the subject. The first ends quickly — it hands
 // over a contact point, without which there is nothing to wake. The second is started by
-// the warden and HELD by a pause: the second message arrives in exactly that window, and
+// the warden and HELD until release: the second message arrives in exactly that window, and
 // that is the delivery-into-a-busy-session check. The third handles it — same process,
 // no new one.
 planParticipant(HARNESS, WORKER, {
@@ -94,11 +90,11 @@ planParticipant(HARNESS, WORKER, {
     {
       do: [
         { tool: 'promptobus_mailbox' },
-        // The report goes BEFORE the pause on purpose: it is the sign "this turn already
-        // fetched the mailbox". Send the second message earlier — the same turn would
+        // The report goes BEFORE the release barrier: it is the sign "this turn already
+        // attempted the mailbox fetch". Send the second message earlier — the same turn would
         // take it, and the gap this file exists for would stay untested.
         { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: `${MARK.second}: woken by the first message` } },
-        { wait: TURN_HOLD_MS },
+        { untilFile: RELEASE_FILE },
       ],
     },
     {
@@ -161,12 +157,13 @@ check('step 3: the first participant turn ended and reported — the loop is sta
 
 // --- message to an idle session: the warden pastes it into the live session ---------
 
-store.sendMessage(home, TASK, {
+const deliveredBeforeA = store.readHealth(home, TASK)[WORKER]?.deliveredAt ?? null;
+const answerA = store.sendMessage(home, TASK, {
   from: 'orchestrator', to: WORKER, type: 'answer', body: `${MARK.answerA}: the session was idle`,
-});
+}).message.id;
 
-// The wake sign is THIS turn's report: it goes out right after the mailbox fetch, so it
-// proves both that the turn started and that it already handled its unread.
+// This turn's report follows the mailbox attempt. The harness continues after an RPC
+// failure, so the participant's history must separately prove the actual read below.
 const woken = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
   .find((m) => String(m.body ?? '').includes(MARK.second)) ?? null, { timeoutMs: 60000 });
 check('step 4: the warden woke the idle session — the text arrived by injection',
@@ -183,32 +180,37 @@ check('step 4: the wake happened WITHOUT a new process — the session pane is t
 // Send it STRICTLY after the woken turn's report: one that arrived earlier would be
 // taken by the same turn, and the gap this file exists for would stay untested.
 
-store.sendMessage(home, TASK, {
+// Let the warden finish acknowledging A before B arrives, so B is not coalesced
+// under A's outstanding knock. The baseline was captured before triggering A.
+const deliveryA = await waitFor(() => {
+  const health = store.readHealth(home, TASK)[WORKER];
+  return health?.deliveredAt && health.deliveredAt !== deliveredBeforeA
+    && health.unread === 0 && health.knockedAt === null
+    && store.historyHeaders(home, TASK, WORKER).some(message => message.id === answerA);
+}, { timeoutMs: 30000 });
+check('step 5: the warden acknowledged answer A before answer B was sent', Boolean(deliveryA),
+  JSON.stringify(store.readHealth(home, TASK)[WORKER]));
+
+const answerB = store.sendMessage(home, TASK, {
   from: 'orchestrator', to: WORKER, type: 'answer', body: `${MARK.answerB}: the answer arrived during a turn`,
-});
+}).message;
 
-// The step-4 wake still holds the inject lock under load, so the state is waited for and
-// asserted on its own line: contributing.md § Suite isolation.
-const lockPath = lockFile(ref, env);
-const lockHolder = () => {
-  if (!existsSync(lockPath)) return null;
-  try { return JSON.parse(readFileSync(lockPath, 'utf8')); } catch { return null; }
-};
-// The title claims only what a poll proves — the window against the live warden is
-// narrowed, not closed: contributing.md § Suite isolation.
-const lockFree = await waitFor(() => !pidAlive(Number(lockHolder()?.pid)) || null, { timeoutMs: 30000 });
-check('step 5: the previous writer let the inject lock go before this delivery',
-  lockFree === true,
-  `${lockPath} · ${existsSync(lockPath) ? JSON.stringify(lockHolder()) : '(no lock)'}`);
-
-const busyDelivery = await cursorDriver.activate({ ref }, {
-  kind: 'unread', task: TASK, address: WORKER, unread: 1, messages: [],
-});
+// The stand's tmux Enter producer persists this queue before the held turn can consume it.
+// Notifications carry metadata, never message bodies: bind the receipt to B's actual preview.
+const queue = path.join(HARNESS, 'queue', `${String(record.sessionName).replace(/[^A-Za-z0-9._-]+/g, '-')}.jsonl`);
+const previewB = `— answer from orchestrator · ${answerB.ts}: text ${answerB.body.length} characters — fetch the mailbox`;
+const busyDelivery = await waitFor(() => {
+  if (!existsSync(queue)) return null;
+  return readFileSync(queue, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line))
+    .find(entry => entry.text.includes(`address ${WORKER} on task ${TASK}`) && entry.text.includes(previewB)) ?? null;
+}, { timeoutMs: 20000 });
+const heldTrace = readTrace(HARNESS, WORKER).filter(entry => entry.kind === 'release-file' || entry.kind === 'turn-end');
 check('step 5: delivery into a turn IN PROGRESS succeeds — the text is queued, not refused',
-  busyDelivery?.ok === true, JSON.stringify(busyDelivery));
+  Boolean(busyDelivery) && !heldTrace.some(entry => entry.kind === 'release-file' || entry.turn === 1),
+  JSON.stringify({ receipt: busyDelivery, trace: heldTrace }));
 
 check('step 5: the turn in progress did not see it — the message is still unread',
-  store.countInbox(home, TASK, WORKER) >= 1, String(store.countInbox(home, TASK, WORKER)));
+  store.glanceInbox(home, TASK, WORKER).some(message => message.id === answerB.id), String(store.countInbox(home, TASK, WORKER)));
 
 check('step 5: delivery did not start a second process — panePid is the same, one session',
   readSession(ref, env)?.panePid === panePid
@@ -217,14 +219,24 @@ check('step 5: delivery did not start a second process — panePid is the same, 
 
 // --- the queue runs on the next turn ------------------------------------------------
 
+writeFileSync(RELEASE_FILE, 'release\n');
 const answered = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
   .find((m) => String(m.body ?? '').includes(MARK.third)) ?? null, { timeoutMs: 90000 });
 check('step 6: the loop closed — a message that arrived during a turn was handled by the NEXT one',
   !!answered, `${JSON.stringify(answered)} · warden journal: ${store.tailWardenLog(home, TASK).slice(-14).join(' | ')} · ${diagnoseTrace(HARNESS, WORKER)}`);
 
-check('step 6: the participant fetched its own mailbox — it confirms delivery, not the warden',
-  await waitFor(() => store.countInbox(home, TASK, WORKER) === 0, { timeoutMs: 20000 }),
-  String(store.countInbox(home, TASK, WORKER)));
+// Other mail may arrive after the scripted fetch; require the two sent answers' read-acks.
+const readAnswers = await waitFor(() => {
+  const read = store.historyHeaders(home, TASK, WORKER).map(message => message.id);
+  return read.includes(answerA) && read.includes(answerB.id);
+}, { timeoutMs: 20000 });
+check('step 6: the participant fetched both sent answers — it confirms delivery, not the warden',
+  readAnswers,
+  readAnswers ? undefined : JSON.stringify({
+    expectedIds: [answerA, answerB.id],
+    mailbox: readTrace(HARNESS, WORKER).filter(entry => entry.tool === 'promptobus_mailbox' || entry.kind === 'action-failed'),
+    unread: store.glanceInbox(home, TASK, WORKER).map(({ id, type, sender, recipients }) => ({ id, type, sender, recipients })),
+  }));
 
 check('step 6: this turn also ran in the same session — the process did not change over the loop',
   readSession(ref, env)?.panePid === panePid, `${panePid} → ${readSession(ref, env)?.panePid}`);
@@ -252,4 +264,4 @@ check('step 6: the warden of the closed task exited on its own',
 const closedService = await service.close();
 check('step 6: the owned shared service physically exited after the task seat settled', closedService.stopped
   && processState(closedService.process) === 'dead');
-} finally { await service.close(); restore(); }
+} finally { writeFileSync(RELEASE_FILE, 'release\n'); await service.close(); restore(); }

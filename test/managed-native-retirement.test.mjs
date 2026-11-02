@@ -249,12 +249,13 @@ if (serviceError) throw serviceError;
 
 const bin = path.join(root, 'bin'), harness = await installHarness({ binDir: bin });
 const hook = path.join(root, 'native-start.mjs'), fault = path.join(root, 'cursor-retirement-packet.json');
+const tornBarrier = path.join(root, 'cursor-torn-barrier.json');
 const priorConfig = process.env.CURSOR_CONFIG_DIR;
 process.env.CURSOR_CONFIG_DIR = path.join(root, 'cursor-native'); mkdirSync(process.env.CURSOR_CONFIG_DIR, { mode: 0o700 });
 symlinkSync(realpathSync(process.execPath), path.join(bin, 'node'));
 writeFileSync(path.join(bin, 'package.json'), '{"type":"module"}');
 writeFileSync(path.join(bin, 'cursor-agent'), '#!/bin/bash\nSCRIPT_DIR="${0%/*}"\nNODE_BIN="$SCRIPT_DIR/node"\nexec -a "$0" "$NODE_BIN" "$SCRIPT_DIR/index.js" "$@"\n', { mode: 0o755 });
-writeFileSync(hook, `import {readFileSync,realpathSync} from 'node:fs';
+writeFileSync(hook, `import {readFileSync,realpathSync} from 'node:fs';import fs from 'node:fs';import {syncBuiltinESMExports} from 'node:module';
 import {bindManagedNativeStart} from ${JSON.stringify(path.join(import.meta.dirname, '../lib/drivers.js'))};
 import{recordVersion}from${JSON.stringify(path.join(import.meta.dirname, '../lib/service-state.js'))};
 import{observeRootProcess,processExecutable,processParent,isSupportedPosixShell}from${JSON.stringify(path.join(import.meta.dirname, '../lib/root-process.js'))};
@@ -263,8 +264,14 @@ if(event.hook_event_name==='sessionStart'){const file=process.env.PROMPTOBUS_CUR
 const version=recordVersion(file),executable=record.nativeCommand.executable;let native=await observeRootProcess(process.ppid);
 if(native&&await isSupportedPosixShell(native)){const parent=await processParent(native.pid);native=parent?await observeRootProcess(parent):null;}
 if(!native||await processExecutable(native)!==executable.file)throw new Error('Owned Cursor hook has no matching native runtime');
+const barrier=fs.existsSync(${JSON.stringify(tornBarrier)})?JSON.parse(readFileSync(${JSON.stringify(tornBarrier)},'utf8')):null;
+if(barrier?.record===file){const rename=fs.renameSync;fs.renameSync=function(from,to,...rest){
+if(to===barrier.taskJson&&!fs.existsSync(barrier.entered)){fs.writeFileSync(barrier.entered,'record published, participant held under the task lock');
+const edge=Date.now()+15000;while(!fs.existsSync(barrier.release)&&Date.now()<edge)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,5);}
+return rename.call(this,from,to,...rest);};syncBuiltinESMExports();}
 bindManagedNativeStart({harness:'cursor',home:record.home,task:record.task,address:record.address,ref:record.ref,
-record:file,launchId:record.launchId,nativeId:event.conversation_id,transcript:event.transcript_path,nativeProcessEvidence:{version,process:native,executable}});}
+record:file,launchId:record.launchId,nativeId:event.conversation_id,transcript:event.transcript_path,nativeProcessEvidence:{version,process:native,executable}});
+if(barrier?.record===file)fs.writeFileSync(barrier.finished,'record and participant published');}
 `);
 writeFileSync(path.join(bin, 'index.js'), `import crypto from 'node:crypto';import path from 'node:path';
 import {existsSync,mkdirSync,openSync,readFileSync,writeFileSync} from 'node:fs';import{syncBuiltinESMExports}from'node:module';
@@ -295,6 +302,44 @@ owner = cp.spawn(process.execPath, [serviceBin, 'service', 'run'], { cwd: root, 
 serviceError = null; serviceStderr = '';
 owner.stderr.on('data', bytes => { serviceStderr += bytes; }); owner.once('error', error => { serviceError = error; });
 running = new Promise(resolve => owner.once('close', resolve));
+async function tornCursor(ref, replace) {
+  const files = Object.fromEntries(['entered', 'release', 'finished'].map(name => [name, path.join(root, `${ref}.${name}`)]));
+  const taskJson = path.join(home, 'tasks', task, 'task.json'), taskLock = path.join(home, 'tasks', task, '.lock');
+  writeFileSync(tornBarrier, JSON.stringify({ record: cursorFile(ref), taskJson, ...files }));
+  const stages = [], read = fs.readFileSync, mkdir = fs.mkdirSync;
+  let snapshotAfterPublication = false, replaced = null, replacing = false;
+  fs.readFileSync = function(file, ...rest) {
+    const value = read.call(this, file, ...rest);
+    if (file === taskJson && existsSync(files.entered) && !existsSync(files.release)) {
+      stages.push('unlocked snapshot read'); writeFileSync(files.release, 'released by an unlocked snapshot');
+    } else if (file === taskJson && existsSync(files.release)) snapshotAfterPublication = true;
+    return value;
+  };
+  fs.mkdirSync = function(file, ...rest) {
+    if (file !== taskLock || replacing) return mkdir.call(this, file, ...rest);
+    if (replace && !replaced && snapshotAfterPublication) {
+      replacing = true;
+      try {
+        const current = participantOf(readTask(home, task), `worker:${ref}`);
+        replaced = { original: current, replacement: { ...current, metadata: { ...current.metadata, nativeLaunchId: `${ref}-replacement` } } };
+        upsertParticipant(home, task, replaced.replacement);
+      } finally { replacing = false; }
+    }
+    try { return mkdir.call(this, file, ...rest); } catch (error) {
+      if (error?.code === 'EEXIST' && existsSync(files.entered) && !existsSync(files.release)) {
+        stages.push('contended task lock'); writeFileSync(files.release, 'released by the contended task lock');
+      }
+      throw error;
+    }
+  };
+  syncBuiltinESMExports();
+  try {
+    const result = await cursor(ref);
+    return { ...result, stages, replaced, entered: existsSync(files.entered), finished: existsSync(files.finished) };
+  } finally {
+    fs.readFileSync = read; fs.mkdirSync = mkdir; syncBuiltinESMExports(); rmSync(tornBarrier, { force: true });
+  }
+}
 async function cursor(ref, fail = null) {
   const address = `worker:${ref}`, file = cursorFile(ref), launchId = `${ref}-launch`;
   upsertParticipant(home, task, participantRecord(address, { harness: 'cursor', mode: 'managed', sessionRef: ref }));
@@ -345,6 +390,23 @@ try {
       && readTmuxSessions().sessions.some(session => session.name === unknown.native.sessionName), unknown.error?.stack);
   const unknownStopped = await cursorDriver.stop(unknown.ref);
   check('Cursor uncertain-realization fixture separately stops its unchanged actual native session', unknownStopped.ok && unknownStopped.stopped, unknownStopped.note);
+  const torn = await tornCursor('cursor-torn-snapshot', false);
+  const tornParticipant = participantOf(readTask(home, task), torn.address), tornRecord = readCursor(torn.ref);
+  check('a Cursor hook publication held between its record and participant writes is admitted only from one consistent snapshot',
+    !torn.error && torn.entered && torn.finished && JSON.stringify(torn.stages) === '["contended task lock"]'
+      && tornParticipant?.metadata.sessionId === tornRecord?.chatId && !!tornRecord?.nativeAdmission,
+    JSON.stringify({ stages: torn.stages, entered: torn.entered, finished: torn.finished, error: torn.error?.message }));
+  const tornStopped = await cursorDriver.stop(torn.ref);
+  check('the consistent-snapshot fixture separately stops its actual native session', tornStopped.ok && tornStopped.stopped, tornStopped.note);
+  const replacedTorn = await tornCursor('cursor-torn-replaced', true);
+  check('a real participant replacement after the consistent snapshot still refuses Cursor admission',
+    !!replacedTorn.replaced && /changed its exact owner generation/.test(replacedTorn.error?.message ?? '')
+      && !readCursor(replacedTorn.ref)?.nativeAdmission
+      && participantOf(readTask(home, task), replacedTorn.address)?.metadata.nativeLaunchId === `${replacedTorn.ref}-replacement`,
+    JSON.stringify({ stages: replacedTorn.stages, replaced: !!replacedTorn.replaced, error: replacedTorn.error?.message }));
+  if (replacedTorn.replaced) upsertParticipant(home, task, replacedTorn.replaced.original);
+  const replacedStopped = await cursorDriver.stop(replacedTorn.ref);
+  check('the refused replacement fixture separately stops its actual native session', replacedStopped.ok && replacedStopped.stopped, replacedStopped.note);
   for (const replacement of [false, true]) {
     const ref = `cursor-${replacement ? 'replacement' : 'control'}`;
     const successor = replacement ? await cursor(`${ref}-successor`) : null;

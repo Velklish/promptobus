@@ -13,7 +13,7 @@ const read = file => JSON.parse(readFileSync(path.join(root, file), 'utf8'));
 
 test('current package admits only the checked BB 0.48.1 and SDK 0.6.104 pair', () => {
   const manifest = read('package.json');
-  assert.deepEqual(manifest.engines, { bb: '0.48.1', bbPluginSdk: '0.6.104' },
+  assert.deepEqual(manifest.engines, { bb: '0.48.1', bbPluginSdk: '0.6.104', node: '>=26' },
     'admit the checked installed pair without claiming adjacent or future host versions');
 });
 

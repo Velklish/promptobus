@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox } from './sandbox.mjs';
-import { installHarness, CURSOR_HOME_VAR } from './harness-cursor.mjs';
+import { installHarness, planParticipant, readTrace, CURSOR_HOME_VAR } from './harness-cursor.mjs';
 import { waitFor } from './harness.mjs';
 import { proveStandIsolation, STUB_BIN } from '../scripts/live-entry.mjs';
 import { processState } from '../lib/service-state.js';
@@ -14,6 +14,7 @@ const PACKAGE = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 for (const change of ['wake', 'process', 'chat', 'owner', 'owner-only']) {
   const root = makeSandbox('promptobus-promptobus-live-cursor-cleanup-');
   const bins = path.join(root, 'bin'), harness = await installHarness({ binDir: bins, bundledRuntime: true });
+  planParticipant(harness.home, 'worker:live', { turns: [{ hang: true }] });
   const mechanism = path.join(root, 'mechanism');
   for (const name of ['bin', 'dist', 'lib', 'models', 'schemas', 'skills', 'scripts', 'test', 'package.json']) {
     cpSync(path.join(PACKAGE, name), path.join(mechanism, name), { recursive: true });
@@ -86,6 +87,9 @@ async function fixtureOpenFileProof(identity, nativeFile, recordFile, env, crede
     await waitFor(() => exit || null, { timeoutMs: 90000 });
     proof = existsSync(proofFile) ? JSON.parse(readFileSync(proofFile, 'utf8')) : null;
     result = existsSync(resultFile) ? JSON.parse(readFileSync(resultFile, 'utf8')) : null;
+    const trace = readTrace(harness.home, 'worker:live');
+    check(`Cursor admission ${change}: the held startup turn emits no independent end-of-turn wake`,
+      !trace.some(entry => entry.kind === 'turn-end'), JSON.stringify(trace));
     if (change === 'owner-only') check('Cursor admission: owner replacement is injected after actual open-file proof without changing the native record',
       proof?.actualProof === true && !proof.wake && proof.revisionChanged === false && proof.turnsAfter === proof.turnsBefore,
       JSON.stringify({ proof, exit, output: output.slice(-1800) }));

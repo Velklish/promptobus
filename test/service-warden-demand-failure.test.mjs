@@ -1,13 +1,10 @@
 // Pure production coordinator control flow; actual owner/Worker proof is tested separately.
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
-import * as module from 'node:module';
 import path from 'node:path';
 import { check } from './check.mjs';
 
-const compiled = module.stripTypeScriptTypes
-  ? module.stripTypeScriptTypes(readFileSync(new URL('../lib/service-warden.ts', import.meta.url), 'utf8'), { mode: 'transform' })
-  : readFileSync(new URL('../lib/service-warden.js', import.meta.url), 'utf8');
+const compiled = readFileSync(new URL('../lib/service-warden.js', import.meta.url), 'utf8');
 const source = compiled.slice(compiled.indexOf('export class ServiceWarden')).replace('export ', '')
   .replace("new URL('./warden-worker.js', import.meta.url)", "'/owned/warden-worker.js'");
 const clone = value => value === null ? null : JSON.parse(JSON.stringify(value));

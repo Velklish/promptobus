@@ -360,8 +360,8 @@ Explicit user `status` or mailbox operations may still make synchronous driver
 calls on main; background reads serialize on one Worker and can delay each
 other. Root PID/birth checks use asynchronous OS reads independently of that
 queue, and admit a process only after verifying its actual birth identity.
-The Worker uses the package's supported Node 20+ API; see the
-[Node Worker documentation](https://nodejs.org/docs/latest-v20.x/api/worker_threads.html).
+The Worker uses the package's supported Node 26+ API; see the
+[Node Worker documentation](https://nodejs.org/docs/latest-v26.x/api/worker_threads.html).
 
 Managed observation never creates authority. Main checks immutable task,
 address, ref, launch generation and owned record before dispatch. Provider reads

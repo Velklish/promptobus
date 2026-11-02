@@ -14,7 +14,7 @@ function fixture(t) {
   mkdirSync(path.join(root, 'skills'));
   writeFileSync(path.join(root, 'skills/SKILL.md'), 'Shipped instruction');
   writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'bb-plugin-promptobus', version: '0.1.0',
-    engines: { bb: '0.48.1', bbPluginSdk: '0.6.104' },
+    engines: { bb: '0.48.1', bbPluginSdk: '0.6.104', node: '>=26' },
     bb: { server: './.runtime/source/server.ts', host: './.runtime/source/host.ts', skills: ['.runtime/skills'] },
     dependencies: { promptobus: '1.0.0' }, devDependencies: { '@get-bb/plugin-sdk': '0.6.104' } }));
   writeFileSync(path.join(root, 'package-lock.json'), '{"lockfileVersion":3}');
@@ -114,7 +114,7 @@ test('build embeds one invocation identity and binds final artifacts without cha
   const installed = path.join(root, manifest.installationDirectory);
   const captured = JSON.parse(readFileSync(path.join(installed, 'package.json')));
   assert.deepEqual(captured.engines,
-    JSON.parse(readFileSync(path.join(root, 'package.json'))).engines, 'captured packages must preserve the declared compatibility pair');
+    JSON.parse(readFileSync(path.join(root, 'package.json'))).engines, 'captured packages must preserve the declared compatibility requirements');
   assert.equal(captured.devDependencies['@get-bb/plugin-sdk'], '0.6.104');
   assert.equal(captured.dependencies['@get-bb/plugin-sdk'], undefined);
   assert.deepEqual(readFileSync(path.join(installed, 'node_modules/@get-bb/plugin-sdk/index.js')),

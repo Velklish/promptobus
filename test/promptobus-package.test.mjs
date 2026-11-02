@@ -779,8 +779,8 @@ check('CI names the build before the test step',
   'the workflow must run npm run build before Test');
 const nodeMatrix = workflow.match(/^\s+node:\s*\[([^\]]+)\]$/m)?.[1]
   ?.split(',').map((major) => Number(major.trim())).filter(Number.isInteger) ?? [];
-check('CI covers more than one supported Node major',
-  nodeMatrix.includes(20) && nodeMatrix.some((major) => major !== 20) && nodeMatrix.every((major) => major >= 20),
+check('CI covers the declared Node 26 minimum',
+  nodeMatrix.length === 1 && nodeMatrix[0] === 26 && pkg.engines?.node === '>=26',
   `Node matrix: ${nodeMatrix.join(', ') || 'none'}; package engines: ${pkg.engines?.node ?? 'none'}`);
 check('CI does not duplicate package tarball coverage',
   !/^\s+- name: Pack dry-run$/m.test(workflow) && !/^\s+run: npm pack --dry-run$/m.test(workflow),

@@ -107,7 +107,7 @@ export const SUITE_PREFIXES = [
   'pb-home-', 'pb-hooks-', 'pb-install-', 'pb-bb-native-', 'pb-direct-receipt-',
   'pb-message-order-', 'pb-native-message-order-', 'pb-legacy-feedback-alias-',
   'pb-bb-root-command-', 'pb-bb-root-new-owner-', 'pb-bb-root-owner-',
-  'pb-codex-cleanup-policy-', 'pb-kernel-read-shapes-', 'pb-lead-generation-',
+  'pb-codex-cleanup-policy-', 'pb-kernel-read-shapes-', 'pb-observer-trace-', 'pb-lead-generation-',
   'pb-native-alias-', 'pb-native-retirement-', 'pb-managed-path-',
   // As `mutation-probe.test.mjs` spells it, for the reason the three above are kept:
   // the sweep does not care about the name, and a rename would be an edit for its convenience.
@@ -137,6 +137,7 @@ export const SUITE_PREFIXES = [
   'promptobus-routing-',
   'promptobus-runner-',
   'promptobus-send-', 'promptobus-stop-', 'promptobus-store-', 'promptobus-sweep-',
+  'promptobus-stub-replacement-',
   // Covers the five sandboxes of model-routing-telemetry.test.mjs: one
   // workspace per case, and an entry sweeps everything that starts with it.
   'promptobus-telemetry-',

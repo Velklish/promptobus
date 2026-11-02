@@ -44,7 +44,8 @@
 // written in JS, and `.cmd` with `#!/bin/sh` would drift not in three
 // lines but in two different programs — exactly the problem the script
 // was unified onto one language to avoid.
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
@@ -87,8 +88,13 @@ export function stubCommand(dir, name, body, { platform = process.platform } = {
     // did the quoting.
     writeFileSync(path.join(dir, `${name}.cmd`), `@"${process.execPath}" "${script}" %*\r\n`);
   } else {
-    writeFileSync(path.join(dir, name),
-      `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`, { mode: 0o755 });
+    // An observer may be executing the old launcher: never open that inode for writing.
+    const temporary = path.join(dir, `.${name}-${randomUUID()}.tmp`);
+    try {
+      writeFileSync(temporary,
+        `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`, { mode: 0o755, flag: 'wx' });
+      renameSync(temporary, path.join(dir, name));
+    } finally { rmSync(temporary, { force: true }); }
   }
   // The binary body changed: the former `--version` / `agents --json`
   // is no longer true.

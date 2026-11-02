@@ -5,14 +5,21 @@ import fsp from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import { syncBuiltinESMExports } from 'node:module';
 import { PassThrough } from 'node:stream';
+import path from 'node:path';
 import { processIdentity, processState, processStateAsync } from '../lib/service-state.js';
 import { observeRootProcess } from '../lib/root-process.js';
+import { makeSandbox } from './sandbox.mjs';
 
 // Controlled kernel-view responses exercise the shared parser on both platforms; no real platform certificate.
 const platform = Object.getOwnPropertyDescriptor(process, 'platform');
 const originals = { readFileSync: fs.readFileSync, readlinkSync: fs.readlinkSync, readFile: fsp.readFile, readlink: fsp.readlink,
   spawn: cp.spawn, spawnSync: cp.spawnSync, kill: process.kill };
 const pid = process.pid + 200000, boot = '00000000-0000-4000-8000-000000000001';
+const inheritedTrace = process.env.PROMPTOBUS_EXEC_TRACE;
+const traceFile = path.join(makeSandbox('pb-observer-trace-'), 'mock-kernel.trace');
+const mockTrace = `/bin/ps\t/bin/ps\t${JSON.stringify({ version: 1, platform: 'darwin', shape: 'process-lifetime', pid: String(pid) })}`;
+const traceLines = file => file && fs.existsSync(file) ? originals.readFileSync(file, 'utf8').trimEnd().split('\n') : [];
+const inheritedMockCount = traceLines(inheritedTrace).filter(line => line === mockTrace).length;
 let targetTicks = '800', state = 'S', absent = false, malformed = false, denied = false, namespaceMismatch = false, selfMismatch = false, viewMismatch = false;
 let currentBoot = boot, start = 'Sun Nov 1 00:00:00 2026', stderr = '';
 const calls = [], signals = [];
@@ -40,6 +47,7 @@ const ps = (file, args, options) => {
 };
 const parity = async (identity, expected, name) => check(name, processState(identity) === expected && await processStateAsync(identity) === expected);
 try {
+  process.env.PROMPTOBUS_EXEC_TRACE = traceFile;
   fs.readFileSync = read; fs.readlinkSync = link; fsp.readFile = async file => read(file); fsp.readlink = async file => link(file);
   cp.spawnSync = ps;
   cp.spawn = (file, args, options) => {
@@ -90,8 +98,15 @@ try {
   check('every Darwin observation fixes locale and timezone', calls.length > 0 && calls.every(options =>
     options.env.LC_ALL === 'C' && options.env.LANG === 'C' && options.env.TZ === 'UTC'));
 } finally {
+  if (inheritedTrace === undefined) delete process.env.PROMPTOBUS_EXEC_TRACE;
+  else process.env.PROMPTOBUS_EXEC_TRACE = inheritedTrace;
   Object.defineProperty(process, 'platform', platform);
   fs.readFileSync = originals.readFileSync; fs.readlinkSync = originals.readlinkSync;
   fsp.readFile = originals.readFile; fsp.readlink = originals.readlink; cp.spawn = originals.spawn; cp.spawnSync = originals.spawnSync; process.kill = originals.kill;
   syncBuiltinESMExports();
 }
+const localTrace = traceLines(traceFile);
+check('controlled Darwin observations reach only the fixture trace with their exact kernel shape',
+  localTrace.length > 0 && localTrace.every(line => line === mockTrace));
+check('controlled Darwin observations do not append to the inherited runner trace',
+  traceLines(inheritedTrace).filter(line => line === mockTrace).length === inheritedMockCount);

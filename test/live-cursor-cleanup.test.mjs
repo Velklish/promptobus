@@ -64,7 +64,20 @@ for (const boundary of ['early normal', 'delayed abort', 'unknown abort', 'unkno
     rmSync(SB, { recursive: true, force: true });
   `);
   writeFileSync(entry, source);
-  appendFileSync(path.join(mechanism, 'lib', 'driver-cursor.js'), `
+  const driverFile = path.join(mechanism, 'lib', 'driver-cursor.js');
+  const absenceNote = '`persist session ${id} final absence deadline elapsed; record retained`';
+  const driverSource = readFileSync(driverFile, 'utf8');
+  if (driverSource.split(absenceNote).length !== 3) throw new Error('Live Cursor fixture lost its two final-absence refusals');
+  let absenceStage = 0;
+  writeFileSync(driverFile, driverSource.replaceAll(absenceNote, () => {
+    const after = absenceStage++ === 1;
+    return `${absenceNote} + ' · ' + JSON.stringify({stage:${JSON.stringify(after ? 'after-final-observe' : 'before-final-observe')},
+      budgetMs:waitOptions?.timeoutMs??STOP_TIMEOUT_MS,deadline,now:Date.now(),doneStopped:done.stopped??null,
+      doneMissing:done.missing===null?false:typeof done.missing==='string'?true:null,
+      sessionCount:${after ? 'Array.isArray(after.sessions)?after.sessions.length:null' : 'null'},
+      missing:${after ? "after.missing===null?false:typeof after.missing==='string'?true:null" : 'null'}})`;
+  }));
+  appendFileSync(driverFile, `
 import {writeFileSync as fixtureWrite} from 'node:fs';
 import {processIdentity as fixtureIdentity,processState as fixtureState} from './service-state.js';
 const fixtureStop=cursorDriver.stop;

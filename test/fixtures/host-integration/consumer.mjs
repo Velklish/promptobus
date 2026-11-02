@@ -1,7 +1,7 @@
 // A host that installed the packed tarball: every operation it needs, through public specifiers only.
 // Run with the install directory as cwd; argv[2] is a JSON file `{ expected, sandbox }`; prints verdicts.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
@@ -232,6 +232,8 @@ await verdict('host integration: root profile API and CLI agree with the default
 await verdict('host integration: installed standalone API CLI and pure supplied-descriptor planning agree', async () => {
   const root = path.join(sandbox, 'standalone-profile'), nativeStore = path.join(root, 'native-account');
   mkdirSync(nativeStore, { recursive: true }); writeFileSync(path.join(root, 'promptobus.json'), '{"tools":[]}\n');
+  const nativeExecutable = path.join(root, 'native-node');
+  copyFileSync(process.execPath, nativeExecutable); chmodSync(nativeExecutable, 0o700);
   const host = createStandaloneHost({ cwd: root }), env = { ...process.env };
   for (const name of Object.keys(env)) if (/^(BB_|PROMPTOBUS_(CLIENT_|ROOT_|OWNER_ENV_FILE$|ROLE$|TASK$|.*_SESSION$))/.test(name)) delete env[name];
   const command = async args => {
@@ -239,8 +241,8 @@ await verdict('host integration: installed standalone API CLI and pure supplied-
     return { code: await runPromptobus(args, { host, cwd: root, env, output }), text };
   };
   try {
-    const api = await integration.approveStandaloneRootProfile(host, { id: 'packed-native', harness: 'claude', nativeStore, executable: process.execPath }, env);
-    const cli = await command(['service', 'profile', '--standalone', '--id', 'packed-native', '--harness', 'claude', '--native-store', nativeStore, '--executable', process.execPath]);
+    const api = await integration.approveStandaloneRootProfile(host, { id: 'packed-native', harness: 'claude', nativeStore, executable: nativeExecutable }, env);
+    const cli = await command(['service', 'profile', '--standalone', '--id', 'packed-native', '--harness', 'claude', '--native-store', nativeStore, '--executable', nativeExecutable]);
     const before = filesUnder(root);
     const plan = integration.planHookInstall(host, root, ['claude'], { rootProfile: api });
     const hooks = JSON.parse(plan.writes.find(write => write.rel === path.join('.claude', 'settings.json')).text).hooks;
@@ -255,12 +257,14 @@ await verdict('host integration: installed standalone API CLI and pure supplied-
 await verdict('host integration: installed recovery CLI refuses native-id without a trusted actual binding', async () => {
   const root = path.join(sandbox, 'standalone-recovery'), nativeStore = path.join(root, 'native-account');
   mkdirSync(nativeStore, { recursive: true }); writeFileSync(path.join(root, 'promptobus.json'), '{"tools":[]}\n');
+  const nativeExecutable = path.join(root, 'native-node');
+  copyFileSync(process.execPath, nativeExecutable); chmodSync(nativeExecutable, 0o700);
   const host = createStandaloneHost({ cwd: root }), id = 'packed-recovery';
   const env = { ...process.env };
   for (const name of Object.keys(env)) if (/^(BB_|PROMPTOBUS_(CLIENT_|ROOT_|OWNER_ENV_FILE$|ROLE$|TASK$|.*_SESSION$))/.test(name)) delete env[name];
   let text = ''; const output = new Writable({ write(chunk, _enc, done) { text += chunk; done(); } });
   try {
-    const approved = await integration.approveStandaloneRootProfile(host, { id, harness: 'claude', nativeStore, executable: process.execPath }, env);
+    const approved = await integration.approveStandaloneRootProfile(host, { id, harness: 'claude', nativeStore, executable: nativeExecutable }, env);
     const child = spawnSync(process.execPath, [host.binPath(), 'service', 'preflight', '--standalone', '--profile', id, '--native-id', 'unproved-id'],
       { cwd: root, env, encoding: 'utf8' });
     return all(same([approved.mode, approved.harness, approved.profile, approved.root, approved.home],

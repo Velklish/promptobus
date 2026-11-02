@@ -1,6 +1,6 @@
 {
   "name": "promptobus",
-  "version": "0.32.0",
+  "version": "0.32.1",
   "description": "Harness-neutral bus for agent sessions: tasks, mailboxes, artifacts and participant sessions.",
   "license": "MIT",
   "repository": "github:Velklish/promptobus",
@@ -29,7 +29,7 @@
     "schema-skew": "node scripts/check-schema-skew.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=26"
   },
   "exports": {
     "./participant-context": {

@@ -382,8 +382,10 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
     const managedState: LifetimeObservations = {
       process: grant => {
         if (grant.lifetime.kind !== 'process') return 'unknown';
-        const proof = grant.lifetime;
-        return cachedObservation(grant.id, JSON.stringify(proof), () => processStateAsync(proof.process), () => true);
+        const proof = grant.lifetime, key = JSON.stringify(proof), previous = observed.get(grant.id);
+        // An exact pid and birth that was observed dead cannot return, so tick/cache aliasing must not discard it.
+        if (previous?.key === key && !previous.pending && previous.state === 'dead') return 'dead';
+        return cachedObservation(grant.id, key, () => processStateAsync(proof.process), () => true);
       },
       managed: (grant, participant) => {
         if (grant.lifetime.kind !== 'managed') return 'unknown';
@@ -489,14 +491,32 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         requireLifetime(current, paths.home, unavailableObservations, 401); return;
       }
       const participant = managedParticipant(current.lifetime, paths.home);
-      if (!proof || !sameRecordVersion(proof.revision)
-        || !participant || participant.harness !== proof.participant.harness
-        || sessionIdOf(participant) !== sessionIdOf(proof.participant)
-        || participant.metadata?.nativeLaunchId !== proof.participant.metadata?.nativeLaunchId) {
-        throw new HttpFailure(409, 'Managed lifetime changed after observation; retry with current owner proof');
+      if (!proof || !participant || !isDeepStrictEqual(managedIdentity(participant), managedIdentity(proof.participant))) {
+        throw new ManagedIdentityDrift('within-attempt participant identity');
+      }
+      if (!sameRecordVersion(proof.revision)) throw new ManagedRevisionDrift('within attempt');
+    };
+    const MANAGED_DRIFT = 'Managed lifetime changed after observation; retry with current owner proof';
+    class ManagedRevisionDrift extends HttpFailure {
+      constructor(stage: string) { super(409, `${MANAGED_DRIFT} [stage: ${stage}]`); }
+    }
+    class ManagedIdentityDrift extends HttpFailure {
+      constructor(stage: string) { super(409, `${MANAGED_DRIFT} [stage: ${stage}]`); }
+    }
+    const MANAGED_PROOF_ATTEMPTS = 3;
+    const managedIdentity = (participant: ParticipantV1) => [participant.harness, sessionIdOf(participant), participant.metadata?.nativeLaunchId];
+    // Only same-identity record drift gets a fresh full proof; any other refusal ends authorization.
+    const authorizeGrant = async (grant: ServiceClientGrant, label: string) => {
+      const pin: { identity: unknown[] | null } = { identity: null };
+      for (let attempt = 1; ; attempt += 1) {
+        try { return await authorizeAttempt(grant, pin, label); }
+        catch (error) {
+          if (!(error instanceof ManagedRevisionDrift)) throw error;
+          if (attempt >= MANAGED_PROOF_ATTEMPTS) throw new ManagedRevisionDrift(`exhausted ${MANAGED_PROOF_ATTEMPTS}`);
+        }
       }
     };
-    const authorizeGrant = async (grant: ServiceClientGrant) => {
+    const authorizeAttempt = async (grant: ServiceClientGrant, pin: { identity: unknown[] | null }, label: string) => {
       const current = currentGrant(grant);
       await requireProcessLifetime(current, 401);
       let proof: ManagedAuthorization | null = null;
@@ -507,6 +527,10 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
           participant = managedParticipant(current.lifetime, paths.home);
         } catch { throw new HttpFailure(401, 'Managed lifetime has no matching task, participant and launch record'); }
         if (!participant) throw new HttpFailure(401, 'Managed lifetime has no matching task, participant and launch record');
+        if (pin.identity && !isDeepStrictEqual(pin.identity, managedIdentity(participant))) {
+          throw new HttpFailure(409, 'Managed participant identity changed during authorization');
+        }
+        pin.identity ??= managedIdentity(participant);
         proof = { revision, participant };
       }
       await requireManagedNativeBinding(paths, current, { host, env: current.pollEnv });
@@ -519,16 +543,22 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         if (state === 'dead') throw new HttpFailure(401, 'Client lifetime is already expired or replaced');
         if (state !== 'alive') throw new HttpFailure(503, 'Managed lifetime observation is unavailable; retry after owner diagnostics');
       }
-      const authorize = () => authorizeCurrent(grant, proof);
-      authorize();
-      return authorize;
+      authorizeCurrent(grant, proof);
+      return () => {
+        try { authorizeCurrent(grant, proof); }
+        catch (error) {
+          if (error instanceof ManagedRevisionDrift) throw new ManagedRevisionDrift(`returned fence: ${label}`);
+          if (error instanceof ManagedIdentityDrift) throw new ManagedIdentityDrift(`returned fence: ${label}: participant identity`);
+          throw error;
+        }
+      };
     };
-    const authenticateClient = async (authorization: string | undefined) => {
+    const authenticateClient = async (authorization: string | undefined, label: string) => {
       if (!authorization?.startsWith('Bearer ')) throw new HttpFailure(401, 'Client authentication required');
       const bearer = authorization.slice(7);
       const grant = grants().find(candidate => tokenEquals(candidate.token, bearer));
       if (!grant || grant.runtime !== runtime) throw new HttpFailure(401, 'Client binding is absent or expired');
-      return { grant, authorize: await authorizeGrant(grant) };
+      return { grant, authorize: await authorizeGrant(grant, label) };
     };
     const readConnection = (id: string, grant: ServiceClientGrant, endpoint: Endpoint) => {
       if (!CLIENT_ID.test(id)) throw new HttpFailure(404, 'MCP session not found');
@@ -627,7 +657,9 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         return input.operation === 'warden-ensure' ? warden.ensure(input.task) : await warden.abort(input.task);
       }
       if (input.operation === 'stop') {
-        if (state().clients || activeWork() || requests > 1) throw new HttpFailure(409, 'Shared service still has live clients or active work');
+        const current = state(), work = current.clients ? null : activeWork();
+        if (current.clients || work || requests > 1) throw new HttpFailure(409,
+          `Shared service still has live clients or active work [clients: ${current.clients}, activeWork: ${work ?? 'notObserved'}, pendingObservations: ${pendingObservations.size}, requests: ${requests}]`);
         lifecycle.stop?.();
         return { stopped: true };
       }
@@ -829,7 +861,7 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         if (url.origin !== expected.origin) throw new HttpFailure(403, 'Foreign HTTP request target');
         const endpoint: Endpoint | null = url.pathname === '/mcp/bus' ? 'bus' : url.pathname === '/mcp/reviewer_files' ? 'reviewer_files' : null;
         if (!endpoint) throw new HttpFailure(404, 'Endpoint not found');
-        let { grant, authorize } = await authenticateClient(request.headers.authorization);
+        let { grant, authorize } = await authenticateClient(request.headers.authorization, 'authenticate');
         authorize();
         if (endpoint === 'reviewer_files' && !grant.files) throw new HttpFailure(403, 'This client has no reviewer file grant');
         const header = request.headers['mcp-session-id'];
@@ -858,14 +890,14 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         const message = jsonRpc(await bodyOf(request));
         if (message.method === 'tools/call' && grant.rootLaunch && grant.nativeBinding?.state === 'pending') {
           await finalizeStandaloneStartup(grant);
-          ({ grant, authorize } = await authenticateClient(request.headers.authorization));
+          ({ grant, authorize } = await authenticateClient(request.headers.authorization, 'finalize'));
           authorize();
         }
         if ((grant.rootLaunch || grant.bbRootNonce) && message.method === 'tools/call') {
           mutationNonce = grant.rootLaunch?.nonce ?? grant.bbRootNonce!;
           rootMutations.set(mutationNonce, (rootMutations.get(mutationNonce) ?? 0) + 1);
         }
-        const authorizeBody = await authorizeGrant(grant);
+        const authorizeBody = await authorizeGrant(grant, 'body');
         authorizeBody();
         requireNativeCall(grant, message);
         let record: ConnectionRecord;
@@ -893,8 +925,8 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
           if (message.method === undefined) result = null;
           else if (grant.nativeBinding && message.method !== 'tools/call') result = nativeDiscovery(host, endpoint).handle(message);
           else {
-            const context = await contextFor(grant, () => authorizeGrant(grant));
-            const authorizeDispatch = await authorizeGrant(grant);
+            const context = await contextFor(grant, () => authorizeGrant(grant, 'factory'));
+            const authorizeDispatch = await authorizeGrant(grant, 'dispatch');
             authorizeDispatch();
             if (closing) throw new HttpFailure(503, 'Shared service is stopping');
             contexts.set(grant.id, context);

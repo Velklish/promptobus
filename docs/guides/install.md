@@ -4,7 +4,9 @@ Two steps. The first puts the package on disk. The second writes project-level h
 
 ## 1. Package
 
-Node.js 20 or newer.
+Node.js 26 or newer. Version 0.32.1 raises the minimum from Node.js 20; Node.js 20 and 22 are no longer supported.
+
+Before installing or upgrading the package, writing configuration, or migrating existing state, run `node --version` and verify that its major version is at least 26. Select a supported Node runtime before continuing. This manual preflight precedes every configuration or migration step below.
 
 From a clone:
 
@@ -19,13 +21,13 @@ It prints `promptobus` and the version in `package.json`. No version is written 
 As a local library dependency, pin the GitHub release tag (the package is not published on the npm registry):
 
 ```bash
-npm install github:Velklish/promptobus#v0.32.0
+npm install github:Velklish/promptobus#v0.32.1
 ```
 
 For a global CLI on `PATH`, install the same release globally:
 
 ```bash
-npm install -g github:Velklish/promptobus#v0.32.0
+npm install -g github:Velklish/promptobus#v0.32.1
 promptobus --version
 ```
 

@@ -58,10 +58,10 @@ const text = (name) => readFileSync(path.join(here, name), 'utf8');
 const scenario = text('scenario.mjs');
 const wake = text('promptobus-cursor-wake.test.mjs');
 const stands = ['participant.mjs', 'harness-cursor.mjs', 'harness-codex.mjs'].map(text);
-check('a fetch-then-send pause polls for the delivery mark, and a busy hold stays a sleep',
+check('a fetch-then-send pause polls for the delivery mark, and a busy hold awaits explicit release',
   (scenario.match(/untilDelivered: TURN_PAUSE_MS/g) ?? []).length === 4
   && !scenario.includes('{ wait: TURN_PAUSE_MS }')
-  && wake.includes('{ wait: TURN_HOLD_MS }') && !wake.includes('untilDelivered')
+  && wake.includes('{ untilFile: RELEASE_FILE }') && !wake.includes('untilDelivered')
   && stands.every((src) => src.includes('action.untilDelivered') && src.includes('waitDelivered(')
     && src.includes('action.wait') && src.includes('setTimeout(r, action.wait)')),
-  'a fetch-then-send pause is a sleep, or a busy hold ends on the delivery stamp');
+  'a fetch-then-send pause is a sleep, or a busy hold does not await explicit release');

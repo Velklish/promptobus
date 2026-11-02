@@ -1,7 +1,7 @@
 import { check } from './check.mjs';
 import { randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -13,6 +13,10 @@ import { readDiscovery, readPrivate, runtimeIdentity, servicePaths, writePrivate
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 
 const root = realpathSync(makeSandbox('promptobus-standalone-root-'));
+const runnerExecutable = statSync(process.execPath);
+process.stdout.write(`  · fixture runner executable: ${JSON.stringify({ isFile: runnerExecutable.isFile(), mode: (runnerExecutable.mode & 0o777).toString(8) })}\n`);
+const nativeExecutable = path.join(root, 'native-node');
+copyFileSync(process.execPath, nativeExecutable); chmodSync(nativeExecutable, 0o700);
 const base = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-root-'));
 const bin = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url));
 const wrapper = fileURLToPath(new URL('../bin/promptobus-root', import.meta.url));
@@ -55,7 +59,13 @@ try {
   while (!readDiscovery(paths) && !ownerError && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
   if (ownerError) throw ownerError;
   if (!readDiscovery(paths)) throw new Error('Owned standalone fixture service did not start');
-  const input = { id: 'ordinary', harness: 'claude', nativeStore, executable: process.execPath };
+  const input = { id: 'ordinary', harness: 'claude', nativeStore, executable: nativeExecutable };
+  for (const mode of [0o720, 0o702]) {
+    chmodSync(nativeExecutable, mode);
+    check(`standalone approval refuses an owned executable with mode ${mode.toString(8)}`,
+      await refused(() => approveStandaloneRootProfile(host, { ...input, id: 'writable-' + mode.toString(8) }, env)));
+  }
+  chmodSync(nativeExecutable, 0o700);
   const descriptor = await approveStandaloneRootProfile(host, input, env);
   const ownerHome = path.join(root, 'claude-owner-home'), actorHome = path.join(root, 'claude-actor-home');
   const defaultStore = path.join(ownerHome, '.claude'), customStore = path.join(root, 'claude-custom-store');
@@ -79,7 +89,7 @@ process.stdout.write(JSON.stringify({home:process.env.HOME,selector:process.env.
     const profileFile = path.join(paths.directory, 'root-profile-' + account.id + '.json');
     const profileBytes = readFileSync(profileFile), profile = JSON.parse(profileBytes);
     const snapshotBytes = readFileSync(profile.ownerEnvironment);
-    const executed = await run('/bin/sh', [wrapper, '--profile', account.id, '--service-home', base, '--', process.execPath, selectorNative],
+    const executed = await run('/bin/sh', [wrapper, '--profile', account.id, '--service-home', base, '--', nativeExecutable, selectorNative],
       { HOME: actorHome, CLAUDE_CONFIG_DIR: actorStore });
     let selected = null;
     try { selected = JSON.parse(executed.out); } catch {}
@@ -119,11 +129,11 @@ process.stdout.write(JSON.stringify({home:process.env.HOME,selector:process.env.
   check('a profile cannot switch its approved native store', await refused(() =>
     approveStandaloneRootProfile(host, { ...input, nativeStore: root }, env)));
   const before = readdirSync(paths.directory, { recursive: true }).sort();
-  const preview = await standaloneRootExecPlan(host, input.id, { file: process.execPath, args: [native] }, { env, dryRun: true });
+  const preview = await standaloneRootExecPlan(host, input.id, { file: nativeExecutable, args: [native] }, { env, dryRun: true });
   check('standalone dry-run does not reserve a generation or write an exec plan', preview.nativeAuthorization === 'notRun'
     && JSON.stringify(before) === JSON.stringify(readdirSync(paths.directory, { recursive: true }).sort()));
   check('a non-parent shell cannot register another process as its launcher', await refused(() =>
-    standaloneRootExecPlan(host, input.id, { file: process.execPath, args: [native] }, { env, launcherPid: process.pid })));
+    standaloneRootExecPlan(host, input.id, { file: nativeExecutable, args: [native] }, { env, launcherPid: process.pid })));
   // Inject only the helper's parsed input; a malformed live grant file would also exercise the owner's independent sweep.
   writeFileSync(headerProbe, `const parse=JSON.parse,state=parse(process.env.PB_HEADER_STATE),client=process.env.PB_HEADER_CLIENT;
 JSON.parse=function(source,...args){const value=parse(source,...args);return value?.schemaVersion===1&&value.id===client&&typeof value.token==='string'&&value.nativeBinding?
@@ -231,7 +241,7 @@ const cleanHeaders=(extra={},route='default')=>new Promise(resolve=>{
  const retainedShell=headerCommand+'; header_status=$?; exit "$header_status"';
  const nested='/bin/sh -c '+shellQuote(retainedShell)+'; header_status=$?; exit "$header_status"';
  const foreignCode='import {spawn} from "node:child_process";const p=spawn("/bin/sh",["-c",'+JSON.stringify(headerCommand)+'],{stdio:"inherit"});p.once("close",code=>{process.exitCode=code??1});';
- const file=route==='direct'||route==='foreign-parent'?process.execPath:'/bin/sh';
+ const file=route==='direct'?${JSON.stringify(process.execPath)}:route==='foreign-parent'?process.execPath:'/bin/sh';
  const args=route==='direct'?helperArgs:route==='foreign-parent'?['--input-type=module','-e',foreignCode]:['-c',route==='shell'?retainedShell:route==='nested-shell'?nested:headerCommand];
  const child=spawn(file,args,{env:{...headerEnv,...extra},stdio:['ignore','pipe','pipe']});
  let out='',error='';child.stdout.on('data',bytes=>{out+=bytes});child.stderr.on('data',bytes=>{error+=bytes});
@@ -284,7 +294,7 @@ session=initialized.session;
 await rpc('notifications/initialized',{},true);
 const before=await rpc('tools/call',{name:'promptobus_status',arguments:{}});
 const headers=(state)=>new Promise(resolve=>{
- const child=spawn(process.execPath,[...(state===undefined?[]:['--import',${JSON.stringify(headerProbe)}]),bin,'service','headers','--standalone','--profile',profile,'--service-home',process.env.PROMPTOBUS_SERVICE_HOME],
+ const child=spawn(${JSON.stringify(process.execPath)},[...(state===undefined?[]:['--import',${JSON.stringify(headerProbe)}]),bin,'service','headers','--standalone','--profile',profile,'--service-home',process.env.PROMPTOBUS_SERVICE_HOME],
  {env:{...process.env,...(state===undefined?{}:{PB_HEADER_STATE:JSON.stringify(state),PB_HEADER_CLIENT:grant.id})},stdio:['ignore','ignore','pipe']});
  let error='';child.stderr.on('data',bytes=>{error+=bytes});child.once('close',code=>resolve({code,error}));
 });
@@ -294,7 +304,7 @@ for(const state of [['pending'],['bound'],{value:'pending'},null]){
  corruptHeaders.push({...await headers(state),retained:readFileSync(credential,'utf8')===originalCredential});
 }
 const hook=(role)=>new Promise(resolve=>{
- const child=spawn(process.execPath,['--import',${JSON.stringify(hookProbe)},bin,'guard','--standalone-profile',profile,'--service-home',process.env.PROMPTOBUS_SERVICE_HOME],{env:{...process.env,PB_HOOK_ROLE:role},stdio:['pipe','ignore','pipe']});
+ const child=spawn(${JSON.stringify(process.execPath)},['--import',${JSON.stringify(hookProbe)},bin,'guard','--standalone-profile',profile,'--service-home',process.env.PROMPTOBUS_SERVICE_HOME],{env:{...process.env,PB_HOOK_ROLE:role},stdio:['pipe','ignore','pipe']});
  let error='';child.stderr.on('data',bytes=>{error+=bytes});child.once('close',code=>resolve({code,error}));
  child.stdin.end(JSON.stringify({hook_event_name:'SessionStart',session_id:actualId,cwd:process.cwd()}));
 });
@@ -306,7 +316,7 @@ const race={observed:existsSync(observedFile)?JSON.parse(readFileSync(observedFi
  released:existsSync(process.env.PROMPTOBUS_ROOT_LAUNCH_FILE+'.released')?JSON.parse(readFileSync(process.env.PROMPTOBUS_ROOT_LAUNCH_FILE+'.released')):null,
  timedOut:existsSync(process.env.PROMPTOBUS_ROOT_LAUNCH_FILE+'.timed-out')};
 const cliPreflight=()=>new Promise(resolve=>{
- const child=spawn(process.execPath,[bin,'service','preflight','--standalone','--profile',profile,'--native-id',actualId,'--service-home',process.env.PROMPTOBUS_SERVICE_HOME],{stdio:['ignore','pipe','pipe']});
+ const child=spawn(${JSON.stringify(process.execPath)},[bin,'service','preflight','--standalone','--profile',profile,'--native-id',actualId,'--service-home',process.env.PROMPTOBUS_SERVICE_HOME],{stdio:['ignore','pipe','pipe']});
  let out='',error='';child.stdout.on('data',bytes=>{out+=bytes});child.stderr.on('data',bytes=>{error+=bytes});
  child.once('close',code=>resolve({code,out,error}));
 });
@@ -337,7 +347,7 @@ const result={pid:process.pid,cwd:process.cwd(),literal,before:before.status,aft
 writeFileSync(output,JSON.stringify(result));
 `);
   writeFileSync(unknownNative, `import{spawn}from'node:child_process';
-const child=spawn(process.execPath,[${JSON.stringify(bin)},'guard','--standalone-profile','ordinary','--service-home',process.env.PROMPTOBUS_SERVICE_HOME],{stdio:['pipe','ignore','pipe']});
+const child=spawn(${JSON.stringify(process.execPath)},[${JSON.stringify(bin)},'guard','--standalone-profile','ordinary','--service-home',process.env.PROMPTOBUS_SERVICE_HOME],{stdio:['pipe','ignore','pipe']});
 child.stderr.pipe(process.stderr);
 child.stdin.end(JSON.stringify({hook_event_name:'SessionStart',session_id:${JSON.stringify(unknownId)},cwd:process.cwd()}));
 process.exitCode=await new Promise(resolve=>child.once('close',code=>resolve(code??1)));
@@ -349,7 +359,7 @@ const file=path.join(process.argv[2],name),value=JSON.parse(readFileSync(file));
 if(value.process.pid===Number(process.argv[3]))process.stdout.write(file);}\n`);
   const premature = path.join(root, 'before-exec.sh');
   writeFileSync(premature, `#!/bin/sh
-plan=$(exec "$PB_NODE" "$PB_BIN" service exec-plan --launcher-pid "$$" --profile ordinary --service-home "$PB_BASE" -- "$PB_NODE" "$PB_NATIVE") || exit $?
+plan=$(exec "$PB_NODE" "$PB_BIN" service exec-plan --launcher-pid "$$" --profile ordinary --service-home "$PB_BASE" -- "$PB_NATIVE_NODE" "$PB_NATIVE") || exit $?
 reference=$("$PB_NODE" "$PB_LOOKUP" "$PB_DIRECTORY" "$$") || exit $?
 PROMPTOBUS_ROOT_LAUNCH_FILE="$reference" "$PB_NODE" "$PB_BIN" guard --standalone-profile ordinary --service-home "$PB_BASE" <<'EVENT'
 {"hook_event_name":"SessionStart","session_id":"premature-before-exec"}
@@ -373,18 +383,18 @@ process.stdout.write(JSON.stringify({exact,neighbor,owned}));
   check('unknown-process fixture faults only the exact parent proc stat through the real async read binding',
     observerInput.status === 0 && observerInput.stdout === JSON.stringify({ exact: true, neighbor: true, owned: true }), observerInput.stderr || observerInput.stdout);
 
-  const beforeExec = await run('/bin/sh', [premature], { PB_NODE: process.execPath, PB_BIN: bin, PB_BASE: base,
+  const beforeExec = await run('/bin/sh', [premature], { PB_NODE: process.execPath, PB_NATIVE_NODE: nativeExecutable, PB_BIN: bin, PB_BASE: base,
     PB_NATIVE: native, PB_LOOKUP: lookup, PB_DIRECTORY: paths.directory });
   check('a hook from the registered shell before native exec cannot realize or create an actor', beforeExec.code !== 0
     && factories.length === 0 && readPrivate(path.join(paths.directory, 'native-admission.json')).bindings.length === 0
     && readdirSync(paths.directory).filter(name => /^standalone-launch-.*\.json$/.test(name)).every(name =>
       readPrivate(path.join(paths.directory, name)).nativeId === null), beforeExec.err);
-  const unknownNativeResult = await run('/bin/sh', [wrapper, '--profile', input.id, '--service-home', base, '--', process.execPath, unknownNative]);
+  const unknownNativeResult = await run('/bin/sh', [wrapper, '--profile', input.id, '--service-home', base, '--', nativeExecutable, unknownNative]);
   check('an actual new-process hook identity alone cannot create the first native binding', unknownNativeResult.code !== 0
     && /creation proof is unavailable/.test(unknownNativeResult.err) && factories.length === 0
     && readPrivate(path.join(paths.directory, 'native-admission.json')).bindings.length === 0, unknownNativeResult.err);
   // The remaining HTTP/recovery cases seed a known binding, not a fresh-native proof.
-  const executed = await run('/bin/sh', [wrapper, '--profile', input.id, '--service-home', base, '--', process.execPath,
+  const executed = await run('/bin/sh', [wrapper, '--profile', input.id, '--service-home', base, '--', nativeExecutable,
     native, output, bin, input.id, actualId, 'literal $(touch NEVER)', ''], {
     CLAUDE_CODE_SESSION_ID: 'inherited-hint', PROMPTOBUS_CLIENT_TOKEN: 'inherited-token',
   });
@@ -417,7 +427,7 @@ process.stdout.write(JSON.stringify({exact,neighbor,owned}));
     && result.corruptHeaders.every(receipt => receipt.code !== 0 && receipt.retained && /absent or revoked/.test(receipt.error)),
     JSON.stringify(result.corruptHeaders));
   check('concurrent hooks cross an actual native-image observation and owned publication or lock boundary',
-    result.race?.observed?.nativePid === result.pid && result.race.observed.image === realpathSync(process.execPath)
+    result.race?.observed?.nativePid === result.pid && result.race.observed.image === realpathSync(nativeExecutable)
     && result.race.timedOut === false && ['lock-contention','launch-published'].includes(result.race.released?.kind), JSON.stringify(result.race));
   check('same-generation native observation starts only after its existing hook lock is held',
     result.race?.released?.kind === 'lock-contention', JSON.stringify(result.race));
@@ -438,7 +448,7 @@ process.stdout.write(JSON.stringify({exact,neighbor,owned}));
 const denied=await rpc('tools/call',{name:'promptobus_status',arguments:{}});
 writeFileSync(output,JSON.stringify({hooks,race,clientId:retained.clientId,oldTokenStatus:denied.status,nativeId:retained.nativeId,revoked:retained.revoked,identityInvalid:retained.identityInvalid,sweep:existsSync(process.env.PROMPTOBUS_ROOT_LAUNCH_FILE+'.sweep')?JSON.parse(readFileSync(process.env.PROMPTOBUS_ROOT_LAUNCH_FILE+'.sweep')):null}));
 `);
-  const conflictRun = await run('/bin/sh', [wrapper, '--profile', input.id, '--service-home', base, '--', process.execPath,
+  const conflictRun = await run('/bin/sh', [wrapper, '--profile', input.id, '--service-home', base, '--', nativeExecutable,
     conflictingNative, conflictOutput, bin, input.id, conflictId]);
   const conflict = existsSync(conflictOutput) ? JSON.parse(readFileSync(conflictOutput)) : null;
   check('a concurrent different native hook identity refuses and revokes without replacing the first binding',
@@ -484,7 +494,7 @@ const discovery=JSON.parse(readFileSync(directory+'service.json'));
 const transcript=${JSON.stringify(deferredTranscript)},nativeId=${JSON.stringify(deferredId)},output=${JSON.stringify(deferredOutput)},mode=${JSON.stringify(mode)};
 if(mode==='symlink'){const link=transcript.replace(/[^/]+$/,'').slice(0,-1);mkdirSync(link.replace(/[^/]+$/,''),{recursive:true});symlinkSync(${JSON.stringify(path.join(root, 'foreign-future'))},link);}
 const hook=await new Promise(resolve=>{
- const child=spawn(process.execPath,[${JSON.stringify(bin)},'guard','--standalone-profile','ordinary','--service-home',process.env.PROMPTOBUS_SERVICE_HOME],{stdio:['pipe','ignore','pipe']});
+ const child=spawn(${JSON.stringify(process.execPath)},[${JSON.stringify(bin)},'guard','--standalone-profile','ordinary','--service-home',process.env.PROMPTOBUS_SERVICE_HOME],{stdio:['pipe','ignore','pipe']});
  let error='';child.stderr.on('data',bytes=>{error+=bytes});child.once('close',code=>resolve({code,error}));
  child.stdin.end(JSON.stringify({hook_event_name:'SessionStart',source:'startup',session_id:nativeId,transcript_path:transcript,cwd:process.cwd()}));
 });
@@ -518,7 +528,7 @@ if(hook.code===0){
 writeFileSync(output,JSON.stringify(result));
 })().catch(error=>{process.stderr.write(error.stack);process.exitCode=1});`;
     const deferredFactories = factories.length, deferredLedger = readPrivate(path.join(paths.directory, 'native-admission.json')).bindings.length;
-    const deferredRun = run('/bin/sh', [wrapper, '--profile', input.id, '--service-home', base, '--', process.execPath], {}, deferredNative);
+    const deferredRun = run('/bin/sh', [wrapper, '--profile', input.id, '--service-home', base, '--', nativeExecutable], {}, deferredNative);
     const deferredDeadline = Date.now() + 5000;
     while (!existsSync(deferredOutput + '.ready') && !existsSync(deferredOutput) && Date.now() < deferredDeadline) {
       await new Promise(resolve => setTimeout(resolve, 5));
@@ -577,7 +587,7 @@ writeFileSync(output,JSON.stringify(result));
     && symlinked.result?.hook.code !== 0 && !symlinked.candidate && /not owned native state/.test(symlinked.result.hook.error)
     && readPrivate(symlinked.result.launchFile).revoked === true && !readPrivate(symlinked.result.launchFile).startupCandidate
     && factories.length === symlinked.deferredFactories, symlinked.evidence);
-  await approveStandaloneRootProfile(host, { id: 'codex-exec', harness: 'codex', nativeStore, executable: process.execPath }, env);
+  await approveStandaloneRootProfile(host, { id: 'codex-exec', harness: 'codex', nativeStore, executable: nativeExecutable }, env);
   const execEntry = path.join(root, 'exec'), execOutput = path.join(root, 'codex-exec-result.json');
   writeFileSync(execEntry, `(async()=>{
 const {spawn}=await import('node:child_process');
@@ -588,7 +598,7 @@ const transcript=${JSON.stringify(nativeStore)}+'/sessions/'+nativeId+'.jsonl';
 mkdirSync(${JSON.stringify(nativeStore)}+'/sessions',{recursive:true});
 if(!existsSync(transcript))writeFileSync(transcript,JSON.stringify({type:'session_meta',payload:{id:nativeId,source:process.env.PB_EXEC_SOURCE}})+'\\n',{mode:0o600});
 const hook=await new Promise(resolve=>{
- const child=spawn(process.execPath,[${JSON.stringify(bin)},'guard','--standalone-profile','codex-exec','--service-home',process.env.PROMPTOBUS_SERVICE_HOME],{stdio:['pipe','ignore','pipe']});
+ const child=spawn(${JSON.stringify(process.execPath)},[${JSON.stringify(bin)},'guard','--standalone-profile','codex-exec','--service-home',process.env.PROMPTOBUS_SERVICE_HOME],{stdio:['pipe','ignore','pipe']});
  let error='';child.stderr.on('data',bytes=>{error+=bytes});child.once('close',code=>resolve({code,error}));
  child.stdin.end(JSON.stringify({hook_event_name:'SessionStart',session_id:nativeId,transcript_path:transcript,cwd:process.cwd()}));
 });
@@ -613,7 +623,7 @@ writeFileSync(${JSON.stringify(execOutput)},JSON.stringify(result));
     if (existsSync(execOutput)) unlinkSync(execOutput);
     const count = readPrivate(path.join(paths.directory, 'native-admission.json')).bindings.length, actorCount = factories.length;
     const args = resume ? ['exec', 'resume', nativeId] : ['exec', '--', 'owned frozen fixture read'];
-    const exit = await run('/bin/sh', [wrapper, '--profile', 'codex-exec', '--service-home', base, '--', process.execPath, ...args],
+    const exit = await run('/bin/sh', [wrapper, '--profile', 'codex-exec', '--service-home', base, '--', nativeExecutable, ...args],
       { PB_EXEC_SOURCE: source, PB_EXEC_NATIVE_ID: nativeId });
     const result = existsSync(execOutput) ? JSON.parse(readFileSync(execOutput)) : null;
     return { nativeId, count, actorCount, exit, result, evidence: JSON.stringify({ result, error: exit.err }) };

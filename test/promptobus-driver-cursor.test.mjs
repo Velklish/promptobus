@@ -1380,7 +1380,7 @@ check('step 3: promptobus status shows Cursor session liveness in the words of i
 
 const reviewed = cli([ 'review', wt, '--task', TASK, '--harness', 'cursor'], { cwd: ws, env });
 check('step 4: promptobus review --harness cursor lifted the reviewer',
-  reviewed.status === 0 && /reviewer reviewer:cur started/.test(reviewed.out), reviewed.out.slice(-500));
+  reviewed.status === 0 && /reviewer reviewer:cur started/.test(reviewed.out), reviewed.out);
 
 const rp = store.participantOf(store.readTask(home, TASK), REVIEWER);
 check('step 4: the reviewer record carries the same harness and the denied tools are declared',

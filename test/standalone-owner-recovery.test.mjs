@@ -1,7 +1,7 @@
 import { check } from './check.mjs';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -12,6 +12,8 @@ import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 
 // Synthetic native image and owned service processes prove crash behavior, not Claude compatibility.
 const root = realpathSync(makeSandbox('promptobus-owner-recovery-'));
+const nativeExecutable = path.join(root, 'native-node');
+copyFileSync(process.execPath, nativeExecutable); chmodSync(nativeExecutable, 0o700);
 const base = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-recovery-'));
 const bin = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url));
 const wrapper = fileURLToPath(new URL('../bin/promptobus-root', import.meta.url));
@@ -86,7 +88,7 @@ import{readPrivate,writePrivate}from${JSON.stringify(fileURLToPath(new URL('../l
 const launch=readPrivate(process.env.PROMPTOBUS_ROOT_LAUNCH_FILE),file=${JSON.stringify(path.join(paths.directory, 'native-admission.json'))},ledger=readPrivate(file);
 writePrivate(file,{...ledger,bindings:[...ledger.bindings,{harness:'claude',nativeStore:${JSON.stringify(nativeStore)},nativeId:${JSON.stringify(nativeId)},
 source:'standalone',runtime:launch.runtime,ownerKey:launch.nonce,process:launch.process,nonce:launch.nonce,profile:'recovery',phase:'pending'}]});
-const hook=spawn(process.execPath,[${JSON.stringify(bin)},'guard','--standalone-profile','recovery','--service-home',process.env.PROMPTOBUS_SERVICE_HOME],{stdio:['pipe','ignore','inherit']});
+const hook=spawn(${JSON.stringify(process.execPath)},[${JSON.stringify(bin)},'guard','--standalone-profile','recovery','--service-home',process.env.PROMPTOBUS_SERVICE_HOME],{stdio:['pipe','ignore','inherit']});
 hook.stdin.end(JSON.stringify({hook_event_name:'SessionStart',session_id:${JSON.stringify(nativeId)},cwd:process.cwd()}));
 const code=await new Promise(resolve=>hook.once('close',resolve));if(code!==0)process.exit(code??1);
 writeFileSync(${JSON.stringify(ready)},'ready',{mode:0o600});setInterval(()=>{},1000);
@@ -96,8 +98,8 @@ for (const file of [entry, native]) {
 }
 try {
   await startOwner();
-  await approveStandaloneRootProfile(host, { id: 'recovery', harness: 'claude', nativeStore, executable: process.execPath }, env);
-  nativeChild = start('/bin/sh', [wrapper, '--profile', 'recovery', '--service-home', base, '--', process.execPath, native]);
+  await approveStandaloneRootProfile(host, { id: 'recovery', harness: 'claude', nativeStore, executable: nativeExecutable }, env);
+  nativeChild = start('/bin/sh', [wrapper, '--profile', 'recovery', '--service-home', base, '--', nativeExecutable, native]);
   await until(() => existsSync(ready) || nativeChild.exitCode !== null);
   if (!existsSync(ready)) throw new Error(`Owned native fixture exited: ${nativeChild.failure}`);
   const original = currentLaunch(), processIdentity = original.process;

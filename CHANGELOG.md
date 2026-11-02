@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.32.1] — 2026-11-02
+
+### Changed
+
+- **Breaking runtime requirement:** raise the minimum Node.js version from 20 to 26 for Promptobus and its optional BB integration. Node.js 20 and 22 are no longer supported. Check `node --version` and select Node.js 26 or newer before installing or upgrading the package, changing configuration, or migrating state. CI runs Node 26 on Ubuntu; macOS validation runs locally for this release.
+
+### Fixed
+
+- Compare Darwin native database descriptors by exact device and inode, without asking `lsof` to resolve file names through the mount table. Keep the two-second observation deadline, process-lifetime and path-replacement checks, and refusal of failed or timed-out output.
+- Read the Cursor startup record and participant together under their shared task lock, so an in-progress hook publication cannot look like a replacement generation. Process and database proofs remain outside the lock, followed by the unchanged final ownership check.
+- Refresh managed HTTP authorization at most three times when the same participant's session-record revision changes during observation. Every attempt rechecks the unchanged grant, native launch, process lifetime and binding, and requires its own stable live observation before dispatch. Persistent drift, identity changes and dead or unavailable observations still refuse; tool effects are never retried.
+- Preserve a completed death observation for the same process PID and birth so service ticks cannot repeatedly expire it before releasing the client's protocol resources. Alive, unknown and managed observations keep their existing freshness checks.
+- Give standalone test fixtures their own private native executable, isolate mocked cross-platform execution traces, publish POSIX stub launchers through atomic replacement and wait for the owned holder to settle before failed-launch fixture cleanup.
+
 ## [0.32.0] — 2026-11-02
 
 ### Added

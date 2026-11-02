@@ -13,8 +13,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        node: [20, 22]
+        os: [ubuntu-latest]
+        node: [26]
 
     steps:
       - uses: actions/checkout@v4

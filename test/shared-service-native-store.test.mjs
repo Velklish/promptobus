@@ -1,7 +1,7 @@
 import { check } from './check.mjs';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -14,6 +14,8 @@ import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 
 // Real owned exec/hook/client paths with private known-binding seeds, not native genesis or Claude compatibility.
 const root = realpathSync(makeSandbox('promptobus-service-stores-'));
+const nativeExecutable = path.join(root, 'native-node');
+copyFileSync(process.execPath, nativeExecutable); chmodSync(nativeExecutable, 0o700);
 const base = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-service-stores-'));
 const bin = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url)), wrapper = fileURLToPath(new URL('../bin/promptobus-root', import.meta.url));
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version;
@@ -33,14 +35,14 @@ try{const file=directory+'/native-admission.json',ledger=readPrivate(file);write
 harness:'claude',nativeStore:approved.nativeStore,nativeId:id,source:'standalone',runtime:launch.runtime,ownerKey:launch.nonce,
 process:launch.process,nonce:launch.nonce,profile,phase:'pending'}]});}finally{release();}
 const transcript=(transcriptStore??approved.nativeStore)+'/'+id+'.jsonl';writeFileSync(transcript,JSON.stringify({sessionId:id})+'\\n',{mode:0o600});
-const hook=spawn(process.execPath,[bin,'guard','--standalone-profile',profile,'--service-home',process.env.PROMPTOBUS_SERVICE_HOME],{stdio:['pipe','ignore','pipe']});
+const hook=spawn(${JSON.stringify(process.execPath)},[bin,'guard','--standalone-profile',profile,'--service-home',process.env.PROMPTOBUS_SERVICE_HOME],{stdio:['pipe','ignore','pipe']});
 let error='';hook.stderr.on('data',bytes=>{error+=bytes});hook.stdin.end(JSON.stringify({hook_event_name:'SessionStart',source:'startup',session_id:id,cwd:process.cwd(),transcript_path:transcript}));
 const code=await new Promise(resolve=>hook.once('close',resolve));writeFileSync(output,JSON.stringify({code,error}),{mode:0o600});setInterval(()=>{},1000);
 `);
 const until = async test => { const deadline = Date.now() + 5000; while (!test()) { if (Date.now() >= deadline) throw new Error('Owned native-store fixture did not reach its hook receipt'); await new Promise(resolve => setTimeout(resolve, 10)); } };
 const launch = async (profile, id, transcriptStore) => {
   const output = path.join(root, `result-${randomUUID()}.json`);
-  const child = spawn('/bin/sh', [wrapper, '--profile', profile, '--service-home', base, '--', process.execPath, native, output, bin, profile, id, ...(transcriptStore ? [transcriptStore] : [])],
+  const child = spawn('/bin/sh', [wrapper, '--profile', profile, '--service-home', base, '--', nativeExecutable, native, output, bin, profile, id, ...(transcriptStore ? [transcriptStore] : [])],
     { cwd: root, env, stdio: ['ignore', 'ignore', 'pipe'] });
   child.failure = ''; child.stderr.on('data', bytes => { child.failure += bytes; }); child.closed = new Promise(resolve => child.once('close', resolve)); children.push(child);
   await until(() => existsSync(output) || child.exitCode !== null);
@@ -56,7 +58,7 @@ try {
   await until(() => readDiscovery(paths) || ownerError); if (ownerError) throw ownerError;
   for (const profile of ['store-a', 'store-b', 'store-c']) {
     const store = path.join(root, profile); mkdirSync(store);
-    await approveStandaloneRootProfile(host, { id: profile, harness: 'claude', nativeStore: store, executable: process.execPath }, env);
+    await approveStandaloneRootProfile(host, { id: profile, harness: 'claude', nativeStore: store, executable: nativeExecutable }, env);
   }
   for (const order of [['store-a', 'store-b'], ['store-b', 'store-a']]) {
     const id = randomUUID(), first = await launch(order[0], id), second = await launch(order[1], id);

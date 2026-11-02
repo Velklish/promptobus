@@ -142,8 +142,6 @@ export function wouldResolve(cmd: string, env: NodeJS.ProcessEnv, cwd = process.
 
 const DARWIN_IMAGE_SHA256 = '0eb8dd0083cd4f8eb379f99f891ccb87783fc4fd412ab412ca8da323d61778a1';
 const kernelPid = (value: string | undefined) => typeof value === 'string' && /^[1-9]\d{0,9}$/.test(value) && Number(value) <= 0x7fffffff;
-const kernelFile = (value: string | undefined) => typeof value === 'string' && Buffer.byteLength(value) <= 4096
-  && value !== '/' && path.posix.isAbsolute(value) && path.posix.normalize(value) === value && !value.endsWith('/') && !/[\x00-\x1f\x7f-\x9f\u2028\u2029]/.test(value);
 
 function kernelReadMetadata(cmd: string, args: readonly string[], resolved: string | null) {
   if (process.platform !== 'darwin' || cmd !== resolved || !Array.isArray(args)) return null;
@@ -158,8 +156,8 @@ function kernelReadMetadata(cmd: string, args: readonly string[], resolved: stri
   }
   if (cmd === '/bin/ps' && args.length === 6 && args[0] === '-p' && kernelPid(args[1]) && args[2] === '-o' && args[3] === 'stat='
     && args[4] === '-o' && args[5] === 'lstart=') return { ...base, shape: 'process-lifetime', pid: args[1] };
-  if (cmd === '/usr/sbin/lsof' && args.length === 5 && args[0] === '-a' && args[1] === '-p' && kernelPid(args[2])
-    && args[3] === '-Fpn' && kernelFile(args[4])) return { ...base, shape: 'process-file', pid: args[2], file: args[4] };
+  if (cmd === '/usr/sbin/lsof' && args.length === 4 && args[0] === '-b' && args[1] === '-p' && kernelPid(args[2])
+    && args[3] === '-FpiD') return { ...base, shape: 'process-files', pid: args[2] };
   return null;
 }
 

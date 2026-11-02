@@ -461,8 +461,13 @@ async function managedPublication(paths: ServicePaths, grant: Pick<ServiceClient
         const header = Buffer.alloc(16);
         if (readSync(fd, header, 0, 16, 0) !== 16 || header.toString('binary') !== 'SQLite format 3\0') throw new Error('Managed Cursor database has no initialized SQLite storage');
       } finally { closeSync(fd); }
-      if (observeCurrentProcess && (await processExecutable(process) !== command.executable.file || !await processHasOpenFile(process, expected))) {
-        throw new Error('Managed Cursor native process does not currently hold its durable database');
+      if (observeCurrentProcess) {
+        if (await processExecutable(process) !== command.executable.file) {
+          throw new Error('Managed Cursor native process does not currently hold its durable database [stage: process executable]');
+        }
+        if (!await processHasOpenFile(process, expected)) {
+          throw new Error('Managed Cursor native process does not currently hold its durable database [stage: open database]');
+        }
       }
     } else if (grant.nativeBinding.kind === 'opencode') {
       const evidence = record.nativeAdmissionEvidence, command = record.nativeCommand;
