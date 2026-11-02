@@ -1,0 +1,54 @@
+import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
+import { chmodSync, closeSync, copyFileSync, openSync, statSync } from 'node:fs';
+import path from 'node:path';
+import { check } from './check.mjs';
+import { makeSandbox, stubCommand } from './sandbox.mjs';
+
+// A running native image holds the executable inode deterministically on Linux.
+// A shell launcher holds it only during exec, so racing shell starts would not be a proof.
+if (process.platform === 'win32') {
+  console.log('POSIX launcher replacement is not exercised on Windows');
+} else {
+  const root = makeSandbox('promptobus-stub-replacement-');
+  const launcher = path.join(root, 'claude');
+  copyFileSync(process.execPath, launcher);
+  chmodSync(launcher, 0o700);
+  const original = statSync(launcher);
+  const child = spawn(launcher, ['--input-type=module', '-e', `
+process.on('message', message => {
+  if (message === 'ping') process.send({ kind: 'pong', pid: process.pid });
+  if (message === 'release') process.disconnect();
+});
+process.send({ kind: 'ready', pid: process.pid });
+`], { stdio: ['ignore', 'ignore', 'inherit', 'ipc'], timeout: 10000 });
+  const exited = once(child, 'exit');
+  try {
+    const [ready] = await once(child, 'message', { signal: AbortSignal.timeout(5000) });
+    check('replacement fixture executes its owned Node copy', ready.kind === 'ready' && ready.pid === child.pid);
+    if (process.platform === 'linux') {
+      let refusal = null;
+      try { closeSync(openSync(launcher, 'r+')); } catch (error) { refusal = error.code; }
+      check('Linux refuses writing the retained executable inode with ETXTBSY', refusal === 'ETXTBSY', String(refusal));
+    }
+
+    stubCommand(root, 'claude', `process.stdout.write(JSON.stringify({answer:'replacement',args:process.argv.slice(2)}));`);
+    const replacement = statSync(launcher);
+    check('stubCommand publishes a different executable inode',
+      original.dev !== replacement.dev || original.ino !== replacement.ino);
+    check('replacement launcher retains executable mode', (replacement.mode & 0o777) === 0o755);
+    const called = spawnSync(launcher, ['argument with spaces', '--fixture'], { encoding: 'utf8', timeout: 5000 });
+    check('replacement launcher executes the new body and preserves argv', called.status === 0
+      && called.stdout === JSON.stringify({ answer: 'replacement', args: ['argument with spaces', '--fixture'] }),
+    JSON.stringify({ status: called.status, stdout: called.stdout, stderr: called.stderr, error: called.error?.message }));
+
+    const response = once(child, 'message', { signal: AbortSignal.timeout(5000) });
+    child.send('ping');
+    const [pong] = await response;
+    check('the old executable child still responds after launcher replacement', pong.kind === 'pong' && pong.pid === child.pid);
+  } finally {
+    if (child.connected) child.send('release');
+    const [code, signal] = await exited;
+    check('the exact owned child exits gracefully', code === 0 && signal === null, JSON.stringify({ code, signal }));
+  }
+}
