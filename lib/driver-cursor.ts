@@ -754,8 +754,9 @@ async function spawn(plan: LibLaunchPlan, {
         nativeCreationEvidence: creatorEvidence,
         nativeAdmissionUnknown: { harness: 'cursor', nativeId: id, reason: 'active pane/hook/durable native database proof is pending' } }, creatorVersion);
       acceptSession = async observed => {
-        const version = recordVersion(recordFile), current = readSession(ref, env);
-        const owner = taskExists(runtimeHome, runtimeTask) ? participantOf(readTask(runtimeHome, runtimeTask), runtimeAddress) : null;
+        // The hook publishes the record and then the participant under the task lock; one snapshot sees both or neither.
+        const { version, current, owner } = locked(() => ({ version: recordVersion(recordFile), current: readSession(ref, env),
+          owner: taskExists(runtimeHome, runtimeTask) ? participantOf(readTask(runtimeHome, runtimeTask), runtimeAddress) : null }));
         if (observed.chatId !== nativeId || !observed.panePid || !current || !recordOf(current.nativeStartEvidence)
           || current.nativeStartEvidence.harness !== 'cursor' || current.nativeStartEvidence.nativeId !== nativeId) return false;
         if (!isDeepStrictEqual(current.nativeCommand, persistedCommand) || !isDeepStrictEqual(current.nativeCreationEvidence, creatorEvidence)) {
