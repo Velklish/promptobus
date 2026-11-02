@@ -630,3 +630,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-416.3"></a>`PB-416.3-shared-warden-lifecycle` · 2026-11-01 · completed · — · Run task warden state machines inside the shared service
 - <a id="pb-416.4"></a>`PB-416.4-shared-service-launchers-configs` · 2026-11-02 · completed · — · Launch harness clients through authenticated shared HTTP configurations
 - <a id="pb-416.14"></a>`PB-416.14-linux-ci-fixture-ownership` · 2026-11-02 · completed · — · Require Node 26 and preserve fresh managed startup authorization
+- <a id="pb-416.15"></a>`PB-416.15-codex-exec-control-argv` · 2026-11-03 · completed · — · Admit approved Codex exec control flags as standalone NEW and refuse unsupported NEW before exec

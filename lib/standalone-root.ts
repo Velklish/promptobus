@@ -15,7 +15,7 @@ import { ensureWorkspaceService, realizeServiceClient, registerServiceClient, re
 import { createOwnerEnvironment, readOwnerEnvironment } from './service-launch.js';
 import { acquireServiceLock, prepareServicePaths, processStateAsync, readPrivate, recordOf, recordVersion, sameRecordVersion,
   runtimeIdentity, servicePaths, writePrivate } from './service-state.js';
-import { claudeStartupTranscript, pendingStandaloneExpired, readStandaloneLaunch, readStandaloneProfile, requireStandaloneRoot, scopedRootProfile,
+import { claudeStartupTranscript, codexStandaloneNewExec, pendingStandaloneExpired, readStandaloneLaunch, readStandaloneProfile, requireStandaloneRoot, scopedRootProfile,
   standaloneProfileFile, standaloneReference } from './standalone-root-state.js';
 import type { ProcessIdentity } from './service-state.js';
 import type { StandaloneRootHarness, StandaloneRootLaunch, StandaloneRootProfile, StandaloneRootReference } from './standalone-root-state.js';
@@ -137,6 +137,10 @@ export async function standaloneRootExecPlan(host: PromptobusHost, id: string, c
     || (!['exec', '--no-daemon'].includes(beforePrompt[0] ?? ''))
     || (beforePrompt[0] === '--no-daemon' && ['app-server', 'agents', 'mcp-server'].includes(beforePrompt[1] ?? '')))) {
     throw new Error('This standalone Codex profile requires explicit --no-daemon for TUI/resume or in-process exec; shared daemon and remote routes have no owned launch proof');
+  }
+  if (profile.harness === 'codex' && command.args[0] === 'exec' && !beforePrompt.some(arg => arg === 'resume' || arg === 'fork')
+    && !codexStandaloneNewExec(command.args, realpathSync(cwd))) {
+    throw new Error('This standalone Codex exec command is not a supported NEW form or resume selection; it would start an unbindable native session');
   }
   if (profile.harness === 'claude' && beforePrompt.some(arg => ['--bg', '--background', '--cloud'].includes(arg))) {
     throw new Error('This standalone Claude profile requires a process-owned foreground session; background/cloud native lifetime needs separate proof');
