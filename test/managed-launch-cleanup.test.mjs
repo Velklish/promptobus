@@ -7,11 +7,11 @@ import { createStandaloneHost } from '../dist/host-index.js';
 import { cursorDriver } from '../lib/driver-cursor.js';
 import { codexDriver, participantCodexHome } from '../lib/driver-codex.js';
 import { lockFile as cursorLockFile, sessionFile as cursorFile } from '../lib/cursor-persist.js';
-import { readSession, reapHolder, sessionFile as codexFile, writeSession } from '../lib/codex-session.js';
+import { holderAsk, readSession, reapHolder, sessionFile as codexFile, STOP_TIMEOUT_MS, writeSession } from '../lib/codex-session.js';
 import { lead } from '../lib/lead.js';
 import { report } from '../lib/report.js';
 import { finalizeManagedServiceLaunch, revokeFailedManagedLaunch } from '../lib/service-launch.js';
-import { prepareServicePaths, requireProcess, runtimeIdentity, servicePaths, writePrivate } from '../lib/service-state.js';
+import { prepareServicePaths, processStateAsync, requireProcess, runtimeIdentity, servicePaths, writePrivate } from '../lib/service-state.js';
 import { createTask, participantOf, participantRecord, readTask, upsertParticipant } from '../lib/store.js';
 import { createHarnessRegistry } from '../lib/harness-registry.js';
 import { installHarness } from './harness-codex.mjs';
@@ -72,10 +72,36 @@ async function failedLaunch(driver, stage) {
       JSON.stringify({ message: callerError?.message, revokes }));
   } finally {
     process.exit = previousExit;
-    if (driver.id === 'codex' && readSession(ref, env)?.holderPid) await reapHolder(ref, env);
-    rmSync(record, { force: true });
-    if (stage === 'cleanup') rmSync(cursorLockFile(ref, env), { recursive: true, force: true });
-    if (codexHome) rmSync(codexHome, { recursive: true, force: true });
+    const held = driver.id === 'codex' ? readSession(ref, env) : null;
+    let cleanupFailure;
+    if (held?.holderPid) {
+      const deadline = Date.now() + STOP_TIMEOUT_MS;
+      try {
+        if (held.holderProcess?.pid !== held.holderPid) throw new Error('Fixture holder lifetime is unknown');
+        let settled = false;
+        while (Date.now() < deadline) {
+          const current = readSession(ref, env);
+          if (current?.launchId !== held.launchId || current.holderPid !== held.holderPid
+            || current.holderProcess?.birth !== held.holderProcess.birth) throw new Error('Fixture holder generation changed during cleanup');
+          if (await processStateAsync(held.holderProcess) === 'dead') { settled = true; break; }
+          if (current.rpcSocket) {
+            try {
+              await holderAsk(ref, 'status', {}, env, Math.max(1, Math.min(200, deadline - Date.now())));
+              settled = true; break;
+            } catch { /* A published socket may not yet be listening. */ }
+          }
+          await new Promise(resolve => setTimeout(resolve, 25));
+        }
+        if (!settled || Date.now() >= deadline) throw new Error('Fixture holder neither exited nor published a ready RPC within cleanup allowance');
+        await reapHolder(ref, env, Math.max(1, deadline - Date.now()));
+      } catch (error) { cleanupFailure = error; }
+      check(`codex ${stage} cleanup confirms the owned holder exit before removing retained resources`, !cleanupFailure, cleanupFailure?.stack);
+    }
+    if (!cleanupFailure) {
+      rmSync(record, { force: true });
+      if (stage === 'cleanup') rmSync(cursorLockFile(ref, env), { recursive: true, force: true });
+      if (codexHome) rmSync(codexHome, { recursive: true, force: true });
+    }
   }
 }
 
