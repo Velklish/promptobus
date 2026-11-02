@@ -54,17 +54,20 @@ console.log('[]');}
   Worker.prototype.emit = function(event, ...args) {
     const gate = replyGate;
     if (gate && event === 'message' && args[0]?.kind === 'observed') {
-      gate.held.push(observing.get(args[0].id) ?? '');
-      gate.promise.then(() => emit.call(this, event, gate.fail
-        ? { ...args[0], snapshot: null, error: 'owned observation delivery refused' } : args[0]));
+      const participants = observing.get(args[0].id) ?? '';
+      gate.held.push(participants);
+      gate.promise.then(() => {
+        if (gate.drift && participants.includes(JSON.stringify(gate.drift.ref))) writeFileSync(gate.drift.record, readFileSync(gate.drift.record));
+        emit.call(this, event, gate.fail ? { ...args[0], snapshot: null, error: 'owned observation delivery refused' } : args[0]);
+      });
       return true;
     }
     return emit.call(this, event, ...args);
   };
-  const holdReply = fail => {
+  const holdReply = (fail, drift = null) => {
     let release;
     const promise = new Promise(resolve => { release = resolve; });
-    return replyGate = { promise, release, fail, held: [] };
+    return replyGate = { promise, release, fail, drift, held: [] };
   };
   const rpc = async (actor, method, params = {}, id = ++sequence) => {
     const response = await fetch(actor.credential.busUrl, { method: 'POST', headers: {
@@ -74,16 +77,24 @@ console.log('[]');}
     return { status: response.status, session: response.headers.get('mcp-session-id'), text: await response.text() };
   };
   const question = (actor, body, id) => rpc(actor, 'tools/call', { name: 'promptobus_ask', arguments: { body }, _meta: { threadId: actor.thread } }, id);
-  const gatedQuestion = async (actor, fail, body, id) => {
-    const gate = holdReply(fail), own = () => gate.held.filter(participants => participants.includes(JSON.stringify(actor.ref))).length;
+  const gatedRequest = async (actor, fail, send, sustained = false) => {
+    const gate = holdReply(fail, sustained ? actor : null);
+    const own = () => gate.held.filter(participants => participants.includes(JSON.stringify(actor.ref))).length;
     writeFileSync(actor.record, readFileSync(actor.record));
     await workspaceServiceStatus(host, options);
     await until(() => own() > 0);
     let settled = false;
-    const request = question(actor, body, id);
+    const request = send();
     request.then(() => { settled = true; }, () => { settled = true; });
     await until(() => own() > 1 || settled);
     return { gate, request };
+  };
+  const gatedQuestion = (actor, fail, body, id, sustained = false) => gatedRequest(actor, fail, () => question(actor, body, id), sustained);
+  const publishedOnce = async gated => {
+    writeFileSync(gated.actor.record, readFileSync(gated.actor.record));
+    gated.gate.release();
+    const settled = await gated.request; replyGate = null;
+    return settled;
   };
   const questions = actor => strictTaskFacts(home, actor.task).messages.filter(message => message.type === 'question').length;
   const receipt = (actor, id) => path.join(paths.requests, actor.session, `${createHash('sha256').update(JSON.stringify(id)).digest('hex')}.json`);
@@ -177,12 +188,11 @@ console.log('[]');}
     await abortTaskWarden(host, busyTask, options);
 
     const current = await actor('revision');
-    const driftId = ++sequence, drift = await gatedQuestion(current, false, 'must not cross record revision', driftId);
-    const bytes = readFileSync(current.record); writeFileSync(current.record, bytes);
+    const driftId = ++sequence, drift = await gatedQuestion(current, false, 'must not cross record revision', driftId, true);
     drift.gate.release();
     const drifted = await drift.request; replyGate = null;
-    check('an actual observation result for a prior record revision cannot create a receipt or journal question', drifted.status === 409
-      && questions(current) === 0 && !existsSync(receipt(current, driftId)), drifted.text);
+    check('sustained record drift across every fresh managed proof cannot create a receipt or journal question', drifted.status === 409
+      && /Managed lifetime changed after observation/.test(drifted.text) && questions(current) === 0 && !existsSync(receipt(current, driftId)), drifted.text);
     const unknownId = ++sequence, unknown = await gatedQuestion(current, true, 'must not cross unknown observation', unknownId);
     unknown.gate.release();
     const refused = await unknown.request; replyGate = null;
@@ -209,6 +219,23 @@ console.log('[]');}
     const recovered = await question(current, 'explicit new request after owner inspection');
     check('fresh proof permits an explicit new request after contention resolution', recovered.status === 200
       && !JSON.parse(recovered.text).result?.isError && questions(current) === 1, recovered.text);
+
+    const churn = await actor('churn'), reopened = { ...churn, session: null };
+    const opened = await rpc(reopened, 'initialize', { protocolVersion: '2025-06-18' });
+    reopened.session = opened.session;
+    const initialized = await publishedOnce({ actor: churn, ...await gatedRequest(churn, false, () => rpc(reopened, 'notifications/initialized', {}, null)) });
+    check('one owner record publication during notifications/initialized gets a fresh full proof instead of a 409', opened.status === 200
+      && initialized.status === 202, JSON.stringify({ opened: opened.status, initialized }));
+    const churnId = ++sequence;
+    const published = await publishedOnce({ actor: churn, ...await gatedQuestion(churn, false, 'one mutation after a stable fresh proof', churnId) });
+    check('a benign record publication before dispatch commits exactly one tool mutation after its fresh proof', published.status === 200
+      && !JSON.parse(published.text).result?.isError && questions(churn) === 1 && existsSync(receipt(churn, churnId)), published.text);
+    const changedId = ++sequence, changed = await gatedQuestion(churn, false, 'must not adopt a changed participant generation', changedId);
+    upsertParticipant(home, churn.task, participantRecord('reporter', { harness: 'codex', sessionRef: churn.ref, sessionId: churn.thread,
+      sessionRecord: churn.record, nativeLaunchId: 'launch-churn-replaced' }));
+    const replaced = await publishedOnce({ actor: churn, ...changed });
+    check('a changed participant generation during the proof is refused without a fresh retry or effect', replaced.status === 409
+      && questions(churn) === 1 && !existsSync(receipt(churn, changedId)), replaced.text);
 
     const owner = await actor('claim', 'orchestrator');
     const claim = await rpc(owner, 'tools/call', { name: 'promptobus_mailbox', arguments: { claim: true }, _meta: { threadId: owner.thread } });

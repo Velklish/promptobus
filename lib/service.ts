@@ -70,6 +70,10 @@ interface ManagedAuthorization { revision: RecordVersion; participant: Participa
 class HttpFailure extends Error {
   constructor(readonly status: number, message: string) { super(message); }
 }
+class ManagedRevisionDrift extends HttpFailure {
+  constructor() { super(409, 'Managed lifetime changed after observation; retry with current owner proof'); }
+}
+const MANAGED_PROOF_ATTEMPTS = 3;
 const HTTP_PROTOCOLS = PROTOCOL_VERSIONS.filter(version => version !== '2024-11-05');
 const CLIENT_ID = /^[a-f0-9-]{36}$/;
 const MAX_BODY = 16 * 1024 * 1024;
@@ -489,14 +493,21 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         requireLifetime(current, paths.home, unavailableObservations, 401); return;
       }
       const participant = managedParticipant(current.lifetime, paths.home);
-      if (!proof || !sameRecordVersion(proof.revision)
-        || !participant || participant.harness !== proof.participant.harness
-        || sessionIdOf(participant) !== sessionIdOf(proof.participant)
-        || participant.metadata?.nativeLaunchId !== proof.participant.metadata?.nativeLaunchId) {
+      if (!proof || !participant || !isDeepStrictEqual(managedIdentity(participant), managedIdentity(proof.participant))) {
         throw new HttpFailure(409, 'Managed lifetime changed after observation; retry with current owner proof');
       }
+      if (!sameRecordVersion(proof.revision)) throw new ManagedRevisionDrift();
     };
+    const managedIdentity = (participant: ParticipantV1) => [participant.harness, sessionIdOf(participant), participant.metadata?.nativeLaunchId];
+    // Only same-identity record drift gets a fresh full proof; any other refusal ends authorization.
     const authorizeGrant = async (grant: ServiceClientGrant) => {
+      const pin: { identity: unknown[] | null } = { identity: null };
+      for (let attempt = 1; ; attempt += 1) {
+        try { return await authorizeAttempt(grant, pin); }
+        catch (error) { if (!(error instanceof ManagedRevisionDrift) || attempt >= MANAGED_PROOF_ATTEMPTS) throw error; }
+      }
+    };
+    const authorizeAttempt = async (grant: ServiceClientGrant, pin: { identity: unknown[] | null }) => {
       const current = currentGrant(grant);
       await requireProcessLifetime(current, 401);
       let proof: ManagedAuthorization | null = null;
@@ -507,6 +518,10 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
           participant = managedParticipant(current.lifetime, paths.home);
         } catch { throw new HttpFailure(401, 'Managed lifetime has no matching task, participant and launch record'); }
         if (!participant) throw new HttpFailure(401, 'Managed lifetime has no matching task, participant and launch record');
+        if (pin.identity && !isDeepStrictEqual(pin.identity, managedIdentity(participant))) {
+          throw new HttpFailure(409, 'Managed participant identity changed during authorization');
+        }
+        pin.identity ??= managedIdentity(participant);
         proof = { revision, participant };
       }
       await requireManagedNativeBinding(paths, current, { host, env: current.pollEnv });

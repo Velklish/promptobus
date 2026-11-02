@@ -1408,6 +1408,16 @@ placeholder owner. Additional task connections receive separate grants and
 credentials even when the native process and session are shared. Replacing a
 record generation or its native ID invalidates the old binding.
 
+Each managed request is authorized against the launch record revision it read
+before observing the participant; that revision must survive the observation.
+Owner publication writes the same record during startup, so a request whose only
+change is that revision gets up to three complete fresh proofs before any
+dispatch: current unchanged grant, process lifetime, native binding, participant
+and observation. The participant harness, session and native launch stay pinned
+across those proofs. A changed identity, generation or credential refuses
+immediately; dead and unavailable observations keep their 401 and 503. Sustained
+record churn still ends in 409, and a refused request performs no effect.
+
 `PROMPTOBUS_OWNER_ENV_FILE` names an owned private snapshot scoped to the
 canonical workspace, store and runtime. It captures the common root account
 environment before participant preparation. A managed caller must inherit that
