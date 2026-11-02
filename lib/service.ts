@@ -657,7 +657,9 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         return input.operation === 'warden-ensure' ? warden.ensure(input.task) : await warden.abort(input.task);
       }
       if (input.operation === 'stop') {
-        if (state().clients || activeWork() || requests > 1) throw new HttpFailure(409, 'Shared service still has live clients or active work');
+        const current = state(), work = current.clients ? null : activeWork();
+        if (current.clients || work || requests > 1) throw new HttpFailure(409,
+          `Shared service still has live clients or active work [clients: ${current.clients}, activeWork: ${work ?? 'notObserved'}, pendingObservations: ${pendingObservations.size}, requests: ${requests}]`);
         lifecycle.stop?.();
         return { stopped: true };
       }
