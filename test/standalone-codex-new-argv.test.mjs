@@ -1,7 +1,7 @@
 import { check } from './check.mjs';
 import { codexStandaloneNewExec } from '../lib/standalone-root-state.js';
 
-const cwd = '/private/tmp/owned-fixture', store = '/Users/owner/.codex';
+const cwd = '/private/tmp/owned-fixture', store = '/private/tmp/owned-fixture-store';
 const prompt = 'Call exactly one mcp__promptobus__promptobus_status tool, with empty arguments.';
 const hooks = `hooks.state={"${store}/hooks.json:post_tool_use:0:0"={enabled=false},"${store}/hooks.json:stop:0:0"={enabled=false},`
   + '"warp@codex-warp:hooks/hooks.json:session_start:0:0"={enabled=false}}';

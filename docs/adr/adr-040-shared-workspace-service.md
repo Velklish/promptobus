@@ -210,7 +210,7 @@ POSIX shell's PID/birth crossing exec to the approved native image. Native
 SessionStart must originate from that process or its checked shell hook child.
 Before that hook, discovery stays pure and tools refuse. Codex requires the
 first SessionMeta in the approved store and actual thread metadata on every tool.
-New Codex `exec -- <prompt>` requires first SessionMeta source `exec`; the accepted
+New Codex `exec [controls] [--] <prompt>` requires first SessionMeta source `exec`; the accepted
 new `--no-daemon` TUI forms require source `cli`. An explicit resume of an already
 known current-version binding retains its creation source (`exec` or `cli`),
 including when an exec-created session is later resumed through the TUI.

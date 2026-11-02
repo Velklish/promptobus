@@ -1,6 +1,6 @@
 # Contributing
 
-Use Node.js 26 or newer. Run `node --version` before dependency installation, configuration upgrades, or state migrations. CI runs the full checks on Node 26 on Ubuntu. For 0.32.1, run macOS validation locally; remote macOS CI is not a release requirement. Node 20 and 22 are no longer supported targets.
+Use Node.js 26 or newer. Run `node --version` before dependency installation, configuration upgrades, or state migrations. CI runs the full checks on Node 26 on Ubuntu. For 0.32.2, run macOS validation locally; remote macOS CI is not a release requirement. Node 20 and 22 are no longer supported targets.
 
 This repository is run entirely through [backslop](https://github.com/Velklish/backslop). There is no issue tracker beside it. Install dependencies with `npm ci`, then run the project copy with `npx --no-install backslop`. The GitHub tag is pinned in `package.json` under `devDependencies.backslop`, and `package-lock.json` records the resolved commit. The `cli` field in `backslop.json` names the local invocation.
 

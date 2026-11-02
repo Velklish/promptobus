@@ -1707,7 +1707,7 @@ Claude routes need a separate native lifetime proof and refuse this profile.
 The standalone source rule is shared with [ADR-040](../adr/adr-040-shared-workspace-service.md#portable-native-roots-and-recovery):
 
 <!-- quote:../adr/adr-040-shared-workspace-service.md -->
-New Codex `exec -- <prompt>` requires first SessionMeta source `exec`; the accepted
+New Codex `exec [controls] [--] <prompt>` requires first SessionMeta source `exec`; the accepted
 new `--no-daemon` TUI forms require source `cli`. An explicit resume of an already
 known current-version binding retains its creation source (`exec` or `cli`),
 including when an exec-created session is later resumed through the TUI.
@@ -1745,12 +1745,35 @@ platforms retain the canonical `/bin/sh` image rule. Shell approval never grants
 native authority before exec. Native file identity comparisons retain exact
 BigInt device/inode values through initial, descriptor and final observations.
 First binding also requires a supported NEW dispatch. The private launch records
-the exact structured command actually exec'd. For Codex rust-v0.165.0, accepted
-NEW argv is `exec -- <nonempty prompt>`, `--no-daemon`, or
-`--no-daemon -- <nonempty prompt>`: their in-process ordinary branch invokes
+the exact structured command actually exec'd. Accepted Codex NEW argv is
+`exec [controls] [--] <nonempty prompt>`, `--no-daemon`, or
+`--no-daemon -- <nonempty prompt>`. The bare forms are source-checked on
+rust-v0.165.0, the exec controls on rust-v0.166.0. Their in-process ordinary branch invokes
 `thread/start`, never a resume/fork target. The actual same-process CLI
 SessionStart/transcript ID completes the correlation. Other selectors cannot
 turn an unknown ID into a fresh session.
+
+The exec controls are a closed set; each appears at most once and takes the
+arity Codex gives it. Flags: `--strict-config`, `--ignore-user-config`,
+`--dangerously-bypass-hook-trust`, `--skip-git-repo-check` and `--json`;
+`--sandbox read-only`; and `--model <id>`. Each `-c` takes one `key=value`
+and names a distinct key from this list:
+
+- `model_reasoning_effort` — a quoted effort name Codex knows;
+- `projects` — exactly one entry, the launch's canonical cwd, with
+  `{trust_level="trusted"}`;
+- `hooks.state` — entries that are exactly `{enabled=false}`;
+- `mcp_servers.promptobus.enabled_tools` — unique `promptobus_*` names;
+- `mcp_servers.promptobus.tools` — entries exactly
+  `{approval_mode="approve"}` for enabled tools only.
+
+The prompt is the last token. It is not `-`, not option-like and not an `exec`
+subcommand name, unless it follows `--`. Any other flag, key, value shape,
+`=`-joined option, duplicate or subcommand is not NEW. Admitting a control as
+NEW grants nothing: hook trust, sandbox and tool policy remain the native
+invocation's own. Preflight applies the same classifier. A Codex `exec` command
+that is neither NEW nor a `resume`/`fork` selection refuses before the exec
+plan is written, so no native process, model turn or client grant is spent.
 
 Claude NEW mode is the foreground executable with no arguments and an actual
 `SessionStart.source="startup"`. Its actual absolute transcript must be an
