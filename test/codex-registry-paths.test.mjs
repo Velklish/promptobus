@@ -1,13 +1,13 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { makeSandbox } from './sandbox.mjs';
 import { bindHarnessHomes, harnessStateHome } from '../lib/harness-home.js';
 import { publishCodexNativeAdmission, readSession, sessionFile, writeSession } from '../lib/codex-session.js';
 import { recordVersion, requireProcess } from '../lib/service-state.js';
-import { participantCodexHome, participantHomesRoot, removeParticipantHome, sweepParticipantHomes } from '../lib/driver-codex.js';
+import { codexDriver, participantCodexHome, participantHomesRoot, removeParticipantHome, sweepParticipantHomes } from '../lib/driver-codex.js';
 
 function fixture() {
   const root = realpathSync(makeSandbox('promptobus-codex-'));
@@ -51,6 +51,57 @@ test('explicit registry environment and host aliases select the same canonical n
 });
 
 const unsupported = !['darwin', 'linux'].includes(process.platform);
+
+function reviewerContext(f) {
+  return { env: f.env, ref: 'registry-preflight', role: 'reviewer', task: 'fixture-task', address: 'reviewer:fixture',
+    mcp: { servers: {} }, prompt: 'review', model: null, cwd: f.selected,
+    settingsPath: path.join(f.root, 'reviewer.settings.json') };
+}
+
+test('Codex review planning refuses an existing 0755 registry before writing launch state', { skip: unsupported }, () => {
+  const f = fixture(), directory = path.join(f.expected, 'sessions');
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const retained = path.join(directory, 'retained.json'), bytes = '{"ref":"retained"}\n';
+  writeFileSync(retained, bytes, { mode: 0o600 });
+  chmodSync(directory, 0o755);
+  assert.throws(() => codexDriver.prepare(reviewerContext(f)), error =>
+    error.message.includes('Codex session registry requires an owned private directory (mode 0700) without symbolic links: ' + directory));
+  assert.equal(statSync(directory).mode & 0o777, 0o755);
+  assert.equal(readFileSync(retained, 'utf8'), bytes);
+  assert.deepEqual(readdirSync(directory), ['retained.json']);
+  assert.equal(existsSync(path.join(f.root, 'reviewer.codex-sandbox')), false);
+});
+
+for (const existing of [false, true]) {
+  test(`Codex review planning accepts ${existing ? 'a private' : 'an absent'} registry without creating launch state`, { skip: unsupported }, () => {
+    const f = fixture(), directory = path.join(f.expected, 'sessions');
+    if (existing) mkdirSync(directory, { recursive: true, mode: 0o700 });
+    assert.equal(codexDriver.prepare(reviewerContext(f)).settings.sandbox, 'read-only');
+    assert.equal(existsSync(directory), existing);
+    if (existing) assert.deepEqual(readdirSync(directory), []);
+  });
+}
+
+test('Codex spawn rechecks registry privacy after planning before writing a session or starting a holder', { skip: unsupported }, async () => {
+  const f = fixture(), context = reviewerContext(f), plan = codexDriver.prepare(context);
+  const directory = path.join(f.expected, 'sessions');
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  chmodSync(directory, 0o755);
+  await assert.rejects(codexDriver.spawn(plan, { ...context, tool: { bin: '/must-not-launch-codex' } }), error =>
+    error.message.includes('Codex session registry requires an owned private directory (mode 0700) without symbolic links: ' + directory));
+  assert.equal(statSync(directory).mode & 0o777, 0o755);
+  assert.deepEqual(readdirSync(directory), []);
+});
+
+test('Codex review planning refuses a symlink registry without changing its target', { skip: unsupported }, () => {
+  const f = fixture(), directory = path.join(f.expected, 'sessions');
+  mkdirSync(f.expected, { recursive: true, mode: 0o700 });
+  symlinkSync(f.selected, directory);
+  assert.throws(() => codexDriver.prepare(reviewerContext(f)), /Codex session registry requires an owned private directory/);
+  assert.equal(lstatSync(directory).isSymbolicLink(), true);
+  for (const { file, bytes } of f.kept) assert.equal(readFileSync(file, 'utf8'), bytes);
+});
+
 test('participant-home removal accepts only direct selected-root spellings and never follows a leaf link', { skip: unsupported }, () => {
   const f = fixture(), previousTmp = process.env.TMPDIR;
   try {

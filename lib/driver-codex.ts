@@ -667,6 +667,15 @@ function personalReviewSkillDirs() {
   return [...found];
 }
 
+function checkSessionDirectory(env: NodeJS.ProcessEnv) {
+  const directory = sessionsDir(env), entry = lstatSync(directory, { throwIfNoEntry: false });
+  if (!entry) return;
+  if (!entry.isDirectory() || entry.isSymbolicLink() || realpathSync(directory) !== directory
+    || (process.getuid && entry.uid !== process.getuid()) || (entry.mode & 0o077) !== 0) {
+    throw new GateError(`Codex session registry requires an owned private directory (mode 0700) without symbolic links: ${directory}`);
+  }
+}
+
 /** Lift plan from harness-neutral context; writes and launches nothing. */
 function prepare({
   mcp, prompt, model, effort = null, permissionMode = null, addDirs = [], readFiles = [], readSkillDirs = [], cwd, denyTools = null,
@@ -674,6 +683,7 @@ function prepare({
   executionKind = roleEntry(registryOf(null), role)?.kind,
   rootTask = null, rootAddress = null, guardCommand = null, env = process.env,
 }: CodexPrepareContext): CodexLaunchPlan {
+  checkSessionDirectory(env);
   const privateHome = ['teamlead', 'reporter', 'orchestrator'].includes(role);
   const readOnly = role === REVIEWER || role === 'reporter' || permissionMode === 'read-only';
   const sandbox = privateHome && permissionMode === 'full-access'
@@ -1171,6 +1181,7 @@ async function spawn(input: LibLaunchPlan, {
   tool, ref, role, cwd, env, host, home: runtimeHome, task: runtimeTask, address: runtimeAddress,
   launchFailNote = '', deadNote = '', persist,
 }: LibSpawnContext): Promise<LibSpawnResult<CodexSessionRecord>> {
+  checkSessionDirectory(env ?? process.env);
   // The registry pairs this driver with the launch plan its own prepare returned.
   const plan = input as CodexLaunchPlan;
   const registry = registryOf(host);
