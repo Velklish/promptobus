@@ -168,6 +168,13 @@ to start a new app-server only when its current-version native binding and captu
 process births are retained. Legacy birthless records refuse without migration or
 state deletion. Participants never receive the owner's refresh token. See [Lead](https://github.com/Velklish/promptobus/blob/v0.32.2/docs/reference/03-cli.md).
 
+Codex launch planning checks an existing registry `sessions` directory before native
+start. It must belong to the current user, have no group or other permissions, and
+use its canonical path without a symbolic link at the leaf. A refusal names the
+directory; if a directory you own has mode `0755`, change it to `0700` before retrying.
+The driver preserves existing permissions and records. An earlier unresolved native
+launch still requires its own Stop proof.
+
 The managed root requires explicit `full-access`: `workspace-write` participant lifts are
 unsupported and refuse before launch. Each participant keeps its own permission profile.
 The Desktop chat supplies the brief and reads results; the managed owner holds the mailbox
