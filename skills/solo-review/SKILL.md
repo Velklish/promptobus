@@ -27,6 +27,8 @@ Default diff base is the repository default branch. In a worker worktree it is t
 
 `--dry-run` prints the plan. `--harness` selects the runtime (must be in `promptobus.json` `tools`). `--model` and `--effort` are harness-specific. `--strategy` picks the model for you; see [Reviewer strategy](#reviewer-strategy).
 
+Codex planning, including `--dry-run`, refuses an existing registry `sessions` directory with unsafe ownership, permissions or a symbolic link, and names the path. If a directory you own has mode `0755`, change that directory to `0700` before retrying. Planning does not change existing permissions or records; an earlier unresolved native launch still requires its own Stop proof.
+
 ## Reviewer strategy
 
 `--strategy quality` is the reviewer's default. Pass it unless the user named something else: a reviewer that misses a defect is paid for by the next round, and reading a diff is cheap next to writing it.
