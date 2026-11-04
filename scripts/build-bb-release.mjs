@@ -14,12 +14,14 @@ const destination = path.resolve(args[1]);
 if (existsSync(destination)) throw new Error('Release directory must not already exist');
 const state = spawnSync('git', ['status', '--porcelain', '--untracked-files=normal'], { cwd: root, encoding: 'utf8' });
 if (state.status !== 0 || state.stdout.trim()) throw new Error('BB release requires a clean committed source checkout');
+const initialRevision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' });
+if (initialRevision.status !== 0) throw new Error('BB release requires a committed source revision');
 const adapter = path.join(root, 'integrations/bb'), panel = path.join(root, 'integrations/bb-native-observer');
 const adapterManifest = readJson(path.join(adapter, 'package.json')), panelManifest = readJson(path.join(panel, 'package.json'));
 if (adapterManifest.version !== panelManifest.version) throw new Error('Both BB plugins must use the same release version');
 const receipt = await build(adapter), generation = path.join(adapter, receipt.installationDirectory);
 const revision = receipt.identity.inputs.sourceRevision;
-if (!revision) throw new Error('BB release requires a committed source revision');
+if (!revision || revision !== initialRevision.stdout.trim()) throw new Error('source changed during BB release');
 const result = spawnSync('npm', ['run', 'build'], { cwd: panel, stdio: 'inherit' });
 if (result.status !== 0) throw new Error(`Native panel build failed (${result.status})`);
 mkdirSync(destination, { recursive: true });
@@ -62,6 +64,11 @@ function visit(directory) {
   }
 }
 visit(destination);
+const finalState = spawnSync('git', ['status', '--porcelain', '--untracked-files=normal'], { cwd: root, encoding: 'utf8' });
+const finalRevision = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' });
+if (finalState.status !== 0 || finalState.stdout.trim() || finalRevision.status !== 0 || finalRevision.stdout.trim() !== revision) {
+  throw new Error('source changed during BB release');
+}
 json(path.join(destination, 'release.json'), { format: 1, version: adapterManifest.version,
   sourceRevision: receipt.identity.inputs.sourceRevision, adapterIdentity: receipt.identity, files });
 console.log(JSON.stringify({ directory: destination, version: adapterManifest.version, sourceRevision: receipt.identity.inputs.sourceRevision, files: files.length }));

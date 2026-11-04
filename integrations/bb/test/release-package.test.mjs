@@ -21,6 +21,12 @@ test('release collection pins external documentation to its clean source and ref
   for (const component of ['', 'integrations/bb', 'integrations/bb-native-observer']) {
     symlinkSync(path.join(source, component, 'node_modules'), path.join(fixture, component, 'node_modules'), 'dir');
   }
+  const panelBuild = path.join(fixture, 'integrations/bb-native-observer/scripts/build.mjs');
+  writeFileSync(panelBuild, readFileSync(panelBuild, 'utf8') + `
+if (process.env.PB_BB_TEST_CHANGE_SOURCE === '1') {
+  writeFileSync(${JSON.stringify(path.join(fixture, 'integrations/bb/README.md'))}, readFileSync(${JSON.stringify(path.join(fixture, 'integrations/bb/README.md'))}, 'utf8') + '\\n[New guide](../../docs/guides/during-build.md)\\n');
+  writeFileSync(${JSON.stringify(path.join(fixture, 'docs/guides/during-build.md'))}, 'Uncommitted guide\\n');
+}\n`);
   const git = args => execFileSync('git', args, { cwd: fixture, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   git(['init', '-b', 'main']); git(['add', '-A']);
   git(['-c', 'user.name=BB fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'Captured release source']);
@@ -48,4 +54,11 @@ test('release collection pins external documentation to its clean source and ref
   assert.equal(refused.status, 1);
   assert.match(refused.stderr, /requires a clean committed source checkout/);
   assert.equal(existsSync(path.join(directory, 'dirty-collection')), false);
+  git(['checkout', '--', 'README.md']);
+  const changedCollection = path.join(directory, 'changed-collection');
+  const changed = spawnSync(process.execPath, command(changedCollection), { cwd: fixture, encoding: 'utf8', timeout: 120_000,
+    env: { ...process.env, PB_BB_TEST_CHANGE_SOURCE: '1' } });
+  assert.equal(changed.status, 1, changed.stderr);
+  assert.match(changed.stderr, /source changed during BB release/);
+  assert.equal(existsSync(path.join(changedCollection, 'release.json')), false);
 });
