@@ -303,7 +303,7 @@ const loadLine = () => os.loadavg().map((n) => n.toFixed(2)).join(' ');
 // whose boundary is `run` in [exec.js](../lib/exec.js), not a test
 // file's own `spawnSync`.
 // Cursor Stop checks a 1500 ms cross-process deadline; pool neighbours can exhaust it before native observation.
-const SERIAL = ['promptobus-e2e.test.mjs', 'promptobus-mixed.test.mjs', 'promptobus-cursor-wake.test.mjs', 'promptobus-warden.test.mjs', 'model-routing-preflight.test.mjs', 'runner.test.mjs', 'live-mixed-stand.test.mjs', 'cursor-stop-bounded.test.mjs'];
+const SERIAL = ['promptobus-e2e.test.mjs', 'promptobus-mixed.test.mjs', 'promptobus-cursor-wake.test.mjs', 'promptobus-warden.test.mjs', 'model-routing-preflight.test.mjs', 'runner.test.mjs', 'live-mixed-stand.test.mjs', 'cursor-stop-bounded.test.mjs', 'shared-service-standalone-root.test.mjs'];
 
 // File timeout. A hung file used to hang `npm test` forever: the runner
 // waited on the child with no deadline, and anything can hang a file —

@@ -771,9 +771,11 @@ test('error-state Stop and fresh phase remain refused and paused across reload',
 
 test('Stop during fresh initial assignment wins and an unknown send cannot start a mailbox-only review', async t => {
   for (const stop of [true, false]) {
+    let stopping;
     const s = await stand(t, { assignmentSend: async ({ threadId }) => {
-      if (stop) await s.control('stop', 'phase-review');
-      await s.reconcile(); assert.equal(s.wakes.filter(wake => wake.threadId === threadId).length, 0);
+      if (stop) { stopping = s.control('stop', 'phase-review'); await new Promise(resolve => setImmediate(resolve)); }
+      await s.host.harness.behavior.emitThreadEvent('thread.idle', { thread: s.threads.get(threadId) });
+      assert.equal(s.wakes.filter(wake => wake.threadId === threadId).length, 0);
       if (!stop) throw new Error('Fresh initial send reply lost');
       return { ok: true, delivery: 'sent' };
     } });
@@ -786,6 +788,7 @@ test('Stop during fresh initial assignment wins and an unknown send cannot start
     const f = await evidenceFixture(s.root, s.task);
     const result = await s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', 'phase-review',
       '--launch-context', JSON.stringify(next), '--evidence-manifest', JSON.stringify(f.manifest), '--assignment', 'Read all original evidence.']);
+    if (stopping) await stopping;
     assert.equal(result.exitCode, 1); assert.equal(s.wakes.filter(wake => wake.threadId === 'thr-2').length, 0); assert.equal(s.spawns.length, 2);
     if (stop) assert.equal(s.delivery('thr-2').paused, true);
     else assert.ok(bindingStore(s.host.bb).thread('thr-2').phaseAssignment);
@@ -1122,12 +1125,44 @@ test('an unconfirmed child notification policy retains an orphan and stops its t
 });
 
 test('Stop disables existing child attention and explicit Resume restores stuck', async t => {
-  const s = await stand(t); await s.create(); await s.add('worker-one');
+  const s = await stand(t); await s.create(); await s.add('worker-one'); await s.add('worker-two');
   assert.equal((await s.control('stop', 'orchestrator')).exitCode, 0);
   assert.equal(s.threads.get('thr-2').parentNotifications, 'off');
+  assert.equal(s.threads.get('thr-3').parentNotifications, 'off');
   await s.reload();
   assert.equal((await s.control('resume', 'orchestrator')).exitCode, 0);
   assert.equal(s.threads.get('thr-2').parentNotifications, 'stuck');
+  assert.equal(s.threads.get('thr-3').parentNotifications, 'stuck');
+});
+
+test('partial child notification restore compensates every owned child to off', async t => {
+  let armed = false;
+  const s = await stand(t, { beforeNotificationUpdate: async (id, mode) => {
+    if (armed && id === 'thr-3' && mode === 'stuck') throw new Error('Second restore refused');
+  } });
+  await s.create(); await s.add('worker-one'); await s.add('worker-two'); await s.control('stop', 'orchestrator');
+  armed = true;
+  const result = await s.control('resume', 'orchestrator');
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /Second restore refused/);
+  assert.equal(bindingStore(s.host.bb).delivery('thr-1').paused, true);
+  assert.equal(s.threads.get('thr-2').parentNotifications, 'off');
+  assert.equal(s.threads.get('thr-3').parentNotifications, 'off');
+});
+
+test('Resume waits for pending native Stop before restoring child attention', async t => {
+  const entered = deferred(), release = deferred(); let armed = false, stopped = false, premature = false;
+  const s = await stand(t, { beforeStop: async id => {
+    if (armed && id === 'thr-1') { entered.resolve(); await release.promise; stopped = true; }
+  }, beforeNotificationUpdate: async (_id, mode) => { if (armed && mode === 'stuck' && !stopped) premature = true; } });
+  await s.create(); await s.add('worker-one'); armed = true;
+  const stop = s.control('stop', 'orchestrator'); await entered.promise;
+  const resume = s.control('resume', 'orchestrator');
+  await new Promise(resolve => setImmediate(resolve));
+  release.resolve();
+  assert.equal((await stop).exitCode, 0);
+  assert.equal((await resume).exitCode, 0);
+  assert.equal(premature, false);
 });
 
 test('a new child of a stopped parent disables attention before spawn', async t => {
@@ -2876,7 +2911,9 @@ for (const boundary of ['clearContext', 'evidence']) test(`review boundary: Stop
   const f = await evidenceFixture(s.root, s.task); block = true;
   const pending = s.host.harness.behavior.runCli(['participant', 'resume', '--task', s.task, '--participant', b.participant,
     '--launch-context', JSON.stringify(next), '--evidence-manifest', JSON.stringify(f.manifest), '--assignment', 'Complete bounded repair context.']);
-  await entered.promise; await s.control('stop', b.participant); const stoppedEpoch = s.delivery('thr-2').epoch; release.resolve();
+  await entered.promise; const stopping = s.control('stop', b.participant);
+  await new Promise(resolve => setImmediate(resolve));
+  const stoppedEpoch = s.delivery('thr-2').epoch; release.resolve(); await stopping;
   const result = await pending;
   assert.equal(result.exitCode, 1, 'A Stop during the asynchronous transfer must refuse resume');
   assert.match(result.stderr, /Stop/); assert.equal(s.delivery('thr-2').paused, true);
@@ -2988,7 +3025,9 @@ for (const boundary of ['binding', 'engine', 'control']) test(`review2 boundary:
   await s.create(); await s.add('plain-worker'); await s.control('stop', 'plain-worker');
   await s.call('thr-1', 'promptobus_send', { to: ['plain-worker'], type: 'task', body: 'Canonical bounded task.' });
   block = true; const pending = s.control('resume', 'plain-worker'); await entered.promise;
-  await s.control('stop', 'plain-worker'); const epoch = s.delivery('thr-2').epoch; release.resolve();
+  const stopping = s.control('stop', 'plain-worker');
+  await new Promise(resolve => setImmediate(resolve));
+  const epoch = s.delivery('thr-2').epoch; release.resolve(); await stopping;
   const result = await pending;
   assert.equal(result.exitCode, 1, 'Stop before recovery.resume must not be replaced by a newly captured epoch');
   assert.match(result.stderr, /newer Stop/); assert.equal(s.delivery('thr-2').paused, true); assert.equal(s.delivery('thr-2').epoch, epoch);
