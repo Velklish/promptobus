@@ -110,6 +110,7 @@ function isTrackedPath(cands) {
 // as a product file, a listed location, or a naming example below.
 const namingExamples = new Map([
   ['docs/reference/04-protocol.md', new Set(['.gates-t2.json', 'gates-t2.json', 'gates-x-2.json'])],
+  ['docs/guides/bb-plugins.md', new Set(['release.json'])],
 ]);
 const productLocations = new Set([
   '~/.promptobus/model-routing.json', '~/.promptobus/model-routing/cache.json',
@@ -121,6 +122,7 @@ const productLocations = new Set([
   'waits/warden.exit.json', 'waits/warden.gen.json',
   'integrations/bb/dist/build-manifest.json',
   '.promptobus/message-order.json',
+  '.bb/plugins.json',
 ]);
 
 function isPlaceholder(clean, fromRel) {

@@ -9,7 +9,7 @@ export const selectionSchema = z.object({
 }).strict();
 export const rootsSchema = selectionSchema.omit({ taskId: true });
 export const configurationSchema = rootsSchema.extend({ hostId: z.string().regex(/^host_[A-Za-z0-9]+$/),
-  taskId: selectionSchema.shape.taskId.or(z.literal('')) }).strict();
+  taskId: selectionSchema.shape.taskId.or(z.literal('')), ownerThreadId: z.string().default(''), wakeEnabled: z.boolean().default(false) }).strict();
 export const settingsSchema = configurationSchema.extend({ taskId: selectionSchema.shape.taskId });
 export type Selection = z.infer<typeof selectionSchema>;
 const text = z.string().max(240).nullable();
@@ -29,13 +29,23 @@ export const snapshotSchema = z.object({
 export type Snapshot = z.infer<typeof snapshotSchema>;
 export const taskListSchema = z.array(z.object({ id: z.string(), title: z.string(), state: z.enum(['active', 'done']), updated: z.string() }).strict()).max(256);
 export const catalogueSchema = z.object({ tasks: taskListSchema, truncated: z.boolean(), scanned: z.number().int().min(0).max(4096) }).strict();
+export const ownerFeedSchema = z.object({ taskId: z.string(), state: z.enum(['not prepared', 'active', 'done']),
+  ownerParticipantId: z.string(), ownerSessionRef: text, messages: z.array(z.object({ id: z.string(), sender: z.string(),
+    recipients: z.array(z.string()), type: z.string() }).strict()).max(4096) }).strict();
+export const wakeStatusSchema = z.object({ enabled: z.boolean(), ownerThreadId: z.string().nullable(), state: z.string(),
+  error: z.string().nullable(), lastMessageId: z.string().nullable() }).strict();
 export const viewSchema = z.object({ configuration: configurationSchema, snapshot: snapshotSchema.nullable(),
-  snapshotError: z.string().nullable(), catalogue: catalogueSchema.nullable(), catalogueError: z.string().nullable() }).strict();
+  snapshotError: z.string().nullable(), catalogue: catalogueSchema.nullable(), catalogueError: z.string().nullable(), wake: wakeStatusSchema }).strict();
 export type View = z.infer<typeof viewSchema>;
 export const rpcContract = defineRpcContract({ snapshot: { input: z.null(), output: snapshotSchema },
   view: { input: z.null(), output: viewSchema },
   tasks: { input: z.null(), output: catalogueSchema },
+  wakeStatus: { input: z.null(), output: wakeStatusSchema },
+  bindOwner: { input: z.discriminatedUnion('enabled', [
+    z.object({ taskId: selectionSchema.shape.taskId, threadId: z.string().regex(/^thr_[a-z0-9]+$/), enabled: z.literal(true) }).strict(),
+    z.object({ taskId: selectionSchema.shape.taskId, threadId: z.string().optional(), enabled: z.literal(false) }).strict(),
+  ]), output: wakeStatusSchema },
   selectTask: { input: z.object({ taskId: selectionSchema.shape.taskId }).strict(), output: snapshotSchema },
 });
 export const hostContract = defineRpcContract({ snapshot: { input: selectionSchema, output: snapshotSchema },
-  tasks: { input: rootsSchema, output: catalogueSchema } });
+  tasks: { input: rootsSchema, output: catalogueSchema }, ownerFeed: { input: selectionSchema, output: ownerFeedSchema } });

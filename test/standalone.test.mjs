@@ -14,6 +14,11 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { cpSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 
 // The import of the built module lives INSIDE the test, not at the top of the
@@ -51,4 +56,21 @@ test('entry point "./hooks" yields the hook plan', async () => {
 test('declarations are built next to the code', async () => {
   const dts = await readFile(new URL('../dist/driver.d.ts', import.meta.url), 'utf8');
   assert.match(dts, /interface Driver\b/);
+});
+
+
+test('relocated core imports without package metadata and accepts explicit Host runtime options', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'promptobus-standalone-root-relocated-'));
+  try {
+    cpSync(new URL('../dist', import.meta.url), path.join(root, 'dist'), { recursive: true });
+    const entry = pathToFileURL(path.join(root, 'dist/index.js')).href;
+    execFileSync(process.execPath, ['--input-type=module', '-e', `
+      import assert from 'node:assert/strict';
+      const {createStandaloneHost, PROTOCOL_VERSION} = await import(${JSON.stringify(entry)});
+      assert.equal(PROTOCOL_VERSION, 1);
+      const host = createStandaloneHost({cwd:${JSON.stringify(root)}, version:'fixture', binPath:'/fixture/promptobus.js'});
+      assert.equal(host.version, 'fixture');
+      assert.equal(host.binPath(), '/fixture/promptobus.js');
+    `], { stdio: 'pipe' });
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

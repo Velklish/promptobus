@@ -53,6 +53,43 @@ check('docs: standalone workflows remain required while ordinary BB creation is 
   has(read('docs/reference/02-host.md'), 'Ordinary BB creation is optional for release; this entrypoint remains unsupported.')
   && has(read('docs/reference/02-host.md'), 'Standalone ordinary workflows remain required.'));
 
+check('docs: development generations and managed BB release delivery have distinct installation routes',
+  has(read('docs/reference/02-host.md'), 'Development generations use local path delivery:')
+  && has(read('docs/reference/02-host.md'), 'Managed releases use the collection below.')
+  && !has(read('docs/reference/02-host.md'), 'Supported delivery is a local path:'));
+
+check('docs: the native dashboard includes owner binding and background notifications',
+  has(read('docs/reference/02-host.md'), 'Both `selectTask` and `bindOwner` persist plugin configuration.')
+  && has(read('docs/reference/02-host.md'), 'Owner notifications are a built-in background service.')
+  && has(read('docs/reference/02-host.md'), 'canonical mailbox consumption remains with the owner.')
+  && !has(read('docs/reference/02-host.md'), 'An installed bundle may also provide owner notifications;'));
+
+check('docs: replacing a BB path source preserves journals and starts fresh bindings',
+  has(read('docs/guides/bb-plugins.md'), 'BB refuses installing a Git source over an id registered from `path:`.')
+  && has(read('docs/guides/bb-plugins.md'), 'Keep canonical task stores and original command receipts in place.')
+  && has(read('docs/guides/bb-plugins.md'), 'do not restore an old binding database into the new installation.')
+  && has(read('docs/reference/02-host.md'), 'Later Git range updates preserve the installed plugin\'s state.'));
+
+check('docs: explicit BB Stop separates runtime observation from child attention suppression',
+  has(read('integrations/bb/README.md'), 'childNotifications.complete')
+  && has(read('integrations/bb/README.md'), 'A child of a paused parent starts with `off`.')
+  && has(read('docs/reference/02-host.md'), 'Stop waits for an in-flight spawn')
+  && has(read('docs/reference/02-host.md'), 'Unknown spawn outcomes need operator recovery.')
+  && has(read('integrations/bb/README.md'), 'user message. Do not repeat completed commands or widen permissions.')
+  && !has(read('integrations/bb/README.md'), '`off` would also suppress attention and is not used.'));
+
+check('docs: replacing a retained BB database starts fresh without deleting journals',
+  has(read('docs/guides/bb-plugins.md'), 'BB removal retains the plugin database.')
+  && has(read('docs/guides/bb-plugins.md'), 'move its complete private directory into the retained backup')
+  && has(read('docs/guides/bb-plugins.md'), 'verify that `bb promptobus bindings` is empty'));
+
+check('docs: bounded BB live measurements retain counts and provider recovery limits',
+  has(read('docs/reference/02-host.md'), '1 request and started 1 turn')
+  && has(read('docs/reference/02-host.md'), '0 new requests and 0 new turns.')
+  && has(read('integrations/bb/README.md'), 'PermissionNotFoundError')
+  && has(read('integrations/bb/README.md'), 'the nine commands were not repeated.')
+  && !has(read('docs/reference/05-drivers.md'), 'the adapter is source-only and unreleased.'));
+
 check('docs: declined Stop evidence preserves the non-start outcome and null exit',
   has(section(read('docs/reference/05-drivers.md'), '### Codex holder shutdown'),
     'The retained outcome remains `declined` with a null exit; it proves no command or test execution.')

@@ -43,6 +43,10 @@ Codex `readOnly` with approval policy `never`, regardless of that BB label.
 Participant launches explicitly select `serviceTier: default`, including preparation
 turns, so remembered project Fast preferences do not select another tier.
 
+## Release delivery
+
+Install the versioned collection described in [BB plugin delivery](../../docs/guides/bb-plugins.md). `bb promptobus doctor` reports both plugin versions, release-tracking sources and SDK compatibility without changing installation. `runtime describe` separately checks the executing server and Host identities.
+
 ## Executing runtime identity
 
 Inspect the executing plugin server and selected host without a task binding:
@@ -66,8 +70,8 @@ Install the exact generation recorded by the successful receipt to activate it.
 Building B preserves loaded A; reloading registered A stays on A. Only explicitly
 installing B switches it. Builds perform no install, reload or old-generation
 deletion. The id names captured inputs, not BB loader cache bytes or external
-SDK/Node APIs. Local path delivery is supported; npm/Git automatic plugin
-installation is not claimed. Local fixtures do not certify a particular BB
+SDK/Node APIs. Local development generations and the managed Git release collection are supported.
+See [release delivery](../../docs/guides/bb-plugins.md) for install, update and diagnosis. Local fixtures do not certify a particular BB
 installation; verify the executing identities after install/reload.
 See the [Host reference](../../docs/reference/02-host.md#bb-executing-runtime-identity)
 for snapshot boundaries, fields and failure reasons, and the standalone
@@ -127,7 +131,8 @@ acceptance workspace and the orchestrator lifecycle owner. Raw metadata reparent
 of an already bound thread is refused by authentication. The
 [display contract](../../docs/reference/02-host.md#bb-display-names-and-acceptance-placement)
 describes defaults, inheritance, ownership checks and the SDK fixture evidence
-boundary. Live sidebar and new-source native behavior remain unmeasured.
+boundary. The current-profile workflow below records the separately measured
+model, sidebar and lifecycle scope.
 
 ## Role instructions
 
@@ -136,16 +141,23 @@ and a long background run with volume and a measured estimate. Status remains in
 the orchestrator mailbox without its own bus wake; the next actionable message
 carries it. Decisions require questions.
 
-New managed children use SDK `parentNotifications: 'stuck'`. Routine completed
+Children of an unpaused parent use SDK `parentNotifications: 'stuck'`. Routine completed
 turns do not wake their parent; failures, interruptions, and approval or question
 blockers retain BB's notifications. Children send final results and questions
 through the canonical bus. Parenting and lifecycle ownership stay unchanged.
 
 The public `bb guide threads` documents this policy for the BB 0.48.1 / Plugin
-SDK 0.6.104 profile. `off` would also suppress attention and is not used. The
+SDK 0.6.104 profile. A child of a paused parent starts with `off`. The
 adapter confirms the spawn response; a child whose policy is not confirmed is
-retained as an orphan and stopped. Existing threads keep their recorded policy;
-this change does not update global settings or retrofit existing children.
+retained as an orphan and stopped. Explicit Stop disables attention on existing
+owned children; a successful explicit Resume restores `stuck`. These operations
+share the child's spawn/registration order and the parent's delivery epoch.
+The Stop reply reports `confirmed` for the parent runtime separately from
+`childNotifications.complete`; incomplete suppression exits 1 even if the
+parent stopped. Unknown spawn outcomes require operator recovery. A failed
+notification update still attempts the parent Stop. `recovery run` reconciles
+children of persisted paused parents without resuming them. Global settings,
+provider permissions, parenting and lifecycle ownership remain unchanged.
 Under `stuck`, unassigning a child also does not notify its former parent.
 Canonical mailbox reads remain the only acknowledgement. Stop, current-grant
 validation, predecessor checks, and active-session limits retain their existing
@@ -177,10 +189,17 @@ The hook checks local pause and epoch before and after asynchronous validation.
 It does not serialize its final decision with BB's later provider start or join.
 Public `threads.update` supports `parentNotifications: 'off'`, but changing that
 policy does not establish cancellation of an already admitted notification.
-The adapter keeps `stuck`; with an unpaused current grant, failure,
+With an unpaused current grant, failure,
 interruption, approval and question attention still reach the parent. This hook
-fix still requires a bounded live check; it does not certify the terminal-parent
-race after the hook has returned.
+fix has a bounded BB 0.48.1 live check in the
+[Host reference](../../docs/reference/02-host.md#local-bb-host-boundary); it does
+not certify every terminal-parent race after the hook has returned.
+
+When `accept-edits` refuses a command before an approval request appears, open
+the bound BB thread, enter the authorized continuation in its message composer
+and use Send. Choose Allow once on the actual request for the exact command.
+An agent follow-up or an answer in another thread does not replace that direct
+user message. Do not repeat completed commands or widen permissions.
 
 The six standing role contracts live in `skills/` and are generated from
 `promptobus/instructions`. After refreshing the local package with `npm ci`, run
@@ -240,7 +259,9 @@ answer do not change that turn's eligibility. A genuine user turn uses `"ask"`.
 When this route is available, give the person the actual bound thread and exact
 bounded command: open that thread, use **Send** for that scope, then select
 **Allow once** on the actual request for that command. Approval covers only that
-request. This is a prospective remedy whose live result remains unverified.
+request. On 2026-11-04, the selected Cursor approver completed the previously
+refused fast-forward, final test and clean-status checks after the actual user
+used Send and Allow once. The earlier baseline was retained without a rerun.
 
 Choose the supported gate checkout and actual permission route before dispatch,
 including process visibility required by native tests. A supplied grant or local
@@ -1420,7 +1441,8 @@ schemas. A complete mutation probe still carries `coverage`: `establishes` and
 `doesNotEstablish`. The validator requires both and does not treat `reddened`
 as proof of the excluded claim. The worker skill requires both and does not
 tell the author to omit them. The admission, original-part transport and retained failure replay have
-SDK fixture coverage; the changed live provider workflow is `notMeasured`.
+SDK fixture coverage. The current-profile live workflow below separately records
+original receipts and independent review; neither layer substitutes for the other.
 Current control guards existing Promptobus entry points. Native commands outside
 those points, physical Stop of running calls and provider permission enforcement
 remain separate; a revoked grant alone does not prove task-owned call terminality.
@@ -1435,8 +1457,19 @@ alone are not this support claim.
 | Codex CLI 0.162.0-alpha.17.2; `gpt-6.1-sol`, `high`; isolated native reviewer transport on 2026-10-11 | Permission proof measured | Effective `readOnly` / `never`, private home, disabled features and no MCP; bounded read, outside-root refusal and actual patch sandbox denial; matching canary hashes and child cleanup. Installed-plugin reload and full BB workflow on this version remain unmeasured. |
 | Mixed native reviewer and BB workers | Partial | Does not establish the full BB profile |
 | Cursor and OpenCode ACP workers; Cursor ACP approver | SDK fixtures | Selection, provisioning, authenticated tools, recovery and current predecessors; separate from a live model workflow |
+| BB 0.48.1 / SDK 0.6.104; local Node 26.13.0; 2026-11-04; development candidate `0.2.0-rc.2` | Bounded live workflows | Codex owner, worker, constrained reviewer and owned-worktree approver; Cursor worker `gpt-5.6-sol` / `medium` and approver `grok-4.7` / `high`; OpenCode worker `opencode-go/gpt-6-luna` / `medium`. Each source passed independent constrained review and disposable publication. Teamlead and reporter were not repeated on this profile. |
+| Managed Git candidate `0.2.0-rc.3`, source `d93294c0` | Bounded install and lifecycle check | Matching executing server/Host identity; actual fresh task, child completion after ended-grant parent Stop, explicit Resume and reload. Unavailable model, unsupported role/provider and unsupported reasoning refused without changed bindings. |
 | Other providers, versions, hosts, models/efforts or custom pipeline shapes | Unverified or unsupported | No full support claim; Unadmitted providers and remote environments refuse |
-| Package delivery | Source-only, unreleased | Build this checkout and a matching packed library; the root package tarball excludes the optional plugin |
+| Package delivery | Versioned Git collection | Frozen bundles and command dependencies ship in their release collection; the root package tarball excludes the optional plugins |
+
+The OpenCode run completed its nine commands before a parallel receipt-file read
+failed in the provider with `PermissionNotFoundError`. The same valid phase then
+received the complete original outputs inline and sent its canonical result;
+the nine commands were not repeated. Independent source/evidence review and
+disposable publication followed. The original failure and initially unconfirmed
+Stop remain evidence; this report recovery does not fix the provider's parallel
+read failure. Cursor approval eligibility retains the direct-user boundary above.
+Native process drain and additional OS/remote profiles were not established.
 
 The representative fixture retained current worker and reviewer results for the
 same actual managed environment. Approver admission refused before those results.

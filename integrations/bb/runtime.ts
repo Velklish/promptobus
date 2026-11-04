@@ -11,6 +11,7 @@ import { normalizeContextDeclaration } from 'promptobus/participant-context';
 import { ORCHESTRATOR, REVIEWER, APPROVER } from 'promptobus';
 import { engineInput, hostContract } from './contract.js';
 import { BUILD_IDENTITY } from './build-identity.js';
+import { inspectInstallation } from './installation.js';
 import { bindingStore } from './bindings.js';
 import { artifactSchema, bindingSchema, COMMAND_ADMISSION_FORMAT, emptySchema, hostCallSchema, hostContextSchema, hostReadSchema, mailboxSchema, reasoningSchema, roleSchema, sendSchema, toolsFor } from './protocol.js';
 import type { Binding } from './protocol.js';
@@ -123,6 +124,52 @@ export function registerRuntime(bb: BbPluginApi) {
     if (environment.hostId !== b.hostId || environment.path !== b.environmentPath || b.hostId !== local) throw new Error('BB environment binding mismatch');
   };
   const recovery = registerDelivery(bb, store, onHost);
+  const participantTransitions = new Map<string, Promise<unknown>>();
+  const withParticipantTransition = async <T,>(parentId: string, operation: () => Promise<T>) => {
+    const previous = participantTransitions.get(parentId);
+    const work = (previous ?? Promise.resolve()).catch(() => {}).then(operation);
+    participantTransitions.set(parentId, work);
+    try { return await work; } finally { if (participantTransitions.get(parentId) === work) participantTransitions.delete(parentId); }
+  };
+  const syncChildNotifications = async (parent: Binding) => {
+    for (const child of store.list().filter(child => child.parentThreadId === parent.threadId && child.phase !== 'archived')) {
+      if (!child.threadId) {
+        if (store.launchIntent(child)?.status === 'unknown') throw new Error('BB child notifications incomplete: unknown spawn requires operator recovery');
+        continue;
+      }
+      const actual = await bb.sdk.threads.get({ threadId: child.threadId });
+      if (actual.id !== child.threadId || actual.projectId !== child.projectId || actual.providerId !== child.providerId
+        || actual.parentThreadId !== parent.threadId || actual.lifecycleOwnerThreadId !== child.lifecycleOwnerThreadId) throw new Error('BB child notification binding mismatch');
+      const parentNotifications = store.delivery(parent.threadId!).paused ? 'off' : 'stuck';
+      if (actual.parentNotifications === parentNotifications) continue;
+      const updated = await bb.sdk.threads.update({ threadId: child.threadId!, parentNotifications });
+      if (updated.id !== child.threadId || updated.projectId !== child.projectId || updated.providerId !== child.providerId
+        || updated.parentThreadId !== parent.threadId || updated.lifecycleOwnerThreadId !== child.lifecycleOwnerThreadId
+        || updated.parentNotifications !== parentNotifications) throw new Error('BB child parent notifications were not confirmed');
+    }
+  };
+  const stopWithChildNotifications = async (b: Binding, nativeStop = stopBbParticipant(bb, b)) => {
+    const [stopping, notifications] = await Promise.allSettled([nativeStop, syncChildNotifications(b)]);
+    if (stopping.status === 'rejected') throw stopping.reason;
+    const error = notifications.status === 'rejected' ? String(notifications.reason?.message ?? notifications.reason) : null;
+    const observation = await observeBbParticipant(bb, b);
+    const confirmed = stopping.value.confirmed && observation.view.state === 'alive' && observation.status === 'idle'
+      && observation.thread?.status === 'idle' && observation.thread.activeBackgroundAgentCount === 0 && observation.thread.queuedMessageCount === 0;
+    return { confirmed, observation, childNotifications: { complete: notifications.status === 'fulfilled', error } };
+  };
+  const resumeDelivery = async (b: Binding, wake: boolean, epoch: number) => {
+    const resumed = await recovery.resume(b, false, epoch);
+    try { await syncChildNotifications(b); }
+    catch (error) {
+      recovery.pause(b, 'Child notifications unavailable; explicit resume is required');
+      const stopped = await stopWithChildNotifications(b);
+      if (!stopped.confirmed || !stopped.childNotifications.complete) bb.log.warn(`Promptobus resume rollback incomplete: ${stopped.childNotifications.error ?? 'parent Stop unconfirmed'}`);
+      throw error;
+    }
+    if (store.delivery(b.threadId!).paused || store.delivery(b.threadId!).epoch !== resumed.epoch) throw new Error('A newer Stop wins over child notification restore');
+    if (wake) await recovery.run(b.threadId!);
+    return store.delivery(b.threadId!);
+  };
   const sendPhaseAssignment = async (b: Binding, signal?: AbortSignal) => {
     const epoch = store.delivery(b.threadId!).epoch;
     b.phaseAssignmentPending = true;
@@ -317,20 +364,26 @@ export function registerRuntime(bb: BbPluginApi) {
       await checkStep(b);
       if (b.role === REVIEWER) await checkEvidence(b, store.task(b.task)!, undefined, !provision);
       await currentControl(provision ? { ...b, environmentPath: scope.repository, branch: scope.branch, baseSha: scope.base } : b);
-      const thread = await bb.sdk.threads.spawn({ projectId: b.projectId, environment: baseBranch
+      const launch = async () => {
+        const parentNotifications = b.parentThreadId && store.delivery(b.parentThreadId).paused ? 'off' : 'stuck';
+        const thread = await bb.sdk.threads.spawn({ projectId: b.projectId, environment: baseBranch
         ? { type: 'host', hostId: b.hostId, workspace: { type: 'managed-worktree', baseBranch: { kind: 'named', name: baseBranch } } }
         : environmentPath ? { type: 'host', hostId: b.hostId, workspace: { type: 'unmanaged', path: environmentPath } }
         : { type: 'reuse', environmentId: b.environmentId },
         providerId: b.providerId, model, reasoningLevel, serviceTier: 'default', permissionMode: 'accept-edits', pluginMetadata: { launchAttemptId: intent.attemptId },
-        ...(b.parentThreadId ? { parentThreadId: b.parentThreadId, parentNotifications: 'stuck' } : {}),
+        ...(b.parentThreadId ? { parentThreadId: b.parentThreadId, parentNotifications } : {}),
         ...(b.lifecycleOwnerThreadId ? { lifecycleOwnerThreadId: b.lifecycleOwnerThreadId } : {}),
-        prompt: b.bootstrap ?? initialPrompt(), title: titleFor(b) });
+        prompt: b.bootstrap ?? initialPrompt(), title: titleFor(b) }).catch(error => {
+          store.launch(b, { ...intent, status: 'unknown' }); throw error;
+        });
+        b.threadId = thread.id; store.save(b); recorded = true;
+        store.launch(b, { ...intent, status: 'recorded' });
+        if (b.parentThreadId && thread.parentNotifications !== parentNotifications) throw new Error('BB child parent notifications were not confirmed');
+        return thread;
+      };
+      const thread = b.parentThreadId ? await withParticipantTransition(b.parentThreadId, launch) : await launch();
       b.threadId = thread.id;
-      store.save(b);
-      recorded = true;
-      store.launch(b, { ...intent, status: 'recorded' });
       await host.call('rootLaunch', { operation: 'complete', root: b.root, intent: intent.attemptId, threadId: thread.id, ownerScope }, { hostId: b.hostId });
-      if (b.parentThreadId && thread.parentNotifications !== 'stuck') throw new Error('BB child parent notifications were not confirmed');
       if (prepare) {
         b.phase = 'provisioning'; store.save(b);
         await bb.experimental_hooks.recheck('message.dispatch');
@@ -384,6 +437,7 @@ export function registerRuntime(bb: BbPluginApi) {
       await recovery.arm(b);
       if (store.delivery(b.threadId!).paused) throw new Error('Participant stopped during launch; operator recovery is required');
       b.phase = 'ready'; store.save(b);
+      if (b.parentThreadId) await withParticipantTransition(b.parentThreadId, () => syncChildNotifications(store.thread(b.parentThreadId!)!));
       if (prepare) { b.phaseAssignment = initialPrompt(); await sendPhaseAssignment(b); }
       await bb.experimental_hooks.recheck('message.dispatch');
       store.launch(b, { ...intent, status: 'ready' });
@@ -419,6 +473,14 @@ export function registerRuntime(bb: BbPluginApi) {
   };
   const archiving = new Set<string>();
   bb.cli.register(defineCli({ name: 'promptobus', summary: 'Local engine-backed BB task participants.', commands: {
+    doctor: cliCommand({ summary: 'Check both plugin release sources, versions and SDK compatibility without changing installation.',
+      async run(_input, context) {
+        const { plugins } = await bb.sdk.plugins.list({ signal: context.signal });
+        const entries = await Promise.all(['promptobus', 'promptobus-native-panel'].filter(id => plugins.some(plugin => plugin.id === id))
+          .map(async pluginId => [pluginId, await bb.sdk.plugins.getSource({ pluginId, signal: context.signal })] as const));
+        const report = inspectInstallation(plugins, Object.fromEntries(entries), BUILD_IDENTITY);
+        return { exitCode: report.status === 'complete' ? 0 : 1, stdout: JSON.stringify(report, null, 2) };
+      } }),
     'root lookup': cliCommand({ summary: 'Resolve one ordinary native root from latest public identities and complete managed launch history.', options: {
       root: { type: 'string', required: true, description: 'Canonical owner workspace approved for the root profile.' },
       'native-thread': { type: 'string', required: true, description: 'Actual native thread from the first owned transcript record.' },
@@ -674,9 +736,14 @@ export function registerRuntime(bb: BbPluginApi) {
       async run({ options }) {
         const b = boundParticipant(options.task, options.participant);
         recovery.pause(b, 'Operator Stop; explicit resume is required');
+        const stopping = stopBbParticipant(bb, b);
+        void stopping.catch(() => {});
+        return withParticipantTransition(b.threadId!, async () => {
         await recovery.cancelQueued(b).catch(error => bb.log.warn(`Promptobus queued wake retained: ${(error as Error).message}`));
-        const result = await stopBbParticipant(bb, b);
-        return { exitCode: result.confirmed ? 0 : 1, stdout: JSON.stringify({ ...result, deliveryPaused: true }) }; } }),
+        const result = await stopWithChildNotifications(b, stopping);
+        return { exitCode: result.confirmed && result.childNotifications.complete ? 0 : 1,
+          stdout: JSON.stringify({ ...result, deliveryPaused: true }), stderr: result.childNotifications.error ?? '' };
+        }); } }),
     'participant resume': cliCommand({ summary: 'Explicitly re-enable bounded delivery, or supply a fresh complete phase for the same actor.', options: {
       ...participantOptions, 'launch-context': createOptions['launch-context'],
       assignment: { ...createOptions.assignment, required: false },
@@ -686,6 +753,8 @@ export function registerRuntime(bb: BbPluginApi) {
         const b = boundParticipant(options.task, options.participant);
         if (!b.launchContext || b.launchContext.control.mode !== 'current') throw new Error('Current control blocked: legacy binding requires explicit new-task migration; retain its status and evidence');
         const startEpoch = store.delivery(b.threadId!).epoch;
+        return withParticipantTransition(b.threadId!, async () => {
+        if (store.delivery(b.threadId!).epoch !== startEpoch) throw new Error('A newer Stop wins over resume');
         await requireThread(b, context.signal); await onHost(b, { operation: 'check' }, context.signal);
         if (options['launch-context'] !== undefined) {
           if (!options.assignment || !b.launchContext) throw new Error('A fresh phase requires its complete assignment and previous bounded grant');
@@ -700,7 +769,8 @@ export function registerRuntime(bb: BbPluginApi) {
           if (b.role === REVIEWER) await checkEvidence(next, store.task(b.task)!, context.signal);
           if (store.delivery(b.threadId!).epoch !== startEpoch) throw new Error('A newer Stop wins over phase transfer');
           const transferEpoch = recovery.pause(b, 'Fresh bounded phase transfer').epoch;
-          if (!(await stopBbParticipant(bb, b)).confirmed) throw new Error('Fresh phase Stop was not confirmed');
+          const stopped = await stopWithChildNotifications(b);
+          if (!stopped.confirmed || !stopped.childNotifications.complete) throw new Error(stopped.childNotifications.error ?? 'Fresh phase Stop was not confirmed');
           await bb.sdk.threads.clearContext({ threadId: b.threadId!, signal: context.signal });
           await admit(next, context.signal);
           if (b.role === REVIEWER) await checkEvidence(next, store.task(b.task)!, context.signal);
@@ -712,7 +782,7 @@ export function registerRuntime(bb: BbPluginApi) {
             tools: Object.fromEntries(participantTools(next).map(name => [name, name])) });
           const prompt = `${LAUNCH_HEADER}${intent.attemptId}\n${delivery.initialPrompt}\n\n${next.hostContext ? renderBbHostContext(next.hostContext) : ''}`;
           next.phaseAssignment = prompt; next.phaseAssignmentPending = true; store.save(next);
-          await recovery.resume(next, false, transferEpoch);
+          await resumeDelivery(next, false, transferEpoch);
           if (store.delivery(b.threadId!).paused) throw new Error('Fresh phase remains paused; no assignment sent');
           const sent = await sendPhaseAssignment(next, context.signal);
           store.launch(next, { ...intent, assignment: options.assignment });
@@ -724,15 +794,19 @@ export function registerRuntime(bb: BbPluginApi) {
           if (!b.phaseAssignment) throw new Error('Pending initial assignment has no complete context');
           if (b.phaseAssignmentDelivery?.state === 'queued') throw new Error('Complete initial assignment is still queued; cancel or wait before retry');
           if (b.role === REVIEWER) await checkEvidence(b, store.task(b.task)!, context.signal);
-          await recovery.resume(b, false, startEpoch);
+          await resumeDelivery(b, false, startEpoch);
           const sent = await sendPhaseAssignment(b, context.signal);
           return { exitCode: 0, stdout: JSON.stringify({ ...store.delivery(b.threadId!), sent }) };
         }
-        return { exitCode: 0, stdout: JSON.stringify(await recovery.resume(b, true, startEpoch)) };
+        return { exitCode: 0, stdout: JSON.stringify(await resumeDelivery(b, true, startEpoch)) };
+        });
       } }),
     'recovery run': cliCommand({ summary: 'Reconcile recorded threads, history and canonical unread mail without resuming paused participants.',
       async run(_args, context) {
-        for (const b of store.list()) if (b.threadId && b.phase === 'ready') await recovery.run(b.threadId, context.signal);
+        for (const b of store.list()) if (b.threadId && b.phase === 'ready') {
+          if (store.delivery(b.threadId).paused) await withParticipantTransition(b.threadId, () => syncChildNotifications(b));
+          await recovery.run(b.threadId, context.signal);
+        }
         return { exitCode: 0, stdout: JSON.stringify(store.list().filter(b => b.threadId).map(b => ({ participant: b.participant, task: b.task,
           phase: b.phase, delivery: store.delivery(b.threadId!) }))) };
       } }),
@@ -756,7 +830,8 @@ export function registerRuntime(bb: BbPluginApi) {
         try {
           recovery.pause(b, 'Participant archive');
           b.phase = 'archiving'; store.save(b);
-          if (!(await stopBbParticipant(bb, b)).confirmed) throw new Error('BB Stop was not confirmed; environment remains in place');
+          const stopResult = await withParticipantTransition(b.threadId!, () => stopWithChildNotifications(b));
+          if (!stopResult.confirmed || !stopResult.childNotifications.complete) throw new Error(stopResult.childNotifications.error ?? 'BB Stop was not confirmed; environment remains in place');
           const excludeCanonicalStore = store.task(b.task)?.environmentId === b.environmentId;
           const content = JSON.stringify(await captureBbWorkspace(bb, b, context.signal, excludeCanonicalStore));
           const result = await onHost(b, { operation: 'preserve', content }, context.signal) as { artifact: { id: string; sha256: string } };

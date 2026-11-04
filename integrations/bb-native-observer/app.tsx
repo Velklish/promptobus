@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { definePluginApp, useRealtimeConnectionState, useRpc } from '@get-bb/plugin-sdk/app';
+import { definePluginApp, useBbContext, useRealtimeConnectionState, useRpc } from '@get-bb/plugin-sdk/app';
 import type { rpcContract, View } from './contract.js';
 import { actorActivity, displayTime, messageLabel, retainSample, sampleStale, visibleMessages, type MessageFilter } from './dashboard.js';
 import { poll } from './poll.js';
@@ -40,7 +40,8 @@ const styles = `
 `;
 
 function NativePanel() {
-  const rpc = useRpc<typeof rpcContract>(), connection = useRealtimeConnectionState();
+  const rpc = useRpc<typeof rpcContract>(), connection = useRealtimeConnectionState(), context = useBbContext();
+  const [ownerThreadId, setOwnerThreadId] = useState(context.threadId ?? ''), [bindingOwner, setBindingOwner] = useState(false);
   const [connected, setConnected] = useState(true), [view, setView] = useState<View | null>(null);
   const [selectedId, setSelectedId] = useState(''), [selecting, setSelecting] = useState(false);
   const [error, setError] = useState<string | null>(null), [actionError, setActionError] = useState<string | null>(null);
@@ -65,6 +66,16 @@ function NativePanel() {
     try { await rpc.call('selectTask', { taskId }); }
     catch (cause) { setActionError(String(cause)); }
     finally { setSelecting(false); }
+  }
+  async function bindOwner(enabled: boolean) {
+    if (!view?.configuration.taskId) return;
+    setBindingOwner(true); setActionError(null);
+    try {
+      const taskId = view.configuration.taskId;
+      await rpc.call('bindOwner', enabled ? { taskId, threadId: ownerThreadId, enabled: true } : { taskId, enabled: false });
+    }
+    catch (cause) { setActionError(String(cause)); }
+    finally { setBindingOwner(false); }
   }
   function toggleObserver() {
     generation.current++;
@@ -132,6 +143,12 @@ function NativePanel() {
           </section>
           <section className="pb-card">
             <h2>Task owner</h2>
+            <label className="pb-caption">BB owner thread<input aria-label="BB owner thread" placeholder="thr_…" value={ownerThreadId} onChange={event => setOwnerThreadId(event.target.value)} /></label>
+            <p><button disabled={bindingOwner || !view?.configuration.taskId || !ownerThreadId} onClick={() => void bindOwner(true)}>Connect owner notifications</button></p>
+            {view?.wake.enabled && <p><button disabled={bindingOwner} onClick={() => void bindOwner(false)}>Disable owner notifications</button></p>}
+            <p className="pb-caption">Notifications: {view?.wake.state ?? 'Unknown'}{view?.wake.ownerThreadId ? ` · ${view.wake.ownerThreadId}` : ''}</p>
+            {view?.wake.error && <p className="pb-notice" role="alert">{view.wake.error}</p>}
+            <p className="pb-caption">New questions, results and reviews can wake the bound BB owner even while this panel is closed. Existing messages are not replayed.</p>
             <p>{snapshot?.task.owner?.id ?? 'Owner unavailable'}</p>
             <p className="pb-caption">{snapshot?.task.owner?.harness}</p>
             <dl className="pb-definition"><dt>Session</dt><dd>{snapshot?.task.owner?.sessionRef ?? 'Unavailable'}</dd></dl>

@@ -60,6 +60,7 @@ function assertPublicSdkImports(packageRoot) {
   const scan = experimental_scanPublicSdkOnly(packageRoot, { allow: [/^promptobus(?:\/|$)/] });
   const dynamicFixtures = [
     ['test/activation.test.mjs', 'pathToFileURL(serverFile).href'],
+    ['test/runtime-package.test.mjs', 'pathToFileURL(artifact).href'],
     ['test/activation.test.mjs', "pathToFileURL(path.join(root, 'dist/host.js')).href + `?activation=${generation}`"],
     ['test/evidence-prepare.test.mjs', 'pathToFileURL(process.env.PB_BASE_REVIEW_EVIDENCE)'],
     ['test/runtime-identity.test.mjs', "pathToFileURL(path.join(directory, 'server.js')).href"],
@@ -68,12 +69,15 @@ function assertPublicSdkImports(packageRoot) {
   ];
   const fixtures = dynamicFixtures.map(([file, specifier]) => ({ file, specifier, reason: 'dynamic-specifier' }));
   fixtures.push({ file: 'test/message-order.test.mjs', specifier: '../../../lib/review.js', reason: 'outside-package' });
-  assert.deepEqual(scan.violations.filter(row => !fixtures.some(fixture =>
+  const packagedEntry = row => row.reason === 'dynamic-specifier'
+    && /^(?:runtime-package\.ts|\.test-build\/runtime-package\.js|\.runtime\/[a-f0-9-]+\/(?:source|inputs)\/runtime-package\.ts)$/.test(row.file)
+    && ["pathToFileURL(path.join(root, 'dist/host-index.js')).href", "pathToFileURL(path.join(root, 'lib/bb-host.js')).href"].includes(row.specifier);
+  assert.deepEqual(scan.violations.filter(row => !packagedEntry(row) && !fixtures.some(fixture =>
     row.reason === fixture.reason && row.file === fixture.file && row.specifier === fixture.specifier)), []);
   assert.deepEqual(scan.privateDependencies, []);
 }
 
-test('integration public SDK scan rejects imports outside its explicit test fixture inventory', () => {
+test('integration public SDK scan rejects imports outside its explicit public core and fixture inventory', () => {
   assertPublicSdkImports(root);
 });
 
@@ -89,4 +93,20 @@ test('public SDK scan admits the exact legacy test import and refuses its copy i
   assert.throws(() => assertPublicSdkImports(directory), { code: 'ERR_ASSERTION', expected: [], actual: [{
     file: 'production.ts', specifier: '../../../lib/review.js', reason: 'outside-package',
   }] });
+});
+
+
+test('public SDK scan admits only the two verified packaged core entries in their loader', t => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), 'pb-bb-core-imports-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  writeFileSync(path.join(directory, 'package.json'), '{"name":"core-import-fixture"}');
+  const loader = path.join(directory, 'runtime-package.ts');
+  const admitted = "import(pathToFileURL(path.join(root, 'dist/host-index.js')).href);";
+  writeFileSync(loader, admitted);
+  assertPublicSdkImports(directory);
+  writeFileSync(loader, "import(pathToFileURL(path.join(root, 'private.js')).href);");
+  assert.throws(() => assertPublicSdkImports(directory), { code: 'ERR_ASSERTION' });
+  writeFileSync(loader, admitted);
+  copyFileSync(loader, path.join(directory, 'production.ts'));
+  assert.throws(() => assertPublicSdkImports(directory), { code: 'ERR_ASSERTION' });
 });

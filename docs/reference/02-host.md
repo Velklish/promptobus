@@ -731,7 +731,7 @@ The role contract states the delivery boundary:
 
 <!-- quote:../../integrations/bb/README.md -->
 ```markdown
-New managed children use SDK `parentNotifications: 'stuck'`. Routine completed
+Children of an unpaused parent use SDK `parentNotifications: 'stuck'`. Routine completed
 turns do not wake their parent; failures, interruptions, and approval or question
 blockers retain BB's notifications. Children send final results and questions
 through the canonical bus. Parenting and lifecycle ownership stay unchanged.
@@ -747,8 +747,24 @@ availability is absent, so neither request counts nor request chronology measure
 avoidable turns. Repeated child identities also do not establish duplicate
 outcomes without child-turn identity. A synthetic SDK fixture checks the selected
 spawn option and existing bus recovery separately from BB's outcome scheduler.
-Live before/after coordinator turn savings and visible completion retention
-remain unmeasured. A retained BB 0.47.1 / Plugin SDK 0.6.79 observation on
+One local managed-build measurement on 2026-11-04 used BB 0.48.1, SDK 0.6.104,
+Node 26.13.0 and source `d93294c06456b4317dcb5164f4890126d37bb951`.
+The same child performed one read/status-only turn under each policy; canonical
+status messages do not themselves wake the owner. With `auto`, the owner received
+1 request and started 1 turn in the 18:56:11–18:56:29 UTC window. With `stuck`,
+it received 0 requests and started 0 turns in 18:56:30–18:56:52 UTC. This is one
+bounded comparison, not a general throughput or token-saving estimate.
+
+In the terminal-parent case, the parent grant ended before confirmed Stop.
+The Stop receipt completed at 18:53:14.934 UTC with both runtime confirmation
+and child-notification suppression complete. The child's canonical result arrived
+at 18:53:46.588 UTC. At 18:54:28.034 UTC, 73 seconds after the Stop receipt,
+the parent's last event remained sequence 40: 0 new requests and 0 new turns.
+Explicit fresh-phase Resume restored `stuck`; plugin reload retained the binding.
+These public observations do not establish native process drain or cancellation
+of input already admitted by BB.
+
+A retained BB 0.47.1 / Plugin SDK 0.6.79 observation on
 2026-10-26 recorded parent-grant removal completing at 19:25:51.641Z and
 confirmed parent Stop at 19:25:52.216Z. A senderless system child-interruption
 request followed at 19:25:52.775Z and a parent turn started at 19:25:53.268Z.
@@ -774,9 +790,17 @@ The public hook context carries the system initiator, sender and per-row author
 categories, but no typed system-outcome kind or subject. The check therefore
 covers automatic system input to plugin-owned recipients, including senderless
 notifications; it does not infer a child from prompt text or a parent identity.
-`threads.update` accepts `parentNotifications: 'off'`, but it supplies no atomic
-cancellation receipt for an already admitted notification. The adapter retains
-`stuck` and existing current-control, role, predecessor and session-limit checks.
+Explicit Stop applies `parentNotifications: 'off'` to its owned children;
+explicit Resume restores `stuck` after current-grant and epoch checks. New
+children of a paused parent start with `off`. Spawn/registration and notification
+updates share a parent sequence, so Stop waits for an in-flight spawn before
+confirming suppression. `confirmed` describes the parent runtime observation;
+`childNotifications.complete` separately describes notification suppression.
+Incomplete suppression exits 1, retains the pause and still attempts native BB
+Stop. Unknown spawn outcomes need operator recovery. `recovery run` reconciles
+children of persisted paused parents without resuming them.
+`threads.update` supplies no atomic cancellation receipt for an already admitted
+notification. Current-control, role, predecessor and session-limit checks remain.
 BB system attention that arrives during a pause is rejected, not deferred; BB
 does not deliver it again after resume, so the operator checks child state
 before resuming. A refusal caused by the pause or an epoch change carries a
@@ -788,8 +812,8 @@ The final hook decision and the later provider start or join remain separate.
 A Stop or revocation after the last validation can cross that boundary. A public
 per-thread cancellation generation checked at actual provider start or join,
 ordered with Stop and grant revocation, would be needed to close that gap if the
-live race occurs there. The hook change requires live verification and is not
-proof that the retained terminal-parent race has been eliminated.
+live race occurs there. The bounded current-profile check above does not prove
+that every terminal-parent race has been eliminated.
 
 The optional `bb-plugin-promptobus` package owns the BB server and host entries.
 The server authenticates tool calls from SDK thread/project context and persistent
@@ -946,8 +970,13 @@ and receipts are outside `inputSha256`; the captured consumer payload digest is
 an explicit input. Unique ids are no reproducibility claim.
 
 The copied core package preserves per-source `import.meta` origins for the server.
-The existing flat host bundle's core schema/catalog/native-helper paths and eager
-package-provenance read are not repaired by this change. Node and BB-provided APIs,
+The Host artifact embeds a compressed copy of that exact public core package.
+Root admission materializes it under the plugin's daemon data directory by content
+hash and verifies every file before importing the native Host and admission entry
+points. Their package-relative resources and runtime fingerprint therefore resolve
+inside the retained core package after the build checkout is removed. Core import
+alone does not read package provenance; explicit Host runtime options need no
+adjacent package metadata. Node and BB-provided APIs,
 including the runtime SDK, remain external boundaries. Arbitrary dynamic
 import/require/eval, consumer file-relative filesystem assets and external runtime
 code are not claimed frozen. The captured generation-local `tsconfig.json` stops
@@ -968,15 +997,30 @@ hashes are separate from snapshot identity and BB's loader-generated code. A
 manifest edit cannot change loaded constants; artifact metadata alone cannot
 establish loaded snapshot parity.
 
-Supported delivery is a local path: `npm ci` → `npm run build` → installation of
+Development generations use local path delivery: `npm ci` → `npm run build` → installation of
 the exact generation recorded by the receipt. The source fixture models manifest
 recompilation and host rebuilding using the public builder and ESM copies; BB's
 actual server path cache uses CJS with different options. That fixture is not
 actual server-cache execution proof; an actual BB measurement remains separate.
-Nested `node_modules` copies can be excluded by npm packing, so automatic npm/Git
-installation of this optional plugin is not a supported distribution claim.
+Nested `node_modules` copies can be excluded by npm packing, so these development
+generations are not npm/Git release packages. Managed releases use the collection below.
 The standalone `promptobus-runtime` skill covers diagnosis; the six role skills
 remain generated from the core instruction renderer.
+
+### BB managed release delivery
+
+`npm run bb:release -- --directory <new-path>` builds a self-contained collection
+with `promptobus` and `native-panel` entries. Release tags use `bb/vX.Y.Z`; a Git
+semver range with `--tag-prefix bb/` enables normal `bb plugin update`. The
+collection retains bundle inputs outside `dist`, because BB rebuilds `dist` on
+Git installation. The adapter retains its executing build identity and embeds
+its core package; command modules use the collection-local core dependency.
+`bb promptobus doctor` checks both running versions, source tags and SDK pins.
+Replacing a `path:` installation with Git requires backing up private plugin
+state and removing the old registration first. Canonical journals remain outside
+that plugin state. New tasks receive fresh bindings; the old database is not
+restored. Later Git range updates preserve the installed plugin's state.
+See the [delivery guide](../guides/bb-plugins.md) for the supported commands.
 
 ### BB display names and acceptance placement
 
@@ -1365,15 +1409,16 @@ Discovery returns at most 256 valid tasks from at most 4096 scanned directory
 entries, with an explicit truncation flag. Discovery limits or errors do not block
 the independently read selected task.
 
-The host exposes read-only `snapshot` and `tasks` calls. The server additionally
-exposes `view` and `selectTask`; only `selectTask` persists plugin configuration.
+The host exposes read-only `snapshot`, `tasks` and `ownerFeed` calls. The server
+exposes `snapshot`, `view`, `tasks`, `selectTask`, `wakeStatus` and `bindOwner`.
+Both `selectTask` and `bindOwner` persist plugin configuration.
 Observation reads validated selected-task inbox/history and matching native
 registry/receipt records without consuming mail or opening a writable engine.
 Native detail requires a matching canonical launch binding. Current worker and
 reviewer registration persists session/thread identity without that launch binding;
 those participants retain canonical identity with native launch/state/profile and
 command counts explicitly unavailable. It
-provides no sender, ACK, launch, recovery or Stop controls. Recorded results and
+provides no canonical sender, ACK, launch, recovery or Stop controls. Recorded results and
 review outcomes retain their canonical types and sender roles; owner acceptance
 is not inferred. Native registry activity does not prove process liveness, and
 full native transcripts and command output are unavailable.
@@ -1387,9 +1432,17 @@ recover the explicit selection without restarting native actors.
 Plugin tests require the pinned root development dependencies and always rebuild
 the core before the producer regression loads its adapter. The self-contained
 host bundle has no root `dist/` or root dependency requirement. Source tests and
-clean-bundle fixtures are separate from actual BB visual verification. An installed bundle may also provide owner notifications; replacing
-that service is a separate installation decision. See the integration's live
-verification checklist before accepting the UI.
+clean-bundle fixtures are separate from actual BB visual verification.
+
+Owner notifications are a built-in background service. Explicit binding validates
+the actual BB Codex thread against the canonical task owner's native session and
+selected host. Initial binding does not replay history. New questions, results,
+reviews and errors can wake that owner while the page is closed; status alone
+does not wake it. Durable delivery markers prevent replay after reload. Unconfirmed
+delivery pauses notifications for inspection. The service sends only BB hints;
+canonical mailbox consumption remains with the owner. Selecting another task
+disables the old owner binding. See the integration's live verification checklist
+before accepting the UI.
 
 ## Managed HTTP launch environment
 

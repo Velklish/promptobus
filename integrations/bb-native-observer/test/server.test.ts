@@ -15,7 +15,9 @@ function harness(values: Values) {
   let reader = async (method: string, selected: Selection): Promise<unknown> => method === 'snapshot'
     ? readProjection(selected, 'test', 1) : readTasks(selected);
   const change = (patch: Partial<Values>) => { Object.assign(values, patch); listeners.forEach(listener => listener()); };
+  Object.assign(values, { ownerThreadId: '', wakeEnabled: false });
   plugin({
+    storage: { kv: {} }, background: { service() {} },
     settings: { define() { return { async get() { return { ...values }; },
       onChange(listener: () => void) { listeners.push(listener); }, async experimental_set(patch: Partial<Values>) { change(patch); } }; } },
     hosts: { experimental_client() { return { async call(method: string, selected: Selection) { calls.push(method); return reader(method, selected); } }; } },
@@ -42,7 +44,7 @@ test('task discovery works before selection and selection survives server reload
     assert.equal(view.snapshot?.task.id, 'second-task'); assert.equal(view.configuration.storeRoot, f.selection.storeRoot);
     assert.deepEqual(view.snapshot?.selection, { ...f.selection, taskId: 'second-task' });
     assert.equal(treeDigest(f.root), before);
-    assert.deepEqual(Object.keys(remounted.rpc), ['snapshot', 'view', 'tasks', 'selectTask']);
+    assert.deepEqual(Object.keys(remounted.rpc), ['snapshot', 'view', 'tasks', 'selectTask', 'wakeStatus', 'bindOwner']);
   } finally { f.cleanup(); }
 });
 

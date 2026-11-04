@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { spawn, spawnSync } from 'node:child_process';
@@ -185,6 +186,15 @@ export async function build(root) {
     if (!unchanged(inspectInputs(root, builderVersion).inputs)) throw new Error('Build inputs changed during capture');
     const identity = identityOf(manifest.version, { ...captured, consumerBundleSha256 });
     const encoded = Buffer.from(JSON.stringify(identity)).toString('base64');
+    const runtimePackage = path.join(stage, 'source/runtime-package.ts');
+    if (existsSync(runtimePackage)) {
+      const core = packageInput(stage, 'promptobus');
+      const payload = gzipSync(Buffer.from(JSON.stringify(core.files.map(file => [file, readFileSync(path.join(core.directory, file)).toString('base64')])))).toString('base64');
+      const source = readFileSync(runtimePackage, 'utf8');
+      if (source.split('__PROMPTOBUS_RUNTIME_PACKAGE_V1__').length !== 2) throw new Error('Expected one packaged core placeholder');
+      writeFileSync(runtimePackage, source.replace('__PROMPTOBUS_RUNTIME_PACKAGE_V1__', payload));
+    }
+
     const original = readFileSync(path.join(capturedRoot, 'build-identity.ts'), 'utf8');
     if (original.split(marker).length !== 2) throw new Error('Expected exactly one unbuilt identity placeholder');
     writeFileSync(path.join(stage, 'source/build-identity.ts'), original.replace(marker, encoded));
