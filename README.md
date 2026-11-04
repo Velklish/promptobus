@@ -416,4 +416,10 @@ current activation boundary are described in that package's README.
 A second optional package, `integrations/bb-native-observer/`, is a read-only BB dashboard for native Promptobus tasks.
 It can notify their explicitly bound BB owner without consuming canonical mail.
 Both plugins ship through a versioned Git collection with normal BB updates.
-See [the BB host boundary](https://github.com/Velklish/promptobus/blob/v0.32.3/docs/reference/02-host.md#local-bb-host-boundary) for setup and diagnosis.
+
+```sh
+bb plugin install git:https://github.com/Velklish/promptobus.git@^0.2.0 --tag-prefix bb/ --plugin promptobus
+bb plugin install git:https://github.com/Velklish/promptobus.git@^0.2.0 --tag-prefix bb/ --plugin native-panel
+bb promptobus doctor
+bb promptobus runtime describe
+```
