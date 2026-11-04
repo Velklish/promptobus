@@ -1,10 +1,11 @@
 # PB-404 · BB loads the Promptobus plugins from a participant worktree and a sandbox copy instead of a released checkout
 
-- **Order:** 320
 - **Scope:** [integrations/bb](../../../integrations/bb/README.md), [integrations/bb-native-observer](../../../integrations/bb-native-observer/README.md)
 - **Created:** 2026-10-27
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 320
+- **Taken:** 2026-11-04
 
 ## Context
 
