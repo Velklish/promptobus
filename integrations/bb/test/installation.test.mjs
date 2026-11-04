@@ -35,3 +35,12 @@ test('installation diagnostics reject disposable sources, pinned tags and a diff
     assert.equal(inspectInstallation(f.plugins, f.sources, f.identity).status, 'incomplete');
   }
 });
+
+test('a valid tracking tag for an older component still refuses a mixed release', () => {
+  const f = fixture();
+  f.plugins[1].version = '0.1.0';
+  f.sources['promptobus-native-panel'].resolvedTag = 'bb/v0.1.0';
+  const report = inspectInstallation(f.plugins, f.sources, f.identity);
+  assert.equal(report.status, 'incomplete');
+  assert.deepEqual(report.components[1].issues, ['release-version-mismatch']);
+});
