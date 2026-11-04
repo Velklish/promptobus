@@ -125,6 +125,14 @@ export function readTasks(input: { storeRoot: string; nativeRoot: string }) {
   result.tasks.sort((a, b) => b.updated.localeCompare(a.updated));
   return catalogueSchema.parse(result);
 }
+export function readOwnerFeed(input: Selection) {
+  const { storeRoot, taskId } = selectionSchema.parse(input);
+  const task = existsSync(storeRoot) ? selectedTask(storeRoot, taskId) : null;
+  if (!task) return { taskId, state: 'not prepared' as const, ownerParticipantId: '', ownerSessionRef: null, messages: [] };
+  const owner = taskOwner(task);
+  return { taskId, state: task.status, ownerParticipantId: owner.id, ownerSessionRef: owner.sessionRef,
+    messages: taskMessages(storeRoot, taskId, owner.id).map(({ id, sender, recipients, type }) => ({ id, sender, recipients, type })) };
+}
 function commandCounts(root: string, file: unknown, identity: { ref: unknown; launchId: unknown; task: unknown; address: unknown }) {
   if (file == null) return null;
   if (typeof file !== 'string') throw new Error('Native command receipt path is malformed');

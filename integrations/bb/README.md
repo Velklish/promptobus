@@ -43,6 +43,10 @@ Codex `readOnly` with approval policy `never`, regardless of that BB label.
 Participant launches explicitly select `serviceTier: default`, including preparation
 turns, so remembered project Fast preferences do not select another tier.
 
+## Release delivery
+
+Install the versioned collection described in [BB plugin delivery](../../docs/guides/bb-plugins.md). `bb promptobus doctor` reports both plugin versions, release-tracking sources and SDK compatibility without changing installation. `runtime describe` separately checks the executing server and Host identities.
+
 ## Executing runtime identity
 
 Inspect the executing plugin server and selected host without a task binding:
@@ -66,8 +70,8 @@ Install the exact generation recorded by the successful receipt to activate it.
 Building B preserves loaded A; reloading registered A stays on A. Only explicitly
 installing B switches it. Builds perform no install, reload or old-generation
 deletion. The id names captured inputs, not BB loader cache bytes or external
-SDK/Node APIs. Local path delivery is supported; npm/Git automatic plugin
-installation is not claimed. Local fixtures do not certify a particular BB
+SDK/Node APIs. Local development generations and the managed Git release collection are supported.
+See [release delivery](../../docs/guides/bb-plugins.md) for install, update and diagnosis. Local fixtures do not certify a particular BB
 installation; verify the executing identities after install/reload.
 See the [Host reference](../../docs/reference/02-host.md#bb-executing-runtime-identity)
 for snapshot boundaries, fields and failure reasons, and the standalone
@@ -1436,7 +1440,7 @@ alone are not this support claim.
 | Mixed native reviewer and BB workers | Partial | Does not establish the full BB profile |
 | Cursor and OpenCode ACP workers; Cursor ACP approver | SDK fixtures | Selection, provisioning, authenticated tools, recovery and current predecessors; separate from a live model workflow |
 | Other providers, versions, hosts, models/efforts or custom pipeline shapes | Unverified or unsupported | No full support claim; Unadmitted providers and remote environments refuse |
-| Package delivery | Source-only, unreleased | Build this checkout and a matching packed library; the root package tarball excludes the optional plugin |
+| Package delivery | Versioned Git collection | Frozen bundles and command dependencies ship in their release collection; the root package tarball excludes the optional plugins |
 
 The representative fixture retained current worker and reviewer results for the
 same actual managed environment. Approver admission refused before those results.

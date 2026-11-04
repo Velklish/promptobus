@@ -14,8 +14,8 @@ const area = mkdtempSync(path.join(os.tmpdir(), 'pb-native-panel-clean-'));
 const checkout = path.join(area, 'checkout'), plugin = path.join(checkout, 'integrations/bb-native-observer');
 const cache = process.argv.length === 4 && process.argv[2] === '--cache' ? path.resolve(process.argv[3]) : path.join(area, 'cache');
 if (process.argv.length !== 2 && !(process.argv.length === 4 && process.argv[2] === '--cache')) throw new Error('Use check-clean-bundle.mjs [--cache <owned npm cache>]');
-function run(command, args) {
-  const result = spawnSync(command, args, { stdio: 'inherit' });
+function run(command, args, cwd = root) {
+  const result = spawnSync(command, args, { cwd, stdio: 'inherit' });
   console.log(JSON.stringify({ argv: [command, ...args], exitCode: result.status, signal: result.signal }));
   if (result.status !== 0) throw new Error(`Clean build command failed: ${result.error?.message ?? result.status}`);
 }
@@ -26,11 +26,11 @@ try {
   cpSync(path.join(repository, 'package.json'), path.join(checkout, 'package.json'));
   cpSync(root, plugin, { recursive: true, filter: file => !['node_modules', 'dist', '.test-build'].includes(path.basename(file)) });
   assert.equal(existsSync(path.join(checkout, 'dist')), false);
-  run('npm', ['ci', '--prefix', plugin, '--cache', cache, '--ignore-scripts', '--omit=dev', '--omit=optional', '--no-audit', '--no-fund']);
+  run('npm', ['ci', '--cache', cache, '--ignore-scripts', '--omit=dev', '--omit=optional', '--no-audit', '--no-fund'], plugin);
   assert.deepEqual(readdirSync(path.join(plugin, 'node_modules')).filter(name => !name.startsWith('.')), ['zod']);
   run(process.env.BB_CLI || 'bb', ['plugin', 'build', plugin]);
   const metadata = JSON.parse(readFileSync(path.join(plugin, 'dist/host.meta.json'), 'utf8'));
-  assert.equal(metadata.pluginId, 'promptobus-native-panel'); assert.equal(metadata.sdkVersion, '0.6.79');
+  assert.equal(metadata.pluginId, 'promptobus-native-panel'); assert.equal(metadata.sdkVersion, JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')).devDependencies['@get-bb/plugin-sdk']);
   const sources = JSON.parse(readFileSync(path.join(plugin, 'dist/host.js.map'), 'utf8')).sources;
   assert(sources.some(source => source.endsWith('/src/v1/validate.ts')));
   const isolated = path.join(area, 'isolated'); mkdirSync(isolated);

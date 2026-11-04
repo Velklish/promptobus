@@ -1,11 +1,11 @@
 {
   "name": "bb-plugin-promptobus-native-panel",
-  "version": "0.1.0",
+  "version": "0.2.0-rc.1",
   "type": "module",
   "engines": {
-    "bb": ">=0.47.1",
-    "bbPluginSdk": "0.6.79",
-    "node": ">=22"
+    "bb": "0.48.1",
+    "bbPluginSdk": "0.6.104",
+    "node": ">=26"
   },
   "bb": {
     "name": "Promptobus Native Panel [Experimental]",
@@ -21,10 +21,10 @@
     ]
   },
   "dependencies": {
-    "zod": "4.6.5"
+    "zod": "4.6.6"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.6.79",
+    "@get-bb/plugin-sdk": "0.6.104",
     "typescript": "5.9.3",
     "@types/node": "22.20.5",
     "@types/react": "19.3.0",
@@ -35,7 +35,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "pretest": "npm --prefix ../.. run build",
-    "test": "tsc -p tsconfig.test.json && node --test .test-build/integrations/bb-native-observer/test/*.test.js",
+    "test": "tsc -p tsconfig.test.json && node -e \"require('node:fs').copyFileSync('../../package.json','.test-build/package.json')\" && node --test .test-build/integrations/bb-native-observer/test/*.test.js",
     "build": "node scripts/build.mjs",
     "check:clean-bundle": "node scripts/check-clean-bundle.mjs"
   },

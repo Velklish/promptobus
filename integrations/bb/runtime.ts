@@ -11,6 +11,7 @@ import { normalizeContextDeclaration } from 'promptobus/participant-context';
 import { ORCHESTRATOR, REVIEWER, APPROVER } from 'promptobus';
 import { engineInput, hostContract } from './contract.js';
 import { BUILD_IDENTITY } from './build-identity.js';
+import { inspectInstallation } from './installation.js';
 import { bindingStore } from './bindings.js';
 import { artifactSchema, bindingSchema, COMMAND_ADMISSION_FORMAT, emptySchema, hostCallSchema, hostContextSchema, hostReadSchema, mailboxSchema, reasoningSchema, roleSchema, sendSchema, toolsFor } from './protocol.js';
 import type { Binding } from './protocol.js';
@@ -419,6 +420,14 @@ export function registerRuntime(bb: BbPluginApi) {
   };
   const archiving = new Set<string>();
   bb.cli.register(defineCli({ name: 'promptobus', summary: 'Local engine-backed BB task participants.', commands: {
+    doctor: cliCommand({ summary: 'Check both plugin release sources, versions and SDK compatibility without changing installation.',
+      async run(_input, context) {
+        const { plugins } = await bb.sdk.plugins.list({ signal: context.signal });
+        const entries = await Promise.all(['promptobus', 'promptobus-native-panel'].filter(id => plugins.some(plugin => plugin.id === id))
+          .map(async pluginId => [pluginId, await bb.sdk.plugins.getSource({ pluginId, signal: context.signal })] as const));
+        const report = inspectInstallation(plugins, Object.fromEntries(entries), BUILD_IDENTITY);
+        return { exitCode: report.status === 'complete' ? 0 : 1, stdout: JSON.stringify(report, null, 2) };
+      } }),
     'root lookup': cliCommand({ summary: 'Resolve one ordinary native root from latest public identities and complete managed launch history.', options: {
       root: { type: 'string', required: true, description: 'Canonical owner workspace approved for the root profile.' },
       'native-thread': { type: 'string', required: true, description: 'Actual native thread from the first owned transcript record.' },

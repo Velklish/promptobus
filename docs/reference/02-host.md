@@ -946,8 +946,13 @@ and receipts are outside `inputSha256`; the captured consumer payload digest is
 an explicit input. Unique ids are no reproducibility claim.
 
 The copied core package preserves per-source `import.meta` origins for the server.
-The existing flat host bundle's core schema/catalog/native-helper paths and eager
-package-provenance read are not repaired by this change. Node and BB-provided APIs,
+The Host artifact embeds a compressed copy of that exact public core package.
+Root admission materializes it under the plugin's daemon data directory by content
+hash and verifies every file before importing the native Host and admission entry
+points. Their package-relative resources and runtime fingerprint therefore resolve
+inside the retained core package after the build checkout is removed. Core import
+alone does not read package provenance; explicit Host runtime options need no
+adjacent package metadata. Node and BB-provided APIs,
 including the runtime SDK, remain external boundaries. Arbitrary dynamic
 import/require/eval, consumer file-relative filesystem assets and external runtime
 code are not claimed frozen. The captured generation-local `tsconfig.json` stops
@@ -977,6 +982,17 @@ Nested `node_modules` copies can be excluded by npm packing, so automatic npm/Gi
 installation of this optional plugin is not a supported distribution claim.
 The standalone `promptobus-runtime` skill covers diagnosis; the six role skills
 remain generated from the core instruction renderer.
+
+### BB managed release delivery
+
+`npm run bb:release -- --directory <new-path>` builds a self-contained collection
+with `promptobus` and `native-panel` entries. Release tags use `bb/vX.Y.Z`; a Git
+semver range with `--tag-prefix bb/` enables normal `bb plugin update`. The
+collection retains bundle inputs outside `dist`, because BB rebuilds `dist` on
+Git installation. The adapter retains its executing build identity and embeds
+its core package; command modules use the collection-local core dependency.
+`bb promptobus doctor` checks both running versions, source tags and SDK pins.
+See the [delivery guide](../guides/bb-plugins.md) for the supported commands.
 
 ### BB display names and acceptance placement
 

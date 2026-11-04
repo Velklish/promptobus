@@ -1,0 +1,47 @@
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { test } from 'node:test';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { experimental_createHostEntryHarness } from '@get-bb/plugin-sdk/testing/host';
+import { build } from '../scripts/build.mjs';
+
+const source = fileURLToPath(new URL('..', import.meta.url));
+
+test('a relocated Host retains root admission after its source and dependencies are removed', async t => {
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'pb-bb-packaged-core-')));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const copy = path.join(root, 'source'), isolated = path.join(root, 'isolated');
+  cpSync(source, copy, { recursive: true, filter: file => !['node_modules', '.runtime', '.test-build', 'dist'].includes(path.basename(file)) });
+  symlinkSync(path.join(source, 'node_modules'), path.join(copy, 'node_modules'), 'dir');
+  const receipt = await build(copy);
+  mkdirSync(isolated);
+  const artifact = path.join(isolated, 'host.mjs');
+  cpSync(path.join(copy, receipt.installationDirectory, 'dist/host.js'), artifact);
+  rmSync(copy, { recursive: true, force: true });
+  const entry = (await import(pathToFileURL(artifact).href)).default;
+  const dataDir = path.join(root, 'data'), workspace = path.join(root, 'workspace');
+  mkdirSync(workspace);
+  const previous = process.env.PROMPTOBUS_SERVICE_HOME;
+  process.env.PROMPTOBUS_SERVICE_HOME = path.join(root, 'services');
+  t.after(() => { if (previous === undefined) delete process.env.PROMPTOBUS_SERVICE_HOME; else process.env.PROMPTOBUS_SERVICE_HOME = previous; });
+  const harness = experimental_createHostEntryHarness(entry, { experimental_paths: { dataDir, tempDir: isolated } });
+  t.after(() => harness.experimental_dispose());
+  const observed = await harness.experimental_call('runtimeDescribe', {});
+  assert.equal(observed.identity.buildId, receipt.identity.buildId);
+  const scope = await harness.experimental_call('rootScope', { root: workspace });
+  assert.deepEqual(scope, { root: workspace, home: path.join(workspace, '.promptobus') });
+  const intent = randomUUID();
+  const begun = await harness.experimental_call('rootLaunch', { operation: 'begin', root: workspace, intent });
+  assert.deepEqual(begun, scope);
+  const complete = await harness.experimental_call('rootLaunch', { operation: 'complete', root: workspace, intent, threadId: 'thr_packaged', ownerScope: scope });
+  assert.deepEqual(complete, scope);
+  const packages = path.join(dataDir, 'runtime-packages');
+  const installed = path.join(packages, readdirSync(packages)[0]);
+  const manifest = path.join(installed, 'package.json'), original = readFileSync(manifest);
+  writeFileSync(manifest, '{}');
+  await assert.rejects(harness.experimental_call('rootScope', { root: workspace }), /content differs/);
+  writeFileSync(manifest, original);
+});

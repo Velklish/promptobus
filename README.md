@@ -413,5 +413,7 @@ which supplies a constrained Codex read-only reviewer provider and local engine-
 participant tools. It is separate from the native harness registry. Setup and the
 current activation boundary are described in that package's README.
 
-A second optional package, `integrations/bb-native-observer/`, is a read-only BB
-dashboard for native Promptobus tasks. Its README covers setup and limits.
+A second optional package, `integrations/bb-native-observer/`, shows native tasks
+and can notify their explicitly bound BB owner without consuming canonical mail.
+Both plugins ship through a versioned Git collection with normal BB updates.
+See [BB plugin delivery](docs/guides/bb-plugins.md) for installation and diagnosis.

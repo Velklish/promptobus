@@ -10,6 +10,7 @@ The canonical project documentation. For current work, use `npx --no-install bac
 | [guides/model-routing.md](guides/model-routing.md) | The model catalog, the overlay layers, and the file a person copies | Living |
 | [guides/contributing.md](guides/contributing.md) | Contribution workflow through backslop | Living |
 | [guides/releasing.md](guides/releasing.md) | How a release is cut, including the technical-writer pass | Living |
+| [guides/bb-plugins.md](guides/bb-plugins.md) | Install, update and qualify the BB plugin release collection | Living |
 | [reference/](reference/README.md) | Subsystem reference: how the current code works | Living |
 | [reference/reporter-channel.md](reference/reporter-channel.md) | Human questions to the retained read-only Codex reporter | Living |
 | [GLOSSARY.md](GLOSSARY.md) | Normative terminology: one concept, one name | Living |
@@ -47,6 +48,7 @@ The canonical project documentation. For current work, use `npx --no-install bac
 | [adr/adr-038-durable-message-order.md](adr/adr-038-durable-message-order.md) | Store-local logical message IDs and causal assignment boundaries establish current results; unread membership preserves wake coverage across delayed fan-out | Accepted |
 | [adr/adr-039-terminal-send-barrier.md](adr/adr-039-terminal-send-barrier.md) | Task close fences new intent publication; committed fan-out and already-public artifacts remain recoverable | Accepted |
 | [adr/adr-040-shared-workspace-service.md](adr/adr-040-shared-workspace-service.md) | One authenticated process per canonical workspace/store serves isolated HTTP MCP clients and task wardens; a launcher starts it and idle exit respects client/work lifetime | Accepted |
+| [adr/adr-041-bb-plugin-release-collection.md](adr/adr-041-bb-plugin-release-collection.md) | Versioned BB plugin release collection | Accepted |
 
 ## Cross-cutting principles
 

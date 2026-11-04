@@ -10,6 +10,7 @@ import type { Binding } from './protocol.js';
 import { reviewerFiles } from 'promptobus/bb-reviewer';
 import { hostContract } from './contract.js';
 import { BUILD_IDENTITY } from './build-identity.js';
+import { loadRuntimePackage } from './runtime-package.js';
 import { engineOperation } from './engine-host.js';
 import { readCurrentControl, publishControl } from './control.js';
 
@@ -19,22 +20,27 @@ function participantTask(b: Binding) {
 }
 
 export function createHostEntry(integration?: BbHostIntegration, resolveOwnerHost?: (root: string) => PromptobusHost | Promise<PromptobusHost>) {
-  const standalone = (root: string) => createStandaloneHost({ cwd: root });
+  const coreVersion = BUILD_IDENTITY?.inputs.dependencies.find(dependency => dependency.name === 'promptobus')?.version;
+  const standalone = (root: string) => createStandaloneHost({ cwd: root, ...(coreVersion ? { version: coreVersion } : {}) });
   const selected = integration ?? createBbHostIntegration({ resolveHost: standalone });
   const ownerResolver = resolveOwnerHost ?? (integration ? undefined : standalone);
-  const admission = () => {
+  const admission = async (dataDir?: string) => {
     if (!ownerResolver) throw new Error('A canonical owner Host resolver is required for BB root admission');
-    return createBbManagedAdmission(ownerResolver);
+    if (!BUILD_IDENTITY) return createBbManagedAdmission(ownerResolver);
+    if (!dataDir) throw new Error('Packaged root admission requires the BB Host data directory');
+    const core = await loadRuntimePackage(dataDir);
+    return core.createBbManagedAdmission(resolveOwnerHost ?? (root => core.createStandaloneHost({ cwd: root })));
   };
   return experimental_defineHostEntry({ contract: hostContract, handlers: {
     rootScope: async ({ root }, context) => {
       context.signal.throwIfAborted();
-      return admission().scope(root);
+      return (await admission(context.experimental_paths?.dataDir)).scope(root);
     },
     rootLaunch: async (input, context) => {
       context.signal.throwIfAborted();
-      return input.operation === 'begin' ? admission().begin(input.root, input.intent)
-        : admission().complete(input.root, input.intent, input.threadId, input.ownerScope);
+      const selected = await admission(context.experimental_paths?.dataDir);
+      return input.operation === 'begin' ? selected.begin(input.root, input.intent)
+        : selected.complete(input.root, input.intent, input.threadId, input.ownerScope);
     },
     runtimeDescribe: async (_input, context) => {
       context.signal.throwIfAborted();

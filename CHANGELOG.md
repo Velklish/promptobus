@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Load the BB Host without an adjacent core package manifest. Retain the exact
+  core runtime and its package-relative resources for root admission after the
+  build checkout is removed.
+- Restore the native panel test bootstrap and its clean production-bundle check
+  on BB 0.48.1 / Plugin SDK 0.6.104.
+
+### Added
+
+- Ship native task owner notifications with the dashboard, including explicit
+  BB/native owner validation, durable no-replay delivery and task-switch fencing.
+- Build a self-contained two-plugin Git release collection for standard BB
+  install/update. Add `bb promptobus doctor` for release-source and SDK diagnosis.
+
 ## [0.32.3] — 2026-11-03
 
 ### Fixed
