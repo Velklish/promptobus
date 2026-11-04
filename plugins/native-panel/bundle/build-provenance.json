@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "sourceRevision": "d93294c06456b4317dcb5164f4890126d37bb951",
+  "sourceRevision": "cb06fff67efa6612fb0d41da95bbdbdcec486481",
   "coreDirty": false,
   "coreSource": {
     "files": 32,
@@ -8,7 +8,7 @@
   },
   "pluginSource": {
     "files": 27,
-    "sha256": "ffaf345d8a7316326c78b8be09877ae8cc27be3ce6d12e50532eaa35171d601d"
+    "sha256": "dedcb28b271d5ea5e95235789a596a91d436cd60245ba059ad7dfd4ca86d2eaa"
   },
   "host": {
     "sha256": "c107f1e225fef461b41569abb7251dda3ac1163ded525d6205abfd5895471628",
@@ -17,7 +17,7 @@
       "sdkVersion": "0.6.104",
       "artifactFormatVersion": 1,
       "pluginId": "promptobus-native-panel",
-      "pluginVersion": "0.2.0-rc.3",
+      "pluginVersion": "0.2.0",
       "builtWith": {
         "bbVersion": "0.48.1",
         "pluginSdkVersion": "0.6.104"

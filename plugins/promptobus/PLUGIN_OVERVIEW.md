@@ -22,7 +22,7 @@ switch. Inspect executing server/selected-host snapshot identity
 with `bb promptobus runtime describe [--host <id>] [--json]`. JSON is the default;
 matching embedded build ids and input digests return `complete` with exit 0,
 otherwise `incomplete` with exit 1. The standalone runtime skill covers this
-read-only check. [Runtime identity](https://github.com/Velklish/promptobus/blob/d93294c06456b4317dcb5164f4890126d37bb951/docs/reference/02-host.md#bb-executing-runtime-identity)
+read-only check. [Runtime identity](https://github.com/Velklish/promptobus/blob/cb06fff67efa6612fb0d41da95bbdbdcec486481/docs/reference/02-host.md#bb-executing-runtime-identity)
 defines capture, activation and external runtime boundaries; the id does not hash
 BB's current loader cache bytes. The source root is not a supported install target, and automatic
 npm/Git plugin delivery is not claimed.

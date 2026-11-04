@@ -1,9 +1,9 @@
 {
   "identity": {
     "format": 1,
-    "buildId": "6480696e-281d-4636-855a-41d40ef468fb",
-    "pluginVersion": "0.2.0-rc.3",
-    "inputSha256": "cd64f2e27dc8120d527e697dd63b2026832a983cc34a62a3b5cdd58f86f8fff0",
+    "buildId": "c9944a6b-491d-43a7-92ad-0c84ac4144f3",
+    "pluginVersion": "0.2.0",
+    "inputSha256": "c6da78a37dc0e01785189c2ad47a430481dff7b32c24d14e75bffc953ba1018b",
     "inputs": {
       "commandCompiler": [
         {
@@ -27,10 +27,10 @@
           "sha256": "4fb1814c23602191fc5e48f576555e9978e554a2053708368bc632bcb1402f34"
         }
       ],
-      "sourceSha256": "193dd25c26f36a271e38d1d46c1ef336654055eab61b0a35f222a723ecf8e072",
-      "sourceRevision": "d93294c06456b4317dcb5164f4890126d37bb951",
+      "sourceSha256": "5dbc37f236c1e9aa522cfad52d25fbcd5b79aed4994c186cb94616f9fbc3be3d",
+      "sourceRevision": "cb06fff67efa6612fb0d41da95bbdbdcec486481",
       "sourceDirty": false,
-      "lockSha256": "92687225cf6d42a19b610783ca5b4e9ff3283a16884b519c396035e3324fb2ee",
+      "lockSha256": "8901c03fe3786aafc8b3a54b2e85e75a0e5198c160541058d0e8771a8e0d0ae6",
       "builderVersion": "0.48.1",
       "dependencies": [
         {
@@ -65,8 +65,8 @@
         },
         {
           "name": "promptobus",
-          "version": "0.32.3",
-          "sha256": "1493b545ee7d2edf46aa79f5f6dac973e56113919305b0ddfd766cb4030d9fcb"
+          "version": "0.32.4",
+          "sha256": "f2c1879b657afa7a6404302c776e23da7a546b1ec2848502741a94716a977796"
         },
         {
           "name": "shebang-command",
@@ -93,9 +93,9 @@
       "consumerBundleSha256": null
     }
   },
-  "installationDirectory": ".runtime/6480696e-281d-4636-855a-41d40ef468fb",
+  "installationDirectory": ".runtime/c9944a6b-491d-43a7-92ad-0c84ac4144f3",
   "snapshot": {
-    "sha256": "840e9311b42a21197dfe1f32e2434b464eaafd0fb9c7baa7eebe64277ecb15f9",
+    "sha256": "3183590157b00b2886d6d631cb5a65834b9dc730ff8d4bca939a80917049f4a0",
     "entries": [
       "inputs",
       "source",
@@ -137,7 +137,7 @@
   "commandRecorder": "commands/record-command.js",
   "evidencePreparer": "commands/evidence-prepare.js",
   "artifacts": {
-    "commands/build-identity.js": "50aaaa545746d5972ea6dec4b3ca9682fbf80296c86fa1593b4f6cd8b263d6f2",
+    "commands/build-identity.js": "8860f9781d9a9ac3931ca71ce9559a5b20333faf38f06b32062ce7309839e6a5",
     "commands/command-admission.js": "8bb0f5cbf10a76768041b83e82050eda79781fec1b4a9b358ad7f49da8cfdc8f",
     "commands/command-runner.js": "7a4d0d611331b7804cdeece93059557c573807b6d2882aa21c6cc188a5960aa6",
     "commands/control-schema.js": "335633b40962d965f3d4ad6eaf3ce616bf193a16409782dac39cd73a86216d2b",
@@ -148,8 +148,8 @@
     "commands/protocol.js": "1207963d1d945cb29be1611339f25c251792767fa26f6a87b8a4640e6c933d56",
     "commands/record-command.js": "67f05958d5d8f2badb99a987946ae37411298acfd96f89ac1213a11ff81b0b21",
     "commands/review-evidence.js": "c13e6884bb2e18fa0b04127e4dde9d60b6a5291265053d9e8e6c48eda4745c97",
-    "server.js": "71c706a5950cae8705b60b83df8953c3be6f05eb93c7039e387629eebb9fb89d",
-    "host.js": "681be8e3b621757a144ec06d71a61d7c45734623a56e3401a5029e545a37169e"
+    "server.js": "fc1d4394cb5bfdac82c9066dd64333d0a592a4a3ea1d15e9904810147030e1ea",
+    "host.js": "6eec0f4d4e410320b12544ff05bb8bc411f2b58a12a4f173f3d0df32dcd0f8bc"
   },
   "builtWith": {
     "bbVersion": "0.48.1",

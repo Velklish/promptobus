@@ -1,6 +1,6 @@
 {
   "name": "promptobus",
-  "version": "0.32.3",
+  "version": "0.32.4",
   "description": "Harness-neutral bus for agent sessions: tasks, mailboxes, artifacts and participant sessions.",
   "license": "MIT",
   "repository": "github:Velklish/promptobus",
@@ -26,7 +26,8 @@
     "pins": "node scripts/check-pins.mjs",
     "probe": "node scripts/mutation-probe.mjs",
     "codex-schema": "node scripts/check-codex-schema.mjs",
-    "schema-skew": "node scripts/check-schema-skew.mjs"
+    "schema-skew": "node scripts/check-schema-skew.mjs",
+    "bb:release": "node scripts/build-bb-release.mjs"
   },
   "engines": {
     "node": ">=26"

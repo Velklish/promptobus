@@ -45,7 +45,7 @@ turns, so remembered project Fast preferences do not select another tier.
 
 ## Release delivery
 
-Install the versioned collection described in [BB plugin delivery](https://github.com/Velklish/promptobus/blob/d93294c06456b4317dcb5164f4890126d37bb951/docs/guides/bb-plugins.md). `bb promptobus doctor` reports both plugin versions, release-tracking sources and SDK compatibility without changing installation. `runtime describe` separately checks the executing server and Host identities.
+Install the versioned collection described in [BB plugin delivery](https://github.com/Velklish/promptobus/blob/cb06fff67efa6612fb0d41da95bbdbdcec486481/docs/guides/bb-plugins.md). `bb promptobus doctor` reports both plugin versions, release-tracking sources and SDK compatibility without changing installation. `runtime describe` separately checks the executing server and Host identities.
 
 ## Executing runtime identity
 
@@ -71,9 +71,9 @@ Building B preserves loaded A; reloading registered A stays on A. Only explicitl
 installing B switches it. Builds perform no install, reload or old-generation
 deletion. The id names captured inputs, not BB loader cache bytes or external
 SDK/Node APIs. Local development generations and the managed Git release collection are supported.
-See [release delivery](https://github.com/Velklish/promptobus/blob/d93294c06456b4317dcb5164f4890126d37bb951/docs/guides/bb-plugins.md) for install, update and diagnosis. Local fixtures do not certify a particular BB
+See [release delivery](https://github.com/Velklish/promptobus/blob/cb06fff67efa6612fb0d41da95bbdbdcec486481/docs/guides/bb-plugins.md) for install, update and diagnosis. Local fixtures do not certify a particular BB
 installation; verify the executing identities after install/reload.
-See the [Host reference](https://github.com/Velklish/promptobus/blob/d93294c06456b4317dcb5164f4890126d37bb951/docs/reference/02-host.md#bb-executing-runtime-identity)
+See the [Host reference](https://github.com/Velklish/promptobus/blob/cb06fff67efa6612fb0d41da95bbdbdcec486481/docs/reference/02-host.md#bb-executing-runtime-identity)
 for snapshot boundaries, fields and failure reasons, and the standalone
 `promptobus-runtime` skill for diagnosis. The six role skills are generated from
 the canonical instruction renderer; their text can change without changing the
@@ -104,7 +104,7 @@ The host entry performs bounded reads and rejects paths outside that root. Clien
 metadata never grants another thread access. An effective sandbox, approval or
 model mismatch refuses startup before the first model turn. Missing or widened
 runtime restrictions refuse startup regardless of the reported Codex version.
-See the [compatibility proof](https://github.com/Velklish/promptobus/blob/d93294c06456b4317dcb5164f4890126d37bb951/docs/reference/02-host.md#bb-reviewer-compatibility-proof)
+See the [compatibility proof](https://github.com/Velklish/promptobus/blob/cb06fff67efa6612fb0d41da95bbdbdcec486481/docs/reference/02-host.md#bb-reviewer-compatibility-proof)
 for the measured versions, native denials and reproducible test. The test matches
 the entire reviewed exec source, call/output identity and turn, and independent
 router stderr from the isolated child. The nested patch has no separate native
@@ -129,9 +129,10 @@ metadata failures retain an orphan binding instead of claiming success.
 A new approver is spawned below its authenticated worker, retaining its selected
 acceptance workspace and the orchestrator lifecycle owner. Raw metadata reparenting
 of an already bound thread is refused by authentication. The
-[display contract](https://github.com/Velklish/promptobus/blob/d93294c06456b4317dcb5164f4890126d37bb951/docs/reference/02-host.md#bb-display-names-and-acceptance-placement)
+[display contract](https://github.com/Velklish/promptobus/blob/cb06fff67efa6612fb0d41da95bbdbdcec486481/docs/reference/02-host.md#bb-display-names-and-acceptance-placement)
 describes defaults, inheritance, ownership checks and the SDK fixture evidence
-boundary. Live sidebar and new-source native behavior remain unmeasured.
+boundary. The current-profile workflow below records the separately measured
+model, sidebar and lifecycle scope.
 
 ## Role instructions
 
@@ -163,7 +164,7 @@ validation, predecessor checks, and active-session limits retain their existing
 guards. A retained BB 0.47.1 / Plugin SDK 0.6.79 observation on 2026-10-26
 recorded a system child-interruption request 559 ms after confirmed parent Stop,
 then a new parent turn. The policy itself establishes no stopped-grant guarantee.
-See the [host boundary](https://github.com/Velklish/promptobus/blob/d93294c06456b4317dcb5164f4890126d37bb951/docs/reference/02-host.md#local-bb-host-boundary)
+See the [host boundary](https://github.com/Velklish/promptobus/blob/cb06fff67efa6612fb0d41da95bbdbdcec486481/docs/reference/02-host.md#local-bb-host-boundary)
 for the measurement limits.
 
 Paused plugin-owned threads refuse automatic system dispatch at the public
@@ -190,8 +191,9 @@ Public `threads.update` supports `parentNotifications: 'off'`, but changing that
 policy does not establish cancellation of an already admitted notification.
 With an unpaused current grant, failure,
 interruption, approval and question attention still reach the parent. This hook
-fix still requires a bounded live check; it does not certify the terminal-parent
-race after the hook has returned.
+fix has a bounded BB 0.48.1 live check in the
+[Host reference](https://github.com/Velklish/promptobus/blob/cb06fff67efa6612fb0d41da95bbdbdcec486481/docs/reference/02-host.md#local-bb-host-boundary); it does
+not certify every terminal-parent race after the hook has returned.
 
 When `accept-edits` refuses a command before an approval request appears, open
 the bound BB thread, enter the authorized continuation in its message composer
@@ -257,7 +259,9 @@ answer do not change that turn's eligibility. A genuine user turn uses `"ask"`.
 When this route is available, give the person the actual bound thread and exact
 bounded command: open that thread, use **Send** for that scope, then select
 **Allow once** on the actual request for that command. Approval covers only that
-request. This is a prospective remedy whose live result remains unverified.
+request. On 2026-11-04, the selected Cursor approver completed the previously
+refused fast-forward, final test and clean-status checks after the actual user
+used Send and Allow once. The earlier baseline was retained without a rerun.
 
 Choose the supported gate checkout and actual permission route before dispatch,
 including process visibility required by native tests. A supplied grant or local
@@ -380,8 +384,8 @@ Keep writers quiescent through backup, rebuild and canonical byte/ID/order check
 Restore the coherent backup only before new writes: restoring an older head after
 new writes can reuse ordering positions. This command does not acquire writer
 quiescence or authorize repeating maintenance on a live store. See
-[message-order rebuild](https://github.com/Velklish/promptobus/blob/d93294c06456b4317dcb5164f4890126d37bb951/docs/reference/03-cli.md#message-order-rebuild) and
-[the BB workspace profile](https://github.com/Velklish/promptobus/blob/d93294c06456b4317dcb5164f4890126d37bb951/docs/reference/05-drivers.md#bb-standard-workspace-profile).
+[message-order rebuild](https://github.com/Velklish/promptobus/blob/cb06fff67efa6612fb0d41da95bbdbdcec486481/docs/reference/03-cli.md#message-order-rebuild) and
+[the BB workspace profile](https://github.com/Velklish/promptobus/blob/cb06fff67efa6612fb0d41da95bbdbdcec486481/docs/reference/05-drivers.md#bb-standard-workspace-profile).
 
 Prepare complete supplied owner confirmation and every actor's exact grants in
 `CURRENT_CONTROL_INPUT`, then each role's bounded launch context described under
@@ -466,7 +470,7 @@ orchestrator reads full canonical bodies, including acknowledged status parts,
 checks sender, grant token, totals, order and release, and rejects incomplete,
 duplicated or reordered reports before relying on them. This is a procedural
 check; the bus does not assemble or validate parts. Reviewers need no artifact,
-shell or filesystem write. See [bounded reviewer reports](https://github.com/Velklish/promptobus/blob/d93294c06456b4317dcb5164f4890126d37bb951/docs/reference/04-protocol.md#bb-bounded-reviewer-reports).
+shell or filesystem write. See [bounded reviewer reports](https://github.com/Velklish/promptobus/blob/cb06fff67efa6612fb0d41da95bbdbdcec486481/docs/reference/04-protocol.md#bb-bounded-reviewer-reports).
 
 The six role skills, model-catalog selection and recipient wake/recovery are delivered.
 The measured six-role workflow and its profile limits are recorded below.
@@ -850,7 +854,7 @@ optional and gain no schema default.
 (up to 256 KiB), structurally validated before provider/model work. Its `skills`
 and exact absolute `resources` declare the complete additional set with reasons
 and optional typed `requires` references. The shared
-[participant-context contract](https://github.com/Velklish/promptobus/blob/d93294c06456b4317dcb5164f4890126d37bb951/docs/reference/02-host.md#explicit-participant-context)
+[participant-context contract](https://github.com/Velklish/promptobus/blob/cb06fff67efa6612fb0d41da95bbdbdcec486481/docs/reference/02-host.md#explicit-participant-context)
 defines admission and dependency checks. A child does not inherit the owner's
 extras. Bindings and canonical participant metadata retain the full declaration;
 fresh phases reuse the same prepared selection. A declaration without a Host
@@ -880,7 +884,7 @@ identity and explicit authorization within the existing role and grant. Such a
 handover is evidence of rule content, not a successful Host read, a permission
 grant or a bypass of declared dependency validation during preparation. Use only
 a route actually available to that participant. Unavailable required content
-blocks acceptance. The [role policy](https://github.com/Velklish/promptobus/blob/d93294c06456b4317dcb5164f4890126d37bb951/docs/reference/02-host.md#bb-rule-source-routes)
+blocks acceptance. The [role policy](https://github.com/Velklish/promptobus/blob/cb06fff67efa6612fb0d41da95bbdbdcec486481/docs/reference/02-host.md#bb-rule-source-routes)
 states the same boundary.
 
 Assignments name the authenticated task and purpose, and carry the complete
@@ -1016,7 +1020,7 @@ result/review settles the ordinary obligation; the pipeline still requires
 `result`. The owner's and reporter's exclusions remain. Wall-clock `ts` and
 participant times stay display/measurement fields; BB event replay still uses
 its own numeric `row.seq`, not the logical message-ID prefix. See
-[message order](https://github.com/Velklish/promptobus/blob/d93294c06456b4317dcb5164f4890126d37bb951/docs/reference/04-protocol.md#messages-names-order-and-what-a-read-marks).
+[message order](https://github.com/Velklish/promptobus/blob/cb06fff67efa6612fb0d41da95bbdbdcec486481/docs/reference/04-protocol.md#messages-names-order-and-what-a-read-marks).
 
 Evidence inventories preserve exact test names, order and repeated occurrences
 from complete raw output. Remove only a supported verdict's terminal numeric
@@ -1025,12 +1029,12 @@ lint and other gate status separate, and check names, counts and multiplicities
 against the raw test scope. Raw output is authoritative; approximate inventories,
 missing raw and unsupported formats are explicitly incomplete.
 
-The checkout-only [reference helper](https://github.com/Velklish/promptobus/blob/d93294c06456b4317dcb5164f4890126d37bb951/scripts/bb-evidence-verdict-names.mjs)
+The checkout-only [reference helper](https://github.com/Velklish/promptobus/blob/cb06fff67efa6612fb0d41da95bbdbdcec486481/scripts/bb-evidence-verdict-names.mjs)
 supports one flat passing Node spec scope with one complete footer. Nested or
 concatenated scopes, custom printers, other reporters, ANSI output, failures and
 skips are unsupported. The helper cannot certify gates; the extractor is shipped in the
 library package. Manual lossless opaque UTF-8 evidence with retained raw output
-remains valid. See [BB evidence attachments](https://github.com/Velklish/promptobus/blob/d93294c06456b4317dcb5164f4890126d37bb951/docs/reference/04-protocol.md#bb-evidence-attachments).
+remains valid. See [BB evidence attachments](https://github.com/Velklish/promptobus/blob/cb06fff67efa6612fb0d41da95bbdbdcec486481/docs/reference/04-protocol.md#bb-evidence-attachments).
 
 ### Required launch and review inputs
 
@@ -1437,7 +1441,8 @@ schemas. A complete mutation probe still carries `coverage`: `establishes` and
 `doesNotEstablish`. The validator requires both and does not treat `reddened`
 as proof of the excluded claim. The worker skill requires both and does not
 tell the author to omit them. The admission, original-part transport and retained failure replay have
-SDK fixture coverage; the changed live provider workflow is `notMeasured`.
+SDK fixture coverage. The current-profile live workflow below separately records
+original receipts and independent review; neither layer substitutes for the other.
 Current control guards existing Promptobus entry points. Native commands outside
 those points, physical Stop of running calls and provider permission enforcement
 remain separate; a revoked grant alone does not prove task-owned call terminality.
@@ -1452,8 +1457,19 @@ alone are not this support claim.
 | Codex CLI 0.162.0-alpha.17.2; `gpt-6.1-sol`, `high`; isolated native reviewer transport on 2026-10-11 | Permission proof measured | Effective `readOnly` / `never`, private home, disabled features and no MCP; bounded read, outside-root refusal and actual patch sandbox denial; matching canary hashes and child cleanup. Installed-plugin reload and full BB workflow on this version remain unmeasured. |
 | Mixed native reviewer and BB workers | Partial | Does not establish the full BB profile |
 | Cursor and OpenCode ACP workers; Cursor ACP approver | SDK fixtures | Selection, provisioning, authenticated tools, recovery and current predecessors; separate from a live model workflow |
+| BB 0.48.1 / SDK 0.6.104; local Node 26.13.0; 2026-11-04; development candidate `0.2.0-rc.2` | Bounded live workflows | Codex owner, worker, constrained reviewer and owned-worktree approver; Cursor worker `gpt-5.6-sol` / `medium` and approver `grok-4.7` / `high`; OpenCode worker `opencode-go/gpt-6-luna` / `medium`. Each source passed independent constrained review and disposable publication. Teamlead and reporter were not repeated on this profile. |
+| Managed Git candidate `0.2.0-rc.3`, source `d93294c0` | Bounded install and lifecycle check | Matching executing server/Host identity; actual fresh task, child completion after ended-grant parent Stop, explicit Resume and reload. Unavailable model, unsupported role/provider and unsupported reasoning refused without changed bindings. |
 | Other providers, versions, hosts, models/efforts or custom pipeline shapes | Unverified or unsupported | No full support claim; Unadmitted providers and remote environments refuse |
 | Package delivery | Versioned Git collection | Frozen bundles and command dependencies ship in their release collection; the root package tarball excludes the optional plugins |
+
+The OpenCode run completed its nine commands before a parallel receipt-file read
+failed in the provider with `PermissionNotFoundError`. The same valid phase then
+received the complete original outputs inline and sent its canonical result;
+the nine commands were not repeated. Independent source/evidence review and
+disposable publication followed. The original failure and initially unconfirmed
+Stop remain evidence; this report recovery does not fix the provider's parallel
+read failure. Cursor approval eligibility retains the direct-user boundary above.
+Native process drain and additional OS/remote profiles were not established.
 
 The representative fixture retained current worker and reviewer results for the
 same actual managed environment. Approver admission refused before those results.

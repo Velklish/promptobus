@@ -3,10 +3,10 @@
   "sdkVersion": "0.6.104",
   "artifactFormatVersion": 1,
   "pluginId": "promptobus",
-  "pluginVersion": "0.2.0-rc.3",
+  "pluginVersion": "0.2.0",
   "builtWith": {
     "bbVersion": "0.48.1",
     "pluginSdkVersion": "0.6.104"
   },
-  "artifactDigest": "681be8e3b621757a144ec06d71a61d7c45734623a56e3401a5029e545a37169e"
+  "artifactDigest": "6eec0f4d4e410320b12544ff05bb8bc411f2b58a12a4f173f3d0df32dcd0f8bc"
 }
