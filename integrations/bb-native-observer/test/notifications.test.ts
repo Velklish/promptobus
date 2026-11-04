@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import plugin from '../server.js';
+import { rpcContract } from '../contract.js';
 import { readOwnerFeed, readProjection, readTasks } from '../projection.js';
 import type { OwnerWakeSource } from '../owner-wake.js';
 import type { Selection, Snapshot } from '../contract.js';
@@ -19,7 +20,7 @@ type Handlers = {
   view(): Promise<{ snapshot: Snapshot; wake: WakeStatus }>;
   tasks(): Promise<unknown>;
   selectTask(input: { taskId: string }): Promise<Snapshot>;
-  bindOwner(input: { taskId: string; threadId: string; enabled: boolean }): Promise<WakeStatus>;
+  bindOwner(input: { taskId: string; threadId?: string; enabled: boolean }): Promise<WakeStatus>;
   wakeStatus(): Promise<WakeStatus>;
 };
 
@@ -408,3 +409,16 @@ for (const state of ['queued', 'waiting', 'scheduled', 'claimed', 'failed_retryi
     assert.equal(f.sends.length, 1);
     assert.equal((await f.rpc.wakeStatus()).error, null);
   });
+
+
+test('notifications can be disabled after remount without a local owner thread selection', async () => {
+  const f = harness();
+  await f.rpc.bindOwner({ taskId, threadId: ownerThreadId, enabled: true });
+  const input = { taskId, enabled: false } as const;
+  assert.equal(rpcContract.bindOwner.input.safeParse(input).success, true);
+  assert.equal(rpcContract.bindOwner.input.safeParse({ taskId, enabled: true }).success, false);
+  const disabled = await f.rpc.bindOwner(input);
+  assert.equal(disabled.enabled, false);
+  assert.equal(f.values.wakeEnabled, false);
+  assert.equal(f.sends.length, 0);
+});

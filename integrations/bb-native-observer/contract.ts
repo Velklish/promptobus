@@ -41,7 +41,10 @@ export const rpcContract = defineRpcContract({ snapshot: { input: z.null(), outp
   view: { input: z.null(), output: viewSchema },
   tasks: { input: z.null(), output: catalogueSchema },
   wakeStatus: { input: z.null(), output: wakeStatusSchema },
-  bindOwner: { input: z.object({ taskId: selectionSchema.shape.taskId, threadId: z.string().regex(/^thr_[a-z0-9]+$/), enabled: z.boolean() }).strict(), output: wakeStatusSchema },
+  bindOwner: { input: z.discriminatedUnion('enabled', [
+    z.object({ taskId: selectionSchema.shape.taskId, threadId: z.string().regex(/^thr_[a-z0-9]+$/), enabled: z.literal(true) }).strict(),
+    z.object({ taskId: selectionSchema.shape.taskId, threadId: z.string().optional(), enabled: z.literal(false) }).strict(),
+  ]), output: wakeStatusSchema },
   selectTask: { input: z.object({ taskId: selectionSchema.shape.taskId }).strict(), output: snapshotSchema },
 });
 export const hostContract = defineRpcContract({ snapshot: { input: selectionSchema, output: snapshotSchema },

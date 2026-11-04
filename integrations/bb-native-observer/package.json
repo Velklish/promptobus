@@ -35,7 +35,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "pretest": "npm --prefix ../.. run build",
-    "test": "tsc -p tsconfig.test.json && node -e \"require('node:fs').copyFileSync('../../package.json','.test-build/package.json')\" && node --test .test-build/integrations/bb-native-observer/test/*.test.js",
+    "test": "tsc -p tsconfig.test.json && node -e \"require('node:fs').copyFileSync('../../package.json','.test-build/package.json')\" && node --test --test-timeout=15000 .test-build/integrations/bb-native-observer/test/*.test.js",
     "build": "node scripts/build.mjs",
     "check:clean-bundle": "node scripts/check-clean-bundle.mjs"
   },

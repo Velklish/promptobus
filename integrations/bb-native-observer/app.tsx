@@ -70,7 +70,10 @@ function NativePanel() {
   async function bindOwner(enabled: boolean) {
     if (!view?.configuration.taskId) return;
     setBindingOwner(true); setActionError(null);
-    try { await rpc.call('bindOwner', { taskId: view.configuration.taskId, threadId: ownerThreadId, enabled }); }
+    try {
+      const taskId = view.configuration.taskId;
+      await rpc.call('bindOwner', enabled ? { taskId, threadId: ownerThreadId, enabled: true } : { taskId, enabled: false });
+    }
     catch (cause) { setActionError(String(cause)); }
     finally { setBindingOwner(false); }
   }
