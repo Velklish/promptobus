@@ -2,7 +2,7 @@
 
 An optional experimental BB dashboard for native Promptobus tasks. It shows task selection, managed participants, questions, status and results; raw JSON is available under Diagnostics. The no-argument `bb promptobus-native-panel` command still returns the snapshot. Native execution, mailbox consumption, ACK, recovery, bus send, Stop and cleanup remain with Promptobus.
 
-The plugin requires BB 0.48.1, Plugin SDK 0.6.104 and Node 26 or newer. It is separate from the older Promptobus BB adapter and does not migrate its settings or install it. Review, live installation and release acceptance are separate steps.
+The plugin requires BB 0.48.1, Plugin SDK 0.6.104 and Node 26 or newer. It is separate from the Promptobus BB adapter and does not migrate its settings or install it. Review, live installation and release acceptance are separate steps.
 
 ## Settings
 
@@ -73,4 +73,4 @@ Source tests and synthetic fixtures do not close visual acceptance. After source
 4. During active work, disconnect/reconnect observation, remount the page, and reload only the approved isolated plugin. Verify the selected identity persists, late samples are discarded, entries catch up without duplication, and the same native launch continues. Capture connection status, the last-success timestamp and stale/error recovery.
 5. Compare canonical inbox consumption, outgoing messages and actor launches before/after observation. Attribute concurrent worker changes by actor; observation must contribute no ACK/send/launch/Stop. Missing registry data and recorded idle must remain unknown process-liveness evidence.
 
-Install prerequisites: an exact full repository checkout (the host imports `../../src/index.ts`), Node 26 or newer, BB 0.48.1, SDK 0.6.104, production `zod`, a readable owned canonical store/native registry and an enrolled host. A Git delivery uses `--subdirectory integrations/bb-native-observer`; a prebuilt delivery needs the declared app/server/host bundles and metadata. Installation and settings changes require the controller's separate decision.
+Runtime prerequisites are Node 26 or newer, BB 0.48.1, SDK 0.6.104, a readable owned canonical store/native registry and an enrolled host. The managed collection includes production dependencies and app/server/host bundles; use the [delivery guide](../../docs/guides/bb-plugins.md). Building from source requires the full repository checkout because the host imports `../../src/index.ts`. Installation and settings changes require the controller's authorization.

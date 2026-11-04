@@ -53,6 +53,17 @@ check('docs: standalone workflows remain required while ordinary BB creation is 
   has(read('docs/reference/02-host.md'), 'Ordinary BB creation is optional for release; this entrypoint remains unsupported.')
   && has(read('docs/reference/02-host.md'), 'Standalone ordinary workflows remain required.'));
 
+check('docs: development generations and managed BB release delivery have distinct installation routes',
+  has(read('docs/reference/02-host.md'), 'Development generations use local path delivery:')
+  && has(read('docs/reference/02-host.md'), 'Managed releases use the collection below.')
+  && !has(read('docs/reference/02-host.md'), 'Supported delivery is a local path:'));
+
+check('docs: the native dashboard includes owner binding and background notifications',
+  has(read('docs/reference/02-host.md'), 'Both `selectTask` and `bindOwner` persist plugin configuration.')
+  && has(read('docs/reference/02-host.md'), 'Owner notifications are a built-in background service.')
+  && has(read('docs/reference/02-host.md'), 'canonical mailbox consumption remains with the owner.')
+  && !has(read('docs/reference/02-host.md'), 'An installed bundle may also provide owner notifications;'));
+
 check('docs: declined Stop evidence preserves the non-start outcome and null exit',
   has(section(read('docs/reference/05-drivers.md'), '### Codex holder shutdown'),
     'The retained outcome remains `declined` with a null exit; it proves no command or test execution.')

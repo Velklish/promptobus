@@ -60,7 +60,7 @@ test('declarations are built next to the code', async () => {
 
 
 test('relocated core imports without package metadata and accepts explicit Host runtime options', () => {
-  const root = mkdtempSync(path.join(tmpdir(), 'pb-relocated-core-'));
+  const root = mkdtempSync(path.join(tmpdir(), 'promptobus-standalone-root-relocated-'));
   try {
     cpSync(new URL('../dist', import.meta.url), path.join(root, 'dist'), { recursive: true });
     const entry = pathToFileURL(path.join(root, 'dist/index.js')).href;

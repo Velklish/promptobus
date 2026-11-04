@@ -973,13 +973,13 @@ hashes are separate from snapshot identity and BB's loader-generated code. A
 manifest edit cannot change loaded constants; artifact metadata alone cannot
 establish loaded snapshot parity.
 
-Supported delivery is a local path: `npm ci` → `npm run build` → installation of
+Development generations use local path delivery: `npm ci` → `npm run build` → installation of
 the exact generation recorded by the receipt. The source fixture models manifest
 recompilation and host rebuilding using the public builder and ESM copies; BB's
 actual server path cache uses CJS with different options. That fixture is not
 actual server-cache execution proof; an actual BB measurement remains separate.
-Nested `node_modules` copies can be excluded by npm packing, so automatic npm/Git
-installation of this optional plugin is not a supported distribution claim.
+Nested `node_modules` copies can be excluded by npm packing, so these development
+generations are not npm/Git release packages. Managed releases use the collection below.
 The standalone `promptobus-runtime` skill covers diagnosis; the six role skills
 remain generated from the core instruction renderer.
 
@@ -1381,15 +1381,16 @@ Discovery returns at most 256 valid tasks from at most 4096 scanned directory
 entries, with an explicit truncation flag. Discovery limits or errors do not block
 the independently read selected task.
 
-The host exposes read-only `snapshot` and `tasks` calls. The server additionally
-exposes `view` and `selectTask`; only `selectTask` persists plugin configuration.
+The host exposes read-only `snapshot`, `tasks` and `ownerFeed` calls. The server
+exposes `snapshot`, `view`, `tasks`, `selectTask`, `wakeStatus` and `bindOwner`.
+Both `selectTask` and `bindOwner` persist plugin configuration.
 Observation reads validated selected-task inbox/history and matching native
 registry/receipt records without consuming mail or opening a writable engine.
 Native detail requires a matching canonical launch binding. Current worker and
 reviewer registration persists session/thread identity without that launch binding;
 those participants retain canonical identity with native launch/state/profile and
 command counts explicitly unavailable. It
-provides no sender, ACK, launch, recovery or Stop controls. Recorded results and
+provides no canonical sender, ACK, launch, recovery or Stop controls. Recorded results and
 review outcomes retain their canonical types and sender roles; owner acceptance
 is not inferred. Native registry activity does not prove process liveness, and
 full native transcripts and command output are unavailable.
@@ -1403,9 +1404,17 @@ recover the explicit selection without restarting native actors.
 Plugin tests require the pinned root development dependencies and always rebuild
 the core before the producer regression loads its adapter. The self-contained
 host bundle has no root `dist/` or root dependency requirement. Source tests and
-clean-bundle fixtures are separate from actual BB visual verification. An installed bundle may also provide owner notifications; replacing
-that service is a separate installation decision. See the integration's live
-verification checklist before accepting the UI.
+clean-bundle fixtures are separate from actual BB visual verification.
+
+Owner notifications are a built-in background service. Explicit binding validates
+the actual BB Codex thread against the canonical task owner's native session and
+selected host. Initial binding does not replay history. New questions, results,
+reviews and errors can wake that owner while the page is closed; status alone
+does not wake it. Durable delivery markers prevent replay after reload. Unconfirmed
+delivery pauses notifications for inspection. The service sends only BB hints;
+canonical mailbox consumption remains with the owner. Selecting another task
+disables the old owner binding. See the integration's live verification checklist
+before accepting the UI.
 
 ## Managed HTTP launch environment
 
