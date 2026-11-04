@@ -1,9 +1,9 @@
 {
   "identity": {
     "format": 1,
-    "buildId": "a3b30a51-dd3e-40f3-b469-ee114d1fbba9",
-    "pluginVersion": "0.2.0-rc.2",
-    "inputSha256": "da9f5cf23c587806a9896a42e577350087c25460489024d3951b7002a2616f4e",
+    "buildId": "6480696e-281d-4636-855a-41d40ef468fb",
+    "pluginVersion": "0.2.0-rc.3",
+    "inputSha256": "cd64f2e27dc8120d527e697dd63b2026832a983cc34a62a3b5cdd58f86f8fff0",
     "inputs": {
       "commandCompiler": [
         {
@@ -27,10 +27,10 @@
           "sha256": "4fb1814c23602191fc5e48f576555e9978e554a2053708368bc632bcb1402f34"
         }
       ],
-      "sourceSha256": "356c43856e86c6e699283e4ed9bb45a73abf49c2eb495209b397d6fc83303a43",
-      "sourceRevision": "847a1f53666938f76656294fa902a2961aacae73",
+      "sourceSha256": "193dd25c26f36a271e38d1d46c1ef336654055eab61b0a35f222a723ecf8e072",
+      "sourceRevision": "d93294c06456b4317dcb5164f4890126d37bb951",
       "sourceDirty": false,
-      "lockSha256": "b6c01feeca5315b2c442ff2d9a6745d294d04d95864c544aa0675fefee756cee",
+      "lockSha256": "92687225cf6d42a19b610783ca5b4e9ff3283a16884b519c396035e3324fb2ee",
       "builderVersion": "0.48.1",
       "dependencies": [
         {
@@ -93,9 +93,9 @@
       "consumerBundleSha256": null
     }
   },
-  "installationDirectory": ".runtime/a3b30a51-dd3e-40f3-b469-ee114d1fbba9",
+  "installationDirectory": ".runtime/6480696e-281d-4636-855a-41d40ef468fb",
   "snapshot": {
-    "sha256": "8d1b4976fa34a2855dc6aff37392773a86f03e98903a4b39fe40b440e50e3581",
+    "sha256": "840e9311b42a21197dfe1f32e2434b464eaafd0fb9c7baa7eebe64277ecb15f9",
     "entries": [
       "inputs",
       "source",
@@ -137,7 +137,7 @@
   "commandRecorder": "commands/record-command.js",
   "evidencePreparer": "commands/evidence-prepare.js",
   "artifacts": {
-    "commands/build-identity.js": "7e09dcff91787894e03ee8550f98ccac053851df13249051ad09503b09fbd07d",
+    "commands/build-identity.js": "50aaaa545746d5972ea6dec4b3ca9682fbf80296c86fa1593b4f6cd8b263d6f2",
     "commands/command-admission.js": "8bb0f5cbf10a76768041b83e82050eda79781fec1b4a9b358ad7f49da8cfdc8f",
     "commands/command-runner.js": "7a4d0d611331b7804cdeece93059557c573807b6d2882aa21c6cc188a5960aa6",
     "commands/control-schema.js": "335633b40962d965f3d4ad6eaf3ce616bf193a16409782dac39cd73a86216d2b",
@@ -148,8 +148,8 @@
     "commands/protocol.js": "1207963d1d945cb29be1611339f25c251792767fa26f6a87b8a4640e6c933d56",
     "commands/record-command.js": "67f05958d5d8f2badb99a987946ae37411298acfd96f89ac1213a11ff81b0b21",
     "commands/review-evidence.js": "c13e6884bb2e18fa0b04127e4dde9d60b6a5291265053d9e8e6c48eda4745c97",
-    "server.js": "9d30c1838d11b67bcba9ab63de056cc1e26cacc5b8c2486120dc8c0d5427f6ce",
-    "host.js": "fe010e17e618a48090fca6bcac19181a0b50deb70d0f607f33792a6140c77ec7"
+    "server.js": "71c706a5950cae8705b60b83df8953c3be6f05eb93c7039e387629eebb9fb89d",
+    "host.js": "681be8e3b621757a144ec06d71a61d7c45734623a56e3401a5029e545a37169e"
   },
   "builtWith": {
     "bbVersion": "0.48.1",
