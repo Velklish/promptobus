@@ -992,6 +992,10 @@ collection retains bundle inputs outside `dist`, because BB rebuilds `dist` on
 Git installation. The adapter retains its executing build identity and embeds
 its core package; command modules use the collection-local core dependency.
 `bb promptobus doctor` checks both running versions, source tags and SDK pins.
+Replacing a `path:` installation with Git requires backing up private plugin
+state and removing the old registration first. Canonical journals remain outside
+that plugin state. New tasks receive fresh bindings; the old database is not
+restored. Later Git range updates preserve the installed plugin's state.
 See the [delivery guide](../guides/bb-plugins.md) for the supported commands.
 
 ### BB display names and acceptance placement

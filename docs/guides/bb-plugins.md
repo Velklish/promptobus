@@ -22,6 +22,23 @@ Check updates with `bb plugin outdated`, then apply them with
 Run both diagnostic commands again. Matching manifests alone do not establish
 executing server/Host identity or a working model workflow.
 
+### Replace an older path installation
+
+BB refuses installing a Git source over an id registered from `path:`. This is
+a one-time replacement; subsequent updates use the tracked Git range.
+
+Stop the affected task participants through `bb promptobus participant stop`.
+Save each plugin's Settings with `bb plugin config <id> --json`, disable the
+plugin and copy its private `<bb-data-dir>/plugins/<id>/` directory to an owned,
+private backup outside the source checkout. `bb status --json` reports the data
+directory. Keep canonical task stores and original command receipts in place.
+
+Run `bb plugin remove promptobus` and `bb plugin remove promptobus-native-panel`,
+then install both Git entries with the commands above. Removal deletes plugin
+settings, secrets and schedules. Configure the panel's roots again and use new
+tasks and explicit owner bindings; do not restore an old binding database into
+the new installation. The backup is retained evidence, not a migration route.
+
 Configure the dashboard's host, canonical store and native registry in Settings.
 Select a task and connect its actual BB owner thread. The server validates its
 latest native identity against the canonical task owner. The first binding does
@@ -37,12 +54,15 @@ Then run from the repository root:
 npm run bb:release -- --directory /absolute/new/release-directory
 ```
 
-The output contains `.bb/plugins.json`, both plugin packages and `release.json`.
+The command requires a clean committed checkout. The output contains
+`.bb/plugins.json`, both plugin packages and `release.json`.
 The adapter's frozen source identity remains embedded in its server and Host.
 The Host carries its exact public core package for package-relative root admission;
 command modules retain a collection-local core dependency. Bundles live in
 `bundle/`, outside the `dist/` directory BB replaces during a Git installation.
 No installation, tag or push is performed by the build command.
+Packaged documentation links to repository guides and scripts are pinned to that
+source commit, so they resolve outside the installed plugin directory.
 
 Commit the collection to the repository's release-artifact branch and create an
 annotated `bb/vX.Y.Z` tag on that artifact commit. Preserve the source revision and

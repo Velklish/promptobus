@@ -36,6 +36,9 @@ Store its inputs in `bundle`, expose ordinary server/Host/app wrapper entries,
 index the packages in `.bb/plugins.json`, and publish annotated `bb/vX.Y.Z` tags
 on the artifact branch. Record source revision and file hashes in `release.json`.
 Both packages use the same release version and tested BB/SDK profile.
+Release builds require a clean committed source checkout. Package documentation
+links outside the plugin are pinned to that commit rather than to absent checkout
+directories.
 
 The adapter Host embeds its exact public core package in the build. It extracts
 and verifies those bytes under the daemon plugin data directory before importing
@@ -61,3 +64,6 @@ captured file set and refuses tampering. It executes only package code from the
 approved plugin build; task paths and participant claims select no runtime code.
 Older bindings are not migrated. Live role, provider and lifecycle qualification
 remains separate from portable-bundle and SDK fixtures.
+BB requires removing a path registration before installing the Git source.
+Preserve its private state as an offline backup and retain canonical journals;
+the new installation starts with fresh task and notification bindings.

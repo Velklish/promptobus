@@ -12,10 +12,14 @@ const args = process.argv.slice(2);
 if (args.length !== 2 || args[0] !== '--directory') throw new Error('Use --directory <new release directory>');
 const destination = path.resolve(args[1]);
 if (existsSync(destination)) throw new Error('Release directory must not already exist');
+const state = spawnSync('git', ['status', '--porcelain', '--untracked-files=normal'], { cwd: root, encoding: 'utf8' });
+if (state.status !== 0 || state.stdout.trim()) throw new Error('BB release requires a clean committed source checkout');
 const adapter = path.join(root, 'integrations/bb'), panel = path.join(root, 'integrations/bb-native-observer');
 const adapterManifest = readJson(path.join(adapter, 'package.json')), panelManifest = readJson(path.join(panel, 'package.json'));
 if (adapterManifest.version !== panelManifest.version) throw new Error('Both BB plugins must use the same release version');
 const receipt = await build(adapter), generation = path.join(adapter, receipt.installationDirectory);
+const revision = receipt.identity.inputs.sourceRevision;
+if (!revision) throw new Error('BB release requires a committed source revision');
 const result = spawnSync('npm', ['run', 'build'], { cwd: panel, stdio: 'inherit' });
 if (result.status !== 0) throw new Error(`Native panel build failed (${result.status})`);
 mkdirSync(destination, { recursive: true });
@@ -24,7 +28,11 @@ for (const [name, source, manifest] of [['promptobus', generation, adapterManife
   mkdirSync(target, { recursive: true });
   cpSync(path.join(source, 'dist'), path.join(target, 'bundle'), { recursive: true });
   cpSync(path.join(source, 'skills'), path.join(target, 'skills'), { recursive: true });
-  for (const file of ['README.md', 'PLUGIN_OVERVIEW.md']) cpSync(path.join(name === 'promptobus' ? adapter : panel, file), path.join(target, file));
+  for (const file of ['README.md', 'PLUGIN_OVERVIEW.md']) {
+    const text = readFileSync(path.join(name === 'promptobus' ? adapter : panel, file), 'utf8')
+      .replace(/\]\(\.\.\/\.\.\/((?:docs|scripts)\/[^)]+)\)/g, `](https://github.com/Velklish/promptobus/blob/${revision}/$1)`);
+    writeFileSync(path.join(target, file), text);
+  }
   cpSync(path.join(root, 'LICENSE'), path.join(target, 'LICENSE'));
   const bb = { ...manifest.bb, server: './server.mjs', host: './host.mjs', skills: ['skills'] };
   writeFileSync(path.join(target, 'server.mjs'), "export { default } from './bundle/server.js';\n");

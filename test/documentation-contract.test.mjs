@@ -64,6 +64,12 @@ check('docs: the native dashboard includes owner binding and background notifica
   && has(read('docs/reference/02-host.md'), 'canonical mailbox consumption remains with the owner.')
   && !has(read('docs/reference/02-host.md'), 'An installed bundle may also provide owner notifications;'));
 
+check('docs: replacing a BB path source preserves journals and starts fresh bindings',
+  has(read('docs/guides/bb-plugins.md'), 'BB refuses installing a Git source over an id registered from `path:`.')
+  && has(read('docs/guides/bb-plugins.md'), 'Keep canonical task stores and original command receipts in place.')
+  && has(read('docs/guides/bb-plugins.md'), 'do not restore an old binding database into the new installation.')
+  && has(read('docs/reference/02-host.md'), 'Later Git range updates preserve the installed plugin\'s state.'));
+
 check('docs: declined Stop evidence preserves the non-start outcome and null exit',
   has(section(read('docs/reference/05-drivers.md'), '### Codex holder shutdown'),
     'The retained outcome remains `declined` with a null exit; it proves no command or test execution.')
