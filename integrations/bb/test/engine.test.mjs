@@ -1165,6 +1165,23 @@ test('Resume waits for pending native Stop before restoring child attention', as
   assert.equal(premature, false);
 });
 
+test('Stop rereads parent runtime after the last child notification update', async t => {
+  let armed = false;
+  const s = await stand(t, { beforeNotificationUpdate: async (_id, mode) => {
+    if (armed && mode === 'off') {
+      await new Promise(resolve => setImmediate(resolve));
+      const thread = s.threads.get('thr-1'); thread.status = thread.runtime.displayStatus = 'active';
+    }
+  } });
+  s.host.harness.inspection.sdk.stub('threads.get', async ({ threadId }) => structuredClone(s.threads.get(threadId)));
+  await s.create(); await s.add('worker-one'); armed = true;
+  const result = await s.control('stop', 'orchestrator');
+  assert.equal(result.exitCode, 1);
+  assert.equal(JSON.parse(result.stdout).confirmed, false);
+  assert.equal(JSON.parse(result.stdout).childNotifications.complete, true);
+  assert.equal(JSON.parse(result.stdout).observation.status, 'active');
+});
+
 test('a new child of a stopped parent disables attention before spawn', async t => {
   const s = await stand(t); await s.create();
   assert.equal((await s.control('stop', 'orchestrator')).exitCode, 0);

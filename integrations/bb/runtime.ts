@@ -152,7 +152,10 @@ export function registerRuntime(bb: BbPluginApi) {
     const [stopping, notifications] = await Promise.allSettled([nativeStop, syncChildNotifications(b)]);
     if (stopping.status === 'rejected') throw stopping.reason;
     const error = notifications.status === 'rejected' ? String(notifications.reason?.message ?? notifications.reason) : null;
-    return { ...stopping.value, childNotifications: { complete: notifications.status === 'fulfilled', error } };
+    const observation = await observeBbParticipant(bb, b);
+    const confirmed = stopping.value.confirmed && observation.view.state === 'alive' && observation.status === 'idle'
+      && observation.thread?.status === 'idle' && observation.thread.activeBackgroundAgentCount === 0 && observation.thread.queuedMessageCount === 0;
+    return { confirmed, observation, childNotifications: { complete: notifications.status === 'fulfilled', error } };
   };
   const resumeDelivery = async (b: Binding, wake: boolean, epoch: number) => {
     const resumed = await recovery.resume(b, false, epoch);
