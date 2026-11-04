@@ -1,0 +1,89 @@
+{
+  "name": "promptobus",
+  "version": "0.32.3",
+  "description": "Harness-neutral bus for agent sessions: tasks, mailboxes, artifacts and participant sessions.",
+  "license": "MIT",
+  "repository": "github:Velklish/promptobus",
+  "type": "module",
+  "files": [
+    "bin",
+    "dist",
+    "lib",
+    "models",
+    "schemas",
+    "skills",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.runtime.json && node -e \"for (const file of ['bin/promptobus.js', 'bin/promptobus-bb-root.js']) require('node:fs').chmodSync(file, 0o755)\"",
+    "prepare": "npm run build",
+    "pretest": "npm run build",
+    "test": "node test/run.mjs",
+    "test:local": "node scripts/test-local.mjs",
+    "audit": "node scripts/audit-public.mjs",
+    "docs-links:external": "node scripts/docs-links.mjs --external",
+    "pins": "node scripts/check-pins.mjs",
+    "probe": "node scripts/mutation-probe.mjs",
+    "codex-schema": "node scripts/check-codex-schema.mjs",
+    "schema-skew": "node scripts/check-schema-skew.mjs"
+  },
+  "engines": {
+    "node": ">=26"
+  },
+  "exports": {
+    "./participant-context": {
+      "types": "./lib/participant-context.d.ts",
+      "default": "./lib/participant-context.js"
+    },
+    "./bb-host": {
+      "types": "./lib/bb-host.d.ts",
+      "default": "./lib/bb-host.js"
+    },
+    "./bb-reviewer": {
+      "types": "./lib/bb-reviewer.d.ts",
+      "default": "./lib/bb-reviewer.js"
+    },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./driver": {
+      "types": "./dist/driver.d.ts",
+      "default": "./dist/driver.js"
+    },
+    "./host": {
+      "types": "./dist/host-index.d.ts",
+      "default": "./dist/host-index.js"
+    },
+    "./telemetry": {
+      "types": "./dist/telemetry.d.ts",
+      "default": "./dist/telemetry.js"
+    },
+    "./hooks": {
+      "types": "./dist/hooks.d.ts",
+      "default": "./dist/hooks.js"
+    },
+    "./integration": {
+      "types": "./lib/integration.d.ts",
+      "default": "./lib/integration.js"
+    },
+    "./cli": "./lib/cli.js",
+    "./schemas/*": "./schemas/*",
+    "./instructions": {
+      "types": "./lib/instructions.d.ts",
+      "default": "./lib/instructions.js"
+    }
+  },
+  "bin": {
+    "promptobus": "./bin/promptobus.js",
+    "promptobus-root": "./bin/promptobus-root",
+    "promptobus-bb-root": "./bin/promptobus-bb-root.js"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "ajv": "8.20.0",
+    "backslop": "github:Velklish/backslop#v1.0.0",
+    "typescript": "7.0.2"
+  }
+}

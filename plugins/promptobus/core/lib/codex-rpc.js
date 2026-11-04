@@ -1,0 +1,153 @@
+import { EventEmitter } from 'node:events';
+function property(value, key) {
+    // Keep the native nullish property-access failure.
+    if (value == null)
+        return value[key];
+    return Reflect.get(Object(value), key);
+}
+// Line-delimited JSON-RPC 2.0 over one stream, the way `codex app-server --stdio` talks:
+// one object per line, no Content-Length. An unanswered server request stalls the turn.
+let nextId = 1;
+export function CodexRpc(io, { onLog = null } = {}) {
+    const incoming = (io.stdout ?? io);
+    const outgoing = (io.stdin ?? io);
+    const pending = new Map();
+    const events = new EventEmitter();
+    events.setMaxListeners(0);
+    let buf = '';
+    let serverHandler = null;
+    let closed = false;
+    const write = (obj) => {
+        if (closed)
+            throw new Error('JSON-RPC stream is closed');
+        onLog?.('out', obj);
+        outgoing.write(`${JSON.stringify(obj)}\n`);
+    };
+    const dispatch = (msg) => {
+        onLog?.('in', msg);
+        // Each direction owns its id space, so a server request may reuse an integer still
+        // in `pending`: `method` present means a request, not the awaited reply.
+        if (property(msg, 'method')) {
+            if (property(msg, 'id') !== undefined) {
+                Promise.resolve(serverHandler ? serverHandler(msg) : defaultDeny(msg))
+                    .then((result) => {
+                    if (closed)
+                        return;
+                    if (result && property(result, '__error'))
+                        write({ jsonrpc: '2.0', id: property(msg, 'id'), error: property(result, '__error') });
+                    else
+                        write({ jsonrpc: '2.0', id: property(msg, 'id'), result: result ?? {} });
+                })
+                    .catch((err) => {
+                    if (closed)
+                        return;
+                    write({
+                        jsonrpc: '2.0',
+                        id: property(msg, 'id'),
+                        error: { code: -32000, message: String((err == null ? undefined : property(err, 'message')) ?? err) },
+                    });
+                });
+                return;
+            }
+            events.emit('notification', msg);
+            return;
+        }
+        if (property(msg, 'id') !== undefined && pending.has(property(msg, 'id'))) {
+            const { resolve } = pending.get(property(msg, 'id'));
+            pending.delete(property(msg, 'id'));
+            resolve(msg);
+            return;
+        }
+        if (property(msg, 'id') !== undefined)
+            onLog?.('orphan', msg);
+    };
+    const onData = (chunk) => {
+        buf += chunk;
+        for (;;) {
+            const nl = buf.indexOf('\n');
+            if (nl < 0)
+                break;
+            const line = buf.slice(0, nl).trim();
+            buf = buf.slice(nl + 1);
+            if (!line)
+                continue;
+            try {
+                const message = JSON.parse(line);
+                dispatch(message);
+            }
+            catch {
+                onLog?.('raw', line);
+            }
+        }
+    };
+    incoming.setEncoding?.('utf8');
+    incoming.on('data', onData);
+    return {
+        request(method, params = {}, timeoutMs = 60_000) {
+            const id = nextId++;
+            const req = { jsonrpc: '2.0', id, method, params };
+            return new Promise((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    pending.delete(id);
+                    reject(new Error(`no reply to ${method} in ${timeoutMs} ms`));
+                }, timeoutMs);
+                pending.set(id, {
+                    resolve: (msg) => {
+                        clearTimeout(timer);
+                        resolve(msg);
+                    },
+                });
+                try {
+                    write(req);
+                }
+                catch (err) {
+                    clearTimeout(timer);
+                    pending.delete(id);
+                    reject(err);
+                }
+            });
+        },
+        notify(method, params = {}) {
+            write({ jsonrpc: '2.0', method, params });
+        },
+        onNotification(fn) {
+            events.on('notification', fn);
+            return () => events.off('notification', fn);
+        },
+        onServerRequest(fn) {
+            serverHandler = fn;
+        },
+        waitNotification(method, pred = () => true, timeoutMs = 30_000) {
+            return new Promise((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    off();
+                    reject(new Error(`no notification ${method} in ${timeoutMs} ms`));
+                }, timeoutMs);
+                const off = this.onNotification((msg) => {
+                    if (property(msg, 'method') !== method)
+                        return;
+                    if (!pred(property(msg, 'params') ?? {}, msg))
+                        return;
+                    clearTimeout(timer);
+                    off();
+                    resolve(msg);
+                });
+            });
+        },
+        close() {
+            closed = true;
+            if (buf.trim())
+                onLog?.('raw', buf);
+            buf = '';
+            for (const [id, { resolve }] of pending) {
+                pending.delete(id);
+                resolve({ error: { code: -32000, message: 'stream is closed' } });
+            }
+        },
+    };
+}
+function defaultDeny(msg) {
+    return {
+        __error: { code: -32601, message: `no handler for server request ${property(msg, 'method')}` },
+    };
+}

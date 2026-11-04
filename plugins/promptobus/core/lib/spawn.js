@@ -1,0 +1,2039 @@
+import { finalizeManagedServiceLaunch, revokeFailedManagedLaunch } from './service-launch.js';
+import { persistLegacyParticipant, persistNativeParticipant, releaseNativeReservation, requireNativeTerminal, reserveNativeParticipant } from './native-lifecycle.js';
+import { renderTeamleadInstructions, renderWorkerInstructions } from './prompts/roles.js';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
+import path from 'node:path';
+import { ok, info, warn, fail, runLogged, runProc, shellQuote, PROC_MAX_OUTPUT, GIT_NET_TIMEOUT_MS, PROC_INSTALL_TIMEOUT_MS, toPosix, } from './util.js';
+import { hostOf, HostResolveError } from './host.js';
+import { guardHookCommand } from '../dist/hooks.js';
+import { activeTasks, addressOf, bindIfOwner, boundTaskId, bus, canonicalPath, claimRoute, contactsOf, contactText, createTask, dropStaleWake, ensureRootRecord, filesDir, inboxDir, foreignTaskLine, GateError, newTaskIdentity, occupyTaskFile, ORCHESTRATOR, ownership, participantFileStem, participantMcpPath, participantOf, participantRecord, participantSettingsPath, readTask, retitleTask, rootAddressOf, taskFile, sessionIdentity, SLUG_MAX, slugify, TASK_TITLE_SEP, taskExists, titleFromLines, upsertParticipant, withTaskLock, workerAddress, writeJsonAtomic, } from './store.js';
+import { writeTask as writeTaskJournal } from '../dist/v1/store.js';
+import { PROMPTOBUS_SERVER, TEAMLEAD_HARNESSES, harnessName } from './contract.js';
+import { WORKTREE_BRANCH_PREFIX, WORKTREE_DIR_REL, createWorktree, defaultRefs, excludeWorktrees, installWorktreeDeps, npmCiCommand, worktreeDirt, worktreeHasLock, } from './worktree.js';
+import { HOST_CONFIG, registryOf, ROUTING_FIELD, stemOwner, WORKER, } from '../dist/index.js';
+import { pipelineOf } from '../dist/pipeline.js';
+import { driverOf, liftDriver, REGISTRY } from './drivers.js';
+// The routing gate is one function for both lifts: `review.js` calls the same one,
+// so the decision a reviewer is lifted on is made the way a worker's is.
+import { routeLift, routingLine, sayDecision } from './models.js';
+import { loadCatalog } from './model-routing/catalog.js';
+import { launchProvenance, provenanceLine } from './provenance.js';
+import { ensureWarden, handOverContactPoints } from './warden.js';
+import { clearThroughputSidecar, tokenLogHistoryOf } from './model-routing/telemetry.js';
+// Participant liveness is a state predicate (status.js): the "address is already running"
+// gate and the `promptobus status` line must count the same session as alive.
+import { participantSession } from './status.js';
+import { leaseRule } from './lease.js';
+import { assertNativeContextDriver, assertSelectedNativeFiles, contextRules, nativeContextMetadata, nativeContextPrompt, prepareNativeContext, writeSelectedNativeFile } from './native-participant-context.js';
+// Spawn a worker: a background harness session in the target repository directory, with
+// Promptobus through its own MCP config. The bus config lives in the task store and
+// travels to the participant with the rest of the lift plan. Shared participant assembly
+// (prompt, names, MCP set, settings) lives here and is also called by review.
+//
+// **There is no argv and no harness name here**. This file names the SUBJECT
+// — visibility directories, the loop-guard command, stripped tools — and a driver from
+// the registry ([drivers.js](drivers.js)) translates that into argv, config, and a
+// settings file in one `prepare`. Session registry and lift live there too, behind the
+// contract.
+export function readBrief(file) {
+    if (!file)
+        throw new GateError('needed --brief <file with the assignment text>');
+    const abs = path.resolve(file);
+    if (!existsSync(abs))
+        throw new GateError(`no assignment file: ${abs}`);
+    const text = readFileSync(abs, 'utf8').trim();
+    if (!text)
+        throw new GateError(`assignment file is empty: ${abs}`);
+    return text;
+}
+// `skillOverrides` is the one workspace setting copied to the participant: it suppresses
+// personal file copies of same-named skills, which themselves travel as the plugin directory.
+export const SKILL_KEYS = ['skillOverrides'];
+export function participantSkillsRoot(rootOrHost, repoDir) {
+    const host = hostOf(rootOrHost);
+    return host.participantLayoutRoot ? host.participantLayoutRoot(repoDir ?? host.workspaceRoot()) : host.workspaceRoot();
+}
+export function skillSettings(rootOrHost, repoDir) {
+    const host = hostOf(rootOrHost);
+    const layout = participantSkillsRoot(host, repoDir);
+    if (layout === null)
+        return {};
+    const file = path.join(layout, '.claude', 'settings.json');
+    if (!existsSync(file))
+        return {};
+    try {
+        const ws = JSON.parse(readFileSync(file, 'utf8'));
+        return Object.fromEntries(SKILL_KEYS.filter((k) => ws[k] !== undefined).map((k) => [k, ws[k]]));
+    }
+    catch {
+        warn(`${file}: workspace settings could not be parsed — personal copies of same-named skills`
+            + ` are not suppressed for the participant. Fix the file or run ${host.syncHint()}`);
+        return {};
+    }
+}
+// Workspace skills reach the participant as a session flag, not a plugin install:
+// `--plugin-dir` loads the plugin for one session, the namespace is the same, and
+// `installed_plugins.json` gets no entry.
+export function participantPluginDir(rootOrHost, repoDir) {
+    const host = hostOf(rootOrHost);
+    const dir = host.pluginDir(repoDir);
+    if (dir === null)
+        return null;
+    // Look at the host-declared manifest, not the directory: the manifest is what
+    // makes a directory a plugin.
+    const layout = participantSkillsRoot(host, repoDir) ?? host.workspaceRoot();
+    const manifest = path.resolve(layout, host.pluginManifestRel(repoDir));
+    if (existsSync(manifest))
+        return dir;
+    warn(`${manifest}: plugin directory is missing or has no manifest`
+        + ` — the participant will have no workspace skills. Run ${host.syncHint()}`);
+    return null;
+}
+// The bus entry name in the participant config comes from its home: the bus hook reads it too.
+export { PROMPTOBUS_SERVER } from './contract.js';
+// The participant's MCP descriptor: the host's `participantServers()`, then the bus entry, which
+// overrides a same-named one so its `PROMPTOBUS_*` env is the participant's own; the driver writes the file.
+export function participantMcp(rootOrHost, { address, taskId, home, reportTaskId = null, repoDir }, driver) {
+    const host = hostOf(rootOrHost);
+    const { servers, external } = host.participantServers(repoDir);
+    const mcpServers = {
+        ...host.substituteVars(servers),
+        [PROMPTOBUS_SERVER]: {
+            type: 'stdio',
+            command: host.nodePath(),
+            args: host.busArgv(['mcp']),
+            env: {
+                PROMPTOBUS_ROLE: address, PROMPTOBUS_TASK: taskId, PROMPTOBUS_HOME: home,
+                ...(reportTaskId ? { PROMPTOBUS_ROOT_TASK: reportTaskId } : {}),
+            },
+        },
+    };
+    return {
+        descriptor: { address, task: taskId, home, servers: mcpServers },
+        external,
+        // Shadowed personal entries are counted by the driver: the harness personal config is its dictionary.
+        shadowed: driver.shadowedUserServers(Object.keys(mcpServers)),
+    };
+}
+// Mode 0600 on the participant mcp-config: it holds substituted tokens, so spawn output
+// does not print them. `writeFileSync` `mode` applies only on CREATE, hence `chmod`
+// after: a rewrite on a repeat spawn would have left the previous mode.
+export function writeSecret(file, text) {
+    writeFileSync(file, text, { mode: 0o600 });
+    chmodSync(file, 0o600);
+}
+// Directory from the plan: the driver names the source, the caller writes it — like file
+// text. The source +x bit is copied: skill scripts would otherwise arrive non-executable.
+// Symlinks are not dereferenced: the target can sit outside the canon, and the copy would
+// leave incomplete. Skip with a warning, as Writer.copyDir does: a silently left symlink
+// leaves the skill incomplete. The destination is removed before the copy: a repeat lift
+// would otherwise leave a skill that has since vanished.
+function copyLaunchTree(src, dest, { wipe = true } = {}) {
+    if (wipe && existsSync(dest))
+        rmSync(dest, { recursive: true, force: true });
+    mkdirSync(dest, { recursive: true });
+    for (const e of readdirSync(src, { withFileTypes: true })) {
+        if (e.name === '.git' || e.name === '.DS_Store')
+            continue;
+        const from = path.join(src, e.name);
+        const to = path.join(dest, e.name);
+        if (e.isDirectory())
+            copyLaunchTree(from, to, { wipe: false });
+        else if (e.isFile()) {
+            copyFileSync(from, to);
+            const mode = statSync(from).mode & 0o777;
+            if (mode & 0o111)
+                chmodSync(to, mode);
+        }
+        else {
+            warn(`${toPosix(from)} — ${e.isSymbolicLink() ? 'symbolic link' : 'neither a file nor a directory'}, `
+                + `did not travel into the participant directory (source: ${toPosix(src)}); `
+                + 'whatever points at it will arrive incomplete — put the file itself in the source');
+        }
+    }
+}
+/**
+ * Paths the lift is about to overwrite and Git already tracks.
+ *
+ * The rule is the hazard, not one harness: launch files land in a directory the driver
+ * claims inside the participant's working directory, and a `copyFrom` entry WIPES its
+ * destination before copying. Whatever the repository kept there is gone, the branch is
+ * dirty from its first second, and `done` will not sweep the directory.
+ *
+ * Git is asked about **the paths the lift will write**, not about the claimed directory
+ * whole. The difference is a false warning that would fire on a lawful repository: a
+ * project may keep its own `.codex/config.toml` or `.cursor/rules` under a claimed
+ * directory — the trust record of [ADR-008](../docs/adr/adr-008-codex-reviewer-working-directory.md)
+ * exists so a worker READS exactly that — and no lift touches those files. Asking about
+ * the directory would have named them on every lift and called them about to be
+ * overwritten, which is false twice over.
+ *
+ * The claimed directory (`options.launchDirs`) is still what says where a launch file's
+ * path stops being the working directory and starts being the relative path Git is asked
+ * about. A driver whose launch files land outside the repository — Claude Code writes
+ * them to the task store — claims none, and nothing is asked. A directory handed to
+ * `git ls-files` lists everything tracked under it, which is right: a copy destination is
+ * the one path where the whole subtree goes.
+ */
+function warnTrackedLaunchDirs(files, launchDirs) {
+    // Working directory → the paths, relative to it, that this lift writes into a claimed
+    // directory. The copy destination is one of them, so the wipe is noticed on that path
+    // alone and does not depend on a sibling file being written beside it.
+    const claims = new Map();
+    for (const claimed of launchDirs ?? []) {
+        const inside = `${path.sep}${claimed}${path.sep}`;
+        for (const file of files) {
+            if (file.tracked !== undefined)
+                continue;
+            const at = file.path.indexOf(inside);
+            if (at < 0)
+                continue;
+            const dir = file.path.slice(0, at);
+            const written = claims.get(dir) ?? new Set();
+            // Git pathspecs are POSIX whatever the platform separator is.
+            written.add(toPosix(file.path.slice(at + 1)));
+            claims.set(dir, written);
+        }
+    }
+    for (const [dir, written] of claims) {
+        // Go through runProc so the launch is bounded and the sealed-PATH execution trace
+        // sees the same git read as every other process at this boundary.
+        const listed = runProc('git', ['-c', 'core.quotePath=false', '-C', dir, 'ls-files', '--', ...written], {
+            encoding: 'utf8', timeout: GIT_NET_TIMEOUT_MS, maxBuffer: PROC_MAX_OUTPUT,
+        });
+        if (listed.status !== 0)
+            continue;
+        const names = String(listed.stdout ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
+        if (!names.length)
+            continue;
+        warn(`${dir}: git already tracks ${names.join(', ')} — lift will overwrite them and the tree will be dirty`);
+    }
+}
+/**
+ * Files the driver asks to place next to the session before lift. Order is
+ * its, mode is shared: a secret is written `0600`. What sits in the file and what it is
+ * called is the driver's; that "tokens are here" is the contract's, so the caller sets
+ * the mode. `copyFrom` is a whole directory: the Cursor skill canon travels as files, not
+ * as the text of one file.
+ *
+ * `launchDirs` is the driver's own `options.launchDirs` — the caller hands it over rather
+ * than the whole driver, because this function writes files and asks nothing else of the
+ * harness.
+ */
+export function writeLaunchFiles(files, launchDirs = []) {
+    assertSelectedNativeFiles(files);
+    warnTrackedLaunchDirs(files, launchDirs);
+    for (const file of files) {
+        if (writeSelectedNativeFile(file))
+            continue;
+        mkdirSync(path.dirname(file.path), { recursive: true });
+        if (file.copyFrom)
+            copyLaunchTree(file.copyFrom, file.path);
+        else if (file.secret)
+            writeSecret(file.path, file.text);
+        else
+            writeFileSync(file.path, file.text);
+        if (file.tracked !== undefined)
+            hideTrackedLaunchFile(file.path);
+    }
+}
+// A merged launch file over a tracked path stays out of `git status` and out of the worker's commits.
+function hideTrackedLaunchFile(file) {
+    const hidden = runProc('git', ['-C', path.dirname(file), 'update-index', '--skip-worktree', '--', path.basename(file)], {
+        encoding: 'utf8', timeout: GIT_NET_TIMEOUT_MS, maxBuffer: PROC_MAX_OUTPUT,
+    });
+    if (hidden.status !== 0)
+        warn(`${file}: git update-index --skip-worktree failed — the tree shows it modified`);
+}
+// Delivered-server list for `--dry-run`: name and type, no config with tokens.
+export function mcpServerLines(raw) {
+    const mcpConfig = raw;
+    return Object.entries(mcpConfig.mcpServers ?? {}).map(([name, cfg]) => `${name} · ${cfg?.type ?? 'stdio'}`);
+}
+// Participant MCP set as an output line: only the UNUSUAL is named; the full list stays
+// in `--dry-run`. Shadowing is `warn` (counted from the person's ~/.claude.json — the
+// only machine-dependent spawn output line), stripped servers are `info`.
+export function mcpNote(mcp, who) {
+    const count = Object.keys(mcp.descriptor.servers ?? {}).length;
+    const parts = [];
+    if (mcp.shadowed.length) {
+        parts.push(`shadowed personal user-scope entries — ${mcp.shadowed.join(', ')}`);
+    }
+    if (mcp.external.length) {
+        parts.push(`did not travel — ${mcp.external.join(', ')}`
+            + ' (externally authorized: the token is dynamic, an external user-scope skill holds it)');
+    }
+    return {
+        level: mcp.shadowed.length ? 'warn' : 'info',
+        text: `MCP ${who} (${count}): ${parts.join('; ') || 'nothing unusual'}`,
+    };
+}
+// `--dry-run` gets no hint about `--dry-run`: the full list is already printed above.
+export function sayMcp(plan, { hint = true } = {}) {
+    const n = plan.mcpNote;
+    (n.level === 'warn' ? warn : info)(hint ? `${n.text}. Full name list — --dry-run` : n.text);
+}
+// Environment of background bus sessions.
+// One function for the worker and the reviewer: two background sessions of one run —
+// one environment. What is dropped from the parent is the driver's call: variables that
+// leak foreign values are a property of the harness, and the other one has its own.
+// The memory lever is `host.extraEnv()`.
+//
+// **There is no bus identity here**. Before this, the `PROMPTOBUS_*` triple was put in
+// the lifted session's environment for the Stop hook, and the premise that "the session
+// environment is set by `claude --bg` from spawn's argv" does not hold on `claude`
+// 2.1.251: probe 2026-09-03 — a background session is a pre-created daemon spare, and
+// it inherits environment from the process that started the daemon. The triple from the
+// first spawn of a run stood on ALL of its sessions, including foreign workspaces, and
+// the second participant's hook rewrote the first's contact point. Now identity travels
+// as hook-command arguments in the participant settings file
+// ([hooks](../src/hooks.ts)), and the session environment does not carry it at all —
+// putting a value there that neighbors will inherit is exactly handing out a foreign
+// identity.
+export function sessionEnv(driver, base = process.env, host) {
+    return driver.sessionEnv(base, host.extraEnv());
+}
+/**
+ * MCP tool name as THIS harness's session calls it. The participant prompt names bus
+ * and memory tools, and harness spellings differ: Claude Code takes the short name,
+ * Cursor namespaces with a hyphen (`promptobus-promptobus_send`). A participant given
+ * a foreign spelling looks for a tool they do not have.
+ */
+export function toolName(driver, server, name, host) {
+    return driver.phrases.tool(server, name, host);
+}
+// One rule for both prompts: the worker and the reviewer get one rule per tool.
+// A function, not a constant: memory tool names are written by the harness (`toolName`).
+export function memoryRule(driver, host) {
+    return host.memorySection((server, name) => toolName(driver, server, name, host)) ?? '';
+}
+// Whom a lift says the participant may write, from `contactsOf` over the records it will hold.
+export function contactsSection(contacts, taskTool) {
+    const lines = contacts.length ? contacts.map((routes) => `- ${contactText(routes)}`)
+        : ['- nobody: the bus refuses every send from your address'];
+    return `## Whom you may write
+
+${lines.join('\n')}
+
+The bus refuses a send to any other address. Membership grows during the run: a participant lifted after you is not listed here, and ${taskTool} prints the current list on its \`you may write:\` line.`;
+}
+// Refusal on binary version for the requested options is a driver operation: both the
+// version bound and the refusal wording belong to the harness. The gate is shared by
+// the worker and the reviewer: if the refusals diverged, the reviewer would silently
+// start on default effort.
+export function optionRefusal(driver, effort, tool, host = null) {
+    const statusCommand = host?.busCommand?.(['status']) ?? null;
+    return driver.optionRefusal({ effort, statusCommand }, tool);
+}
+export function normalizeLaunchTool(driver, tool, env) {
+    return typeof driver?.normalizeTool === 'function'
+        ? driver.normalizeTool(tool, { env })
+        : tool;
+}
+// One read per lift, and only when this driver declared it. A filled version is kept.
+export function withToolVersion(driver, host, tool) {
+    if (typeof tool?.version === 'string' && tool.version.trim())
+        return tool;
+    if (driver?.options?.readsVersion !== true)
+        return tool;
+    if (!tool?.bin || typeof host?.readToolVersion !== 'function')
+        return tool;
+    let version = null;
+    try {
+        version = host.readToolVersion(driver.options.tool, tool.bin);
+    }
+    catch {
+        return tool;
+    }
+    if (typeof version !== 'string' || !version.trim())
+        return tool;
+    return { ...tool, version: version.trim() };
+}
+// Re-export: spawn computes it for the `--dry-run` prediction; `retitleTask` decides under the lock.
+export { titleFromLines } from './store.js';
+// Outcome of a restamp that lost under the lock: the plan promised a rename, and
+// `retitleTask` returned `null`. A separate pure function: the `spawn()` stretch that
+// prints it is unreachable by a test — owner change happens between plan and write.
+export function restampOutcome(current, wanted) {
+    return current === wanted
+        ? { level: 'ok', text: 'title is already that — a neighboring spawn named it, nothing to rename' }
+        : {
+            level: 'warn',
+            text: 'title was not restamped — the task mailbox changed owner while spawn ran. '
+                + claimRoute('spawn'),
+        };
+}
+export function liftHarness(rootOrHost, harness = null) {
+    const lifter = liftDriver(harness);
+    if (!harness)
+        return lifter;
+    const host = hostOf(rootOrHost);
+    const tools = host.declaredTools();
+    if (!tools.includes(lifter.id)) {
+        throw new GateError(`--harness ${lifter.id}: tool is not declared in ${host.toolsManifestRel()} of the workspace `
+            + `(declared: ${tools.join(', ') || 'none'}) — adapters for it were not laid out, and the participant `
+            + `would have no workspace rules or skills. A successful install does not satisfy this: it writes `
+            + `"harnesses", which records where hooks went, and never "tools", which is this allow-list. Declaring `
+            + `a harness is a hand edit of that file: add "${lifter.id}" to its "tools" array, then ${host.syncHint()}`);
+    }
+    return lifter;
+}
+export function resolveEffort(effort, driver) {
+    if (effort === undefined)
+        return null;
+    const levels = driver.options.effortLevels;
+    if (!levels.includes(effort)) {
+        throw new GateError(`--effort: unknown value "${effort}" — allowed: ${levels.join(', ')}`);
+    }
+    return effort;
+}
+// Participant session permission mode: the flag value is checked against the binary's
+// list before lift — an unknown mode would otherwise reach `claude` and drop the session
+// with an opaque refusal. Without the flag — `fallback`: `auto` for the worker, the
+// binary's mode for the reviewer (`null`).
+export function resolvePermissionMode(mode, driver, fallback = undefined) {
+    const modes = driver.options.permissionModes;
+    if (mode === undefined)
+        return fallback === undefined ? driver.options.defaultPermissionMode : fallback;
+    if (!modes.includes(mode)) {
+        throw new GateError(`--permission-mode: unknown value "${mode}" — allowed: ${modes.join(', ')}`);
+    }
+    return mode;
+}
+function titleFromBrief(brief) {
+    const first = brief.split('\n').map((l) => l.replace(/^#+\s*/, '').trim()).find(Boolean) ?? 'task';
+    return first.length > 80 ? `${first.slice(0, 79)}…` : first;
+}
+// Declared steps reserve their stems; existing participants keep theirs when a step leaves
+// the current declaration.
+export function refuseParticipantPrefix(slug, route, registry, participants = [], addressFor = workerAddress) {
+    const owner = stemOwner(registry, slug);
+    if (!owner || (owner.layer === 'step' && registry.activeSteps
+        && !registry.activeSteps.includes(owner.name))) {
+        const address = addressFor(slug);
+        const stem = participantFileStem(address);
+        const occupied = participants.find((participant) => {
+            const other = addressOf(participant);
+            return other.includes(':') && other !== address
+                && participantFileStem(other) === stem;
+        });
+        if (occupied) {
+            throw new GateError(`the owner step name "${slug}" shares workers/${stem}.mcp.json `
+                + `with existing participant ${addressOf(occupied)}. ${route}`);
+        }
+        return slug;
+    }
+    const role = owner.name;
+    if (owner.stem === 'name') {
+        throw new GateError(`the owner step name "${slug}" is taken by the ${role}: it equals "${role}", `
+            + `an address the package reserves without a slug. ${route}`);
+    }
+    throw new GateError(`the owner step name "${slug}" starts with "${role}-", and that prefix is taken by the ${role}: `
+        + `its files in workers/ are named the same (${role}-<name>.mcp.json), and one of the two `
+        + `participants' configs would be overwritten in silence. ${route}`);
+}
+function workerSlug(home, taskId, nsPath, explicit, registry, ownerName) {
+    const participants = taskExists(home, taskId) ? readTask(home, taskId).participants ?? [] : [];
+    const ownerAddress = (slug) => `${ownerName}:${slug}`;
+    // Both paths go through `slugify`: the address must fit the grammar
+    // `<owner>:[a-z0-9][a-z0-9-]*`; the participant record checks the same invariant again.
+    if (explicit) {
+        const named = slugify(explicit);
+        if (!named) {
+            throw new GateError(`--worker "${explicit}" does not yield a worker name: the address is Latin letters, digits, and a hyphen `
+                + `(\`${ownerName}:<name>\`), Cyrillic is transliterated, the rest is dropped. Pick a name that leaves something.`);
+        }
+        // The task slug may be truncated (it is not an address); the worker name may not.
+        const full = slugify(explicit, Number.MAX_SAFE_INTEGER);
+        if (named !== full) {
+            throw new GateError(`--worker "${explicit}" is longer than ${SLUG_MAX} significant characters: the address would become `
+                + `"${ownerAddress(named)}", and the name tail would vanish in silence — two different slices of work `
+                + 'would then meet at one address and share one worktree. Pick a shorter name.');
+        }
+        return refuseParticipantPrefix(named, 'Pick another --worker.', registry, participants, ownerAddress);
+    }
+    // Truncation is not applied to the auto-slug: it would change the address of long
+    // repository names, and with it the branch and directory of already lifted tasks.
+    const base = slugify(path.basename(nsPath), Number.MAX_SAFE_INTEGER) || 'repo';
+    const route = 'The worker name here is built from the repository name — name the slice of work yourself: --worker <name>.';
+    if (!participants.length)
+        return refuseParticipantPrefix(base, route, registry, participants, ownerAddress);
+    const taken = new Map(participants
+        .map((p) => [addressOf(p), p.metadata.repo]));
+    let slug = base;
+    for (let i = 2; taken.has(ownerAddress(slug)) && taken.get(ownerAddress(slug)) !== nsPath; i += 1) {
+        slug = `${base}-${i}`;
+    }
+    return refuseParticipantPrefix(slug, route, registry, participants, ownerAddress);
+}
+// Machine-name limit is a filesystem one: Windows without long paths cuts the FULL path
+// at 260 characters, and after the directory name comes the whole file path inside the
+// repository, so the ceiling is well below 255. The bg-session name is not bound by this
+// limit: `--name` has no restriction.
+export const NAME_MAX = 100;
+// Task stamp in the READABLE name goes to minutes (`t20260826-021515` → `0826-0215`):
+// a person does not need seconds, and in the machine name they keep directory and branch
+// uniqueness.
+function shortStamp(stamp) {
+    const m = /^t\d{4}(\d{2})(\d{2})-(\d{2})(\d{2})\d{2}$/.exec(String(stamp ?? ''));
+    return m ? `${m[1]}${m[2]}-${m[3]}${m[4]}` : null;
+}
+// Name tail: the task stamp, or for a former-CLI record without one — its id. Slug and
+// stamp are mechanism fields and in the v1 journal they live in `adapter`: the task's own
+// fields there are title, status, owner, and participants.
+function machineTail(task) {
+    return task.adapter?.stamp ?? task.id;
+}
+function readableTail(task) {
+    return shortStamp(task.adapter?.stamp) ?? machineTail(task);
+}
+// Machine name of the worker: the worktree directory and, with the `worktree-` prefix,
+// the branch name. Only `[a-z0-9-]` — `git check-ref-format` rejects a space. Only the
+// task slug is shortened: the rest of the name is not ours.
+export function machineName(task, { slug } = {}) {
+    const tail = [slug, machineTail(task)].filter(Boolean).join('-');
+    const room = NAME_MAX - `promptobus-${tail}`.length - 1; // −1 for the hyphen after the task slug
+    const head = task.adapter?.slug ? slugify(task.adapter.slug, Math.max(0, room)) : '';
+    const name = ['promptobus', head, tail].filter(Boolean).join('-');
+    if (name.length > NAME_MAX) {
+        throw new Error(`worktree name is longer than ${NAME_MAX} characters (${name.length}): "${name}". `
+            + 'The directory path then has no room left for repository files inside it (Windows without '
+            + 'long paths cuts the full path at 260 characters), and there is nothing to shorten: the task slug is already gone, '
+            + 'and the task stamp is not ours. The refusal will take a shorter name: `--worker` if the worker is named explicitly, '
+            + `otherwise the repository directory name — the worker slug is built from those two.`);
+    }
+    return name;
+}
+// Readable bg-session name — what travels in `--name`: a person on the outside reads it,
+// and the title goes into the name as words, not the machine slug. The role is the first
+// word — a terminal-width list trim does not reach it.
+const TITLE_MAX = 48;
+// Title for the session name: whole words, no mid-word cut. Invisible characters are
+// stripped — `\s` in the replace below covers only whitespace, and session lookup is a
+// name compare: if the bytes diverge by one invisible character, there is never a match
+// and no diagnosis. Replace with a space, do not drop: glued words read worse.
+const INVISIBLE_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
+export function shortTitle(title, max = TITLE_MAX) {
+    const t = String(title ?? '').replace(INVISIBLE_CHARS, ' ').replace(/\s+/g, ' ').trim();
+    if (!t || t.length <= max)
+        return t;
+    const cut = t.slice(0, max);
+    const stop = cut.lastIndexOf(' ');
+    return `${(stop > max / 2 ? cut.slice(0, stop) : cut).replace(/[\s,.:;—-]+$/, '')}…`;
+}
+// First line of the assembled task title. Sits next to its only consumer: between a
+// foreign comment and its function it would read as a header on someone else's code.
+function firstLine(title) {
+    return String(title ?? '').split(TASK_TITLE_SEP)[0].trim() || title;
+}
+// `taken` — participant names from the journal: the slug enters the name ONLY when
+// titles collide (a live session name cannot be renamed; `--name` applies only at lift).
+// `title` is the title of the work SLICE, otherwise sessions of one task are
+// indistinguishable in `claude agents`; if unset, the task title is used.
+export function sessionName(task, { slug, reviewer = false, approver = false, taken = [], title } = {}) {
+    const head = approver ? 'Accept:' : reviewer ? 'Review:' : 'Worker:';
+    // The fallback takes the FIRST line of the task title, not the whole thing: the task
+    // title lists the run's tracks, and the session name would get a "Review: A · B · C…" trim.
+    const label = shortTitle(title ?? firstLine(task.title)) || task.adapter?.slug || slug || 'task';
+    const stamp = readableTail(task);
+    const name = `${head} ${label} (${stamp})`;
+    if (!taken.includes(name))
+        return name;
+    return `${head} ${label} (${stamp}, ${slug})`;
+}
+function teamleadPrompt({ host, driver, rootTask, childTask, address, rootAddress, brief, siblings, rules, contacts }) {
+    const bus = (name) => toolName(driver, PROMPTOBUS_SERVER, name, host);
+    return renderTeamleadInstructions({ rootTask, childTask, address, rootAddress, root: host.workspaceRoot(), brief, siblings: siblings, rules, bindings: {
+            tools: Object.fromEntries(['promptobus_send', 'promptobus_mailbox', 'promptobus_task'].map(name => [name, bus(name)])), entry: 'MCP', installationNote: 'where promptobus.json lives',
+            secondaryMailbox: driver.id === 'codex'
+                ? ` Your second entry is bound to ${address} in task ${rootTask}; its ${toolName(driver, `${PROMPTOBUS_SERVER}-root`, 'promptobus_mailbox', host)} returns the same mailbox.` : '',
+            memory: memoryRule(driver, host), lease: leaseRule({ host, taskId: childTask, address }),
+            contacts: contactsSection(contacts, bus('promptobus_task')),
+        } });
+}
+function teamleadRebindFile(home, rootTask, address) {
+    return path.join(path.dirname(taskFile(home, rootTask)), 'rebinds', `${address.slice('teamlead:'.length)}.json`);
+}
+const nativeTeamleadState = (p) => JSON.parse(JSON.stringify({
+    id: p?.id, harness: p?.harness, mode: p?.mode, sessionRef: p?.sessionRef,
+    metadata: Object.fromEntries(['sessionId', 'owner', 'childTask', 'nativeLaunchId', 'nativeStop',
+        'nativeUnlaunched', 'nativePendingLaunchId'].map(key => [key, p?.metadata?.[key]])),
+}));
+function clearTeamleadReservation(plan, launchId) {
+    return withTaskLock(plan.home, plan.rootTask, () => withTaskLock(plan.home, plan.childTask, () => {
+        for (const [task, address] of [[plan.rootTask, plan.address], [plan.childTask, ORCHESTRATOR]]) {
+            const p = participantOf(readTask(plan.home, task), address);
+            if (p?.metadata.nativePendingLaunchId !== launchId)
+                continue;
+            const { nativePendingLaunchId, ...metadata } = p.metadata;
+            const prior = task === plan.rootTask ? plan.former : participantOf(plan.childMeta, ORCHESTRATOR);
+            if (!isDeepStrictEqual(nativeTeamleadState({ ...p, metadata }), nativeTeamleadState(prior)))
+                continue;
+            upsertParticipant(plan.home, task, { ...p, metadata });
+        }
+    }));
+}
+function reserveTeamleadRelift(plan, launchId) {
+    return withTaskLock(plan.home, plan.rootTask, () => withTaskLock(plan.home, plan.childTask, () => {
+        const root = readTask(plan.home, plan.rootTask), child = readTask(plan.home, plan.childTask);
+        const lead = participantOf(root, plan.address), owner = participantOf(child, ORCHESTRATOR);
+        if (root.status !== 'active' || child.status !== 'active'
+            || !isDeepStrictEqual(nativeTeamleadState(lead), nativeTeamleadState(plan.former))
+            || !isDeepStrictEqual(nativeTeamleadState(owner), nativeTeamleadState(participantOf(plan.childMeta, ORCHESTRATOR))))
+            throw new GateError('native teamlead changed before relift reservation');
+        requireNativeTerminal(plan.home, root, lead);
+        try {
+            upsertParticipant(plan.home, plan.rootTask, { ...lead, metadata: { ...lead.metadata, nativePendingLaunchId: launchId } });
+            upsertParticipant(plan.home, plan.childTask, { ...owner, metadata: { ...owner.metadata, nativePendingLaunchId: launchId } });
+        }
+        catch (error) {
+            try {
+                clearTeamleadReservation(plan, launchId);
+            }
+            catch (cleanupError) {
+                const original = error instanceof Error ? error.message : String(error);
+                const cleanup = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+                throw new AggregateError([error, cleanupError], `${original}; teamlead reservation cleanup failed: ${cleanup}`, { cause: error });
+            }
+            throw error;
+        }
+        return { launchId,
+            oldRoot: nativeTeamleadState(participantOf(readTask(plan.home, plan.rootTask), plan.address)),
+            oldChild: nativeTeamleadState(participantOf(readTask(plan.home, plan.childTask), ORCHESTRATOR)) };
+    }));
+}
+export function recoverTeamleadRebind(home, rootTask, address, fault = null) {
+    const file = teamleadRebindFile(home, rootTask, address);
+    if (!existsSync(file))
+        return false;
+    const observed = readFileSync(file, 'utf8');
+    fault?.('teamlead-rebind-before-lock');
+    return withTaskLock(home, rootTask, () => {
+        if (!existsSync(file))
+            return false;
+        const current = readFileSync(file, 'utf8');
+        if (current !== observed)
+            return false;
+        let intent;
+        try {
+            intent = JSON.parse(current);
+        }
+        catch (error) {
+            throw new GateError(`teamlead rebind ${file} cannot be read: ${error.message}`);
+        }
+        if (intent.rootTask !== rootTask || intent.address !== address || !intent.childTask
+            || !intent.sessionId || addressOf(intent.rootParticipant) !== address
+            || intent.childParticipant?.id !== ORCHESTRATOR
+            || intent.rootParticipant.metadata?.sessionId !== intent.sessionId
+            || intent.childParticipant.metadata?.owner !== intent.sessionId
+            || intent.childParticipant.metadata?.sessionId !== intent.sessionId) {
+            throw new GateError(`teamlead rebind ${file} has mismatched addresses or session; repair the intent before retrying`);
+        }
+        const publish = () => {
+            const root = readTask(home, rootTask);
+            const child = readTask(home, intent.childTask);
+            const lead = participantOf(root, address);
+            const owner = participantOf(child, ORCHESTRATOR);
+            if (child.parent !== rootTask || lead?.metadata?.childTask !== intent.childTask || !owner
+                || ![intent.oldRootSession, intent.sessionId].includes(lead.metadata.sessionId)
+                || ![intent.oldChildSession, intent.sessionId].includes(owner.metadata.owner)) {
+                throw new GateError(`teamlead rebind ${file} no longer matches the root and child journals; repair them before retrying`);
+            }
+            if (intent.native) {
+                const nextRoot = nativeTeamleadState(intent.rootParticipant), nextChild = nativeTeamleadState(intent.childParticipant);
+                const validNext = (p) => p.harness === 'codex' && p.metadata.nativeLaunchId === intent.native.launchId
+                    && !p.metadata.nativeStop && !p.metadata.nativePendingLaunchId && !p.metadata.nativeUnlaunched;
+                const same = (p, expected) => isDeepStrictEqual(nativeTeamleadState(p), expected);
+                if (!intent.native.launchId || !validNext(nextRoot) || !validNext(nextChild))
+                    throw new GateError('native teamlead rebind has invalid new launch metadata');
+                if (!(same(lead, intent.native.oldRoot) || same(lead, nextRoot))
+                    || !(same(owner, intent.native.oldChild) || same(owner, nextChild))) {
+                    const withoutStop = (p) => { const state = nativeTeamleadState(p); delete state.metadata.nativeStop; return state; };
+                    if (!isDeepStrictEqual(withoutStop(lead), nextRoot) || !isDeepStrictEqual(withoutStop(owner), nextChild))
+                        throw new GateError('native teamlead generation changed during rebind recovery');
+                    requireNativeTerminal(home, root, lead);
+                    unlinkSync(file);
+                    return true;
+                }
+            }
+            else if ([lead, owner].some(p => p.harness === 'codex')) {
+                throw new GateError('native teamlead rebind needs its reserved launch identity');
+            }
+            dropStaleWake(home, intent.childTask, ORCHESTRATOR, intent.sessionId);
+            dropStaleWake(home, rootTask, address, intent.sessionId);
+            if (owner.metadata.owner !== intent.sessionId || owner.metadata.sessionId !== intent.sessionId) {
+                upsertParticipant(home, intent.childTask, intent.childParticipant);
+                fault?.('teamlead-rebind-after-child');
+            }
+            if (lead.metadata.sessionId !== intent.sessionId) {
+                writeTaskJournal(home, {
+                    ...root,
+                    participants: root.participants.map((participant) => addressOf(participant) === address
+                        ? intent.rootParticipant : participant),
+                }, () => new Date());
+            }
+            const latest = JSON.parse(readFileSync(file, 'utf8'));
+            if (latest.id !== intent.id)
+                return false;
+            unlinkSync(file);
+            return true;
+        };
+        return intent.native ? withTaskLock(home, intent.childTask, publish) : publish();
+    });
+}
+export async function planTeamlead(rootOrHost, opts) {
+    const host = hostOf(rootOrHost);
+    const home = canonicalPath(host.promptobusHome());
+    const rootTask = opts.task;
+    if (!rootTask || opts.newTask || opts.repo || opts.worker || opts.title || opts.taskTitle) {
+        throw new GateError('--teamlead needs --task <root> and --brief <file>; --repo, --worker, --title, --task-title and --new-task belong to worker spawn');
+    }
+    const brief = readBrief(opts.brief);
+    if (!taskExists(home, rootTask))
+        throw new GateError(`root task ${rootTask} does not exist`);
+    const rootMeta = readTask(home, rootTask);
+    if (rootMeta.parent || rootMeta.status !== 'active') {
+        throw new GateError(`task ${rootTask} is not an active root task`);
+    }
+    const own = ownership(home, rootTask, ORCHESTRATOR, sessionIdentity());
+    if (!own.allowed)
+        throw new GateError(`${foreignTaskLine(rootMeta, own)} — only the root orchestrator lifts a teamlead`);
+    const title = titleFromBrief(brief);
+    const slug = slugify(opts.slug ?? title);
+    if (!slug || (opts.slug && slug !== slugify(opts.slug, Number.MAX_SAFE_INTEGER))) {
+        throw new GateError(`--slug must yield at most ${SLUG_MAX} significant characters for teamlead:<slug>`);
+    }
+    const address = `teamlead:${slug}`;
+    const cursorRefusal = 'A Cursor teamlead at the install root is refused: ADR-024 found that Cursor reads its project layer from the selected cwd, where placing it would mutate the shared tree. The refusal stands until that project layer can be seated without writing the shared install root.';
+    if (opts.harness === 'cursor')
+        throw new GateError(`--harness cursor: ${cursorRefusal}`);
+    if (opts.harness && !TEAMLEAD_HARNESSES.includes(opts.harness)) {
+        throw new GateError(`--harness ${opts.harness}: teamlead lift is supported only on ${TEAMLEAD_HARNESSES.map(harnessName).join(' and ')}`);
+    }
+    let modelHarness = null;
+    let modelMatches = [];
+    if (opts.model) {
+        const tuples = loadCatalog({ host }).tuples ?? [];
+        modelMatches = tuples.filter((tuple) => tuple.model === opts.model);
+        if (modelMatches.length && !modelMatches.some((tuple) => TEAMLEAD_HARNESSES.includes(tuple.harness))) {
+            throw new GateError(`--model ${opts.model} resolves only to Cursor. ${cursorRefusal}`);
+        }
+        if (opts.harness && modelMatches.length && !modelMatches.some((tuple) => tuple.harness === opts.harness)) {
+            throw new GateError(`--model ${opts.model} has no tuple on --harness ${opts.harness}`);
+        }
+        if (modelMatches.some((tuple) => tuple.harness === 'codex')
+            && !modelMatches.some((tuple) => tuple.harness === 'claude'))
+            modelHarness = 'codex';
+    }
+    const pendingRebind = existsSync(teamleadRebindFile(home, rootTask, address));
+    const former = participantOf(rootMeta, address);
+    const requestedHarness = opts.harness ?? modelHarness ?? former?.harness ?? null;
+    if (former && requestedHarness && requestedHarness !== former.harness) {
+        throw new GateError(`${address} was lifted by harness ${former.harness}; a relift cannot change its harness to ${requestedHarness}`);
+    }
+    if (former && modelMatches.length && !modelMatches.some((tuple) => tuple.harness === former.harness)) {
+        throw new GateError(`--model ${opts.model} has no tuple on ${address}'s harness ${former.harness}`);
+    }
+    const childTask = former?.metadata?.childTask ?? newTaskIdentity(slug).id;
+    const root = canonicalPath(host.workspaceRoot());
+    const selectedContext = prepareNativeContext(host, { root, role: 'teamlead', taskId: childTask, options: opts, participant: former });
+    if (requestedHarness)
+        assertNativeContextDriver(selectedContext, liftHarness(host, requestedHarness));
+    if (former && !former.metadata?.childTask) {
+        throw new GateError(`${address} has no child task in root ${rootTask}; the address cannot be relifted safely`);
+    }
+    const childMeta = former ? readTask(home, childTask) : null;
+    if (childMeta && (childMeta.parent !== rootTask || childMeta.status !== 'active')) {
+        throw new GateError(`child task ${childTask} is not active under root ${rootTask}`);
+    }
+    if (former && !pendingRebind
+        && participantOf(childMeta, ORCHESTRATOR)?.metadata.owner !== former.metadata.sessionId) {
+        throw new GateError(`${address} and child task ${childTask} are bound to different sessions without a pending rebind; repair their journals before relifting`);
+    }
+    if (former && !pendingRebind && participantSession(former, opts.sessions) === 'alive') {
+        throw new GateError(`${address} is already running in root task ${rootTask}; stop that session before relifting it`);
+    }
+    const routingHost = Object.create(host);
+    routingHost.declaredTools = () => host.declaredTools().filter((harness) => harness !== 'cursor');
+    const routed = former ? null : await routeLift(routingHost, {
+        role: WORKER, strategy: opts.strategy, harness: requestedHarness, model: opts.model, effort: opts.effort,
+        allowPayg: opts.allowPayg, refresh: opts.refresh, dryRun: opts.dryRun,
+        taskMeta: childMeta ?? rootMeta, address, adapterFor: opts.adapterFor,
+    });
+    const driver = liftHarness(host, routed?.harness ?? requestedHarness ?? 'claude');
+    assertNativeContextDriver(selectedContext, driver);
+    const model = opts.model ?? former?.metadata?.model ?? routed?.model ?? driver.options.defaultModel;
+    const effort = resolveEffort(opts.effort ?? former?.metadata?.effort ?? routed?.effort, driver);
+    const permissionMode = driver.id === 'codex' && opts.permissionMode === 'full-access'
+        ? 'full-access' : resolvePermissionMode(opts.permissionMode, driver);
+    const name = `Teamlead: ${shortTitle(title) || slug} (${rootTask}, ${slug})`;
+    const rules = contextRules(selectedContext, () => host.collectRules(root));
+    const ruleDirs = [...new Set(rules.filter((file) => !file.startsWith(root + path.sep)).map(path.dirname))];
+    const mcpConfigPath = participantMcpPath(home, rootTask, address);
+    const settingsPath = participantSettingsPath(home, rootTask, address);
+    const guardCommand = guardHookCommand(host, { address, taskId: rootTask, home }, process.platform);
+    const pluginDir = selectedContext ? null : participantPluginDir(host);
+    const commonEnv = { ...process.env, ...host.extraEnv() };
+    const env = driver.sessionEnv(commonEnv);
+    const mcp = participantMcp(host, { address: ORCHESTRATOR, taskId: childTask, home, reportTaskId: rootTask }, driver);
+    const siblings = (rootMeta.participants ?? []).filter((p) => p.role === 'teamlead' && addressOf(p) !== address)
+        .map(addressOf);
+    const rootAddress = rootAddressOf(rootMeta, childMeta);
+    const registry = registryOf(host);
+    const childSeat = childMeta ?? {
+        id: childTask, parent: rootTask,
+        participants: [participantRecord(ORCHESTRATOR), participantRecord(rootAddress, { rootTask }, registry)],
+    };
+    const contacts = contactsOf(home, childTask, ORCHESTRATOR, { registry, seats: [
+            { meta: childSeat, sender: participantOf(childSeat, ORCHESTRATOR) },
+            { meta: rootMeta, sender: former ?? participantRecord(address, { childTask }, registry) },
+        ] });
+    const prompt = teamleadPrompt({ host, driver, rootTask, childTask, address, rootAddress, brief, siblings, rules, contacts }) + nativeContextPrompt(selectedContext);
+    const launch = driver.prepare({
+        ref: name, role: 'teamlead', mcp: mcp.descriptor, prompt, model, effort, permissionMode,
+        addDirs: ruleDirs, pluginDir, mcpConfigPath, settingsPath, guardCommand,
+        extraSettings: selectedContext ? {} : skillSettings(host), selectedContext,
+        cwd: root, root, home, task: childTask, address: ORCHESTRATOR, rootTask, rootAddress: address, env,
+    });
+    return {
+        host, home, root, rootTask, childTask, rootMeta, childMeta, address, slug, title, brief, former, pendingRebind, selectedContext,
+        driver, name, model, effort, permissionMode, rules, ruleDirs, pluginDir, env, commonEnv, mcpConfigPath,
+        settingsPath, guardCommand, mcpNote: mcpNote(mcp, 'teamlead'), launch, prompt,
+        routing: routed?.metadata ?? null, decision: routed?.decision ?? null,
+        routingSkipped: former && opts.strategy ? `${address}: --strategy is ignored on a relift` : null,
+        briefStem: `brief-teamlead-${slug}`, taskId: childTask,
+    };
+}
+function buildPrompt({ taskId, nsPath, brief, rules, branch, worktreePath, ruleDirs, driver, host, repoSkills, worktreeDeps, address, contacts }) {
+    const bus = (name) => toolName(driver, PROMPTOBUS_SERVER, name, host);
+    return renderWorkerInstructions({ brief, rules, bindings: {
+            tools: Object.fromEntries(['promptobus_send', 'promptobus_mailbox', 'promptobus_task'].map(name => [name, bus(name)])),
+            preamble: host.workerPreamble({ taskId, nsPath, branch, worktreePath }) + host.liveRunNote(nsPath),
+            workspace: `Allowed roots (session cwd and addDirs): ${[worktreePath, ...ruleDirs].join(', ')}. The first root is your worktree; make repository edits there.`,
+            repositorySkills: repoSkillsLine(repoSkills), dependencies: worktreeDepsLine(worktreeDeps),
+            lease: leaseRule({ host, taskId, address }), memory: memoryRule(driver, host),
+            contacts: contactsSection(contacts, bus('promptobus_task')),
+            orchestrator: driver.phrases.workerOrchestrator ?? 'a separate Claude Code session',
+            communication: `the ${PROMPTOBUS_SERVER} MCP-server tools (already attached to this session): ${bus('promptobus_send')}, ${bus('promptobus_mailbox')}, ${bus('promptobus_task')}`,
+            wait: "To wait for a message (a reply, review notes) — just end the turn. There is nothing to wait with and no need: the task mailboxes are listened to by the bus warden, and it wakes you with a postcard when someone writes to you.",
+            answerDelivery: 'The reply (type=answer) arrives as a warden postcard, as in step 3.',
+            branchDelivery: `Do not move the branch of your own will: the orchestrator takes the result from this worktree's branch. If the assignment explicitly asks for another branch — create it, but in the same turn tell the orchestrator with a status which branch now carries the result. A silently changed branch sends its publication into a void: it will publish the one spawn created, and that one will still sit on the original commit.`,
+            reviewDelivery: 'they arrive on the same postcard',
+            operationalRules: driver.phrases.promptRulesFor?.(WORKER) ?? driver.phrases.promptRules,
+        } });
+}
+// Spawn plan: everything is computed, nothing is written to disk. The same plan prints
+// --dry-run and drives the real start — there is nowhere for them to diverge.
+export async function planSpawn(rootOrHost, opts) {
+    const host = hostOf(rootOrHost);
+    const root = canonicalPath(host.workspaceRoot());
+    const { repo, brief: briefFile, task, newTask = false, title, taskTitle: explicitTaskTitle, } = opts;
+    if (task && newTask) {
+        throw new GateError('--new-task is incompatible with --task: one flag opens a new task, '
+            + 'the other selects an existing one');
+    }
+    const home = canonicalPath(host.promptobusHome());
+    const brief = readBrief(briefFile);
+    let resolved;
+    try {
+        resolved = await host.resolveRepo(repo);
+    }
+    catch (e) {
+        if (!(e instanceof HostResolveError))
+            throw e;
+        throw new Error([e.message, ...e.candidates.map((c) => `    ${host.formatCandidate(c)}`)].join('\n'));
+    }
+    const nsPath = resolved.nsPath;
+    // The group gate stands before the clone check: first "what was named", then "does it
+    // exist" — otherwise the "not cloned" diagnosis is about something that was not named.
+    if (resolved.group) {
+        throw new Error(`${repo} is a group address (${nsPath}), not a repository: a worker needs one. `
+            + `Name a repository: --repo ${nsPath}/<name>. `
+            + `Name one repository of the group (a \`${nsPath}/<name>\` address): a whole group is not a spawn target, and this command does not clone one.`);
+    }
+    const repoAbs = canonicalPath(host.repoAbsPath(nsPath));
+    // A clone, not just a directory: `repos/` also holds group directories with no `.git` of
+    // their own, and `git` inside one of those would answer about the workspace. Same
+    // signal as the resolver and `fresh`.
+    if (!host.isClone(repoAbs)) {
+        throw new Error(`${nsPath} is not cloned — the worker has nowhere to work: ${host.cloneHint(nsPath)}`);
+    }
+    const active = activeTasks(home);
+    // Same order as `resolveTaskId` (explicit `--task`, session bind, the single active
+    // one), but the resolve is its own: `--new-task`, no actives, and ambiguity without a
+    // bind mean opening a new one.
+    const bound = boundTaskId(home);
+    if (newTask && bound) {
+        throw new GateError(`--new-task does not open a second run from a session bound to the active task ${bound}: `
+            + `finish the current run (${host.busCommand(['done', `--task ${bound}`])}) or run spawn from another session`);
+    }
+    const existing = newTask ? null : (task ?? bound ?? (active.length === 1 ? active[0].id : null));
+    if (task && !taskExists(home, task))
+        throw new GateError(`task ${task} does not exist`);
+    if (task && readTask(home, task).status === 'done') {
+        throw new GateError(`task ${task} is closed — nobody sees a worker lifted in it: `
+            + `\`${host.busCommand(['status'])}\` lists active ones, and \`${host.busCommand(['done'])}\` cleanup sweeps worktree directories of every closed task, `
+            + 'so the next close would pull the worktree out from under a live session. '
+            + `A new run is lifted by spawn WITHOUT --task — it will open the task itself; `
+            + `there is no way to continue work in a closed task: ${host.busCommand(['done'])} has no reverse.`);
+    }
+    // Attaching to a FOREIGN task: without `--task` spawn sits in the single active one,
+    // and the originals of its worker's messages would go to the owner of a foreign mailbox.
+    // The condition is the same `ownership` as the rest of the owner gate; an explicit
+    // `--task` does not know this gate.
+    if (!task && existing) {
+        const own = ownership(home, existing, ORCHESTRATOR, sessionIdentity());
+        if (own.gated) {
+            throw new GateError(`${foreignTaskLine(readTask(home, existing), own)}: `
+                + `spawn without --task would attach a worker to a foreign run, and that track's messages would go to a foreign orchestrator. `
+                + `If the attach is intentional — attach with an explicit --task ${existing}. `
+                + `${claimRoute(host.busCommand(['spawn']))} `
+                + 'Need a separate run — repeat spawn with --new-task. '
+                + `No route fits — the run is finished by its owner: a foreign hand running ${host.busCommand(['done'])} would cut live work.`);
+        }
+    }
+    // There are two titles: `piece` is the title of the participant's work SLICE (`--title`,
+    // otherwise the first line of the brief); session and reviewer names are built from it;
+    // `taskTitle` is the TASK title (`--task-title`, strongest at creation). Without flags
+    // they match; later the task title is extended by attaching tracks.
+    const piece = title ?? titleFromBrief(brief);
+    const taskTitle = explicitTaskTitle ?? piece;
+    const identity = newTaskIdentity(slugify(opts.slug ?? taskTitle) || 'task');
+    const taskId = existing ?? identity.id;
+    // Plan shape is the journal shape, the same `readTask` returns: slug, stamp, and the
+    // explicit-title mark live in `adapter`; the task's own fields are title, status, and
+    // participants.
+    const createNew = existing ? null : {
+        id: taskId,
+        title: taskTitle,
+        status: 'active',
+        adapter: {
+            ...(identity.slug ? { slug: identity.slug } : {}),
+            ...(identity.stamp ? { stamp: identity.stamp } : {}),
+            ...(explicitTaskTitle ? { titleExplicit: true } : {}),
+        },
+        participants: [],
+    };
+    // The session name is assembled from the journal: for a new task — from the create
+    // plan, for an existing one — from its task.json.
+    const taskMeta = createNew ?? readTask(home, taskId);
+    const ownerName = pipelineOf(host)[0].name;
+    const slug = workerSlug(home, taskId, nsPath, opts.worker, registryOf(host), ownerName);
+    const address = `${ownerName}:${slug}`;
+    // Two name lines: `name` is for a person in `claude agents`, `worktreeName` is for the
+    // machine; both travel into the task journal.
+    const participant = participantOf(taskMeta, address);
+    const selectedContext = prepareNativeContext(host, { root: repoAbs, role: ownerName, taskId, options: opts, participant });
+    assertNativeContextDriver(selectedContext, participant ? driverOf(participant) : liftHarness(host, opts.harness));
+    const contacts = contactsOf(home, taskId, address, { registry: registryOf(host), seats: [{
+                meta: createNew ? { ...createNew, participants: [participantRecord(ORCHESTRATOR)] } : taskMeta,
+                sender: participant ?? participantRecord(address, {}, registryOf(host)),
+            }] });
+    // The driver is taken from the registry BEFORE any journal write and before option
+    // parse: an unknown harness must refuse here, not after the participant is in the task,
+    // and the allowed `--effort`, `--permission-mode`, and `--model` values are its
+    // dictionary. For a NEW participant the harness is named by a person with `--harness`;
+    // without the flag the previous one is taken. For a re-lifted one — the one that lifted
+    // them, taken from their record.
+    // Routing joins the gate order stated below — "two gates, both before any write
+    // to disk" — and joins it for the same reason: a strategy that finds no candidate
+    // must leave no task, no worktree and no participant behind, and past this point
+    // there is a journal to roll back. `routeLift` returns `null` the moment there is
+    // no `--strategy`, before it asks the host anything: without the flag the call
+    // takes today's path exactly, and the declaration is not consulted.
+    //
+    // Only on a FRESH lift. ADR-005 fixes a participant's harness and model at
+    // liftoff; a repeat spawn restarts an already lifted address, its harness comes
+    // from the record the first lift wrote, and there is nothing left for a strategy
+    // to choose. Silence about that would read as a routed restart, so the plan
+    // carries a line and `spawn` prints it.
+    const routed = participant ? null : await routeLift(host, {
+        role: ownerName,
+        strategy: opts.strategy,
+        harness: opts.harness,
+        model: opts.model,
+        effort: opts.effort,
+        allowPayg: opts.allowPayg,
+        refresh: opts.refresh,
+        dryRun: opts.dryRun,
+        taskMeta,
+        address,
+        // Test seam, like `opts.tool` and `opts.sessions` below: the suite routes
+        // against stand-in adapters, because no test run may start a harness binary
+        // to find out whether an account is logged in. The CLI never sets it.
+        adapterFor: opts.adapterFor,
+    });
+    const routingSkipped = participant && opts.strategy
+        ? `${address} in task ${taskId} is already in the journal, lifted by harness ${participant.harness}: `
+            + '--strategy routes a lift, and a repeat spawn restarts a participant whose harness and worktree '
+            + 'are already fixed. The flag is ignored here — for a routed lift take another name: --worker <name>.'
+        : null;
+    const driver = participant ? driverOf(participant) : liftHarness(host, routed?.harness ?? opts.harness);
+    assertNativeContextDriver(selectedContext, driver);
+    // Restart with a foreign harness is a refusal, not a silent swap: the participant
+    // session is already started in another tool, its worktree and branch stayed with it,
+    // and the task record would name one harness while the session was another's.
+    if (participant && opts.harness && opts.harness !== driver.id) {
+        throw new GateError(`${address} in task ${taskId} was lifted by harness ${driver.id}, and --harness asks for `
+            + `${opts.harness}: a repeat spawn restarts an ALREADY STARTED participant, and there is no way to change `
+            + `its tool mid-flight — its worktree and branch stayed with it. For a second tool pick another name: --worker <name>.`);
+    }
+    // Mechanism fields live in the v1 record `metadata`; v1's own fields are role, harness,
+    // mode, session reference, and the capabilities snapshot.
+    const was = participant?.metadata ?? {};
+    // An explicit name taken by a worker of ANOTHER repository: the journal participant
+    // would hand over its worktree. An automatic slug splits that collision with a number;
+    // an explicit one does not.
+    if (opts.worker && was.repo && was.repo !== nsPath) {
+        throw new Error(`${address} in task ${taskId} is the worker of repository ${was.repo}, `
+            + `and spawn is going to ${nsPath}. The worker name is one per task: pick another --worker.`);
+    }
+    // Spawn at a live participant's address is a refusal: a repeat spawn routinely
+    // restarts a DEAD one in its worktree and branch, and on a live one would send a
+    // second worker into foreign work. Only on `alive`: unknown is no reason to forbid.
+    if (participant) {
+        // Test seam: the `participantSession` default fires exactly on undefined, and
+        // `sessions: null` ("claude agents output was not parsed") arrives as-is.
+        if (participantSession(participant, opts.sessions) === 'alive') {
+            // The bus stop takes this ONE participant through its driver; `done` would close the task.
+            const restart = driver.capabilities.stop
+                ? host.busCommand(['stop', address, `--task ${taskId}`])
+                : driver.phrases.stop('<id>');
+            throw new Error(`task ${taskId} already has ${address} running: session "${was.name}" is alive. `
+                + `A repeat spawn at this address would restart it in the same worktree (${was.worktree}) `
+                + 'and the same branch. '
+                + (opts.worker
+                    ? 'Pick another --worker for the second slice of work.'
+                    : 'A second slice of work in this same repository is lifted under its own name: --worker <name>.')
+                + ` If you need a restart — close the session first: ${restart}.`);
+        }
+    }
+    // The work-slice title comes from the NEW brief, including for an existing address:
+    // a repeat spawn writes the participant record whole again, and the old title in it
+    // would outlive the new assignment — the session would be named after foreign work.
+    // The old title is not stored in a live record: the address's work history is in the
+    // task message journal. This does not rename a reviewer: an already lifted name is
+    // taken from its own record ([review.js](review.js)), and a new one should be named
+    // after the new slice.
+    const workTitle = piece;
+    // Title of an existing task: `--task-title` pins it for good, otherwise attaching a
+    // NEW track appends its title to the previous ones. `retitleTask` decides under the
+    // lock: here there is only the intent and the prediction for `--dry-run` print.
+    let retitle = null;
+    let titleKept = null;
+    if (existing) {
+        if (explicitTaskTitle) {
+            // A diverged title of a pinned task is restamped only on double explicitness:
+            // `--task-title` plus an explicit `--task`, and the right is the mailbox owner's.
+            // One explicitness is not enough: without `--task` spawn sits in the single active.
+            if (taskMeta.adapter.titleExplicit) {
+                if (taskMeta.title !== explicitTaskTitle) {
+                    // `own.gated` reaches here only with an explicit `--task` — the gate above refused spawn without it.
+                    const own = ownership(home, taskId, ORCHESTRATOR, sessionIdentity());
+                    if (task && !own.gated) {
+                        retitle = { title: explicitTaskTitle, explicit: true, restamp: true, session: own.session };
+                    }
+                    else {
+                        titleKept = `task ${taskId}: the task title is already set explicitly ("${taskMeta.title}"), --task-title ignored. `
+                            + (own.gated
+                                ? `The mailbox owner can restamp it: ${foreignTaskLine(taskMeta, own)}. ${claimRoute('spawn')}`
+                                : `Restamp needs double explicitness — repeat spawn with --task ${taskId}.`);
+                    }
+                }
+            }
+            else {
+                retitle = { title: explicitTaskTitle, explicit: true };
+            }
+        }
+        else if (!taskMeta.adapter.titleExplicit && (!participant || (was.title && was.title !== workTitle))) {
+            // Recalculation is where THIS address's line in the task title changed: a new track
+            // or a restart with a different brief. That is how it skips two cases. A routine
+            // restart with the same brief: `applyParticipant` puts the rewritten record at the
+            // END of the list, and `titleFromLines` reads in order — a three-track task would
+            // rename from "A · B · C" to "B · C · A" for no reason. And a former-CLI record
+            // that has no `title` field at all: assembly would take titles only from those who
+            // have one, i.e. replace the task title with the title of one slice — exactly the
+            // trouble this left behind.
+            //
+            // `preview`, not `title`: a prediction for `--dry-run` print. Put it in `title`
+            // and the under-lock recalculation dies on `??`, and the race comes back in silence.
+            // The former record of this address is dropped from assembly: under the lock the
+            // new one has already overwritten it, and a prediction with both lines would
+            // diverge from the live run. The line then travels to the end of the list — the
+            // under-lock recalculation will see it there too.
+            const lines = titleFromLines({
+                participants: [
+                    ...(taskMeta.participants ?? []).filter((p) => addressOf(p) !== address),
+                    { metadata: { address, title: workTitle } },
+                ],
+            }, registryOf(host));
+            if (lines && lines !== taskMeta.title)
+                retitle = { fromLines: true, preview: lines, explicit: false };
+        }
+    }
+    // The session name is recomputed for an existing address too: spawn refused a live
+    // participant above, and a dead one gets a NEW session — under the name from the new
+    // brief. Its former name is dropped from `taken`: otherwise a repeat with the same
+    // brief would bump into itself and append the worker slug to the name for no reason.
+    const name = sessionName(taskMeta, {
+        slug,
+        title: workTitle,
+        taken: (taskMeta.participants ?? []).filter((p) => addressOf(p) !== address)
+            .map((p) => p.metadata.name).filter(Boolean),
+    });
+    // The machine name of a recorded participant is taken from the journal: a recompute
+    // would send a restart onto a new branch. An old record has no `worktreeName` field —
+    // the name is the worktree directory.
+    const known = was.worktreeName ?? (was.worktree ? path.basename(was.worktree) : null);
+    const wtName = known ?? machineName(taskMeta, { slug });
+    const worktreePath = path.join(repoAbs, WORKTREE_DIR_REL, wtName);
+    const branch = `${WORKTREE_BRANCH_PREFIX}${wtName}`;
+    // Directory is taken and the journal has no participant: the name collided with a
+    // foreign one — refuse loudly.
+    if (!known && existsSync(worktreePath)) {
+        throw new Error(`${worktreePath}: worktree directory is already taken, and task ${taskId} journal has no such worker — `
+            + 'the name collided with a foreign one, and the worker would sit in a foreign working tree, on a foreign branch. '
+            + `Take or remove the previous worker's work (git -C ${shellQuote(repoAbs)} worktree remove ${shellQuote(worktreePath)}), `
+            + `or pick another name for this worker: --worker <name>.`);
+    }
+    // Base of a new worktree is the LOCAL default branch: the worker must see the person's
+    // unpushed commits. Preference order comes from `defaultRefs` — the same ladder
+    // cleanup compares against.
+    const base = defaultRefs(repoAbs, host.defaultBranch(repoAbs))[0] ?? 'HEAD';
+    // Model without a flag is the driver's default: the model name belongs to the harness
+    // entirely, and Claude Code `opus` is rejected by a second binary as any unknown id.
+    // A routed lift takes both from the tuple the resolver picked — which is the tuple an
+    // explicit `--model` or `--effort` already constrained, so nothing here replaces a
+    // named value. The routed effort still goes through the same gate as a typed one: the
+    // catalog is data, and a level no driver knows must refuse here rather than reach the
+    // binary as an unknown flag.
+    const model = routed?.model ?? opts.model ?? driver.options.defaultModel;
+    const effort = resolveEffort(routed ? (routed.effort ?? undefined) : opts.effort, driver);
+    const permissionMode = resolvePermissionMode(opts.permissionMode, driver);
+    // The participant settings file is written by the driver: its shape is the harness
+    // contract. What arrives here is only the loop-guard command and the workspace keys
+    // addressed to the participant. What sits in the workspace's own settings would not
+    // reach the participant: its cwd is the clone worktree, not the workspace root. The
+    // command is the same as the orchestrator's — absolute node and the workspace binary,
+    // it resolves from any cwd.
+    const settingsPath = participantSettingsPath(home, taskId, address);
+    const guardCommand = guardHookCommand(host, { address, taskId, home }, process.platform);
+    // Not every harness takes a skills directory from the workspace: for Claude Code it is
+    // a one-lift flag (`--plugin-dir`). For Cursor the canon travels as `.cursor/skills`
+    // files — the driver itself writes them into the worktree from the workspace root.
+    // If it does not take a plugin — do not count it and do not warn about absence: a
+    // warning about something unused reads as a break.
+    const pluginDirPath = !selectedContext && driver.options.skillsDir ? participantPluginDir(host, repoAbs) : null;
+    const commonEnv = { ...process.env, ...host.extraEnv() };
+    const env = driver.sessionEnv(commonEnv);
+    const mcpConfigPath = participantMcpPath(home, taskId, address);
+    const mcp = participantMcp(host, { address, taskId, home, repoDir: repoAbs }, driver);
+    const collected = contextRules(selectedContext, () => host.collectRules(repoAbs));
+    const module = host.moduleNote(repoAbs);
+    // The worker reads the repository AGENTS.md in its own copy: the main tree is not
+    // in --add-dir and stays unwritable — exactly as the prompt promises.
+    const rules = collected.map((f) => (f.startsWith(repoAbs + path.sep)
+        ? path.join(worktreePath, path.relative(repoAbs, f))
+        : f));
+    // Claude Code asks permission to read outside the working directory: without --add-dir
+    // the worker would stall on the first "read these files". Permission mode is irrelevant
+    // — it is about what may be done, not what is visible.
+    const ruleDirs = [...new Set(rules
+            .filter((f) => !f.startsWith(worktreePath + path.sep))
+            .map((f) => path.dirname(f)))];
+    // The lift plan is assembled by the driver: translating a harness-neutral context into
+    // argv, config, and a settings file is its job, and it also knows the binary's
+    // prompt representation. Model is opus by default: the user's session default
+    // can be more expensive. Permission mode is auto by default, not acceptEdits:
+    // acceptEdits skips questions only for file edits and asks about every ordinary Bash
+    // command — a background worker would stall on the first one. `--permission-mode`
+    // overrides it for one spawn: a track with a stand outside the worktree would otherwise
+    // have auto asking the person on every new command shape.
+    const launchContext = {
+        ref: name,
+        address,
+        task: taskId,
+        home,
+        role: ownerName,
+        executionKind: pipelineOf(host)[0].kind,
+        env,
+        mcp: mcp.descriptor,
+        cwd: worktreePath,
+        model,
+        effort,
+        permissionMode,
+        addDirs: ruleDirs,
+        pluginDir: pluginDirPath,
+        mcpConfigPath,
+        settingsPath,
+        guardCommand,
+        extraSettings: selectedContext ? {} : skillSettings(host, repoAbs),
+        root,
+        skillsRoot: selectedContext ? null : participantSkillsRoot(host, repoAbs), selectedContext,
+        readFiles: selectedContext ? [...rules, ...selectedContext.resources.map(resource => resource.path)] : undefined,
+        readSkillDirs: selectedContext ? selectedContext.skills.map(skill => skill.root) : undefined,
+    };
+    // Assembled through a closure rather than once, because two lines of the preamble are not
+    // knowable here: whether the repository's generator laid its process skills out in the
+    // worktree, and whether a fresh worktree's dependencies installed. The plan writes nothing
+    // to disk and the worktree does not exist yet, so it carries both forecasts and `spawn`
+    // rebuilds once with the outcomes. Nothing but the prompt differs between the two, and
+    // rebuilding before the launch files are written keeps them written exactly once.
+    const plannedWorktreeDeps = existsSync(worktreePath)
+        ? { ran: false, repeat: true }
+        : worktreeHasLock(repoAbs)
+            ? { planned: true, command: npmCiCommand() }
+            : { ran: false };
+    const buildLaunch = (repoSkills, worktreeDeps = plannedWorktreeDeps) => {
+        if (selectedContext) {
+            prepareNativeContext(host, { root: repoAbs, role: ownerName, taskId, options: opts, participant, preparedSelection: selectedContext });
+            contextRules(selectedContext, () => [], repoAbs, worktreePath, existsSync(worktreePath));
+        }
+        const prompt = buildPrompt({ taskId, nsPath, brief, rules, branch, worktreePath, ruleDirs, driver, host, repoSkills, worktreeDeps, address, contacts }) + nativeContextPrompt(selectedContext);
+        return { prompt, launch: driver.prepare({ ...launchContext, prompt }) };
+    };
+    // The plan reads the CLONE's file: the worktree does not exist yet. The run reads the
+    // worktree's own — see `runRepoGenerator` — so the two can disagree, and the plan is a
+    // forecast rather than a verdict. A declaration that is there but unusable is its own
+    // state: printing "no generator" for it would contradict the preamble and hide the
+    // reason a repository's skills went missing.
+    const declaredGenerator = repoGenerator(repoAbs);
+    const plannedSkills = declaredGenerator
+        ? {
+            kind: declaredGenerator.argv ? 'planned' : 'invalid',
+            argv: declaredGenerator.argv,
+            why: declaredGenerator.why,
+        }
+        : { kind: 'none', argv: null };
+    const { prompt, launch } = buildLaunch(plannedSkills, plannedWorktreeDeps);
+    // A missing worktree is read as the main checkout. The refusal stands here,
+    // before the first write of this lift, and `--dry-run` takes the same plan.
+    if (typeof driver.refuseForeignProjectLayer === 'function') {
+        driver.refuseForeignProjectLayer(existsSync(worktreePath) ? worktreePath : repoAbs, worktreePath, null, guardCommand);
+    }
+    return {
+        home, taskId, createNew, participant, slug, address, ownerName, nsPath, repoAbs, via: resolved.via, brief, selectedContext,
+        name, workTitle, wtName, worktreePath, branch, base, model, effort, permissionMode,
+        settingsPath, guardCommand, pluginDir: pluginDirPath,
+        mcpConfigPath, mcpNote: mcpNote(mcp, 'participant'), retitle, titleKept, driver,
+        routing: routed?.metadata ?? null, decision: routed?.decision ?? null, routingSkipped,
+        launch, argv: launch.argv, mcpConfig: launch.mcpConfig, settings: launch.settings,
+        rules, ruleDirs, module, prompt, env, commonEnv, host,
+        // The repository's generator and dependency install: what was declared, their
+        // forecasts, and the door for `spawn` to put the real outcomes into the preamble once
+        // the worktree exists.
+        repoSkills: plannedSkills, worktreeDeps: plannedWorktreeDeps, rebuild: buildLaunch,
+        // A recorded branch point is not recomputed: on a branch the worker already worked
+        // on, HEAD is not the branch point. A former-CLI record has no field.
+        knownBaseSha: was.baseSha ?? null,
+        // The session is lifted right in the worker's working tree: spawn creates the directory.
+        cwd: worktreePath,
+    };
+}
+/**
+ * Line about workspace skills. Four outcomes: the plugin directory is attached, there is
+ * no plugin, the harness does not take a plugin, and the harness itself said where the
+ * skills come from (a file copy, not a flag). The driver puts its own line on the plan —
+ * otherwise Cursor would read "not attached" after already receiving the canon in the
+ * worktree `.cursor/skills`.
+ */
+export function skillsNote(plan) {
+    if (plan.launch?.skillsNote)
+        return plan.launch.skillsNote;
+    if (plan.pluginDir)
+        return plan.pluginDir;
+    if (!plan.driver.options.skillsDir) {
+        return `not attached — ${plan.driver.options.tool} does not read the Claude Code skills plugin`;
+    }
+    return 'not attached — this host ships no workspace-skills plugin';
+}
+// Module state is assembled once in the plan and printed twice.
+export function sayModule(plan) {
+    (plan.module.level === 'warn' ? warn : info)(plan.module.text);
+}
+/**
+ * Field in the REPOSITORY's own `promptobus.json` that declares how to restore the
+ * process skills it does not keep in git.
+ *
+ * The repository's file, not the workspace's: a generator belongs to the repository
+ * being spawned into, and the host describes a workspace. `PromptobusHost` is asked
+ * nothing here — a host method would either answer about the workspace root's manifest
+ * or need a repository argument, and the declaration is one JSON field read by path.
+ *
+ * An argv array, never a shell line: everything the package launches goes through
+ * `run`, and a shell string would need a quoting dialect invented for this one field —
+ * and would put a repository's text on the operator's command line.
+ */
+export const GENERATOR_FIELD = 'generate';
+/**
+ * The generator the repository at `repoAbs` declares. `null` — none, which is the
+ * default: skills in git stay the normal case and cost this step nothing. A declaration
+ * that is there but unusable comes back with `argv: null` and the reason, because
+ * silently treating a malformed field as "no generator" is how a participant comes up
+ * without the skills its repository thinks it declared.
+ */
+export function repoGenerator(repoAbs) {
+    const file = path.join(repoAbs, HOST_CONFIG);
+    if (!existsSync(file))
+        return null;
+    let parsed;
+    try {
+        parsed = JSON.parse(readFileSync(file, 'utf8'));
+    }
+    catch (e) {
+        return { argv: null, why: `could not be read: ${file} is not valid JSON (${e.message})` };
+    }
+    const declared = parsed?.[GENERATOR_FIELD];
+    if (declared === undefined || declared === null)
+        return null;
+    if (Array.isArray(declared) && declared.length === 0)
+        return null;
+    if (!Array.isArray(declared) || !declared.every((a) => typeof a === 'string' && a.length > 0)) {
+        return {
+            argv: null,
+            why: `is declared wrongly: "${GENERATOR_FIELD}" in ${file} must be a non-empty array of strings `
+                + '— the command and its arguments, not a shell line',
+        };
+    }
+    return { argv: declared, why: null };
+}
+/**
+ * Run the repository's generator in the fresh worktree.
+ *
+ * A refusal is NOT a spawn refusal, the same rule the dependency install follows: the
+ * participant is told what failed and with what exit code, and decides. Killing a lift
+ * over missing skills would cost more than the skills.
+ *
+ * `fresh: false` is a repeat spawn into a surviving directory — what the previous
+ * session generated is still there, and running a generator over a worker's tree is a
+ * write nobody asked for.
+ *
+ * `exec` is the test seam, as in `installWorktreeDeps`.
+ */
+export function runRepoGenerator({ worktreePath }, { fresh = true, exec = runProc, depsRefused = false } = {}) {
+    // Read from the WORKTREE, not from the clone: the worktree is checked out from the
+    // base branch and is the file the participant will actually see. The plan reads the
+    // clone because the worktree does not exist yet at plan time, so the two can disagree
+    // — and where they do, the worktree decides.
+    const declared = repoGenerator(worktreePath);
+    if (!declared)
+        return { kind: 'none', argv: null };
+    if (!fresh)
+        return { kind: 'kept', argv: declared.argv };
+    if (!declared.argv) {
+        return { kind: 'failed', argv: null, why: declared.why, code: null, logPath: null };
+    }
+    // The log goes next to the directory, not inside the worker's tree.
+    const logPath = `${worktreePath}.generate.log`;
+    const missingDeps = depsRefused ? 'refused' : existsSync(path.join(worktreePath, 'node_modules')) ? null : 'absent';
+    const before = new Set(worktreeDirt(worktreePath) ?? []);
+    const result = runLogged(declared.argv, {
+        cwd: worktreePath, timeout: PROC_INSTALL_TIMEOUT_MS, logPath, exec,
+    });
+    // What the generator leaves is checked only after a successful run, net of what the install left.
+    if (result.status === 0) {
+        const dirt = worktreeDirt(worktreePath)?.filter((line) => !before.has(line)) ?? null;
+        return { kind: 'ok', argv: declared.argv, ms: result.ms, logPath, dirt, missingDeps };
+    }
+    return {
+        kind: 'failed', argv: declared.argv, why: result.why, code: result.status, ms: result.ms, logPath, missingDeps,
+    };
+}
+const trackedDirt = (state) => state?.dirt?.filter((line) => !line.startsWith('??')) ?? [];
+const dirtPaths = (lines) => `${lines.slice(0, 3).map((line) => line.slice(3)).join(', ')}`
+    + `${lines.length > 3 ? ', …' : ''}`;
+const MISSING_DEPS = {
+    refused: 'the dependency install refused before it, so this worktree has no complete node_modules',
+    absent: 'this worktree had no node_modules when it started',
+};
+const FIRST_STEP = {
+    refused: 'The dependency install refused before it: get npm ci working first, then run the command yourself',
+    absent: 'This worktree had no node_modules when it ran: if the command needs installed tools, install them '
+        + 'first, then run it yourself',
+};
+/**
+ * The preamble sentence about the repository's own process skills. It is written for
+ * every outcome, including "no generator declared": three workers once came up without
+ * the rules their repository generates, one noticed and two did not, and a participant
+ * that is never told cannot notice.
+ */
+export function repoSkillsLine(state) {
+    const cmd = state?.argv?.length ? `\`${state.argv.join(' ')}\`` : 'the command it declares';
+    switch (state?.kind) {
+        case 'planned':
+            return `Repository process skills: this repository declares a generator (${cmd}) in its ${HOST_CONFIG}, `
+                + 'and spawn runs it in the fresh worktree after the checkout and any dependency install.';
+        case 'invalid':
+            return `Repository process skills will NOT be laid out: the repository's ${HOST_CONFIG} declares a `
+                + `"${GENERATOR_FIELD}" field, but it ${state.why}, so there is nothing spawn can run. Whatever that `
+                + 'command was meant to generate is missing here.';
+        case 'ok':
+            return `Repository process skills were laid out in this worktree: the repository declares a generator `
+                + `(${cmd}) in its ${HOST_CONFIG}, and spawn ran it here after the checkout and any dependency install.`
+                + (state.missingDeps ? ` But ${MISSING_DEPS[state.missingDeps]}: a tool it resolves through node_modules `
+                    + 'may have come from an enclosing directory, such as the clone root, at another version — check what it '
+                    + 'wrote before you rely on it.' : '')
+                + (trackedDirt(state).length ? ` It also changed tracked files (${dirtPaths(trackedDirt(state))}) — do not `
+                    + 'commit those changes; restore them with git checkout before you work.' : '')
+                + (state.dirt === null ? ' What it left was not checked: git did not answer in this worktree — run git '
+                    + 'status before you commit.' : '');
+        case 'failed':
+            return `Repository process skills were NOT laid out. The repository declares a generator (${cmd}) in its `
+                + `${HOST_CONFIG}; spawn ran it in this worktree and it ${state.why}. Whatever that command generates — `
+                + 'process skills, rules — is missing here. '
+                + (FIRST_STEP[state.missingDeps] ?? 'Run it yourself before you work')
+                + '; if it refuses again, say so in your first status instead of working without them silently.';
+        case 'kept':
+            return `Repository process skills were not regenerated on this lift: the worktree already existed (a repeat `
+                + `spawn at the same address), and the repository's generator (${cmd}) runs only in a fresh one. Whether `
+                + 'what a previous session generated is still there was not checked — look before you rely on it, and run '
+                + 'the command yourself if it is gone.';
+        default:
+            return `Repository process skills: this repository declares no generator in a ${HOST_CONFIG} of its own, so `
+                + 'whatever process skills it has travel with the checkout and are already here.';
+    }
+}
+/**
+ * The participant's dependency-install line. A fresh plan carries the lock forecast,
+ * while a real spawn replaces it with the install outcome. A repeat carries `repeat`:
+ * it deliberately does not rerun or check dependencies in a worktree that may contain
+ * the previous session's changes.
+ */
+export function worktreeDepsLine(state) {
+    if (state?.repeat || state?.kind === 'kept') {
+        return 'Worktree dependencies were not re-run or checked: this is a repeat spawn into an existing worktree. '
+            + `Look before relying on node_modules; run ${npmCiCommand()} yourself if needed.`;
+    }
+    if (state?.planned || state?.kind === 'planned') {
+        return `Worktree dependencies: package-lock.json is present; a fresh spawn will run ${state.command ?? npmCiCommand()} `
+            + 'before writing launch files.';
+    }
+    if (!state?.ran) {
+        return 'Worktree dependencies: no package-lock.json was found, so there is nothing to install.';
+    }
+    const command = state.command ?? npmCiCommand();
+    if (state.ok) {
+        return `Worktree dependencies were installed in this worktree: ${command} already ran; `
+            + 'you do not need to run it again before you work.';
+    }
+    return `Worktree dependencies were NOT installed: ${state.why ?? 'the install was refused'}; run ${command} by hand `
+        + 'before you work, and say so in your first status.';
+}
+/**
+ * The same three states for the OPERATOR, in `--dry-run`. It says what the preamble will
+ * say, in one line: a run that printed "no generator declared" while the participant was
+ * told the declaration is broken would send the reader looking in the wrong file.
+ */
+export function repoSkillsPlanNote(state) {
+    if (state?.kind === 'invalid') {
+        return `the repository declares "${GENERATOR_FIELD}" in its ${HOST_CONFIG}, but it ${state.why}`
+            + ' — nothing will be run, and the participant is told so';
+    }
+    if (state?.argv?.length) {
+        return `generator ${state.argv.join(' ')} — runs in the fresh worktree, after the checkout `
+            + 'and any dependency install';
+    }
+    return `no generator declared in a ${HOST_CONFIG} of the repository — they travel with the checkout`;
+}
+/**
+ * Outcome of the generator for the OPERATOR. `none` and `kept` say nothing out loud:
+ * the preamble carries both, and a line about a step that did not happen would print on
+ * every lift into every repository that never declared one.
+ */
+export function sayRepoSkills(state) {
+    const cmd = state?.argv?.length ? state.argv.join(' ') : null;
+    if (state?.kind === 'ok') {
+        const done = `repository skills generated in the worktree (${cmd}, ${(state.ms / 1000).toFixed(1)} s)`;
+        if (state.missingDeps === 'refused') {
+            warn(`${done}, but the dependency install refused before it: a tool the generator names may have come `
+                + 'from an enclosing directory, such as the clone root, rather than from this worktree\'s lock');
+        }
+        else {
+            ok(done);
+        }
+        const tracked = trackedDirt(state);
+        const untracked = state.dirt?.filter((line) => line.startsWith('??')) ?? [];
+        if (tracked.length) {
+            warn(`the generator changed ${tracked.length} tracked file(s) in the worktree (${dirtPaths(tracked)}) — `
+                + 'do not commit them: the worker branch starts dirty, and the participant is told to restore those files');
+        }
+        if (state.dirt === null)
+            warn('what the generator left was not checked: git did not answer in the worktree');
+        if (untracked.length) {
+            warn(`the generator left ${untracked.length} change(s) git can see in the worktree (${dirtPaths(untracked)}) `
+                + '— the repository does not ignore what it generates, so the worker branch starts dirty and done will '
+                + 'never sweep the directory. Add those paths to the repository .gitignore');
+        }
+        return;
+    }
+    if (state?.kind !== 'failed')
+        return;
+    warn(`repository skills NOT generated: ${cmd ? `${cmd} ` : ''}${state.why}`
+        + `${state.missingDeps === 'refused' ? ' — the dependency install refused before it' : ''}`
+        + `${state.logPath ? ` · log ${state.logPath}` : ''} — the participant is told this in its preamble, `
+        + 'and spawn is not rolled back for it');
+}
+// Outcome of install in a just-created worktree. A refusal is a warning with a command,
+// not `fail`: spawn of the participant is not rolled back for this.
+export function sayWorktreeDeps(result) {
+    if (!result?.ran)
+        return;
+    const dur = `${(result.ms / 1000).toFixed(1)} s`;
+    if (result.ok) {
+        ok(`worktree dependencies installed (npm ci, ${dur})`);
+    }
+    else {
+        const log = result.logPath ? ` · log ${result.logPath}` : '';
+        warn(`worktree dependencies not installed: npm ci ${result.why} — the worker will do it: ${result.command}${log}`);
+    }
+    if (result.ignored === false) {
+        warn('git does not ignore node_modules in the worktree — the directory will stay dirty, done will not remove it');
+    }
+}
+// Loop-guard line in `--dry-run`: the participant settings file and the identity the
+// hook will call the bus with. Printed by both lift commands — `--dry-run` must show
+// what will land on disk, and participant identity travels exactly here.
+export function guardHookNote(plan) {
+    return `participant settings: ${plan.settingsPath} · loop guard: ${plan.guardCommand}`;
+}
+// An opencode lift installs no settings file and no loop-guard hook: scope is prompt rules
+// plus the permission map. Dry-run says that instead of naming files that never land.
+export function opencodeGuardNote(plan) {
+    return `opencode config: ${plan.mcpConfigPath} · no loop-guard hook: scope is prompt rules plus the permission map`;
+}
+// Participant-environment line in `--dry-run` — next to the environment assembly itself.
+// Identity is no longer named in it: it is not in the session environment, it stands as
+// Stop-hook command arguments in the settings file, and the line about that file prints it.
+export function sessionEnvNote(driver, host) {
+    const extra = host.extraEnv();
+    return `session environment: ${Object.entries(extra).map(([k, v]) => `${k}=${v}`).join(' ')}`
+        + ' — the memory gate does not hold a background session; '
+        + `dropped from the parent: ${driver.options.envDrop.join(', ')} — these variables leak foreign values`;
+}
+// How `--dry-run` explains silence about the binary version — the same words for spawn
+// and review. The driver names the binary: the command has none of its own.
+export function dryRunToolNote(driver) {
+    return `version was not checked: dry-run — ${driver.options.tool} --version is not run,`
+        + ' the binary is resolved on the real run';
+}
+// About the binary — only when there is something to say. `reason: false` is for the
+// real run, where `fail(tool.reason)` follows: the same text as a warning and a refusal
+// in a row reads as two different troubles.
+export function sayTool(tool, { reason = true } = {}) {
+    if (tool.note)
+        info(tool.note);
+    if (tool.warn)
+        warn(tool.warn);
+    if (!tool.ok && reason)
+        warn(tool.reason);
+}
+/**
+ * The brief in the task files folder. The file the orchestrator passes is theirs and
+ * temporary — a scratch note beside a run, and the consumer's workspace filled up with
+ * directories of stale ones; the assignment itself is the one document that explains a
+ * branch months later, so the bus keeps a copy next to the review diffs of the same
+ * task. Every lift stores the brief it was given, and a repeat at the same address takes
+ * the next number: overwriting would drop the assignment the previous session actually
+ * worked by, and the history of assignments of an address is exactly what is being kept.
+ *
+ * A write refusal is a WARNING, in the voice of the dependency install: the worker is
+ * already up by this point, and a throw here would end the command with a running
+ * session, no report and no route back. What is lost is a copy — the orchestrator still
+ * holds the file it passed.
+ */
+export function keepBrief(plan) {
+    const stem = plan.briefStem ?? `brief-${plan.slug}`;
+    try {
+        ok(`brief kept in the task files: ${occupyTaskFile(filesDir(plan.home, plan.taskId), stem, '.md', `${plan.brief}\n`)}`);
+    }
+    catch (e) {
+        warn(`the brief was not kept: ${e.message}; the participant is up, spawn is not rolled back for this`);
+    }
+}
+export async function spawnTeamlead(rootOrHost, opts) {
+    let plan = await planTeamlead(rootOrHost, opts);
+    if (plan.routingSkipped)
+        warn(plan.routingSkipped);
+    if (plan.routing)
+        info(routingLine(plan.routing));
+    if (opts.dryRun) {
+        info(`root task: ${plan.rootTask} · child task: ${plan.childTask}${plan.childMeta ? ' (relift)' : ' (will be created)'}`);
+        info(`teamlead address: ${plan.address} · session: "${plan.name}" · harness: ${harnessName(plan.driver.id)} · model: ${plan.model}`
+            + `${plan.effort ? ` · requested effort: ${plan.effort}` : ''}`);
+        if (plan.decision)
+            sayDecision(plan.decision);
+        info(`install root: ${plan.root}`);
+        info(`mcp-config: ${plan.mcpConfigPath} · default task ${plan.childTask} · reports to ${plan.rootTask}`);
+        if (plan.driver.id === 'codex') {
+            info('teamlead thread: features.hooks=false · holder completion and wake provide the loop guard');
+            info(`Codex sandbox: ${plan.launch.settings.sandbox}`);
+        }
+        else if (plan.driver.id === 'opencode')
+            info(opencodeGuardNote(plan));
+        else
+            info(guardHookNote(plan));
+        info(sessionEnvNote(plan.driver, plan.host));
+        if (plan.launch.envNote)
+            info(plan.launch.envNote);
+        info(`participant MCP (${Object.keys(plan.launch.mcpConfig?.mcpServers ?? {}).length}):`);
+        for (const line of mcpServerLines(plan.launch.mcpConfig))
+            console.log(`  ${line}`);
+        info(`workspace skills: ${skillsNote(plan)}`);
+        info('teamlead rules:');
+        for (const file of plan.rules)
+            console.log(`  ${file}`);
+        info(dryRunToolNote(plan.driver));
+        info('command:');
+        const command = plan.launch.dryRunCommand
+            ?? `${plan.driver.options.tool} ${plan.launch.argv.slice(0, -1).map(shellQuote).join(' ')} <prompt>`;
+        console.log(`  cd ${shellQuote(plan.root)} && ${command}`);
+        info('prompt:');
+        console.log(plan.prompt);
+        ok('dry-run: nothing written to disk, teamlead not started');
+        return plan;
+    }
+    if (plan.pendingRebind) {
+        if (!recoverTeamleadRebind(plan.home, plan.rootTask, plan.address)) {
+            throw new GateError(`${plan.address} rebind changed while this lift was planned; retry spawn to recover the current intent`);
+        }
+        plan = await planTeamlead(rootOrHost, opts);
+    }
+    const rawTool = opts.tool ?? plan.host.resolveToolBin(plan.driver.options.tool);
+    const tool = withToolVersion(plan.driver, plan.host, normalizeLaunchTool(plan.driver, rawTool, plan.env));
+    sayTool(tool, { reason: false });
+    if (!tool.ok)
+        fail(tool.reason);
+    const refused = optionRefusal(plan.driver, plan.effort, tool, plan.host);
+    if (refused)
+        fail(refused);
+    const provenance = launchProvenance(plan.host, tool);
+    info(provenanceLine(provenance));
+    sayMcp(plan);
+    info(`workspace skills: ${skillsNote(plan)}`);
+    info('teamlead rules:');
+    for (const file of plan.rules)
+        console.log(`  ${file}`);
+    const nativeLaunchId = plan.driver.id === 'codex' ? randomUUID() : null;
+    const nativeReservation = nativeLaunchId && plan.former ? reserveTeamleadRelift(plan, nativeLaunchId) : null;
+    if (nativeLaunchId)
+        plan.launch.launchId = nativeLaunchId;
+    try {
+        plan.env = (await finalizeManagedServiceLaunch(plan.host, {
+            ...plan, task: plan.childTask, address: ORCHESTRATOR, ref: plan.name, cwd: plan.root,
+            env: { ...plan.env, PROMPTOBUS_ROOT_TASK: plan.rootTask }, deferTaskBinding: true,
+        })).env;
+        writeLaunchFiles(plan.launch.files, plan.driver.options.launchDirs);
+    }
+    catch (error) {
+        return revokeFailedManagedLaunch(plan.launch, error, () => {
+            if (nativeReservation)
+                clearTeamleadReservation(plan, nativeLaunchId);
+        });
+    }
+    const formerTokenLogs = tokenLogHistoryOf(plan.host, plan.home, plan.rootTask, plan.former);
+    const formerChildTokenLogs = plan.childMeta
+        ? tokenLogHistoryOf(plan.host, plan.home, plan.childTask, participantOf(plan.childMeta, ORCHESTRATOR)) : [];
+    const { output, session, seen } = await plan.driver.spawn(plan.launch, {
+        tool: tool, host: plan.host, home: plan.home, task: plan.childTask, address: ORCHESTRATOR,
+        cwd: plan.root, env: plan.env, ref: plan.name, role: 'teamlead', noun: 'teamlead',
+        requireFullSession: true, requireLaunchMatch: true,
+        launchFailNote: ` Repeat spawn --teamlead --task ${plan.rootTask} --slug ${plan.slug} after fixing the launch.`,
+        deadNote: ` Repeat spawn --teamlead --task ${plan.rootTask} --slug ${plan.slug}.`,
+        unboundNote: plan.driver.id === 'codex'
+            ? ' Stop the unbound Codex thread before repeating the lift.'
+            : ' Stop the unbound Claude session by name before repeating the lift.',
+        awaitOptions: opts.awaitOptions,
+        persist: (id, state, full) => {
+            if (state === 'dead' || !full)
+                return;
+            const nextLead = participantRecord(plan.address, {
+                ...nativeContextMetadata(plan.selectedContext),
+                childTask: plan.childTask, harness: plan.driver.id, mode: 'managed',
+                ...(plan.launch.service ? { sessionRecord: plan.launch.rootSessionRecord ?? plan.launch.sessionRecord } : {}),
+                ...(nativeLaunchId ? { nativeLaunchId } : {}),
+                name: plan.name, sessionRef: plan.name, session: id ?? null, sessionId: full,
+                model: plan.model, ...(plan.effort ? { effort: plan.effort } : {}),
+                ...(plan.routing ? { [ROUTING_FIELD]: plan.routing } : {}),
+                title: plan.title, started: new Date().toISOString(),
+                ...(plan.former ? { tokenLogHistory: formerTokenLogs } : {}),
+                mechanismPath: provenance.mechanismPath, mechanismPathIssue: provenance.mechanismPathIssue,
+                mechanismVersion: plan.host.version, packagePath: provenance.packagePath,
+                packageVersion: provenance.packageVersion, packageIssue: provenance.packageIssue,
+                hostVersion: provenance.hostVersion, binaryPath: provenance.binaryPath,
+                binaryVersion: provenance.binaryVersion,
+                capabilities: plan.driver.capabilities,
+            }, registryOf(plan.host));
+            if (!plan.childMeta) {
+                const firstOwner = participantRecord(ORCHESTRATOR, {
+                    ...nativeContextMetadata(plan.selectedContext),
+                    owner: full, sessionId: full, session: id ?? null, name: plan.name, sessionRef: plan.name,
+                    ...(plan.launch.service ? { sessionRecord: plan.launch.sessionRecord } : {}),
+                    harness: plan.driver.id, mode: 'attached', mechanismVersion: plan.host.version,
+                    ...(nativeLaunchId ? { nativeLaunchId } : {}),
+                }, registryOf(plan.host));
+                bus(plan.home, { cli: plan.host.version }).createTask({
+                    id: plan.childTask, title: plan.title,
+                    adapter: { slug: plan.slug, stamp: plan.childTask.match(/(t\d{8}-\d{6})$/)?.[1] },
+                    owner: firstOwner, parent: plan.rootTask, teamlead: nextLead,
+                });
+                opts.fault?.('teamlead-first-after-link');
+                mkdirSync(inboxDir(plan.home, plan.childTask, ORCHESTRATOR), { recursive: true });
+                mkdirSync(filesDir(plan.home, plan.childTask), { recursive: true });
+                return;
+            }
+            const childOwner = participantOf(readTask(plan.home, plan.childTask), ORCHESTRATOR);
+            const { nativeLaunchId: previousLaunch, nativeStop: previousStop, nativeUnlaunched, nativePendingLaunchId, ...childMetadata } = childOwner.metadata;
+            const nextChild = participantRecord(ORCHESTRATOR, {
+                ...nativeContextMetadata(plan.selectedContext),
+                ...(nativeLaunchId ? childMetadata : childOwner.metadata), owner: full, sessionId: full, mode: 'attached',
+                ...(nativeLaunchId ? { nativeLaunchId } : {}),
+                session: id ?? null, name: plan.name, sessionRef: plan.name,
+                ...(plan.launch.service ? { sessionRecord: plan.launch.sessionRecord } : {}),
+                tokenLogHistory: formerChildTokenLogs,
+            }, registryOf(plan.host));
+            const file = teamleadRebindFile(plan.home, plan.rootTask, plan.address);
+            withTaskLock(plan.home, plan.rootTask, () => {
+                const currentLead = participantOf(readTask(plan.home, plan.rootTask), plan.address);
+                if (currentLead?.metadata.sessionId !== plan.former.metadata.sessionId) {
+                    throw new GateError(`${plan.address} changed session while this lift started; stop the extra session before retrying`);
+                }
+                if (nativeReservation && (!isDeepStrictEqual(nativeTeamleadState(currentLead), nativeReservation.oldRoot)
+                    || !isDeepStrictEqual(nativeTeamleadState(participantOf(readTask(plan.home, plan.childTask), ORCHESTRATOR)), nativeReservation.oldChild)))
+                    throw new GateError('native teamlead reservation changed before rebind publication');
+                if (existsSync(file))
+                    throw new GateError(`teamlead rebind ${file} is already pending; retry spawn to recover it`);
+                mkdirSync(path.dirname(file), { recursive: true });
+                writeJsonAtomic(file, {
+                    id: randomUUID(),
+                    rootTask: plan.rootTask, childTask: plan.childTask, address: plan.address,
+                    oldRootSession: plan.former.metadata.sessionId, oldChildSession: childOwner.metadata.owner,
+                    sessionId: full, rootParticipant: nextLead, childParticipant: nextChild,
+                    ...(nativeReservation ? { native: nativeReservation } : {}),
+                });
+            });
+            if (!recoverTeamleadRebind(plan.home, plan.rootTask, plan.address, opts.fault)) {
+                throw new GateError(`${plan.address} rebind changed while this lift started; retry spawn to recover the current intent`);
+            }
+        },
+    }).catch(error => revokeFailedManagedLaunch(plan.launch, error));
+    if (plan.driver.id === 'codex' && plan.launch.rootSessionRecord && !plan.launch.service) {
+        writeJsonAtomic(plan.launch.rootSessionRecord, {
+            home: plan.home, task: plan.rootTask, address: plan.address, threadId: session,
+        }, { mode: 0o600 });
+    }
+    if (plan.driver.id === 'codex' && plan.launch.sessionRecord) {
+        plan.driver.registerWake(plan.home, plan.rootTask, plan.address, {
+            ...plan.env, [plan.driver.options.mcpIdentity.recordVar]: plan.launch.rootSessionRecord ?? plan.launch.sessionRecord,
+        }, session);
+    }
+    ensureRootRecord(plan.home, plan.childTask);
+    bindIfOwner(plan.home, plan.rootTask);
+    handOverContactPoints(plan.home, { env: process.env });
+    await ensureWarden(plan.home, plan.rootTask, { host: plan.host });
+    await ensureWarden(plan.home, plan.childTask, { host: plan.host });
+    keepBrief(plan);
+    ok(`${plan.address} lifted at ${plan.root} for child task ${plan.childTask}${session ? ` (session ${session})` : ''}`);
+    plan.driver.saidLiftoff({ name: plan.name, seen, session, output });
+    return plan;
+}
+export async function spawn(rootOrHost, opts) {
+    if (opts.teamlead)
+        return spawnTeamlead(rootOrHost, opts);
+    const plan = await planSpawn(rootOrHost, opts);
+    // Before the `--dry-run` branch: an ignored --task-title is reported on a dry run too.
+    if (plan.titleKept)
+        warn(plan.titleKept);
+    // Same rule for an ignored --strategy, and for the decision itself: a routed lift
+    // says which tuple it is about to take before it takes it.
+    if (plan.routingSkipped)
+        warn(plan.routingSkipped);
+    if (plan.routing)
+        info(routingLine(plan.routing));
+    if (opts.dryRun) {
+        info(`repository: ${plan.nsPath} (source: ${plan.via}) → ${plan.repoAbs}`);
+        info(`task: ${plan.taskId}${plan.createNew ? ` (will be created: ${plan.createNew.title})` : ''}`
+            + `${plan.retitle ? ` (will be renamed: ${plan.retitle.preview ?? plan.retitle.title})` : ''}`);
+        info(`worker address: ${plan.address} · session: "${plan.name}" · model: ${plan.model}${plan.effort ? ` · requested effort: ${plan.effort}` : ''}${plan.permissionMode !== plan.driver.options.defaultPermissionMode ? ` · permission mode: ${plan.permissionMode}` : ''}${opts.harness ? ` · harness: ${plan.driver.id}` : ''}`);
+        if (plan.decision)
+            sayDecision(plan.decision);
+        info(`worktree: ${plan.worktreePath} (branch ${plan.branch}, from ${plan.base})`);
+        // The directory is not there yet — look at the lock in the clone: after `worktree add`
+        // it will be at the root. The directory already exists (a restart) — there will be no
+        // install, and there is no intent.
+        if (!existsSync(plan.worktreePath) && worktreeHasLock(plan.repoAbs)) {
+            info(`worktree dependencies: ${npmCiCommand()}`);
+        }
+        info(`mcp-config: ${plan.mcpConfigPath}`);
+        if (plan.driver.id === 'opencode')
+            info(opencodeGuardNote(plan));
+        else
+            info(guardHookNote(plan));
+        info(sessionEnvNote(plan.driver, plan.host));
+        // A driver whose session environment is not merely stripped but REDIRECTED says
+        // where to: the line above reports a dropped variable, and on its own that reads
+        // as "the harness default will be used". Absent for drivers that only strip.
+        if (plan.launch?.envNote)
+            info(plan.launch.envNote);
+        // What this output does NOT have and why: a harness that invents the session name
+        // itself cannot have it printed in advance, and silence about that would read as a skip.
+        if (plan.driver.phrases.naming)
+            info(`harness session name: ${plan.driver.phrases.naming}`);
+        info(`participant MCP (${plan.mcpConfig.mcpServers ? Object.keys(plan.mcpConfig.mcpServers).length : 0}):`);
+        for (const line of mcpServerLines(plan.mcpConfig))
+            console.log(`  ${line}`);
+        sayMcp(plan, { hint: false });
+        info(`workspace skills: ${skillsNote(plan)}`);
+        info(`repository skills: ${repoSkillsPlanNote(plan.repoSkills)}`);
+        info(`worker rules:`);
+        for (const f of plan.rules)
+            console.log(`  ${f}`);
+        sayModule(plan);
+        // Binary version is not asked in `--dry-run`: nothing is started.
+        info(dryRunToolNote(plan.driver));
+        info('command:');
+        // A driver may describe a non-argv prompt channel; ordinary drivers keep the
+        // existing runnable argv template.
+        const command = plan.launch.dryRunCommand
+            ?? `${plan.driver.options.tool} ${plan.argv.slice(0, -1).map(shellQuote).join(' ')} <prompt>`;
+        console.log(`  cd ${shellQuote(plan.cwd)} && ${command}`);
+        info('prompt:');
+        console.log(plan.prompt);
+        ok('dry-run: nothing written to disk, worker not started');
+        return plan;
+    }
+    // The binary is resolved HERE, not in the plan: a declared driver reads `--version`,
+    // and the plan promises it does nothing. `opts.tool` is a test seam.
+    const rawTool = opts.tool ?? plan.host.resolveToolBin(plan.driver.options.tool);
+    const tool = withToolVersion(plan.driver, plan.host, normalizeLaunchTool(plan.driver, rawTool, plan.env));
+    // Binary refusal is BEFORE the first write to disk: otherwise a worktree, a branch, and
+    // a participant record would remain. `sayTool` stands BEFORE the refusal: the "version
+    // is older" branch has a `note` about the directory of the found binary — otherwise a
+    // person updates the wrong binary.
+    sayTool(tool, { reason: false });
+    if (!tool.ok)
+        fail(tool.reason);
+    const ultra = optionRefusal(plan.driver, plan.effort, tool, plan.host);
+    if (ultra)
+        fail(ultra);
+    plan.driver.refuseForeignProjectLayer?.(plan.repoAbs, plan.worktreePath, tool, plan.guardCommand);
+    const provenance = launchProvenance(plan.host, tool);
+    info(provenanceLine(provenance));
+    // The set the participant is lifted with is announced by the same rules block as in
+    // `--dry-run`.
+    sayModule(plan);
+    sayMcp(plan);
+    // The same line the dry run prints, and for the reason `review` prints it too: the
+    // canon travels as files, so whether it arrived is a fact about this lift.
+    info(`workspace skills: ${skillsNote(plan)}`);
+    info(`worker rules:`);
+    for (const f of plan.rules)
+        console.log(`  ${f}`);
+    let baseSha = plan.knownBaseSha;
+    const reserve = () => reserveNativeParticipant(plan.home, plan.taskId, participantRecord(plan.address, {
+        ...nativeContextMetadata(plan.selectedContext),
+        // Record harness is the one that lifts it. Without it the registry would assign
+        // the participant `fallback`, and all further work with its session — state, stop,
+        // routes — would go through a FOREIGN harness's driver.
+        harness: plan.driver.id,
+        repo: plan.nsPath,
+        repoAbs: plan.repoAbs,
+        worktree: plan.worktreePath,
+        branch: plan.branch,
+        // Branch point was not found — no field at all, review stays on the previous behavior.
+        ...(baseSha ? { baseSha } : {}),
+        model: plan.model,
+        ...(plan.effort ? { effort: plan.effort } : {}),
+        // The routing decision rides in `metadata` and nowhere else: the field is opaque
+        // to the core by construction, so a record carrying one is readable by a
+        // mechanism of any version, and `promptobus status` reads it back through the
+        // accessor rather than by reaching into the map.
+        ...(plan.routing ? { [ROUTING_FIELD]: plan.routing } : {}),
+        name: plan.name,
+        sessionRef: plan.name,
+        session: null,
+        ...plan.launch.prelaunchBinding,
+        ...(plan.workTitle ? { title: plan.workTitle } : {}),
+        worktreeName: plan.wtName,
+        started: new Date().toISOString(),
+        mechanismPath: provenance.mechanismPath,
+        mechanismPathIssue: provenance.mechanismPathIssue,
+        mechanismVersion: plan.host.version,
+        packagePath: provenance.packagePath,
+        packageVersion: provenance.packageVersion,
+        packageIssue: provenance.packageIssue,
+        hostVersion: provenance.hostVersion,
+        binaryPath: provenance.binaryPath,
+        binaryVersion: provenance.binaryVersion,
+    }, registryOf(plan.host)), plan.participant, REGISTRY);
+    let reserved;
+    if (plan.driver.id === 'codex') {
+        if (plan.createNew)
+            createTask(plan.home, plan.createNew);
+        reserved = reserve();
+    }
+    let record;
+    try {
+        // Worktree exclude goes FIRST, before freshenRepo: an unexcluded directory of a past
+        // worker reads as an uncommitted edit, and freshenRepo deliberately does not touch a
+        // dirty tree — the default branch would not be pulled.
+        const excluded = excludeWorktrees(plan.repoAbs);
+        if (excluded.status === 'added') {
+            info(`${plan.nsPath}: service worktrees excluded from git status (.git/info/exclude) — otherwise the clone stays dirty forever`);
+        }
+        else if (excluded.status === 'failed') {
+            warn(`${plan.nsPath}: service worktrees NOT excluded from git status (${excluded.error}) — the clone will stay`
+                + ' dirty, and fresh will stop pulling its default branch. Add the line yourself:'
+                + ' **/.claude/worktrees/ in .git/info/exclude');
+        }
+        plan.host.reportFresh(plan.host.freshenRepo(plan.repoAbs), plan.nsPath);
+        // Worktree branch point goes into the task journal: `promptobus review` counts the
+        // diff from it. git counts it at branch creation, not the plan: the plan was assembled
+        // BEFORE freshenRepo, and a sha from it would diverge from the real one by pulled commits.
+        // Directory already exists — a routine restart of a dead worker: continue in its tree.
+        // The participant record is written before either repository repair step: otherwise
+        // Ctrl+C on a long generator or `npm ci` leaves a directory with no journal line, and a
+        // repeat hits "directory is taken".
+        let freshWorktree = false;
+        if (!existsSync(plan.worktreePath)) {
+            const made = createWorktree(plan.repoAbs, plan.worktreePath, plan.branch, plan.base);
+            if (!made.created) {
+                const reason = `git worktree add: ${made.error} — the worker has nowhere to work`;
+                if (plan.driver.id === 'codex')
+                    throw new GateError(reason);
+                fail(reason);
+            }
+            if (made.reused)
+                ok(`worktree ${plan.wtName} created on the surviving branch ${plan.branch} — previous worker's work is in place`);
+            else
+                ok(`worktree ${plan.wtName} created from ${plan.base} (branch ${plan.branch})`);
+            baseSha ??= made.baseSha;
+            freshWorktree = true;
+        }
+        if (plan.createNew && plan.driver.id !== 'codex') {
+            createTask(plan.home, plan.createNew);
+            ok(`task ${plan.taskId}: ${plan.createNew.title}`);
+        }
+        // "session → task" bind: `promptobus spawn` is started by Bash from the orchestrator
+        // session and inherits its identity. Written only for the task owner.
+        bindIfOwner(plan.home, plan.taskId);
+        // One binding stays, so a task this session owns beside the bound one gets its contact point
+        // only here and at the end of the turn — 03-cli § Guard and warden.
+        handOverContactPoints(plan.home, { env: process.env });
+        // The participant goes into the journal BEFORE anything long runs in the worktree —
+        // the repository generator and the dependency install both are: refusal branches leave
+        // through `fail()`, and Ctrl+C on either would otherwise leave a directory with no
+        // record — a repeat hits "directory is taken, and the journal has none". A repeat
+        // recognizes its own directory by `worktreeName`.
+        // The record is written by the registry: it also refuses — an unknown harness and a
+        // driver that cannot lift a session — BEFORE the participant appears in the journal.
+        // It also fills harness, mode, sessionRef, and the capabilities snapshot.
+        clearThroughputSidecar(plan.home, plan.taskId, plan.address);
+        ({ record } = reserved ?? reserve());
+        if (plan.driver.id === 'codex' && baseSha) {
+            persistNativeParticipant(plan.home, plan.taskId, record, { baseSha });
+        }
+        // Dependencies, then the repository's generator, which may run a tool the lock pins; both
+        // follow the journal record and precede the launch files (03-cli § Spawn).
+        let worktreeDeps;
+        if (freshWorktree) {
+            if (worktreeHasLock(plan.worktreePath)) {
+                info(`installing dependencies from package-lock.json (${npmCiCommand()})`);
+            }
+            worktreeDeps = installWorktreeDeps(plan.worktreePath);
+            sayWorktreeDeps(worktreeDeps);
+        }
+        else {
+            worktreeDeps = { ran: false, repeat: true };
+        }
+        const repoSkills = runRepoGenerator(plan, {
+            fresh: freshWorktree, depsRefused: worktreeDeps.ran === true && !worktreeDeps.ok,
+        });
+        sayRepoSkills(repoSkills);
+        const rebuilt = plan.rebuild(repoSkills, worktreeDeps);
+        plan.repoSkills = repoSkills;
+        plan.worktreeDeps = worktreeDeps;
+        plan.prompt = rebuilt.prompt;
+        plan.launch = rebuilt.launch;
+        if (plan.driver.id === 'codex')
+            plan.launch.launchId = record.metadata.nativeLaunchId;
+        plan.env = (await finalizeManagedServiceLaunch(plan.host, {
+            ...plan, task: plan.taskId, ref: plan.name, cwd: plan.cwd,
+        })).env;
+        plan.argv = rebuilt.launch.argv;
+        plan.mcpConfig = rebuilt.launch.mcpConfig;
+        plan.settings = rebuilt.launch.settings;
+        writeLaunchFiles(plan.launch.files, plan.driver.options.launchDirs);
+        // The task title is extended AFTER the participant write and entirely under the lock:
+        // assembly walks the journal that already has this track.
+        if (plan.retitle) {
+            const named = retitleTask(plan.home, plan.taskId, plan.retitle, registryOf(plan.host));
+            if (named)
+                ok(`task ${plan.taskId}: ${named}`);
+            else if (plan.retitle.restamp) {
+                const outcome = restampOutcome(readTask(plan.home, plan.taskId).title, plan.retitle.title);
+                if (outcome.level === 'ok')
+                    ok(`task ${plan.taskId}: ${outcome.text}`);
+                else
+                    warn(`task ${plan.taskId}: ${outcome.text}`);
+            }
+        }
+    }
+    catch (error) {
+        return revokeFailedManagedLaunch(plan.launch, error, () => {
+            if (reserved)
+                releaseNativeReservation(plan.home, plan.taskId, reserved.record);
+        });
+    }
+    // Lift goes through the driver taken from the registry. On Windows a multiline argv
+    // survives only on the native binary; `claude.cmd` pulls cmd.exe, and the helper gives
+    // a clear refusal instead of a mangled command. Start and the "session came up" check
+    // are shared with the reviewer in liftoff.js, and they live on the driver.
+    const { output, session, seen } = await plan.driver.spawn(plan.launch, {
+        tool: tool,
+        // Address, task, and bus home travel to the driver TOGETHER with the plan: a harness
+        // whose wake channel is driven by the mechanism itself has to hand contact points to
+        // its own machinery, and there is nothing else to address them with.
+        home: plan.home,
+        // The workspace interface travels with them: a lift refused because the
+        // account's limit was spent between the preflight and this launch is marked
+        // in the availability cache, and the cache file is named by the host.
+        host: plan.host,
+        task: plan.taskId,
+        address: plan.address,
+        cwd: plan.cwd,
+        env: plan.env,
+        ref: plan.name,
+        role: plan.ownerName,
+        launchFailNote: ` Task ${plan.taskId} and participant record ${plan.address} are in place: `
+            + 'repeat spawn with the same command — the worker will sit in its directory, no need to create it again.',
+        deadNote: ` Task ${plan.taskId} and participant record ${plan.address} are in place: repeat spawn with the same command.`
+            + ' There will be no messages from this address — waiting for them is pointless.',
+        unboundNote: ` Stop it — its record is the only handle: ${plan.host.busCommand(['stop', plan.address, `--task ${plan.taskId}`])},`
+            + ' then repeat spawn with the same command.',
+        persist: (id, _state, sessionId) => {
+            if (plan.driver.id === 'codex')
+                return persistNativeParticipant(plan.home, plan.taskId, record, {
+                    session: id ?? null, ...(sessionId ? { sessionId } : {}),
+                });
+            const sessionRecord = participantOf(readTask(plan.home, plan.taskId), plan.address)?.metadata.sessionRecord;
+            return persistLegacyParticipant(plan.home, plan.taskId, { ...record, metadata: {
+                    ...record.metadata, session: id ?? null, ...(sessionId ? { sessionId } : {}),
+                    ...(sessionRecord ? { sessionRecord } : {}),
+                } });
+        },
+        awaitOptions: opts.awaitOptions,
+    }).catch(error => revokeFailedManagedLaunch(plan.launch, error));
+    ok(`worker ${plan.address} lifted in ${plan.nsPath}, branch ${plan.branch}${session ? ` (session ${session})` : ''}`);
+    // The warden is lifted right after the participant. Spawn does not hand over its own
+    // contact point — each participant hands it over itself, from its own bus process.
+    await ensureWarden(plan.home, plan.taskId, { host: plan.host });
+    // The brief copy is AFTER the lift, and only after it: a refused spawn leaves no
+    // artifact — a brief of a worker that never started explains nothing and would be read
+    // as an assignment someone is working by. And after the warden: the safety net over a
+    // live participant must not depend on a file write.
+    keepBrief(plan);
+    plan.driver.saidLiftoff({ name: plan.name, seen, session, output });
+    return plan;
+}

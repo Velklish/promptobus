@@ -1,0 +1,1627 @@
+import { replaceLaunchMcpConfig } from './driver-runtime.js';
+import { createHash, randomUUID } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync, } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { installSelectedNativeFiles, selectedNativeFiles } from './native-participant-context.js';
+import { info, warn } from './util.js';
+import { launchProvenance, provenanceLine } from './provenance.js';
+import { PROMPTOBUS_SERVER } from './contract.js';
+import { canonicalPath, filesDir, foreignSession, participantOf, readTask, sameStoreHome, taskExists, upsertParticipant, wakeAddressOf, withTaskLock, writeJsonAtomic, writeWake } from './store.js';
+import { processIdentity, processState, readPrivate, recordOf, recordVersion, sameRecordVersion, writePrivate } from './service-state.js';
+import { requireNativeTerminal, retainNativeStop, withNativeStopLocks } from './native-lifecycle.js';
+import { PARTICIPANT_ARGV, SESSION_ENV_VAR, pidAlive, dropSession, findSessionByAddress, holderAlive, holderAsk, patchSession, rateLimitNote, rateLimitReached, readSession, readyMs, reapHolder, sessionFile, startHolder, STOP_TIMEOUT_MS, tailLog, waitReady, writeParticipantWake, writeSession, withSessionLaunch, sessionKey, codexMcpName, codexMcpPrefix, bindParticipantHomeRemoval, codexMcpServers, registrySessions, sessionsDir, turnWaitMs, turnIdleMs, turnFailed, managedCodexResumeDeath, retireCodexResumeHolderLock, } from './codex-session.js';
+import { probeCodex } from './model-routing/adapter-codex.js';
+import { APPROVER, EDITS_TREE, GateError, KNOCK_RETRY_SEC, liftWords, namedReset, registryOf, resetAhead, REVIEWER, roleEntry, WORKER, WRITES_MAIN_TREE, } from '../dist/index.js';
+import { GUARD_HOOK_EVENT, GUARD_START_EVENT } from '../dist/hooks.js';
+import { harnessStateHome } from './harness-home.js';
+import { PARENT_SESSION_ENV, WARDEN_ENV_VARS } from './session-env.js';
+import { orderBody as commonOrderBody } from './notification.js';
+import { readRecordAt, revokeFailedManagedLaunch, sayForeignWrite as commonSayForeignWrite, sessionEnvFor } from './driver-common.js';
+import { bindBeforeLaunch } from './liftoff.js';
+import { participantAuthSnapshot } from './codex-participant-auth.js';
+import { judgeHookRecords, trustRule } from './project-hooks.js';
+import { codexPrompts } from './prompts/codex.js';
+import { readStopConfirmation } from './codex-command-receipts.js';
+export { participantAuthSnapshot } from './codex-participant-auth.js';
+// Codex harness driver — the third production bus driver.
+// [reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver](../docs/reference/05-drivers.md#codex--codex-harness-driver--the-third-production-bus-driver)
+export const CODEX = 'codex';
+export const CODEX_TEAMLEAD_ROOT_SERVER = `${PROMPTOBUS_SERVER}-root`;
+export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+export const PERMISSION_MODES = ['read-only', 'workspace-write'];
+export const DEFAULT_PERMISSION_MODE = 'workspace-write';
+export const DEFAULT_MODEL = 'gpt-6-astra';
+export const REVIEWER_DENY = ['workspace-write'];
+// Capture labels are provenance, not native admission rules.
+export const PROVEN_CODEX_VERSION = '0.166.0';
+export const MIN_CODEX_VERSION = '0.158.0';
+// An INHERITED `CODEX_HOME` never reaches a participant: the lift sets its own, and an ancestor's
+// value would put the session back in the owner's home. A caller naming one explicitly still wins.
+export const SESSION_ENV_DROP = [...PARENT_SESSION_ENV];
+const CODEX_DRY_RUN_COMMAND = `${CODEX} ${PARTICIPANT_ARGV.join(' ')} (prompt via turn/start request)`;
+// The tool name a Codex session calls an MCP server's tool by: the CONFIG key stays raw, only the
+// name is sanitised — [02-host.md](../docs/reference/02-host.md#consumer-identity-inside-a-harness).
+export const codexToolSegment = (s) => String(s ?? '').replace(/[^A-Za-z0-9_]/g, '_');
+const mcpToolName = (server, name, prefix) => `mcp__${codexToolSegment(codexMcpName(server, prefix))}__${codexToolSegment(name)}`;
+const CODEX_SESSIONS_SOURCE = 'participant threads — the registry the host names for `codex`'
+    + ' (`PROMPTOBUS_CODEX_HOME` overrides it)';
+function sessionsPhrase() {
+    try {
+        return `participant threads — ${sessionsDir()}`;
+    }
+    catch (error) {
+        if (error instanceof GateError)
+            return CODEX_SESSIONS_SOURCE;
+        throw error;
+    }
+}
+/** The Codex home of the thread with this id, for a phrase an operator opens. A thread with no
+ * readable record is named by what its home IS: a guessed path sends them to the owner's home. */
+function sessionHomePhrase(id) {
+    try {
+        return registrySessions().find((r) => r.threadId === id)?.codexHome ?? "the participant's own CODEX_HOME";
+    }
+    catch {
+        return "the participant's own CODEX_HOME";
+    }
+}
+// The phrases a Codex participant is addressed by, and who else copies them.
+// [reference/05-drivers.md#codex-the-phrases-a-participant-is-addressed-by](../docs/reference/05-drivers.md#codex-the-phrases-a-participant-is-addressed-by)
+export const PHRASES = {
+    get sessions() { return sessionsPhrase(); },
+    unreadable: 'the mechanism thread registry is unreadable',
+    naming: 'the thread id is chosen by app-server itself and printed on lift',
+    enter: (id) => `codex resume ${id}`,
+    stop: (id) => `stop the thread through the mechanism's stop of its one participant — `
+        + `Codex has no single-thread kill command, the app-server process holds the session; id ${id}`,
+    logs: (id) => `thread ${id} rollout is written by Codex itself in ${sessionHomePhrase(id)}/sessions`
+        + ' — it carries token usage, but the mechanism refuses it as throughput input because model-active time is absent; that home goes away with the session on done',
+    tool: (server, name, host) => mcpToolName(server, name, codexMcpPrefix(host)),
+    ...codexPrompts,
+};
+/** Directory inside a project that Codex reads its project layer from. */
+const CODEX_DIR = '.codex';
+/** Project skills directory relative to project root: `.codex/skills` —
+ * [ADR-008](../docs/adr/adr-008-codex-reviewer-working-directory.md). */
+export const CODEX_SKILLS_REL = path.join(CODEX_DIR, 'skills');
+const CODEX_HOOKS_REL = path.join(CODEX_DIR, 'hooks.json');
+// Hooks are a PROJECT file, and the only project this participant trusts is its own
+// working directory — the workspace root where `install` writes is neither.
+function codexHooksFile(command) {
+    const group = () => [{ hooks: [{ type: 'command', command }] }];
+    return { hooks: { [GUARD_HOOK_EVENT]: group(), [GUARD_START_EVENT]: group() } };
+}
+/** The hooks document this lift writes into a path it owns. A file already at the
+ * discovery path is judged by its records, not by these bytes. */
+export function hooksDocument(command) {
+    return `${JSON.stringify(codexHooksFile(command), null, 2)}\n`;
+}
+function canonicalHooksFile(file) {
+    const dir = path.dirname(file);
+    try {
+        return path.join(realpathSync(dir), path.basename(file));
+    }
+    catch {
+        return path.resolve(file);
+    }
+}
+function foreignProjectFile(lookupDir, writtenDir, name) {
+    const discovered = path.join(projectHooksDir(lookupDir), name);
+    const written = path.join(writtenDir, CODEX_DIR, name);
+    if (canonicalHooksFile(discovered) === canonicalHooksFile(written))
+        return null;
+    try {
+        lstatSync(discovered);
+    }
+    catch (error) {
+        if (error.code === 'ENOENT')
+            return null;
+    }
+    return discovered;
+}
+function judgedProjectHooks(file, guard) {
+    try {
+        if (!lstatSync(file).isFile())
+            return { refused: ['not a regular file'], broken: null };
+        return judgeHookRecords(readFileSync(file, 'utf8'), path.dirname(path.dirname(file)), CODEX, { guard });
+    }
+    catch (error) {
+        return { refused: [`unreadable (${error.code ?? error.message})`], broken: null };
+    }
+}
+/** Refuse foreign hooks, then validate clone-root config with the selected binary at lift. */
+export function refuseForeignProjectLayer(lookupDir, writtenDir, tool = null, guardCommand = null) {
+    const hooks = foreignProjectFile(lookupDir, writtenDir, 'hooks.json');
+    const judged = hooks ? judgedProjectHooks(hooks, guardCommand) : { refused: [] };
+    if (judged.refused.length)
+        throw new GateError(foreignHooksMessage(hooks, judged));
+    if (!tool?.bin)
+        return;
+    const config = foreignProjectFile(lookupDir, writtenDir, 'config.toml');
+    if (!config)
+        return;
+    const probeHome = mkdtempSync(path.join(tmpdir(), 'promptobus-codex-config-'));
+    try {
+        let source;
+        try {
+            source = readFileSync(config);
+        }
+        catch (error) {
+            warn(`Codex could not read clone-root project config ${config} for a syntax preflight (${error.message}); the lift will let Codex load it`);
+            return;
+        }
+        writeFileSync(path.join(probeHome, 'config.toml'), source, { mode: 0o600 });
+        const checked = spawnSync(tool.bin, ['features', 'list'], {
+            cwd: lookupDir, env: { ...process.env, CODEX_HOME: probeHome },
+            encoding: 'utf8', timeout: 10000, maxBuffer: 1024 * 1024,
+        });
+        if (checked.status === 0)
+            return;
+        const output = `${checked.stderr ?? ''}\n${checked.stdout ?? ''}`;
+        if (/TOML parse error/.test(output)) {
+            const reason = /config\.toml:\d+:\d+:\s*([^\n]+)/.exec(output)?.[1]
+                ?? /TOML parse error[^\n]*/.exec(output)?.[0] ?? 'TOML parse error';
+            throw new GateError(`Codex cannot parse clone-root project config ${config}: ${reason}. `
+                + 'Fix or move that file before lifting this participant.');
+        }
+        warn(`Codex could not verify clone-root project config ${config} (${checked.error?.message ?? output.trim().split('\n')[0] ?? 'unknown error'}); the lift will let Codex load it`);
+    }
+    finally {
+        rmSync(probeHome, { recursive: true, force: true });
+    }
+}
+function foreignHooksMessage(file, { refused, broken }) {
+    return `Codex would run ${file} with hook trust bypassed, and it holds records this lift does not trust: `
+        + `${refused.join('; ')}. ${trustRule(path.dirname(path.dirname(file)), CODEX)}`
+        + `${broken ? `; ${broken}` : ''}. `
+        + 'List the commands you trust there, remove or move that file, or lift this participant on another harness.';
+}
+const SKILL_FILE = 'SKILL.md';
+const HOMES_DIR = 'promptobus-codex-homes';
+/** The owner's Codex home — the only thing a participant home copies from, and read-only to the
+ * mechanism. The durable host override precedes `CODEX_HOME`, else `~/.codex`. */
+export function ownerCodexHome(env = process.env) {
+    return String(env?.PROMPTOBUS_CODEX_OWNER_HOME ?? '').trim()
+        || String(env?.CODEX_HOME ?? '').trim() || path.join(homedir(), CODEX_DIR);
+}
+/** Parent of every participant home. Nothing outside it is ever removed. */
+export function participantHomesRoot() {
+    return path.join(tmpdir(), HOMES_DIR);
+}
+// Suffix shape, and why an older name is skipped: 05-drivers § sweepParticipantHomes.
+function registryHomesKey(env) {
+    return `_${createHash('sha1').update(path.resolve(harnessStateHome(CODEX, env))).digest('hex')}`;
+}
+/** The home of ONE participant. Deterministic rather than `mkdtemp`, so `--dry-run` can print the
+ * path a real lift will use; the hash carries task and address, and the suffix the registry. */
+export function participantCodexHome({ task, address }, env = process.env) {
+    const head = `${task ?? ''}-${address ?? ''}`
+        .replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48).toLowerCase();
+    const hash = createHash('sha1').update(`${task ?? ''}\0${address ?? ''}`).digest('hex').slice(0, 12);
+    const leaf = head ? `${head}-${hash}` : hash;
+    return path.join(participantHomesRoot(), `${leaf}${registryHomesKey(env)}`);
+}
+// A narrow TOML writer: strings, string arrays, one level of string-valued table — the whole
+// vocabulary of `[mcp_servers]` and `[projects]`. Keys are quoted unless they are TOML-bare.
+const TOML_BARE = /^[A-Za-z0-9_-]+$/;
+const tomlString = (v) => JSON.stringify(String(v));
+const tomlKey = (k) => (TOML_BARE.test(k) ? k : tomlString(k));
+const tomlHeader = (...parts) => `[${parts.map(tomlKey).join('.')}]`;
+function tomlTable(header, entry) {
+    const lines = [tomlHeader(...header)];
+    const nested = [];
+    for (const [key, value] of Object.entries(entry ?? {})) {
+        if (Array.isArray(value)) {
+            lines.push(`${tomlKey(key)} = [${value.map(tomlString).join(', ')}]`);
+            continue;
+        }
+        if (value && typeof value === 'object') {
+            if (Object.keys(value).length)
+                nested.push([key, value]);
+            continue;
+        }
+        lines.push(`${tomlKey(key)} = ${tomlString(value)}`);
+    }
+    for (const [key, value] of nested) {
+        lines.push('', tomlHeader(...header, key));
+        for (const [k, v] of Object.entries(value))
+            lines.push(`${tomlKey(k)} = ${tomlString(v)}`);
+    }
+    return lines.join('\n');
+}
+// Off for every role: the `apps` feature lifts a built-in MCP server with account write tools —
+// [05-drivers.md § the built-in codex_apps server](../docs/reference/05-drivers.md#the-built-in-codex_apps-server-stays-off-in-the-participant-home).
+const APPS_OFF = '[features]\napps = false';
+/** `config.toml` of a participant home. There is no trust COMMAND on codex-cli 0.156.1, and the
+ * `[projects]` key is the project's REALPATH — the unresolved spelling is not recognised. */
+export function codexHomeConfig({ servers = {}, trusted = [], hooksEnabled = true, rawToolReceipts = false } = {}) {
+    const blocks = [
+        `${APPS_OFF}${hooksEnabled ? '' : '\nhooks = false'}`,
+        ...(rawToolReceipts ? ['[features.code_mode]\ndirect_only_tool_namespaces = ["functions"]'] : []),
+        ...Object.entries(servers).map(([name, entry]) => tomlTable(['mcp_servers', name], entry)),
+        ...trusted.map((dir) => `${tomlHeader('projects', dir)}\ntrust_level = "trusted"`),
+    ];
+    return `${blocks.join('\n\n')}\n`;
+}
+/** The spelling Codex compares a `[projects]` key against. Exported because the difference from
+ * `path.resolve` is invisible except through a symlink, so the check lives on this function. */
+export function trustPath(dir) {
+    try {
+        return realpathSync(dir);
+    }
+    catch {
+        // The directory is not there yet, or is unreadable. The unresolved spelling is still the
+        // honest answer: a record Codex will not match says what the mechanism intended.
+        return path.resolve(dir);
+    }
+}
+function resolvedDir(dir) {
+    try {
+        return realpathSync(dir);
+    }
+    catch {
+        return path.resolve(dir);
+    }
+}
+function gitCheckoutMarker(dotGit) {
+    let st;
+    try {
+        st = lstatSync(dotGit);
+    }
+    catch {
+        return false;
+    }
+    if (st.isSymbolicLink())
+        return false;
+    if (st.isDirectory()) {
+        try {
+            return lstatSync(path.join(dotGit, 'HEAD')).isFile();
+        }
+        catch {
+            return false;
+        }
+    }
+    return st.isFile();
+}
+function gitCheckoutRoot(start) {
+    let dir;
+    try {
+        dir = lstatSync(start).isDirectory() ? start : path.dirname(start);
+    }
+    catch {
+        return null;
+    }
+    const root = path.parse(dir).root;
+    for (;;) {
+        if (gitCheckoutMarker(path.join(dir, '.git')))
+            return dir;
+        if (dir === root)
+            return null;
+        dir = path.dirname(dir);
+    }
+}
+function readGitdirTarget(file) {
+    let text;
+    try {
+        text = readFileSync(file, 'utf8');
+    }
+    catch {
+        return null;
+    }
+    const line = text.split('\n').find((entry) => entry.startsWith('gitdir:'));
+    if (!line)
+        return null;
+    const target = line.slice('gitdir:'.length).trim();
+    return target ? path.resolve(path.dirname(file), target) : null;
+}
+function mainCheckout(cwd) {
+    const checkout = gitCheckoutRoot(cwd);
+    if (!checkout)
+        return null;
+    const dotGit = path.join(checkout, '.git');
+    let st;
+    try {
+        st = lstatSync(dotGit);
+    }
+    catch {
+        return null;
+    }
+    if (st.isSymbolicLink())
+        return null;
+    if (st.isDirectory())
+        return checkout;
+    if (!st.isFile())
+        return null;
+    const gitDir = readGitdirTarget(dotGit);
+    if (!gitDir)
+        return null;
+    let gitDirReal;
+    try {
+        gitDirReal = realpathSync(gitDir);
+    }
+    catch {
+        return null;
+    }
+    if (path.basename(path.dirname(gitDirReal)) !== 'worktrees')
+        return null;
+    const common = path.dirname(path.dirname(gitDirReal));
+    const mainRoot = path.dirname(common);
+    try {
+        const mainDot = path.join(mainRoot, '.git');
+        const mainSt = lstatSync(mainDot);
+        if (mainSt.isSymbolicLink())
+            return null;
+        const mainGit = mainSt.isDirectory() ? mainDot : (mainSt.isFile() ? readGitdirTarget(mainDot) : null);
+        if (!mainGit || realpathSync(mainGit) !== realpathSync(common))
+            return null;
+    }
+    catch {
+        return null;
+    }
+    return mainRoot;
+}
+/** Where Codex reads this directory's project `hooks.json`. A linked worktree is the main
+ * checkout's `.codex`; every other directory is its own. [hooks-and-trust](../docs/guides/hooks-and-trust.md). */
+export function projectHooksDir(cwd) {
+    const resolved = resolvedDir(cwd);
+    const own = path.join(resolved, CODEX_DIR);
+    const checkout = gitCheckoutRoot(resolved);
+    const main = mainCheckout(resolved);
+    if (!checkout || !main)
+        return own;
+    let checkoutReal;
+    let mainReal;
+    try {
+        checkoutReal = realpathSync(checkout);
+        mainReal = realpathSync(main);
+    }
+    catch {
+        return own;
+    }
+    if (checkoutReal === mainReal)
+        return own;
+    const rel = path.relative(checkoutReal, resolved);
+    if (rel.startsWith('..') || path.isAbsolute(rel))
+        return own;
+    return path.join(mainReal, rel, CODEX_DIR);
+}
+function linkedWorktree(dir) {
+    return projectHooksDir(dir) !== path.join(resolvedDir(dir), CODEX_DIR);
+}
+/** The home hooks file is written here, after the home exists. A launch-file write
+ * would go through a path the home guard has not checked. */
+export function writeRedirectedHooks(plan, workdir, codexHome) {
+    if (!plan.homeHooks || !linkedWorktree(workdir))
+        return null;
+    const dest = path.join(codexHome, 'hooks.json');
+    writeFileSync(dest, plan.homeHooks);
+    return dest;
+}
+/** Refuse a path that is not already OUR plain directory: `mkdirSync` with `recursive` follows an
+ * existing symlink without a word, and one aimed at `~/.codex` would overwrite the owner's config. */
+function ownDirectory(dir) {
+    let stat;
+    try {
+        stat = lstatSync(dir);
+    }
+    catch (error) {
+        if (error.code === 'ENOENT')
+            return;
+        throw new GateError(`Codex participant home ${dir} cannot be read (${error.code ?? error.message}) — the lift does not write through it`);
+    }
+    if (!stat.isDirectory()) {
+        throw new GateError(`Codex participant home ${dir} is not a directory (${stat.isSymbolicLink() ? 'symbolic link' : 'other file type'})`
+            + ' — the lift refuses rather than write through it; remove it yourself if it is yours');
+    }
+    const uid = typeof process.getuid === 'function' ? process.getuid() : null;
+    if (uid !== null && stat.uid !== uid) {
+        throw new GateError(`Codex participant home ${dir} belongs to uid ${stat.uid}, not to this user — the lift refuses to write into it`);
+    }
+}
+/** Build the home. Not a wipe: a repeat spawn writes over the config of a home whose app-server may
+ * still hold a thread. A missing `auth.json` is reported, not refused — an API key travels anyway. */
+export function makeParticipantHome({ dir, config = '', env = process.env, ownerHome = ownerCodexHome(env) }) {
+    const abs = path.resolve(String(dir));
+    const key = registryHomesKey(env);
+    if (path.dirname(abs) !== participantHomesRoot() || !path.basename(abs).endsWith(key)) {
+        throw new GateError(`Codex participant home ${dir} is not a home of this registry — the lift does not write it`);
+    }
+    // The root is checked too, and first: a link at the root redirects every home under
+    // it, and checking only the leaf would walk through it to get there.
+    ownDirectory(participantHomesRoot());
+    mkdirSync(participantHomesRoot(), { recursive: true, mode: 0o700 });
+    ownDirectory(dir);
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    chmodSync(dir, 0o700);
+    const target = path.join(dir, 'auth.json');
+    let auth = false;
+    let source = null;
+    try {
+        source = readFileSync(path.join(ownerHome, 'auth.json'), 'utf8');
+    }
+    catch {
+        source = null;
+    }
+    rmSync(target, { force: true });
+    if (source !== null) {
+        const snapshot = participantAuthSnapshot(source, ownerHome);
+        writeFileSync(target, snapshot, { mode: 0o600 });
+        auth = true;
+    }
+    const file = path.join(dir, 'config.toml');
+    writeFileSync(file, config, { mode: 0o600 });
+    chmodSync(file, 0o600);
+    return { dir, auth, config: file };
+}
+/** Remove one participant home. The guard is the point: this runs on `done` and on a failed lift
+ * with a path off a record, so only a direct child of the homes root is ever removed. */
+export function removeParticipantHome(dir) {
+    if (!dir)
+        return false;
+    const abs = path.resolve(String(dir));
+    const root = participantHomesRoot();
+    if (path.dirname(abs) !== root && path.dirname(abs) !== canonicalPath(root))
+        return false;
+    rmSync(abs, { recursive: true, force: true });
+    return true;
+}
+bindParticipantHomeRemoval(removeParticipantHome);
+/** Remove every home of this registry that no session record names.
+ * [reference/05-drivers.md#sweepparticipanthomes--remove-every-home-of-this-registry-that-no-session-record-names](../docs/reference/05-drivers.md#sweepparticipanthomes--remove-every-home-of-this-registry-that-no-session-record-names) */
+export function sweepParticipantHomes(env = process.env) {
+    let key;
+    try {
+        key = registryHomesKey(env);
+    }
+    catch (error) {
+        if (error instanceof GateError)
+            return [];
+        throw error;
+    }
+    const root = participantHomesRoot();
+    let names;
+    try {
+        names = readdirSync(root);
+    }
+    catch {
+        // No root yet, or it is not readable: nothing of ours is in it either way.
+        return [];
+    }
+    let live;
+    try {
+        live = new Set(registrySessions(env).map((r) => r.codexHome && canonicalPath(r.codexHome)).filter(Boolean));
+    }
+    catch {
+        // The registry home is not declared, so no record can be read and every home here
+        // would look orphaned. Sweeping on that reading would remove live sessions' homes.
+        return [];
+    }
+    const swept = [];
+    for (const name of names) {
+        if (!name.endsWith(key))
+            continue;
+        const dir = path.join(root, name);
+        if (live.has(canonicalPath(dir)))
+            continue;
+        if (removeParticipantHome(dir))
+            swept.push(dir);
+    }
+    return swept;
+}
+/** The harness state of one closed participant that lives outside its worktree — a reviewer has
+ * none and its home holds the same credentials copy. Rebuilt from task and address when needed. */
+export function sweepParticipant(participant, taskId, env = process.env) {
+    // Public cleanup already validates terminal/alias or freshly dead abandonment proof.
+    // False skips native-home removal; it does not refuse permitted task-local cleanup.
+    if (participant?.metadata?.nativeStop?.alias)
+        return false;
+    // Abandonment is not a Stop receipt, so it does not license deleting the private home.
+    if (participant?.metadata?.abandoned)
+        return false;
+    const proofHome = participant?.metadata?.nativeStop?.home;
+    requireNativeTerminal(proofHome, { id: taskId }, participant, env);
+    if (participant.metadata.nativeUnlaunched === participant.metadata.nativeLaunchId)
+        return false;
+    const address = participant?.metadata?.address ?? participant?.address ?? null;
+    const ref = participant?.sessionRef ?? null;
+    let named = null;
+    try {
+        named = ref ? readSession(ref, env)?.codexHome ?? null : null;
+    }
+    catch {
+        named = null;
+    }
+    const home = named ?? (taskId && address ? participantCodexHome({ task: taskId, address }, env) : null);
+    return removeParticipantHome(home);
+}
+// --- workspace skills into the participant worktree ---------------------------------
+/** The Codex skills canon at the workspace root — the only source, since a person's copies under
+ * `~/.codex` are not addressed to the participant. No directory means `null`. */
+export function workspaceSkillsDir(root) {
+    if (!root)
+        return null;
+    const src = path.join(root, CODEX_SKILLS_REL);
+    try {
+        if (statSync(src).isDirectory())
+            return src;
+    }
+    catch {
+        // No directory, or it is not one — the same outcome as “there was no render”.
+    }
+    return null;
+}
+function skillsCount(dir) {
+    let entries;
+    try {
+        entries = readdirSync(dir, { withFileTypes: true });
+    }
+    catch {
+        return 0;
+    }
+    return entries.filter((e) => e.isDirectory() && existsSync(path.join(dir, e.name, SKILL_FILE))).length;
+}
+function copyPrivateSkills(src, dest) {
+    rmSync(dest, { recursive: true, force: true });
+    mkdirSync(dest, { recursive: true });
+    for (const entry of readdirSync(src, { withFileTypes: true })) {
+        if (entry.name === '.git' || entry.name === '.DS_Store')
+            continue;
+        const from = path.join(src, entry.name);
+        const to = path.join(dest, entry.name);
+        if (entry.isDirectory())
+            copyPrivateSkills(from, to);
+        else if (entry.isFile()) {
+            copyFileSync(from, to);
+            const mode = statSync(from).mode & 0o777;
+            if (mode & 0o111)
+                chmodSync(to, mode);
+        }
+        else {
+            warn(`${from} — ${entry.isSymbolicLink() ? 'symbolic link' : 'neither a file nor a directory'}, did not travel into the participant home`);
+        }
+    }
+}
+export function installPrivateHomeLayer(plan, codexHome) {
+    if (plan.privateHomeFiles) {
+        installSelectedNativeFiles(plan.privateHomeFiles);
+        return;
+    }
+    if (plan.privateHomeSkills)
+        copyPrivateSkills(plan.privateHomeSkills, path.join(codexHome, 'skills'));
+}
+/** The lift line about workspace skills names the destination each role actually reads. */
+export function skillsNoteOf({ src, dest, count }) {
+    if (!src) {
+        return 'not attached — the workspace root has no .codex/skills (Codex sync render did not lay it out)';
+    }
+    return `${count} from ${src} → ${dest}`;
+}
+/** Reviewer working directory: the mechanism's own, not the tree under review.
+ * [reference/05-drivers.md#reviewsandbox--reviewer-working-directory-the-mechanisms-own-not-the-tree-under-review](../docs/reference/05-drivers.md#reviewsandbox--reviewer-working-directory-the-mechanisms-own-not-the-tree-under-review) */
+export function reviewSandbox(settingsPath) {
+    return `${String(settingsPath).replace(/\.settings\.json$/, '')}.codex-sandbox`;
+}
+// Codex's deny syntax is attached to each mechanism-supplied server entry; the tool name is attached
+// only when the matching server is present. In an isolated home there is no personal set beside them.
+export function mcpDenyTools(tools) {
+    return tools.map(({ server, tool }) => ({ server, tool }));
+}
+function mcpConfig({ servers }, ref, denyTools = [], env = process.env) {
+    const mcpServers = { ...servers };
+    const disabled = new Map();
+    for (const rule of denyTools ?? []) {
+        if (!rule || typeof rule !== 'object')
+            continue;
+        if (typeof rule.server !== 'string' || typeof rule.tool !== 'string'
+            || !rule.server || !rule.tool || rule.server === PROMPTOBUS_SERVER)
+            continue;
+        const tools = disabled.get(rule.server) ?? [];
+        if (!tools.includes(rule.tool))
+            tools.push(rule.tool);
+        disabled.set(rule.server, tools);
+    }
+    for (const [server, tools] of disabled) {
+        const config = mcpServers[server];
+        if (!config || typeof config !== 'object' || Array.isArray(config))
+            continue;
+        mcpServers[server] = { ...config, disabled_tools: tools };
+    }
+    const bus = mcpServers[PROMPTOBUS_SERVER];
+    if (bus && ref) {
+        const extra = { [SESSION_ENV_VAR]: sessionFile(ref, env) };
+        if (env.PROMPTOBUS_CODEX_HOME)
+            extra.PROMPTOBUS_CODEX_HOME = env.PROMPTOBUS_CODEX_HOME;
+        for (const name of WARDEN_ENV_VARS) {
+            if (process.env[name])
+                extra[name] = process.env[name];
+        }
+        mcpServers[PROMPTOBUS_SERVER] = { ...bus, env: { ...bus.env, ...extra } };
+    }
+    return { mcpServers };
+}
+function personalReviewSkillDirs() {
+    const found = new Set();
+    const visited = new Set();
+    const visit = (dir) => {
+        if (!existsSync(dir))
+            return;
+        const real = realpathSync(dir);
+        if (visited.has(real) || !statSync(real).isDirectory())
+            return;
+        visited.add(real);
+        if (existsSync(path.join(real, 'SKILL.md'))) {
+            found.add(real);
+            return;
+        }
+        for (const entry of readdirSync(real, { withFileTypes: true })) {
+            if (entry.isDirectory() || entry.isSymbolicLink())
+                visit(path.join(real, entry.name));
+        }
+    };
+    visit(path.join(homedir(), '.agents', 'skills'));
+    return [...found];
+}
+function checkSessionDirectory(env) {
+    const directory = sessionsDir(env), entry = lstatSync(directory, { throwIfNoEntry: false });
+    if (!entry)
+        return;
+    if (!entry.isDirectory() || entry.isSymbolicLink() || realpathSync(directory) !== directory
+        || (process.getuid && entry.uid !== process.getuid()) || (entry.mode & 0o077) !== 0) {
+        throw new GateError(`Codex session registry requires an owned private directory (mode 0700) without symbolic links: ${directory}`);
+    }
+}
+/** Lift plan from harness-neutral context; writes and launches nothing. */
+function prepare({ mcp, prompt, model, effort = null, permissionMode = null, addDirs = [], readFiles = [], readSkillDirs = [], cwd, denyTools = null, ref, role = WORKER, task = null, address = null, root = null, skillsRoot = root, selectedContext = null, settingsPath = null, executionKind = roleEntry(registryOf(null), role)?.kind, rootTask = null, rootAddress = null, guardCommand = null, env = process.env, }) {
+    checkSessionDirectory(env);
+    const privateHome = ['teamlead', 'reporter', 'orchestrator'].includes(role);
+    const readOnly = role === REVIEWER || role === 'reporter' || permissionMode === 'read-only';
+    const sandbox = privateHome && permissionMode === 'full-access'
+        ? 'danger-full-access' : readOnly ? 'read-only' : 'workspace-write';
+    const cfg = mcpConfig(mcp, ref, denyTools, env);
+    if (role === 'reporter' && cfg.mcpServers[PROMPTOBUS_SERVER]) {
+        cfg.mcpServers[PROMPTOBUS_SERVER] = {
+            ...cfg.mcpServers[PROMPTOBUS_SERVER], disabled_tools: ['promptobus_send'],
+        };
+    }
+    const home = participantCodexHome({ task, address }, env);
+    const rootSessionRecord = privateHome && rootTask && rootAddress
+        ? path.join(canonicalPath(home), 'teamlead-root-session.json') : null;
+    if (rootSessionRecord && cfg.mcpServers[PROMPTOBUS_SERVER]) {
+        const bus = cfg.mcpServers[PROMPTOBUS_SERVER];
+        cfg.mcpServers[CODEX_TEAMLEAD_ROOT_SERVER] = {
+            ...bus,
+            env: {
+                ...bus.env,
+                PROMPTOBUS_TASK: rootTask,
+                PROMPTOBUS_ROLE: rootAddress,
+                [SESSION_ENV_VAR]: rootSessionRecord,
+            },
+        };
+    }
+    let serviceFiles;
+    const isolated = role === REVIEWER;
+    const configDir = isolated ? reviewSandbox(settingsPath) : cwd;
+    const sessionDir = configDir;
+    const fileRoot = isolated ? configDir : cwd;
+    const dirs = [...new Set([cwd, ...addDirs])];
+    // Workspace-write protects Git metadata unless it is an explicit root. Resolve
+    // the actual linked-worktree/common directories only after the checkout exists.
+    if (!readOnly && [EDITS_TREE, WRITES_MAIN_TREE].includes(executionKind) && gitCheckoutRoot(cwd)) {
+        const gitEnv = { ...env };
+        for (const key of ['GIT_DIR', 'GIT_COMMON_DIR', 'GIT_WORK_TREE'])
+            delete gitEnv[key];
+        const metadata = spawnSync('git', [
+            '-C', cwd, 'rev-parse', '--path-format=absolute', '--absolute-git-dir', '--git-common-dir',
+        ], { encoding: 'utf8', env: gitEnv, timeout: 5000, maxBuffer: 65536 });
+        if (metadata.status !== 0) {
+            throw new GateError(`cannot resolve Git metadata for ${cwd}: ${metadata.error?.message ?? metadata.stderr.trim()}`);
+        }
+        for (const dir of metadata.stdout.trim().split(/\r?\n/).map((entry) => realpathSync(entry))) {
+            if (!dirs.includes(dir))
+                dirs.push(dir);
+        }
+    }
+    const src = selectedContext ? null : workspaceSkillsDir(skillsRoot);
+    const dest = privateHome
+        ? path.join(realpathSync(tmpdir()), HOMES_DIR, path.basename(home), 'skills')
+        : path.join(fileRoot, CODEX_SKILLS_REL);
+    const selectedFiles = selectedContext ? selectedNativeFiles(selectedContext, dest) : [];
+    if (isolated) {
+        const busHome = cfg.mcpServers[PROMPTOBUS_SERVER]?.env?.PROMPTOBUS_HOME;
+        const indexPath = !selectedContext && skillsRoot && existsSync(skillsRoot) ? path.join(realpathSync(skillsRoot), '.agents', 'skills-index.md') : null;
+        const skillsIndex = indexPath && existsSync(indexPath) && realpathSync(indexPath) === indexPath
+            && statSync(indexPath).isFile() ? indexPath : null;
+        const canonicalFiles = selectedContext ? [...readFiles, ...selectedContext.resources.map(resource => resource.path),
+            ...selectedFiles.filter(file => file.copyFileFrom).map(file => file.path)] : (skillsIndex ? [skillsIndex] : []);
+        const readRoots = [...new Set([cwd, ...readFiles, ...readSkillDirs, ...(selectedContext ? selectedContext.resources.map(resource => resource.path) : personalReviewSkillDirs()),
+                ...(selectedContext ? selectedContext.skills.map(skill => skill.root) : []),
+                ...(selectedContext ? selectedContext.skills.map(skill => path.join(dest, skill.name)) : []),
+                ...canonicalFiles,
+                ...(skillsIndex ? [skillsIndex] : []),
+                ...(src ? [src, dest] : []),
+                ...(busHome && task ? [filesDir(busHome, task)] : []),
+            ].filter(Boolean))];
+        serviceFiles = { roots: readRoots, canonicalFiles };
+        cfg.mcpServers.reviewer_files = {
+            command: process.execPath,
+            args: [path.join(path.dirname(fileURLToPath(import.meta.url)), 'reviewer-files.js')],
+            env: { PROMPTOBUS_REVIEW_READ_ROOTS: JSON.stringify(readRoots),
+                PROMPTOBUS_REVIEW_CANONICAL_FILES: JSON.stringify(canonicalFiles) },
+        };
+    }
+    const files = privateHome ? [] : [
+        { path: path.join(fileRoot, CODEX_DIR, '.gitignore'), text: '*\n', secret: false },
+    ];
+    if (!privateHome)
+        refuseForeignProjectLayer(sessionDir, fileRoot, null, guardCommand);
+    // A linked worktree's own hooks file is not read by Codex, and a tracked one must stay clean.
+    const homeHooks = guardCommand && !privateHome && linkedWorktree(fileRoot) ? hooksDocument(guardCommand) : null;
+    if (guardCommand && !privateHome && !homeHooks)
+        files.push({
+            path: path.join(fileRoot, CODEX_HOOKS_REL), text: hooksDocument(guardCommand), secret: false,
+        });
+    if (src && !privateHome)
+        files.push({ path: dest, copyFrom: src, text: '', secret: false });
+    if (!privateHome)
+        files.push(...selectedFiles);
+    return {
+        prelaunchBinding: ref && !privateHome ? { sessionRecord: sessionFile(ref, env) } : {},
+        sessionRecord: ref ? sessionFile(ref, env) : null,
+        rootSessionRecord,
+        ...(serviceFiles ? { serviceFiles } : {}),
+        ...(rootSessionRecord ? { serviceScopes: [{ server: CODEX_TEAMLEAD_ROOT_SERVER,
+                    task: rootTask, address: rootAddress, record: rootSessionRecord }] } : {}),
+        argv: PARTICIPANT_ARGV,
+        prompt,
+        dryRunCommand: CODEX_DRY_RUN_COMMAND,
+        mcpConfig: cfg,
+        settings: {
+            sandbox,
+            approvalPolicy: 'on-request',
+            model,
+            effort,
+            addDirs: dirs,
+        },
+        cwd: sessionDir,
+        files,
+        skillsNote: selectedContext ? `${selectedContext.skills.length} selected skills → ${dest}` : skillsNoteOf({ src, dest, count: src ? skillsCount(src) : 0 }),
+        codexHome: home,
+        privateHomeSkills: privateHome ? src : null,
+        ...(privateHome && selectedContext ? { privateHomeFiles: selectedFiles } : {}),
+        canonicalSkillsDir: src || selectedContext ? dest : null,
+        homeHooks,
+        bindBeforeFirstTurn: privateHome,
+        trustProject: !privateHome,
+        // Printed right after the dropped-variable line, and it has to be: that line alone reads as
+        // "the session will use ~/.codex", the exact opposite of what happens.
+        envNote: `Codex home: ${home} — CODEX_HOME is dropped from the parent and set to this;`
+            + " built at lift with an auth.json snapshot (0600, subscription refresh token removed) and the mechanism MCP set,"
+            + ' removed with the session',
+    };
+}
+function replaceMcpServers(plan, servers) {
+    const former = plan.mcpConfig;
+    const { reviewer_files: previousFiles, ...kept } = former.mcpServers;
+    const owned = Object.fromEntries(Object.entries(servers).map(([name, server]) => [name, {
+            ...(former.mcpServers[name]?.disabled_tools ? { disabled_tools: former.mcpServers[name].disabled_tools } : {}), ...server,
+        }]));
+    replaceLaunchMcpConfig(plan, { ...former, mcpServers: { ...kept, ...owned } });
+}
+const filteredSessionEnv = sessionEnvFor(SESSION_ENV_DROP);
+const sessionEnv = (base = process.env, extra = {}) => filteredSessionEnv(base, {
+    PROMPTOBUS_CODEX_OWNER_HOME: ownerCodexHome(base), ...extra,
+});
+function optionRefusal() {
+    return null;
+}
+function shadowedUserServers() {
+    // Nothing of the owner's is in reach to shadow: the participant lifts in its own `CODEX_HOME`,
+    // and an empty home lifts no personal MCP server at all (measured on codex-cli 0.146.0).
+    return [];
+}
+const sayForeignWrite = commonSayForeignWrite;
+export { sayForeignWrite };
+export function registerWake(home, task, addr, env = process.env, session = null) {
+    try {
+        const file = String(env?.[SESSION_ENV_VAR] ?? '').trim();
+        const record = (file ? readRecordAt(file) : null)
+            ?? findSessionByAddress(home, task, addr, env);
+        if (!record?.rpcSocket)
+            return null;
+        const id = session ?? record.threadId;
+        if (id) {
+            const held = foreignSession(home, task, addr, id);
+            if (held) {
+                sayForeignWrite(home, task, addr, held, id, `contact-point handoff`);
+                return false;
+            }
+        }
+        const at = wakeAddressOf(home, task, addr);
+        return writeWake(home, at.task, at.address, {
+            socket: `${record.rpcSocket}#${Number(record.turns) || 0}`,
+            token: null,
+            session: id,
+        });
+    }
+    catch {
+        return null;
+    }
+}
+export function checkWake(env = process.env) {
+    const file = String(env?.[SESSION_ENV_VAR] ?? '').trim();
+    if (!file)
+        return { endpoint: null, ok: false, error: `${SESSION_ENV_VAR} is empty — this session is not a Codex participant` };
+    const record = readRecordAt(file);
+    if (!record)
+        return { endpoint: file, ok: false, error: 'no session record at this path' };
+    if (!record.threadId)
+        return { endpoint: file, ok: false, error: 'the thread is not named yet — lift is not confirmed' };
+    const live = holderAlive(record.ref, env);
+    return {
+        endpoint: record.rpcSocket ?? file,
+        ok: live,
+        error: live ? null : `no holder for thread ${record.threadId}`,
+    };
+}
+export function orderBody(task, addr, unread, msgs = [], prefix = null) {
+    const mailbox = prefix
+        ? `\`${mcpToolName(PROMPTOBUS_SERVER, 'promptobus_mailbox', prefix)}\``
+        : `this session's ${PROMPTOBUS_SERVER} mailbox tool`;
+    return commonOrderBody(task, addr, unread, msgs, {
+        fetchLine: `Fetch the mailbox with ${mailbox}: only it marks messages read. `,
+    });
+}
+/** Wake text for one participant. The tool namespace comes off the SESSION RECORD, since neither
+ * this function nor a `Notification` carries a host; `activate` holds the record and never comes here. */
+export function renderNotification(n) {
+    return orderBody(n.task, n.address, n.unread, n.messages ?? [], sessionPrefix(n.task, n.address));
+}
+/** The override key prefix of a live participant, or `null` — nothing holds one. */
+function sessionPrefix(task, address, env = process.env) {
+    try {
+        return registrySessions(env).find((r) => r.task === task && r.address === address)?.mcpPrefix ?? null;
+    }
+    catch {
+        // No registry home is named at all, so there is no record to ask.
+        return null;
+    }
+}
+export async function activate(target, notification) {
+    const ref = target?.ref;
+    if (!ref)
+        return { ok: false, error: 'the participant record has no session reference — nothing to wake' };
+    const record = readSession(ref);
+    if (!record)
+        return { ok: false, error: `no session record «${ref}» in the Codex registry — nobody to wake` };
+    if (!holderAlive(ref)) {
+        return {
+            ok: false,
+            error: `no holder for thread ${record.threadId ?? ref} — the session is stale. Lift the participant again`,
+        };
+    }
+    // A record written before the prefix moved onto it carries none, and there is nothing here to
+    // derive one from — so it refuses rather than letting the name be built without a prefix.
+    if (!record.mcpPrefix) {
+        return {
+            ok: false,
+            error: `the session record for ${record.threadId ?? ref} predates the MCP key prefix; lift the participant again`,
+        };
+    }
+    let st;
+    try {
+        st = await holderAsk(ref, 'status');
+    }
+    catch (err) {
+        return { ok: false, error: err.message };
+    }
+    if (rateLimitReached(st.rateLimits)) {
+        return { ok: false, error: `Codex account limit: ${rateLimitNote(st.rateLimits) ?? 'window exhausted'} — a new turn is not started` };
+    }
+    const text = orderBody(notification.task, notification.address, notification.unread, notification.messages ?? [], record.mcpPrefix);
+    try {
+        // app-server accepts turn/start while a turn runs and queues the input. `turn/steer` changes
+        // the running turn, which is not a mailbox wake: mail arriving during work is the next turn's.
+        await holderAsk(ref, 'rpc', {
+            method: 'turn/start',
+            params: {
+                threadId: record.threadId,
+                input: [{ type: 'text', text }],
+            },
+            timeoutMs: turnWaitMs(),
+            // The outer socket wait has to outlast the inner one, or the client hangs up on a holder
+            // still waiting for app-server and the declared budget means nothing.
+        }, undefined, turnWaitMs() + 1_000);
+        return { ok: true };
+    }
+    catch (err) {
+        return { ok: false, error: err.message };
+    }
+}
+function eventAgeMs(iso) {
+    const t = Date.parse(iso ?? '');
+    return Number.isFinite(t) ? Date.now() - t : null;
+}
+function pendingRequestReason(pending) {
+    const method = pending?.method ?? 'server request';
+    const server = pending?.server ? ` from ${pending.server}` : '';
+    const since = pending?.at ? ` since ${pending.at}` : '';
+    return `waiting on ${method}${server}${since}`;
+}
+function inspect(ref) {
+    const record = readSession(ref);
+    if (!record) {
+        return {
+            state: 'gone',
+            busy: false,
+            stall: { kind: 'gone', reason: 'no session record in the Codex registry' },
+            id: null,
+            note: null,
+        };
+    }
+    const id = record.threadId ?? null;
+    if (record.state === 'dead') {
+        return {
+            state: 'stale',
+            busy: false,
+            stall: { kind: 'stale', reason: record.error ?? `app-server of thread ${id ?? ref} died` },
+            id,
+            note: null,
+        };
+    }
+    if (!holderAlive(ref)) {
+        if (!id && record.state === 'starting') {
+            if (record.error) {
+                return {
+                    state: 'stale',
+                    busy: false,
+                    stall: { kind: 'stale', reason: record.error },
+                    id: null,
+                    note: null,
+                };
+            }
+            const started = Date.parse(record.startedAt ?? '');
+            const budget = readyMs();
+            if (Number.isFinite(started) && Date.now() - started > budget) {
+                return {
+                    state: 'stale',
+                    busy: false,
+                    stall: {
+                        kind: 'stale',
+                        reason: `the holder did not name a thread within ${budget} ms`,
+                    },
+                    id: null,
+                    note: null,
+                };
+            }
+            return {
+                state: 'alive',
+                busy: true,
+                stall: null,
+                id: null,
+                note: 'rising — the thread is not named yet',
+            };
+        }
+        return {
+            state: 'stale',
+            busy: false,
+            stall: {
+                kind: 'stale',
+                reason: `no holder for thread ${id ?? ref} — the app-server process died, the rollout on disk is intact`,
+            },
+            id,
+            note: record.nameSet === false ? 'thread name did not apply (unobserved outcome)' : null,
+        };
+    }
+    const limit = rateLimitNote(record.rateLimits);
+    const unknown = record.lastUnknownApproval
+        ? `unknown approval request ${record.lastUnknownApproval.method}: ${record.lastUnknownApproval.why}`
+        : null;
+    const extra = [limit, unknown].filter(Boolean).join('; ');
+    // A failed turn whose refusal named a reset outranks a running turn: the one a knock just started
+    // fails the same way, and "the turn is running" would read unreachable as busy.
+    const reset = turnFailed(record.lastTurn?.status) ? namedReset(record.lastTurn?.error) : null;
+    if (reset && resetAhead(reset)) {
+        const why = `the last turn was refused: ${record.lastTurn.error}`;
+        return {
+            state: 'alive',
+            busy: record.state === 'starting' || record.busy === true,
+            stall: { kind: 'limit', reason: why, reset },
+            id,
+            note: extra || why,
+        };
+    }
+    if (record.state === 'starting' || record.busy) {
+        const pending = record.pendingRequest;
+        if (pending?.method) {
+            const why = pendingRequestReason(pending);
+            const pendingAge = eventAgeMs(pending.at);
+            const idleMs = turnIdleMs();
+            if (pendingAge != null && pendingAge > idleMs) {
+                return {
+                    state: 'alive',
+                    busy: true,
+                    stall: { kind: 'pending-request', reason: why },
+                    id,
+                    note: extra ? `${why} · ${extra}` : why,
+                };
+            }
+            return {
+                state: 'alive',
+                busy: true,
+                stall: null,
+                id,
+                note: extra ? `${why} · ${extra}` : why,
+            };
+        }
+        const last = record.lastEvent ?? null;
+        const lastAge = eventAgeMs(record.lastEventAt);
+        const idleMs = turnIdleMs();
+        if (lastAge != null && lastAge > idleMs) {
+            const silentSec = Math.round(lastAge / 1000);
+            const idleSec = Math.round(idleMs / 1000);
+            const why = `the turn has been silent for ${silentSec} s (threshold ${idleSec} s)`
+                + (last ? `, last event ${last}` : '');
+            return {
+                state: 'alive',
+                busy: true,
+                stall: { kind: 'watchdog', reason: why },
+                id,
+                note: extra || `silent ${silentSec} s`,
+            };
+        }
+        const agePart = last && lastAge != null
+            ? ` · last event ${last} ${Math.round(lastAge / 1000)} s ago`
+            : '';
+        return { state: 'alive', busy: true, stall: null, id, note: extra || `the turn is running${agePart}` };
+    }
+    if (turnFailed(record.lastTurn?.status)) {
+        const err = record.lastTurn?.error ? `: ${record.lastTurn.error}` : '';
+        const why = `the last turn ended failed${err}`;
+        return {
+            state: 'alive',
+            busy: false,
+            stall: { kind: 'failed', reason: why },
+            id,
+            note: extra || why,
+        };
+    }
+    return {
+        state: 'alive',
+        busy: false,
+        stall: record.lastUnknownApproval
+            ? { kind: 'unknown-approval', reason: unknown }
+            : (rateLimitReached(record.rateLimits)
+                ? { kind: 'limit', reason: limit }
+                : { kind: 'unknown', reason: 'the turn ended' }),
+        id,
+        note: extra || (record.nameSet === false ? 'thread name did not apply (unobserved outcome)' : 'the thread is idle'),
+    };
+}
+export function stallRoute({ kind, address, repoAbs, task: _task, reviewCommand, doneCommand, statusCommand, reset }, id) {
+    const where = repoAbs ? `cd ${repoAbs} && ` : '';
+    const review = reviewCommand;
+    const done = doneCommand;
+    const status = statusCommand;
+    const relift = () => (address?.startsWith(`${REVIEWER}:`)
+        ? `lift the reviewer again: ${review}`
+        : (address?.startsWith(`${APPROVER}:`)
+            ? `lift the approver again: ${review}`
+            : `lift the worker again with the same spawn --harness codex — it will sit in its own worktree`));
+    if (kind === 'gone') {
+        return `no session record in the registry — nobody to wake. The mechanism dropped it (${done}). `
+            + `Work delivered — a normal end; not delivered — ${relift()}`;
+    }
+    if (kind === 'stale') {
+        return `no app-server holder: the process died or the machine was rebooted. `
+            + `The thread on disk is intact, but the mechanism does not resume it by itself. ${relift()}`;
+    }
+    if (kind === 'limit' && resetAhead(reset)) {
+        const probe = reset.at === null ? ` and probes it every ${KNOCK_RETRY_SEC} s, since that time does not parse` : '';
+        return `no human is needed for the limit to lift: the warden holds its knocks until the time named here${probe}. `
+            + `If the run cannot wait that long, ${relift()}`;
+    }
+    if (kind === 'limit') {
+        return 'no human is needed: the Codex account limit will reset itself, the mechanism does not start a new turn. '
+            + `The reset is named in ${status}`;
+    }
+    if (kind === 'unknown-approval') {
+        return 'the turn stalled on an unknown approval request type — the driver denied it and recorded this in status. '
+            + `See the warden journal. ${id ? PHRASES.enter(id) : relift()}`;
+    }
+    if (kind === 'watchdog') {
+        return 'the turn is silent past the activity budget — lastEventAt did not move. The session is still alive. '
+            + `Look in: ${id ? PHRASES.enter(id) : relift()}. A later wake still queues.`;
+    }
+    if (kind === 'pending-request') {
+        return 'a server-to-client request is still pending: the holder JSON-RPC reply is not serverRequest/resolved. '
+            + `See ${status}. ${id ? PHRASES.enter(id) : relift()}`;
+    }
+    if (kind === 'failed') {
+        return 'the last turn ended failed — the thread is still up and a later turn may succeed. '
+            + `Holder log: ${id ? PHRASES.enter(id) : relift()}`;
+    }
+    if (kind === 'wake-taken') {
+        return 'the session is alive, only the channel is deaf: the contact point will return on the next end of turn. '
+            + `Until then deliver the message yourself — ${where}${id ? PHRASES.enter(id) : relift()}`;
+    }
+    return `the turn ended, the session waits for a message — the warden will wake it. `
+        + `Look in yourself: ${id ? PHRASES.enter(id) : relift()}`;
+}
+function resumeState(ref, { home, cwd, task, address, threadId, launcherPid, env = process.env }) {
+    const record = readSession(ref, env);
+    const expectedHome = participantCodexHome({ task, address }, env);
+    if (!record || record.ref !== ref || record.threadId !== threadId || record.task !== task
+        || record.address !== address || record.role !== 'orchestrator'
+        || !record.home || !record.cwd || !record.codexHome
+        || canonicalPath(record.home) !== canonicalPath(home)
+        || canonicalPath(record.cwd) !== canonicalPath(cwd)
+        || !existsSync(record.codexHome) || canonicalPath(record.codexHome) !== canonicalPath(expectedHome)) {
+        throw new GateError(`task ${task} has no matching active managed Codex root owner to resume`);
+    }
+    if (pidAlive(launcherPid)) {
+        throw new GateError(`task ${task} still has a live Codex launcher; resume cannot start a second owner`);
+    }
+    managedCodexResumeDeath(ref, record, env);
+    return record;
+}
+async function spawn(input, { tool, ref, role, cwd, env, host, home: runtimeHome, task: runtimeTask, address: runtimeAddress, launchFailNote = '', deadNote = '', persist, }) {
+    checkSessionDirectory(env ?? process.env);
+    // The registry pairs this driver with the launch plan its own prepare returned.
+    const plan = input;
+    const registry = registryOf(host);
+    const who = (liftWords(registry, role) ?? liftWords(registry, WORKER)).acc;
+    // The working directory is taken from the plan, not the caller's cwd: for a reviewer that is its
+    // own sandbox. Both are on disk by this point, and app-server is handed the path as the thread cwd.
+    const workdir = plan.cwd ?? cwd;
+    const sandbox = plan.settings?.sandbox
+        ?? (role === REVIEWER ? 'read-only' : 'workspace-write');
+    const prompt = plan.prompt;
+    // Homes left by earlier participants whose record is gone. The lift is one of the two
+    // moments a Codex home is provably orphaned and someone is here to notice.
+    for (const dir of sweepParticipantHomes(env ?? process.env)) {
+        info(`removed an orphaned Codex participant home (no session record names it): ${dir}`);
+    }
+    const codexHome = plan.codexHome ?? participantCodexHome({ task: runtimeTask, address: runtimeAddress }, env ?? process.env);
+    const previous = plan.resumeThreadId ? readSession(ref, env) : null;
+    const launchId = plan.service?.launchId ?? plan.launchId ?? randomUUID();
+    const resume = plan.managedResume;
+    if (resume && (!previous || resume.version.file !== sessionFile(ref, env) || !sameRecordVersion(resume.version)
+        || resume.ref !== ref || resume.home !== runtimeHome || resume.task !== runtimeTask || resume.address !== runtimeAddress
+        || previous.ref !== resume.ref || previous.home !== resume.home || previous.task !== resume.task || previous.address !== resume.address
+        || previous.launchId !== resume.previousLaunchId || previous.threadId !== resume.nativeId || plan.resumeThreadId !== resume.nativeId
+        || !previous.codexHome || realpathSync(previous.codexHome) !== resume.nativeStore
+        || !previous.cwd || canonicalPath(previous.cwd) !== resume.cwd || canonicalPath(workdir) !== resume.cwd
+        || (resume.previous && processState(resume.previous.process) !== 'dead'))) {
+        throw new GateError('Managed Codex resume changed its approved previous generation or old process is not confirmed dead');
+    }
+    if (resume)
+        managedCodexResumeDeath(ref, previous, env);
+    const bindBeforeFirstTurn = plan.bindBeforeFirstTurn === true || Boolean(plan.service);
+    const ownsLaunch = () => readSession(ref, env)?.launchId === launchId;
+    const discardLaunch = (undo) => {
+        const discard = () => withSessionLaunch(ref, env, () => {
+            const version = recordVersion(sessionFile(ref, env)), current = readSession(ref, env);
+            if (!current || current.launchId !== launchId || current.ref !== ref || current.home !== runtimeHome
+                || current.task !== runtimeTask || current.address !== runtimeAddress || !sameRecordVersion(version)) {
+                throw new GateError(`Codex launch ${ref} changed ownership before retirement; replacement retained`);
+            }
+            if (resume) {
+                const owner = participantOf(readTask(runtimeHome, runtimeTask), runtimeAddress);
+                if (owner?.harness !== 'codex' || owner.mode !== 'managed' || owner.sessionRef !== ref
+                    || owner.metadata.owner !== resume.nativeId || owner.metadata.sessionId !== resume.nativeId
+                    || owner.metadata.sessionRecord !== resume.version.file || owner.metadata.launcherPid !== resume.launcherPid
+                    || ![launchId, resume.previousLaunchId].includes(String(owner.metadata.nativeLaunchId))
+                    || !sameRecordVersion(version))
+                    throw new GateError(`Codex launch ${ref} changed its root owner before rollback; replacement retained`);
+                undo?.();
+                writeSession(previous, env);
+                if (owner.metadata.nativeLaunchId === launchId)
+                    upsertParticipant(runtimeHome, runtimeTask, {
+                        ...owner, metadata: { ...owner.metadata, nativeLaunchId: resume.previousLaunchId },
+                    });
+            }
+            else {
+                undo?.();
+                if (previous)
+                    writeSession(previous, env);
+                else
+                    dropSession(ref, env);
+            }
+        });
+        if (taskExists(runtimeHome, runtimeTask))
+            withTaskLock(runtimeHome, runtimeTask, discard);
+        else
+            discard();
+    };
+    const authOwnerHome = ownerCodexHome(env ?? process.env);
+    const provenance = launchProvenance(host, tool);
+    const mcp = codexMcpServers(plan.mcpConfig?.mcpServers ?? {}, codexMcpPrefix(host));
+    if (mcp.skipped.length) {
+        warn(`MCP did not go to ${who} — Codex has no transport of that form: ${mcp.skipped.join(', ')}`);
+    }
+    const freshRecord = {
+        ref,
+        launchId,
+        ...(plan.service ? { nativeAdmissionSchema: 1 } : {}),
+        ...(resume ? { nativeAdmissionTransition: { kind: 'managed-root-resume', record: resume.version.file,
+                previousLaunchId: resume.previousLaunchId, previous: resume.previous,
+                previousRecord: { version: resume.version.version, ref, home: resume.home, task: resume.task, address: resume.address,
+                    nativeId: resume.nativeId, nativeStore: resume.nativeStore, cwd: resume.cwd },
+                launcherReservation: { previous: resume.previousLauncherPid, current: resume.launcherPid } } } : {}),
+        launcherPid: process.pid,
+        cwd: workdir,
+        bin: tool.bin,
+        provenance: provenanceLine(provenance),
+        mechanismPath: provenance.mechanismPath,
+        mechanismPathIssue: provenance.mechanismPathIssue,
+        mechanismVersion: provenance.hostVersion,
+        packagePath: provenance.packagePath,
+        packageVersion: provenance.packageVersion,
+        packageIssue: provenance.packageIssue,
+        hostVersion: provenance.hostVersion,
+        binaryPath: provenance.binaryPath,
+        binaryVersion: provenance.binaryVersion,
+        role: role ?? WORKER,
+        startedAt: new Date().toISOString(),
+        threadId: plan.resumeThreadId ?? null,
+        resumeThreadId: plan.resumeThreadId ?? null,
+        holderPid: null,
+        appPid: null,
+        rpcSocket: null,
+        state: 'starting',
+        sandbox,
+        approvalPolicy: plan.settings?.approvalPolicy ?? 'on-request',
+        model: plan.settings?.model,
+        effort: plan.settings?.effort ?? null,
+        canonicalSkillsDir: plan.canonicalSkillsDir ?? null,
+        bindBeforeFirstTurn,
+        addDirs: plan.settings?.addDirs ?? [],
+        // No `mcpServers` copy on the record — a second copy nobody reads would drift from the
+        // `config.toml` app-server loads. The home is on the record: `stop` and `done` hold nothing else.
+        codexHome,
+        authOwnerHome,
+        // The prefix travels in the RECORD because the process that applies it is the detached holder,
+        // which is handed this file and has no host to ask. One value, two readers.
+        mcpPrefix: codexMcpPrefix(host),
+        prompt,
+        ...(role === 'orchestrator' ? { initialPrompt: previous?.initialPrompt ?? previous?.prompt ?? prompt, initialAssignmentInjected: previous?.initialAssignmentInjected === true } : {}),
+        name: ref,
+        home: runtimeHome,
+        task: runtimeTask,
+        address: runtimeAddress,
+        argv: plan.argv,
+        hostName: String((env ?? process.env).PROMPTOBUS_HOST_NAME ?? '').trim() || undefined,
+        statusHint: host?.busCommand?.(['status']),
+        turns: previous?.turns ?? 0,
+    };
+    const stageRecord = () => {
+        if (resume) {
+            managedCodexResumeDeath(ref, previous, env);
+            const owner = participantOf(readTask(runtimeHome, runtimeTask), runtimeAddress);
+            if (!sameRecordVersion(resume.version) || owner?.harness !== 'codex' || owner.mode !== 'managed'
+                || owner.sessionRef !== ref || owner.metadata.owner !== resume.nativeId || owner.metadata.sessionId !== resume.nativeId
+                || resume.launcherPid !== process.pid || owner.metadata.launcherPid !== resume.launcherPid
+                || owner.metadata.sessionRecord !== resume.version.file
+                || (resume.previous && processState(resume.previous.process) !== 'dead')) {
+                throw new GateError('Managed Codex resume no longer owns its approved record and current root participant');
+            }
+            retireCodexResumeHolderLock(ref, previous, env);
+        }
+        return writeSession(freshRecord, env);
+    };
+    if (resume)
+        withTaskLock(runtimeHome, runtimeTask, () => withSessionLaunch(ref, env, stageRecord));
+    else
+        withSessionLaunch(ref, env, stageRecord);
+    if (plan.service)
+        plan.sessionRecord = sessionFile(ref, env);
+    for (const scope of plan.service ? plan.serviceScopes ?? [] : [])
+        writeJsonAtomic(scope.record, {
+            ref, launchId, home: runtimeHome, task: scope.task, address: scope.address, threadId: null,
+        }, { mode: 0o600 });
+    const publishScopeProvenance = () => {
+        for (const scope of plan.service ? plan.serviceScopes ?? [] : [])
+            withTaskLock(runtimeHome, scope.task, () => withSessionLaunch(ref, env, () => {
+                const source = recordVersion(sessionFile(ref, env)), primary = readPrivate(source.file);
+                const version = recordVersion(scope.record), sidecar = readPrivate(scope.record);
+                const participant = participantOf(readTask(runtimeHome, scope.task), scope.address);
+                if (!primary || primary.launchId !== launchId || primary.ref !== ref || primary.home !== runtimeHome
+                    || primary.task !== runtimeTask || primary.address !== runtimeAddress || !primary.threadId
+                    || !primary.nativeAdmission || !primary.nativeAdmissionEvidence || primary.nativeAdmission.nativeId !== primary.threadId
+                    || primary.nativeAdmission.nativeStore !== primary.codexHome || processState(primary.nativeAdmission.process) !== 'alive'
+                    || primary.nativeAdmissionEvidence.nativeId !== primary.threadId || primary.nativeAdmissionEvidence.nativeStore !== primary.nativeAdmission.nativeStore
+                    || primary.nativeAdmissionEvidence.process.pid !== primary.nativeAdmission.process.pid
+                    || primary.nativeAdmissionEvidence.process.birth !== primary.nativeAdmission.process.birth
+                    || !recordOf(sidecar) || sidecar.ref !== ref || sidecar.launchId !== launchId || sidecar.home !== runtimeHome
+                    || sidecar.task !== scope.task || sidecar.address !== scope.address
+                    || participant?.sessionRef !== ref || participant.metadata.sessionRecord !== scope.record
+                    || participant.metadata.sessionId !== primary.threadId
+                    || !sameRecordVersion(source) || !sameRecordVersion(version))
+                    throw new GateError('Codex alias provenance no longer owns its exact source and sidecar');
+                writePrivate(scope.record, { ...sidecar, threadId: primary.threadId, codexHome: primary.codexHome,
+                    rolloutPath: primary.rolloutPath ?? null, appPid: primary.appPid, appProcess: primary.appProcess,
+                    holderPid: primary.holderPid, holderProcess: primary.holderProcess,
+                    nativeAdmissionSchema: primary.nativeAdmissionSchema,
+                    nativeAdmission: primary.nativeAdmission, nativeAdmissionEvidence: primary.nativeAdmissionEvidence,
+                    nativeAdmissionUnknown: primary.nativeAdmissionUnknown,
+                    nativeAdmissionSource: { record: source.file, version: source.version, launchId, nativeId: primary.threadId } });
+            }));
+    };
+    // The home is built AFTER the record, which is the only thing that names it for whatever removes
+    // it. Trust is the OWN working directory, never the tree under review ([ADR-008](../docs/adr/adr-008-codex-reviewer-working-directory.md)).
+    let built;
+    try {
+        built = makeParticipantHome({
+            dir: codexHome,
+            ownerHome: authOwnerHome,
+            env: env ?? process.env,
+            config: codexHomeConfig({
+                servers: mcp.servers,
+                trusted: plan.trustProject === false ? [] : [trustPath(workdir)],
+                hooksEnabled: plan.trustProject !== false,
+                rawToolReceipts: (env ?? process.env).PROMPTOBUS_CODEX_RAW_TOOL_RECEIPTS === '1',
+            }),
+        });
+    }
+    catch (error) {
+        // A resume keeps the old record and rollout on refusal; a new unbound lift keeps neither.
+        return revokeFailedManagedLaunch(plan, error, discardLaunch);
+    }
+    if (!built.auth) {
+        warn(`no auth.json in ${authOwnerHome} — the participant home carries no copy of the owner's credentials; `
+            + 'Codex will lift only if the account is driven by an API key in the environment');
+    }
+    try {
+        if (role === REVIEWER && runtimeHome && runtimeTask)
+            mkdirSync(filesDir(runtimeHome, runtimeTask), { recursive: true });
+        if (plan.trustProject === false)
+            installPrivateHomeLayer(plan, codexHome);
+        else
+            writeRedirectedHooks(plan, workdir, codexHome);
+    }
+    catch (error) {
+        return revokeFailedManagedLaunch(plan, error, discardLaunch);
+    }
+    const undo = bindBeforeLaunch(runtimeHome, runtimeTask, runtimeAddress, plan.prelaunchBinding, { harness: 'codex', sessionRef: ref, metadata: { nativeLaunchId: launchId } });
+    let holder;
+    try {
+        await plan.service?.beforeStart(sessionFile(ref, env));
+        holder = startHolder(ref, sessionEnv(env ?? process.env, { CODEX_HOME: codexHome }));
+    }
+    catch (error) {
+        return revokeFailedManagedLaunch(plan, error, () => {
+            discardLaunch(undo);
+        });
+    }
+    if (Number.isInteger(holder.pid) && holder.pid > 0) {
+        withSessionLaunch(ref, env, () => {
+            if (!ownsLaunch())
+                throw new GateError(`Codex session ${ref} changed launch ownership before holder publication`);
+            const holderProcess = processIdentity(holder.pid);
+            patchSession(ref, { holderPid: holder.pid, ...(plan.service && holderProcess ? { holderProcess } : {}) }, env);
+        });
+    }
+    let binding = null;
+    let boundToBus = false;
+    if (bindBeforeFirstTurn) {
+        binding = await waitReady(ref, env, readyMs(env), 'binding');
+        if (binding.ok) {
+            try {
+                persist(binding.record.threadId, 'alive', binding.record.threadId);
+                publishScopeProvenance();
+                await plan.service?.realize(binding.record.threadId);
+                boundToBus = true;
+                await holderAsk(ref, 'bound', {}, env);
+            }
+            catch (error) {
+                return revokeFailedManagedLaunch(plan, error, async () => {
+                    if (ownsLaunch()) {
+                        await reapHolder(ref, env);
+                        if (previous || !plan.retainFailedSession || !boundToBus)
+                            discardLaunch(undo);
+                        else
+                            undo();
+                    }
+                });
+            }
+        }
+    }
+    const lifted = binding?.ok === false ? binding : await waitReady(ref, env, readyMs(env));
+    if (!lifted.ok) {
+        const log = lifted.log || tailLog(ref, env);
+        return revokeFailedManagedLaunch(plan, new GateError(`${tool.bin}: Codex thread did not lift (${lifted.error}) — nothing to lift ${who} with.`
+            + `${launchFailNote}${deadNote}${log ? `\n${log}` : ''}`), async () => {
+            if (ownsLaunch()) {
+                await reapHolder(ref, env);
+                if (previous || !plan.retainFailedSession || !boundToBus)
+                    discardLaunch(undo);
+                else
+                    undo();
+            }
+        });
+    }
+    const rec = lifted.record;
+    if (!bindBeforeFirstTurn)
+        persist(rec.threadId, 'alive', rec.threadId);
+    writeParticipantWake(rec, env);
+    registerWake(runtimeHome, runtimeTask, runtimeAddress, env, rec.threadId);
+    return {
+        output: `thread ${rec.threadId}`,
+        session: rec.threadId,
+        seen: rec,
+    };
+}
+function saidLiftoff({ output, seen: receipt }) {
+    const seen = receipt;
+    if (output)
+        info(output);
+    info(`Codex home: ${seen?.codexHome ?? 'unnamed on the record'} — the mechanism MCP set only, the owner's auth copied in, `
+        + 'removed on done; the owner ~/.codex is not written');
+    info('personal ~/.agents/skills remain visible; only copies colliding with loaded canonical names are disabled in this thread');
+    info('each bus tool call costs a turn of the Codex auto-reviewer (~3.4 s and ~19 thousand input tokens)');
+    if (['teamlead', 'reporter', 'orchestrator'].includes(seen?.role))
+        info('Codex project hooks are disabled for this install-root role; the holder drives turns and wake');
+    else
+        info('hook trust for this thread is bypass_hook_trust on thread/start; a linked worktree also has that hooks file in its Codex home');
+}
+/** Stop confirms terminal command accounting before retiring the matching launch.
+ * Unresolved stops retain their record, participant home and selected lifecycle receipts. */
+async function stop(ref, { timeoutMs = STOP_TIMEOUT_MS } = {}) {
+    const record = readSession(ref);
+    if (!record) {
+        return {
+            ok: true,
+            stopped: false,
+            note: `no live session «${ref}» in the Codex registry; no other participant homes touched`,
+        };
+    }
+    const id = record.threadId ?? ref;
+    const unresolved = (note) => ({ ok: false, attempted: true, stopped: false,
+        note: `thread ${id}: ${note}; record/home retained; command receipts ${record.commandReceiptFile ?? 'not established'}` });
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 0)
+        return unresolved('invalid Stop timeout; no shutdown issued');
+    const deadline = Date.now() + Math.min(STOP_TIMEOUT_MS, timeoutMs);
+    if (!record.launchId)
+        return unresolved('launch identity is missing; no shutdown issued');
+    if (Date.now() >= deadline)
+        return unresolved('Stop deadline elapsed before shutdown or recovery');
+    if (!record.stopConfirmed || holderAlive(ref)) {
+        let answer;
+        try {
+            if (Date.now() >= deadline)
+                return unresolved('Stop deadline elapsed before shutdown');
+            answer = await holderAsk(ref, 'shutdown', { launchId: record.launchId, deadlineAt: deadline }, process.env, Math.max(1, deadline - Date.now()));
+        }
+        catch (error) {
+            return unresolved(`shutdown outcome unresolved: ${error.message}`);
+        }
+        if (!answer.ok || !answer.stopped || answer.launchId !== record.launchId)
+            return unresolved(answer.note ?? 'holder did not confirm terminal command accounting');
+    }
+    while (holderAlive(ref) && Date.now() < deadline)
+        await new Promise(resolve => setTimeout(resolve, 20));
+    if (holderAlive(ref))
+        return unresolved('holder exit was not confirmed before the Stop deadline');
+    let retired, receiptFile;
+    try {
+        const retire = () => {
+            if (Date.now() >= deadline)
+                throw new Error('Stop deadline elapsed before record retirement');
+            const current = readSession(ref);
+            if (!current || current.launchId !== record.launchId || !current.stopConfirmed
+                || holderAlive(ref) || pidAlive(current.appPid))
+                return false;
+            receiptFile = path.join(harnessStateHome(CODEX), 'receipts', sessionKey(ref), sessionKey(record.launchId) + '.jsonl');
+            if (current.commandReceiptFile !== receiptFile)
+                return false;
+            const confirmation = readStopConfirmation(receiptFile, current);
+            if (!confirmation.ok)
+                throw new Error(confirmation.note);
+            if (Date.now() >= deadline)
+                throw new Error('Stop deadline elapsed while validating record retirement');
+            retainNativeStop(current, receiptFile);
+            if (Date.now() >= deadline)
+                throw new Error('Stop deadline elapsed while retaining terminal proof');
+            dropSession(ref);
+            return true;
+        };
+        retired = withNativeStopLocks(record, retire, { deadlineAt: deadline });
+    }
+    catch (error) {
+        return unresolved(`record retirement unresolved: ${error.message}`);
+    }
+    if (!retired)
+        return unresolved('launch ownership or finalization changed before record retirement');
+    return {
+        ok: true,
+        stopped: true,
+        note: `thread ${id} stopped, the record dropped after terminal command accounting; selected receipts ${receiptFile}`,
+    };
+}
+export const codexDriver = {
+    id: CODEX,
+    capabilities: {
+        spawn: true,
+        attach: false,
+        activation: 'push',
+        inspect: true,
+        stop: true,
+        denyTools: true,
+        mcpDenyTools: true,
+        approverLift: true,
+        systemPrompt: true,
+        sessionList: true,
+        enter: true,
+    },
+    options: {
+        tool: CODEX,
+        effortLevels: EFFORT_LEVELS,
+        permissionModes: PERMISSION_MODES,
+        defaultPermissionMode: DEFAULT_PERMISSION_MODE,
+        defaultModel: DEFAULT_MODEL,
+        denyTools: REVIEWER_DENY,
+        provenVersion: PROVEN_CODEX_VERSION,
+        // Not 'socket': knockRegistry reserves that value for a messaging socket and
+        // replaces activate with a knock to it. The Codex channel is the holder RPC.
+        knockChannel: 'rpc',
+        identityVar: 'CODEX_THREAD_ID',
+        mcpIdentity: { recordVar: SESSION_ENV_VAR, idField: 'threadId' },
+        envDrop: SESSION_ENV_DROP,
+        skillsDir: false,
+        selectedContext: true,
+        // Git is asked about the two paths under `.codex/`, not about the directory: a project's own
+        // `.codex/config.toml` and `.codex/agents` are what the trust record hands over to READ.
+        launchDirs: [CODEX_DIR],
+    },
+    // The account gate, asked before any session exists. The home it names is the OWNER's: there is
+    // no participant yet, and its `auth.json` is what every participant home will copy.
+    availability: {
+        tool: CODEX,
+        probe: (request) => probeCodex(request, {
+            tool: CODEX,
+            env: sessionEnv(process.env, { CODEX_HOME: ownerCodexHome() }),
+        }),
+    },
+    phrases: PHRASES,
+    prepare,
+    replaceMcpServers,
+    resumeState,
+    prepareRootLaunch: ({ home, task, env }) => {
+        const retained = registrySessions(env).filter(record => sameStoreHome(record.home, home) && record.task === task
+            && record.address === 'orchestrator');
+        retained.sort((a, b) => a.ref.localeCompare(b.ref));
+        const cleanup = (index = 0) => {
+            if (index < retained.length)
+                return withSessionLaunch(retained[index].ref, env, () => cleanup(index + 1));
+            const current = retained.map(record => ({ before: record, now: readSession(record.ref, env) }))
+                .filter((pair) => Boolean(pair.now));
+            const live = current.find(({ before, now }) => now.launchId !== before.launchId
+                || holderAlive(now.ref, env) || pidAlive(now.appPid));
+            if (live)
+                throw new GateError(`task ${task} retains a live unbound Codex root ${live.now.ref}; no session files were touched`);
+            for (const { now } of current)
+                dropSession(now.ref, env);
+        };
+        cleanup();
+    },
+    refuseForeignProjectLayer,
+    participantCodexHome,
+    sweepParticipant,
+    mcpDenyTools,
+    spawn,
+    saidLiftoff,
+    inspect,
+    stop,
+    activate,
+    renderNotification,
+    stallRoute,
+    registerWake,
+    sayForeignWrite,
+    checkWake,
+    sessionEnv,
+    optionRefusal,
+    shadowedUserServers,
+};

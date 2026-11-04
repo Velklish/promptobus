@@ -1,0 +1,36 @@
+// The package entry point.
+// [reference/01-overview.md#the-package-entry-point](../docs/reference/01-overview.md#the-package-entry-point)
+export * from './telemetry.js';
+/** Protocol and store version this build understands. */
+export const PROTOCOL_VERSION = 1;
+/** Package name. Exposed so an import from the built dist is checkable. */
+export const PACKAGE_NAME = 'promptobus';
+// Bus vocabulary: message types, address grammar, task identity, foreign-mailbox
+// gate wording, and accessors for adapter fields on the participant record.
+export { addressOf, addrDir, approverAddress, brokenNote, claimRoute, dismissedOf, foreignTaskLine, FOREIGN_MARK, FOREIGN_ROUTE, GateError, isAddress, MAILBOX_CLAIMED_MARK, MAILBOX_COPY, MECHANISM_VERSION_FIELD, mechanismVersionOf, MESSAGE_TYPES, nameOf, newTaskIdentity, ORCHESTRATOR, ownerOf, participantFileStem, repoAbsOf, requireTaskId, boundSessionOf, foreignSessionOf, holdsSession, reviewerAddress, roleOf, ROUTING_FIELD, routingOf, sameSession, sessionIdOf, sessionOf, SLUG_MAX, slugify, stampOfId, startedOf, TASK_ID_RE, TASK_TITLE_SEP, taskDir, tasksDir, UNDECLARED_HARNESS, UNDECLARED_ROLE, workerAddress, } from './protocol.js';
+// Role registry: governance roles, step kinds and the default pipeline as an immutable value, and
+// `withSteps`, the door a declared step name comes in through. Every closed role list reads it.
+export { ADDRESS_RE, addressList, admitsAddress, APPROVER, defaultFloor, EDITS_TREE, liftWords, packageDenyTools, pipelineAddressNames, READS_DIFF, registryOf, REVIEWER, roleEntry, routedCatalogRoles, SHIPPED_REGISTRY, STEP_KINDS, stemOwner, withoutStep, withSteps, WORKER, WRITES_MAIN_TREE, } from './registry.js';
+// The pipeline declaration: the default, the check a host runs on its source, and the refusal it throws.
+export { acceptsBrief, DEFAULT_PIPELINE, PIPELINE_INVALID, pipelineFinding, pipelineOf, pipelineRefusal, pipelineSteps, pipelineText, pipelineVerdict, readPipeline, STEP_NAME_PATTERN, } from './pipeline.js';
+// Protocol and store v1 — flat, not a namespace: the `v1` namespace existed because the flat names
+// were taken by the compatibility layer, and with that gone there is no second set here.
+export * from './v1/index.js';
+// Task-directory files the store does not hold: contact points, health, warden mark and log, stall
+// and end-of-turn marks, session bindings, the participant files directory, and the journal lock.
+export { beatWarden, claimWarden, clearWarden, clearWardenExit, healthFile, lastTurnAt, liveWarden, lockBusyError, logWarden, markTranscript, markTurn, onTaskLock, readBinding, readHealth, readStalls, readTranscript, readWake, readWardenExit, readWardenGeneration, sessionFile, sessionsDir, stallsFile, tailWardenLog, WARDEN_BEAT_SEC, wakeFile, wardenLogFile, wardenMarkFile, withBlobLock, withTaskLock, withTaskLockAsync, workersDir, writeBinding, bindingNames, dropBinding, writeHealth, writeStalls, writeWake, writeWardenExit, } from './sidecar.js';
+// The adapter's bundled lib/ runtime imports package-owned helpers from their built
+// implementation modules; higher-level consumers should prefer protocol and store APIs.
+export { pidAlive } from './fs/proc.js';
+// Bus MCP server: transport, negotiation and the tool dispatcher. Workspace, Git and harness do not
+// cross this boundary ([mcp/server.ts](mcp/server.ts)).
+export { createMcpServer, negotiateProtocol } from './mcp/server.js';
+export { ADDR_MARK, MAILBOX_EMPTY, mailboxPart, MESSAGE_FROM, readableName, senderAddress, SENT_PREFIX, summarizeMessages, } from './mcp/render.js';
+// Driver contract, registry and the warden state machine, together because a consumer takes them
+// together: the registry goes into the state machine, and the state machine reads the task store.
+export * from './driver.js';
+export * from './supervisor.js';
+// Host contract and standalone implementation. A separate `./host` entry
+// point is the same set: a consumer that only needs a host does not pull the store.
+export { HOST_KIND, HostResolveError, homeOfRoot, isPromptobusHost, } from './host.js';
+export { HOST_CONFIG, createStandaloneHost } from './standalone.js';

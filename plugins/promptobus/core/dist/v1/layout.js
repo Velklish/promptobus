@@ -1,0 +1,124 @@
+// Where a v1 store puts things on disk.
+// [reference/04-protocol.md#where-a-v1-store-puts-things-on-disk](../../docs/reference/04-protocol.md#where-a-v1-store-puts-things-on-disk)
+import path from 'node:path';
+import { fail } from './errors.js';
+import { PARTICIPANT_ID_RE, RECORD_ID_RE, TASK_ID_RE } from './model.js';
+/** Store directory inside the workspace. */
+export const ROOT_DIR = '.promptobus';
+/** Store v1 inside the root the caller named. */
+export function homeOf(root) {
+    if (typeof root !== 'string' || !root)
+        fail('schema-invalid', 'store root is not named');
+    return path.join(root, ROOT_DIR);
+}
+// Grammar is checked on EVERY name that enters a path: an id arrives both from the adapter and from
+// a foreign record on disk, and `..` in it would walk the record out of the task.
+function safeTask(id) {
+    if (typeof id !== 'string' || !TASK_ID_RE.test(id)) {
+        fail('task-not-found', `invalid task id: «${String(id)}»`, { task: id });
+    }
+    return id;
+}
+function safeParticipant(id) {
+    if (typeof id !== 'string' || !PARTICIPANT_ID_RE.test(id)) {
+        fail('participant-not-found', `invalid participant id: «${String(id)}»`, { participant: id });
+    }
+    return id;
+}
+function safeRecord(id) {
+    if (typeof id !== 'string' || !RECORD_ID_RE.test(id)) {
+        fail('schema-invalid', `invalid record id: «${String(id)}»`, { record: id });
+    }
+    return id;
+}
+export function tasksDir(home) {
+    return path.join(home, 'tasks');
+}
+export function taskDir(home, task) {
+    return path.join(tasksDir(home), safeTask(task));
+}
+export function taskFile(home, task) {
+    return path.join(taskDir(home, task), 'task.json');
+}
+export function lockDir(home, task) {
+    return path.join(taskDir(home, task), '.lock');
+}
+/** Artifact publication lock: payload, metadata and sweep reachability checks.
+ * Separate from the task and store message-commit locks; streaming stays outside commit. */
+export function blobLockDir(home, task) {
+    return path.join(taskDir(home, task), '.lock-blobs');
+}
+/** Canonical messages. Immutable: inbox, history, and intent refs are the same inode. */
+export function messagesDir(home, task) {
+    return path.join(taskDir(home, task), 'messages');
+}
+export function messageFile(home, task, message) {
+    return path.join(messagesDir(home, task), `${safeRecord(message)}.json`);
+}
+/** Unclosed fan-outs. The file here is a hard link to the canonical message. */
+export function intentsDir(home, task) {
+    return path.join(taskDir(home, task), 'intents');
+}
+export function intentFile(home, task, message) {
+    return path.join(intentsDir(home, task), `${safeRecord(message)}.json`);
+}
+/** Lease of an unclosed fan-out: `<id>.owner` beside the intent. Assembled FROM the intent path, not
+ * from the id again — recovery walks by file names and asks for the lease before parsing. */
+export function ownerOfIntent(intent) {
+    return `${intent.slice(0, -'.json'.length)}.owner`;
+}
+export function inboxDir(home, task, participant) {
+    return path.join(taskDir(home, task), 'inbox', safeParticipant(participant));
+}
+export function inboxRef(home, task, participant, message) {
+    return path.join(inboxDir(home, task, participant), `${safeRecord(message)}.json`);
+}
+/** Root of all per-participant history boxes. */
+export function historyRoot(home, task) {
+    return path.join(taskDir(home, task), 'history');
+}
+/** Read mail. The file name is the same — recovery uses it to tell delivered from missing. */
+export function historyDir(home, task, participant) {
+    return path.join(historyRoot(home, task), safeParticipant(participant));
+}
+export function historyRef(home, task, participant, message) {
+    return path.join(historyDir(home, task, participant), `${safeRecord(message)}.json`);
+}
+/** Isolated. Two subdirectories, not one: `inbox/<participant>` and `artifacts` — otherwise a
+ * participant whose id is `artifacts` would take foreign records as its own. */
+export function brokenInboxDir(home, task, participant) {
+    return path.join(taskDir(home, task), 'broken', 'inbox', safeParticipant(participant));
+}
+export function brokenArtifactsDir(home, task) {
+    return path.join(taskDir(home, task), 'broken', 'artifacts');
+}
+/** A torn intent: a crash inside the commit point is the only form of its corruption. */
+export function brokenMessagesDir(home, task) {
+    return path.join(taskDir(home, task), 'broken', 'messages');
+}
+/** Artifact payloads, addressed by SHA-256. Deduplicated inside the task. */
+export function blobsDir(home, task) {
+    return path.join(taskDir(home, task), 'blobs');
+}
+export function blobFile(home, task, sha256) {
+    return path.join(blobsDir(home, task), sha256);
+}
+/** Artifact metadata: the file name lives here, the payload in the blob. */
+export function artifactsDir(home, task) {
+    return path.join(taskDir(home, task), 'artifacts');
+}
+/** Human-facing task files: artifacts and mechanism-produced briefs or diffs. */
+export function filesDir(home, task) {
+    return path.join(taskDir(home, task), 'files');
+}
+export function artifactFile(home, task, artifact) {
+    return path.join(artifactsDir(home, task), `${safeRecord(artifact)}.json`);
+}
+/** Blob path as written in metadata: relative, inside the task directory. */
+export function blobRef(sha256) {
+    return `blobs/${sha256}`;
+}
+/** The same path, absolute. Metadata is read only through it: `..` in the field is cut by the schema. */
+export function blobOf(home, task, artifact) {
+    return blobFile(home, task, artifact.sha256);
+}

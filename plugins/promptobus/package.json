@@ -1,0 +1,30 @@
+{
+  "name": "bb-plugin-promptobus",
+  "version": "0.2.0-rc.1",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "bb": "0.48.1",
+    "bbPluginSdk": "0.6.104",
+    "node": ">=26"
+  },
+  "bb": {
+    "name": "Promptobus",
+    "description": "Local engine-backed task participants and read-only Codex reviewers in BB.",
+    "branding": {
+      "icon": "Workflow"
+    },
+    "server": "./server.mjs",
+    "host": "./host.mjs",
+    "skills": [
+      "skills"
+    ]
+  },
+  "dependencies": {
+    "zod": "4.6.6",
+    "promptobus": "file:./core"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.6.104"
+  }
+}

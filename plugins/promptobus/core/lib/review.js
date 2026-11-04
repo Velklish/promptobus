@@ -1,0 +1,1541 @@
+import { finalizeManagedServiceLaunch, revokeFailedManagedLaunch } from './service-launch.js';
+import { persistLegacyParticipant, persistNativeParticipant, releaseNativeReservation, requireCurrentNativeLaunch, reserveNativeParticipant } from './native-lifecycle.js';
+import { renderReviewerInstructions, renderReviewProcedure } from './prompts/roles.js';
+import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+import { ok, info, warn, fail, gitIn, PROC_MAX_OUTPUT, GIT_NET_TIMEOUT_MS } from './util.js';
+import { normalize } from './fuzzy.js';
+import { hostOf } from './host.js';
+import { guardHookCommand } from '../dist/hooks.js';
+import { activeTasks, addressOf, attachmentsOf, bindIfOwner, canonicalPath, claimRoute, contactsOf, createTask, currentResult, filesDir, foreignTaskLine, GateError, journalMessageBody, newTaskIdentity, numberedName, occupyTaskFile, ownership, participantMcpPath, participantOf, participantRecord, participantSettingsPath, readTask, sendMessage, sessionIdentity, slugify, stampReviewAssignment, stampSnapshot, strictTaskFacts, taskExists, unreadNote, upsertParticipant, watchParticipant, withTaskLock, ORCHESTRATOR, } from './store.js';
+import { contactsSection, dryRunToolNote, guardHookNote, liftHarness, memoryRule, mcpNote, mcpServerLines, normalizeLaunchTool, optionRefusal, participantMcp, participantPluginDir, participantSkillsRoot, PROMPTOBUS_SERVER, resolveEffort, resolvePermissionMode, withToolVersion, sayMcp, sayModule, sayTool, sessionEnvNote, sessionName, skillSettings, skillsNote, toolName, writeLaunchFiles, } from './spawn.js';
+import { participantSession, unknownWhy } from './status.js';
+import { ATTACHMENT_CONTRACT, GATE_RECORD_STEM, HANDOVER_CHECKS, HANDOVER_RECORD_STEM, isGateRecordName, isHandoverRecordName, } from './handoff.js';
+import { launchProvenance, provenanceLine } from './provenance.js';
+// Same routing gate the worker lift stands on ([models.js](models.js)): the context is built here
+// because the preflight is asynchronous, and the pick is taken where the participants are known.
+import { decideLift, effectiveStrategy, routingContext, routingLine, sayDecision, } from './models.js';
+import { APPROVER, hasFeature, packageDenyTools, registryOf, REVIEWER, roleEntry, routingOf, ROUTING_FIELD, } from '../dist/index.js';
+import { pipelineOf } from '../dist/pipeline.js';
+import { EDITS_TREE, READS_DIFF, WRITES_MAIN_TREE } from '../dist/registry.js';
+import { driverOf, REGISTRY, snapshotOf } from './drivers.js';
+import { ensureWarden, handOverContactPoints } from './warden.js';
+import { clearThroughputSidecar, sessionLogOf, tokenLogHistoryOf } from './model-routing/telemetry.js';
+import { assertNativeContextDriver, contextRules, nativeContextMetadata, nativeContextPrompt, prepareNativeContext } from './native-participant-context.js';
+import { coreDriver } from './driver-runtime.js';
+// Reviewer — a bus participant in the directory of the reviewed copy, one per task and repository.
+// **Read-only is a capability, not a wish**: `denyTools` is asked BEFORE lift and before any write.
+/** Refusal on the ability to strip tools; `null` means the driver declared it. A pure function:
+ * there is no live driver without `denyTools`, so the branch is reachable only with a stand-in. */
+export function denyToolsRefusal(driver) {
+    if (hasFeature(coreDriver(driver), 'denyTools'))
+        return null;
+    return `harness "${driver.id}" cannot strip session tools, and isolation of the reviewer rests `
+        + 'exactly on that: a reviewer it started would write the reviewed tree, not read it. '
+        + 'Review is not started with this harness — take a harness that declares denyTools.';
+}
+export function hostDenyClassification(host, entry, declaredServers = [], repoDir) {
+    const canonicalServers = [...new Set((declaredServers ?? [])
+            .map(String).filter((server) => server && server !== PROMPTOBUS_SERVER))];
+    const member = typeof host.participantDenyToolsByKind === 'function' ? 'participantDenyToolsByKind'
+        : typeof host.participantDenyTools === 'function' && entry.hostDenyRole ? 'participantDenyTools' : null;
+    const selector = member === 'participantDenyToolsByKind' ? entry.kind : entry.hostDenyRole;
+    const answer = member === 'participantDenyToolsByKind'
+        ? host.participantDenyToolsByKind(selector, repoDir)
+        : member ? host.participantDenyTools(selector, repoDir) : null;
+    const classified = Array.isArray(answer) ? answer : Array.isArray(answer?.tools) ? answer.tools : [];
+    const valid = classified.filter((tool) => (tool && typeof tool === 'object'
+        && typeof tool.server === 'string' && typeof tool.tool === 'string'
+        && tool.server && tool.tool && tool.server !== PROMPTOBUS_SERVER));
+    const tools = [...new Map(valid.map((tool) => [`${tool.server}\0${tool.tool}`, tool])).values()];
+    const complete = !member && canonicalServers.length === 0
+        ? true
+        : !Array.isArray(answer) && answer?.complete === true && Array.isArray(answer.tools);
+    const covered = new Set(tools.map(({ server }) => server));
+    const unclassified = canonicalServers.filter((server) => !covered.has(server));
+    const source = member ? `${member}('${selector}')` : 'host write-tool classifier';
+    const detail = unclassified.length
+        ? `the ${source} classification is incomplete for canonical external MCP server(s): ${unclassified.join(', ')}`
+        : Array.isArray(answer)
+            ? `the ${source} member returned the pre-{ tools, complete } shape`
+            : `the ${source} member did not return complete: true`;
+    return { tools, complete, detail };
+}
+// The host names MCP writes in canonical pairs; only a driver declaring a mechanical MCP deny adds
+// them. The bus stays available, and `complete` tells an empty classification from an uninspected host.
+export function reviewerDenyTools(host, driver, declaredServers = [], stepName = REVIEWER, repoDir) {
+    const registry = registryOf(host);
+    const builtIn = packageDenyTools(registry, stepName, driver.options.denyTools ?? []);
+    if (!hasFeature(coreDriver(driver), 'mcpDenyTools'))
+        return { tools: builtIn, refusal: null };
+    const classified = hostDenyClassification(host, roleEntry(registry, stepName), declaredServers, repoDir);
+    if (!classified.complete)
+        return {
+            tools: builtIn,
+            refusal: `harness "${driver.id}" cannot mechanically deny MCP writes for host "${host.commandName}": `
+                + `${classified.detail}. `
+                + 'Review is not started — the host must return { tools, complete: true } before this harness can review.',
+        };
+    return {
+        tools: classified.tools.length ? [...builtIn, ...driver.mcpDenyTools(classified.tools)] : builtIn,
+        refusal: null,
+    };
+}
+// Hint "how to wait for the report", naming the task by its id — what `--task` accepts. Otherwise
+// `--task` would get the session name from the neighbouring line of output.
+function waitHint(what, taskId) {
+    return `${what} will arrive as a type=result message to the orchestrator of task ${taskId}: `
+        + 'the bus warden will wake you, fetch the mailbox';
+}
+/** Which reviewer this subject belongs to. The slug comes from the SUBJECT, not the clone root: with
+ * two workers of one repository `basename` would send the second review to the first's reviewer. */
+export function reviewerFor(ownerStep, taskMeta, repoDir, clone, stepName = REVIEWER) {
+    const owner = worktreeOwner(ownerStep, taskMeta, repoDir);
+    const slug = (owner ? addressSlug(addressOf(owner)) : normalize(path.basename(clone.abs))) || 'repo';
+    return { owner, slug, address: `${stepName}:${slug}` };
+}
+/** The bus checks only journal facts: the current assignment, the subject and a result after it. */
+export function requireStepResults(host, { home, taskId, taskMeta, stepName, slug, repoDir, facts = null }) {
+    const steps = pipelineOf(host);
+    const index = steps.findIndex((step) => step.name === stepName);
+    if (index < 1)
+        throw new GateError(`step ${stepName} is not a gate in the declared pipeline: ${steps.map((s) => s.name).join(' → ')}`);
+    const required = index > 1 ? [steps[index - 1]] : [];
+    if (steps[index].kind === WRITES_MAIN_TREE)
+        required.push(steps[0]);
+    if (!required.length)
+        return;
+    const snapshot = facts ?? strictTaskFacts(home, taskId);
+    const subjects = facts ? taskMeta : snapshot.task;
+    for (const predecessor of required) {
+        const address = `${predecessor.name}:${slug}`;
+        const participant = participantOf(subjects, address);
+        const metadata = participant?.metadata ?? {};
+        const subject = predecessor.kind === 'edits-tree'
+            ? metadata.worktree : metadata.reviewSubject ?? metadata.repoAbs;
+        const currentParticipant = snapshot.task.participants.find((entry) => entry.id === participant?.id);
+        const matches = subject && canonical(subject) === canonical(repoDir);
+        const result = currentResult(currentParticipant, snapshot.messages);
+        if (!participant || !matches || !result) {
+            const detail = !participant ? 'no participant is recorded'
+                : !matches ? `its recorded subject is ${subject ?? 'absent'}, not ${repoDir}`
+                    : currentParticipant?.metadata?.assignmentAfterId === null ? 'its current assignment is pending publication'
+                        : !currentParticipant?.metadata?.assignmentAfterId ? 'its causal assignment boundary is absent; this participant requires explicit fresh assignment'
+                            : `no result is recorded after its current assignment ${currentParticipant.metadata.assignmentAfterId}`;
+            throw new GateError(`step ${stepName} requires a type=result message from ${address} for subject ${repoDir} in task ${taskId}'s journal — ${detail}.`);
+        }
+    }
+}
+export function readGateInstructions(host, stepName, cached = null) {
+    const file = pipelineOf(host).find((step) => step.name === stepName)?.instructions;
+    if (!file)
+        return null;
+    if (!path.isAbsolute(file)) {
+        throw new GateError(`step ${stepName} instructions path ${file} is not absolute; the host must resolve it from the install root`);
+    }
+    if (cached?.path === file && typeof cached.text === 'string')
+        return cached;
+    try {
+        return { path: file, text: readFileSync(file, 'utf8') };
+    }
+    catch (error) {
+        throw new GateError(`step ${stepName} instructions ${file} cannot be read: ${error.message}`);
+    }
+}
+export function gateInstructionsSection(instructions) {
+    return instructions ? `## Gate instructions\n\n${instructions.text}\n\n` : '';
+}
+/** The subject's reviewer, if any, before the routing context. Read-only and silent. */
+function reviewerInJournal(host, { target, task, stepName = REVIEWER }) {
+    try {
+        const ownerStep = pipelineOf(host)[0];
+        const resolved = resolveRepoDir(target);
+        if (resolved.refusal)
+            return false;
+        const clone = host.cloneOf(resolved.repoDir);
+        if (!clone)
+            return false;
+        const home = canonicalPath(host.promptobusHome());
+        const taskId = task ?? claimingTasks(ownerStep, home, resolved.repoDir, stepName)[0]?.id ?? null;
+        if (!taskId || !taskExists(home, taskId))
+            return false;
+        const meta = readTask(home, taskId);
+        return participantOf(meta, reviewerFor(ownerStep, meta, resolved.repoDir, clone, stepName).address);
+    }
+    catch {
+        return false;
+    }
+}
+function harnessHistoryOf(metadata) {
+    const raw = metadata?.harnessHistory;
+    if (!Array.isArray(raw))
+        return [];
+    return raw.filter((row) => (row && typeof row.harness === 'string' && row.harness));
+}
+function closedRouting(participant) {
+    const routing = routingOf(participant);
+    if (!routing)
+        return {};
+    const entry = {};
+    if (typeof routing.tupleId === 'string' && routing.tupleId)
+        entry.tupleId = routing.tupleId;
+    if (typeof routing.strategy === 'string' && routing.strategy)
+        entry.strategy = routing.strategy;
+    if (typeof routing.strategySource === 'string' && routing.strategySource)
+        entry.strategySource = routing.strategySource;
+    return entry;
+}
+// One closed generation. `from` is that harness's last lift; the counting window starts at the
+// previous entry's `until`, so a same-harness re-lift in between does not drop its earlier rounds.
+function closedHarnessGeneration(participant, until, plan) {
+    const meta = participant?.metadata ?? {};
+    const entry = {
+        harness: participant.harness,
+        from: typeof meta.started === 'string' ? meta.started : null,
+        until,
+        ...closedRouting(participant),
+        sessionId: typeof meta.sessionId === 'string' ? meta.sessionId : null,
+        tokenLog: sessionLogOf(plan.host, plan.home, plan.taskId, participant),
+        tokenLogHistory: tokenLogHistoryOf(plan.host, plan.home, plan.taskId, participant),
+    };
+    if (typeof meta.model === 'string' && meta.model)
+        entry.model = meta.model;
+    if (typeof meta.effort === 'string' && meta.effort)
+        entry.effort = meta.effort;
+    return [...harnessHistoryOf(meta), entry];
+}
+// A new lift replaces the participant record whole. History is copied on every lift and extended
+// only when this call re-binds; a same-harness repeat would otherwise forget the earlier tool.
+function harnessHistoryForLift(participant, rebind, until, plan) {
+    if (!participant)
+        return [];
+    return rebind ? closedHarnessGeneration(participant, until, plan) : harnessHistoryOf(participant.metadata);
+}
+function harnessChangeRefusal(host, { address, taskId, from, to, sessionState, participant, driver, sessions }) {
+    const head = `${address} in task ${taskId} was started by harness ${from}, and --harness asks for ${to}: `;
+    if (sessionState === 'alive') {
+        const stop = host.busCommand(['stop', address, `--task ${taskId}`]);
+        return `${head}the session is alive, so its tool is not changed. `
+            + `Stop it first: ${stop}, then repeat this review with --harness ${to}.`;
+    }
+    const why = unknownWhy(participant, sessions, driver);
+    return `${head}liveness of the session is unknown — ${why} — `
+        + 'and unknown is not a gone session, so its tool is not changed. '
+        + `This call saw unknown. Check ${driver.phrases.sessions}.`;
+}
+export function planReview(rootOrHost, { target, base, task, title, model, effort: effortOpt, permissionMode: permissionOpt, harness, strategy = undefined, routing = null, instructions: suppliedInstructions = undefined, instructionsReuse = undefined, dryRun, stepName = REVIEWER, contextPurpose, contextDeclaration, taskIdentity, preparedContext, contextPreflightOnly = false } = {}) {
+    const host = hostOf(rootOrHost);
+    const stepKind = roleEntry(registryOf(host), stepName)?.kind;
+    if (stepKind !== READS_DIFF)
+        throw new GateError(`step ${stepName} is ${stepKind ?? 'unknown'}, not ${READS_DIFF}`);
+    const ownerStep = pipelineOf(host)[0];
+    // LIFT driver — the one the person asks to start with. Its option dictionary is not asked yet: an
+    // opened reviewer has its own harness, and a foreign dictionary would let a stray value through.
+    const lifter = liftHarness(host, harness);
+    // Both sides of the comparison are in canonical native form: git prints `C:/…` on Windows and
+    // realpath strips `/var` ↔ `/private/var` on macOS, or the prefix check falsely refuses.
+    const root = realpathSync(host.workspaceRoot());
+    // The repository path is required — there is no resolve from `cwd`. The gate stands first: before
+    // the diff, `createTask` and the lift.
+    if (!String(target ?? '').trim()) {
+        // The hint repeats the call FLAGS, not the parsed values: `--effort` is parsed below, after the
+        // participant driver, and this gate is the very first.
+        throw new GateError(missingTarget(host, { task, title, base, model, effort: effortOpt, harness, dryRun }));
+    }
+    const resolved = resolveRepoDir(target);
+    if (resolved.refusal)
+        return { refusal: resolved.refusal };
+    const { targetDir, repoDir } = resolved;
+    if (!host.inWorkspace(repoDir)) {
+        // The target is inside the zone and its git-toplevel is above: a group folder with nested
+        // clones, not a clone — an "outside" refusal here would confuse.
+        if (host.inWorkspace(targetDir)) {
+            throw new GateError(host.reviewLayoutError('not-clone', { targetDir, repoDir }));
+        }
+        throw new GateError(host.reviewLayoutError('outside', { repoDir }));
+    }
+    // Which clone that is and how it is named — the host's answer: zones and
+    // namespace depth are its layout, not the package's.
+    const clone = host.cloneOf(repoDir);
+    if (!clone)
+        throw new GateError(host.reviewLayoutError('no-clone', { repoDir }));
+    const nsPath = clone.nsPath;
+    const home = canonicalPath(host.promptobusHome());
+    if (task && !taskExists(home, task))
+        throw new GateError(`there is no task ${task}`);
+    // A closed task is a legal entry for nobody, and an explicit `--task` is not a bypass. Without the
+    // flag, pickup looks at active tasks and will not choose a closed one.
+    if (task && readTask(home, task).status === 'done') {
+        throw new GateError(`task ${task} is closed — nobody for the reviewer to report to: `
+            + `\`${host.busCommand(['status'])}\` lists the active ones, and \`${host.busCommand(['done'])}\` cleanup sweeps worktree directories of all closed tasks, `
+            + 'so the next close would pull the worktree out from under a live session. '
+            + 'A new run — review without --task and with --title: without a name the command will not open a task. '
+            + 'If the directory is listed as a worktree of an active task — without --task it will pick that one up, not open a new one. '
+            + 'Review into another live one — name it with --task, just not this id. '
+            + `There is nothing to continue work in a closed task with: ${host.busCommand(['done'])} has no undo.`);
+    }
+    // Without `--task` the subject names the task: a directory listed as a participant worktree of an
+    // active task takes that one, and the branch point with it; otherwise a task of its own opens.
+    const claiming = task ? [] : claimingTasks(ownerStep, home, repoDir, stepName);
+    if (claiming.length > 1) {
+        throw new GateError(`directory is listed in several active tasks at once (${claiming.map((t) => t.id).join(', ')})`
+            + ' — the command will not choose for the person: name the one you want, --task <id>');
+    }
+    const existing = task ?? claiming[0]?.id ?? null;
+    // The owner gate sits ON TOP of directory pickup: a directory listed in a task bound to ANOTHER
+    // session would otherwise have its reviewer report to a foreign orchestrator.
+    if (!task && existing) {
+        const own = ownership(home, existing, ORCHESTRATOR, sessionIdentity());
+        if (own.gated) {
+            throw new GateError(`directory ${repoDir} is listed as a worktree of a participant of a foreign run: `
+                + `${foreignTaskLine(readTask(home, existing), own)}. A reviewer started from here will report `
+                + 'to its orchestrator, and copies marked FOREIGN_MARK will arrive here. '
+                + `Review by agreement with the owner — name the task explicitly: --task ${existing}. `
+                + `${claimRoute(host.busCommand(['review']))}`);
+        }
+    }
+    // We warn about the other active ones only where we open our own.
+    const otherActive = existing ? [] : activeTasks(home).map((t) => t.id);
+    // The command does not invent a task name: opening a new one means naming it, and the session is
+    // called by that name. Checked below, once there is something to review.
+    const identity = existing ? null : taskIdentity ?? newTaskIdentity(slugify(String(title ?? '').trim()));
+    const taskId = existing ?? identity.id;
+    // Plan shape is journal shape, the same `readTask` returns: slug and stamp sit
+    // in `adapter`.
+    const createNew = existing ? null : {
+        id: taskId,
+        title: String(title ?? '').trim(),
+        status: 'active',
+        adapter: {
+            ...(identity.slug ? { slug: identity.slug } : {}),
+            ...(identity.stamp ? { stamp: identity.stamp } : {}),
+        },
+        participants: [],
+    };
+    const taskMeta = (createNew ?? readTask(home, taskId));
+    // Whose subject this is: a directory listed as a participant worktree is reviewed FOR them — the
+    // address and the diff base come from them, and the main clone has no owner.
+    const titleIgnored = !!(existing && String(title ?? '').trim());
+    const { owner, slug, address } = reviewerFor(ownerStep, taskMeta, repoDir, clone, stepName);
+    requireStepResults(host, { home, taskId, taskMeta, stepName, slug, repoDir });
+    // Mechanism fields sit in the v1 record `metadata`: address, branch point and
+    // slice title.
+    const attachmentSeat = owner ? null : approverSeat(taskMeta, repoDir, clone.abs);
+    const baseOwner = owner ?? attachmentSeat?.owner ?? null;
+    const ownerFields = baseOwner?.metadata ?? {};
+    const ownerAddress = baseOwner ? addressOf(baseOwner) : null;
+    const approverBeside = owner ? approversAt(taskMeta, repoDir) : null;
+    const reviewed = baseOwner;
+    const reviewedAddress = reviewed ? addressOf(reviewed) : null;
+    // Diff base: `--base` is strongest, then the branch point spawn wrote, then a guess from the LOCAL
+    // default branch. The recorded point is checked against HEAD history, since a branch may be rebased.
+    const isWorktree = repoDir !== clone.abs;
+    const recorded = base ? null : ancestorOfHead(repoDir, ownerFields.baseSha);
+    // The main clone is still computed from the default branch: merge-base with itself would give HEAD
+    // and an empty diff, and reviewing unpushed work is a legal move.
+    const defBranch = base || !isWorktree ? null : localDefault(repoDir, host);
+    const computed = defBranch ? mergeBase(repoDir, defBranch) : null;
+    // The computed base is worse than the recorded one in two cases: a rewritten default branch, and a
+    // worker branch already merged — merge-base then equals HEAD and the diff is empty.
+    const head = headOf(repoDir);
+    // Matching HEAD is not enough: on a fresh worktree HEAD equals the default tip and the recorded
+    // point equals both, where "already merged" would be a lie.
+    const mergedIntoDefault = !!computed && !!head && computed === head && computed !== recorded;
+    const rewound = !!computed && !!recorded && computed !== recorded && !isAncestor(repoDir, recorded, computed);
+    const live = (mergedIntoDefault || rewound) && recorded ? null : computed;
+    let baseRef;
+    let baseSource;
+    if (base) {
+        baseRef = base;
+        baseSource = 'set by --base';
+    }
+    else if (live) {
+        baseRef = live;
+        // A mismatch of recorded and computed bases is named out loud in the same
+        // line: the base shift is visible from it, not from the size of the diff.
+        baseSource = recorded === live ? `worktree branch point of ${ownerAddress}`
+            : recorded ? `merge-base with ${defBranch} at review time; recorded point ${recorded} was left behind — ${defBranch} was merged into the worker branch`
+                : `merge-base with ${defBranch} at review time`;
+    }
+    else if (recorded) {
+        baseRef = recorded;
+        baseSource = mergedIntoDefault
+            ? `worktree branch point of ${ownerAddress}; work already merged into ${defBranch}`
+            : rewound
+                ? `worktree branch point of ${ownerAddress}; ${defBranch} was rewritten, merge-base with it moved back`
+                : `worktree branch point of ${ownerAddress}`;
+    }
+    else {
+        baseRef = detectBase(repoDir);
+        baseSource = 'repository default branch';
+    }
+    // The base is named out loud — one line for command output, the prompt and the
+    // re-review message.
+    const baseLine = baseRef
+        ? `diff base: ${baseRef} (${baseSource})`
+        : 'diff base: not determined — only uncommitted work is reviewed';
+    // Mechanical gate: the condition looks at the SOURCE of the base, not at which fields the record
+    // has — a record with a worktree but no baseSha would fall through both conditions.
+    const warnings = [];
+    // An empty diff on a merged branch and on an untouched one look the same — after the merge the
+    // default branch points at the same tip. The command names the fact, not a guess.
+    if (isWorktree && !base && mergedIntoDefault && !recorded) {
+        warnings.push(`HEAD of this branch matches ${defBranch}: there is no work on top of it — `
+            + 'the worker has either committed nothing yet, or its branch was already merged. '
+            + 'To review earlier work — pass --base <branch-point sha>');
+    }
+    if (isWorktree && !base && !live && !recorded) {
+        const why = !baseOwner
+            ? (task ? `in the journal of task ${task} it is listed for nobody`
+                : 'this directory is listed in no active task')
+            : ownerFields.baseSha
+                ? `recorded point ${ownerFields.baseSha} is not in HEAD history — the branch was rebased or the commit is not in the clone`
+                : `record ${ownerAddress} has no branch point, it was made by a former CLI`;
+        warnings.push(`the target is a worktree, but there is nowhere to take the branch point from (${why}), `
+            + `and computing it from the local default branch failed: ${baseLine} — foreign work may enter the diff. `
+            + `Pass --task <id of the worker task> or --base <branch-point sha>`);
+    }
+    if (!baseRef)
+        warnings.push('base branch is not determined — only uncommitted work is reviewed (pass --base <ref>)');
+    // Git reads are checked separately, since each depends on the last. Patch, stat and raw records
+    // come from one diff queue, and the comparison after it never reads the moving tree again.
+    const from = baseRef ? git(repoDir, ['merge-base', baseRef, 'HEAD']) : { out: 'HEAD' };
+    if (from.refusal)
+        return { refusal: from.refusal };
+    const diffFrom = from.out;
+    const diffOut = snapshotDiff(repoDir, diffFrom, head);
+    if (diffOut.refusal)
+        return { refusal: diffOut.refusal };
+    const { diff, stat, modifiedTracked } = diffOut;
+    const others = git(repoDir, ['ls-files', '--others', '--exclude-standard']);
+    if (others.refusal)
+        return { refusal: others.refusal };
+    const untracked = others.out.split('\n').filter(Boolean);
+    // The diff file is a ONE-TIME snapshot: the worker goes on committing while the reviewer reads.
+    // What the reviewer needs is its age and whether the tracked tree matched HEAD, so all three travel.
+    const snapshot = {
+        at: new Date().toISOString(),
+        head: head ?? null,
+        clean: modifiedTracked.length === 0,
+        modifiedTracked,
+    };
+    snapshot.line = `diff snapshot: ${snapshot.at}${snapshot.head ? `, worktree HEAD ${snapshot.head}` : ''}, `
+        + (snapshot.clean ? 'tracked tree clean' : `tracked tree dirty (modified tracked paths: ${snapshot.modifiedTracked.join(', ')})`);
+    const participant = participantOf(taskMeta, address);
+    const selectedContext = prepareNativeContext(host, { root: repoDir, role: REVIEWER, taskId,
+        options: { contextPurpose, contextDeclaration }, participant, preparedSelection: preparedContext });
+    assertNativeContextDriver(selectedContext, participant ? driverOf(participant) : lifter);
+    if (contextPreflightOnly)
+        return { taskIdentity: identity, participant, selectedContext };
+    const contacts = contactsOf(home, taskId, address, { registry: registryOf(host), seats: [{
+                meta: createNew ? { ...createNew, participants: [participantRecord(ORCHESTRATOR)] } : taskMeta,
+                sender: participant ?? participantRecord(address, {}, registryOf(host)),
+            }] });
+    const was = participant?.metadata ?? {};
+    // The participant name from the journal is not rewritten: the session was started under it, and
+    // re-review finds it by that line. The title is taken from the worktree owner.
+    const name = (was.name ?? sessionName(taskMeta, {
+        slug: stepName === REVIEWER ? slug : `${stepName}-${slug}`,
+        reviewer: true,
+        title: ownerFields.title,
+        taken: (taskMeta.participants ?? []).map((p) => p.metadata.name).filter(Boolean),
+    }));
+    // Re-review goes to the participant only if its bg-session is alive: after a stop the message
+    // would sit in the mailbox forever. Unknown — the diff goes to the former address.
+    const sessions = participant ? snapshotOf([participant]) : null;
+    const sessionState = participant ? participantSession(participant, sessions) : null;
+    const lastResultId = sessionState === 'dead'
+        ? strictTaskFacts(home, taskId).messages.filter((m) => m.sender === participant.id && m.type === 'result')
+            .map((m) => m.id).sort().at(-1)
+        : null;
+    const priorFindings = lastResultId ? journalMessageBody(home, taskId, lastResultId, 'review') : null;
+    // A record BEFORE start makes "the reviewer is in the journal" true even for one that never
+    // lifted. `pending` is what is read, not `participant.session`: a live one may have no field either.
+    const unlaunched = !!was.pending && sessionState !== 'alive';
+    const reuse = !!participant && sessionState !== 'dead' && !unlaunched;
+    const instructions = suppliedInstructions === undefined || (instructionsReuse !== undefined && instructionsReuse !== reuse)
+        ? readGateInstructions(host, stepName, reuse ? was.gateInstructions : null) : suppliedInstructions;
+    // --effort applies to session lift, not to re-review: recreating loses finding context.
+    // A module may declare a review procedure — a skill from its composition. An absolute path is
+    // enough: skill materials resolve by ordinary read, and no plugin load is needed.
+    const moduleHit = host.resolveRepoModule(repoDir);
+    const declaredSkill = moduleHit?.meta?.review?.skill;
+    let skill = null;
+    if (declaredSkill) {
+        const dir = selectedContext ? selectedContext.skills.find(entry => entry.name === declaredSkill).root : host.reviewSkillDir(declaredSkill, repoDir);
+        if (!existsSync(path.join(dir, 'SKILL.md'))) {
+            throw new GateError(`module ${moduleHit.name} declared review skill "${declaredSkill}", but ${dir} is not laid out — ${host.syncHint()}`);
+        }
+        const shared = path.join(path.dirname(dir), '_shared');
+        skill = { name: declaredSkill, module: moduleHit.name, dir, shared: !selectedContext && existsSync(shared) ? shared : null };
+    }
+    // A name is required only when a task will actually be opened, and an empty SLUG is not an absent
+    // name: a non-latin title slugs to nothing, and refusing there would loop.
+    if (createNew && !identity.slug && (diff.trim() || untracked.length)) {
+        if (!createNew.title) {
+            throw new GateError(`review of ${nsPath} opens a new task, and it has no name: `
+                + 'name it — --title "<whose work we are looking at>". '
+                + `Reviewing work of the worker on an active task — name that instead: --task <id>`);
+        }
+        warnings.push(`name "${createNew.title}" does not translate into an id slug (only `
+            + `latin letters and digits go in) — the task id stayed a machine stamp ${taskId}. `
+            + `The name is kept in full in the task journal and in the reviewer session name`);
+    }
+    // Driver from the registry before any journal write, as with worker spawn, and routing in the same
+    // place: a strategy with no candidate must leave no task, no diff file and no participant behind.
+    const recordedDriver = participant ? driverOf(participant) : null;
+    // Gone is the measured `dead` state. Unknown is the driver not answering, and it is not gone.
+    const sessionGone = sessionState === 'dead';
+    const harnessChange = !!(participant && harness && recordedDriver && harness !== recordedDriver.id);
+    if (harnessChange && sessionState === 'alive') {
+        throw new GateError(harnessChangeRefusal(host, {
+            address, taskId, from: recordedDriver.id, to: harness, sessionState: 'alive',
+        }));
+    }
+    if (harnessChange && !sessionGone) {
+        throw new GateError(harnessChangeRefusal(host, {
+            address, taskId, from: recordedDriver.id, to: harness, sessionState,
+            participant, driver: recordedDriver, sessions,
+        }));
+    }
+    const rebind = harnessChange && sessionGone;
+    const routed = participant ? null : decideLift(routing, { taskMeta, address });
+    // The line is owed to `--strategy`, not to a context: a skip that only spoke once the preflight
+    // had been paid for would be silent exactly where it matters.
+    const routingSkipped = participant && strategy
+        ? (rebind
+            ? `${address} in task ${taskId} is being re-bound from harness ${recordedDriver.id} to ${harness}: `
+                + '--strategy routes a lift, and --harness names the tool. The flag is ignored here.'
+            : `${address} in task ${taskId} is already in the journal, started by harness ${participant.harness}: `
+                + '--strategy routes a lift, and this call sends a new diff to a reviewer whose harness is already '
+                + 'fixed. The flag is ignored here.')
+        : null;
+    const driver = (rebind ? lifter : (participant ? recordedDriver : (routed ? liftHarness(host, routed.harness) : lifter)));
+    assertNativeContextDriver(selectedContext, driver);
+    // Legal flag values — the dictionary of THIS participant's driver; a foreign one would let a level
+    // through as a model-id suffix. A routed lift's effort goes through the same gate.
+    const effort = resolveEffort(routed ? (routed.effort ?? undefined) : effortOpt, driver);
+    // Without the flag the reviewer starts on the binary's mode — its rights are cut by tool stripping
+    // in the settings file, and the flag is for one lift, like `--effort`.
+    const permissionMode = resolvePermissionMode(permissionOpt, driver, null);
+    const diffPath = path.join(filesDir(home, taskId), diffName(home, taskId, slug, stepName));
+    const gateRecords = gateRecordPaths(home, taskId);
+    const handoverRecords = recordPaths(home, taskId, HANDOVER_RECORD_STEM);
+    const attachments = attachmentSeat?.kind === 'several' ? null : attachedFiles(home, taskId, reviewed);
+    const approverFiles = !approverBeside || approverBeside.kind === 'several'
+        ? null : attachedFiles(home, taskId, approverBeside.owner);
+    const rules = contextRules(selectedContext, () => host.collectRules(repoDir));
+    // Base rules and the diff sit outside the reviewer working directory, and a read outside it is
+    // asked about: without `--add-dir` the reviewer stalls on its own first instruction. No write rights.
+    const ruleDirs = [...new Set(rules.map((f) => path.dirname(f)))];
+    const addDirs = [...new Set([...ruleDirs, path.dirname(diffPath)])];
+    const prompt = buildPrompt({ taskId, nsPath, repoDir, address, stepName, instructions, diffPath, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles, rules, skill, driver, host, contacts, priorFindings }) + nativeContextPrompt(selectedContext);
+    const reReview = buildReReview({ diffPath, repoDir, stepName, instructions, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles });
+    const settingsPath = participantSettingsPath(home, taskId, address);
+    const guardCommand = guardHookCommand(host, { address, taskId, home }, process.platform);
+    // Not every harness takes a skills directory — the same rule as for the worker.
+    const pluginDir = !selectedContext && driver.options.skillsDir ? participantPluginDir(host, repoDir) : null;
+    // Canonical MCP list — the same path as for the worker: read-only is held by tool stripping.
+    const mcpConfigPath = participantMcpPath(home, taskId, address);
+    const mcp = participantMcp(host, { address, taskId, home, repoDir }, driver);
+    const declaredServers = Object.keys(mcp.descriptor.servers ?? {})
+        .filter((server) => server !== PROMPTOBUS_SERVER);
+    const deny = reviewerDenyTools(host, driver, declaredServers, stepName, repoDir);
+    const denyTools = deny.tools;
+    // The lift plan is assembled by the driver, as with worker spawn: same settings plus stripped
+    // tools, the same loop-guard command, default permission mode, and the driver's default model.
+    const resolvedModel = routed?.model ?? model ?? driver.options.defaultModel;
+    const commonEnv = { ...process.env, ...host.extraEnv() };
+    const liftEnv = driver.sessionEnv(commonEnv);
+    const launch = driver.prepare({
+        ref: name,
+        address,
+        task: taskId,
+        home,
+        role: REVIEWER,
+        env: liftEnv,
+        mcp: mcp.descriptor,
+        prompt,
+        cwd: repoDir,
+        model: resolvedModel,
+        effort,
+        permissionMode,
+        addDirs,
+        readFiles: [...rules, ...(selectedContext ? selectedContext.resources.map(resource => resource.path) : [])],
+        readSkillDirs: selectedContext ? selectedContext.skills.map(entry => entry.root) : skill ? [skill.dir, ...(skill.shared ? [skill.shared] : [])] : [],
+        pluginDir,
+        mcpConfigPath,
+        settingsPath,
+        guardCommand,
+        denyTools,
+        extraSettings: selectedContext ? {} : skillSettings(host, repoDir), selectedContext,
+        root,
+        skillsRoot: selectedContext ? null : participantSkillsRoot(host, repoDir),
+    });
+    return {
+        home, taskId, createNew, taskIdentity: identity, selectedContext, otherActive, slug, stepName, address, name, nsPath, repoDir, baseRef, baseLine, snapshot, gateRecords, handoverRecords, attachments, ownerAddress, reviewedAddress, attachmentSeat, approverBeside, approverFiles, owner, warnings,
+        diff, untracked, stat,
+        participant, sessionState, reuse, unlaunched, titleIgnored, rebind: rebind ? { from: recordedDriver.id, to: harness } : null,
+        skill, rules, ruleDirs, addDirs, diffPath, prompt, reReview, instructions, contacts, priorFindings,
+        module: host.moduleNote(repoDir), pluginDir,
+        settingsPath, guardCommand, mcpConfigPath, mcpNote: mcpNote(mcp, 'the reviewer'),
+        launch, argv: launch.argv, mcpConfig: launch.mcpConfig, settings: launch.settings,
+        model: resolvedModel, effort, permissionMode, driver,
+        refusal: deny.refusal,
+        routing: routed?.metadata ?? null, decision: routed?.decision ?? null, routingSkipped,
+        // Environment is a plan field: `--dry-run` prints what the real start executes. No bus identity
+        // in it — that reaches the reviewer as arguments of the Stop-hook command.
+        env: liftEnv, commonEnv,
+        host,
+    };
+}
+// Mail piled up in the orchestrator's own mailbox is shown here too: a notification may not have
+// arrived. A task opened by this same call gets no counter — its mailbox is empty by construction.
+function warnUnread(plan) {
+    if (plan.createNew)
+        return;
+    const note = unreadNote(plan.home, plan.taskId, ORCHESTRATOR, sessionIdentity());
+    if (note)
+        warn(note);
+}
+/** Where the reviewer actually sits, printed on a real lift as well as in `--dry-run`: the repository
+ * under review is NOT the session's working directory. One function for both prints, so they cannot drift. */
+function sayReviewerHome(plan) {
+    if (!plan.launch.cwd || plan.launch.cwd === plan.repoDir)
+        return;
+    info(`reviewer home: ${plan.launch.cwd} — the reviewed directory is attached read-only`);
+}
+function sayRebind(plan) {
+    if (!plan.rebind)
+        return;
+    info(`reviewer ${plan.address} re-bound from harness ${plan.rebind.from} to ${plan.rebind.to}: `
+        + 'the previous session is gone, and this lift starts a new one');
+}
+function warnDirtySnapshot(plan) {
+    if (plan.snapshot.clean)
+        return;
+    warn(`the diff snapshot was taken from a dirty tracked tree (${plan.snapshot.modifiedTracked.join(', ')}): `
+        + 'the snapshot can omit committed content or include uncommitted content');
+}
+export async function review(rootOrHost, opts = {}) {
+    const host = hostOf(rootOrHost);
+    const kind = opts.approver ? WRITES_MAIN_TREE : READS_DIFF;
+    const found = pipelineOf(host).slice(1).find((gate) => gate.kind === kind);
+    if (!found) {
+        throw new GateError(`review${opts.approver ? ' --approver' : ''} has no ${kind} gate in the declared pipeline: `
+            + `${pipelineOf(host).map((gate) => gate.name).join(' → ')}`);
+    }
+    return step(host, { ...opts, stepName: found.name, alias: true });
+}
+export async function step(rootOrHost, opts = {}) {
+    const host = hostOf(rootOrHost);
+    const gates = pipelineOf(host).slice(1);
+    const selected = gates.find((gate) => gate.name === opts.stepName);
+    if (!selected) {
+        throw new GateError(`step ${opts.stepName ?? '<name>'} is not a gate in the declared pipeline: `
+            + `${pipelineOf(host).map((gate) => gate.name).join(' → ')}`);
+    }
+    if (!opts.alias && !opts.task) {
+        throw new GateError(`step ${selected.name} requires --task <id> for the declared pipeline`);
+    }
+    if (opts.brief !== undefined && selected.kind !== WRITES_MAIN_TREE) {
+        throw new GateError(opts.alias
+            ? '--brief is the approver\'s assignment and is refused without --approver: '
+                + 'a reviewer\'s subject is the diff, and it arrives with the lift.'
+            : `--brief requires a writes-main-tree gate; step ${selected.name} is ${selected.kind}.`);
+    }
+    info(`step ${selected.name} (${selected.kind})`);
+    if (selected.kind === WRITES_MAIN_TREE) {
+        const { approverLift } = await import('./approver.js');
+        return approverLift(host, { ...opts, stepName: selected.name });
+    }
+    return reviewLift(host, { ...opts, stepName: selected.name });
+}
+async function reviewLift(rootOrHost, opts) {
+    const host = hostOf(rootOrHost);
+    const wanted = effectiveStrategy(host, { strategy: opts?.strategy });
+    if (!String(opts.target ?? '').trim()) {
+        throw new GateError(missingTarget(host, {
+            task: opts.task, title: opts.title, base: opts.base, model: opts.model,
+            effort: opts.effort, harness: opts.harness, dryRun: opts.dryRun,
+        }));
+    }
+    const participant = reviewerInJournal(host, {
+        target: opts.target, task: opts.task, stepName: opts.stepName,
+    });
+    const selectedMode = typeof host.selectParticipantContext === 'function' || opts.contextPurpose !== undefined
+        || opts.contextDeclaration !== undefined || participant?.metadata?.participantContext;
+    const preliminary = selectedMode ? planReview(host, { ...opts, contextPreflightOnly: true }) : null;
+    const state = participant ? participantSession(participant, snapshotOf([participant])) : null;
+    const reuse = !!participant && state !== 'dead' && !(participant.metadata?.pending && state !== 'alive');
+    const instructions = readGateInstructions(host, opts.stepName, reuse ? participant.metadata?.gateInstructions : null);
+    const routing = !wanted ? null : await (async () => {
+        // A reviewer already in the journal fixes its own harness: nothing to route, nothing to pay a
+        // preflight for. The plan still says the flag was ignored — it reads `--strategy`, not the context.
+        if (participant)
+            return null;
+        return routingContext(host, {
+            role: opts.stepName,
+            strategy: wanted.strategy,
+            strategySource: wanted.source === 'flag' ? null : wanted.source,
+            harness: opts.harness,
+            model: opts.model,
+            effort: opts.effort,
+            allowPayg: opts.allowPayg,
+            refresh: opts.refresh,
+            dryRun: opts.dryRun,
+            // Test seam, like `opts.tool`: the suite routes against stand-in adapters
+            // rather than starting a harness binary. The CLI never sets it.
+            adapterFor: opts.adapterFor,
+            liftUnrated: true,
+        });
+    })();
+    const outcome = planReview(host, { ...opts, routing, instructions, instructionsReuse: reuse,
+        taskIdentity: preliminary?.taskIdentity, preparedContext: preliminary?.selectedContext });
+    if (outcome.routingSkipped)
+        warn(outcome.routingSkipped);
+    if (outcome.routing)
+        info(routingLine(outcome.routing));
+    // A plan refusal is printed and the command exits: `fail()` lives here, not in
+    // the plan.
+    if (outcome.refusal && !outcome.reuse)
+        fail(outcome.refusal);
+    // A re-review keeps the running session and the denies it launched with; the
+    // regressed host answer is said, not swallowed — a new lift would refuse.
+    else if (outcome.refusal)
+        warn(`${outcome.refusal} The running reviewer keeps the deny list it was launched with; this re-review proceeds.`);
+    // The refusal-only result cannot pass the fail branch above.
+    const plan = outcome;
+    // The binary is resolved lazily: the command has three early returns without
+    // lift. `opts.tool` is a seam.
+    let toolCache = null;
+    let liftProvenance = null;
+    // The binary name is named by the driver: the command has none of its own.
+    const harnessTool = () => (toolCache ??= withToolVersion(plan.driver, plan.host, normalizeLaunchTool(plan.driver, opts.tool ?? plan.host.resolveToolBin(plan.driver.options.tool), plan.env)));
+    // Base warnings come before any fork: on an empty diff the base is suspicious first.
+    for (const w of plan.warnings)
+        warn(w);
+    if (!plan.diff.trim() && plan.untracked.length === 0) {
+        ok(`no changes — nothing to review (${plan.baseLine} · ${plan.snapshot.line})`);
+        warnDirtySnapshot(plan);
+        warnUnread(plan);
+        return plan;
+    }
+    if (opts.dryRun) {
+        info(`repository: ${plan.nsPath} → ${plan.repoDir} · ${plan.baseLine} · ${plan.snapshot.line}`);
+        warnDirtySnapshot(plan);
+        info(`task: ${plan.taskId}${plan.createNew ? ` (will be created: ${plan.createNew.title})` : ''}${titleNote(plan)}`);
+        // Name from the journal, not rebuilt: on a former-CLI task they will not match.
+        const sessionShown = plan.reuse ? plan.participant.metadata.name ?? plan.name : plan.name;
+        info(`reviewer address: ${plan.address}${ownerNote(plan)} · session: "${sessionShown}"${modelNote(plan)}${effortNote(plan)}${participantNote(plan)}`);
+        sayRebind(plan);
+        if (plan.decision)
+            sayDecision(plan.decision);
+        info(`procedure: ${plan.skill ? `skill ${plan.skill.name} (module ${plan.skill.module})` : 'built-in (the module did not declare a review skill)'}`);
+        sayReviewerHome(plan);
+        info(`reviewer rules:`);
+        for (const f of plan.rules)
+            console.log(`  ${f}`);
+        sayModule(plan);
+        // The server list, not the whole config: it holds substituted tokens.
+        info(`reviewer MCP (${plan.mcpConfig.mcpServers ? Object.keys(plan.mcpConfig.mcpServers).length : 0}):`);
+        for (const line of mcpServerLines(plan.mcpConfig))
+            console.log(`  ${line}`);
+        sayMcp(plan, { hint: false });
+        // We do not ask the binary version in `--dry-run`: nothing is started, and
+        // the probe is a process.
+        info(dryRunToolNote(plan.driver));
+        info(`workspace skills: ${skillsNote(plan)}`);
+        info(guardHookNote(plan));
+        info(sessionEnvNote(plan.driver, plan.host));
+        // A driver whose session environment is REDIRECTED rather than merely stripped says where to:
+        // the dropped-variable line on its own reads as "the harness default will be used".
+        if (plan.launch?.envNote)
+            info(plan.launch.envNote);
+        // The same line and reason as spawn: the session name the binary invents is nothing `--dry-run`
+        // can print, and it says so out loud.
+        if (plan.driver.phrases.naming)
+            info(`harness session name: ${plan.driver.phrases.naming}`);
+        info('prompt:');
+        console.log(plan.reuse ? plan.reReview : plan.prompt);
+        warnSecondTask(plan);
+        ok('dry-run: nothing written to disk, reviewer not started');
+        return plan;
+    }
+    // Checked with the binary BEFORE the first write to disk: a version refusal would otherwise leave
+    // an opened task, a diff file and a `pending` record. Re-review does not need the binary.
+    if (!plan.reuse) {
+        // Read-only is asked FIRST and before any write: a harness that cannot strip
+        // tools would start a session with write access to the reviewed tree.
+        const noDeny = denyToolsRefusal(plan.driver);
+        if (noDeny)
+            fail(noDeny);
+        const t = harnessTool();
+        sayTool(t, { reason: false });
+        if (!t.ok)
+            fail(t.reason);
+        // Version gate is shared with the worker: if the refusals diverged, the
+        // reviewer would silently sit on default effort.
+        const ultra = optionRefusal(plan.driver, plan.effort, t, plan.host);
+        if (ultra)
+            fail(ultra);
+        liftProvenance = launchProvenance(plan.host, t);
+        info(provenanceLine(liftProvenance));
+    }
+    // What the diff was computed from and who we review for — out loud on the real run too.
+    if (plan.titleIgnored)
+        info(titleNote(plan).replace(/^ · /, ''));
+    info(`reviewer address: ${plan.address}${ownerNote(plan)} · ${plan.baseLine} · ${plan.snapshot.line}`);
+    sayRebind(plan);
+    warnDirtySnapshot(plan);
+    sayModule(plan);
+    // The MCP set is announced only where it actually goes: on re-review a live reviewer works with
+    // the OLD config, and the lines would describe a set that is not there.
+    if (!plan.reuse) {
+        sayMcp(plan);
+        sayReviewerHome(plan);
+        // Named on the real lift and not only in `--dry-run`: the canon travels as FILES, so whether it
+        // arrived is a fact about this lift, and the operator has no other way to see it.
+        info(`workspace skills: ${skillsNote(plan)}`);
+        info(`reviewer rules:`);
+        for (const f of plan.rules)
+            console.log(`  ${f}`);
+    }
+    if (plan.createNew) {
+        createTask(plan.home, plan.createNew);
+        ok(`task ${plan.taskId}: ${plan.createNew.title}`);
+        warnSecondTask(plan);
+    }
+    const reserve = () => {
+        const assignedAt = new Date().toISOString();
+        const harnessHistory = harnessHistoryForLift(plan.participant, plan.rebind, assignedAt, plan);
+        return reserveNativeParticipant(plan.home, plan.taskId, participantRecord(plan.address, {
+            ...nativeContextMetadata(plan.selectedContext),
+            // Harness of the record — the one that starts it, the same rule as for the worker.
+            harness: plan.driver.id,
+            repo: plan.nsPath,
+            repoAbs: plan.repoDir,
+            model: plan.model,
+            ...(plan.effort ? { effort: plan.effort } : {}),
+            // The routing decision rides in `metadata`, as for the worker: the field is opaque to the core,
+            // and `status` reads it back through the accessor rather than into the map.
+            ...(plan.routing ? { [ROUTING_FIELD]: plan.routing } : {}),
+            name: plan.name,
+            sessionRef: plan.name,
+            session: null,
+            started: assignedAt,
+            reviewAssignedAt: assignedAt,
+            ...(plan.instructions ? { gateInstructions: plan.instructions } : {}),
+            ...(harnessHistory.length ? { harnessHistory } : {}),
+            tokenLogHistory: plan.rebind ? [] : tokenLogHistoryOf(plan.host, plan.home, plan.taskId, plan.participant),
+            // Which snapshot this reviewer holds — the same state `stampSnapshot` patches on
+            // a re-review.
+            diffAt: plan.snapshot.at,
+            ...(plan.snapshot.head ? { diffHead: plan.snapshot.head } : {}),
+            diffClean: plan.snapshot.clean,
+            diffModifiedTracked: plan.snapshot.modifiedTracked,
+            pending: true,
+            mechanismPath: liftProvenance.mechanismPath,
+            mechanismPathIssue: liftProvenance.mechanismPathIssue,
+            mechanismVersion: plan.host.version,
+            packagePath: liftProvenance.packagePath,
+            packageVersion: liftProvenance.packageVersion,
+            packageIssue: liftProvenance.packageIssue,
+            hostVersion: liftProvenance.hostVersion,
+            binaryPath: liftProvenance.binaryPath,
+            binaryVersion: liftProvenance.binaryVersion,
+        }, registryOf(plan.host)), plan.participant, REGISTRY);
+    };
+    const reserved = !plan.reuse ? reserve() : null;
+    let record, tool;
+    try {
+        // The reviewer is alive — we send it a new diff: re-review in the same context checks findings.
+        if (plan.reuse) {
+            return withTaskLock(plan.home, plan.taskId, () => {
+                const meta = readTask(plan.home, plan.taskId), current = participantOf(meta, plan.address);
+                if (meta.status !== 'active' || !current)
+                    throw new GateError('review participant is no longer active');
+                requireCurrentNativeLaunch(current, plan.participant);
+                if (!plan.createNew)
+                    bindIfOwner(plan.home, plan.taskId);
+                handOverContactPoints(plan.home, { env: process.env });
+                retargetDiff(plan, writeDiff(path.dirname(plan.diffPath), plan.slug, plan.diff, plan.stepName));
+                if (plan.sessionState === 'unknown') {
+                    warn(`liveness of the reviewer session ${plan.address} cannot be confirmed (${plan.driver.phrases.unreadable}) — the diff goes to the former address; if there is no report — check the session: ${plan.driver.phrases.sessions}`);
+                }
+                if (plan.instructions && !current.metadata?.gateInstructions) {
+                    upsertParticipant(plan.home, plan.taskId, {
+                        ...current,
+                        metadata: { ...current.metadata, gateInstructions: plan.instructions },
+                    });
+                }
+                stampReviewAssignment(plan.home, plan.taskId, plan.address, null);
+                const sent = sendMessage(plan.home, plan.taskId, {
+                    from: ORCHESTRATOR, to: plan.address, type: 'task', body: plan.reReview,
+                }, {
+                    status: plan.host.busCommand(['status']),
+                });
+                stampReviewAssignment(plan.home, plan.taskId, plan.address, sent.message.id, sent.message.ts);
+                // The record now holds THIS snapshot: a re-review does not rewrite the participant, and without
+                // the patch `status` would show the first snapshot for the whole review.
+                stampSnapshot(plan.home, plan.taskId, plan.address, plan.snapshot);
+                ok(`reviewer ${plan.address} is already on the bus — new diff sent ${plan.diffPath}`);
+                // A new assignment puts the participant back under watch: this branch does not rewrite the
+                // record, and a dismissed one would sit silently.
+                if (watchParticipant(plan.home, plan.taskId, plan.address).was) {
+                    info('participant was dismissed from watch — the new assignment put them back: a stop of this session will be reported again');
+                }
+                info(waitHint('the reply', plan.taskId));
+                warnUnread(plan);
+                return plan;
+            });
+        }
+        // The owner bind and contact handoff precede launch files so the first reply has a route.
+        if (!plan.createNew)
+            bindIfOwner(plan.home, plan.taskId);
+        handOverContactPoints(plan.home, { env: process.env });
+        retargetDiff(plan, writeDiff(path.dirname(plan.diffPath), plan.slug, plan.diff, plan.stepName));
+        // A dead session cannot receive a re-review. Its last result travels in the initial prompt.
+        if (plan.unlaunched) {
+            // Not a single word about a dead session is true here: this reviewer was never started.
+            warn(`record of the reviewer ${plan.address} is left from a failed start (pending), liveness cannot be confirmed — nobody to send a re-review to`);
+            warn(`starting the reviewer again with the full prompt: it has no prior context, it looks at the diff from a clean slate`);
+        }
+        else if (plan.participant) {
+            warn(`session of the reviewer ${plan.address} is dead (it is not among the live ones in ${plan.driver.phrases.sessions}) — nobody to send a re-review to`);
+            if (plan.priorFindings !== null) {
+                warn(`starting a new reviewer with the full prompt: prior findings are included for closure checks first`);
+            }
+            else {
+                warn(`starting a new reviewer with the full prompt: prior findings left with the session, it looks at the diff from a clean slate`);
+            }
+        }
+        // The participant is written to the journal BEFORE the lift, the same order as for the worker, and
+        // the record is laid by the registry: an unknown-harness refusal arrives before the journal entry.
+        if (!plan.reuse)
+            clearThroughputSidecar(plan.home, plan.taskId, plan.address);
+        ({ record } = reserved ?? reserve());
+        if (plan.driver.id === 'codex')
+            plan.launch.launchId = record.metadata.nativeLaunchId;
+        const grantResources = plan.driver.id === 'codex'
+            ? plan.launch.files.filter(file => file.path !== plan.launch.mcpConfigPath) : [];
+        if (grantResources.length)
+            writeLaunchFiles(grantResources, plan.driver.options.launchDirs);
+        plan.env = (await finalizeManagedServiceLaunch(plan.host, {
+            ...plan, task: plan.taskId, ref: plan.name, cwd: plan.repoDir,
+        })).env;
+        plan.mcpConfig = plan.launch.mcpConfig;
+        writeLaunchFiles(plan.launch.files.filter(file => !grantResources.includes(file)), plan.driver.options.launchDirs);
+        tool = harnessTool();
+    }
+    catch (error) {
+        return revokeFailedManagedLaunch(plan.launch, error, () => {
+            if (reserved)
+                releaseNativeReservation(plan.home, plan.taskId, reserved.record);
+        });
+    }
+    // Start and the "session lifted" check — a helper shared with the worker inside the driver.
+    const { output, session, seen } = await plan.driver.spawn(plan.launch, {
+        tool: tool,
+        // Address, task and bus home go to the driver TOGETHER with the plan: a harness whose wake
+        // channel the mechanism drives has to hand contact points to its own machinery.
+        home: plan.home,
+        // The workspace interface travels with them: a lift refused on a limit spent between the
+        // preflight and this launch is marked in the availability cache, whose file the host names.
+        host: plan.host,
+        task: plan.taskId,
+        address: plan.address,
+        cwd: plan.repoDir,
+        env: plan.env,
+        ref: plan.name,
+        role: REVIEWER,
+        launchFailNote: launchFailureNote(plan),
+        // Re-lift route of the reviewer is its own: `promptobus review` starts it, it has no worktree.
+        deadNote: deadSessionNote(plan),
+        unboundNote: unboundSessionNote(plan),
+        // The `pending` mark is cleared only by a successful lift: otherwise a repeat would take the
+        // record for a live reviewer and send a re-review into an empty mailbox.
+        persist: (id, state, sessionId) => {
+            // Cleared EXPLICITLY: it entered with the first upsert, and `applyParticipant` replaces the
+            // participant whole, so a surviving mark would pass a started reviewer off as unstarted.
+            const { pending, ...rest } = record.metadata;
+            const sessionRecord = participantOf(readTask(plan.home, plan.taskId), plan.address)?.metadata?.sessionRecord;
+            if (plan.driver.id === 'codex') {
+                return persistNativeParticipant(plan.home, plan.taskId, record, { session: id ?? null,
+                    ...(sessionId ? { sessionId } : {}), pending: state === 'dead' });
+            }
+            return persistLegacyParticipant(plan.home, plan.taskId, {
+                ...record,
+                metadata: {
+                    ...rest,
+                    session: id ?? null,
+                    ...(sessionId ? { sessionId } : {}),
+                    ...(sessionRecord ? { sessionRecord } : {}),
+                    ...(state === 'dead' ? { pending: true } : {}),
+                },
+            });
+        },
+        awaitOptions: opts.awaitOptions,
+    }).catch(error => revokeFailedManagedLaunch(plan.launch, error));
+    ok(`reviewer ${plan.address} started in ${plan.nsPath}${session ? ` (session ${session})` : ''}`);
+    // The warden is started right after the participant: without it the reviewer would not learn about
+    // a message — it fetches the mailbox only on its own turn.
+    await ensureWarden(plan.home, plan.taskId, { host: plan.host });
+    plan.driver.saidLiftoff({ name: plan.name, seen, session, output });
+    info(waitHint('the report', plan.taskId));
+    // Print the re-review command in full so the task id does not have to be fished from the output.
+    const repeat = plan.stepName === REVIEWER
+        ? ['review', `"${plan.repoDir}"`, `--task ${plan.taskId}`]
+        : ['step', plan.stepName, `"${plan.repoDir}"`, `--task ${plan.taskId}`];
+    info(`new diff to this same reviewer: ${plan.host.busCommand(repeat)}`);
+    warnUnread(plan);
+    return plan;
+}
+// What survived a failure — one line for both refusals. A task opened by this call has no worktree
+// participant, so a repeat without `--task` will not pick it up: the refusal names the orphan.
+function keptNote(plan) {
+    return ` Task ${plan.taskId} and the participant record ${plan.address} are in place; the diff is saved in ${plan.diffPath}.`;
+}
+// Start succeeded and there is no session: run the same command again and it picks the task up by
+// `--task`. Cleanup is named as the alternative, for a review that was dropped.
+function deadSessionNote(plan) {
+    const repeat = plan.stepName === REVIEWER
+        ? ['review', `"${plan.repoDir}"`, `--task ${plan.taskId}`]
+        : ['step', plan.stepName, `"${plan.repoDir}"`, `--task ${plan.taskId}`];
+    return `${keptNote(plan)} Start the reviewer again: ${plan.host.busCommand(repeat)}.`
+        + ' There will be no messages from this address — waiting for them is pointless.'
+        + (plan.createNew ? ` If you dropped the review — close the task: ${plan.host.busCommand(['done', `--task ${plan.taskId}`])}` : '');
+}
+// The session is alive and cannot report: stop it by its record, then lift again.
+function unboundSessionNote(plan) {
+    const repeat = plan.stepName === REVIEWER
+        ? ['review', `"${plan.repoDir}"`, `--task ${plan.taskId}`]
+        : ['step', plan.stepName, `"${plan.repoDir}"`, `--task ${plan.taskId}`];
+    return `${keptNote(plan)} Stop it — its record is the only handle: ${plan.host.busCommand(['stop', plan.address, `--task ${plan.taskId}`])},`
+        + ` then start the reviewer again: ${plan.host.busCommand(repeat)}.`;
+}
+function launchFailureNote(plan) {
+    const kept = keptNote(plan);
+    return plan.createNew
+        ? `${kept} This is an active orphan task: the reviewer was not started, and the next call without --task will not pick it up. `
+            + `Close it: ${plan.host.busCommand(['done', `--task ${plan.taskId}`])}`
+        : `${kept} The reviewer was not started; the task stays active.`;
+}
+// A review task of our own beside a foreign active one means several active, and resolving "the
+// single active one" refuses — better learnt here than on the next call.
+function warnSecondTask({ createNew, otherActive, taskId, host }) {
+    if (!createNew || !otherActive.length)
+        return;
+    const many = otherActive.length > 1;
+    warn(`${many ? 'other tasks are also active' : 'another task is also active'} ${otherActive.join(', ')} — there will be several active: `
+        + 'commands will need --task, bus tools will need the task argument');
+    info(`when you finish the review — close its task: ${host.busCommand(['done', `--task ${taskId}`])}`);
+}
+// Model and effort in dry run: on re-review argv is not executed, and printing the flag as applied
+// would be a lie. "The session is already alive" is not asserted when liveness is unconfirmed.
+function notApplied({ reuse, sessionState }) {
+    if (!reuse)
+        return '';
+    return sessionState === 'unknown'
+        ? ' (not applied — the diff will go to the former address)'
+        : ' (not applied — the session is already alive)';
+}
+// A name given together with --task: the task already exists, and the title is taken from its journal.
+function titleNote({ titleIgnored, taskId }) {
+    return titleIgnored ? ` · --title is not applied — the name is taken from the journal of task ${taskId}` : '';
+}
+function modelNote(plan) {
+    return ` · model: ${plan.model}${notApplied(plan)}`;
+}
+function effortNote(plan) {
+    return plan.effort ? ` · requested effort: ${plan.effort}${notApplied(plan)}` : '';
+}
+// Whose worktree we review — a note on the address: otherwise "why the reviewer
+// is not named like the repository" is found by reading the code.
+function ownerNote({ owner }) {
+    return owner ? ` (by the worker ${addressOf(owner)})` : '';
+}
+// Task participant whose worktree is this directory, compared by canonical paths — the target went
+// through realpath and the journal stores the spawn path. A participant without `worktree` owns nothing.
+export function worktreeOwner(ownerStep, taskMeta, repoDir) {
+    if (ownerStep.kind !== EDITS_TREE)
+        return null;
+    return (taskMeta.participants ?? [])
+        .find((p) => p.role === ownerStep.name && p.metadata?.worktree
+        && canonical(p.metadata.worktree) === repoDir) ?? null;
+}
+// The declared owner's worktree wins first. Otherwise the approver's own worktree is the seat.
+export function approverSeat(taskMeta, repoDir, cloneRoot) {
+    if (!cloneRoot)
+        return null;
+    const root = canonical(cloneRoot);
+    const here = canonical(repoDir);
+    return seatFrom((taskMeta.participants ?? []).filter((p) => {
+        if (p.role !== APPROVER)
+            return false;
+        if (p.metadata?.worktree)
+            return canonical(p.metadata.worktree) === here;
+        const recorded = p.metadata?.reviewSubject ?? p.metadata?.repoAbs;
+        if (here !== root || !recorded)
+            return false;
+        const rec = canonical(recorded);
+        return rec === root || rec.startsWith(`${root}${path.sep}`);
+    }));
+}
+// Approvers whose recorded repository is this directory. The worker still owns the subject.
+function approversAt(taskMeta, repoDir) {
+    const here = canonical(repoDir);
+    return seatFrom((taskMeta.participants ?? []).filter((p) => {
+        if (p.role !== APPROVER)
+            return false;
+        const recorded = p.metadata?.reviewSubject ?? p.metadata?.repoAbs;
+        return !!recorded && canonical(recorded) === here;
+    }));
+}
+// The latest lift is the seat. A tie, or a record with no readable started stamp, picks nobody.
+function seatFrom(matches) {
+    if (!matches.length)
+        return null;
+    const detail = matches.map((p) => {
+        const started = p.metadata?.started;
+        const address = addressOf(p);
+        return started ? `${address} (started ${started})` : address;
+    }).join(', ');
+    if (matches.length === 1)
+        return { kind: 'one', owner: matches[0], detail };
+    const parsed = matches.map((p) => {
+        const started = p.metadata?.started;
+        return typeof started === 'string' ? Date.parse(started) : NaN;
+    });
+    if (parsed.some((n) => Number.isNaN(n)))
+        return { kind: 'several', detail };
+    const max = Math.max(...parsed);
+    const tops = matches.filter((_, i) => parsed[i] === max);
+    if (tops.length !== 1)
+        return { kind: 'several', detail };
+    return { kind: 'latest', owner: tops[0], detail, picked: addressOf(tops[0]) };
+}
+// Active tasks whose journal lists the target as a participant worktree or a reviewer's repository.
+// Belonging is asked of the journal, not of a name; `repo` is not checked — `repoAbs` is exact.
+function claimingTasks(ownerStep, home, repoDir, stepName = REVIEWER) {
+    return activeTasks(home).filter((t) => worktreeOwner(ownerStep, t, repoDir)
+        || (t.participants ?? []).some((p) => p.role === stepName
+            && p.metadata.repoAbs && canonical(p.metadata.repoAbs) === repoDir));
+}
+// The directory may already be gone (task closed, worktree removed) — the path from the journal is absolute.
+function canonical(p) {
+    try {
+        return realpathSync(p);
+    }
+    catch {
+        return path.resolve(p);
+    }
+}
+// Local default branch: merge-base with it gives where the worker work actually starts. The LOCAL
+// branch is what must exist — the orchestrator's unpushed work is not in the remote.
+function localDefault(repoDir, host) {
+    const exists = (br) => gitIn(repoDir, ['rev-parse', '--verify', '-q', `refs/heads/${br}`]).status === 0;
+    const named = host.defaultBranch(repoDir);
+    // A name with no local branch under it gives no base from here, and the ladder does not help: the
+    // worker branched from `origin/<name>`, not from a random local branch.
+    if (named)
+        return exists(named) ? named : null;
+    // No origin refs in the clone at all: spawn then takes `HEAD` as the base. The local ladder keeps
+    // the same order as the freshen path, or the answers would diverge.
+    return ['master', 'main'].find(exists) ?? null;
+}
+// Questions to git about the diff base use the shared low-level helper, not the wrappers: those take
+// the whole plan with a refusal, and here a refusal is a legal answer.
+function mergeBase(repoDir, ref) {
+    const r = gitIn(repoDir, ['merge-base', ref, 'HEAD']);
+    if (r.error || r.status !== 0)
+        return null;
+    return (r.stdout ?? '').trim() || null;
+}
+function isAncestor(repoDir, sha, ref) {
+    const r = gitIn(repoDir, ['merge-base', '--is-ancestor', sha, ref]);
+    return !r.error && r.status === 0;
+}
+function headOf(repoDir) {
+    const r = gitIn(repoDir, ['rev-parse', 'HEAD']);
+    if (r.error || r.status !== 0)
+        return null;
+    return (r.stdout ?? '').trim() || null;
+}
+// Whether the recorded branch point lies in HEAD history: the sha, or `null` for "cannot be
+// trusted". The reasons need not be told apart — the rollback from them is one.
+function ancestorOfHead(repoDir, sha) {
+    if (!sha)
+        return null;
+    return isAncestor(repoDir, sha, 'HEAD') ? sha : null;
+}
+// Slug from a participant address — inverse of workerAddress/reviewerAddress (store.js).
+function addressSlug(address) {
+    const addr = String(address ?? '');
+    return addr.slice(addr.indexOf(':') + 1);
+}
+// What `--dry-run` says about an already opened reviewer, by the same three-valued session state the
+// real start uses to choose between re-review and a new spawn.
+function participantNote({ participant, sessionState, unlaunched }) {
+    if (!participant)
+        return '';
+    // A record before start is not "already on the bus": the real run in this
+    // state will start a new reviewer, and print must say the same.
+    if (unlaunched)
+        return ' · record was made before start, the reviewer was not started — a new one will start';
+    if (sessionState === 'dead')
+        return ' · was on the bus, but its session is dead — a new reviewer will start';
+    if (sessionState === 'unknown')
+        return ' · already on the bus, session liveness is not confirmed — a new diff will go';
+    return ' · already on the bus — a new diff will go';
+}
+// Refusal of `promptobus review` without a path. The repository of the current directory lands here
+// only as hint text: the command does not execute it, it names it.
+function missingTarget(host, { task, title, base, model, effort, harness, dryRun }) {
+    const head = `repository path is required: ${host.busCommand(['review', '<path>'])} [--task <id> | --title <name>].`
+        + '\n    There is no resolve from the current directory for this command: a workspace has dozens of clones side by side,'
+        + ' and the current directory is almost never the one being talked about.';
+    const ask = `\n    ${host.reviewLayoutError('ask-path')}`;
+    const here = cwdRepo(host);
+    // The repository is named, not the directory: git-toplevel is what is returned, and a nested path
+    // would have a person read about a directory they are not standing in.
+    if (!here)
+        return `${head}\n    The current directory is not in a git repository.${ask}`;
+    // A ready command only where the next gate will accept it: a hint `planReview` rejects right away
+    // costs the person two repeats instead of one.
+    if (!here.nsPath) {
+        return `${head}\n    The repository of the current directory is ${here.dir}, but it ${host.reviewLayoutError('cwd-outside')}.${ask}`;
+    }
+    const arg = (v) => (/[\s"]/.test(v) ? JSON.stringify(v) : v);
+    const flags = [
+        ...(task ? ['--task', arg(task)] : []),
+        ...(String(title ?? '').trim() ? ['--title', arg(String(title).trim())] : []),
+        ...(base ? ['--base', arg(base)] : []),
+        ...(model ? ['--model', arg(model)] : []),
+        ...(effort ? ['--effort', effort] : []),
+        // The lift tool rides in the hint on a par with the other flags: a repeat without it would start
+        // the reviewer with the wrong harness from the one that was talked about.
+        ...(harness ? ['--harness', arg(harness)] : []),
+        ...(dryRun ? ['--dry-run'] : []),
+    ];
+    return `${head}\n    The repository of the current directory is ${here.nsPath} (${here.dir}).`
+        + '\n    That is the review subject — repeat with it:'
+        + `\n      ${host.busCommand(['review', `"${here.dir}"`])}${flags.length ? ` ${flags.join(' ')}` : ''}`
+        + '\n    If the subject is different — name its path yourself.';
+}
+// The clone the current process directory resolves into — only for the refusal above.
+function cwdRepo(host) {
+    const r = gitIn(process.cwd(), ['rev-parse', '--show-toplevel']);
+    if (r.error || r.status !== 0 || !r.stdout?.trim())
+        return null;
+    let dir;
+    try {
+        dir = realpathSync(path.resolve(r.stdout.trim()));
+    }
+    catch {
+        return null;
+    }
+    return { dir, nsPath: host.cloneOf(dir)?.nsPath ?? null };
+}
+// A refusal is a `refusal` field, the same outcome as `git()`. Target and git-toplevel both return:
+// `planReview` chooses how to refuse by their mismatch.
+export function resolveRepoDir(target) {
+    const start = path.resolve(target);
+    const r = gitIn(start, ['rev-parse', '--show-toplevel']);
+    if (r.error || r.status !== 0)
+        return { refusal: `${start}: not a git repository` };
+    // On Windows git prints the path with forward slashes — path.resolve returns the native form.
+    return { targetDir: realpathSync(start), repoDir: realpathSync(path.resolve(r.stdout.trim())) };
+}
+function detectBase(repoDir) {
+    const head = gitIn(repoDir, ['symbolic-ref', '-q', 'refs/remotes/origin/HEAD']);
+    if (!head.error && head.status === 0)
+        return (head.stdout ?? '').trim().replace('refs/remotes/', '');
+    const current = gitIn(repoDir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    if (current.error || current.status !== 0)
+        return null;
+    const cur = (current.stdout ?? '').trim();
+    for (const ref of ['origin/main', 'origin/master', 'main', 'master']) {
+        // A local branch cannot be a base for itself. Exact comparison: on local main the `origin/main`
+        // candidate must NOT be skipped — unpushed commits are a legal review subject.
+        if (cur === ref)
+            continue;
+        const r = gitIn(repoDir, ['rev-parse', '--verify', '-q', ref]);
+        if (!r.error && r.status === 0)
+            return ref;
+    }
+    return null;
+}
+// Records a worker attached, resolved rather than described. The files folder holds
+// every worker's files and every review round's — a reviewer told "a JSON file" finds many.
+function recordPaths(home, taskId, stem) {
+    const dir = filesDir(home, taskId);
+    const re = new RegExp(`^${stem}-[^.]*\\.json$`);
+    try {
+        return readdirSync(dir).filter((n) => re.test(n)).sort().map((n) => path.join(dir, n));
+    }
+    catch {
+        // No folder yet and no record are one verdict: the reviewer is told there is none.
+        return [];
+    }
+}
+// What a landed name claims to be, for the attachment list: the two records keep their own
+// blocks below, and everything else is named `other` rather than dropped.
+function recordKind(filename) {
+    if (isGateRecordName(filename))
+        return 'gate record';
+    if (isHandoverRecordName(filename))
+        return 'handover record';
+    return 'other';
+}
+// Every file the reviewed address attached, taken from the JOURNAL — which binds sender to
+// artifact — and not from a name pattern. `null`: this subject has no reviewed address at all.
+function attachedFiles(home, taskId, owner) {
+    if (!owner)
+        return null;
+    const dir = filesDir(home, taskId);
+    const { files, broken } = attachmentsOf(home, taskId, owner.id);
+    return {
+        files: files.map(({ filename, at }) => ({ path: path.join(dir, filename), at, kind: recordKind(filename) })),
+        broken,
+    };
+}
+const gateRecordPaths = (home, taskId) => recordPaths(home, taskId, GATE_RECORD_STEM);
+// Diff file stem — one home for it: the name is both PREDICTED (`diffName`) and written
+// (`writeDiff`), and a stem spelled twice is a stem that drifts.
+function diffStem(slug, stepName = REVIEWER) {
+    return `${stepName === REVIEWER ? 'review' : stepName}-${slug}`;
+}
+// Diff file name by slug and number. The numbering itself is the task files folder's
+// (`numberedName`): the same one an artifact that arrived through the bus gets.
+function diffFile(slug, n, stepName = REVIEWER) {
+    return numberedName(diffStem(slug, stepName), '.diff', n);
+}
+// The diff sits in task artifacts, where both the reviewer and a person see it. An occupied name
+// gets a number — the previous must not be overwritten. Here the name is only PREDICTED.
+function diffName(home, taskId, slug, stepName = REVIEWER) {
+    const dir = filesDir(home, taskId);
+    let n = 1;
+    while (existsSync(path.join(dir, diffFile(slug, n, stepName))))
+        n += 1;
+    return diffFile(slug, n, stepName);
+}
+// Diff write that occupies the name by the write itself: between `existsSync` and the write a second
+// review of the same slug would slip in. Returns the path that LANDED on disk; exported for the test.
+export function writeDiff(dir, slug, content, stepName = REVIEWER) {
+    return occupyTaskFile(dir, diffStem(slug, stepName), '.diff', content);
+}
+// The diff path sits in three places of the plan, rebuilt from the path that landed. Called
+// UNCONDITIONALLY: the "name moved forward" branch happens only in a race.
+function retargetDiff(plan, diffPath) {
+    const { taskId, nsPath, repoDir, address, stepName, instructions, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles, rules, skill, driver, host, contacts, priorFindings } = plan;
+    plan.diffPath = diffPath;
+    plan.prompt = buildPrompt({ taskId, nsPath, repoDir, address, stepName, instructions, diffPath, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles, rules, skill, driver, host, contacts, priorFindings });
+    plan.reReview = buildReReview({ diffPath, repoDir, stepName, instructions, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles });
+}
+// The contract the worker and approver preambles quote, and the list it promises. Built from the
+// journal, so a file the author attached cannot be missing here however the author labelled it.
+function attachmentEvidence(attachments, reviewedAddress, at, attachmentSeat) {
+    if (attachmentSeat?.kind === 'several') {
+        return `${ATTACHMENT_CONTRACT} These approvers recorded this subject: ${attachmentSeat.detail}. `
+            + 'The path matches more than one and there is no single latest lift, so this subject does not pick a reviewed address and no attachment list is built.';
+    }
+    const seat = attachmentSeat?.kind === 'one'
+        ? `This subject selects ${reviewedAddress} as its recorded approver. `
+        : attachmentSeat?.kind === 'latest'
+            ? `These approvers recorded this subject: ${attachmentSeat.detail}. The reviewed address is ${attachmentSeat.picked}, the latest lifted; the list below is only that address's. `
+            : '';
+    if (!attachments) {
+        return `${ATTACHMENT_CONTRACT} This subject is not a participant worktree, so no address here is `
+            + 'the reviewed one and no such list is built.';
+    }
+    // The list is read at plan time, like the diff beside it: what arrives later is not in it, and
+    // saying so is the difference between a stale list and one the reader can trust.
+    const short = attachments.broken.length
+        ? `\n${attachments.broken.length} artifact record(s) of that address could not be read, so the list `
+            + `may be short: ${attachments.broken.join('; ')}.`
+        : '';
+    if (!attachments.files.length) {
+        return `${ATTACHMENT_CONTRACT} ${seat}${reviewedAddress} attached nothing as of ${at}, and that is the `
+            + 'whole list rather than a gap in it. A file attached after that moment reaches you only with a '
+            + `re-review.${short}`;
+    }
+    return `${ATTACHMENT_CONTRACT} ${seat}${reviewedAddress} attached these as of ${at}, in send order — path, type, time:\n`
+        + attachments.files.map((a) => `- ${a.path} — ${a.kind} — ${a.at}`).join('\n')
+        + '\nRead the ones your findings depend on. Reporting that a claim has nothing behind it while a file '
+        + 'above carries it is a false finding — a probe transcript attached as `other` is still the probe. '
+        + `A file attached after that moment reaches you only with a re-review.${short}`;
+}
+// The worker owns a worktree subject. Approvers who recorded that same path are listed after.
+function approverBesideEvidence(seat, files, at) {
+    if (!seat)
+        return '';
+    if (seat.kind === 'several') {
+        return `\nApprovers recorded at this worktree: ${seat.detail}. The worker still owns the subject, so the list above is the worker's. `
+            + 'There is no single latest lift, so no approver attachment list is built.';
+    }
+    const address = addressOf(seat.owner);
+    const lead = seat.kind === 'latest'
+        ? `Approvers recorded at this worktree: ${seat.detail}. The worker still owns the subject. The approver list is ${seat.picked}, the latest lifted. `
+        : `The approver ${address} recorded this worktree. The worker still owns the subject. `;
+    const short = files?.broken?.length
+        ? `\n${files.broken.length} artifact record(s) of that address could not be read, so the list may be short: ${files.broken.join('; ')}.`
+        : '';
+    if (!files?.files?.length) {
+        return `\n${lead}${address} attached nothing as of ${at}, and that is the whole approver list rather than a gap in it.${short}`;
+    }
+    return `\n${lead}${address} attached these as of ${at}, in send order — path, type, time:\n`
+        + files.files.map((a) => `- ${a.path} — ${a.kind} — ${a.at}`).join('\n')
+        + short;
+}
+// What the record covers, said where the reviewer reads the snapshot: a matching sha is a
+// statement about the COMMIT, and the subject can hold more than the commit does.
+function gateEvidence(gateRecords, snapshot, untracked) {
+    if (!gateRecords.length) {
+        return 'No gate record is attached to this task: the author\'s gate claim has nothing behind it. '
+            + 'Say so in the report — that is not a refusal and not a green.';
+    }
+    const outside = [
+        ...(snapshot.clean ? [] : ['the tracked tree was dirty at snapshot time']),
+        ...(untracked.length ? ['the subject includes untracked files, which no commit holds'] : []),
+    ];
+    return `Gate records attached to this task, read them:\n${gateRecords.map((f) => `- ${f}`).join('\n')}\n`
+        + 'Use the one whose `tree` equals the worktree HEAD named above — several can be here because this folder holds '
+        + 'every worker\'s files and every review round\'s, and the sha is what tells them apart. None matching that sha '
+        + 'means no record covers this tree. A matching record is a statement about the COMMIT at that sha and about '
+        + `nothing else${outside.length ? `, and here it is already narrower than the subject: ${outside.join('; ')}` : ''}.`;
+}
+// The second record: what makes the gate run mean anything. Its absence is stated, never
+// left to be inferred — the whole point of the form is that a missing check is not a pass.
+function handoverEvidence(handoverRecords) {
+    if (!handoverRecords.length) {
+        return 'No handover record is attached to this task: none of the five pre-handover checks has anything '
+            + 'behind it. Say so in the report — that is not a refusal and not a green. The one subject where its '
+            + 'absence is expected rather than a gap is an approver\'s hand-off: the record is the WORKER\'s, and an '
+            + 'approver carries only its own gate record.';
+    }
+    return `Handover records attached to this task, read them:\n${handoverRecords.map((f) => `- ${f}`).join('\n')}\n`
+        + 'Use the one whose `tree` equals the worktree HEAD named above — several can be here because this folder holds '
+        + 'every worker\'s files and every review round\'s, and the sha is what tells them apart. None matching that sha '
+        + 'means no record covers this tree, and that is a gap to name rather than a green. Each record carries five checks '
+        + `(${HANDOVER_CHECKS.join(', ')}); a check that says \`notRun\` was not performed, and a record whose `
+        + 'check is missing altogether says less than one that admits it. Name which checks are absent or `notRun` '
+        + 'in the report — you run nothing, so what the record does not claim is what nobody checked. '
+        + 'A `mutationProbe` with no `expected` is the one PRESENT check that still claims less than it looks: '
+        + 'the field naming what the probe was made to redden is optional, and without it `reddened` cannot be told '
+        + 'from a probe that reddened something else. Name its absence too — deleting the field is the cheapest way '
+        + 'out of a refusal over it, and that leaves no trace anywhere else. '
+        + 'A present `treeLag` is named together with both shas — the record\'s `tree` and `checks.mutationProbe.tree`. '
+        + 'That probe is not a probe of HEAD: do not take the record as covering the tree being accepted. '
+        + 'Hand the orchestrator the command `git log --oneline <probe.tree>..<tree> -- <mutated file> <files of the tests in reddened>`, whose empty output is what supports the reason. '
+        + 'A performed `mutationProbe` carries `coverage`: `establishes` and `doesNotEstablish`. '
+        + 'Name a performed probe that has neither. From the release that ships `coverage` that absence is a record the bus should have refused; before that release it is the seam, and it is not a narrow probe. '
+        + 'A present `coverage` is the boundary: do not read `reddened` as proof of what `doesNotEstablish` names. '
+        + '`notRun` is not that boundary, and a mutation that reddens nothing is not saved by writing one.';
+}
+function subject({ diffPath, repoDir, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles }) {
+    const treeState = snapshot.clean
+        ? 'At snapshot time the tracked tree was clean.'
+        : `At snapshot time the tracked tree was dirty; modified tracked paths: ${snapshot.modifiedTracked.join(', ')}. `
+            + 'This can fail in both directions: content committed at HEAD can be absent from the snapshot because the tree was mid-edit, '
+            + 'and uncommitted content can be present although nothing committed it.';
+    return `The diff is in the file ${diffPath} (read it in full); ${baseLine}. What lies outside this boundary is not a review subject.
+The file is a SNAPSHOT taken at ${snapshot.at} against that base${snapshot.head ? `, from worktree HEAD ${snapshot.head}` : ''} — it is written once and never updated, while the author goes on committing. Everything committed after that moment is missing from it. The current state is the working copy ${repoDir} itself: before reporting a finding, open the file there and check that the line is still as the snapshot shows it — a review of a stale file reports closed findings as open. Make this check whether the tracked-tree state below is clean or dirty: the working copy can change after either snapshot. If the working copy contradicts the snapshot, do not run Git and do not file a finding; report the discrepancy as unresolved and hand the orchestrator the exact verification command \`git show <sha> -- <path>\`, substituting the worktree HEAD named above and the path in question. A fresh diff file comes as a re-review; ask the orchestrator for one, the same command re-snapshots.
+${treeState}
+Change summary:
+${stat || '(new files only)'}
+${untracked.length ? `\nNew untracked files (paths relative to the repository, read them):\n${untracked.map((f) => `- ${f}`).join('\n')}` : ''}
+
+${attachmentEvidence(attachments, reviewedAddress, snapshot.at, attachmentSeat)}${approverBesideEvidence(approverBeside, approverFiles, snapshot.at)}
+
+${gateEvidence(gateRecords, snapshot, untracked)}
+
+${handoverEvidence(handoverRecords)}`;
+}
+function procedure(skill, reviewerCommands) {
+    return renderReviewProcedure(skill, reviewerCommands);
+}
+function buildPrompt({ taskId, nsPath, repoDir, address, stepName, instructions, diffPath, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles, rules, skill, driver, host, contacts, priorFindings }) {
+    const bus = (name) => toolName(driver, PROMPTOBUS_SERVER, name, host);
+    const findings = priorFindings === null ? '' : '\n\n## Prior reviewer findings\n\n'
+        + 'Check these findings for closure first, then review the rest of the diff. '
+        + 'The previous reviewer\'s last result follows unchanged:\n\n' + priorFindings;
+    return renderReviewerInstructions({ taskId, nsPath, repoDir, address, stepName, rules,
+        reviewSubject: subject({ diffPath, repoDir, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles }) + findings,
+        instructionsSection: gateInstructionsSection(instructions), procedureText: procedure(skill, driver.phrases.reviewerCommands),
+        bindings: { tools: Object.fromEntries(['promptobus_send', 'promptobus_mailbox', 'promptobus_task'].map(name => [name, bus(name)])), mcpBoundary: driver.phrases.mcpBoundary, reviewerCommands: driver.phrases.reviewerCommands,
+            externalReads: `You have the whole canonical workspace set, and every name is pre-approved: nobody will ask you for permission, and there is no person behind the session who would refuse. Read as much as you need — an event contract, a task card, a merge request diff, a metric, a fact from team memory.`,
+            communication: `the MCP server tools ${PROMPTOBUS_SERVER} (it is already attached to this session): ${bus('promptobus_send')}, ${bus('promptobus_mailbox')}, ${bus('promptobus_task')}`,
+            memory: memoryRule(driver, host), contacts: contactsSection(contacts, bus('promptobus_task')),
+            wait: "You have nothing to wait with and no need to: the task mailboxes are listened to by the bus warden, and it wakes you with a postcard when you are written to.", close: 'A person closes the session.',
+            operationalRules: driver.phrases.promptRulesFor?.(REVIEWER) ?? driver.phrases.promptRules, },
+    });
+}
+// Re-review message: the reviewer already has the context (rules, skill, isolation).
+function buildReReview({ diffPath, repoDir, stepName, instructions, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles }) {
+    return `Re-review: the author sent a new version of the changes.
+
+Step ${stepName}.
+
+${gateInstructionsSection(instructions)}${subject({ diffPath, repoDir, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles })}
+
+First check your prior findings against the new diff — which are closed, which are not, then look at what else changed. The report is promptobus_send {to:"orchestrator", type:"result", body:"..."} as before.`;
+}
+// `core.quotePath=false` on EVERY git call of this file: otherwise git gives non-ASCII paths in
+// octal escaping, and the reviewer gets names that are not on disk.
+const GIT_OPTS = ['-c', 'core.quotePath=false'];
+// The ordinary output ceiling is shared with the zone walk, and both wrappers share the git wait
+// ceiling. A timeout or overflow leaves no status, so the `error` branch names it.
+function git(repoDir, args) {
+    const r = spawnSync('git', ['-C', repoDir, ...GIT_OPTS, ...args], {
+        encoding: 'utf8', maxBuffer: PROC_MAX_OUTPUT, timeout: GIT_NET_TIMEOUT_MS,
+    });
+    if (r.error)
+        return { refusal: `git ${args.join(' ')}: ${r.error.message}` };
+    if (r.status !== 0)
+        return { refusal: `git ${args.join(' ')}: ${(r.stderr ?? '').trim() || `code ${r.status}`}` };
+    return { out: r.stdout.trim() };
+}
+// The ceiling here is its own and higher: the subject of the call is the diff itself. Output is not
+// trimmed — in a diff both the first and the last newline matter.
+function gitRaw(repoDir, args) {
+    const r = spawnSync('git', ['-C', repoDir, ...GIT_OPTS, ...args], {
+        encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, timeout: GIT_NET_TIMEOUT_MS,
+    });
+    if (r.error)
+        return { refusal: `git ${args.join(' ')}: ${r.error.message}` };
+    if (r.status !== 0)
+        return { refusal: `git ${args.join(' ')}: ${(r.stderr ?? '').trim() || `code ${r.status}`}` };
+    return { out: r.stdout };
+}
+// One git diff invocation gives the patch, stat and raw records off the same tracked-tree reads:
+// comparing them with the base-to-HEAD diff finds the race without opening the tree a second time.
+function snapshotDiff(repoDir, diffFrom, head) {
+    // A stat-only change can leave the worktree side of a raw record at 0000000 though the content
+    // still matches HEAD. Refresh the index stat data first, so the comparison is about content.
+    git(repoDir, ['update-index', '-q', '--refresh']);
+    const out = gitRaw(repoDir, ['diff', '--raw', '--stat', '--patch', diffFrom]);
+    if (out.refusal)
+        return out;
+    const patchAt = /^diff --(?:git|cc|combined) /m.exec(out.out)?.index ?? -1;
+    const prefix = patchAt < 0 ? out.out : out.out.slice(0, patchAt);
+    const diff = patchAt < 0 ? '' : out.out.slice(patchAt);
+    const prefixLines = prefix.split('\n');
+    const snapshotRecords = prefixLines.filter((line) => line.startsWith(':'));
+    const stat = prefixLines.filter((line) => line && !line.startsWith(':')).join('\n').trim();
+    if (!head)
+        return { diff, stat, modifiedTracked: [] };
+    const committed = gitRaw(repoDir, ['diff', '--raw', diffFrom, head]);
+    if (committed.refusal)
+        return committed;
+    const committedRecords = committed.out.split('\n').filter((line) => line.startsWith(':'));
+    const snapshotSet = new Set(snapshotRecords);
+    const committedSet = new Set(committedRecords);
+    const changedRecords = [
+        ...snapshotRecords.filter((line) => !committedSet.has(line)),
+        ...committedRecords.filter((line) => !snapshotSet.has(line)),
+    ];
+    const modifiedTracked = [...new Set(changedRecords.flatMap((line) => line.split('\t').slice(1)))].sort();
+    return { diff, stat, modifiedTracked };
+}

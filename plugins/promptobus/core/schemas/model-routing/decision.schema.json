@@ -1,0 +1,465 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:promptobus:model-routing:decision",
+  "title": "Routing decision",
+  "description": "The output of `promptobus models --json`, and the same document `spawn` and `review` keep in participant metadata. Stable from its first version: a golden fixture pins it before a resolver exists. It answers one question completely — why this tuple and not the others — so every candidate the resolver saw is here, chosen or excluded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "strategy", "role", "weights", "chosen", "candidates", "runtime", "warnings", "constraints", "overlays", "snapshot"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "strategy": {
+      "description": "The concrete strategy the resolver was given. `auto` is a skill decision and never appears here. `balance` is ADR-005's fifth: it answers which account to spend from rather than how to weigh a tuple, and it has no weight set of its own.",
+      "enum": ["quality", "balanced", "speed", "economy", "balance"]
+    },
+    "role": { "enum": ["worker", "reviewer", "approver"] },
+    "step": {
+      "description": "The pipeline step being routed. The role is the catalog role of its kind; older decisions may omit this additive field, and then the step is the role.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+    },
+    "qualityFloor": {
+      "description": "The effective soft floor used for this pick: an explicit value of the step declaration, otherwise the merged catalog-role floor. Older decisions may omit this additive field.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10
+    },
+    "weights": {
+      "description": "The weights actually used, after overlays. Published so a reader can divide a component by its weight and recover the normalised rating. Under `balance` these are the merged `balanced` weights, which is what that strategy orders tuples inside one harness by.",
+      "$ref": "urn:promptobus:model-routing:overlay#/$defs/weightSet"
+    },
+    "balance": {
+      "description": "The two numbers of the pace layer, in percentage points of a window, as they stood after overlays. Present exactly when the strategy is `balance`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["band", "spendUnit"],
+      "properties": {
+        "band": { "type": "number", "minimum": 0 },
+        "spendUnit": { "type": "number", "minimum": 0 }
+      }
+    },
+    "strategySource": {
+      "description": "Where the strategy came from when it was not named on the command line: `overlay:<layer>` for a merged `defaults.strategy`. Absent when `--strategy` was given, which always wins.",
+      "type": "string",
+      "minLength": 1
+    },
+    "chosen": {
+      "description": "null when nothing survived filtering. The command then exits with candidates-empty and writes no task, worktree or participant.",
+      "oneOf": [
+        { "$ref": "urn:promptobus:model-routing:decision#/$defs/tupleRef" },
+        { "type": "null" }
+      ]
+    },
+    "candidates": {
+      "description": "Every tuple the resolver considered, scored ones first by descending total, then excluded ones. The order is part of the contract: the text renderer prints this array as it stands.",
+      "type": "array",
+      "items": { "$ref": "urn:promptobus:model-routing:decision#/$defs/candidate" }
+    },
+    "runtime": {
+      "description": "Models the account exposes that the merged catalog does not rate. Shown, never selected automatically.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["harness", "model"],
+        "properties": {
+          "harness": { "type": "string", "minLength": 1 },
+          "model": { "type": "string", "minLength": 1 },
+          "flags": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "$ref": "urn:promptobus:model-routing:decision#/$defs/warningCode" },
+          "message": { "type": "string", "minLength": 1 },
+          "harness": {
+            "description": "Present on `near-limit`: the harness the line is about, so a one-line summary can name it without reading the message.",
+            "type": "string",
+            "minLength": 1
+          },
+          "usedPercent": {
+            "description": "Present on `near-limit`: the used percentage of that harness's binding window, as the snapshot carried it.",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          }
+        }
+      }
+    },
+    "constraints": {
+      "description": "What the caller pinned by hand. These are constraints on the resolver, never wishes: a named value is not replaced, and if it cannot be met the command fails instead of choosing something else.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["harness", "model", "effort", "allowPayg", "applied"],
+      "properties": {
+        "harness": { "type": ["string", "null"], "minLength": 1 },
+        "model": { "type": ["string", "null"], "minLength": 1 },
+        "effort": { "type": ["string", "null"], "minLength": 1 },
+        "allowPayg": { "type": "boolean" },
+        "applied": {
+          "description": "True when at least one of harness, model or effort narrowed the candidate list.",
+          "type": "boolean"
+        }
+      }
+    },
+    "overlays": {
+      "description": "The layers the host named, in the order they were merged, lowest precedence first. A layer whose file is missing is present here with applied:false — that is how a person sees the path they should create.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "path", "applied"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 1 },
+          "applied": { "type": "boolean" }
+        }
+      }
+    },
+    "harnesses": {
+      "description": "ADR-005: the availability facts behind this decision, one row per harness the snapshot carried — the tier and every window with its kind, scope, used percent and reset. OPTIONAL, so a decision assembled without a snapshot in reach stays valid; assembled by the command rather than by the resolver, which reads no disk. It is here rather than only in the text output because `render` prints the decision document and nothing else, and two outputs of one command that read different sources drift.",
+      "type": "array",
+      "items": { "$ref": "urn:promptobus:model-routing:decision#/$defs/harnessAvailability" }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["takenAt", "ageSec", "source"],
+      "properties": {
+        "takenAt": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
+        "ageSec": { "type": "integer", "minimum": 0 },
+        "source": {
+          "description": "mixed — some harnesses came from a live probe and some from the cache.",
+          "enum": ["probe", "cache", "mixed"]
+        },
+        "harnesses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["harness", "availability", "inventory", "windows"],
+            "properties": {
+              "harness": { "type": "string", "minLength": 1 },
+              "availability": { "$ref": "#/$defs/readingAge" },
+              "inventory": { "oneOf": [{ "$ref": "#/$defs/readingAge" }, { "type": "null" }] },
+              "windows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["id", "checkedAt", "ageSec", "source"],
+                  "properties": {
+                    "id": { "type": "string", "minLength": 1 },
+                    "checkedAt": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
+                    "ageSec": { "type": "integer", "minimum": 0 },
+                    "source": { "enum": ["probe", "cache", "manual"] }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "readingAge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checkedAt", "ageSec", "source"],
+      "properties": {
+        "checkedAt": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
+        "ageSec": { "type": "integer", "minimum": 0 },
+        "source": { "enum": ["probe", "cache", "manual"] }
+      }
+    },
+    "harnessAvailability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["harness", "state", "reason", "checkedAt", "source"],
+      "properties": {
+        "harness": { "type": "string", "minLength": 1 },
+        "state": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/state" },
+        "reason": {
+          "oneOf": [
+            { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/reason" },
+            { "type": "null" }
+          ]
+        },
+        "checkedAt": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
+        "source": { "enum": ["probe", "cache", "manual"] },
+        "tier": {
+          "oneOf": [
+            { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/tier" },
+            { "type": "null" }
+          ]
+        },
+        "plan": {
+          "description": "Effective plan: overlay answer when declared, otherwise the adapter tier; null when neither is known. A plan name alone has no numeric scoring effect.",
+          "oneOf": [
+            { "type": "null" },
+            { "type": "object", "additionalProperties": false, "required": ["name", "source"],
+              "properties": { "name": { "type": "string", "minLength": 1 }, "source": { "type": "string", "minLength": 1 } } }
+          ]
+        },
+        "capacity": {
+          "description": "Effective relative capacity by window kind; default 1 preserves the previous estimate. Source names the declaring overlay or default.",
+          "type": "object", "additionalProperties": false,
+          "required": ["session", "weekly", "monthly"],
+          "properties": {
+            "session": { "$ref": "#/$defs/capacitySetting" },
+            "weekly": { "$ref": "#/$defs/capacitySetting" },
+            "monthly": { "$ref": "#/$defs/capacitySetting" }
+          }
+        },
+        "credits": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/credits" },
+        "resetCredits": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/resetCredits" },
+        "poolWindowsUnbound": {
+          "description": "Retained Cursor pool windows remain visible but do not bind current models because auto-pool membership changed without new usable percentages.",
+          "type": "boolean"
+        },
+        "windows": {
+          "type": "array",
+          "items": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/window" }
+        }
+      }
+    },
+    "capacitySetting": {
+      "type": "object", "additionalProperties": false, "required": ["value", "source"],
+      "properties": {
+        "value": { "type": "number", "exclusiveMinimum": 0 },
+        "source": { "type": "string", "minLength": 1 }
+      }
+    },
+    "tupleRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tupleId", "harness", "model", "effort"],
+      "properties": {
+        "tupleId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$" },
+        "harness": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "effort": { "type": ["string", "null"], "minLength": 1 }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tupleId", "harness", "model", "effort", "availability", "score", "excluded", "chosen"],
+      "properties": {
+        "tupleId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$" },
+        "harness": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "effort": { "type": ["string", "null"], "minLength": 1 },
+        "availability": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "reason", "checkedAt", "source"],
+          "properties": {
+            "state": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/state" },
+            "reason": {
+              "oneOf": [
+                { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/reason" },
+                { "type": "null" }
+              ]
+            },
+            "checkedAt": { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/timestamp" },
+            "source": { "enum": ["probe", "cache", "manual"] }
+          }
+        },
+        "score": {
+          "description": "null exactly when the candidate was excluded before scoring.",
+          "oneOf": [
+            { "$ref": "urn:promptobus:model-routing:decision#/$defs/score" },
+            { "type": "null" }
+          ]
+        },
+        "pace": {
+          "description": "How much of this candidate's binding window is spent against how much of it has elapsed (ADR-005). Present on every scored candidate when the strategy is `balance`, and on none otherwise: `balance` is a choice layer above the scoring, so a candidate keeps its score and its place and only the pick moves, but a decision carrying a number no rule of its own strategy used would invite a reader to believe one did.",
+          "$ref": "urn:promptobus:model-routing:decision#/$defs/pace"
+        },
+        "excluded": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "detail"],
+              "properties": {
+                "code": { "$ref": "urn:promptobus:model-routing:decision#/$defs/exclusionCode" },
+                "detail": { "type": "string", "minLength": 1 },
+                "usedPercent": {
+                  "description": "Present on `window-nearly-spent`: the used percentage of the window that took the tuple out — the most spent applicable window whose reset has not passed — so a one-line summary can name it without reading the detail.",
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "pool": {
+                  "description": "Present on `window-nearly-spent` when that window's scope names a pool, so the summary names the pool that left selection rather than the whole harness.",
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "chosen": { "type": "boolean" }
+      }
+    },
+    "pace": {
+      "description": "Every number of the pace layer, in ONE unit: `usedShare` and `elapsedShare` are shares of 0…1, and everything compared — `underspend`, `spendPenalty`, `effective` — is in PERCENTAGE POINTS of the window, the unit `usedPercent` is already in. Both shares are published beside the result so a reader can recompute the conversion.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["window", "eligible", "note"],
+      "properties": {
+        "window": {
+          "description": "The binding window — the applicable one with the highest usedPercent, the account-wide windows plus the scope covering this tuple. null when the harness reported none that apply.",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "kind", "scope"],
+              "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "kind": { "enum": ["session", "weekly", "monthly"] },
+                "scope": {
+                  "oneOf": [
+                    { "type": "null" },
+                    { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/modelScope" },
+                    { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/autoPoolScope" },
+                    { "$ref": "urn:promptobus:model-routing:snapshot#/$defs/apiPoolScope" }
+                  ]
+                }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "usedShare": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "elapsedShare": {
+          "description": "(now − (resetAt − lengthSec)) / lengthSec, clamped to 0…1 against clock skew.",
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "underspend": {
+          "description": "(elapsedShare − usedShare) × 100 × the declared capacity (default 1) — relative percentage points of that window. Positive means the account is behind the pace of its own window and has room to spend.",
+          "type": ["number", "null"]
+        },
+        "spendPenalty": {
+          "description": "balance.spendUnit × (quotaCost − 1) / 9 × the declared capacity (default 1), in the same points: the tuple that would actually be picked gives up a share of the window proportional to its quotaCost, before harnesses are compared.",
+          "type": ["number", "null"]
+        },
+        "effective": {
+          "description": "underspend − spendPenalty. The number harnesses are compared and banded by.",
+          "type": ["number", "null"]
+        },
+        "eligible": {
+          "description": "Whether this candidate takes part in the pace comparison at all.",
+          "type": "boolean"
+        },
+        "representative": {
+          "description": "Present and true on the one candidate that represents its harness in the comparison — its best eligible tuple by the role's ordering that meets the role's quality floor, which is the tuple that would actually be picked there. Absent on every other candidate, and on all of them when no harness could be paced.",
+          "const": true
+        },
+        "atCap": {
+          "description": "Present and true when this candidate's harness already carries as many live participants OF THIS TASK as `caps.liveParticipants.<harness>` of the merged policy allows, and is therefore out of the pace comparison. Absent on every other candidate, including every one of a harness no layer capped. A candidate keeps its score, its place and its pace row while marked: the cap is a choice rule like the quality floor, not a filter.",
+          "const": true
+        },
+        "note": {
+          "description": "Why it does not, when it does not. `no-pace` — the harness reports no applicable window, or the binding one has no future reset or no length. `window-spent` — the binding window is at or past 100 %.",
+          "oneOf": [
+            { "enum": ["no-pace", "window-spent"] },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "base", "components", "adjustments"],
+      "properties": {
+        "total": {
+          "description": "base plus every adjustment. Rounded to two decimals — the tie-break reads this number, so it must be exactly what was printed.",
+          "type": "number"
+        },
+        "base": {
+          "description": "Sum of the four weighted components.",
+          "type": "number"
+        },
+        "components": {
+          "description": "Weighted contributions, not raw inputs: each is weight/100 times the value below. quality and speed are (r-1)/9*100 of their 1-10 rating (ADR-005); quotaCost is inverted, (10-r)/9*100; remaining is not a rating at all but the minimum of (100 minus usedPercent) times the declared capacity for each applicable window OF THIS TUPLE — the account-wide ones plus the scope covering it (ADR-005) — and 50 when none apply or the harness state is unknown; the unknown case also carries the unknown-availability adjustment.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["quality", "speed", "quotaCost", "remaining"],
+          "properties": {
+            "quality": { "type": "number" },
+            "speed": { "type": "number" },
+            "quotaCost": { "type": "number" },
+            "remaining": { "type": "number" }
+          }
+        },
+        "adjustments": {
+          "description": "Penalties (negative) and bonuses (positive), in the order the resolver applied them.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "points"],
+            "properties": {
+              "code": { "$ref": "urn:promptobus:model-routing:decision#/$defs/adjustmentCode" },
+              "points": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "exclusionCode": {
+      "description": "Why a tuple did not reach scoring. A model the account exposes but the catalog does not rate is not a tuple at all — it appears in `runtime`, not here. Written once in docs/reference/03-cli.md.",
+      "enum": [
+        "model-not-in-inventory",
+        "role-not-allowed",
+        "constraint-mismatch",
+        "denied-by-policy",
+        "payg-not-allowed",
+        "harness-unavailable",
+        "harness-exhausted",
+        "window-nearly-spent"
+      ]
+    },
+    "adjustmentCode": {
+      "description": "Penalties and bonuses. Written once in docs/reference/03-cli.md.",
+      "enum": [
+        "unknown-availability",
+        "live-participant",
+        "reviewer-diversity"
+      ]
+    },
+    "warningCode": {
+      "description": "Written once in docs/reference/03-cli.md.",
+      "enum": [
+        "stale-rating",
+        "unknown-remaining",
+        "reviewer-floor-not-met",
+        "approver-floor-not-met",
+        "snapshot-stale",
+        "probe-incomplete",
+        "flag-not-in-inventory",
+        "worker-floor-not-met",
+        "balance-fallback",
+        "near-limit",
+        "live-participant-cap",
+        "window-nearly-spent-named",
+        "role-not-rated-named",
+        "pool-denied-named"
+      ]
+    }
+  }
+}

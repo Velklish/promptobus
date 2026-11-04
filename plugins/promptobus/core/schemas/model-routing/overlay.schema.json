@@ -1,0 +1,363 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:promptobus:model-routing:overlay",
+  "title": "Model routing overlay",
+  "description": "One layer above the catalog. Every field is optional: an overlay changes what it names and leaves the rest of the layer below it untouched. The host names the layers and their order (src/host.ts routingPaths).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion"],
+  "properties": {
+    "schemaVersion": { "enum": [1, 2], "description": "Version 2 is required whenever a key on the rating scale is present: `ratings`, `qualityFloor` or `reviewerQualityFloor` (ADR-005). Version 1 remains readable for policy-only overlays — deny, allow, defaults, account, caps, weights, penalties, bonuses, priority and payg carry no value on that scale." },
+    "note": {
+      "description": "Free text for whoever opens the file next. The mechanism never reads it.",
+      "type": "string"
+    },
+    "weights": {
+      "description": "Strategy weights in percent. A named strategy is replaced whole, not merged field by field: a half-replaced weight set would silently stop summing to 100.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "quality": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/weightSet" },
+        "balanced": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/weightSet" },
+        "speed": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/weightSet" },
+        "economy": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/weightSet" }
+      }
+    },
+    "penalties": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "unknownAvailability": {
+          "description": "Points subtracted from a candidate whose availability is unknown, on top of counting its remaining limit as a neutral 50 per cent.",
+          "type": "number",
+          "minimum": 0
+        },
+        "liveParticipantPerHarness": {
+          "description": "Points subtracted per participant already live on that harness.",
+          "type": "number",
+          "minimum": 0
+        },
+        "liveParticipantCap": {
+          "description": "Ceiling for the sum of the above. Without it a busy harness would be unreachable rather than expensive.",
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "bonuses": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reviewerDiversity": {
+          "description": "Points added to a reviewer candidate whose harness or model differs from the worker's.",
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "caps": {
+      "description": "Hard ceilings, per harness, counted in PARTICIPANTS. Not to be confused with `penalties.liveParticipantCap`, which is a ceiling on the live-participant PENALTY and is counted in score points: that one bounds how expensive a busy harness gets, this one bounds how many participants it carries. A ceiling is not a penalty at all — `penalties.liveParticipantPerHarness` only ORDERS candidates, and under `balance` the harness is chosen by pace inside the band, so a harness ahead of the others attracts the next worker however expensive the penalty made it.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "liveParticipants": {
+          "description": "How many participants of ONE TASK may be live on a harness at once, keyed by harness. The count is the task's own participant list — a record that is not dismissed and carries a model — so two tasks running side by side each count their own, and this is a ceiling on a run rather than on the account. Under `balance` a harness whose live count has reached its cap leaves the pace comparison; 0 means the harness is never chosen there. A harness with no cap is unbounded, which is the behaviour of a layer that names none.",
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "propertyNames": { "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+          "patternProperties": {
+            "^[a-z][a-z0-9-]{0,31}$": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "reviewerQualityFloor": {
+      "description": "ALIAS for qualityFloor.reviewer, kept so an overlay written for v1 keeps its meaning (ADR-005). A layer stating both is a models validate warning and the explicit key wins.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10
+    },
+    "qualityFloor": {
+      "description": "Lowest quality rating a candidate of that role should have. Defaults: worker 5, reviewer 9, approver 7 on the ADR-005 1–10 scale. A soft floor and a CHOICE RULE, not a filter.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "worker": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "reviewer": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "approver": { "type": "integer", "minimum": 1, "maximum": 10 }
+      }
+    },
+    "balance": {
+      "description": "The two numbers of the balance strategy's pace layer, both in PERCENTAGE POINTS of a window — the unit usedPercent is already in — and both defaulting to 5.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "band": {
+          "description": "Harnesses within this many points of the leader's effective underspend are tied, and the balanced score of their representatives decides. Its job is not to model noise, but the noise floor is about a point — one harness reports usedPercent as an integer, and a sixty-second cache entry moves a five-hour window by a third of a point — so a band below that would do nothing.",
+          "type": "number",
+          "minimum": 0
+        },
+        "spendUnit": {
+          "description": "The discount a heavy tuple gives up before harnesses are compared: spendUnit × (quotaCost − 1) / 9. Equal to the band by default, so a quotaCost of 10 gives up exactly one band against a quotaCost of 1.",
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "nearLimit": {
+      "description": "When models says an account is running short (ADR-005). Two readings of the same binding window, and either one on its own raises the line; a third level takes the tuple out of automatic selection.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "usedPercent": {
+          "description": "A LEVEL: how much of the binding window is gone. Default 80.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "underspend": {
+          "description": "A RATE, in percentage points of the window: how far the account is AHEAD of its own pace. Default -15 — fifteen points more of the window spent than has elapsed of it. Negative on purpose and unbounded below; a positive value would fire on every harness that is behind pace, which is every harness the balance strategy is happy about.",
+          "type": "number"
+        },
+        "excludeAtUsedPercent": {
+          "description": "A LEVEL at which a tuple leaves automatic selection: its binding window at or past this percentage is the window-nearly-spent exclusion. Default 90. A --harness or --model that names the tuple passes it with the window-nearly-spent-named warning instead.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+    "defaults": {
+      "description": "What a command uses when the flag is absent. The one key models strategy --set writes, into the host's writable layer. Merged as a scalar: the highest layer that names one wins.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "strategy": {
+          "description": "The strategy spawn and review route with when --strategy is absent. A flag a person typed always wins. With no default anywhere the legacy path is unchanged — a call with no --strategy routes nothing. `auto` is not a value: it is a skill decision.",
+          "enum": ["quality", "balanced", "speed", "economy", "balance"]
+        }
+      }
+    },
+    "account": {
+      "description": "Owner-declared plan name and relative capacity by window kind. Models prints their effective values and sources. A plan name alone enters no score; capacity scales remaining allowance and balance pace. Missing capacity uses 1 and preserves the previous estimate.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+      "patternProperties": {
+        "^[a-z][a-z0-9-]{0,31}$": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "plan": { "type": "string", "minLength": 1 },
+            "capacity": {
+              "description": "Owner-declared relative capacity by window kind. A positive multiplier no greater than 1000000000: 4 means four times the allowance represented by 1 at the same used percentage. The bound keeps derived numbers finite. Missing kinds use the existing unscaled estimate. Adapter tier names supply no numeric default without published quota evidence.",
+              "type": "object",
+              "additionalProperties": false,
+              "minProperties": 1,
+              "properties": {
+                "session": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000000000 },
+                "weekly": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000000000 },
+                "monthly": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000000000 }
+              }
+            },
+            "allowance": {
+              "description": "Absolute OpenCode monthly allowance. The unit is tokens, named by monthlyTokens. No default: until it is set, OpenCode local-estimate windows carry no used percentage. Not a relative capacity weight.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["monthlyTokens"],
+              "properties": {
+                "monthlyTokens": {
+                  "description": "Monthly allowance in tokens. The 5-hour window is 20 percent of this number and the weekly window is 50 percent.",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1000000000000000
+                }
+              }
+            },
+            "denySuffixes": {
+              "description": "Extra model-id suffixes that receive the off-allowance flag, unioned with the built-in suffixes -free and -contributor. Those two always apply. Read only from account.opencode.",
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^-[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" }
+            }
+          }
+        }
+      }
+    },
+    "allow": {
+      "description": "Allow-lists. A non-empty list means: only these. An empty list is a shape error, not 'allow nothing' — write a deny rule for that. Allow lists INTERSECT across layers: a tuple must be named by every allow list of that kind any layer states, so a layer's rule survives every layer above it. Two layers can therefore intersect to nothing, which models validate reports as allow-intersection-empty.",
+      "$ref": "urn:promptobus:model-routing:overlay#/$defs/selectors"
+    },
+    "deny": {
+      "description": "Deny-lists, applied after allow. Deny lists ACCUMULATE across layers: a ban written in any layer stands and no layer above it lifts one — lifting a ban means changing the layer that wrote it. A name allowed in one layer and denied in another is lawful and deny wins, which models validate reports as the allow-shadowed-by-deny warning; a name both allowed and denied in ONE layer stays an error.",
+      "$ref": "urn:promptobus:model-routing:overlay#/$defs/selectors"
+    },
+    "ratings": {
+      "description": "Rating overrides by tuple id. Only the named ratings are replaced.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/partialRatings" },
+      "propertyNames": { "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$" }
+    },
+    "priority": {
+      "description": "Canonical-priority overrides by tuple id. Lower comes first.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": "integer", "minimum": 0 },
+      "propertyNames": { "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$" }
+    },
+    "payg": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "description": "Whether pay-as-you-go tuples take part in automatic selection without the --allow-payg flag.",
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "weightSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quality", "speed", "quotaCost", "remaining"],
+      "properties": {
+        "quality": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/weight" },
+        "speed": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/weight" },
+        "quotaCost": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/weight" },
+        "remaining": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/weight" }
+      }
+    },
+    "weight": {
+      "description": "Percent. The four of a set sum to 100; the sum is checked by models validate, not by this schema.",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "selectors": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "harnesses": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
+        "models": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
+        "efforts": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
+        "tuples": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
+        "flags": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/flagList" },
+        "pools": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/poolList" },
+        "byRole": {
+          "description": "The same rule block scoped to a catalog role or a step declared by the host. The schema checks step-name shape; models validate checks names against the declaration. When routing a step, unscoped, catalog-role and step rules all apply: denies union and allows intersect.",
+          "type": "object",
+          "additionalProperties": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/roleSelectors" },
+          "minProperties": 1,
+          "propertyNames": { "pattern": "^[a-z][a-z0-9-]{0,31}$" },
+          "properties": {
+            "worker": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/roleSelectors" },
+            "reviewer": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/roleSelectors" },
+            "approver": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/roleSelectors" }
+          }
+        }
+      }
+    },
+    "roleSelectors": {
+      "description": "Selectors inside a byRole block. The same four names and flags; byRole does not nest inside itself — a rule is scoped to one role or to none.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "harnesses": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
+        "models": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
+        "efforts": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
+        "tuples": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/nameList" },
+        "flags": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/flagList" },
+        "pools": { "$ref": "urn:promptobus:model-routing:overlay#/$defs/poolList" }
+      }
+    },
+    "flagList": {
+      "description": "Marks the availability snapshot carries on a model row. The one selector whose names are in no catalog — a flag is not a catalog fact — so they are checked against this closed list, which is the snapshot schema's own flags enum. A new mark a harness starts printing needs a release rather than a data change; the price of catching a person's typo. MODEL_FLAGS in lib/model-routing/catalog.js is the same list and the suite reads the two as one.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["no-zdr", "off-allowance"] }
+    },
+    "poolList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["cursor:auto", "cursor:api"] }
+    },
+    "nameList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "examples": [
+    {
+      "schemaVersion": 2,
+      "note": "schema example: a deny rule, a weight change, and a PAYG opt-in",
+      "weights": { "balanced": { "quality": 50, "speed": 20, "quotaCost": 15, "remaining": 15 } },
+      "qualityFloor": { "worker": 5, "reviewer": 9, "approver": 7 },
+      "deny": { "models": ["example-quick"] },
+      "ratings": { "example-deep": { "speed": 3 } },
+      "payg": { "allow": true }
+    },
+    {
+      "schemaVersion": 1,
+      "note": "schema example: the strategy a person agreed to, the ceiling on how many workers one account carries at once, and the one answer no method returns",
+      "defaults": { "strategy": "balance" },
+      "nearLimit": { "usedPercent": 85 },
+      "caps": { "liveParticipants": { "example": 2 } },
+      "account": { "example": { "plan": "example-plan" } }
+    },
+    {
+      "schemaVersion": 1,
+      "allow": { "harnesses": ["example"] }
+    },
+    {
+      "schemaVersion": 1,
+      "note": "schema example: the two selectors ADR-005 added — a mark the snapshot carries, and a rule that holds for one role only",
+      "deny": {
+        "flags": ["no-zdr"],
+        "byRole": { "reviewer": { "harnesses": ["example"] } }
+      }
+    },
+    {
+      "schemaVersion": 2,
+      "note": "schema example: an absolute OpenCode monthly token allowance, and one extra denied suffix. The number is an example, not a default.",
+      "account": {
+        "opencode": {
+          "allowance": { "monthlyTokens": 50000000 },
+          "denySuffixes": ["-preview"]
+        }
+      }
+    }
+  ]
+  ,"allOf": [
+    {
+      "$comment": "ADR-005: the keys whose VALUES are on the rating scale cannot be read from a version 1 file. A `reviewerQualityFloor: 5` written for the 1-5 scale means the top band; read as 1-10 it would silently lower the reviewer floor from 9 to 5. Mirrored by SCALED_OVERLAY_KEYS in lib/model-routing/catalog.js, and the parity check in test/model-routing-catalog.test.mjs holds the two together.",
+      "if": {
+        "anyOf": [
+          { "required": ["ratings"] },
+          { "required": ["qualityFloor"] },
+          { "required": ["reviewerQualityFloor"] }
+        ]
+      },
+      "then": { "properties": { "schemaVersion": { "const": 2 } } }
+    }
+  ]
+}

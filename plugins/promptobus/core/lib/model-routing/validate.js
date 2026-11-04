@@ -1,0 +1,1155 @@
+// Validate: what a catalog or an overlay is refused for.
+// [guides/model-routing.md#validate-what-a-catalog-or-an-overlay-is-refused-for](../../docs/guides/model-routing.md#validate-what-a-catalog-or-an-overlay-is-refused-for)
+import { existsSync, readFileSync } from 'node:fs';
+import { SHIPPED_REGISTRY, withSteps, WORKER } from '../../dist/index.js';
+import { pipelineVerdict } from '../../dist/pipeline.js';
+import { REGISTRY } from '../drivers.js';
+import { HARNESS_RE, MODEL_FLAGS } from './cache.js';
+import { CATALOG_FILE, CATALOG_SCHEMA_VERSION, DEFAULT_POLICY, DEFAULTS as DEFAULTS_LAYER, OVERLAY_SCHEMA_VERSION, ROUTED_ROLES, ROUTING_POOLS, SCALED_OVERLAY_KEYS, SELECTOR_KINDS, STRATEGIES, WEIGHT_STRATEGIES, mergeRouting, rulePath, rulesFor, rulesForRole, rulesLabel, } from './catalog.js';
+import { ratingsFor } from './resolver.js';
+const TIMESTAMP_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$/;
+const TUPLE_ID_RE = /^[a-z0-9][a-z0-9.-]{0,63}$/;
+const ROLES = ROUTED_ROLES;
+const ASSESSED_ROLES = ROLES.filter((role) => role !== WORKER);
+const RATING_KEYS = ['quality', 'speed', 'quotaCost'];
+const CATALOG_LAYER = 'catalog';
+export const WEIGHT_KEYS = ['quality', 'speed', 'quotaCost', 'remaining'];
+const PRICE_KEYS = ['inputPerMTok', 'cachedInputPerMTok', 'outputPerMTok'];
+const BILLING = ['subscription', 'payg'];
+const TUPLE_KEYS = [
+    'id', 'harness', 'model', 'effort', 'roles', 'ratings', 'roleRatings',
+    'prices', 'billing', 'priority', 'assessedAt', 'source', 'evidence',
+];
+const TUPLE_REQUIRED = [
+    'id', 'harness', 'model', 'effort', 'roles', 'ratings', 'prices',
+    'billing', 'priority', 'assessedAt', 'source',
+];
+const CATALOG_KEYS = ['schemaVersion', 'updated', 'tuples'];
+const OVERLAY_KEYS = [
+    'schemaVersion', 'note', 'weights', 'penalties', 'bonuses', 'reviewerQualityFloor', 'qualityFloor',
+    'balance', 'nearLimit', 'defaults', 'account', 'caps', 'allow', 'deny', 'ratings', 'priority', 'payg',
+];
+const BALANCE_KEYS = ['band', 'spendUnit'];
+const NEAR_LIMIT_KEYS = ['usedPercent', 'underspend', 'excludeAtUsedPercent'];
+const DEFAULTS_KEYS = ['strategy'];
+const ACCOUNT_KEYS = ['plan', 'capacity', 'allowance', 'denySuffixes'];
+const WINDOW_KINDS = ['session', 'weekly', 'monthly'];
+const CAP_KINDS = ['liveParticipants'];
+const PENALTY_KEYS = ['unknownAvailability', 'liveParticipantPerHarness', 'liveParticipantCap'];
+const BONUS_KEYS = ['reviewerDiversity'];
+const EVIDENCE_KEYS = ['text', 'sources', 'interpolatedFrom', 'hypothesis'];
+const CITATION_KEYS = [
+    'rating', 'basis', 'version', 'agentHarness', 'provenance', 'figure', 'url', 'date',
+    'validUntil', 'listFigure', 'listBand',
+];
+const CITATION_REQUIRED = ['rating', 'basis', 'version', 'agentHarness', 'figure', 'url', 'date'];
+const PROMOTION_KEYS = ['validUntil', 'listFigure', 'listBand'];
+const DATE_RE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
+const isRating = (v) => Number.isInteger(v) && v >= 1 && v <= 10;
+const isText = (v) => typeof v === 'string' && v.length > 0;
+/** Harnesses this CLI can actually launch. A tuple naming anything else is unroutable by construction. */
+export function knownHarnesses() {
+    return Object.keys(REGISTRY.drivers);
+}
+/** Effort levels of one harness, from that driver's own dictionary. Unknown harness — an empty list. */
+export function effortLevelsOf(harness) {
+    return REGISTRY.drivers[harness]?.options?.effortLevels ?? [];
+}
+function extras(value, allowed) {
+    return Object.keys(value).filter((k) => !allowed.includes(k));
+}
+// --- grammar -----------------------------------------------------------------
+function checkRatings(value, at, push, { partial = false } = {}) {
+    if (!isObject(value))
+        return push(at, 'expected an object of ratings');
+    const unknown = extras(value, RATING_KEYS);
+    if (unknown.length)
+        push(at, `unknown rating ${unknown.join(', ')}`);
+    if (partial && !Object.keys(value).length)
+        push(at, 'names no rating — an empty override changes nothing');
+    for (const key of RATING_KEYS) {
+        if (value[key] === undefined) {
+            if (!partial)
+                push(`${at}.${key}`, 'is required');
+            continue;
+        }
+        if (!isRating(value[key]))
+            push(`${at}.${key}`, 'expected an integer from 1 to 10');
+    }
+    return undefined;
+}
+// One citation, mirroring `citation` in the catalog schema by hand: production reads no JSON
+// Schema, and the parity check in the suite is what keeps the two from drifting.
+function checkCitation(citation, at, push) {
+    if (!isObject(citation))
+        return push(at, 'expected an object');
+    const unknown = extras(citation, CITATION_KEYS);
+    if (unknown.length)
+        push(at, `unknown field ${unknown.join(', ')}`);
+    for (const key of CITATION_REQUIRED) {
+        if (citation[key] === undefined)
+            push(`${at}.${key}`, 'is required');
+    }
+    if (citation.rating !== undefined && !RATING_KEYS.includes(citation.rating)) {
+        push(`${at}.rating`, `expected one of ${RATING_KEYS.join(', ')}`);
+    }
+    for (const key of ['basis', 'version', 'agentHarness', 'provenance', 'figure', 'url', 'listFigure']) {
+        if (citation[key] !== undefined && !isText(citation[key])) {
+            push(`${at}.${key}`, 'expected a non-empty string');
+        }
+    }
+    if (citation.date !== undefined && !(isText(citation.date) && DATE_RE.test(citation.date))) {
+        push(`${at}.date`, 'expected the date the source was seen, as YYYY-MM-DD');
+    }
+    if (citation.validUntil !== undefined && !(isText(citation.validUntil) && DATE_RE.test(citation.validUntil))) {
+        push(`${at}.validUntil`, 'expected the last date a promotional figure was observed in force, as YYYY-MM-DD');
+    }
+    if (citation.listBand !== undefined && !isRating(citation.listBand)) {
+        push(`${at}.listBand`, 'expected an integer from 1 to 10');
+    }
+    for (const key of PROMOTION_KEYS) {
+        if (citation[key] !== undefined && citation.rating !== 'quotaCost') {
+            push(`${at}.${key}`, 'is only valid on a quotaCost citation');
+        }
+    }
+    if (citation.validUntil !== undefined) {
+        if (citation.listFigure === undefined) {
+            push(`${at}.listFigure`, 'is required when validUntil is present');
+        }
+        if (citation.listBand === undefined) {
+            push(`${at}.listBand`, 'is required when validUntil is present');
+        }
+    }
+    return undefined;
+}
+// The object form of `evidence` (ADR-005). The string form is the v1 shape and
+// is still lawful; a row that is neither is a shape error here.
+function checkCitedEvidence(evidence, at, push) {
+    if (!isObject(evidence))
+        return push(at, 'expected a string, or an object of { text, sources, interpolatedFrom, hypothesis }');
+    const unknown = extras(evidence, EVIDENCE_KEYS);
+    if (unknown.length)
+        push(at, `unknown field ${unknown.join(', ')}`);
+    if (!isText(evidence.text))
+        push(`${at}.text`, 'is required and non-empty');
+    if (evidence.sources !== undefined) {
+        if (!Array.isArray(evidence.sources) || !evidence.sources.length) {
+            push(`${at}.sources`, 'expected a non-empty array — omit it rather than writing an empty one');
+        }
+        else {
+            evidence.sources.forEach((citation, i) => checkCitation(citation, `${at}.sources[${i}]`, push));
+        }
+    }
+    if (evidence.interpolatedFrom !== undefined
+        && !(isText(evidence.interpolatedFrom) && TUPLE_ID_RE.test(evidence.interpolatedFrom))) {
+        push(`${at}.interpolatedFrom`, `does not match ${TUPLE_ID_RE.source}`);
+    }
+    if (evidence.hypothesis !== undefined) {
+        if (!Array.isArray(evidence.hypothesis) || !evidence.hypothesis.length) {
+            push(`${at}.hypothesis`, 'expected a non-empty array of rating names');
+        }
+        else {
+            if (new Set(evidence.hypothesis).size !== evidence.hypothesis.length) {
+                push(`${at}.hypothesis`, 'repeats a rating');
+            }
+            for (const rating of evidence.hypothesis) {
+                if (!RATING_KEYS.includes(rating)) {
+                    push(`${at}.hypothesis`, `unknown rating "${rating}" — allowed: ${RATING_KEYS.join(', ')}`);
+                }
+            }
+        }
+    }
+    return undefined;
+}
+function checkTuple(tuple, at, push) {
+    if (!isObject(tuple))
+        return push(at, 'expected an object');
+    const unknown = extras(tuple, TUPLE_KEYS);
+    if (unknown.length)
+        push(at, `unknown field ${unknown.join(', ')}`);
+    for (const key of TUPLE_REQUIRED) {
+        if (tuple[key] === undefined)
+            push(`${at}.${key}`, 'is required');
+    }
+    if (tuple.id !== undefined && !(isText(tuple.id) && TUPLE_ID_RE.test(tuple.id))) {
+        push(`${at}.id`, `does not match ${TUPLE_ID_RE.source}`);
+    }
+    if (tuple.harness !== undefined && !(isText(tuple.harness) && HARNESS_RE.test(tuple.harness))) {
+        push(`${at}.harness`, `does not match ${HARNESS_RE.source}`);
+    }
+    if (tuple.model !== undefined && !isText(tuple.model))
+        push(`${at}.model`, 'expected a non-empty string');
+    if (tuple.effort !== undefined && tuple.effort !== null && !isText(tuple.effort)) {
+        push(`${at}.effort`, 'expected a non-empty string or null');
+    }
+    if (tuple.roles !== undefined) {
+        if (!Array.isArray(tuple.roles) || !tuple.roles.length)
+            push(`${at}.roles`, 'expected a non-empty array');
+        else {
+            if (new Set(tuple.roles).size !== tuple.roles.length)
+                push(`${at}.roles`, 'repeats a role');
+            for (const role of tuple.roles) {
+                if (!ROLES.includes(role))
+                    push(`${at}.roles`, `unknown role "${role}" — allowed: ${ROLES.join(', ')}`);
+            }
+        }
+    }
+    if (tuple.ratings !== undefined)
+        checkRatings(tuple.ratings, `${at}.ratings`, push);
+    if (tuple.roleRatings !== undefined) {
+        if (!isObject(tuple.roleRatings))
+            push(`${at}.roleRatings`, 'expected an object');
+        else {
+            const unknownRoles = extras(tuple.roleRatings, ROLES);
+            if (unknownRoles.length)
+                push(`${at}.roleRatings`, `unknown role ${unknownRoles.join(', ')}`);
+            for (const role of ROLES) {
+                if (tuple.roleRatings[role] === undefined)
+                    continue;
+                checkRatings(tuple.roleRatings[role], `${at}.roleRatings.${role}`, push, { partial: true });
+            }
+        }
+    }
+    if (tuple.prices !== undefined) {
+        if (!isObject(tuple.prices))
+            push(`${at}.prices`, 'expected an object');
+        else {
+            const unknownPrices = extras(tuple.prices, PRICE_KEYS);
+            if (unknownPrices.length)
+                push(`${at}.prices`, `unknown price ${unknownPrices.join(', ')}`);
+            for (const key of PRICE_KEYS) {
+                const price = tuple.prices[key];
+                if (price === undefined)
+                    push(`${at}.prices.${key}`, 'is required — write null when there is no published price');
+                else if (price !== null && !(typeof price === 'number' && price >= 0)) {
+                    push(`${at}.prices.${key}`, 'expected a number not below zero, or null');
+                }
+            }
+        }
+    }
+    if (tuple.billing !== undefined && !BILLING.includes(tuple.billing)) {
+        push(`${at}.billing`, `expected one of ${BILLING.join(', ')}`);
+    }
+    if (tuple.priority !== undefined && !(Number.isInteger(tuple.priority) && tuple.priority >= 0)) {
+        push(`${at}.priority`, 'expected an integer not below zero');
+    }
+    if (tuple.assessedAt !== undefined && !(isText(tuple.assessedAt) && TIMESTAMP_RE.test(tuple.assessedAt))) {
+        push(`${at}.assessedAt`, 'expected the exact form Date#toISOString prints');
+    }
+    if (tuple.source !== undefined && !isText(tuple.source)) {
+        push(`${at}.source`, 'is required and non-empty — a rating with no source is a hypothesis');
+    }
+    if (tuple.evidence !== undefined && typeof tuple.evidence !== 'string') {
+        checkCitedEvidence(tuple.evidence, `${at}.evidence`, push);
+    }
+    return undefined;
+}
+/** Grammar of the shipped catalog. Returns a list of `{ at, note }`; empty means the shape holds. */
+export function checkCatalogShape(doc) {
+    const found = [];
+    const push = (at, note) => found.push({ at, note });
+    if (!isObject(doc)) {
+        push('', 'expected an object');
+        return found;
+    }
+    const unknown = extras(doc, CATALOG_KEYS);
+    if (unknown.length)
+        push('', `unknown field ${unknown.join(', ')}`);
+    if (doc.schemaVersion !== CATALOG_SCHEMA_VERSION) {
+        push('schemaVersion', `expected ${CATALOG_SCHEMA_VERSION}`);
+    }
+    if (!(isText(doc.updated) && TIMESTAMP_RE.test(doc.updated))) {
+        push('updated', 'expected the exact form Date#toISOString prints');
+    }
+    if (!Array.isArray(doc.tuples) || !doc.tuples.length) {
+        push('tuples', 'expected a non-empty array');
+        return found;
+    }
+    doc.tuples.forEach((tuple, i) => checkTuple(tuple, `tuples[${i}]`, push));
+    return found;
+}
+/** `null` when the list is well formed, a marker when it is not — `checkFlagList` reads that. */
+function checkNameList(value, at, push) {
+    if (!Array.isArray(value) || !value.length) {
+        push(at, 'expected a non-empty array');
+        return 'shape';
+    }
+    if (new Set(value).size !== value.length)
+        push(at, 'repeats a name');
+    for (const name of value)
+        if (!isText(name))
+            push(at, 'expected non-empty strings');
+    return undefined;
+}
+/** `flags` names a mark the SNAPSHOT carries — the one selector whose names are in no catalog,
+ * so a typo has nothing to catch it but the closed `MODEL_FLAGS` (ADR-005). */
+function checkFlagList(value, at, push) {
+    if (checkNameList(value, at, push) !== undefined)
+        return undefined;
+    for (const name of value) {
+        if (!MODEL_FLAGS.includes(name)) {
+            push(at, `unknown flag "${name}" — a snapshot carries ${MODEL_FLAGS.join(', ')}`);
+        }
+    }
+    return undefined;
+}
+function checkFlatSelectors(value, at, push, allowed) {
+    if (!isObject(value))
+        return push(at, 'expected an object');
+    if (!Object.keys(value).length) {
+        return push(at, 'names no selector — an empty rule is a shape error, not "allow nothing"');
+    }
+    const unknown = extras(value, allowed);
+    if (unknown.length)
+        push(at, `unknown selector ${unknown.join(', ')}`);
+    for (const kind of SELECTOR_KINDS) {
+        if (value[kind] === undefined)
+            continue;
+        if (kind === 'flags')
+            checkFlagList(value[kind], `${at}.${kind}`, push);
+        else if (kind === 'pools') {
+            if (checkNameList(value[kind], `${at}.${kind}`, push) === undefined) {
+                for (const name of value[kind]) {
+                    if (!ROUTING_POOLS.includes(name))
+                        push(`${at}.${kind}`, `unknown pool "${name}" — allowed: ${ROUTING_POOLS.join(', ')}`);
+                }
+            }
+        }
+        else
+            checkNameList(value[kind], `${at}.${kind}`, push);
+    }
+    return undefined;
+}
+function checkSelectors(value, at, push, stepNames = []) {
+    const done = checkFlatSelectors(value, at, push, [...SELECTOR_KINDS, 'byRole']);
+    if (done !== undefined || value.byRole === undefined)
+        return done;
+    if (!isObject(value.byRole))
+        return push(`${at}.byRole`, 'expected an object keyed by role');
+    if (!Object.keys(value.byRole).length) {
+        return push(`${at}.byRole`, 'names no role — an empty block scopes nothing');
+    }
+    const allowed = [...new Set([...ROUTED_ROLES, ...stepNames])];
+    const unknownRoles = extras(value.byRole, allowed);
+    for (const name of unknownRoles) {
+        push(`${at}.byRole.${name}`, `unknown role or declared step "${name}" — allowed: ${allowed.join(', ')}`);
+    }
+    for (const role of allowed) {
+        if (!Object.hasOwn(value.byRole, role))
+            continue;
+        // No `byRole` inside `byRole`: a rule is scoped to one role or to none, and
+        // a second nesting would be a role that is also another role.
+        checkFlatSelectors(value.byRole[role], `${at}.byRole.${role}`, push, SELECTOR_KINDS);
+    }
+    return undefined;
+}
+function checkIdMap(value, at, push, checkValue) {
+    if (!isObject(value))
+        return push(at, 'expected an object keyed by tuple id');
+    if (!Object.keys(value).length)
+        return push(at, 'is empty — remove it instead');
+    for (const [id, entry] of Object.entries(value)) {
+        if (!TUPLE_ID_RE.test(id))
+            push(`${at}.${id}`, `key does not match ${TUPLE_ID_RE.source}`);
+        checkValue(entry, `${at}.${id}`);
+    }
+    return undefined;
+}
+/** Grammar of one overlay. Every field is optional except `schemaVersion`. */
+export function checkOverlayShape(doc, stepNames = []) {
+    const found = [];
+    const push = (at, note) => found.push({ at, note });
+    if (!isObject(doc)) {
+        push('', 'expected an object');
+        return found;
+    }
+    const unknown = extras(doc, OVERLAY_KEYS);
+    if (unknown.length)
+        push('', `unknown field ${unknown.join(', ')}`);
+    const scaled = doc.schemaVersion === 1
+        ? SCALED_OVERLAY_KEYS.filter((key) => Object.hasOwn(doc, key))
+        : [];
+    if (scaled.length) {
+        push('schemaVersion', `rewrite ${scaled.map((key) => `\`${key}\``).join(' and ')} on the 1–10 scale `
+            + 'and set `schemaVersion: 2`');
+    }
+    else if (doc.schemaVersion !== OVERLAY_SCHEMA_VERSION && doc.schemaVersion !== 1) {
+        push('schemaVersion', `expected ${OVERLAY_SCHEMA_VERSION}`);
+    }
+    if (doc.note !== undefined && typeof doc.note !== 'string')
+        push('note', 'expected a string');
+    if (doc.weights !== undefined) {
+        if (!isObject(doc.weights))
+            push('weights', 'expected an object');
+        else {
+            // `balance` is not among them and cannot be: it has no weight set of its
+            // own and orders tuples by the merged `balanced` weights (ADR-005).
+            const unknownStrategies = extras(doc.weights, WEIGHT_STRATEGIES);
+            if (unknownStrategies.length)
+                push('weights', `unknown strategy ${unknownStrategies.join(', ')}`);
+            for (const name of WEIGHT_STRATEGIES) {
+                const set = doc.weights[name];
+                if (set === undefined)
+                    continue;
+                if (!isObject(set)) {
+                    push(`weights.${name}`, 'expected an object of four weights');
+                    continue;
+                }
+                const unknownWeights = extras(set, WEIGHT_KEYS);
+                if (unknownWeights.length)
+                    push(`weights.${name}`, `unknown weight ${unknownWeights.join(', ')}`);
+                for (const key of WEIGHT_KEYS) {
+                    const w = set[key];
+                    if (w === undefined)
+                        push(`weights.${name}.${key}`, 'is required — a weight set is replaced whole');
+                    else if (!(typeof w === 'number' && w >= 0 && w <= 100)) {
+                        push(`weights.${name}.${key}`, 'expected a percent from 0 to 100');
+                    }
+                }
+            }
+        }
+    }
+    for (const [field, keys] of [['penalties', PENALTY_KEYS], ['bonuses', BONUS_KEYS]]) {
+        if (doc[field] === undefined)
+            continue;
+        if (!isObject(doc[field])) {
+            push(field, 'expected an object');
+            continue;
+        }
+        const unknownKeys = extras(doc[field], keys);
+        if (unknownKeys.length)
+            push(field, `unknown key ${unknownKeys.join(', ')}`);
+        for (const key of keys) {
+            const v = doc[field][key];
+            if (v === undefined)
+                continue;
+            if (!(typeof v === 'number' && v >= 0))
+                push(`${field}.${key}`, 'expected a number not below zero');
+        }
+    }
+    if (doc.reviewerQualityFloor !== undefined && !isRating(doc.reviewerQualityFloor)) {
+        push('reviewerQualityFloor', 'expected an integer from 1 to 10');
+    }
+    if (doc.qualityFloor !== undefined) {
+        if (!isObject(doc.qualityFloor))
+            push('qualityFloor', 'expected an object keyed by role');
+        else {
+            if (!Object.keys(doc.qualityFloor).length)
+                push('qualityFloor', 'names no role — an empty block changes nothing');
+            const unknownRoles = extras(doc.qualityFloor, ROUTED_ROLES);
+            if (unknownRoles.length) {
+                push('qualityFloor', `unknown role ${unknownRoles.join(', ')} — allowed: ${ROUTED_ROLES.join(', ')}`);
+            }
+            for (const role of ROUTED_ROLES) {
+                if (doc.qualityFloor[role] === undefined)
+                    continue;
+                if (!isRating(doc.qualityFloor[role]))
+                    push(`qualityFloor.${role}`, 'expected an integer from 1 to 10');
+            }
+        }
+    }
+    if (doc.balance !== undefined) {
+        if (!isObject(doc.balance))
+            push('balance', 'expected an object');
+        else {
+            if (!Object.keys(doc.balance).length)
+                push('balance', 'names no key — an empty block changes nothing');
+            const unknownKeys = extras(doc.balance, BALANCE_KEYS);
+            if (unknownKeys.length)
+                push('balance', `unknown key ${unknownKeys.join(', ')}`);
+            for (const key of BALANCE_KEYS) {
+                const v = doc.balance[key];
+                if (v === undefined)
+                    continue;
+                if (!(typeof v === 'number' && v >= 0)) {
+                    push(`balance.${key}`, 'expected a number not below zero — percentage points of a window');
+                }
+            }
+        }
+    }
+    if (doc.nearLimit !== undefined) {
+        if (!isObject(doc.nearLimit))
+            push('nearLimit', 'expected an object');
+        else {
+            if (!Object.keys(doc.nearLimit).length)
+                push('nearLimit', 'names no key — an empty block changes nothing');
+            const unknownKeys = extras(doc.nearLimit, NEAR_LIMIT_KEYS);
+            if (unknownKeys.length)
+                push('nearLimit', `unknown key ${unknownKeys.join(', ')}`);
+            for (const key of ['usedPercent', 'excludeAtUsedPercent']) {
+                const v = doc.nearLimit[key];
+                if (v !== undefined && !(typeof v === 'number' && v >= 0 && v <= 100)) {
+                    push(`nearLimit.${key}`, 'expected a percent from 0 to 100');
+                }
+            }
+            // Negative on purpose and unbounded below: it is an underspend. A positive value would
+            // fire on every harness behind pace, which is every harness the strategy is happy about.
+            if (doc.nearLimit.underspend !== undefined && typeof doc.nearLimit.underspend !== 'number') {
+                push('nearLimit.underspend', 'expected a number — percentage points of a window, normally negative');
+            }
+        }
+    }
+    if (doc.defaults !== undefined) {
+        if (!isObject(doc.defaults))
+            push('defaults', 'expected an object');
+        else {
+            if (!Object.keys(doc.defaults).length)
+                push('defaults', 'names no key — an empty block changes nothing');
+            const unknownKeys = extras(doc.defaults, DEFAULTS_KEYS);
+            if (unknownKeys.length)
+                push('defaults', `unknown key ${unknownKeys.join(', ')}`);
+            if (doc.defaults.strategy !== undefined && !STRATEGIES.includes(doc.defaults.strategy)) {
+                push('defaults.strategy', `expected one of ${STRATEGIES.join(', ')} — `
+                    + '"auto" is not one of them: classifying a task into a strategy is the agent\'s decision');
+            }
+        }
+    }
+    if (doc.caps !== undefined) {
+        if (!isObject(doc.caps))
+            push('caps', 'expected an object');
+        else {
+            if (!Object.keys(doc.caps).length)
+                push('caps', 'names no ceiling — an empty block changes nothing');
+            const unknownKinds = extras(doc.caps, CAP_KINDS);
+            if (unknownKinds.length)
+                push('caps', `unknown key ${unknownKinds.join(', ')}`);
+            for (const kind of CAP_KINDS) {
+                const block = doc.caps[kind];
+                if (block === undefined)
+                    continue;
+                if (!isObject(block)) {
+                    push(`caps.${kind}`, 'expected an object keyed by harness');
+                    continue;
+                }
+                if (!Object.keys(block).length)
+                    push(`caps.${kind}`, 'names no harness — an empty block changes nothing');
+                for (const [harness, value] of Object.entries(block)) {
+                    if (!HARNESS_RE.test(harness))
+                        push(`caps.${kind}.${harness}`, `key does not match ${HARNESS_RE.source}`);
+                    // Zero is lawful and is why the minimum is zero: it is a person saying "never this
+                    // harness", and demanding a positive number would refuse the clearest thing said.
+                    if (!(Number.isInteger(value) && value >= 0)) {
+                        push(`caps.${kind}.${harness}`, 'expected an integer not below zero — a count of participants, and 0 means never');
+                    }
+                }
+            }
+        }
+    }
+    if (doc.account !== undefined) {
+        if (!isObject(doc.account))
+            push('account', 'expected an object keyed by harness');
+        else {
+            if (!Object.keys(doc.account).length)
+                push('account', 'names no harness — an empty block changes nothing');
+            for (const [harness, block] of Object.entries(doc.account)) {
+                if (!HARNESS_RE.test(harness))
+                    push(`account.${harness}`, `key does not match ${HARNESS_RE.source}`);
+                if (!isObject(block)) {
+                    push(`account.${harness}`, 'expected an object');
+                    continue;
+                }
+                if (!Object.keys(block).length)
+                    push(`account.${harness}`, 'names no key — an empty block changes nothing');
+                const unknownKeys = extras(block, ACCOUNT_KEYS);
+                if (unknownKeys.length)
+                    push(`account.${harness}`, `unknown key ${unknownKeys.join(', ')}`);
+                if (block.plan !== undefined && !isText(block.plan)) {
+                    push(`account.${harness}.plan`, 'expected a non-empty string');
+                }
+                if (block.capacity !== undefined) {
+                    const at = `account.${harness}.capacity`;
+                    if (!isObject(block.capacity) || !Object.keys(block.capacity).length) {
+                        push(at, 'expected a non-empty object keyed by window kind');
+                    }
+                    else {
+                        for (const [kind, value] of Object.entries(block.capacity)) {
+                            if (!WINDOW_KINDS.includes(kind))
+                                push(`${at}.${kind}`, `unknown window kind — allowed: ${WINDOW_KINDS.join(', ')}`);
+                            if (!(Number.isFinite(value) && value > 0 && value <= 1e9))
+                                push(`${at}.${kind}`, 'expected a positive finite capacity at most 1000000000');
+                        }
+                    }
+                }
+                if ((block.allowance !== undefined || block.denySuffixes !== undefined) && harness !== 'opencode') {
+                    push(`account.${harness}`, 'allowance and denySuffixes are read only on opencode');
+                }
+                if (block.allowance !== undefined) {
+                    const at = `account.${harness}.allowance`;
+                    const allowance = block.allowance;
+                    const monthly = allowance?.monthlyTokens;
+                    if (!isObject(allowance) || extras(allowance, ['monthlyTokens']).length
+                        || !Number.isInteger(monthly) || monthly < 1 || monthly > 1e15) {
+                        push(at, 'expected { monthlyTokens }: a positive integer of tokens, at most 1000000000000000');
+                    }
+                }
+                if (block.denySuffixes !== undefined) {
+                    const at = `account.${harness}.denySuffixes`;
+                    const suffixes = block.denySuffixes;
+                    const shape = /^-[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+                    if (!Array.isArray(suffixes) || !suffixes.length || new Set(suffixes).size !== suffixes.length
+                        || suffixes.some((suffix) => typeof suffix !== 'string' || !shape.test(suffix))) {
+                        push(at, 'expected a non-empty list of unique suffixes such as "-preview"');
+                    }
+                }
+            }
+        }
+    }
+    if (doc.allow !== undefined)
+        checkSelectors(doc.allow, 'allow', push, stepNames);
+    if (doc.deny !== undefined)
+        checkSelectors(doc.deny, 'deny', push, stepNames);
+    if (doc.ratings !== undefined) {
+        checkIdMap(doc.ratings, 'ratings', push, (entry, at) => checkRatings(entry, at, push, { partial: true }));
+    }
+    if (doc.priority !== undefined) {
+        checkIdMap(doc.priority, 'priority', push, (entry, at) => {
+            if (!(Number.isInteger(entry) && entry >= 0))
+                push(at, 'expected an integer not below zero');
+        });
+    }
+    if (doc.payg !== undefined) {
+        if (!isObject(doc.payg))
+            push('payg', 'expected an object');
+        else {
+            const unknownKeys = extras(doc.payg, ['allow']);
+            if (unknownKeys.length)
+                push('payg', `unknown key ${unknownKeys.join(', ')}`);
+            if (doc.payg.allow !== undefined && typeof doc.payg.allow !== 'boolean') {
+                push('payg.allow', 'expected a boolean');
+            }
+        }
+    }
+    return found;
+}
+// --- the verdict -------------------------------------------------------------
+function collector() {
+    const errors = [];
+    const warnings = [];
+    return {
+        errors,
+        warnings,
+        // `message`, not the internal `note`: the verdict shares a vocabulary with the decision
+        // document. `rule` names the CHECK that fired and is not a second error code.
+        error: (code, layer, at, message, rule = null) => errors.push({
+            code, layer, at, message, ...(rule ? { rule } : {}),
+        }),
+        warn: (entry) => warnings.push(entry),
+    };
+}
+function referenceChecks(out, layer, doc, catalogFacts, stepNames) {
+    const { ids, models, harnesses, efforts } = catalogFacts;
+    const bad = (at, note) => out.error('overlay-invalid', layer.id, at, note);
+    for (const field of ['ratings', 'priority']) {
+        if (!isObject(doc[field]))
+            continue;
+        for (const id of Object.keys(doc[field])) {
+            if (!ids.has(id))
+                bad(`${field}.${id}`, `no tuple with id "${id}" in the merged catalog`);
+        }
+    }
+    // `flags` cannot be checked here: a flag is a snapshot mark, not a catalog fact. Whether a
+    // model of a RUN carries one is the resolver's `flag-not-in-inventory` warning.
+    for (const rule of ['allow', 'deny']) {
+        const selectors = doc[rule];
+        if (!isObject(selectors))
+            continue;
+        const blocks = [[selectors, `${rule}`]];
+        if (isObject(selectors.byRole)) {
+            for (const role of [...new Set([...ROUTED_ROLES, ...stepNames])]) {
+                if (isObject(selectors.byRole[role]))
+                    blocks.push([selectors.byRole[role], `${rule}.byRole.${role}`]);
+            }
+        }
+        for (const [block, at] of blocks) {
+            for (const id of block.tuples ?? []) {
+                if (!ids.has(id))
+                    bad(`${at}.tuples`, `no tuple with id "${id}" in the merged catalog`);
+            }
+            for (const name of block.harnesses ?? []) {
+                if (!harnesses.has(name)) {
+                    bad(`${at}.harnesses`, `unknown harness "${name}" — this CLI drives ${knownHarnesses().join(', ')}`);
+                }
+            }
+            for (const name of block.models ?? []) {
+                if (!models.has(name))
+                    bad(`${at}.models`, `no tuple in the merged catalog uses model "${name}"`);
+            }
+            for (const name of block.efforts ?? []) {
+                if (!efforts.has(name)) {
+                    bad(`${at}.efforts`, `no harness of this CLI names effort "${name}", and no tuple uses it`);
+                }
+            }
+            for (const name of block.pools ?? []) {
+                if (!ROUTING_POOLS.includes(name)) {
+                    bad(`${at}.pools`, `unknown pool "${name}" — allowed: cursor:auto, cursor:api`);
+                }
+            }
+        }
+    }
+}
+/** A name one layer allows and another denies, over rule PAIRS: only a rule that is in a file
+ * gives an `at` that exists. `layer` is the DENY half, because deny is applied last. */
+function shadowChecks(out, sources, kind, stepRoles) {
+    const allowRules = rulesFor(sources, { rule: 'allow', kind, role: null });
+    const denyRules = rulesFor(sources, { rule: 'deny', kind, role: null });
+    allowRules.push(...(sources.rules ?? []).filter((r) => r.rule === 'allow' && r.kind === kind && r.role !== null));
+    denyRules.push(...(sources.rules ?? []).filter((r) => r.rule === 'deny' && r.kind === kind && r.role !== null));
+    for (const a of allowRules) {
+        for (const d of denyRules) {
+            // Rules scoped to different roles never both apply, so a name in both is
+            // not a contradiction — it is two policies for two roles.
+            if (a.role !== null && d.role !== null && a.role !== d.role
+                && stepRoles[a.role] !== d.role && stepRoles[d.role] !== a.role)
+                continue;
+            const role = d.role ?? a.role;
+            const scope = role ? ` when routing the ${role}` : '';
+            for (const name of a.names) {
+                if (!d.names.includes(name))
+                    continue;
+                if (a.layer === d.layer && a.role === d.role) {
+                    // One file that both allows and denies a name at the same scope. Nobody writes that
+                    // on purpose, and under union there is no reading of it that helps.
+                    out.error('overlay-invalid', d.layer, rulePath(d), `"${name}" is both allowed and denied in "${d.layer}"${scope} — deny is applied after allow, `
+                        + 'so the allow rule can never take effect');
+                }
+                else if (a.layer === d.layer) {
+                    // Allowed here, denied FOR ONE ROLE: a deliberate narrowing, which is what `byRole`
+                    // was added to make writable. Neither error nor warning.
+                    continue;
+                }
+                else {
+                    // Lawful under union, and deny wins. A warning rather than an error, sending the
+                    // person to the file that took their allow list away (ADR-005).
+                    out.warn({
+                        code: 'allow-shadowed-by-deny',
+                        layer: d.layer,
+                        at: rulePath(d),
+                        message: `"${name}" is allowed by ${rulePath(a)} of "${a.layer}" and denied by `
+                            + `${rulePath(d)} of "${d.layer}"${scope} — lawful, and deny wins: no allow list anywhere `
+                            + `reaches a ban, because deny is applied after allow. Lifting it means editing "${d.layer}"`,
+                    });
+                }
+            }
+        }
+    }
+}
+/** The two set-level checks, over the lists in force. `at` is the path of the last rule that
+ * made up the half being reported, so it names a line that exists. */
+function setChecksForKind(out, policy, sources, kind, role, step = role) {
+    const effective = role === null
+        ? { allow: policy.allow ?? {}, deny: policy.deny ?? {} }
+        : rulesForRole(policy, role, step);
+    const allow = effective.allow?.[kind];
+    const deny = effective.deny?.[kind] ?? [];
+    const allowRules = rulesFor(sources, { rule: 'allow', kind, role, step });
+    const denyRules = rulesFor(sources, { rule: 'deny', kind, role, step });
+    const scope = role === null ? '' : ` when routing the ${step}`;
+    const at = (rules, fallback) => (rules.length ? rulePath(rules[rules.length - 1]) : fallback);
+    // Two layers narrowing different ways intersect to nothing, and every tuple is then denied
+    // by files that both say "allow". Without this the symptom is an unexplained empty set.
+    if (Array.isArray(allow) && !allow.length && allowRules.length > 1) {
+        out.error('overlay-invalid', allowRules[allowRules.length - 1].layer, at(allowRules, `allow.${kind}`), `the allow lists of ${rulesLabel(allowRules)} intersect to nothing${scope}, so no tuple is admitted `
+            + '— an allow list is narrowed by every layer that states one and widened by none', 'allow-intersection-empty');
+    }
+    if (Array.isArray(allow) && allow.length && deny.length && allow.every((n) => deny.includes(n))) {
+        out.error('overlay-invalid', denyRules[denyRules.length - 1]?.layer ?? allowRules[0].layer, at(denyRules, `deny.${kind}`), `every name the merged allow list admits is denied${scope}: ${rulesLabel(allowRules)} allow `
+            + `${allow.map((n) => `"${n}"`).join(', ')}, and ${rulesLabel(denyRules)} deny all of them`, 'deny-covers-allow');
+    }
+}
+/** The allow and deny lists of the merged policy under ADR-005's merge: the pairwise check per
+ * kind over the rules, the set-level ones over the lists in force, per role where scoped. */
+function contradictionChecks(out, policy, sources, stepRoles) {
+    const scoped = new Set((sources.rules ?? []).filter((r) => r.role !== null).map((r) => r.kind));
+    for (const kind of SELECTOR_KINDS) {
+        shadowChecks(out, sources, kind, stepRoles);
+        if (scoped.has(kind)) {
+            for (const role of ROUTED_ROLES)
+                setChecksForKind(out, policy, sources, kind, role);
+            for (const [step, role] of Object.entries(stepRoles)) {
+                if ((sources.rules ?? []).some((r) => r.kind === kind && r.role === step)) {
+                    setChecksForKind(out, policy, sources, kind, role, step);
+                }
+            }
+        }
+        else
+            setChecksForKind(out, policy, sources, kind, null);
+    }
+}
+function weightChecks(out, policy, sources) {
+    for (const name of WEIGHT_STRATEGIES) {
+        const from = sources.weights?.[name] ?? DEFAULTS_LAYER;
+        const set = policy.weights?.[name];
+        if (!isObject(set)) {
+            out.error('overlay-invalid', from, `weights.${name}`, 'the merged policy has no weight set for this strategy');
+            continue;
+        }
+        const sum = WEIGHT_KEYS.reduce((a, k) => a + (typeof set[k] === 'number' ? set[k] : 0), 0);
+        if (Math.round(sum * 100) / 100 !== 100) {
+            out.error('overlay-invalid', from, `weights.${name}`, `the four weights sum to ${sum}, not 100`);
+        }
+    }
+}
+function catalogSemantics(out, tuples) {
+    const seen = new Set();
+    for (const tuple of tuples) {
+        if (!isText(tuple?.id))
+            continue;
+        if (seen.has(tuple.id)) {
+            out.error('catalog-invalid', 'catalog', `tuples.${tuple.id}`, 'duplicate tuple id — the resolver\'s last tie-break is the id, and a duplicate makes the pick order-dependent');
+        }
+        seen.add(tuple.id);
+        if (!isText(tuple.harness))
+            continue;
+        if (!knownHarnesses().includes(tuple.harness)) {
+            out.error('catalog-invalid', 'catalog', `tuples.${tuple.id}.harness`, `unknown harness "${tuple.harness}" — this CLI drives ${knownHarnesses().join(', ')}`);
+            continue;
+        }
+        if (tuple.effort === null || tuple.effort === undefined)
+            continue;
+        const levels = effortLevelsOf(tuple.harness);
+        if (!levels.includes(tuple.effort)) {
+            out.error('catalog-invalid', 'catalog', `tuples.${tuple.id}.effort`, `"${tuple.effort}" is not an effort level of ${tuple.harness} — allowed: ${levels.join(', ')}`);
+        }
+    }
+}
+// What a rated row must carry before validate accepts it.
+// [guides/model-routing.md#citationchecks--what-a-rated-row-must-carry-before-validate-accepts-it](../../docs/guides/model-routing.md#citationchecks--what-a-rated-row-must-carry-before-validate-accepts-it)
+function citationChecks(out, tuples) {
+    const byId = new Map(tuples.filter((t) => isText(t?.id)).map((t) => [t.id, t]));
+    for (const tuple of tuples) {
+        // A row with NO `evidence` is the case this check most needs: the field is optional, so
+        // "no citation" and "no field" would otherwise be one document with two verdicts.
+        const evidence = tuple?.evidence === undefined ? {} : tuple.evidence;
+        if (!isObject(evidence))
+            continue;
+        const cited = new Set((evidence.sources ?? []).map((c) => c?.rating));
+        const supposed = new Set((evidence.hypothesis ?? []));
+        const interpolated = isText(evidence.interpolatedFrom);
+        if (interpolated) {
+            const origin = byId.get(evidence.interpolatedFrom);
+            if (!origin) {
+                out.error('catalog-invalid', 'catalog', `tuples.${tuple.id}.evidence.interpolatedFrom`, `no tuple with id "${evidence.interpolatedFrom}" — an interpolated row is exempt from citing `
+                    + 'its own figures because the base row carries them, so a base row that is not there '
+                    + 'leaves the ladder with no source at all');
+            }
+            else if (isObject(origin.evidence) && isText(origin.evidence.interpolatedFrom)) {
+                // One hop and no more: a chain would let a ladder cite itself in a ring, every rung
+                // exempt and no row naming a page. ADR-005 puts the figures on THE base row.
+                out.error('catalog-invalid', 'catalog', `tuples.${tuple.id}.evidence.interpolatedFrom`, `"${evidence.interpolatedFrom}" is itself interpolated (from `
+                    + `"${origin.evidence.interpolatedFrom}") — a base row carries the figures, so the `
+                    + 'exemption is one hop; a chain of them can close into a ring that cites nothing');
+            }
+            else if (origin.id === tuple.id) {
+                out.error('catalog-invalid', 'catalog', `tuples.${tuple.id}.evidence.interpolatedFrom`, 'a row cannot be interpolated from itself');
+            }
+            continue;
+        }
+        for (const rating of RATING_KEYS) {
+            if (cited.has(rating) || supposed.has(rating))
+                continue;
+            out.error('catalog-invalid', 'catalog', `tuples.${tuple.id}.evidence`, `"${rating}" is rated ${tuple.ratings?.[rating]} with nothing behind it — name a source in `
+                + '`sources`, mark the row `interpolatedFrom` a base row that has one, or say in '
+                + '`hypothesis` that no figure is published for this exact model');
+        }
+        for (const rating of supposed) {
+            if (!cited.has(rating))
+                continue;
+            out.error('catalog-invalid', 'catalog', `tuples.${tuple.id}.evidence.hypothesis`, `"${rating}" is named a hypothesis and also carries a source — it is one or the other`);
+        }
+    }
+}
+// Which layer a merged-catalog warning belongs to: the highest-precedence one
+// among the values that raised it ([03-cli](../../docs/reference/03-cli.md)).
+function provenanceOf(sources, appliedOverlays) {
+    const rank = new Map([[CATALOG_LAYER, 0]]);
+    appliedOverlays.forEach((id, index) => rank.set(id, index + 1));
+    const top = (ids) => ids.reduce((best, id) => ((rank.get(id) ?? 0) > (rank.get(best) ?? 0) ? id : best), CATALOG_LAYER);
+    // `Object.hasOwn` for the reason the merge writes these maps with it: the
+    // tuple-id grammar admits `constructor`.
+    const ofPriority = (id) => (Object.hasOwn(sources?.priority ?? {}, id) ? sources.priority[id] : CATALOG_LAYER);
+    const ofRating = (id, rating) => {
+        const row = Object.hasOwn(sources?.ratings ?? {}, id) ? sources.ratings[id] : null;
+        return row && Object.hasOwn(row, rating) ? row[rating] : CATALOG_LAYER;
+    };
+    return {
+        priority: (...ids) => top(ids.map(ofPriority)),
+        rating: (rating, ...ids) => top(ids.map((id) => ofRating(id, rating))),
+        ratings: (...ids) => top(ids.flatMap((id) => RATING_KEYS.map((rating) => ofRating(id, rating)))),
+        top: (...ids) => top(ids),
+    };
+}
+// Canonical priority is a documented convention, not a schema rule, and a catalog that breaks
+// it still routes — [guides/model-routing.md](../../docs/guides/model-routing.md#canonical-priority).
+function priorityChecks(out, tuples, layers) {
+    const byPriority = new Map();
+    for (const tuple of tuples) {
+        if (!Number.isInteger(tuple?.priority))
+            continue;
+        if (byPriority.has(tuple.priority)) {
+            out.warn({
+                code: 'priority-duplicate',
+                priority: tuple.priority,
+                tupleIds: [byPriority.get(tuple.priority), tuple.id],
+                layer: layers.priority(byPriority.get(tuple.priority), tuple.id),
+                message: `tuples "${byPriority.get(tuple.priority)}" and "${tuple.id}" share canonical priority `
+                    + `${tuple.priority}, so the tie-break falls through to the tuple id`,
+            });
+        }
+        else
+            byPriority.set(tuple.priority, tuple.id);
+    }
+    const order = knownHarnesses();
+    const groups = new Map();
+    for (const tuple of tuples) {
+        if (!isText(tuple?.harness) || !Number.isInteger(tuple?.priority))
+            continue;
+        if (!groups.has(tuple.harness))
+            groups.set(tuple.harness, []);
+        groups.get(tuple.harness).push(tuple);
+    }
+    let ceiling = -1;
+    let ceilingId = null;
+    for (const harness of order) {
+        const group = groups.get(harness);
+        if (!group?.length)
+            continue;
+        const sorted = [...group].sort((a, b) => a.priority - b.priority);
+        if (sorted[0].priority <= ceiling) {
+            out.warn({
+                code: 'priority-not-canonical',
+                harness,
+                layer: layers.priority(sorted[0].id, ceilingId),
+                message: `the ${harness} block starts at ${sorted[0].priority}, inside the block above it — `
+                    + `harness blocks run in the order the driver registry lists them: ${order.join(', ')}`,
+            });
+        }
+        ceiling = sorted[sorted.length - 1].priority;
+        ceilingId = sorted[sorted.length - 1].id;
+        for (let i = 1; i < sorted.length; i += 1) {
+            if (sorted[i].ratings?.quality > sorted[i - 1].ratings?.quality) {
+                out.warn({
+                    code: 'priority-not-canonical',
+                    harness,
+                    tupleIds: [sorted[i - 1].id, sorted[i].id],
+                    // The order came from the priorities and the verdict from the quality
+                    // ratings, so both pairs of values raised this one.
+                    layer: layers.top(layers.priority(sorted[i - 1].id, sorted[i].id), layers.rating('quality', sorted[i - 1].id, sorted[i].id)),
+                    message: `inside a harness block priority rises as quality falls; "${sorted[i].id}" `
+                        + `rates higher than "${sorted[i - 1].id}" but sits below it`,
+                });
+            }
+        }
+    }
+}
+/** Keep launchable effort rungs even when the 1–10 bands cannot tell them apart, but make the
+ * tie visible. `interpolatedFrom` is the ladder identity — Cursor puts effort in the id. */
+function ladderChecks(out, tuples, layers) {
+    const groups = new Map();
+    for (const tuple of tuples) {
+        const root = isText(tuple?.evidence?.interpolatedFrom) ? tuple.evidence.interpolatedFrom : tuple?.id;
+        if (!isText(root))
+            continue;
+        if (!groups.has(root))
+            groups.set(root, []);
+        groups.get(root).push(tuple);
+    }
+    for (const rows of groups.values()) {
+        const seen = new Map();
+        for (const tuple of rows.sort((a, b) => a.priority - b.priority)) {
+            const signature = JSON.stringify([tuple.ratings, [...(tuple.roles ?? [])].sort()]);
+            if (!seen.has(signature)) {
+                seen.set(signature, tuple);
+                continue;
+            }
+            const first = seen.get(signature);
+            out.warn({
+                code: 'ladder-indistinguishable',
+                tupleIds: [first.id, tuple.id],
+                // The signature is ratings and roles, and no overlay may patch roles:
+                // the collision is attributable to the ratings alone.
+                layer: layers.ratings(first.id, tuple.id),
+                message: `ladder rungs "${first.id}" and "${tuple.id}" coincide on all ratings and roles; `
+                    + 'both remain because effort is still a launchable choice',
+            });
+        }
+    }
+}
+/** Assessed roles are conferred by a qualifying base row, never by upward interpolation. */
+function assessedRoleChecks(out, tuples) {
+    const byId = new Map(tuples.filter((t) => isText(t?.id)).map((t) => [t.id, t]));
+    for (const tuple of tuples) {
+        for (const role of ASSESSED_ROLES) {
+            if (!tuple?.roles?.includes(role))
+                continue;
+            const floor = DEFAULT_POLICY.qualityFloor[role];
+            const baseId = isText(tuple.evidence?.interpolatedFrom) ? tuple.evidence.interpolatedFrom : tuple.id;
+            const base = byId.get(baseId);
+            const tupleQuality = ratingsFor(tuple, role).quality ?? 0;
+            const baseQuality = base ? (ratingsFor(base, role).quality ?? 0) : 0;
+            if (baseQuality < floor || tupleQuality < floor) {
+                out.error('catalog-invalid', 'catalog', `tuples.${tuple.id}.roles`, `${role} requires this tuple (effective quality ${tupleQuality}) and its assessed base row "${baseId}" `
+                    + `(effective quality ${baseQuality}) to have quality ${floor} or above; `
+                    + `upward interpolation never confers the ${role} role`);
+            }
+        }
+    }
+}
+/** Validate a stack already in memory. Pure. The grammar gate is deliberate: semantic checks
+ * run only on layers whose shape held, or a broken file answers with a stack trace. */
+export function validateLayers({ canonical, overlays = [], constraints = null, steps = [], now = Date.now() } = {}) {
+    const out = collector();
+    const registry = withSteps(SHIPPED_REGISTRY, steps);
+    const stepNames = registry.entries.filter((entry) => entry.layer === 'step').map((entry) => entry.name);
+    const stepRoles = Object.fromEntries(registry.entries.filter((entry) => entry.layer === 'step'
+        && !ROUTED_ROLES.includes(entry.name)).map((entry) => [entry.name, entry.catalogRole]));
+    const catalogShape = checkCatalogShape(canonical?.data);
+    for (const { at, note } of catalogShape) {
+        out.error('catalog-invalid', 'catalog', at, note);
+    }
+    const sound = [];
+    for (const layer of overlays) {
+        if (!layer.present)
+            continue;
+        const shape = checkOverlayShape(layer.data, stepNames);
+        for (const { at, note } of shape)
+            out.error('overlay-invalid', layer.id, at, note);
+        if (!shape.length)
+            sound.push(layer);
+    }
+    if (catalogShape.length)
+        return { ok: false, errors: out.errors, warnings: out.warnings };
+    catalogSemantics(out, canonical.data.tuples);
+    citationChecks(out, canonical.data.tuples);
+    assessedRoleChecks(out, canonical.data.tuples);
+    let merged;
+    try {
+        merged = mergeRouting({ canonical: canonical.data, overlays: sound, constraints, stepNames, now });
+    }
+    catch (err) {
+        out.error('overlay-invalid', 'merge', '', err.message);
+        return { ok: false, errors: out.errors, warnings: out.warnings };
+    }
+    const facts = {
+        ids: new Set(merged.tuples.map((t) => t.id)),
+        models: new Set(merged.tuples.map((t) => t.model)),
+        harnesses: new Set(knownHarnesses()),
+        efforts: new Set([
+            ...knownHarnesses().flatMap((h) => effortLevelsOf(h)),
+            ...merged.tuples.map((t) => t.effort).filter((e) => typeof e === 'string'),
+        ]),
+    };
+    for (const layer of sound)
+        referenceChecks(out, layer, layer.data, facts, stepNames);
+    // A harness a person answered a question about that this CLI does not drive. An error, not a
+    // warning: the answer is display only, so a misspelt one would sit in a file forever.
+    for (const layer of sound) {
+        for (const harness of Object.keys(isObject(layer.data.account) ? layer.data.account : {})) {
+            if (knownHarnesses().includes(harness))
+                continue;
+            out.error('overlay-invalid', layer.id, `account.${harness}`, `unknown harness "${harness}" — this CLI drives ${knownHarnesses().join(', ')}`);
+        }
+        // A ceiling on a harness this CLI does not drive, and an error for the same reason: a
+        // misspelt name is a cap that bounds nothing while its author believes it holds.
+        for (const kind of CAP_KINDS) {
+            const block = isObject(layer.data.caps) ? layer.data.caps[kind] : null;
+            for (const harness of Object.keys(isObject(block) ? block : {})) {
+                if (knownHarnesses().includes(harness))
+                    continue;
+                out.error('overlay-invalid', layer.id, `caps.${kind}.${harness}`, `unknown harness "${harness}" — this CLI drives ${knownHarnesses().join(', ')}`);
+            }
+        }
+    }
+    weightChecks(out, merged.policy, merged.sources);
+    // A layer stating `qualityFloor.reviewer` and the alias both. Lawful — the explicit key wins
+    // (ADR-005) — and worth saying: a file that says one thing twice expected two things.
+    for (const layer of merged.sources.floorAlias ?? []) {
+        out.warn({
+            code: 'quality-floor-alias',
+            layer,
+            at: 'reviewerQualityFloor',
+            message: `"${layer}" states both qualityFloor.reviewer and the reviewerQualityFloor alias — `
+                + 'the explicit key wins and the alias does nothing in this layer',
+        });
+    }
+    contradictionChecks(out, merged.policy, merged.sources, stepRoles);
+    const layers = provenanceOf(merged.sources, merged.appliedOverlays);
+    priorityChecks(out, merged.tuples, layers);
+    ladderChecks(out, merged.tuples, layers);
+    for (const warning of merged.warnings)
+        out.warn(warning);
+    // `rules` travels with the verdict because `models validate` prints the bans in force and
+    // who may lift each one, and the merge is the only place that knows.
+    return {
+        ok: out.errors.length === 0, errors: out.errors, warnings: out.warnings, rules: merged.sources.rules,
+    };
+}
+/** The routing stack and the host's pipeline declaration, each finding in one list; `pipeline` is the
+ * steps in order, `null` when the declaration is refused. */
+export function validate(options = {}) {
+    const { steps, findings } = pipelineVerdict(options.host);
+    const verdict = validateStack({ ...options, steps: steps ?? [] });
+    if (!findings.length)
+        return { ...verdict, pipeline: steps };
+    return { ...verdict, ok: false, errors: [...verdict.errors, ...findings], pipeline: null };
+}
+/** Read the shipped catalog and every overlay the host names, then validate. Unreadable JSON is
+ * a finding, not a throw: this is the command a person runs when a file is broken. */
+function validateStack({ host, constraints = null, catalogFile = CATALOG_FILE, steps = [], now = Date.now() } = {}) {
+    const read = (file, id, code) => {
+        if (!existsSync(file))
+            return { id, path: file, present: false, data: null };
+        try {
+            return { id, path: file, present: true, data: JSON.parse(readFileSync(file, 'utf8')) };
+        }
+        catch (err) {
+            return { id, path: file, present: true, data: null, failure: { code, note: err.message } };
+        }
+    };
+    const canonical = read(catalogFile, 'catalog', 'catalog-invalid');
+    const declared = host?.routingPaths?.()?.overlays ?? [];
+    const overlays = declared.map((layer) => ({
+        ...read(layer.path, layer.id, 'overlay-invalid'),
+        writable: layer.writable === true,
+    }));
+    // `writable` travels with the layer because `models validate` is where a person asks which
+    // file the tool writes — the one layer whose content is not theirs alone (ADR-005).
+    const layers = [canonical, ...overlays]
+        .map(({ id, path: file, present, writable }) => ({ id, path: file, present, writable: writable === true }));
+    // The same rule `readLayers` refuses on, reported as a FINDING: otherwise `models validate`
+    // would say the stack holds while `models` says it does not.
+    const writable = overlays.filter((l) => l.writable).map((l) => l.id);
+    if (declared.length && writable.length !== 1) {
+        return {
+            ok: false,
+            layers,
+            errors: [{
+                    code: 'overlay-invalid',
+                    layer: 'host',
+                    at: 'routingPaths().overlays',
+                    message: writable.length
+                        ? `${writable.length} layers are writable (${writable.join(', ')}); exactly one may be`
+                        : `no declared layer is writable (${declared.map((l) => l.id).join(', ')}); exactly one must be`,
+                }],
+            warnings: [],
+        };
+    }
+    const broken = [canonical, ...overlays].filter((l) => l.failure);
+    if (!canonical.present) {
+        return {
+            ok: false,
+            layers,
+            errors: [{ code: 'catalog-invalid', layer: 'catalog', at: '', message: `the shipped catalog is missing: ${catalogFile}` }],
+            warnings: [],
+        };
+    }
+    if (broken.length) {
+        return {
+            ok: false,
+            layers,
+            errors: broken.map((l) => ({ code: l.failure.code, layer: l.id, at: '', message: `not valid JSON: ${l.failure.note}` })),
+            warnings: [],
+        };
+    }
+    return { ...validateLayers({ canonical, overlays, constraints, steps, now }), layers };
+}

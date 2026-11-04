@@ -1,0 +1,38 @@
+import { APPROVER, ORCHESTRATOR, REVIEWER, WORKER } from '../../dist/registry.js';
+export type BbInstructionRole = typeof WORKER | typeof REVIEWER | typeof APPROVER | typeof ORCHESTRATOR | 'teamlead' | 'reporter';
+interface BbInstructionContext {
+    taskId: string;
+    address: string;
+    environmentId: string;
+    workspace: string;
+    assignment: string;
+    tools: Readonly<Record<string, string>>;
+    workerAddress?: string | null;
+    allowDirectWorkerMessages?: boolean;
+    snapshot?: {
+        head: string;
+        base: string;
+        dirty: boolean;
+        diffPath: string;
+    };
+    gateRecords?: readonly string[];
+    launchContext?: unknown;
+    commandAdmission?: {
+        format: 'promptobus-bb-command-admission-v1';
+        role: BbInstructionRole;
+    };
+    evidenceManifest?: unknown;
+    bridgeCheck?: string;
+}
+interface BbInstructionDelivery {
+    configuration: {
+        tools: string[];
+        skills: string[];
+        instructions: string;
+    };
+    initialPrompt: string;
+}
+export declare const BB_ROLE_SKILLS: Readonly<Record<BbInstructionRole, string>>;
+export declare function renderBbInstructionSkill(role: BbInstructionRole): string;
+export declare function createBbInstructionDelivery(role: BbInstructionRole, context: BbInstructionContext): BbInstructionDelivery;
+export {};

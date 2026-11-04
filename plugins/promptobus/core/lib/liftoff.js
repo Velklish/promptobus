@@ -1,0 +1,289 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { GateError, liftWords, PromptobusError, SHIPPED_REGISTRY, WORKER } from '../dist/index.js';
+import { info, warn } from './util.js';
+import { run } from './exec.js';
+import { commonPollEnvironment, harnessBin } from './harness-home.js';
+import { participantOf, readTask, taskExists, withTaskLock } from './store.js';
+import { ownsLegacyLaunch, requireCurrentNativeLaunch } from './native-lifecycle.js';
+import { bindBeforeLaunch, revokeFailedManagedLaunch } from './driver-common.js';
+export { bindBeforeLaunch } from './driver-common.js';
+// Lift a bus participant and the registry of their sessions; both live here or spawn.js and
+// review.js would import each other. One lift per role — line-by-line copies had drifted.
+// `limit-hit-at-start`: when a lift fails on a limit spent since the preflight.
+// [guides/model-routing.md#limit-hit-at-start-when-a-lift-fails-on-a-limit-spent-since-the-preflight](../docs/guides/model-routing.md#limit-hit-at-start-when-a-lift-fails-on-a-limit-spent-since-the-preflight)
+export async function liftoffParticipant({ tool, argv, cwd, env, name, role, registry = SHIPPED_REGISTRY, launchFailNote = '', deadNote = '', unboundNote = '', persist, awaitOptions, sayLimit = null, home = null, task = null, address = null, preboundSessionId = null, preboundSessionRecord = null, noun = null, requireFullSession = false, requireLaunchMatch = false, beforeStart, afterBind, launch = { argv: [], files: [], mcpConfig: null, settings: null, sessionRecord: preboundSessionRecord }, expectedBinding, }) {
+    const who = noun ? { nom: noun, acc: `the ${noun}` } : liftWords(registry, role) ?? liftWords(registry, WORKER);
+    const pointer = preboundSessionId && home && task && address ? preboundSessionRecord : null;
+    const undo = preboundSessionId && home && task && address
+        ? bindBeforeLaunch(home, task, address, {
+            sessionId: preboundSessionId, ...(pointer ? { sessionRecord: pointer } : {}),
+        }) : () => { };
+    const undoOwned = () => {
+        if (!expectedBinding || !home || !task || !address)
+            return undo();
+        if (!taskExists(home, task))
+            return;
+        return withTaskLock(home, task, () => {
+            if (ownsLegacyLaunch(home, task, address, expectedBinding))
+                undo();
+        });
+    };
+    const refuse = (message) => { throw new GateError(message); };
+    try {
+        await beforeStart?.();
+        // The shared minute bounds this `--bg` registration call, not the session's
+        // lifetime; session appearance is retried separately by awaitSession below.
+        const r = run(tool.bin, argv, {
+            cwd,
+            env,
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        // The same words on three refusal branches: the route is one and is held by the record
+        // written before launch.
+        if (r.error?.code === 'ENOENT')
+            refuse(`${tool.bin}: the binary vanished between the check and launch — nothing to start ${who.acc} with.${launchFailNote}`);
+        if (r.error)
+            refuse(`claude --bg: ${r.error.message}.${launchFailNote}`);
+        const output = `${r.stdout ?? ''}\n${r.stderr ?? ''}`.trim();
+        if (r.status !== 0) {
+            const limitNote = sayLimit?.(output) ?? '';
+            const said = `claude --bg exited with code ${r.status}${output ? `: ${output}` : ''}.${launchFailNote}${limitNote}`;
+            if (limitNote)
+                throw new PromptobusError('limit-hit-at-start', said);
+            refuse(said);
+        }
+        // Did the session come up? `claude --bg` returns 0 and prints "backgrounded" even when
+        // there will be none. Checked with the same `findSession` as `status`; a short retry.
+        const launchId = parseSessionId(output);
+        if (requireLaunchMatch && !launchId) {
+            refuse(`session "${name}" started, but claude --bg did not name its id, so this lift cannot identify its own session.${unboundNote}`);
+        }
+        const seen = await awaitSession(name, { ...awaitOptions, launchId: requireLaunchMatch ? launchId : null });
+        // Session binding retains the harness protocol's string-id assumption, without validation.
+        const session = spawnedSessionId(seen, output) ?? (seen.state === 'dead' ? null : preboundSessionId);
+        const named = sessionIdFull(seen);
+        const full = named ?? (seen.state === 'dead' ? null : preboundSessionId);
+        const unbound = seen.state !== 'dead' && ((!session && !full) || (requireFullSession && !full));
+        const state = unbound ? 'dead' : seen.state;
+        // A handshake binding stands; only the id the harness itself names can contradict it.
+        let disagreement = null;
+        const publish = () => {
+            if (expectedBinding && home && task && address && !ownsLegacyLaunch(home, task, address, expectedBinding)) {
+                throw new GateError(`Claude launch ${name} changed its owned generation, ref or participant before native publication`);
+            }
+            if (pointer && state !== 'dead') {
+                requireCurrentNativeLaunch(participantOf(readTask(home, task), address), null);
+                const bound = handshakeBinding(pointer);
+                if (bound && named && bound !== named) {
+                    return bound;
+                }
+                persist(session, state, bound ?? full);
+                return null;
+            }
+            else
+                persist(session, state, full);
+            return null;
+        };
+        disagreement = home && task && taskExists(home, task) ? withTaskLock(home, task, publish) : publish();
+        if (disagreement) {
+            if (output)
+                info(output);
+            refuse(`session "${name}" is alive, but claude agents names it ${named} while its own MCP handshake bound `
+                + `${who.acc}'s record to ${disagreement} — the record cannot say which session it holds. This lift is refused.${unboundNote}`);
+        }
+        if (seen.state === 'dead') {
+            const limitNote = sayLimit?.(output) ?? '';
+            if (output)
+                info(output);
+            const said = `claude --bg reported success, but there is no live session "${name}" in claude agents — ${who.nom} was NOT started.`
+                + (seen.ghost ? ` A record of a past session sits under this name (${seen.ghost.id ?? 'no id'}), having outlived its daemon — that is not it.` : '')
+                + deadNote + limitNote;
+            if (limitNote)
+                throw new PromptobusError('limit-hit-at-start', said);
+            refuse(said);
+        }
+        if (unbound) {
+            if (output)
+                info(output);
+            const missing = requireFullSession && session
+                ? 'the full session id was not read from claude agents'
+                : 'no session id was read for it — neither claude agents nor the --bg output named one';
+            refuse(`session "${name}" is alive and working, but ${missing} — so ${who.nom}'s record is bound to no session and nothing it sends will be taken: `
+                + `it cannot report. This lift is refused.${unboundNote}`);
+        }
+        if (afterBind) {
+            const confirmed = named ?? (pointer ? handshakeBinding(pointer) : null) ?? launchId;
+            if (!confirmed)
+                refuse(`session "${name}" has not confirmed its actual native id for shared HTTP.${unboundNote}`);
+            await afterBind(confirmed);
+        }
+        return { output, session, seen };
+    }
+    catch (error) {
+        return revokeFailedManagedLaunch(launch, error, undoOwned);
+    }
+}
+// The id a session's own handshake bound into its session record, or null.
+function handshakeBinding(file) {
+    try {
+        const parsed = JSON.parse(readFileSync(file, 'utf8'));
+        const id = parsed?.sessionId;
+        return typeof id === 'string' && id.trim() ? id.trim() : null;
+    }
+    catch {
+        return null;
+    }
+}
+// What is said after a successful lift, the same for every role: an unconfirmed check and
+// an unparsed id are not a refusal — the participant is up and can be found by name.
+export function sayLiftoff({ name, seen, session, output }) {
+    if (seen.state === 'unknown') {
+        warn(`lift of session "${name}" is not confirmed: claude agents --json was not parsed.`
+            + ' Check yourself — a missing participant is as silent as a working one.');
+    }
+    if (!session)
+        warn(`session identifier was not parsed from the output — look it up by name "${name}": claude agents`);
+    if (output)
+        info(output);
+}
+// Background-session identifier from `claude --bg` output. Output format is not a
+// contract: if we did not parse it — that is not a refusal.
+export function parseSessionId(output) {
+    const text = String(output ?? '');
+    const uuid = text.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i);
+    if (uuid)
+        return uuid[0];
+    // Observed v2.1.221 format: "backgrounded · d7b7340b · <name>".
+    const bg = text.match(/backgrounded\W+([0-9a-f]{6,})/i);
+    if (bg)
+        return bg[1];
+    // The third pattern is a spare and deliberately narrow: the value must carry a digit, or
+    // "session started successfully" would declare `started` the identifier.
+    const named = text.match(/\b(?:agent|session|id)\b\W{0,4}([A-Za-z0-9][\w-]{5,})/i);
+    return named && /\d/.test(named[1]) ? named[1] : null;
+}
+// A parsed value binds a participant only in the shape of a session id: a uuid, or its hex head.
+const SESSION_ID_SHAPE = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{6,})$/i;
+// Where the session id comes from after a spawn; the order matters and is tested. Why this
+// name: [03-cli.md § The session id after a lift](../docs/reference/03-cli.md#the-session-id-after-a-lift).
+export function spawnedSessionId(seen, output) {
+    const parsed = parseSessionId(output);
+    return seen?.session?.id ?? (SESSION_ID_SHAPE.test(parsed ?? '') ? parsed : null);
+}
+// The full session identifier — the one the session calls itself — and only from the
+// harness record: [03-cli.md § The session id after a lift](../docs/reference/03-cli.md#the-session-id-after-a-lift).
+export function sessionIdFull(seen) {
+    const full = seen?.session?.sessionId;
+    return typeof full === 'string' && full.trim() ? full.trim() : null;
+}
+// Wait for the session to appear. Outcomes: `alive` — found, `dead` — not found in all
+// attempts, `unknown` — `claude agents --json` output was not parsed, which is not death.
+export async function awaitSession(name, { tries = 6, delayMs = 500, sessions = bgSessions, launchId = null } = {}) {
+    let ghost = null;
+    for (let i = 0; i < tries; i += 1) {
+        // The list changes after `--bg`: without a reset the cache of the first empty probe
+        // would declare a just-lifted session missing on every remaining attempt.
+        if (sessions === bgSessions)
+            resetBgSessionsCache();
+        const list = sessions();
+        if (list === null)
+            return { state: 'unknown', session: null, ghost: null };
+        const hit = findSession(list, name, launchId);
+        // A matching name is not enough: a restarted worker reuses the address, and the past
+        // session's record does not vanish from the list.
+        if (hit && sessionLiveness(hit, list) === 'alive')
+            return { state: 'alive', session: hit, ghost: null };
+        if (hit)
+            ghost = hit;
+        if (i < tries - 1)
+            await new Promise((r) => { setTimeout(r, delayMs); });
+    }
+    return { state: 'dead', session: null, ghost };
+}
+// Live background sessions by the names we set at spawn.
+// [reference/03-cli.md#bgsessionscache--live-background-sessions-by-the-names-we-set-at-spawn](../docs/reference/03-cli.md#bgsessionscache--live-background-sessions-by-the-names-we-set-at-spawn)
+let bgSessionsCache = undefined;
+let bgSessionsCacheKey = null;
+export function resetBgSessionsCache() {
+    bgSessionsCache = undefined;
+    bgSessionsCacheKey = null;
+}
+export function bgSessions({ fresh = false } = {}) {
+    return readBgSessions({ fresh }).list;
+}
+// The same read, saying WHY there is no list: `missing` — the harness binary was not found or does
+// not start, in words that name it; `null` beside a `null` list — it ran and did not parse.
+export function readBgSessions({ fresh = false } = {}) {
+    const key = JSON.stringify({ tool: harnessBin('claude'), env: commonPollEnvironment() });
+    if (!fresh && bgSessionsCache !== undefined && bgSessionsCacheKey === key)
+        return { list: bgSessionsCache, missing: null };
+    const { r, missing } = runClaude(['agents', '--json']);
+    if (missing)
+        return { list: null, missing };
+    if (r.error || r.status !== 0)
+        return { list: null, missing: null };
+    try {
+        const raw = JSON.parse(r.stdout);
+        const parsed = raw;
+        const list = Array.isArray(parsed) ? parsed : parsed.agents ?? parsed.sessions ?? [];
+        if (!Array.isArray(list))
+            return { list: null, missing: null };
+        bgSessionsCache = list;
+        bgSessionsCacheKey = key;
+        return { list, missing: null };
+    }
+    catch {
+        return { list: null, missing: null };
+    }
+}
+// `claude <args>` through the binary the host names — the lift's door, not this process's PATH:
+// [05-drivers.md § The harness binary after a lift](../docs/reference/05-drivers.md#the-harness-binary-after-a-lift-the-lifts-door-not-path).
+export function runClaude(args) {
+    const tool = harnessBin('claude');
+    if (!tool.bin)
+        return { r: null, missing: `the harness binary was not found: ${tool.reason}` };
+    const r = run(tool.bin, args, { encoding: 'utf8', env: commonPollEnvironment() });
+    const code = r.error?.code;
+    if (code === 'EACCES' || code === 'ENOEXEC') {
+        return { r: null, missing: `the harness binary does not start: ${tool.bin} (${code})` };
+    }
+    if (code !== 'ENOENT')
+        return { r, missing: null };
+    const where = path.isAbsolute(tool.bin) || tool.bin.includes(path.sep) ? tool.bin
+        : `${tool.bin} on this process's PATH (a background session's PATH is its daemon's, not a terminal's)`;
+    return { r: null, missing: `the harness binary was not found: looked for ${where}` };
+}
+// By the record's `name` field and in full: a substring over the whole record would match a
+// session whose `cwd` holds another name. No `kind` filter — a vanished field kills all.
+export function findSession(sessions, name, launchId = null) {
+    const hits = (sessions ?? []).filter((raw) => {
+        const s = raw;
+        return s?.name === name && (!launchId || [s.id, s.sessionId]
+            .some((id) => typeof id === 'string' && (id === launchId || (launchId.length >= 6 && id.startsWith(launchId)))));
+    });
+    if (!hits.length)
+        return null;
+    if (launchId) {
+        const liveIds = new Set(hits.filter((s) => sessionLiveness(s, sessions) === 'alive')
+            .map((s) => s.sessionId ?? s.id));
+        if (liveIds.size > 1)
+            return null;
+    }
+    // More than one record is normal: a ghost and a new session. We pick the live one.
+    return hits.find((s) => sessionLiveness(s, sessions) === 'alive') ?? hits[0];
+}
+// A record is not liveness — it outlives its daemon, and `pid` separates them. The signal
+// is self-calibrating: a missing `pid` means "listed" only where this claude prints one.
+export function sessionLiveness(session, sessions = null) {
+    if (!session)
+        return 'dead';
+    const hasPid = (raw) => {
+        const s = raw;
+        return typeof s?.pid === 'number' && s.pid > 0;
+    };
+    if (hasPid(session))
+        return 'alive';
+    return (sessions ?? []).some(hasPid) ? 'stale' : 'alive';
+}

@@ -1,0 +1,824 @@
+// The warden state machine: what is here and what is not.
+// [guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not](../docs/guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not)
+import { existsSync } from 'node:fs';
+import { beatWarden, lastTurnAt, logWarden, readHealth, readStalls, readTranscript, readWake, writeHealth, writeStalls, } from './sidecar.js';
+import { addressOf, dismissedOf, foreignSessionOf, ORCHESTRATOR, repoAbsOf, sessionIdOf, sessionOf, startedOf, } from './protocol.js';
+import { readArtifact } from './v1/artifacts.js';
+import { inboxRef } from './v1/layout.js';
+import { countInbox, glanceInbox, inboxIdentity, lastSentAt } from './v1/messages.js';
+import { readTask } from './v1/store.js';
+import { driverFor, harnessOf, pushes, resetAhead, resetText, sessionRefOf } from './driver.js';
+// Polling mailboxes — a safety net for `fs.watch`, which loses events.
+export const TICK_MS = 1000;
+// Knock retry: the mailbox is still not taken — knock again. Two minutes are measured to the
+// participant's turn, not the network: a long turn is allowed to stay silent for minutes.
+export const KNOCK_RETRY_SEC = 120;
+// Coalescing window: new mail under a knock whose mailbox is not yet taken waits this long for the
+// take. A hand-off burst spans under 20 s; half the postcards of a measured run came within 90 s.
+export const KNOCK_COALESCE_SEC = 90;
+// Silence threshold: unread must not sit longer than this. Fifteen minutes means "not answering",
+// not "thinking" — the mailbox is taken BEFORE the turn is inspected, not after.
+export const SILENCE_SEC = 900;
+// Working lifetime ceiling — only ends the warden process for an idle task; live work defers it.
+export const WARDEN_TOTAL_SEC = 6 * 3600;
+// Unconditional process ceiling — guards a forgotten run and a stuck delivery loop.
+export const WARDEN_ABSOLUTE_SEC = 72 * 3600;
+// How many consecutive round failures the process tolerates before exiting. One is a transient (a
+// held task lock, a file rewritten underfoot); three in a row is not.
+export const ROUND_FAIL_LIMIT = 3;
+// Registration window for a freshly spawned session: spawn writes the participant BEFORE the
+// session appears at the harness, and the gap means an unfinished start, not death.
+export const SPAWN_GRACE_SEC = 30;
+const NO_FAULT = () => { };
+function slotsOf(task, p, mailboxes) {
+    return mailboxes?.(p) ?? { alias: false, slots: [{ task, participant: p.id }] };
+}
+// Send order across slots by the plain comparison record ids sort by; `localeCompare` depends on the locale.
+function bySendOrder(a, b) {
+    const x = String(a?.id ?? '');
+    const y = String(b?.id ?? '');
+    return x < y ? -1 : (x > y ? 1 : 0);
+}
+function unreadOf(home, mailbox) {
+    return mailbox.slots.reduce((n, slot) => n + countInbox(home, slot.task, slot.participant), 0);
+}
+function keyOf(key) { return JSON.stringify(key); }
+function unreadKeys(value) {
+    return Array.isArray(value) ? value.filter((key) => Array.isArray(key) && key.length === 3 && key.every(part => typeof part === 'string')) : [];
+}
+function uniqueKeys(keys) {
+    return [...new Map(keys.map(key => [keyOf(key), key])).entries()]
+        .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([, key]) => key);
+}
+function marksOf(health, addr) {
+    const v = health[addr];
+    return (v && typeof v === 'object' ? v : {});
+}
+// The window is SYMMETRIC: spawn time is written by that machine's clock, and a clock set
+// backwards would make a fresh record "from the future" with a negative age.
+export function justSpawned(participant, now = Date.now()) {
+    const at = Date.parse(String(startedOf(participant) ?? ''));
+    return Number.isFinite(at) && Math.abs(now - at) < SPAWN_GRACE_SEC * 1000;
+}
+// When a turn was last STARTED: three marks, all meaning the participant was reached. A failed
+// activation (`triedAt`) is left out — silence after it speaks of a deaf channel, not a stall.
+export function lastActivation(home, task, participant) {
+    const marks = marksOf(readHealth(home, task), String(addressOf(participant) ?? ''));
+    const at = [startedOf(participant), marks.knockedAt, marks.deliveredAt]
+        .map((v) => Date.parse(String(v ?? ''))).filter(Number.isFinite);
+    return at.length ? Math.max(...at) : null;
+}
+/** Whether a dialog mark is a real prompt or the bus's own postcard held behind it.
+ * [guides/hooks-and-trust.md#promptstands--whether-a-dialog-mark-is-a-permission-prompt-the-participant-is-standing-at](../docs/guides/hooks-and-trust.md#promptstands--whether-a-dialog-mark-is-a-permission-prompt-the-participant-is-standing-at) */
+function promptStands(home, task, participant) {
+    const turn = lastTurnAt(home, task, String(addressOf(participant) ?? ''));
+    if (turn === null)
+        return true;
+    const since = lastActivation(home, task, participant);
+    if (since === null)
+        return true;
+    if (turn <= since)
+        return true;
+    try {
+        const sent = lastSentAt(home, task, String(participant?.id ?? ''));
+        return sent === null || sent <= since;
+    }
+    catch {
+        return true;
+    }
+}
+/** What the snapshot knows about the participant's session. No ref — there is no session for the address at all. */
+function viewOf(participant, sessions) {
+    if (sessions === null)
+        return null;
+    if (!sessionRefOf(participant))
+        return null;
+    // There is a ref, but no record in the snapshot: the participant appeared
+    // after the snapshot, or the session is gone.
+    return sessions[String(addressOf(participant) ?? '')] ?? { state: 'gone', busy: false, stall: null, id: null };
+}
+/** The named reset that holds the address's knocks at `now`, or null: the harness refused the turn
+ * and said when to retry. [03-cli.md § Guard and warden](../docs/reference/03-cli.md#guard-and-warden) */
+export function heldReset(participant, sessions, now = Date.now()) {
+    const reset = viewOf(participant, sessions)?.stall?.reset ?? null;
+    return resetAhead(reset, now) ? reset : null;
+}
+/** Participant session state: `alive` | `dead` | `unknown`. An unparsed snapshot, a record with no
+ * session reference, and a participant nobody can be asked about are unknown, not death. */
+export function liveParticipant(participant, sessions) {
+    if (!sessionRefOf(participant))
+        return 'unknown';
+    const view = viewOf(participant, sessions);
+    if (!view || view.state === 'unknown')
+        return 'unknown';
+    // The question is one: will we reach them. A record that outlived its process is unreachable
+    // exactly like an absent one; `status` tells them apart, because a person needs the reason.
+    return view.state === 'alive' ? 'alive' : 'dead';
+}
+/** Whether this is a stall for real: a SILENT end of turn, and `permission` has a check
+ * [guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not](../docs/guides/hooks-and-trust.md#the-warden-state-machine-what-is-here-and-what-is-not) */
+export function stallStands(home, task, participant, stall) {
+    if (!home || !task)
+        throw new Error('stallStands: home and task are required — the predicate reads the task store');
+    if (!stall)
+        return false;
+    if (stall.kind === 'permission')
+        return promptStands(home, task, participant);
+    if (stall.kind !== 'unknown')
+        return true;
+    const since = lastActivation(home, task, participant);
+    if (since === null)
+        return true;
+    let sent;
+    try {
+        sent = lastSentAt(home, task, String(participant?.id ?? ''));
+    }
+    catch {
+        // A bad participant record has no right to lift the report of their stall.
+        return true;
+    }
+    // A participant that has never spoken gets a grace window from `justSpawned`:
+    // [guides/hooks-and-trust.md#stallstands--the-grace-window-before-a-participant-has-ever-spoken](../docs/guides/hooks-and-trust.md#stallstands--the-grace-window-before-a-participant-has-ever-spoken)
+    if (sent === null)
+        return !justSpawned(participant);
+    return sent < since;
+}
+/** The address's contact point is held by a FOREIGN session, or null.
+ * [guides/hooks-and-trust.md#waketakenby--the-addresss-contact-point-is-held-by-a-foreign-session--or-null-if](../docs/guides/hooks-and-trust.md#waketakenby--the-addresss-contact-point-is-held-by-a-foreign-session--or-null-if) */
+export function wakeTakenBy(home, task, p, endpoint) {
+    const addr = addressOf(p);
+    if (!addr)
+        return null;
+    // The record is read by the caller when they already have it: the round reads every contact point
+    // every second. No argument — we read ourselves: the stall report goes past the round.
+    const wake = endpoint === undefined ? readWake(home, task, addr) : endpoint;
+    const held = wake?.session ?? null;
+    // What is returned is the TAKER — the session from the contact point, not the one the address is
+    // bound to: that is what the reason line names. The comparison rule is shared, with no copy.
+    return held && foreignSessionOf(p, held) ? held : null;
+}
+/** The session the address is bound to in the journal — how to name it to a human. */
+function heldBy(p) {
+    return sessionIdOf(p) ?? sessionOf(p) ?? 'nobody';
+}
+/** Whether the participant's session is busy with a turn.
+ * [guides/hooks-and-trust.md#sessionbusy--whether-the-participants-session-is-busy-with-a-turn](../docs/guides/hooks-and-trust.md#sessionbusy--whether-the-participants-session-is-busy-with-a-turn) */
+export function sessionBusy(home, task, participant, sessions) {
+    // The branch is chosen by the KIND of participant, not by whether the snapshot found a session:
+    // on emptiness a session-bearing participant would fall into the watchman branch and go silent.
+    if (sessionRefOf(participant)) {
+        const view = viewOf(participant, sessions);
+        return view ? view.busy === true : false;
+    }
+    const turn = lastTurnAt(home, task, String(addressOf(participant) ?? ''));
+    if (turn === null)
+        return false;
+    const since = lastActivation(home, task, participant);
+    return since !== null && since > turn;
+}
+/** Whether the address's session holds an open question to its user — positive evidence only.
+ * [guides/hooks-and-trust.md#awaitinguser--whether-the-turn-waits-on-its-user](../docs/guides/hooks-and-trust.md#awaitinguser--whether-the-turn-waits-on-its-user) */
+function awaitingUser(home, task, addr, driver, endpoint) {
+    if (typeof driver.awaitsUser !== 'function')
+        return false;
+    const transcript = readTranscript(home, task, addr);
+    if (!transcript)
+        return false;
+    if (transcript.session && endpoint?.session && transcript.session !== endpoint.session)
+        return false;
+    try {
+        return driver.awaitsUser(transcript.path) === true;
+    }
+    catch {
+        return false;
+    }
+}
+/** Task participants from whom no messages are to be expected; `null` means the state is unknown,
+ * which is not "everyone is alive". "Listed, but no process" is checked BEFORE the stall. */
+export function blockedParticipants(home, task, participants, sessions, mailboxes = null) {
+    // The task store is asked on entry, not at the first stall: a call with a forgotten store would
+    // stay silent until someone stalled, then throw inside a warden round or a `mailbox` reply.
+    if (!home || !task)
+        throw new Error('blockedParticipants: home and task are required — stall inspection reads the task store');
+    if (sessions === null)
+        return null;
+    const stalled = [];
+    // The record's harness travels into the report with it: the ROUTE is asked of the same driver
+    // that inspected the state, and a second source of truth about the harness would drift in silence.
+    const harnessOfRecord = (p) => (typeof p.harness === 'string' && p.harness.trim() ? p.harness.trim() : null);
+    for (const p of participants ?? []) {
+        const ref = sessionRefOf(p);
+        if (!ref)
+            continue;
+        // A participant taken off watch does not enter the report at all. Watch is lifted as a whole:
+        // a filter on the outcome would make silence depend on a race of two orchestrator commands.
+        if (dismissedOf(p))
+            continue;
+        const view = viewOf(p, sessions);
+        // Nobody to ask about them — no driver for their harness, or that driver does not inspect. Stay
+        // silent: a made-up "GONE" would call for raising a session that is still working.
+        if (view.state === 'unknown')
+            continue;
+        const repoAbs = repoAbsOf(p);
+        // No record at all is also a report: a participant stopped by a person and a failed spawn would
+        // otherwise be invisible. Its own state, not `stale` — there is no trace of a session.
+        if (view.state === 'gone') {
+            if (justSpawned(p))
+                continue;
+            stalled.push({
+                address: String(addressOf(p)),
+                ref,
+                // Last known id from the journal: there is no session behind it,
+                // but its directory lives longer.
+                id: sessionOf(p),
+                repoAbs,
+                harness: harnessOfRecord(p),
+                kind: 'gone',
+                // Words about a vanished record belong to the driver: it alone knows where it went missing
+                // and what that is called at its harness. It did not say — we speak neutrally.
+                reason: view.stall?.reason ?? 'the harness has no session record',
+            });
+            continue;
+        }
+        if (view.state === 'stale') {
+            // A fresh record is not a ghost: stay silent entirely, the "reported"
+            // mark is not laid either.
+            if (justSpawned(p))
+                continue;
+            stalled.push({
+                address: String(addressOf(p)),
+                ref,
+                id: view.id,
+                // The clone directory is needed by the route: the reviewer is
+                // raised from it, not by a worker spawn.
+                repoAbs,
+                harness: harnessOfRecord(p),
+                kind: 'stale',
+                // The reason says only what is new: "listed, but there is no
+                // process" will be said by the caller.
+                reason: view.stall?.reason ?? 'the record outlived its process',
+            });
+            continue;
+        }
+        // An ordinary end of turn is not a stall, and the task store decides that, not the snapshot:
+        // home and task are required for exactly this.
+        if (stallStands(home, task, p, view.stall)) {
+            stalled.push({
+                address: String(addressOf(p)),
+                ref,
+                id: view.id,
+                repoAbs,
+                harness: harnessOfRecord(p),
+                kind: view.stall.kind,
+                reason: view.stall.reason,
+                ...(view.stall.reset ? { reset: view.stall.reset } : {}),
+            });
+            continue;
+        }
+        // The session works but nothing can reach it: another session holds its contact point. Checked
+        // LAST — a dead record is the larger trouble — and the registration window covers a re-spawn.
+        const channelless = slotsOf(task, p, mailboxes).alias;
+        const taken = justSpawned(p) || channelless ? null : wakeTakenBy(home, task, p);
+        if (taken) {
+            stalled.push({
+                address: String(addressOf(p)),
+                ref,
+                id: view.id,
+                repoAbs,
+                harness: harnessOfRecord(p),
+                kind: 'wake-taken',
+                reason: `contact point is held by session ${taken}, while the address is bound to ${heldBy(p)}`,
+            });
+        }
+    }
+    return stalled;
+}
+// The mark of reported stalls lives in the task store (`readStalls`/`writeStalls`):
+// without it the report would repeat every round, burning turn after turn at the addressee.
+/** What is new among the stalls, WITHOUT the mark — the caller sets it. `current === null` means
+ * session state was not inspected, which is not "there are no stalls". */
+export function pendingStalls(home, task, probe, { now = Date.now(), retryMs = 0, maxTries = 1 } = {}) {
+    const stalled = probe(readTask(home, task).participants);
+    if (stalled === null)
+        return { fresh: [], current: null };
+    const reported = readStalls(home, task);
+    const current = {};
+    const fresh = [];
+    for (const s of stalled) {
+        const reason = `${s.ref}|${s.reason}`;
+        const was = reported[s.address];
+        const same = was?.reason === reason;
+        const at = Date.parse(was?.at ?? '');
+        const tries = Number(was?.tries) || 0;
+        const again = retryMs > 0 && tries < maxTries && Number.isFinite(at) && now - at >= retryMs;
+        if (same && !again) {
+            current[s.address] = was;
+            continue;
+        }
+        fresh.push(s);
+        current[s.address] = { reason, at: new Date(now).toISOString(), tries: same ? tries + 1 : 1 };
+    }
+    return { fresh, current };
+}
+/** Mark what was reported. The state is already like this — do not touch the journal: a write would cost disk. */
+export function commitStalls(home, task, current) {
+    if (current === null)
+        return;
+    if (JSON.stringify(readStalls(home, task)) === JSON.stringify(current))
+        return;
+    writeStalls(home, task, current);
+}
+/** Whom the warden still has reason to watch: only participants with a session reference, since a
+ * person's session is observable from nowhere. Unknown is not taken as dead, nor is a fresh spawn. */
+export function liveWatched(home, task, sessions) {
+    let meta;
+    try {
+        meta = readTask(home, task);
+    }
+    catch {
+        return [];
+    }
+    if (meta.status !== 'active')
+        return [];
+    const named = (meta.participants ?? []).filter((p) => addressOf(p) && sessionRefOf(p));
+    if (!named.length)
+        return [];
+    return named
+        .filter((p) => justSpawned(p) || liveParticipant(p, sessions) !== 'dead')
+        .map((p) => String(addressOf(p)));
+}
+// Whether the task has unread — at any of its addresses.
+function unreadLeft(home, task, mailboxes) {
+    let meta;
+    try {
+        meta = readTask(home, task);
+    }
+    catch {
+        return false;
+    }
+    return (meta.participants ?? []).some((p) => {
+        if (!p?.id)
+            return false;
+        try {
+            const mailbox = slotsOf(task, p, mailboxes);
+            return !mailbox.alias && unreadOf(home, mailbox) > 0;
+        }
+        catch {
+            return false;
+        }
+    });
+}
+/** Heartbeat: renew our mark and check three reasons to exit. Lifted out of the loop for the test —
+ * checking a branch inside the loop would have cost the suite half an hour of waiting. */
+export function beatRound(home, task, startedMs, { now = Date.now(), sessions = null, session = null, mailboxes = null, } = {}) {
+    // A successor intercepted the mark — two cannot watch, and they continue the work. Session
+    // identity goes to the lock: whose process holds the journal is known to the environment.
+    if (!beatWarden(home, task, { session }))
+        return 'another process took the warden place';
+    const live = liveWatched(home, task, sessions);
+    const unread = unreadLeft(home, task, mailboxes);
+    const idle = !live.length && !unread;
+    if (now - startedMs >= WARDEN_ABSOLUTE_SEC * 1000) {
+        return `hit the absolute limit ${Math.round(WARDEN_ABSOLUTE_SEC / 3600)} h`;
+    }
+    if (idle) {
+        if (now - startedMs >= WARDEN_TOTAL_SEC * 1000) {
+            return `sat out the overall ceiling ${Math.round(WARDEN_TOTAL_SEC / 3600)} h`;
+        }
+        return 'no live participants remain';
+    }
+    return null;
+}
+/** Message extract for a notification. The sender is named by ADDRESS and the artifact by FILENAME:
+ * a record id or a metadata id would be a machine tail instead of a name. Both come from the journal. */
+function previewOf(home, meta, m) {
+    const sender = meta.participants.find((p) => p.id === m.sender);
+    let artifact = null;
+    if (m.artifact) {
+        try {
+            artifact = readArtifact(home, m.task, m.artifact).filename;
+        }
+        catch {
+            // Artifact metadata did not read — the counter in the postcard matters more than the filename.
+            artifact = m.artifact;
+        }
+    }
+    return {
+        id: typeof m?.id === 'string' ? m.id : null,
+        type: String(m?.type ?? ''),
+        from: addressOf(sender) ?? String(m?.sender ?? ''),
+        ts: String(m?.ts ?? ''),
+        body: typeof m?.body === 'string' ? m.body : '',
+        artifact,
+    };
+}
+/** Keep a refused or unparsable ref visible in the same preview budget as a message. */
+function brokenPreview(note, now) {
+    return {
+        id: null,
+        type: 'mailbox-broken',
+        from: 'promptobus',
+        ts: new Date(now).toISOString(),
+        body: `unreadable ref ${note.name}: ${note.code}`,
+        artifact: null,
+        bus: true,
+    };
+}
+/** One watch round: look at all mailboxes, wake those with unread, update health. `sessions` is the
+ * snapshot from the last heartbeat — the round runs once a second and gets no poll of its own. */
+export async function supervisorRound(home, task, { now = Date.now(), registry, sessions = null, faults = NO_FAULT, mailboxes = null, }) {
+    let meta;
+    try {
+        meta = readTask(home, task);
+    }
+    catch (e) {
+        return { stop: `task journal does not read: ${e.message}`, events: [], knocked: [] };
+    }
+    if (meta.status !== 'active')
+        return { stop: 'task is closed', events: [], knocked: [] };
+    const health = readHealth(home, task);
+    const events = [];
+    const knocked = [];
+    let changed = false;
+    const journals = new Map([[task, meta]]);
+    const journalOf = (id) => {
+        if (!journals.has(id))
+            journals.set(id, readTask(home, id));
+        return journals.get(id);
+    };
+    for (const p of meta.participants ?? []) {
+        const addr = addressOf(p);
+        if (!addr)
+            continue;
+        let mailbox;
+        let snapshots;
+        try {
+            // An address alias is knocked by the warden of its primary task, which counts this slot too.
+            mailbox = slotsOf(task, p, mailboxes);
+            if (mailbox.alias)
+                continue;
+            snapshots = mailbox.slots.map(slot => ({ ...slot, ...inboxIdentity(home, slot.task, slot.participant) }));
+        }
+        catch {
+            // A bad participant record has no right to stop the watch over the others.
+            continue;
+        }
+        const was = marksOf(health, addr);
+        const h = { ...was };
+        const complete = snapshots.every(slot => slot.complete);
+        const identities = new Map(snapshots.map(slot => [JSON.stringify([slot.task, slot.participant]),
+            { complete: slot.complete, ids: new Set(slot.ids) }]));
+        const retain = (key) => {
+            const slot = identities.get(JSON.stringify(key.slice(0, 2)));
+            return slot !== undefined && (!slot.complete || slot.ids.has(key[2]));
+        };
+        const observed = uniqueKeys([
+            ...unreadKeys(was.observedUnread).filter(retain),
+            ...snapshots.flatMap(slot => slot.ids.map(id => [slot.task, slot.participant, id])),
+        ]);
+        const previous = new Set(unreadKeys(was.observedUnread).map(keyOf));
+        const unread = Math.max(observed.length, complete ? 0 : was.unread ?? 0);
+        const endpoint = readWake(home, task, addr);
+        const wakeSession = endpoint?.session ?? null;
+        const restarted = wakeSession !== (was.wakeSession ?? null);
+        const baseline = !restarted && Array.isArray(was.coveredUnread);
+        const covered = baseline ? unreadKeys(was.coveredUnread).filter(retain) : [];
+        const coveredSet = new Set(covered.map(keyOf));
+        let arrivals = observed.filter(key => !previous.has(keyOf(key)) && !coveredSet.has(keyOf(key)));
+        if (observed.length || was.observedUnread !== undefined)
+            h.observedUnread = observed;
+        if (baseline)
+            h.coveredUnread = covered;
+        else
+            delete h.coveredUnread;
+        // The mailbox was taken — that is the delivery confirmation; a mailbox that was always empty is
+        // not written. A take is the knocked mail gone, not a count drop: a peek sets broken refs aside too.
+        const took = complete && Boolean(was.unread) && (!unread || leftInbox(home, mailbox, was.knockedFirst ?? null));
+        if (took) {
+            events.push(`delivered ${addr}: mailbox was taken (had ${was.unread}, knocks ${was.knocks ?? 0}`
+                + `${was.coalesced ? `, coalesced ${was.coalesced}` : ''})`);
+        }
+        if (!unread) {
+            if (took) {
+                Object.assign(h, {
+                    unread: 0,
+                    ...(was.actionableUnread !== undefined ? { actionableUnread: 0 } : {}),
+                    ...(was.actionableSince !== undefined ? { actionableSince: null } : {}),
+                    deliveredAt: new Date(now).toISOString(),
+                    since: null,
+                    knockedAt: null,
+                    triedAt: null,
+                    knocks: 0,
+                    escalatedAt: null,
+                    unreadableRefs: [],
+                    hold: undefined,
+                    asking: undefined,
+                    coalesced: undefined,
+                    knockedFirst: null,
+                });
+            }
+            if (JSON.stringify(h) !== JSON.stringify(was)) {
+                health[addr] = h;
+                changed = true;
+            }
+            continue;
+        }
+        // `since` — when the mailbox stopped being empty: silence is counted from it, and a new message
+        // on top of an old one does not reset it, or silence would never be seen.
+        if (!was.unread || took) {
+            h.since = new Date(now).toISOString();
+            h.knocks = 0;
+            h.knockedAt = null;
+            h.triedAt = null;
+            h.escalatedAt = null;
+            h.knockedFirst = null;
+            delete h.coalesced;
+        }
+        if (took)
+            h.deliveredAt = new Date(now).toISOString();
+        h.unread = unread;
+        if (addr === ORCHESTRATOR) {
+            const progress = mailbox.slots.map(slot => glanceInbox(home, slot.task, slot.participant, faults));
+            const readable = complete && progress.every(box => !box.broken.length)
+                && progress.reduce((n, box) => n + box.messages.length, 0) === unread;
+            h.actionableUnread = readable
+                ? progress.reduce((n, box) => n + box.messages.filter(message => message.type !== 'status').length, 0) : unread;
+            if (readable) {
+                const actionable = new Set(progress.flatMap((box, i) => box.messages.filter(m => m.type !== 'status')
+                    .map(m => keyOf([mailbox.slots[i].task, mailbox.slots[i].participant, m.id]))));
+                arrivals = arrivals.filter(key => actionable.has(keyOf(key)));
+            }
+            if (readable && !h.actionableUnread) {
+                h.actionableSince = null;
+                h.escalatedAt = null;
+                if (JSON.stringify(h) !== JSON.stringify(was))
+                    changed = true;
+                health[addr] = h;
+                continue;
+            }
+            if ((was.actionableUnread ?? was.unread ?? 0) === 0 || took) {
+                h.actionableSince = new Date(now).toISOString();
+                h.escalatedAt = null;
+            }
+            else
+                h.actionableSince ??= h.since;
+        }
+        // The driver is taken from the registry by harness, and one participant's failure may not take
+        // the watch over the others: an unknown harness stays a line in the journal, and the round goes on.
+        let driver;
+        try {
+            driver = driverFor(registry, harnessOf(p, registry));
+        }
+        catch (e) {
+            if (h.channel !== 'no-driver' || h.knockError !== e.message) {
+                events.push(`nothing to wake with ${addr}: ${e.message}`);
+            }
+            h.channel = 'no-driver';
+            h.knockError = e.message;
+            if (JSON.stringify(h) !== JSON.stringify(was))
+                changed = true;
+            health[addr] = h;
+            continue;
+        }
+        // Whose contact point this really is, asked before the knock-retry thresholds: a hijacked
+        // channel is not "not yet time", it is "nowhere to knock".
+        const taken = wakeTakenBy(home, task, p, endpoint);
+        // Contact-point fingerprint: channel address only. A pid or hand-over time changes when two
+        // writers hand over the same session's point; a turn counter in the socket asks for a wake.
+        const print = endpoint?.socket ? endpoint.socket : null;
+        const moved = print !== null && was.wake !== undefined && print !== was.wake;
+        // The knock-retry threshold counts from ATTEMPT time, not success, or a dead channel would get
+        // an attempt every second. `knockedAt` stays the last SUCCESSFUL delivery.
+        const triedAt = Date.parse(h.triedAt ?? '');
+        const grew = arrivals.length > 0;
+        // A knock is outstanding from its success until the take, bounded both ways as a clock may step back.
+        const knockedAt = Date.parse(h.knockedAt ?? '');
+        const outstanding = Number.isFinite(knockedAt) && Math.abs(now - knockedAt) < KNOCK_COALESCE_SEC * 1000;
+        // Carried mail knocks once at the window's end; after a failed attempt it waits for the retry.
+        const pending = grew || ((!baseline || (h.coalesced ?? 0) > 0) && h.triedAt === h.knockedAt);
+        const stale = Number.isFinite(triedAt) && now - triedAt >= KNOCK_RETRY_SEC * 1000;
+        // A retry on the SAME unread waits until the session gives the turn back — it will see the
+        // notification at the end of it anyway. A fresh mailbox's first knock does not wait.
+        const since = Date.parse((addr === ORCHESTRATOR ? h.actionableSince : h.since) ?? '');
+        const waited = Number.isFinite(since) ? now - since : 0;
+        // Bound of the cumulative signal: a successful activation does not confirm delivery, and one
+        // dropped by a queue limit never starts a turn — so past the threshold we knock regardless.
+        const busy = stale && waited < SILENCE_SEC * 1000 && sessionBusy(home, task, p, sessions);
+        // A turn held on a question to its user is not a dropped knock: the retry waits for the answer.
+        const asking = stale && !busy && pushes(driver) && awaitingUser(home, task, addr, driver, endpoint);
+        if (asking && !h.asking) {
+            h.asking = new Date(now).toISOString();
+            events.push(`knocks held ${addr}: the turn waits on its user — a question is open, no re-knock until it is answered`);
+        }
+        else if (!asking && stale && !busy)
+            delete h.asking;
+        // A refusal with a named reset is a state, not one more failed turn: no knock before that time.
+        // A time that did not parse is probed at once, then at the ordinary retry pace — never on a rewritten point.
+        const hold = pushes(driver) ? heldReset(p, sessions, now) : null;
+        const probe = hold !== null && hold.at === null && !busy && (!Number.isFinite(triedAt) || stale);
+        if (hold) {
+            if (JSON.stringify(hold) !== JSON.stringify(was.hold ?? null)) {
+                events.push(`knocks held ${addr}: the harness refused the turn and named a reset — unreachable until `
+                    + `${resetText(hold)}${hold.at === null ? `, probed every ${KNOCK_RETRY_SEC} s` : ''}`);
+            }
+            h.hold = hold;
+        }
+        else
+            delete h.hold;
+        if (!pushes(driver)) {
+            // A pull-driver does not wake the session at all — it polls. Health is kept like everyone
+            // else's, so such a participant's silence is visible by the same threshold.
+            if (h.channel !== 'pull') {
+                h.channel = 'pull';
+                h.wake = null;
+                // A self-wake verdict from an earlier channel must not survive the move to pull:
+                // `status` would print a prognosis for knocks that no longer happen.
+                h.selfWake = null;
+                h.selfWakeChannel = null;
+            }
+        }
+        else if (hold && !probe) {
+            // Held: the mark above says why, and the round neither knocks nor falls back to self-wake.
+        }
+        else if (!endpoint?.socket) {
+            // No contact point — nothing to knock with, and the threshold does not hold this back: the
+            // participant may hand over the channel after the message has already landed.
+            const why = 'no contact point — the participant did not hand over a socket';
+            if (h.channel !== 'self-wake' || h.knockError !== why) {
+                events.push(`fell back to self-wake ${addr}: ${why}`);
+            }
+            h.channel = 'self-wake';
+            h.knockError = why;
+            h.selfWake = 'starting';
+            h.selfWakeChannel = null;
+            h.wake = null;
+        }
+        else if (taken) {
+            // Another session holds the contact point: a knock would start a turn for THEM and leave the
+            // addressee deaf. Nothing to wait for, and said once per reason — the round runs every second.
+            const why = `contact point is held by session ${taken}, while the address is bound to ${heldBy(p)}`;
+            if (h.channel !== 'self-wake' || h.knockError !== why) {
+                events.push(`fell back to self-wake ${addr}: ${why} — the knock would have gone to a foreign session`);
+            }
+            h.channel = 'self-wake';
+            h.knockError = why;
+            h.selfWake = 'taken';
+            h.selfWakeChannel = null;
+            h.wake = null;
+        }
+        else if (!Number.isFinite(triedAt) || (pending && !outstanding) || moved || (stale && !busy && !asking)) {
+            const carried = h.coalesced ?? 0;
+            h.triedAt = new Date(now).toISOString();
+            h.wake = print;
+            // The mailbox is read exactly here, not every round. `glanceInbox`, not `peekInbox`: the
+            // warden does not set a broken ref aside, but names its refusal or parse error in the postcard.
+            const glanced = mailbox.slots.map((slot) => glanceInbox(home, slot.task, slot.participant, faults));
+            const box = glanced.flatMap((g) => g.messages).sort(bySendOrder);
+            const broken = glanced.flatMap((g) => g.broken);
+            h.unreadableRefs = broken.map(({ code, name }) => `${code} ${name}`);
+            const sampled = glanced.flatMap((g, i) => g.messages.map(message => ({ message,
+                key: typeof message?.id === 'string'
+                    ? [mailbox.slots[i].task, mailbox.slots[i].participant, message.id] : null,
+            })));
+            const msgs = sampled.filter(({ key }) => key === null || !coveredSet.has(keyOf(key)))
+                .map(({ message }) => message).sort(bySendOrder);
+            const previews = [
+                ...msgs.map((m) => previewOf(home, m?.task && m.task !== task ? journalOf(m.task) : meta, m)),
+                ...broken.map((note) => brokenPreview(note, now)),
+            ];
+            const r = await activate(driver, { ref: sessionRefOf(p), endpoint }, {
+                kind: 'unread', task, address: addr, unread, messages: previews,
+            });
+            if (r?.ok) {
+                // The channel is the driver's declaration, not the contact-point wire: `wake.socket` is also
+                // present on inject/rpc, where it is a registry or holder path, not a messaging socket.
+                h.channel = driver.options?.knockChannel ?? 'socket';
+                h.knockError = null;
+                h.selfWake = null;
+                h.selfWakeChannel = null;
+                h.knockedAt = h.triedAt;
+                h.knocks = (h.knocks ?? 0) + 1;
+                h.wakeSession = wakeSession;
+                h.coveredUnread = uniqueKeys([...covered, ...sampled.flatMap(({ key }) => key === null ? [] : [key])]);
+                h.knockedFirst = box[0]?.id ?? null;
+                delete h.coalesced;
+                knocked.push(addr);
+                const brokenText = broken.map(({ code, name }) => `${code} ${name}`).join(', ');
+                events.push(`notification ${addr}: unread ${unread}, knock ${h.knocks}`
+                    + `${brokenText ? ` (unreadable refs: ${brokenText})` : ''}`
+                    + `${moved ? ' (contact point rewritten)' : ''}`
+                    + `${carried ? ` (${carried} coalesced under the previous knock)` : ''}`);
+            }
+            else {
+                // Once per reason: a dead channel returns the same error every two minutes. The phrase names
+                // the driver's channel — the `socket` literal sent inspection at a transport inject/rpc lack.
+                const why = r?.error ?? 'unknown';
+                const channel = driver.options?.knockChannel ?? 'socket';
+                const label = channel === 'socket' ? 'socket' : channel;
+                if (h.channel !== 'self-wake' || h.knockError !== why) {
+                    events.push(`fell back to self-wake ${addr}: ${label} did not accept the notification (${why})`);
+                }
+                h.channel = 'self-wake';
+                h.knockError = why;
+                h.selfWake = 'refused';
+                // The label the journal line above uses; `status` had only the raw error.
+                h.selfWakeChannel = label;
+            }
+            // There is no write here: the state comparison below decides that.
+        }
+        else if (grew) {
+            h.coalesced = (h.coalesced ?? 0) + arrivals.length;
+        }
+        // Silence longer than the threshold — escalation, and once: otherwise
+        // the journal would flood with one fact.
+        if (Number.isFinite(since) && waited >= SILENCE_SEC * 1000 && !h.escalatedAt) {
+            h.escalatedAt = new Date(now).toISOString();
+            events.push(`SILENT ${addr}: mailbox not taken for ${Math.round(waited / 60000)} min, `
+                + `unread ${unread}, channel ${h.channel ?? 'none'}`);
+            changed = true;
+        }
+        if (JSON.stringify(h) !== JSON.stringify(was))
+            changed = true;
+        health[addr] = h;
+    }
+    if (changed)
+        writeHealth(home, task, health);
+    for (const line of events)
+        logWarden(home, task, line);
+    return { stop: null, events, knocked };
+}
+function leftInbox(home, mailbox, id) {
+    if (!id)
+        return false;
+    try {
+        return !mailbox.slots.some((slot) => existsSync(inboxRef(home, slot.task, slot.participant, id)));
+    }
+    catch {
+        return false;
+    }
+}
+// Activation of one participant. A driver refusal is an outcome, not an exception: delivery to the
+// others must go on, and a throw would take the whole round with it.
+async function activate(driver, target, notification) {
+    if (typeof driver.activate !== 'function') {
+        return { ok: false, error: `driver "${driver.id}" does not wake itself: it has no activate operation` };
+    }
+    try {
+        const r = await driver.activate(target, notification);
+        return r?.ok ? { ok: true } : { ok: false, error: r?.error ?? 'unknown' };
+    }
+    catch (e) {
+        return { ok: false, error: e.message };
+    }
+}
+/** Participant stall. Escalation is visibility — a status line and a journal entry, no postcard: a
+ * separate notification burned orchestrator turns every round. The journal line is the adapter's. */
+export async function stallRound(home, task, { sessions = null, now = Date.now(), mailboxes = null, } = {}) {
+    const { fresh, current } = pendingStalls(home, task, (ps) => blockedParticipants(home, task, ps, sessions, mailboxes), { now, retryMs: 0, maxTries: 1 });
+    // The set may have changed even without new ones: a participant unstuck. Move the mark anyway, or
+    // their next stall with the same reason would not be counted fresh.
+    commitStalls(home, task, current);
+    return fresh;
+}
+/** One report per sighting of a named reset: the orchestrator is knocked once with the time, so the run
+ * decides instead of reading the journal. `fresh` is `stallRound`'s, whose mark makes a sighting once. */
+export async function reportResets(home, task, fresh, { registry, now = Date.now(), mailboxes = null, }) {
+    const own = fresh.filter((s) => s.address === ORCHESTRATOR && resetAhead(s.reset, now))
+        .map((s) => `could not report to ${ORCHESTRATOR} (the refusal is its own): ${ORCHESTRATOR} is unreachable until ${resetText(s.reset)}`);
+    const held = fresh.filter((s) => s.address !== ORCHESTRATOR && resetAhead(s.reset, now));
+    if (!held.length)
+        return own;
+    const lines = held.map((s) => `${s.address} is unreachable until ${resetText(s.reset)}: ${s.reason}`);
+    const orchestrator = readTask(home, task).participants.find((p) => addressOf(p) === ORCHESTRATOR);
+    const why = orchestrator ? await reportTo(home, task, orchestrator, lines, { registry, now, mailboxes }) : 'the task has no orchestrator';
+    return [...own, ...lines.map((line) => (why ? `could not report to ${ORCHESTRATOR} (${why}): ${line}` : `reported to ${ORCHESTRATOR}: ${line}`))];
+}
+// The report rides the ordinary postcard as a preview of its own type, like an unreadable ref does.
+async function reportTo(home, task, orchestrator, lines, { registry, now, mailboxes }) {
+    let driver;
+    try {
+        driver = driverFor(registry, harnessOf(orchestrator, registry));
+    }
+    catch (e) {
+        return e.message;
+    }
+    if (!pushes(driver))
+        return 'its driver polls, and the stall line waits in its mailbox reply';
+    const endpoint = readWake(home, task, ORCHESTRATOR);
+    if (!endpoint?.socket)
+        return 'no contact point';
+    const taken = wakeTakenBy(home, task, orchestrator, endpoint);
+    if (taken)
+        return `contact point is held by session ${taken}`;
+    const r = await activate(driver, { ref: sessionRefOf(orchestrator), endpoint }, {
+        kind: 'unread',
+        task,
+        address: ORCHESTRATOR,
+        unread: unreadOf(home, slotsOf(task, orchestrator, mailboxes)),
+        messages: lines.map((body) => ({
+            id: null, type: 'unreachable', from: 'promptobus', ts: new Date(now).toISOString(), body, artifact: null,
+            bus: true,
+        })),
+    });
+    return r.ok ? null : r.error ?? 'unknown';
+}

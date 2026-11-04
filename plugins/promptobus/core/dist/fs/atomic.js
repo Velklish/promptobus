@@ -1,0 +1,35 @@
+// Atomic writes.
+// [reference/01-overview.md#atomic-writes](../../docs/reference/01-overview.md#atomic-writes)
+import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import process from 'node:process';
+let atomicSeq = 0;
+/** Write a file whole: a temporary neighbour in the same directory, then `rename` over it.
+ * `writeFileSync` truncates to zero — a parallel reader finds it empty, and a death leaves it so. */
+export function writeFileAtomic(file, content, { mode = null, preserveMode = false } = {}) {
+    const dir = path.dirname(file);
+    mkdirSync(dir, { recursive: true });
+    atomicSeq += 1;
+    const tmp = path.join(dir, `.tmp-${path.basename(file)}-${process.pid}-${atomicSeq}`);
+    const kept = preserveMode && existsSync(file) ? (statSync(file).mode & 0o777) : null;
+    const m = kept ?? mode;
+    try {
+        writeFileSync(tmp, content, m === null ? undefined : { mode: m });
+        // `mode` on `writeFileSync` is cut by umask: under a stock 022 a requested 0o660
+        // arrives as 0o640. `chmod` after create does not touch umask.
+        if (m !== null)
+            chmodSync(tmp, m);
+        renameSync(tmp, file);
+    }
+    catch (e) {
+        // recursive: a directory can sit where tmp should be, and `force` alone will not lift it —
+        // the next write would hit it forever.
+        rmSync(tmp, { force: true, recursive: true });
+        throw e;
+    }
+}
+/** The same move — for every overwriteable JSON file on the bus. */
+export function writeJsonAtomic(file, value, { mode = null } = {}) {
+    writeFileAtomic(file, `${JSON.stringify(value, null, 2)}\n`, { mode });
+    return value;
+}

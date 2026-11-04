@@ -1,0 +1,27 @@
+// Stall parsing.
+// [reference/03-cli.md#stall-parsing](../docs/reference/03-cli.md#stall-parsing)
+import { resetAhead, resetText } from '../dist/index.js';
+/** The state word of a stall: a refusal with a named reset still ahead is unreachable until then. */
+export function stallWord(s) {
+    return resetAhead(s.reset) ? `UNREACHABLE until ${resetText(s.reset)}` : 'STALLED';
+}
+/** Line about a stalled participant. `route` is what to do, in that harness's words. */
+export function stallLine(s, route) {
+    // Four states with no shared word: "stalled" would promise a session that will
+    // unstick, and a deaf one is running and does not know it.
+    const what = s.kind === 'stale'
+        ? `LISTED, but no process behind it: ${s.reason}`
+        : s.kind === 'gone'
+            ? `GONE: ${s.reason}`
+            : s.kind === 'wake-taken'
+                ? `DEAF: ${s.reason}`
+                : `${resetAhead(s.reset) ? stallWord(s) : 'stalled'}: ${s.reason}`;
+    return `${s.address} ${what} — session ${s.id ?? s.ref}; ${route}`;
+}
+// "Until the stall is cleared" is said only where the stall really is cleared: a dead
+// record has nothing to clear, and promising return of its messages would be a lie.
+export function stallTail(stalled) {
+    const forever = stalled.some((s) => s.kind === 'stale' || s.kind === 'gone');
+    return `no messages from them${forever ? '' : ' until the stall is cleared'}: `
+        + 'each has its own route, named in its line.';
+}

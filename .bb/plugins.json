@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "name": "promptobus",
+  "plugins": [
+    {
+      "name": "promptobus",
+      "source": "./plugins/promptobus"
+    },
+    {
+      "name": "native-panel",
+      "source": "./plugins/native-panel"
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:promptobus:v1:digest",
+  "title": "Digest page",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "generatedAt", "tasks"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "generatedAt": { "$ref": "#/$defs/time" },
+    "tasks": { "type": "array", "items": { "$ref": "#/$defs/task" } }
+  },
+  "$defs": {
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "age": { "type": ["integer", "null"], "minimum": 0 },
+    "status": {
+      "type": "object", "additionalProperties": false,
+      "required": ["firstLine", "at", "ageSeconds"],
+      "properties": {
+        "firstLine": { "type": "string" },
+        "at": { "$ref": "#/$defs/time" },
+        "ageSeconds": { "$ref": "#/$defs/age" }
+      }
+    },
+    "participant": {
+      "type": "object", "additionalProperties": false,
+      "required": ["address", "unread", "lastStatus", "stall", "silent", "unanswered"],
+      "properties": {
+        "address": { "type": "string", "minLength": 1 },
+        "unread": { "type": "integer", "minimum": 0 },
+        "lastStatus": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/status" }] },
+        "stall": {
+          "oneOf": [{ "type": "null" }, {
+            "type": "object", "additionalProperties": false, "required": ["reason", "at"],
+            "properties": { "reason": { "type": "string" }, "at": { "type": ["string", "null"] } }
+          }]
+        },
+        "silent": {
+          "oneOf": [{ "type": "null" }, {
+            "type": "object", "additionalProperties": false, "required": ["since", "escalatedAt"],
+            "properties": {
+              "since": { "type": ["string", "null"] },
+              "escalatedAt": { "$ref": "#/$defs/time" }
+            }
+          }]
+        },
+        "unanswered": {
+          "oneOf": [{ "type": "null" }, {
+            "type": "object", "additionalProperties": false, "required": ["since"],
+            "properties": { "since": { "$ref": "#/$defs/time" } }
+          }]
+        }
+      }
+    },
+    "question": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "state", "from", "to", "at", "ageSeconds", "body"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "state": { "enum": ["open", "unresolved-provenance"] },
+        "originTask": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "type": "string", "minLength": 1 },
+        "at": { "$ref": "#/$defs/time" },
+        "ageSeconds": { "$ref": "#/$defs/age" },
+        "body": { "type": "string" }
+      }
+    },
+    "piece": {
+      "type": "object", "additionalProperties": false,
+      "required": ["slug", "step"],
+      "properties": {
+        "slug": { "type": "string", "minLength": 1 },
+        "step": { "type": ["string", "null"] }
+      }
+    },
+    "task": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "title", "status", "depth", "pipeline", "participants", "questions", "pieces"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string" },
+        "status": { "enum": ["active", "done"] },
+        "depth": { "type": "integer", "minimum": 0 },
+        "parent": { "type": "string", "minLength": 1 },
+        "pipeline": { "type": "array", "items": { "type": "string" } },
+        "participants": { "type": "array", "items": { "$ref": "#/$defs/participant" } },
+        "questions": { "type": "array", "items": { "$ref": "#/$defs/question" } },
+        "pieces": { "type": "array", "items": { "$ref": "#/$defs/piece" } }
+      }
+    }
+  }
+}

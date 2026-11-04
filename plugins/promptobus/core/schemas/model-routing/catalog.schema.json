@@ -1,0 +1,278 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:promptobus:model-routing:catalog",
+  "title": "Model catalog",
+  "description": "The maintainers' rating of tuples, shipped with the package. One row per thing that can actually be launched; only rated tuples enter automatic selection.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "updated", "tuples"],
+  "properties": {
+    "schemaVersion": {
+      "description": "Version of the catalog format. An older or newer one blocks the load rather than being read under the wrong rating scale.",
+      "const": 2
+    },
+    "updated": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/timestamp" },
+    "tuples": {
+      "description": "Rated tuples. An id occurs once: the resolver's last tie-break is the id, and a duplicate would make the pick order-dependent.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/tuple" }
+    }
+  },
+  "$defs": {
+    "timestamp": {
+      "description": "Exactly what Date#toISOString prints: date-time alone would admit offsets.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "rating": {
+      "description": "Maintainer rating on the 1–10 scale. Integers: half a point is a judgement the source cannot support.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10
+    },
+    "ratings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quality", "speed", "quotaCost"],
+      "properties": {
+        "quality": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/rating" },
+        "speed": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/rating" },
+        "quotaCost": {
+          "description": "Spend against the subscription. Inverted when scored: a smaller spend contributes more.",
+          "$ref": "urn:promptobus:model-routing:catalog#/$defs/rating"
+        }
+      }
+    },
+    "price": {
+      "description": "USD per 1M tokens, or null when the billing mode makes it meaningless or the price is not published.",
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "tuple": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "harness", "model", "effort", "roles", "ratings", "prices", "billing", "priority", "assessedAt", "source"],
+      "properties": {
+        "id": {
+          "description": "Stable id. It survives a model rename, and it is the resolver's final tie-break.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$"
+        },
+        "harness": {
+          "description": "Harness the tuple runs on. Checked against the host's declaredTools() at load.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,31}$"
+        },
+        "model": {
+          "description": "Model id as the harness binary names it. For a harness that carries effort inside the id, the full id including that suffix.",
+          "type": "string",
+          "minLength": 1
+        },
+        "effort": {
+          "description": "Effort level passed to the driver, from that driver's EFFORT_LEVELS; null for a harness that takes no separate effort flag.",
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "roles": {
+          "description": "Roles this tuple may be picked for. A tuple may name any subset of worker, reviewer and approver.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["worker", "reviewer", "approver"] }
+        },
+        "ratings": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/ratings" },
+        "roleRatings": {
+          "description": "Per-role overrides of the ratings above. Only the named keys are replaced.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "worker": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/partialRatings" },
+            "reviewer": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/partialRatings" },
+            "approver": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/partialRatings" }
+          }
+        },
+        "prices": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inputPerMTok", "cachedInputPerMTok", "outputPerMTok"],
+          "properties": {
+            "inputPerMTok": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/price" },
+            "cachedInputPerMTok": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/price" },
+            "outputPerMTok": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/price" }
+          }
+        },
+        "billing": {
+          "description": "subscription — the spend is against a plan; payg — it is money per token, and the tuple stays out of automatic selection without --allow-payg.",
+          "enum": ["subscription", "payg"]
+        },
+        "priority": {
+          "description": "Canonical priority, used only as a tie-break. Lower comes first.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "assessedAt": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/timestamp" },
+        "source": {
+          "description": "Where the rating came from. A row with NO assessment stays out of the catalog; an assessed rating with no published figure stays in it and names itself in `evidence.hypothesis` (ADR-005).",
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence": {
+          "description": "What a later maintainer checks the rating against. A bare string is the v1 form and still holds. The object form is what ADR-005 asks for once ratings come from published results: it carries the citation per rating, so `validate` can refuse a rated row that has none.",
+          "oneOf": [
+            { "type": "string" },
+            { "$ref": "urn:promptobus:model-routing:catalog#/$defs/citedEvidence" }
+          ]
+        }
+      }
+    },
+    "citation": {
+      "description": "One published figure behind one rating. ADR-005 requires its source, version, agent harness, figure, URL and date; absolute bands have no comparison field. A quotaCost promotion also records the last observed date and the list-price figure and band it replaces.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rating", "basis", "version", "agentHarness", "figure", "url", "date"],
+      "properties": {
+        "rating": { "enum": ["quality", "speed", "quotaCost"] },
+        "basis": {
+          "description": "The benchmark or the price source, named as the source names it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "description": "Version of the benchmark. Two versions of one benchmark are two benchmarks: the same model moves tens of points between them.",
+          "type": "string",
+          "minLength": 1
+        },
+        "agentHarness": {
+          "description": "Agent harness the figure was measured under, or a sentence saying the page does not state one. A benchmark that scores the model and the harness together produces a different number per harness.",
+          "type": "string",
+          "minLength": 1
+        },
+        "provenance": {
+          "description": "Whether the cited page is the one that was opened, and whether it is primary or secondary.",
+          "type": "string",
+          "minLength": 1
+        },
+        "figure": { "type": "string", "minLength": 1 },
+        "validUntil": {
+          "description": "The last date a promotional figure was observed in force, as YYYY-MM-DD.",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "listFigure": {
+          "description": "The list-price figure the promotion replaces.",
+          "type": "string",
+          "minLength": 1
+        },
+        "listBand": {
+          "description": "The 1–10 band the list-price figure gives.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "url": { "type": "string", "minLength": 1 },
+        "date": {
+          "description": "The date the source was seen, as YYYY-MM-DD.",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              { "required": ["validUntil"] },
+              { "required": ["listFigure"] },
+              { "required": ["listBand"] }
+            ]
+          },
+          "then": {
+            "properties": {
+              "rating": { "const": "quotaCost" }
+            }
+          }
+        },
+        {
+          "if": { "required": ["validUntil"] },
+          "then": { "required": ["listFigure", "listBand"] }
+        }
+      ]
+    },
+    "citedEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": {
+          "description": "The prose a later maintainer reads first.",
+          "type": "string",
+          "minLength": 1
+        },
+        "sources": {
+          "description": "One entry per rating that rests on a published figure.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/citation" }
+        },
+        "interpolatedFrom": {
+          "description": "Tuple id of the base row this one was interpolated from. The base row holds the citations and the ladder shares its assessedAt, so a ladder goes stale together.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]{0,63}$"
+        },
+        "hypothesis": {
+          "description": "Ratings with no published figure for this exact model. ADR-005 refuses to invent one: the row says so, and the band stays the maintainers' reasoning.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["quality", "speed", "quotaCost"] }
+        }
+      }
+    },
+    "partialRatings": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "quality": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/rating" },
+        "speed": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/rating" },
+        "quotaCost": { "$ref": "urn:promptobus:model-routing:catalog#/$defs/rating" }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schemaVersion": 2,
+      "updated": "2026-09-05T00:00:00.000Z",
+      "tuples": [
+        {
+          "id": "example-deep",
+          "harness": "example",
+          "model": "example-deep",
+          "effort": "high",
+          "roles": ["worker", "reviewer", "approver"],
+          "ratings": { "quality": 10, "speed": 3, "quotaCost": 10 },
+          "roleRatings": { "reviewer": { "quality": 10 }, "approver": { "quality": 8 } },
+          "prices": { "inputPerMTok": null, "cachedInputPerMTok": null, "outputPerMTok": null },
+          "billing": "subscription",
+          "priority": 10,
+          "assessedAt": "2026-09-05T00:00:00.000Z",
+          "source": "schema example — not a rating of any real model",
+          "evidence": "placeholder row; the shipped catalog is models/catalog.json"
+        },
+        {
+          "id": "example-quick",
+          "harness": "example",
+          "model": "example-quick",
+          "effort": null,
+          "roles": ["worker"],
+          "ratings": { "quality": 6, "speed": 10, "quotaCost": 3 },
+          "prices": { "inputPerMTok": 1.5, "cachedInputPerMTok": 0.15, "outputPerMTok": 7.5 },
+          "billing": "payg",
+          "priority": 20,
+          "assessedAt": "2026-09-05T00:00:00.000Z",
+          "source": "schema example — not a rating of any real model"
+        }
+      ]
+    }
+  ]
+}

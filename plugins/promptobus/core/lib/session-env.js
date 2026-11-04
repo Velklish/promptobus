@@ -1,0 +1,16 @@
+// Identity, messaging and configuration of the PARENT harness, dropped by every driver's `SESSION_ENV_DROP`.
+// A shared leaf, not a per-driver list: the names belong to no driver. Why: 03-cli § Spawn.
+export const PARENT_SESSION_ENV = [
+    'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_HOST_SESSION_ID',
+    'CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN',
+    'CLAUDE_PID', 'CLAUDE_EFFORT',
+    'CODEX_HOME', 'CODEX_THREAD_ID',
+    'BB_THREAD_ID', 'BB_ENVIRONMENT_ID', 'BB_PROJECT_ID', 'BB_THREAD_STORAGE',
+    'CURSOR_CONVERSATION_ID', 'AGENT_CLI_SOCKET_PATH', 'AGENT_CLI_LOG_PATH', 'CURSOR_AGENT_SOCKET',
+    'PROMPTOBUS_CURSOR_SESSION',
+    'PROMPTOBUS_OPENCODE_SESSION', 'OPENCODE_SESSION_ID',
+    'OPENCODE_SERVER_PASSWORD', 'OPENCODE_CONFIG', 'OPENCODE_CONFIG_DIR',
+];
+// The warden switch and its trace. A harness that REPLACES the MCP child's environment
+// drops both unless the driver names them: measured on Codex and Cursor.
+export const WARDEN_ENV_VARS = ['PROMPTOBUS_WARDEN', 'PROMPTOBUS_WARDEN_TRACE'];

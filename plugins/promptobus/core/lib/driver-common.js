@@ -1,0 +1,111 @@
+import { readFileSync } from 'node:fs';
+import process from 'node:process';
+import { dropStaleWake, logWarden, participantOf, readTask, upsertParticipant, withTaskLock } from './store.js';
+import { requireCurrentNativeLaunch } from './native-lifecycle.js';
+import { fail } from './util.js';
+const managedCleanupFailures = new WeakMap();
+export async function revokeFailedManagedLaunch(launch, error, afterRevoke, revokeRegistered) {
+    const handled = managedCleanupFailures.get(launch);
+    if (handled && error === handled)
+        throw error;
+    let stage = 'credential revocation';
+    try {
+        await (revokeRegistered ? revokeRegistered() : launch.service?.revoke());
+        stage = 'native launch cleanup';
+        await afterRevoke?.();
+    }
+    catch (cleanupError) {
+        const first = error instanceof Error ? error.message : String(error);
+        const second = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+        const record = launch.sessionRecord ?? launch.prelaunchBinding?.sessionRecord;
+        const failure = new AggregateError([error, ...(cleanupError instanceof AggregateError ? cleanupError.errors : [cleanupError])], `${first}; ${stage} failed: ${second}. Native launch state is unknown; `
+            + `inspect ${record ?? 'the retained native launch record'} before retrying`, { cause: error });
+        managedCleanupFailures.set(launch, failure);
+        throw failure;
+    }
+    throw error;
+}
+export function parseVersion(value) {
+    const raw = String(value ?? '');
+    const match = /(?:^|[^A-Za-z0-9])v?(\d+(?:\.\d+)*)(?![\d.])/.exec(raw);
+    return match ? match[1].split('.').map(Number) : null;
+}
+export function versionLess(a, b) {
+    const pa = parseVersion(a);
+    const pb = parseVersion(b);
+    if (!pa || !pb)
+        return false;
+    for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
+        const x = pa[i] ?? 0;
+        const y = pb[i] ?? 0;
+        if (x !== y)
+            return x < y;
+    }
+    return false;
+}
+export function versionParseRefusal(name, value) {
+    return `${name} binary version could not be parsed: ${String(value)}`;
+}
+export function sessionEnv(dropList, base = process.env, extra = {}) {
+    const env = { ...base };
+    for (const name of dropList ?? [])
+        delete env[name];
+    const own = { ...env, ...extra };
+    for (const name of Object.keys(own))
+        if (name.startsWith('PROMPTOBUS_ROOT_'))
+            delete own[name];
+    return own;
+}
+export function sessionEnvFor(dropList) {
+    return (base = process.env, extra = {}) => sessionEnv(dropList, base, extra);
+}
+export function readRecordAt(file) {
+    try {
+        const record = JSON.parse(readFileSync(file, 'utf8'));
+        return record;
+    }
+    catch {
+        return null;
+    }
+}
+const foreignWrites = new Set();
+export function sayForeignWrite(home, task, addr, held, session, what) {
+    const key = [home, task, addr, held, session, what].join('\u0000');
+    if (foreignWrites.has(key))
+        return;
+    foreignWrites.add(key);
+    logWarden(home, task, `${what} for address ${addr} is refused: the address is bound to session ${held}, `
+        + `and ${session} is writing — the owner's records were left untouched`);
+}
+export function bindBeforeLaunch(home, task, address, binding = {}, expected = null) {
+    if (!home || !task || !address || !Object.keys(binding).length)
+        return () => { };
+    const record = withTaskLock(home, task, () => {
+        const found = participantOf(readTask(home, task), address);
+        if (!found)
+            return null;
+        requireCurrentNativeLaunch(found, expected);
+        upsertParticipant(home, task, { ...found, metadata: { ...found.metadata, ...binding } });
+        dropStaleWake(home, task, address, binding.sessionId);
+        return found;
+    });
+    if (!record)
+        fail(`participant ${address} of task ${task} disappeared before its session launch`);
+    return () => withTaskLock(home, task, () => {
+        const current = participantOf(readTask(home, task), address);
+        if (!current)
+            return;
+        try {
+            requireCurrentNativeLaunch(current, record);
+        }
+        catch {
+            return;
+        }
+        const metadata = { ...current.metadata };
+        for (const [key, value] of Object.entries(binding)) {
+            if (metadata[key] === value || metadata[key] === record.metadata?.[key])
+                delete metadata[key];
+        }
+        upsertParticipant(home, task, { ...current, metadata });
+    });
+}

@@ -1,0 +1,330 @@
+// The standalone host.
+// [reference/02-host.md#the-standalone-host](../docs/reference/02-host.md#the-standalone-host)
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import process from 'node:process';
+import { fileURLToPath } from 'node:url';
+import { HOST_KIND, HostResolveError, homeOfRoot, } from './host.js';
+import { pipelineRefusal, pipelineSteps, readPipeline } from './pipeline.js';
+import { ROOT_DIR } from './v1/layout.js';
+export const HOST_CONFIG = 'promptobus.json';
+const DEFAULT_COMMAND = 'promptobus';
+const defaultVersion = () => JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+// Model-routing file names of the standalone host. Names, not paths: the two homes they hang off
+// differ, and one name serves both overlays because a layer is told apart by its id and its home.
+const ROUTING_HOME = ROOT_DIR;
+const PROJECT_HOME = ROOT_DIR;
+const ROUTING_DIR = 'model-routing';
+const ROUTING_CACHE = 'cache.json';
+const ROUTING_OVERLAY = 'model-routing.json';
+const GIT_TIMEOUT_MS = 30_000;
+const GIT_MAX_OUTPUT = 32 * 1024 * 1024;
+// One `--version` per ask, from the preflight or a lift, never from `resolveToolBin`. Ceiling: 02-host.
+const VERSION_READ_MS = 5_000;
+function readConfig(file) {
+    try {
+        const parsed = JSON.parse(readFileSync(file, 'utf8'));
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    }
+    catch {
+        return {};
+    }
+}
+// Fields a repository declares for itself; a file holding only these does not move the root.
+const REPOSITORY_FIELDS = ['generate', 'trustedHooks'];
+/** The directory whose `promptobus.json` is the root above `start`, or null: 02-host § Standalone host. */
+export function findHostRoot(start) {
+    let nearestRepository = null;
+    for (let dir = path.resolve(start);; dir = path.dirname(dir)) {
+        const file = path.join(dir, HOST_CONFIG);
+        if (existsSync(file)) {
+            const keys = Object.keys(readConfig(file));
+            if (!keys.length || !keys.every((key) => REPOSITORY_FIELDS.includes(key)))
+                return dir;
+            nearestRepository ??= dir;
+        }
+        if (path.dirname(dir) === dir)
+            return nearestRepository;
+    }
+}
+function findConfig(start) {
+    const root = findHostRoot(start);
+    return root ? { root, config: readConfig(path.join(root, HOST_CONFIG)) } : { root: path.resolve(start), config: {} };
+}
+function readBinVersion(bin, timeoutMs) {
+    const r = spawnSync(bin, ['--version'], {
+        encoding: 'utf8',
+        timeout: timeoutMs,
+        maxBuffer: 64 * 1024,
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if (r.error || r.status !== 0)
+        return null;
+    const line = String(r.stdout ?? '').split(/\r?\n/).find((row) => row.trim());
+    return line ? line.trim() : null;
+}
+function git(repo, args) {
+    const r = spawnSync('git', ['-C', repo, ...args], {
+        encoding: 'utf8',
+        timeout: GIT_TIMEOUT_MS,
+        maxBuffer: GIT_MAX_OUTPUT,
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return r.status === 0 ? (r.stdout ?? '').trim() : null;
+}
+function isDiskPath(target) {
+    return /^\.{1,2}([\\/]|$)/.test(target) || path.isAbsolute(target);
+}
+function defaultBranchOf(repoDir) {
+    const head = git(repoDir, ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD']);
+    if (head)
+        return head.replace(/^refs\/remotes\/origin\//, '');
+    for (const br of ['master', 'main']) {
+        if (git(repoDir, ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${br}`]) !== null) {
+            return br;
+        }
+    }
+    return git(repoDir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+}
+// A path that is not on disk yet keeps its missing tail after the nearest existing directory is canonicalized.
+function canonicalPath(target) {
+    const missing = [];
+    let dir = path.resolve(target);
+    while (!existsSync(dir)) {
+        const parent = path.dirname(dir);
+        if (parent === dir)
+            break;
+        missing.push(path.basename(dir));
+        dir = parent;
+    }
+    let abs = realpathSync(dir);
+    for (let i = missing.length - 1; i >= 0; i -= 1)
+        abs = path.join(abs, missing[i]);
+    return abs;
+}
+// True when `candidate` is outside `root`. Both sides are canonicalized first.
+export function pathOutsideRoot(root, candidate) {
+    const rel = path.relative(canonicalPath(root), canonicalPath(candidate));
+    // A parent segment is outside; a directory name that starts with ".." is not.
+    return rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
+}
+// The clone `dir` sits in: descend from the root to the first directory with `.git`. The root itself
+// is never a clone here — a standalone workspace holds its clones below it. `nsPath` is the path from it.
+function cloneBelow(root, dir) {
+    if (pathOutsideRoot(root, dir))
+        return null;
+    const rel = path.relative(canonicalPath(root), canonicalPath(dir));
+    if (!rel)
+        return null;
+    // The host passes its canonical install root, so this path matches realpath.
+    let abs = root;
+    const taken = [];
+    for (const part of rel.split(path.sep)) {
+        abs = path.join(abs, part);
+        taken.push(part);
+        if (existsSync(path.join(abs, '.git')))
+            return { abs, nsPath: taken.join('/') };
+    }
+    return null;
+}
+export function createStandaloneHost(options = {}) {
+    const found = findConfig(options.cwd ?? '.');
+    const config = { ...found.config, ...(options.config ?? {}) };
+    const root = canonicalPath(found.root);
+    const commandName = options.commandName ?? config.commandName ?? DEFAULT_COMMAND;
+    const version = options.version ?? config.version ?? defaultVersion();
+    const locale = options.locale ?? config.locale ?? 'en';
+    const nodePath = options.nodePath ?? process.execPath;
+    const binPath = options.binPath ?? fileURLToPath(new URL('../bin/promptobus.js', import.meta.url));
+    const extra = { ...(options.extraEnv ?? {}) };
+    const home = options.home ?? homeOfRoot(root);
+    const tools = Array.isArray(config.tools) ? config.tools.map(String) : [];
+    const ruleFiles = Array.isArray(config.rules) ? config.rules.map(String) : [];
+    const mcp = config.mcp && typeof config.mcp === 'object' ? config.mcp : {};
+    const skills = typeof config.skills === 'string' ? config.skills : null;
+    // The verdict is taken here; a refusal is spoken at the first ask. Absent key — no member.
+    const declared = config.pipeline === undefined ? null
+        : readPipeline(config.pipeline, { root, file: path.join(root, HOST_CONFIG) });
+    const steps = declared?.pipeline ? pipelineSteps(declared.pipeline) : null;
+    const versionReadMs = typeof options.versionReadMs === 'number' && options.versionReadMs > 0
+        ? options.versionReadMs
+        : VERSION_READ_MS;
+    // A usable line stays for this host. A failed read is not stored.
+    const readLines = new Map();
+    const host = {
+        kind: HOST_KIND,
+        id: options.id ?? 'standalone',
+        commandName,
+        version,
+        locale,
+        workspaceRoot: () => root,
+        promptobusHome: () => home,
+        findRoot: (cwd) => {
+            const hit = findConfig(cwd);
+            const foundRoot = existsSync(path.join(hit.root, HOST_CONFIG)) ? hit.root : path.resolve(cwd);
+            return canonicalPath(foundRoot);
+        },
+        // Routing files of a standalone workspace: the user home carries the account's cache and `user`
+        // overlay, the store home the workspace layer the tool writes. A consumer inserts its own between.
+        routingPaths: () => ({
+            cacheFile: path.join(os.homedir(), ROUTING_HOME, ROUTING_DIR, ROUTING_CACHE),
+            overlays: [
+                { id: 'user', path: path.join(os.homedir(), ROUTING_HOME, ROUTING_OVERLAY) },
+                // The workspace layer is STATE the tool writes, so it lives in this package's own directory
+                // rather than the repository root. There is no fallback path: two would make the file depend on which exists.
+                { id: 'workspace', path: path.join(home, ROUTING_OVERLAY), writable: true },
+            ],
+        }),
+        // Session registry of one harness. Standalone answers the path the package used to fall back to,
+        // so a single-user checkout keeps working: the refusal is for a host that names nothing.
+        harnessStateHome: (harness) => (harness
+            ? path.join(os.homedir(), ROUTING_HOME, harness)
+            : null),
+        nodePath: () => nodePath,
+        binPath: () => binPath,
+        layoutBinPath: () => binPath,
+        toolsManifestRel: () => HOST_CONFIG,
+        skillsDir: () => (skills ? path.join(root, skills) : null),
+        pluginDir: () => null,
+        pluginManifestRel: () => path.join(PROJECT_HOME, 'plugin.json'),
+        busHookRel: () => path.join(PROJECT_HOME, 'hooks', 'bus.mjs'),
+        installManifestRel: () => path.join(PROJECT_HOME, 'manifest.json'),
+        pluginSkillsRel: () => path.join(PROJECT_HOME, 'skills'),
+        declaredTools: () => [...tools],
+        collectRules: (repoDir) => {
+            const files = [];
+            const agents = path.join(repoDir, 'AGENTS.md');
+            if (existsSync(agents))
+                files.push(agents);
+            for (const rel of ruleFiles) {
+                const abs = path.isAbsolute(rel) ? rel : path.join(root, rel);
+                if (existsSync(abs))
+                    files.push(abs);
+            }
+            return files;
+        },
+        moduleNote: () => ({
+            level: 'info',
+            text: 'workspace module does not apply — standalone host',
+        }),
+        resolveRepoModule: () => null,
+        reviewSkillDir: (name) => path.join(root, PROJECT_HOME, 'skills', name),
+        participantServers: () => ({
+            servers: { ...mcp },
+            external: [],
+        }),
+        participantDenyTools: () => ({ tools: [], complete: true }),
+        ...(declared ? {
+            pipeline: () => {
+                if (!steps)
+                    throw pipelineRefusal(declared.findings);
+                return steps;
+            },
+        } : {}),
+        memorySection: () => null,
+        resolveRepo: async (query) => {
+            if (!query)
+                throw new HostResolveError('a repository name or path is required');
+            const abs = isDiskPath(query) ? path.resolve(query) : path.resolve(root, query);
+            if (!existsSync(abs)) {
+                throw new HostResolveError(`«${query}» was not found on disk (${abs})`);
+            }
+            const canonical = realpathSync(abs);
+            const installRoot = realpathSync(root);
+            if (pathOutsideRoot(root, abs)) {
+                throw new HostResolveError(`${canonical} is outside the install root ${installRoot}: name a repository inside it`);
+            }
+            const rel = path.relative(installRoot, canonical);
+            const nsPath = rel === '' ? path.basename(canonical) : rel.split(path.sep).join('/');
+            return { nsPath, abs: canonical, via: 'path on disk' };
+        },
+        repoAbsPath: (nsPath) => (path.isAbsolute(nsPath) ? nsPath : path.join(root, nsPath)),
+        isClone: (abs) => existsSync(path.join(abs, '.git')),
+        formatCandidate: (candidate) => candidate.nsPath,
+        inWorkspace: (abs) => !pathOutsideRoot(root, abs),
+        cloneOf: (abs) => cloneBelow(root, abs),
+        reviewLayoutError: (kind, ctx = {}) => {
+            switch (kind) {
+                case 'not-clone':
+                    return `${ctx.targetDir}: not a clone — there is no .git of its own here (nearest repository above: ${ctx.repoDir})`;
+                case 'outside':
+                    return `${ctx.repoDir}: outside the workspace`;
+                case 'no-clone':
+                    return `${ctx.repoDir}: clone not found`;
+                case 'cwd-outside':
+                    return 'outside the workspace';
+                case 'ask-path':
+                    return 'Name a path to a git repository inside the workspace.';
+                default:
+                    return null;
+            }
+        },
+        defaultBranch: (repoDir) => defaultBranchOf(repoDir),
+        freshenRepo: (repoDir) => {
+            const res = {
+                branch: null, checkout: null, behind: null, ahead: null,
+                headBehindDefault: null, checkoutBehind: null, checkoutAhead: null,
+                dirty: null, updated: false, warnings: [],
+            };
+            const fetch = spawnSync('git', ['-C', repoDir, 'fetch', '--quiet', 'origin'], {
+                encoding: 'utf8',
+                timeout: GIT_TIMEOUT_MS,
+                maxBuffer: GIT_MAX_OUTPUT,
+                stdio: ['ignore', 'pipe', 'pipe'],
+            });
+            if (fetch.status !== 0) {
+                res.warnings.push(`fetch origin failed: ${(fetch.stderr ?? '').toString().trim() || `exited ${fetch.status}`}`);
+                return res;
+            }
+            res.updated = true;
+            res.branch = defaultBranchOf(repoDir);
+            res.checkout = git(repoDir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+            const porcelain = git(repoDir, ['status', '--porcelain']);
+            res.dirty = porcelain === null ? null : porcelain.length > 0;
+            return res;
+        },
+        reportFresh: () => {
+            // The package does not write to stdout/stderr: freshness reporting is the CLI adapter's business.
+        },
+        extraEnv: () => ({ ...extra }),
+        // No spawn here: this member stays synchronous. The caller reads the version — see
+        // [02-host.md § The standalone host](../docs/reference/02-host.md#the-standalone-host).
+        resolveToolBin: (name) => {
+            const answered = { ok: true, bin: name };
+            const known = readLines.get(name);
+            if (known)
+                answered.version = known;
+            return answered;
+        },
+        readToolVersion: (name, bin) => {
+            const known = readLines.get(bin) ?? readLines.get(name);
+            if (known)
+                return known;
+            const line = readBinVersion(bin, versionReadMs);
+            if (line) {
+                readLines.set(bin, line);
+                readLines.set(name, line);
+            }
+            return line;
+        },
+        substituteVars: (value) => value,
+        formatCommand: (args) => [commandName, ...args].join(' '),
+        formatNpx: (args) => ['npx', commandName, ...args].join(' '),
+        busCommand: (args) => [commandName, ...args].join(' '),
+        busArgv: (args) => [binPath, ...args],
+        // Keep the established standalone spelling for its default entry: a configured command name is
+        // already the dispatch word and must not receive the package's default prefix.
+        guardArgv: (args) => commandName === DEFAULT_COMMAND
+            ? [binPath, commandName, ...args]
+            : [binPath, ...args],
+        cloneHint: (nsPath) => `git clone <url> ${nsPath}`,
+        syncHint: () => `${commandName} install`,
+        workerPreamble: ({ taskId, nsPath, branch, worktreePath }) => (`You are a worker on task ${taskId}. Your working directory is ${worktreePath}, an isolated `
+            + `git worktree of repository ${nsPath} (branch ${branch}); you edit only that. Do not touch the main `
+            + 'repository tree: your result stays on this branch, and the orchestrator collects it.'),
+        liveRunNote: () => '',
+    };
+    return host;
+}

@@ -1,0 +1,158 @@
+{
+  "identity": {
+    "format": 1,
+    "buildId": "55d586c1-a9b4-45f8-9cde-ac316511a322",
+    "pluginVersion": "0.2.0-rc.1",
+    "inputSha256": "fe5db5f160f5488c06d80a3c9ad90e6edb31aa20e8c1e3eaa135cfbd29f5b391",
+    "inputs": {
+      "commandCompiler": [
+        {
+          "name": "typescript",
+          "version": "7.0.2",
+          "sha256": "59782cf3d2bb3961e835f084189a5315db99f1941ad6dc2e15a1b4cc05c0896a"
+        },
+        {
+          "name": "@typescript/typescript-darwin-arm64",
+          "version": "7.0.2",
+          "sha256": "fbc6f37b0f9193818ad789dc7c8761e9f602047f269762098e59fcae9478d8a7"
+        },
+        {
+          "name": "@types/node",
+          "version": "22.19.11",
+          "sha256": "886f573baeca154edc7d2d3889c4a5d77ae155bd67e9fbe76e8ccccbf11c4611"
+        },
+        {
+          "name": "undici-types",
+          "version": "6.21.0",
+          "sha256": "4fb1814c23602191fc5e48f576555e9978e554a2053708368bc632bcb1402f34"
+        }
+      ],
+      "sourceSha256": "85a7e9e94dc89930ee19f7e640a35817a6d8a96db64f1ad11f0f3aebb4019b68",
+      "sourceRevision": "041eb1f63d6d13a09f5ed75ebb89cf401988c99f",
+      "sourceDirty": false,
+      "lockSha256": "f8924359b635b9745cf549141261b4e45965cd13d06ca9aa602b1635a5703a0f",
+      "builderVersion": "0.48.1",
+      "dependencies": [
+        {
+          "name": "@get-bb/plugin-sdk",
+          "version": "0.6.104",
+          "sha256": "6d69496bda0875aeaa27e83f1f5091381a5822e6d9177cbe13a7808eed806a48"
+        },
+        {
+          "name": "@tanstack/query-core",
+          "version": "5.105.0",
+          "sha256": "916707c09ba2a2410c2b7e9a8e6bb0ebb8afaf93e2dccf7cf826f03dabdff677"
+        },
+        {
+          "name": "@tanstack/react-query",
+          "version": "5.105.0",
+          "sha256": "556c9dcf1031c1c3fb19b3952bb6b742027bbf3052ed791615287b8d1048f157"
+        },
+        {
+          "name": "cross-spawn",
+          "version": "7.0.6",
+          "sha256": "a434bda8050acfb275852e92ca498105a0e33bb1d67d580f241c34efbf791747"
+        },
+        {
+          "name": "isexe",
+          "version": "2.0.0",
+          "sha256": "1830d9d27e4c53e32ad08ecc6a163fc50182e63139ad8d0abd5970cdc3529b24"
+        },
+        {
+          "name": "path-key",
+          "version": "3.1.1",
+          "sha256": "8c62a93719e53f13f115fdafc977d4c9a3ff2e8bc8f16b81d4142ee2442a369e"
+        },
+        {
+          "name": "promptobus",
+          "version": "0.32.3",
+          "sha256": "1493b545ee7d2edf46aa79f5f6dac973e56113919305b0ddfd766cb4030d9fcb"
+        },
+        {
+          "name": "shebang-command",
+          "version": "2.0.0",
+          "sha256": "d5112e345c841fc868ac07ad09e0dc1288e7e759fd2f92f15e70757f1e75ae87"
+        },
+        {
+          "name": "shebang-regex",
+          "version": "3.0.0",
+          "sha256": "5381a4ac76d7d2880f245c781f250e5f0a39208d6833565684fa88da73600496"
+        },
+        {
+          "name": "which",
+          "version": "2.0.2",
+          "sha256": "e4bea4fc674ffcfb2a3834b3d4565092460c5eba9fee3f150b96287ab3c5785e"
+        },
+        {
+          "name": "zod",
+          "version": "4.6.6",
+          "sha256": "16c37972bd7c3e91b95a2bc063566accba697b59793df55b2de0890f092efec2"
+        }
+      ],
+      "consumerIntegrationSha256": null,
+      "consumerBundleSha256": null
+    }
+  },
+  "installationDirectory": ".runtime/55d586c1-a9b4-45f8-9cde-ac316511a322",
+  "snapshot": {
+    "sha256": "8f73a626d0129a15b38c00ad5c29fd3dd9a6b252033ba04baaa7de8483c3fd7f",
+    "entries": [
+      "inputs",
+      "source",
+      "skills",
+      "commands",
+      "node_modules",
+      "package.json",
+      "tsconfig.json"
+    ],
+    "server": "./source/server.ts",
+    "host": "./source/host.ts",
+    "skills": [
+      "skills"
+    ]
+  },
+  "commandLauncher": "commands/command-runner.js",
+  "commandCompiler": [
+    {
+      "name": "typescript",
+      "version": "7.0.2",
+      "sha256": "59782cf3d2bb3961e835f084189a5315db99f1941ad6dc2e15a1b4cc05c0896a"
+    },
+    {
+      "name": "@typescript/typescript-darwin-arm64",
+      "version": "7.0.2",
+      "sha256": "fbc6f37b0f9193818ad789dc7c8761e9f602047f269762098e59fcae9478d8a7"
+    },
+    {
+      "name": "@types/node",
+      "version": "22.19.11",
+      "sha256": "886f573baeca154edc7d2d3889c4a5d77ae155bd67e9fbe76e8ccccbf11c4611"
+    },
+    {
+      "name": "undici-types",
+      "version": "6.21.0",
+      "sha256": "4fb1814c23602191fc5e48f576555e9978e554a2053708368bc632bcb1402f34"
+    }
+  ],
+  "commandRecorder": "commands/record-command.js",
+  "evidencePreparer": "commands/evidence-prepare.js",
+  "artifacts": {
+    "commands/build-identity.js": "a50eacb5fd7ef924f4205b58843292f4a703f925bc64fdd0d2d574223beb867b",
+    "commands/command-admission.js": "8bb0f5cbf10a76768041b83e82050eda79781fec1b4a9b358ad7f49da8cfdc8f",
+    "commands/command-runner.js": "7a4d0d611331b7804cdeece93059557c573807b6d2882aa21c6cc188a5960aa6",
+    "commands/control-schema.js": "335633b40962d965f3d4ad6eaf3ce616bf193a16409782dac39cd73a86216d2b",
+    "commands/control.js": "68ff1ffdcb8bfd052b2827f9f3962d0467560e82810f47256af51f8b4019e990",
+    "commands/evidence-builder.js": "7e358c838694b34640e0bd8e550d1610928313ced1df291fbdc06846d1e91bec",
+    "commands/evidence-prepare.js": "b4c03b57bcaf9d4ff493e927c420e20974139d3af02694d92e263a0ab6ebae6f",
+    "commands/launch-context.js": "4456b253706e867f947c696e5f9c7aab698df05b3ad063164b3c708b462a8318",
+    "commands/protocol.js": "1207963d1d945cb29be1611339f25c251792767fa26f6a87b8a4640e6c933d56",
+    "commands/record-command.js": "67f05958d5d8f2badb99a987946ae37411298acfd96f89ac1213a11ff81b0b21",
+    "commands/review-evidence.js": "c13e6884bb2e18fa0b04127e4dde9d60b6a5291265053d9e8e6c48eda4745c97",
+    "server.js": "13df98d2057632948c1a31ba20e15920fb3f7c4523b8114d7ea46d74e35f7318",
+    "host.js": "7ff3e2514988ca1b063ff85120b32ec8f68f88730148ab2b2e0e6d3e118243a1"
+  },
+  "builtWith": {
+    "bbVersion": "0.48.1",
+    "pluginSdkVersion": "0.6.104"
+  }
+}

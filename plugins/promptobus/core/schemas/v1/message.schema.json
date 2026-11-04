@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:promptobus:v1:message",
+  "title": "Message",
+  "description": "A canonical protocol v1 message. Immutable: the inbox and history links are the same inode.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocolVersion", "id", "task", "sender", "recipients", "type", "body", "ts"],
+  "properties": {
+    "protocolVersion": { "const": 1 },
+    "id": {
+      "description": "Opaque logical message ID. Upgraded same-store writers allocate committed order independently of wall time; retained IDs are unchanged.",
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{9}-[0-9]{4}-[0-9a-f]{6}$"
+    },
+    "task": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "originTask": {
+      "description": "The root task that sent a routed peer message, or the root whose orchestrator's mail was delivered into this child task. Absent on messages written before this field.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "sender": {
+      "description": "The sending participant's ID. A role is not derived from it.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "recipients": {
+      "description": "A non-empty list of participant IDs with no duplicates.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+      }
+    },
+    "type": {
+      "enum": ["task", "status", "question", "answer", "artifact", "result", "review"]
+    },
+    "body": {
+      "type": "string",
+      "minLength": 1
+    },
+    "artifact": {
+      "description": "The ID of the artifact's metadata record. The content lives in the task's blob.",
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{9}-[0-9]{4}-[0-9a-f]{6}$"
+    },
+    "ts": {
+      "description": "When this message was sent. Telemetry uses the sender's latest result timestamp as that participant's end stamp.",
+      "$ref": "urn:promptobus:v1:task#/$defs/timestamp"
+    }
+  }
+}
