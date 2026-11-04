@@ -78,6 +78,18 @@ check('docs: explicit BB Stop separates runtime observation from child attention
   && has(read('integrations/bb/README.md'), 'user message. Do not repeat completed commands or widen permissions.')
   && !has(read('integrations/bb/README.md'), '`off` would also suppress attention and is not used.'));
 
+check('docs: replacing a retained BB database starts fresh without deleting journals',
+  has(read('docs/guides/bb-plugins.md'), 'BB removal retains the plugin database.')
+  && has(read('docs/guides/bb-plugins.md'), 'move its complete private directory into the retained backup')
+  && has(read('docs/guides/bb-plugins.md'), 'verify that `bb promptobus bindings` is empty'));
+
+check('docs: bounded BB live measurements retain counts and provider recovery limits',
+  has(read('docs/reference/02-host.md'), '1 request and started 1 turn')
+  && has(read('docs/reference/02-host.md'), '0 new requests and 0 new turns.')
+  && has(read('integrations/bb/README.md'), 'PermissionNotFoundError')
+  && has(read('integrations/bb/README.md'), 'the nine commands were not repeated.')
+  && !has(read('docs/reference/05-drivers.md'), 'the adapter is source-only and unreleased.'));
+
 check('docs: declined Stop evidence preserves the non-start outcome and null exit',
   has(section(read('docs/reference/05-drivers.md'), '### Codex holder shutdown'),
     'The retained outcome remains `declined` with a null exit; it proves no command or test execution.')

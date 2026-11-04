@@ -36,7 +36,8 @@ Ordinary roles default to Codex. Workers can explicitly select Cursor or OpenCod
 approvers can explicitly select Cursor. Every selected provider must support
 `accept-edits`. Other role/provider pairs refuse. The selected provider survives
 binding, environment preparation, spawn, authenticated tools and recovery.
-These paths have SDK fixture coverage, distinct from the historical live profile.
+These paths have SDK fixture coverage and the bounded current-profile live
+measurements linked below; the two are separate evidence.
 The `acp-opencode` catalog may list an `opencode-go/` model with backend
 `routeProviderId: opencode-go`. Both its SDK id and native model name must use
 that prefix; the BB execution provider stays `acp-opencode`. Unlisted models,
@@ -49,7 +50,12 @@ with `gpt-6.1-sol`, `low` and the shipped pipeline. Codex CLI
 0.162.0-alpha.17.2 has a historical isolated native permission proof with
 `gpt-6.1-sol`, `high`; it does not establish `xhigh` or the full BB workflow on
 that build. [Compatibility proof](02-host.md#bb-reviewer-compatibility-proof).
-Other profiles are unverified; the adapter is source-only and unreleased. [Support and limits](../../integrations/bb/README.md#approver-admission-and-workflow-support).
+The 2026-11-04 BB 0.48.1 / SDK 0.6.104 profile additionally measured Codex
+owner/worker/reviewer/approver, the selected Cursor worker/approver and OpenCode
+worker. The versioned Git collection has a managed installation check. OpenCode
+report recovery and Cursor's direct-user approval requirement retain their
+documented limits. Other profiles remain unverified.
+[Support and limits](../../integrations/bb/README.md#approver-admission-and-workflow-support).
 Provider/model inventory is re-read before
 launch; a model-load error, unsupported model/effort, unavailable host/environment
 or known invalid installation/authentication refuses before canonical reservation.

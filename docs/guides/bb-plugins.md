@@ -32,6 +32,11 @@ Save each plugin's Settings with `bb plugin config <id> --json`, disable the
 plugin and copy its private `<bb-data-dir>/plugins/<id>/` directory to an owned,
 private backup outside the source checkout. `bb status --json` reports the data
 directory. Keep canonical task stores and original command receipts in place.
+BB removal retains the plugin database. After disabling the adapter, move its
+complete private directory into the retained backup before enabling the new
+installation. Do not edit or delete individual SQLite files. After install and
+enable, verify that `bb promptobus bindings` is empty before creating the new
+acceptance task.
 
 Run `bb plugin remove promptobus` and `bb plugin remove promptobus-native-panel`,
 then install both Git entries with the commands above. Removal deletes plugin

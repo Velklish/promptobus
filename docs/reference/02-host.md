@@ -747,8 +747,24 @@ availability is absent, so neither request counts nor request chronology measure
 avoidable turns. Repeated child identities also do not establish duplicate
 outcomes without child-turn identity. A synthetic SDK fixture checks the selected
 spawn option and existing bus recovery separately from BB's outcome scheduler.
-Live before/after coordinator turn savings and visible completion retention
-remain unmeasured. A retained BB 0.47.1 / Plugin SDK 0.6.79 observation on
+One local managed-build measurement on 2026-11-04 used BB 0.48.1, SDK 0.6.104,
+Node 26.13.0 and source `d93294c06456b4317dcb5164f4890126d37bb951`.
+The same child performed one read/status-only turn under each policy; canonical
+status messages do not themselves wake the owner. With `auto`, the owner received
+1 request and started 1 turn in the 18:56:11–18:56:29 UTC window. With `stuck`,
+it received 0 requests and started 0 turns in 18:56:30–18:56:52 UTC. This is one
+bounded comparison, not a general throughput or token-saving estimate.
+
+In the terminal-parent case, the parent grant ended before confirmed Stop.
+The Stop receipt completed at 18:53:14.934 UTC with both runtime confirmation
+and child-notification suppression complete. The child's canonical result arrived
+at 18:53:46.588 UTC. At 18:54:28.034 UTC, 73 seconds after the Stop receipt,
+the parent's last event remained sequence 40: 0 new requests and 0 new turns.
+Explicit fresh-phase Resume restored `stuck`; plugin reload retained the binding.
+These public observations do not establish native process drain or cancellation
+of input already admitted by BB.
+
+A retained BB 0.47.1 / Plugin SDK 0.6.79 observation on
 2026-10-26 recorded parent-grant removal completing at 19:25:51.641Z and
 confirmed parent Stop at 19:25:52.216Z. A senderless system child-interruption
 request followed at 19:25:52.775Z and a parent turn started at 19:25:53.268Z.
@@ -796,8 +812,8 @@ The final hook decision and the later provider start or join remain separate.
 A Stop or revocation after the last validation can cross that boundary. A public
 per-thread cancellation generation checked at actual provider start or join,
 ordered with Stop and grant revocation, would be needed to close that gap if the
-live race occurs there. The hook change requires live verification and is not
-proof that the retained terminal-parent race has been eliminated.
+live race occurs there. The bounded current-profile check above does not prove
+that every terminal-parent race has been eliminated.
 
 The optional `bb-plugin-promptobus` package owns the BB server and host entries.
 The server authenticates tool calls from SDK thread/project context and persistent
