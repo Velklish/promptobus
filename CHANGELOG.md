@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   build checkout is removed.
 - Restore the native panel test bootstrap and its clean production-bundle check
   on BB 0.48.1 / Plugin SDK 0.6.104.
+- Disable future child attention after explicit BB parent Stop, including
+  concurrent spawn and Resume. Report runtime Stop and notification suppression
+  separately; retain uncertain spawn outcomes for operator recovery.
 
 ### Added
 

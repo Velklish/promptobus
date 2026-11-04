@@ -122,9 +122,15 @@ async function stand(t, options = {}) {
       },
       get: async ({ threadId, signal }) => { if (!threads.has(threadId)) throw new Error('Thread not found');
         if (options.beforeGet) await options.beforeGet(threadId, signal); return threads.get(threadId); },
-      update: async ({ threadId, title }) => {
-        if (options.titleUpdateError) throw new Error(options.titleUpdateError);
-        const thread = threads.get(threadId); if (!options.titleUpdateUnconfirmed) thread.title = title; return thread;
+      update: async ({ threadId, title, parentNotifications }) => {
+        if (title !== undefined && options.titleUpdateError) throw new Error(options.titleUpdateError);
+        if (parentNotifications !== undefined) {
+          await options.beforeNotificationUpdate?.(threadId, parentNotifications);
+          if (options.notificationUpdateError) throw new Error(options.notificationUpdateError);
+        }
+        const thread = threads.get(threadId); if (title !== undefined && !options.titleUpdateUnconfirmed) thread.title = title;
+        if (parentNotifications !== undefined && !options.notificationUpdateUnconfirmed) thread.parentNotifications = parentNotifications;
+        return thread;
       },
       defaultExecutionOptions: async ({ threadId }) => executionOptions.get(threadId) ?? null,
       spawn: async args => {
@@ -155,7 +161,8 @@ async function stand(t, options = {}) {
       getPluginMetadata: async ({ threadId, pluginId }) => {
         assert.equal(pluginId, 'promptobus'); return metadata.get(threadId) ?? {};
       },
-      stop: async ({ threadId }) => { events.push('stop'); const thread = threads.get(threadId); thread.status = thread.runtime.displayStatus = stopStatus; return { ok: true }; },
+      stop: async ({ threadId }) => { events.push('stop'); await options.beforeStop?.(threadId);
+        const thread = threads.get(threadId); thread.status = thread.runtime.displayStatus = stopStatus; return { ok: true }; },
       wait: async ({ threadId }) => {
         const thread = threads.get(threadId);
         const hook = host.harness.inspection.registrations.hooks['message.dispatch'];
@@ -1112,6 +1119,104 @@ test('an unconfirmed child notification policy retains an orphan and stops its t
   const binding = bindingStore(s.host.bb).participant(s.task, 'worker-one');
   assert.equal(binding.phase, 'orphan'); assert.equal(binding.threadId, 'thr-2');
   assert.equal(s.events.at(-1), 'stop');
+});
+
+test('Stop disables existing child attention and explicit Resume restores stuck', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  assert.equal((await s.control('stop', 'orchestrator')).exitCode, 0);
+  assert.equal(s.threads.get('thr-2').parentNotifications, 'off');
+  await s.reload();
+  assert.equal((await s.control('resume', 'orchestrator')).exitCode, 0);
+  assert.equal(s.threads.get('thr-2').parentNotifications, 'stuck');
+});
+
+test('a new child of a stopped parent disables attention before spawn', async t => {
+  const s = await stand(t); await s.create();
+  assert.equal((await s.control('stop', 'orchestrator')).exitCode, 0);
+  const child = await s.add('worker-one');
+  assert.equal(child.exitCode, 0, child.stderr);
+  assert.equal(s.spawns.at(-1).parentNotifications, 'off');
+  assert.equal(s.threads.get('thr-2').parentNotifications, 'off');
+});
+
+test('unconfirmed child attention suppression refuses a successful Stop receipt', async t => {
+  const s = await stand(t, { notificationUpdateUnconfirmed: true }); await s.create(); await s.add('worker-one');
+  const result = await s.control('stop', 'orchestrator');
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /child parent notifications were not confirmed/);
+  assert.equal(JSON.parse(result.stdout).confirmed, true);
+  assert.equal(JSON.parse(result.stdout).childNotifications.complete, false);
+  assert.equal(bindingStore(s.host.bb).delivery('thr-1').paused, true);
+  assert.equal(s.events.at(-1), 'stop');
+});
+
+test('failed child attention update still stops the parent and keeps delivery paused', async t => {
+  const options = {};
+  const s = await stand(t, options); await s.create(); await s.add('worker-one');
+  options.notificationUpdateError = 'Notification update unavailable';
+  const result = await s.control('stop', 'orchestrator');
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /Notification update unavailable/);
+  assert.equal(bindingStore(s.host.bb).delivery('thr-1').paused, true);
+  assert.equal(s.events.at(-1), 'stop');
+});
+
+test('Stop during a resumed child notification update leaves attention off', async t => {
+  const entered = deferred(), release = deferred(); let armed = false;
+  const s = await stand(t, { beforeNotificationUpdate: async (_id, mode) => {
+    if (armed && mode === 'stuck') { armed = false; entered.resolve(); await release.promise; }
+  } });
+  await s.create(); await s.add('worker-one'); await s.control('stop', 'orchestrator');
+  armed = true;
+  const resume = s.control('resume', 'orchestrator');
+  await entered.promise;
+  const stop = s.control('stop', 'orchestrator');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(bindingStore(s.host.bb).delivery('thr-1').paused, true);
+  release.resolve();
+  assert.equal((await resume).exitCode, 1);
+  assert.equal((await stop).exitCode, 0);
+  assert.equal(s.threads.get('thr-2').parentNotifications, 'off');
+  assert.equal(bindingStore(s.host.bb).delivery('thr-1').paused, true);
+});
+
+test('Stop waits for in-flight child registration before confirming its attention is off', async t => {
+  const entered = deferred(), release = deferred(), nativeStop = deferred(); let armed = false;
+  const s = await stand(t, { beforeReturn: async () => { if (armed) { entered.resolve(); await release.promise; } },
+    beforeStop: async id => { if (armed && id === 'thr-1') nativeStop.resolve(); } });
+  await s.create(); armed = true;
+  const adding = s.add('worker-one'); await entered.promise;
+  let returned = false;
+  const stopping = s.control('stop', 'orchestrator').then(result => { returned = true; return result; });
+  await nativeStop.promise;
+  assert.equal(returned, false);
+  release.resolve();
+  assert.equal((await adding).exitCode, 0);
+  const result = await stopping;
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).childNotifications.complete, true);
+  assert.equal(s.threads.get('thr-2').parentNotifications, 'off');
+});
+
+test('a lost child spawn response makes notification suppression explicitly incomplete', async t => {
+  const options = {};
+  const s = await stand(t, options); await s.create(); options.ambiguousSpawn = true;
+  assert.equal((await s.add('worker-one')).exitCode, 1);
+  const result = await s.control('stop', 'orchestrator');
+  assert.equal(result.exitCode, 1);
+  assert.equal(JSON.parse(result.stdout).confirmed, true);
+  assert.equal(JSON.parse(result.stdout).childNotifications.complete, false);
+  assert.match(result.stderr, /unknown spawn requires operator recovery/);
+});
+
+test('changed child parent identity is refused without modifying its notification setting', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  s.threads.get('thr-2').parentThreadId = 'another-parent';
+  const result = await s.control('stop', 'orchestrator');
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /child notification binding mismatch/);
+  assert.equal(s.threads.get('thr-2').parentNotifications, 'stuck');
+  assert.equal(JSON.parse(result.stdout).confirmed, true);
 });
 
 test('synthetic child completion replay leaves coordinator idle until one canonical result', async t => {

@@ -731,7 +731,7 @@ The role contract states the delivery boundary:
 
 <!-- quote:../../integrations/bb/README.md -->
 ```markdown
-New managed children use SDK `parentNotifications: 'stuck'`. Routine completed
+Children of an unpaused parent use SDK `parentNotifications: 'stuck'`. Routine completed
 turns do not wake their parent; failures, interruptions, and approval or question
 blockers retain BB's notifications. Children send final results and questions
 through the canonical bus. Parenting and lifecycle ownership stay unchanged.
@@ -774,9 +774,17 @@ The public hook context carries the system initiator, sender and per-row author
 categories, but no typed system-outcome kind or subject. The check therefore
 covers automatic system input to plugin-owned recipients, including senderless
 notifications; it does not infer a child from prompt text or a parent identity.
-`threads.update` accepts `parentNotifications: 'off'`, but it supplies no atomic
-cancellation receipt for an already admitted notification. The adapter retains
-`stuck` and existing current-control, role, predecessor and session-limit checks.
+Explicit Stop applies `parentNotifications: 'off'` to its owned children;
+explicit Resume restores `stuck` after current-grant and epoch checks. New
+children of a paused parent start with `off`. Spawn/registration and notification
+updates share a parent sequence, so Stop waits for an in-flight spawn before
+confirming suppression. `confirmed` describes the parent runtime observation;
+`childNotifications.complete` separately describes notification suppression.
+Incomplete suppression exits 1, retains the pause and still attempts native BB
+Stop. Unknown spawn outcomes need operator recovery. `recovery run` reconciles
+children of persisted paused parents without resuming them.
+`threads.update` supplies no atomic cancellation receipt for an already admitted
+notification. Current-control, role, predecessor and session-limit checks remain.
 BB system attention that arrives during a pause is rejected, not deferred; BB
 does not deliver it again after resume, so the operator checks child state
 before resuming. A refusal caused by the pause or an epoch change carries a

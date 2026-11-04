@@ -70,6 +70,14 @@ check('docs: replacing a BB path source preserves journals and starts fresh bind
   && has(read('docs/guides/bb-plugins.md'), 'do not restore an old binding database into the new installation.')
   && has(read('docs/reference/02-host.md'), 'Later Git range updates preserve the installed plugin\'s state.'));
 
+check('docs: explicit BB Stop separates runtime observation from child attention suppression',
+  has(read('integrations/bb/README.md'), 'childNotifications.complete')
+  && has(read('integrations/bb/README.md'), 'A child of a paused parent starts with `off`.')
+  && has(read('docs/reference/02-host.md'), 'Stop waits for an in-flight spawn')
+  && has(read('docs/reference/02-host.md'), 'Unknown spawn outcomes need operator recovery.')
+  && has(read('integrations/bb/README.md'), 'user message. Do not repeat completed commands or widen permissions.')
+  && !has(read('integrations/bb/README.md'), '`off` would also suppress attention and is not used.'));
+
 check('docs: declined Stop evidence preserves the non-start outcome and null exit',
   has(section(read('docs/reference/05-drivers.md'), '### Codex holder shutdown'),
     'The retained outcome remains `declined` with a null exit; it proves no command or test execution.')

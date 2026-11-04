@@ -64,6 +64,10 @@ captured file set and refuses tampering. It executes only package code from the
 approved plugin build; task paths and participant claims select no runtime code.
 Older bindings are not migrated. Live role, provider and lifecycle qualification
 remains separate from portable-bundle and SDK fixtures.
+Explicit Stop disables future attention from owned children through public
+`threads.update`; explicit Resume restores `stuck`. Spawn registration shares
+that update order. Runtime Stop and complete notification suppression have
+separate results; no update claims cancellation of already admitted BB input.
 BB requires removing a path registration before installing the Git source.
 Preserve its private state as an offline backup and retain canonical journals;
 the new installation starts with fresh task and notification bindings.

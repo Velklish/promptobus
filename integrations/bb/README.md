@@ -140,16 +140,23 @@ and a long background run with volume and a measured estimate. Status remains in
 the orchestrator mailbox without its own bus wake; the next actionable message
 carries it. Decisions require questions.
 
-New managed children use SDK `parentNotifications: 'stuck'`. Routine completed
+Children of an unpaused parent use SDK `parentNotifications: 'stuck'`. Routine completed
 turns do not wake their parent; failures, interruptions, and approval or question
 blockers retain BB's notifications. Children send final results and questions
 through the canonical bus. Parenting and lifecycle ownership stay unchanged.
 
 The public `bb guide threads` documents this policy for the BB 0.48.1 / Plugin
-SDK 0.6.104 profile. `off` would also suppress attention and is not used. The
+SDK 0.6.104 profile. A child of a paused parent starts with `off`. The
 adapter confirms the spawn response; a child whose policy is not confirmed is
-retained as an orphan and stopped. Existing threads keep their recorded policy;
-this change does not update global settings or retrofit existing children.
+retained as an orphan and stopped. Explicit Stop disables attention on existing
+owned children; a successful explicit Resume restores `stuck`. These operations
+share the child's spawn/registration order and the parent's delivery epoch.
+The Stop reply reports `confirmed` for the parent runtime separately from
+`childNotifications.complete`; incomplete suppression exits 1 even if the
+parent stopped. Unknown spawn outcomes require operator recovery. A failed
+notification update still attempts the parent Stop. `recovery run` reconciles
+children of persisted paused parents without resuming them. Global settings,
+provider permissions, parenting and lifecycle ownership remain unchanged.
 Under `stuck`, unassigning a child also does not notify its former parent.
 Canonical mailbox reads remain the only acknowledgement. Stop, current-grant
 validation, predecessor checks, and active-session limits retain their existing
@@ -181,10 +188,16 @@ The hook checks local pause and epoch before and after asynchronous validation.
 It does not serialize its final decision with BB's later provider start or join.
 Public `threads.update` supports `parentNotifications: 'off'`, but changing that
 policy does not establish cancellation of an already admitted notification.
-The adapter keeps `stuck`; with an unpaused current grant, failure,
+With an unpaused current grant, failure,
 interruption, approval and question attention still reach the parent. This hook
 fix still requires a bounded live check; it does not certify the terminal-parent
 race after the hook has returned.
+
+When `accept-edits` refuses a command before an approval request appears, open
+the bound BB thread, enter the authorized continuation in its message composer
+and use Send. Choose Allow once on the actual request for the exact command.
+An agent follow-up or an answer in another thread does not replace that direct
+user message. Do not repeat completed commands or widen permissions.
 
 The six standing role contracts live in `skills/` and are generated from
 `promptobus/instructions`. After refreshing the local package with `npm ci`, run
