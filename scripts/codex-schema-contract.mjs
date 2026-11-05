@@ -143,13 +143,25 @@ export function readCapture(dir, { allowEvidence = false } = {}) {
   return schemas;
 }
 
+// Compiled validators are reused by content across calls: a validator is self-contained once compiled.
+const compiledByContent = new Map();
+const definitionsKeys = new WeakMap();
+const definitionsKey = root => {
+  if (!definitionsKeys.has(root)) definitionsKeys.set(root, JSON.stringify(root.definitions ?? null));
+  return definitionsKeys.get(root);
+};
+
 export function validateConsumedContract(schemas) {
   const load = name => schemas.get(`${name}.json`) ?? fail(name, 'required schema missing');
   const ajv = new Ajv({ strict: false, allErrors: true, formats });
   const validators = new WeakMap();
   const compile = (schema, root) => {
     if (typeof schema === 'boolean') return ajv.compile(schema);
-    if (!validators.has(schema)) validators.set(schema, ajv.compile({ ...schema, definitions: root.definitions }));
+    if (!validators.has(schema)) {
+      const key = `${JSON.stringify(schema)}\0${definitionsKey(root)}`;
+      if (!compiledByContent.has(key)) compiledByContent.set(key, ajv.compile({ ...schema, definitions: root.definitions }));
+      validators.set(schema, compiledByContent.get(key));
+    }
     return validators.get(schema);
   };
   const deref = (schema, root) => schema.$ref

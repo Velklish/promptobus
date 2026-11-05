@@ -460,6 +460,11 @@ future and unreadable labels can pass the same valid contract. A changed server-
 inventory requires security review. The finite
 witnesses check holder requests, response fields, notifications and actual approval replies;
 they do not certify arbitrary forwarded RPC. `currentTime/read` remains an extension.
+Within one process a compiled schema validator is reused by the schema's content and its
+`definitions`, so a suite that runs the gate dozens of times compiles each schema once: measured
+2026-11-05, a repeated validation of a capture took 221–347 ms before and 5–7 ms after, and
+`codex-schema-gate.test.mjs` 49 s before and 6 s after. A changed schema has other content and
+compiles anew.
 
 To raise `PROVEN_CODEX_VERSION`, run `codex app-server generate-json-schema --out <temporary>`
 with the candidate binary, then run

@@ -2513,7 +2513,8 @@ const queuedOnFirst = await codexDriver.activate({ ref: longPart?.sessionRef }, 
 });
 check(': a review arriving during the running first turn is accepted into the next-turn queue',
   queuedOnFirst.ok === true, JSON.stringify(queuedOnFirst));
-if (longPart?.sessionRef) await codexDriver.stop(longPart.sessionRef);
+// The first turn never ends, so the holder never confirms shutdown: a full budget only waits it out.
+if (longPart?.sessionRef) await codexDriver.stop(longPart.sessionRef, { timeoutMs: 1000 });
 
 planParticipant(HARNESS, 'worker:hang', {
   turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'HANG' } }] }],
