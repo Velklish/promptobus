@@ -219,22 +219,23 @@ const loadLine = () => os.loadavg().map((n) => n.toFixed(2)).join(' ');
 //   itself spawns as many processes as a whole pool lane. What it waits
 //   on is one place, named in the file: 25 s of 33 is waiting for that
 //   heartbeat;
-// - `runner.test.mjs` (4.6 s): a nested copy of the runner raises its
-//   own lanes. The concurrency verdict reads the peak of live children
-//   (`live.size` at spawn), not a `Date.now()` window in them:
-//   wall-clock measures when the child got CPU, and under machine
-//   neighbours it drifts on a sound pool. The 120 ms pauses stay for
-//   the buffering verdict. The file is outside the pool because the
-//   nested copy itself opens up to six lanes — it would take time from
-//   neighbours on the run, not because the verdict needs a still
-//   machine.
+// - `live-mixed-stand.test.mjs`: a hung persist stop must end the
+//   cut-off run inside 10 s — a 5 s stop budget plus a 5 s allowance,
+//   measured with `Date.now()` around the signal;
+// - `shared-service-standalone-root.test.mjs`: its native fixtures
+//   hold cross-process barriers of 1000 ms;
+// - `cursor-stop-bounded.test.mjs`: Cursor Stop checks a 1500 ms
+//   cross-process deadline.
 // - `model-routing-preflight.test.mjs`: its wall-clock guards cover a
 //   200 ms budget, a 400 ms in-flight probe, a 1 s memoised binary
 //   resolve, and 400 ms budgeted resolves. The counted interval check
 //   is sound under load, but the elapsed guards measure the machine's
 //   neighbours, so the whole file runs here without them.
 //
-// Who is not in the group, and why. `promptobus-mcp.test.mjs` has no
+// Who is not in the group, and why. `runner.test.mjs` raises nested
+// runner copies with lanes of their own, but its verdicts read the
+// peak of live children and contiguous output, not a clock: it takes
+// a pool lane like any file. `promptobus-mcp.test.mjs` has no
 // wall-clock thresholds left: its checks look at response contents and
 // store counters. In `install.test.mjs` `Date.now()` only builds
 // fixture age, and there is no clock threshold at all: load does not
@@ -311,8 +312,7 @@ const loadLine = () => os.loadavg().map((n) => n.toFixed(2)).join(' ');
 // the seal itself is watched by the gate at the tail of this file —
 // whose boundary is `run` in [exec.js](../lib/exec.js), not a test
 // file's own `spawnSync`.
-// Cursor Stop checks a 1500 ms cross-process deadline; pool neighbours can exhaust it before native observation.
-const SERIAL = ['promptobus-e2e.test.mjs', 'promptobus-mixed.test.mjs', 'promptobus-cursor-wake.test.mjs', 'promptobus-warden.test.mjs', 'model-routing-preflight.test.mjs', 'runner.test.mjs', 'live-mixed-stand.test.mjs', 'cursor-stop-bounded.test.mjs', 'shared-service-standalone-root.test.mjs'];
+const SERIAL = ['promptobus-e2e.test.mjs', 'promptobus-mixed.test.mjs', 'promptobus-cursor-wake.test.mjs', 'promptobus-warden.test.mjs', 'model-routing-preflight.test.mjs', 'live-mixed-stand.test.mjs', 'cursor-stop-bounded.test.mjs', 'shared-service-standalone-root.test.mjs'];
 
 // File timeout. A hung file used to hang `npm test` forever: the runner
 // waited on the child with no deadline, and anything can hang a file —

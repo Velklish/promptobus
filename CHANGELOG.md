@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first turn, which starts at launch and is never knocked.
 - The Codex schema gate compiles each consumed schema once per process instead of
   on every call, so its suite runs in about 6 s instead of 45 s.
+- The runner's own suite runs in the pool instead of the serial group: its
+  verdicts do not depend on a still machine.
 
 ## [0.32.4] — 2026-11-04
 
