@@ -18,7 +18,7 @@
 // wall-clock time — the warden loop, a pause inside a turn — and therefore runs in a
 // serial runner group. Here everything that is judged without a clock.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1325,6 +1325,14 @@ check('injection activity: delayed transcript keeps its grace without changing n
   && (statSync(path.dirname(activityFile)).mode & 0o777) === 0o700,
   JSON.stringify({ markedActivity, state: turnState(activityRecord, env), directoryMode: statSync(path.dirname(activityFile)).mode & 0o777 }));
 const activity = readPrivate(activityFile);
+const injectedMs = Date.parse(activity.injectedAt);
+writeFileSync(activityRecord.transcript, [{ role: 'user', message: { content: [] } }, { type: 'turn_ended', status: 'success' }]
+  .map((event) => JSON.stringify(event)).join('\n') + '\n');
+utimesSync(activityRecord.transcript, new Date(injectedMs + 1000), new Date(injectedMs + 1000));
+check('injection activity: a turn the transcript recorded after the injection and already ended is not busy inside the grace',
+  Date.now() - injectedMs < INJECT_GRACE_MS && turnState(activityRecord, env).busy === false,
+  JSON.stringify({ sinceInjection: Date.now() - injectedMs, state: turnState(activityRecord, env) }));
+writeFileSync(activityRecord.transcript, JSON.stringify({ type: 'turn_ended', status: 'success' }) + '\n');
 writePrivate(activityFile, { ...activity, injectedAt: new Date(Date.now() - INJECT_GRACE_MS - 1000).toISOString() });
 check('injection activity: expired grace does not make an ended turn busy', turnState(activityRecord, env).busy === false);
 writeFileSync(activityRecord.transcript, JSON.stringify({ role: 'user', message: { content: [] } }) + '\n');

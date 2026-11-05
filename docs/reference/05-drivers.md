@@ -403,6 +403,13 @@ Cursor turn-state observation reads or discovers its transcript without rewritin
 the registry. An observation must not invalidate its own native ownership proof;
 explicit transcript caching remains a separate operation.
 
+An injection counts as a running turn for `INJECT_GRACE_MS` (20 s) only while the
+transcript stays silent after it: the first transcript line was measured 3.09 and
+8.03 s after an injection, and without the grace the warden would wake the session
+twice. Once the transcript has been written after the injection, the transcript alone
+decides, so a turn that has already ended reads idle inside the grace. Both times are
+compared in whole milliseconds, the precision of the injection mark.
+
 Every number and shape below was taken from live spike runs (2026-09-03, `agent`
 2026.09.02-c22c1a3, tmux 3.6b), not inferred from documentation: Cursor has no docs
 on `persist` at all, and the subcommand itself has no flags of its own.

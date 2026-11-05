@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A Cursor participant whose turn ended within 20 s of its injection no longer
+  reads busy for the rest of that window, so the next delivery is not held back.
+
 ### Changed
 
 - `npm test` names every suite file that stayed alive at least 5 s after its last
