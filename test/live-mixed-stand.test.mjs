@@ -52,6 +52,7 @@ function start(args = [], env = {}) {
 
 const line = (out, re) => re.exec(out)?.[1] ?? null;
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+const expiry = (ms) => new Promise((resolve) => { setTimeout(() => resolve(null), ms).unref(); });
 const pidAlive = codexStub.pidAlive;
 // A listing that cannot be read is empty: the stand creates its sessions directory only with
 // the first session, and an unborn one is exactly the "raised nothing" this file checks.
@@ -74,7 +75,7 @@ codexStub.planParticipant(codexHarness.home, REVIEWER, {
 // --- a reviewer model the catalog does not know: refused before the worker is raised ----------
 
 const refused = start(['--codex-model', 'no-such-stand-model']);
-const refusedExit = await Promise.race([refused.done, sleep(30000).then(() => null)]);
+const refusedExit = await Promise.race([refused.done, expiry(30000)]);
 check('preflight: an unknown --codex-model refuses the run before the worker is raised',
   refusedExit?.code === 1 && refused.out.includes('✖ live run not started:')
   && refused.out.includes('no-such-stand-model') && refused.out.includes('codex debug models'),
@@ -119,7 +120,7 @@ check('cold start: the owned service is live while its warden CLI and parent are
 cold.child.kill('SIGTERM');
 await sleep(30);
 writeFileSync(coldBarrier + '.release', 'release');
-const coldExit = await Promise.race([cold.done, sleep(30000).then(() => null)]);
+const coldExit = await Promise.race([cold.done, expiry(30000)]);
 const coldPreExit = JSON.parse(line(cold.out, /^ {2}· pre-exit: (.+)$/m) ?? 'null');
 check('cold abort: the queued signal reaches awaited cleanup before either native participant is raised',
   coldExit?.code === 143 && /run cut off by SIGTERM/.test(cold.out) && coldPreExit?.sandboxPresent === true
@@ -202,7 +203,7 @@ check('cut: before the signal both participants are up — the worker pane and t
 
 writeFileSync(stopBarrier + '.enabled', JSON.stringify({ receipt: reviewerRecord?.commandReceiptFile, launchId: reviewerRecord?.launchId }));
 cut.child.kill('SIGTERM');
-const exit = await Promise.race([cut.done, sleep(30000).then(() => null)]);
+const exit = await Promise.race([cut.done, expiry(30000)]);
 rmSync(stopBarrier + '.enabled', { force: true });
 const barrierResult = existsSync(stopBarrier + '.released') ? JSON.parse(readFileSync(stopBarrier + '.released', 'utf8')) : null;
 const keptLogs = line(cut.out, /^ {2}· turn logs: (.+)$/m);

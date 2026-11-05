@@ -98,12 +98,20 @@ const roomyCopy = src.replace(/const FILE_TIMEOUT_MS = [\d_]+;/, `const FILE_TIM
 check('file timeout in the roomy copy is swapped — the watchdog probe is not racing the runner',
   roomyCopy !== src && roomyCopy.includes(`const FILE_TIMEOUT_MS = ${ROOMY_CAP_MS};`));
 
-function plant(dir, source, { watchdog = false } = {}) {
+// The idle threshold is swapped like the deadlines above: a fixture that slept the real 5 s
+// would add them to every run.
+const checkSrc = readFileSync(path.join(here, 'check.mjs'), 'utf8');
+const IDLE_CAP_MS = 300;
+const checkCopy = checkSrc.replace(/export const IDLE_REPORT_MS = [\d_]+;/, `export const IDLE_REPORT_MS = ${IDLE_CAP_MS};`);
+check('idle threshold in the helper copy is swapped — we exercise the shortened one, not the real one',
+  checkCopy !== checkSrc && checkCopy.includes(`export const IDLE_REPORT_MS = ${IDLE_CAP_MS};`));
+
+function plant(dir, source, { watchdog = false, helper = checkSrc } = {}) {
   writeFileSync(path.join(dir, 'run.mjs'), source);
   copyFileSync(path.join(here, 'hygiene.mjs'), path.join(dir, 'hygiene.mjs'));
   copyFileSync(path.join(here, 'kernel-read-shapes.mjs'), path.join(dir, 'kernel-read-shapes.mjs'));
   writeFileSync(path.join(dir, 'home.mjs'), watchdog ? homeCopy : homeSrc);
-  copyFileSync(path.join(here, 'check.mjs'), path.join(dir, 'check.mjs'));
+  writeFileSync(path.join(dir, 'check.mjs'), helper);
   writeFileSync(path.join(dir, 'tmpdir-sweep.mjs'), sweepCopy);
 }
 plant(SB, copy);
@@ -170,6 +178,20 @@ check(': a run with a fully skipped file stays green but names the skip in its s
 check(': the runner names the skipped file, verdict, and permission reason',
   /a-skip\.test\.mjs: ↷ SKIP socket-dependent group — listen EPERM: denied/.test(skippedRun.out)
   && /unskipped file ran/.test(skippedRun.out), skippedRun.out.slice(-500));
+
+// A file held by a timer after its last verdict is named in the summary, and the run stays green.
+const SB_IDLE = makeSandbox('promptobus-runner-idle-');
+plant(SB_IDLE, src, { helper: checkCopy });
+writeFileSync(path.join(SB_IDLE, 'a-idle.test.mjs'),
+  "import { check } from './check.mjs';\ncheck('held', true);\nsetTimeout(() => {}, 1200);\n");
+writeFileSync(path.join(SB_IDLE, 'b-prompt.test.mjs'),
+  "import { check } from './check.mjs';\ncheck('prompt', true);\n");
+const idleRun = await runCopy(SB_IDLE);
+const idleSection = /\n⏸ (\d+ files? idled after the last verdict.*\n(?: {2}.*\n?)*)/.exec(idleRun.out)?.[1] ?? '';
+check(': a file held by a timer after its last verdict is named with its idle time, and the run stays green',
+  idleRun.status === 0 && /^1 file idled after the last verdict/.test(idleSection)
+  && /\n {2}a-idle\.test\.mjs: 1\.\d s/.test(idleSection) && !idleSection.includes('b-prompt'),
+  `status=${idleRun.status} · ${idleRun.out.slice(-600)}`);
 
 writeFileSync(path.join(SB_SKIP, 'c-red.test.mjs'),
   "import { check } from './check.mjs';\ncheck('ordinary failure', false, 'probe');\n");

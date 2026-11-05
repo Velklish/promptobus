@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- `npm test` names every suite file that stayed alive at least 5 s after its last
+  verdict, in a summary section that does not fail the run. Two Codex and mixed
+  live-stand suites no longer wait out their unused exit-race timers: the Codex
+  stand ends in about 17 s instead of 122 s.
+
 ## [0.32.4] — 2026-11-04
 
 ### Fixed

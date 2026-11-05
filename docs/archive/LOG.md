@@ -634,3 +634,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-404"></a>`PB-404-bb-plugins-from-release` · 2026-11-04 · completed · — · BB loads the Promptobus plugins from a participant worktree and a sandbox copy instead of a released checkout
 - <a id="pb-374.1"></a>`PB-374.1-bb-terminal-parent-live-measurement` · 2026-11-04 · completed · — · Measure BB child-outcome turns and confirm a stopped parent stays stopped live
 - <a id="pb-373.16"></a>`PB-373.16-bb-acp-live-workflows` · 2026-11-04 · completed · — · Run the approved Cursor and OpenCode BB workflows live
+- <a id="pb-420"></a>`PB-420-stand-race-timers` · 2026-11-05 · completed · — · live-codex-stand and live-mixed-stand idle on uncleared race timers after their last check, and the runner names a file that idles after its last verdict

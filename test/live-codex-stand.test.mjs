@@ -63,7 +63,7 @@ const tasksFromBus = () => readTrace(HARNESS, WORKER)
 // --- a refused model: the binary catalog is asked before anything is raised ------------------------
 
 const refused = start(['--model', 'no-such-stand-model']);
-const refusedExit = await Promise.race([refused.done, new Promise((r) => { setTimeout(() => r(null), 30000); })]);
+const refusedExit = await Promise.race([refused.done, new Promise((r) => { setTimeout(() => r(null), 30000).unref(); })]);
 check('preflight: a model the binary catalog does not know refuses the run before anything is raised',
   refusedExit?.code === 1 && refused.out.includes('✖ live run not started:')
   && refused.out.includes('no-such-stand-model') && refused.out.includes('codex debug models'),
@@ -77,7 +77,7 @@ if (!refusedExit) {
 }
 
 const noCatalog = start(['--model', 'gpt-5.4-mini'], { [PROBE_VAR]: 'no-catalog' });
-const noCatalogExit = await Promise.race([noCatalog.done, new Promise((r) => { setTimeout(() => r(null), 30000); })]);
+const noCatalogExit = await Promise.race([noCatalog.done, new Promise((r) => { setTimeout(() => r(null), 30000).unref(); })]);
 check('preflight: a catalog that cannot be read refuses the run the same way',
   noCatalogExit?.code === 1 && noCatalog.out.includes('✖ live run not started:')
   && noCatalog.out.includes('no model catalog'), `${JSON.stringify(noCatalogExit)} · ${noCatalog.out.slice(-500)}`);
@@ -89,7 +89,7 @@ if (!noCatalogExit) {
 // --- a whole run: the id the script prints is the id its participant was handed -------------------
 
 const whole = start(['--model', 'gpt-5.4-mini']);
-await Promise.race([whole.done, new Promise((r) => { setTimeout(r, 120000); })]);
+await Promise.race([whole.done, new Promise((r) => { setTimeout(r, 120000).unref(); })]);
 if (!whole.exit) whole.child.kill('SIGKILL');
 const task = line(whole.out, /^▸ task: (\S+)$/m);
 const steps = [
@@ -145,7 +145,7 @@ check('abort: the start sweep took the dead owner\'s sandbox and held the live o
   !existsSync(deadNeighbour) && existsSync(liveNeighbour) && /held, their owner is alive: .*live-/.test(cut.out),
   cut.out.split('\n').filter((l) => l.startsWith('▸')).join(' | '));
 cut.child.kill('SIGTERM');
-const exit = await Promise.race([cut.done, new Promise((r) => { setTimeout(() => r(null), 30000); })]);
+const exit = await Promise.race([cut.done, new Promise((r) => { setTimeout(() => r(null), 30000).unref(); })]);
 // Stop results and liveness come from the child before teardown; parent PID reads are delayed.
 const streamNote = (cut.out.split('\n').find((l) => l.startsWith(`  · stop returned for the stream ${cutRef}: `)) ?? '')
   .slice(`  · stop returned for the stream ${cutRef}: `.length);

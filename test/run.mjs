@@ -397,6 +397,7 @@ if (!files.length) {
 const failed = [];
 const skipped = [];
 const fullySkipped = [];
+const idled = [];
 function skipLines(out) {
   return out.split(/\r?\n/).filter((line) => line.startsWith('↷ SKIP '));
 }
@@ -476,6 +477,8 @@ function report({ name, ms, out, why, loadAtStart, loadAtEnd }) {
   if (out) process.stdout.write(out.endsWith('\n') ? out : `${out}\n`);
   const fileSkips = skipLines(out);
   if (fileSkips.length) skipped.push({ name, lines: fileSkips });
+  const idle = /^⏸ idle (\d+(?:\.\d+)?) s after the last verdict$/m.exec(out);
+  if (idle) idled.push({ name, seconds: idle[1] });
   const verdict = verdictSummary(out);
   if (!why && fileSkips.length && verdict?.passed === 0
       && verdict.total === verdict.skipped && verdict.skipped === fileSkips.length) {
@@ -674,6 +677,11 @@ if (interrupted) {
       + ' wall-clock budget MAY go red because neighbours took the time. That is a candidate, not a'
       + ' verdict — discharge it with that file standalone twice AND on the base commit, exit codes'
       + ' for each; see contributing.md § Suite isolation');
+  }
+  if (idled.length) {
+    console.log(`\n⏸ ${idled.length} file${idled.length === 1 ? '' : 's'} idled after the last verdict`
+      + ' — a timer or handle outlived the checks (check.mjs IDLE_REPORT_MS):');
+    for (const file of idled) console.log(`  ${file.name}: ${file.seconds} s`);
   }
   if (skippedChecks) {
     console.log(`\n↷ ${skippedSummary}:`);

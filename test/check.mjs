@@ -45,7 +45,13 @@ const results = [];
 // file reached the end" from "the file was cut off", without which an
 // incomplete summary would read as complete.
 let finished = false;
-process.on('beforeExit', () => { finished = true; });
+let finishedAt = 0;
+process.on('beforeExit', () => { finished = true; finishedAt = Date.now(); });
+
+// A natural finish this long after the last verdict means a timer or handle held the file;
+// the runner lists such files in its summary.
+export const IDLE_REPORT_MS = 5000;
+let lastVerdictAt = 0;
 
 // Pause between write attempts. `writeSync` is synchronous, there is
 // no event loop here at all, and there is nothing to yield a tick to —
@@ -79,11 +85,13 @@ export function check(name, cond, detail = '') {
   // The exit code is set on the spot: in the `exit` handler it can no
   // longer be changed, and the check may not live to the file tail.
   if (!ok) process.exitCode = 1;
+  lastVerdictAt = Date.now();
   out(`${ok ? '✔' : '✖'} ${name}${!ok && detail ? ` — ${detail}` : ''}`);
 }
 
 export function skip(name, reason) {
   results.push({ name, outcome: 'skipped' });
+  lastVerdictAt = Date.now();
   out(`↷ SKIP ${name} — ${String(reason).replace(/\s+/g, ' ').trim() || 'no reason given'}`);
 }
 
@@ -114,6 +122,8 @@ process.on('exit', () => {
   const expected = failed === 0 ? 0 : 1;
   if (finished && code === expected) {
     out(`\n${passed}/${results.length} passed${skipped ? `, ${skipped} skipped` : ''}`);
+    const idle = lastVerdictAt ? finishedAt - lastVerdictAt : 0;
+    if (idle >= IDLE_REPORT_MS) out(`⏸ idle ${(idle / 1000).toFixed(1)} s after the last verdict`);
     return;
   }
   const last = results.length ? `after check "${results[results.length - 1].name}"` : 'before the first check';
