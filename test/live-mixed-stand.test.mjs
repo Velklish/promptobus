@@ -9,7 +9,7 @@ import { makeSandbox, stubCommand } from './sandbox.mjs';
 import * as cursorStub from './harness-cursor.mjs';
 import * as codexStub from './harness-codex.mjs';
 import { store } from './scenario.mjs';
-import { waitFor } from './harness.mjs';
+import { readCompleteJson, waitFor } from './harness.mjs';
 import * as cursorSession from '../lib/cursor-persist.js';
 import * as codexSession from '../lib/codex-session.js';
 import { processState } from '../lib/service-state.js';
@@ -111,7 +111,7 @@ if (argv[0] === 'warden' && process.env.PROMPTOBUS_TEST_MIXED_COLD_START) {
 `);
 const coldBarrier = path.join(SB, 'cold-start.json');
 const cold = start([], { PROMPTOBUS_E2E_ROOT: externalMechanism, PROMPTOBUS_TEST_MIXED_COLD_START: coldBarrier });
-const coldOwner = await waitFor(() => existsSync(coldBarrier) ? JSON.parse(readFileSync(coldBarrier, 'utf8')) : null, { timeoutMs: 60000 });
+const coldOwner = await waitFor(() => readCompleteJson(coldBarrier), { timeoutMs: 60000 });
 const coldTask = coldOwner ? store.readTask(coldOwner.home, coldOwner.task) : null;
 check('cold start: the owned service is live while its warden CLI and parent are still pending before native lifts',
   coldOwner?.cli && coldOwner?.owner && coldOwner.parent === cold.child.pid

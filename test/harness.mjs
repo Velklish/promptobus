@@ -619,3 +619,9 @@ export async function waitFor(probe, { timeoutMs, stepMs = 100 } = {}) {
   }
   return last;
 }
+
+/** Read a JSON file another process writes: a missing or unfinished file reads as null,
+ * so a waitFor probe retries instead of throwing out of the wait. */
+export function readCompleteJson(file) {
+  try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; }
+}

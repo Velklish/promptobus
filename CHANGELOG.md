@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A Cursor participant whose turn ended within 20 s of its injection no longer
   reads busy for the rest of that window, so the next delivery is not held back.
+- Live suites no longer abort when they read a half-written marker file under
+  load: the wait retries until the file is complete.
 
 ### Changed
 

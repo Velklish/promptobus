@@ -641,3 +641,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-422.1"></a>`PB-422.1-cursor-inject-grace-ended-turn` · 2026-11-05 · completed · — · A Cursor session reads busy for the rest of the 20 s injection grace after a turn that already ended
 - <a id="pb-425"></a>`PB-425-pool-file-repeated-waits` · 2026-11-05 · completed · — · codex-schema-gate recompiles the same Codex schemas on every gate call, and promptobus-driver-codex waits a full 10 s Stop budget on a cleanup that never confirms
 - <a id="pb-424"></a>`PB-424-runner-test-into-pool` · 2026-11-05 · completed · — · runner.test.mjs leaves the serial group, and the runner's register names why each remaining serial file needs a still machine
+- <a id="pb-425.1"></a>`PB-425.1-live-mixed-raised-torn-read` · 2026-11-05 · completed · — · Two live-mixed fixtures parse the raised-file once and abort on a torn read under load

@@ -504,6 +504,10 @@ check('docs: a fetch-then-send pause waits for the delivery mark, and a hold sta
   && has(read('README.md'), 'A pause that holds the turn stays a sleep.')
   && has(section(read('CHANGELOG.md'), '## [0.31.0] — 2026-10-29'), 'The pause between a mailbox fetch and the following send waits for the warden\'s delivery mark instead of sleeping one tick'),
   'suite isolation still tells every scripted pause to poll, or drops the hold that stays a sleep');
+check('docs: a probe that parses a file another process writes reads it through readCompleteJson',
+  has(suiteIsolation, 'must not let a half-written file throw out of the wait: `readCompleteJson` in `test/harness.mjs` reads a missing or unfinished file as `null` so the wait retries, while a bare `JSON.parse` in the probe aborts the whole suite file')
+  && has(section(read('CHANGELOG.md'), '## [Unreleased]'), 'Live suites no longer abort when they read a half-written marker file under'),
+  'suite isolation no longer names readCompleteJson for the torn read of a file another process writes');
 check('docs: models probes by default in the orchestrate skill, abandon refuses a BB task, and the sweep ADR keeps artifacts',
   has(orchestrateSkill, '[--refresh | --no-probe] [--json]')
   && has(orchestrateSkill, 'It probes the harnesses by default and updates the availability cache; `--no-probe` reads the cached readings only.')

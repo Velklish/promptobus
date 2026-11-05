@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox, stubCommand } from './sandbox.mjs';
-import { waitFor } from './harness.mjs';
+import { readCompleteJson, waitFor } from './harness.mjs';
 import { proveStandIsolation, STUB_BIN } from '../scripts/live-entry.mjs';
 import { RUN_OWNER_FILE, sweepLiveRuns } from '../scripts/canary-runs.mjs';
 import * as cursorStub from './harness-cursor.mjs';
@@ -111,7 +111,7 @@ if(process.argv.includes('list-sessions')&&existsSync(${JSON.stringify(armed)}))
   const done = new Promise(resolve => child.on('close', (code, signal) => { exit = { code, signal }; resolve(exit); }));
   let raised;
   try {
-    raised = await waitFor(() => existsSync(raisedFile) ? JSON.parse(readFileSync(raisedFile, 'utf8')) : exit ? { earlyExit: exit } : null, { timeoutMs: 120000 });
+    raised = await waitFor(() => readCompleteJson(raisedFile) ?? (exit ? { earlyExit: exit } : null), { timeoutMs: 120000 });
     check(`live Cursor ${boundary}: actual owned owner and expected native pane exist at the boundary`,
       !!raised?.owner && processState(raised.owner) === 'alive'
       && (boundary === 'early normal' ? !raised.ref && !raised.pane : !!raised.pane && processState(raised.pane) === 'alive'),

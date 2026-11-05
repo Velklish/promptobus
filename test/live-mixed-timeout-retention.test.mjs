@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox } from './sandbox.mjs';
-import { waitFor } from './harness.mjs';
+import { readCompleteJson, waitFor } from './harness.mjs';
 import { proveStandIsolation, STUB_BIN } from '../scripts/live-entry.mjs';
 import { RUN_OWNER_FILE, sweepLiveRuns } from '../scripts/canary-runs.mjs';
 import * as cursorStub from './harness-cursor.mjs';
@@ -53,7 +53,7 @@ for (const mode of ['abort cleanup', 'normal cleanup transfer']) {
   child.stdout.on('data', bytes => { out += bytes; }); child.stderr.on('data', bytes => { out += bytes; });
   const done = new Promise(resolve => child.on('close', (code, signal) => { exit = { code, signal }; resolve(exit); }));
   try {
-    raised = await waitFor(() => existsSync(raisedFile) ? JSON.parse(readFileSync(raisedFile, 'utf8')) : exit ? { earlyExit: exit } : null, { timeoutMs: 120000 });
+    raised = await waitFor(() => readCompleteJson(raisedFile) ?? (exit ? { earlyExit: exit } : null), { timeoutMs: 120000 });
     check(`mixed ${mode} timeout: actual owned native pane and service owner are alive before cancellation`,
       !!raised?.pane && !!raised?.owner && processState(raised.pane) === 'alive' && processState(raised.owner) === 'alive', JSON.stringify({ raised, out }));
     if (mode === 'normal cleanup transfer') {

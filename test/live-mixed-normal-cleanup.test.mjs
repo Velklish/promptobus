@@ -11,7 +11,7 @@ import * as codexStub from './harness-codex.mjs';
 import * as cursorSession from '../lib/cursor-persist.js';
 import { cursorDriver } from '../lib/driver-cursor.js';
 import { processState } from '../lib/service-state.js';
-import { waitFor } from './harness.mjs';
+import { readCompleteJson, waitFor } from './harness.mjs';
 import { RUN_OWNER_FILE, sweepLiveRuns } from '../scripts/canary-runs.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -71,7 +71,7 @@ async function runCase(unread) {
   child.stdout.on('data', data => { out += data; });
   child.stderr.on('data', data => { out += data; });
   const done = new Promise(resolve => child.on('close', (code, signal) => { exit = { code, signal }; resolve(exit); }));
-  const raised = await waitFor(() => existsSync(raisedFile) ? JSON.parse(readFileSync(raisedFile, 'utf8')) : exit ? { earlyExit: exit } : null,
+  const raised = await waitFor(() => readCompleteJson(raisedFile) ?? (exit ? { earlyExit: exit } : null),
     { timeoutMs: 120000 });
   const aliveBeforeFailure = !!raised?.process && processState(raised.process) === 'alive';
   check(`${label}: the owned Cursor pane is physically alive before the injected exception`,
