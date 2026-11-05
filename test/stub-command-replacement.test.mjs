@@ -1,9 +1,9 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
-import { chmodSync, closeSync, copyFileSync, openSync, statSync } from 'node:fs';
+import { closeSync, openSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { check } from './check.mjs';
-import { makeSandbox, stubCommand } from './sandbox.mjs';
+import { copyNodeExecutable, makeSandbox, stubCommand } from './sandbox.mjs';
 
 // A running native image holds the executable inode deterministically on Linux.
 // A shell launcher holds it only during exec, so racing shell starts would not be a proof.
@@ -12,8 +12,7 @@ if (process.platform === 'win32') {
 } else {
   const root = makeSandbox('promptobus-stub-replacement-');
   const launcher = path.join(root, 'claude');
-  copyFileSync(process.execPath, launcher);
-  chmodSync(launcher, 0o700);
+  copyNodeExecutable(launcher);
   const original = statSync(launcher);
   const child = spawn(launcher, ['--input-type=module', '-e', `
 process.on('message', message => {

@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads busy for the rest of that window, so the next delivery is not held back.
 - Live suites no longer abort when they read a half-written marker file under
   load: the wait retries until the file is complete.
+- The suite files that start a copy of the Node executable pass on a Node build
+  linked against a shared libnode, such as Homebrew's on macOS: the copy gets a
+  symlink to the library beside it.
 
 ### Changed
 

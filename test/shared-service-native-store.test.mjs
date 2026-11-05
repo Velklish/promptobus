@@ -1,7 +1,7 @@
 import { check } from './check.mjs';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -10,12 +10,12 @@ import { runWorkspaceService } from '../lib/service.js';
 import { registerServiceClient, serviceControl } from '../lib/service-client.js';
 import { privateDirectory, processStateAsync, readDiscovery, readPrivate, requireProcess, runtimeIdentity, servicePaths, writePrivate } from '../lib/service-state.js';
 import { observeRootProcess } from '../lib/root-process.js';
-import { makeSandbox, writeHostConfig } from './sandbox.mjs';
+import { copyNodeExecutable, makeSandbox, writeHostConfig } from './sandbox.mjs';
 
 // Real owned exec/hook/client paths with private known-binding seeds, not native genesis or Claude compatibility.
 const root = realpathSync(makeSandbox('promptobus-service-stores-'));
 const nativeExecutable = path.join(root, 'native-node');
-copyFileSync(process.execPath, nativeExecutable); chmodSync(nativeExecutable, 0o700);
+copyNodeExecutable(nativeExecutable);
 const base = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-service-stores-'));
 const bin = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url)), wrapper = fileURLToPath(new URL('../bin/promptobus-root', import.meta.url));
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version;

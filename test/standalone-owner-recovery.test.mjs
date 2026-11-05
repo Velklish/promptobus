@@ -1,19 +1,19 @@
 import { check } from './check.mjs';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
 import { approveStandaloneRootProfile } from '../lib/integration.js';
 import { serviceControl } from '../lib/service-client.js';
 import { processState, readDiscovery, readPrivate, runtimeIdentity, servicePaths, writePrivate } from '../lib/service-state.js';
-import { makeSandbox, writeHostConfig } from './sandbox.mjs';
+import { copyNodeExecutable, makeSandbox, writeHostConfig } from './sandbox.mjs';
 
 // Synthetic native image and owned service processes prove crash behavior, not Claude compatibility.
 const root = realpathSync(makeSandbox('promptobus-owner-recovery-'));
 const nativeExecutable = path.join(root, 'native-node');
-copyFileSync(process.execPath, nativeExecutable); chmodSync(nativeExecutable, 0o700);
+copyNodeExecutable(nativeExecutable);
 const base = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-recovery-'));
 const bin = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url));
 const wrapper = fileURLToPath(new URL('../bin/promptobus-root', import.meta.url));

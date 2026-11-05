@@ -508,6 +508,11 @@ check('docs: a probe that parses a file another process writes reads it through 
   has(suiteIsolation, 'must not let a half-written file throw out of the wait: `readCompleteJson` in `test/harness.mjs` reads a missing or unfinished file as `null` so the wait retries, while a bare `JSON.parse` in the probe aborts the whole suite file')
   && has(section(read('CHANGELOG.md'), '## [Unreleased]'), 'Live suites no longer abort when they read a half-written marker file under'),
   'suite isolation no longer names readCompleteJson for the torn read of a file another process writes');
+check('docs: a fixture that starts a copy of the Node executable copies it with copyNodeExecutable',
+  has(suiteIsolation, 'A fixture that starts a copy of the Node executable copies it with `copyNodeExecutable`')
+  && has(suiteIsolation, 'puts a symlink beside the copy to each one it finds in the executable\'s own rpath directories')
+  && has(section(read('CHANGELOG.md'), '## [Unreleased]'), 'linked against a shared libnode, such as Homebrew'),
+  'suite isolation no longer says how a copied Node executable gets its shared library');
 check('docs: models probes by default in the orchestrate skill, abandon refuses a BB task, and the sweep ADR keeps artifacts',
   has(orchestrateSkill, '[--refresh | --no-probe] [--json]')
   && has(orchestrateSkill, 'It probes the harnesses by default and updates the availability cache; `--no-probe` reads the cached readings only.')

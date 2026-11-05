@@ -44,7 +44,7 @@
 // written in JS, and `.cmd` with `#!/bin/sh` would drift not in three
 // lines but in two different programs — exactly the problem the script
 // was unified onto one language to avoid.
-import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -187,6 +187,29 @@ function keepUntilExit(dir, { signalCleanup = true } = {}) {
 
 export function makeSandbox(prefix, { signalCleanup = true } = {}) {
   return keepUntilExit(mkdtempSync(path.join(os.tmpdir(), prefix)), { signalCleanup });
+}
+
+// A Node build linked against a shared libnode (Homebrew on macOS) loads it from beside the executable,
+// so the copy gets a symlink to each `@rpath` library the original links directly; `otool` lists them.
+export function copyNodeExecutable(destination) {
+  copyFileSync(process.execPath, destination);
+  chmodSync(destination, 0o700);
+  for (const { name, file } of sharedNodeLibraries(realpathSync(process.execPath))) {
+    const link = path.join(path.dirname(destination), name);
+    try { lstatSync(link); } catch { symlinkSync(file, link); }
+  }
+}
+
+function sharedNodeLibraries(executable) {
+  if (process.platform !== 'darwin') return [];
+  const read = (flag) => spawnSync('/usr/bin/otool', [flag, executable], { encoding: 'utf8' }).stdout ?? '';
+  const names = [...new Set([...read('-L').matchAll(/^\s+@rpath\/(\S+)/gm)].map((match) => match[1]))];
+  const dirs = [...read('-l').matchAll(/cmd LC_RPATH\s+cmdsize \d+\s+path (\S+) \(offset/g)]
+    .map((match) => path.resolve(match[1].replace(/^@(?:loader|executable)_path/, () => path.dirname(executable))));
+  return names.flatMap((name) => {
+    const dir = dirs.find((candidate) => existsSync(path.join(candidate, name)));
+    return dir ? [{ name, file: realpathSync(path.join(dir, name)) }] : [];
+  });
 }
 
 /** Keep this process's registered run after unknown cleanup, including its exit hook. */

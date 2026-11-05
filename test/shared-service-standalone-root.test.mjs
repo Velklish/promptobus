@@ -1,7 +1,7 @@
 import { check } from './check.mjs';
 import { randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -10,13 +10,13 @@ import { planHookInstall } from '../lib/integration.js';
 import { runWorkspaceService } from '../lib/service.js';
 import { serviceControl } from '../lib/service-client.js';
 import { readDiscovery, readPrivate, runtimeIdentity, servicePaths, writePrivate } from '../lib/service-state.js';
-import { makeSandbox, writeHostConfig } from './sandbox.mjs';
+import { copyNodeExecutable, makeSandbox, writeHostConfig } from './sandbox.mjs';
 
 const root = realpathSync(makeSandbox('promptobus-standalone-root-'));
 const runnerExecutable = statSync(process.execPath);
 process.stdout.write(`  · fixture runner executable: ${JSON.stringify({ isFile: runnerExecutable.isFile(), mode: (runnerExecutable.mode & 0o777).toString(8) })}\n`);
 const nativeExecutable = path.join(root, 'native-node');
-copyFileSync(process.execPath, nativeExecutable); chmodSync(nativeExecutable, 0o700);
+copyNodeExecutable(nativeExecutable);
 const base = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-root-'));
 const bin = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url));
 const wrapper = fileURLToPath(new URL('../bin/promptobus-root', import.meta.url));

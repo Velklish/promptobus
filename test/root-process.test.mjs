@@ -1,9 +1,9 @@
 import { check } from './check.mjs';
 import { spawn } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { isSupportedPosixShell, processExecutable, processParent, observeRootProcess, requireNativeHookAncestor } from '../lib/root-process.js';
-import { makeSandbox } from './sandbox.mjs';
+import { copyNodeExecutable, makeSandbox } from './sandbox.mjs';
 
 const identity = await observeRootProcess(process.pid);
 const before = process.title;
@@ -102,9 +102,7 @@ while(!existsSync(process.argv[3]))await new Promise(resolve=>setTimeout(resolve
     await exercise('/bin/bash', 'protected-bin-bash', true);
     const actor = path.join(root, 'actor'); mkdirSync(path.join(actor, 'bin'), { recursive: true });
     const custom = path.join(actor, 'bin', 'bash'), node = realpathSync(process.execPath);
-    copyFileSync(node, custom);
-    const libraries = path.resolve(path.dirname(node), '..', 'lib');
-    if (existsSync(libraries)) symlinkSync(realpathSync(libraries), path.join(actor, 'lib'));
+    copyNodeExecutable(custom);
     const holder = path.join(root, 'actor-holder.mjs'), ready = path.join(root, 'actor-hook.json'), release = path.join(root, 'actor-release');
     writeFileSync(holder, `import{spawn}from'node:child_process';
 const[node,hook,...args]=process.argv.slice(2),child=spawn(node,[hook,...args],{stdio:'inherit'});
