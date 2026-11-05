@@ -1,5 +1,6 @@
 # PB-422 · The serial group takes half of npm test; find which fixed pauses inside promptobus-e2e and promptobus-mixed can be shortened
 
+- **Order:** 420
 - **Scope:** [Suite isolation](../../guides/contributing.md#suite-isolation)
 - **Created:** 2026-11-05
 - **Dependencies:** none
