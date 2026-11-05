@@ -184,9 +184,9 @@ export const REVIEWER_SCRIPT = {
     {
       say: `On the first turn send the orchestrator a result whose body starts with the line «${MARK.review}». Do nothing else and end the turn.`,
       detail: 'review sent; awaiting next cycle',
+      // Started at launch, not by a knock: no delivery mark follows the fetch, as on the worker's first turn.
       do: [
         { tool: 'promptobus_mailbox' },
-        { untilDelivered: TURN_PAUSE_MS },
         { tool: 'promptobus_send', args: { to: 'orchestrator', type: 'result', body: `${MARK.review}: note — the edit's heading carries no task number` } },
       ],
     },

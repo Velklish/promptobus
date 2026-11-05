@@ -25,16 +25,22 @@ check('build dependencies are installed',
 if (!depsReady) process.exit(1);
 
 const COPY_ROOT = path.join(SB, 'repo');
-cpSync(REPO, COPY_ROOT, {
-  recursive: true,
-  filter: (s) => {
-    const base = path.basename(s);
-    if (base === 'node_modules' || base === '.git' || base === 'dist') return false;
-    if (/^(lib|bin)\//.test(path.relative(REPO, s).split(path.sep).join('/'))
-      && /\.(?:js|d\.ts)$/.test(s) && existsSync(s.replace(/\.(?:js|d\.ts)$/, '.ts'))) return false;
-    return true;
-  },
-});
+// The fixture is the tree git knows — tracked files and new unignored ones — not the whole checkout:
+// ignored trees (`dist/`, generated output, agent worktrees) stay out, whatever their size.
+const listed = run('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: REPO, encoding: 'utf8' });
+check('the fixture file list comes from git', listed.status === 0, listed.error?.message ?? listed.stderr);
+const copied = [...new Set(listed.stdout.split('\0').filter(Boolean))].filter((rel) => existsSync(path.join(REPO, rel)));
+for (const rel of copied) {
+  mkdirSync(path.dirname(path.join(COPY_ROOT, rel)), { recursive: true });
+  cpSync(path.join(REPO, rel), path.join(COPY_ROOT, rel));
+}
+const inCopy = readdirSync(COPY_ROOT, { recursive: true, withFileTypes: true })
+  .filter((entry) => !entry.isDirectory())
+  .map((entry) => path.relative(COPY_ROOT, path.join(entry.parentPath, entry.name)).split(path.sep).join('/'));
+const strays = inCopy.filter((rel) => !copied.includes(rel));
+check('the copy holds exactly the files git lists, no ignored or generated one',
+  copied.length > 0 && inCopy.length === copied.length && strays.length === 0,
+  `${inCopy.length} in the copy, ${copied.length} listed; first strays: ${strays.slice(0, 5).join(', ')}`);
 symlinkSync(path.join(REPO, 'node_modules'), path.join(COPY_ROOT, 'node_modules'), 'junction');
 const BIN = path.join(REPO, 'node_modules', '.bin');
 const PATH_KEY = Object.keys(process.env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH';

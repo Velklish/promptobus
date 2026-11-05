@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox } from './sandbox.mjs';
 import { waitDelivered } from './delivery-wait.mjs';
+import { REVIEW_ROUND_TURN, REVIEWER_SCRIPT, WORKER_SCRIPT } from './scenario.mjs';
 
 const root = makeSandbox('promptobus-test-delivery-wait-');
 const home = path.join(root, 'bus');
@@ -59,9 +60,16 @@ const scenario = text('scenario.mjs');
 const wake = text('promptobus-cursor-wake.test.mjs');
 const stands = ['participant.mjs', 'harness-cursor.mjs', 'harness-codex.mjs'].map(text);
 check('a fetch-then-send pause polls for the delivery mark, and a busy hold awaits explicit release',
-  (scenario.match(/untilDelivered: TURN_PAUSE_MS/g) ?? []).length === 4
+  (scenario.match(/untilDelivered: TURN_PAUSE_MS/g) ?? []).length === 3
   && !scenario.includes('{ wait: TURN_PAUSE_MS }')
   && wake.includes('{ untilFile: RELEASE_FILE }') && !wake.includes('untilDelivered')
   && stands.every((src) => src.includes('action.untilDelivered') && src.includes('waitDelivered(')
     && src.includes('action.wait') && src.includes('setTimeout(r, action.wait)')),
   'a fetch-then-send pause is a sleep, or a busy hold does not await explicit release');
+
+const waits = (turn) => turn.do.some((action) => action.untilDelivered);
+const launched = [WORKER_SCRIPT.turns[0], REVIEWER_SCRIPT.turns[0]];
+const knocked = [WORKER_SCRIPT.turns[1], WORKER_SCRIPT.turns[2], REVIEW_ROUND_TURN];
+check('a turn started at launch sends without a delivery wait, and every knocked fetch-then-send turn waits for the mark',
+  launched.every((turn) => !waits(turn)) && knocked.every(waits),
+  JSON.stringify({ launched: launched.map(waits), knocked: knocked.map(waits) }));
