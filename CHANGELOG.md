@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   verdict, in a summary section that does not fail the run. Two Codex and mixed
   live-stand suites no longer wait out their unused exit-race timers: the Codex
   stand ends in about 17 s instead of 122 s.
+- `npm test` keeps a time ledger in `node_modules/.cache`, hands pool files out
+  longest first by their median there, reports the run's wall time and names files
+  that took at least twice their median and 5 s more. `PROMPTOBUS_TEST_POOL` sets
+  the pool width for a measurement.
 
 ## [0.32.4] — 2026-11-04
 

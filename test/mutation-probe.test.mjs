@@ -117,6 +117,7 @@ writeFileSync(path.join(RUNNER, 'run-unstartable.mjs'), unstartable);
 writeFileSync(path.join(RUNNER, 'tmpdir-sweep.mjs'), sweepCopy);
 copyFileSync(path.join(here, 'hygiene.mjs'), path.join(RUNNER, 'hygiene.mjs'));
 copyFileSync(path.join(here, 'kernel-read-shapes.mjs'), path.join(RUNNER, 'kernel-read-shapes.mjs'));
+copyFileSync(path.join(here, 'ledger.mjs'), path.join(RUNNER, 'ledger.mjs'));
 writeFileSync(path.join(RUNNER, 'a-subject.test.mjs'), [
   "import { readFileSync } from 'node:fs';",
   "const text = readFileSync(new URL('../subject.txt', import.meta.url), 'utf8');",

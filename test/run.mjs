@@ -11,11 +11,11 @@
 // `time npm test`: 47 files, 259.4 s wall-clock sequential at 105.6 s
 // CPU (user+sys), 181.2 s with the pool.
 //
-// Sort by name now sets the order files are HANDED to lanes, not the
-// print order: they print as they finish, and print order follows
-// durations. The hand-out stays deterministic — otherwise the first
-// wave's membership would drift between runs with load. Who does not
-// belong in the pool — below, at `SERIAL`.
+// Files are handed to lanes longest first by the median of the time
+// ledger ([ledger.mjs](ledger.mjs)), a file without history first, ties
+// by name; without a ledger, by name. They print as they finish. The
+// hand-out is deterministic for a given ledger. Who does not belong in
+// the pool — below, at `SERIAL`.
 //
 // A file failure does not stop the chain: files are isolated from each
 // other, and stopping on the first hid the picture behind one diagnosis
@@ -51,6 +51,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { applyHygiene } from './hygiene.mjs';
 import { recognizeKernelRead } from './kernel-read-shapes.mjs';
+import { appendLedger, dispatchOrder, fileMedians, ledgerPath, readLedger, slowFiles } from './ledger.mjs';
 import {
   RUN_OWNER_FILE, runOwnerIsLive, sweepTestSandboxes, sweepTestSockets, sweptLine,
 } from './tmpdir-sweep.mjs';
@@ -65,6 +66,13 @@ if (args.length && (args[0] !== '--files' || !requested.length
   process.exit(1);
 }
 const files = args.length ? requested.sort() : allFiles;
+const POOL_ENV = 'PROMPTOBUS_TEST_POOL';
+const poolRaw = process.env[POOL_ENV];
+if (poolRaw !== undefined && poolRaw !== '' && !/^[1-9]\d?$/.test(poolRaw)) {
+  console.error(`✖ ${POOL_ENV}=${poolRaw}: the pool width is a whole number from 1 to 99`);
+  process.exit(1);
+}
+const runStarted = Date.now();
 
 // Run sandboxes go into one directory, removed on exit — including
 // failure and Ctrl+C. Each file does its own `mkdtemp` in `os.tmpdir()`,
@@ -184,7 +192,8 @@ function testEnv(tmp) {
 // core takes time from those children rather than adding parallelism.
 // The cap of six is from the same measure: forty-seven files in six
 // lanes already wait on the longest file, and lanes beyond that idle.
-const POOL = Math.max(1, Math.min(6, os.cpus().length - 2));
+// `PROMPTOBUS_TEST_POOL` sets the width for a measurement; an invalid value refuses above.
+const POOL = poolRaw ? Number(poolRaw) : Math.max(1, Math.min(6, os.cpus().length - 2));
 
 // Machine load beside every red — a candidate explanation, never a verdict, and no
 // classifying of assertions: contributing.md § Worker path, gates.
@@ -398,6 +407,7 @@ const failed = [];
 const skipped = [];
 const fullySkipped = [];
 const idled = [];
+const timings = [];
 function skipLines(out) {
   return out.split(/\r?\n/).filter((line) => line.startsWith('↷ SKIP '));
 }
@@ -473,6 +483,7 @@ function runFile(name) {
 // diagnosis. File time is always printed — the run breakdown is built
 // from it, and the serial group is decided from it.
 function report({ name, ms, out, why, loadAtStart, loadAtEnd }) {
+  timings.push({ name, ms, why });
   console.log(`\n▸ ${name} — ${(ms / 1000).toFixed(1)} s`);
   if (out) process.stdout.write(out.endsWith('\n') ? out : `${out}\n`);
   const fileSkips = skipLines(out);
@@ -501,11 +512,27 @@ async function runGroup(names, width) {
   await Promise.all(lanes);
 }
 
+// Slow is twice the ledger median and this much more; runner.test.mjs swaps the number.
+const SLOW_MIN_DELTA_MS = 5000;
+const LEDGER = ledgerPath(path.join(here, '..'));
+let medians = new Map();
+if (!LEDGER) console.log('▸ no time ledger: the checkout has no node_modules — the pool takes files in name order');
+else {
+  try {
+    const { lines, broken } = readLedger(LEDGER);
+    medians = fileMedians(lines);
+    if (broken) console.log(`▸ time ledger: ${broken} unreadable line(s) skipped in ${LEDGER}`);
+  } catch (e) {
+    console.log(`▸ time ledger not read (${e.message}) — the pool takes files in name order`);
+  }
+}
 const serial = files.filter((n) => SERIAL.includes(n));
-const pooled = files.filter((n) => !SERIAL.includes(n));
+const pooled = dispatchOrder(files.filter((n) => !SERIAL.includes(n)), medians);
 console.log(`▸ ${files.length} files: ${pooled.length} in a pool of ${POOL}, `
   + `${serial.length} in the serial group at the end`);
 console.log(`▸ ${CORES} cores, load average ${loadLine()} before the pool`);
+console.log(`▸ pool hand-out: longest median first, ${pooled.filter((n) => medians.has(n)).length}`
+  + ` of ${pooled.length} files have history in the time ledger`);
 
 await runGroup(pooled, POOL);
 console.log(`▸ pool peak: ${peakLive}`);
@@ -657,6 +684,24 @@ if (interrupted) {
   }
 
   const passed = files.length - failed.length;
+  const runMs = Date.now() - runStarted;
+  const slow = slowFiles(timings.filter((t) => !t.why), medians, { minDeltaMs: SLOW_MIN_DELTA_MS });
+  const run = `${new Date(runStarted).toISOString()}-${process.pid}`;
+  const at = new Date().toISOString();
+  if (LEDGER) try {
+    appendLedger(LEDGER, [
+      ...timings.map(({ name, ms, why }) => ({ kind: 'file', run, at, file: name, outcome: why ? 'fail' : 'pass', ms })),
+      { kind: 'run', run, at, ms: runMs, files: files.length, failed: failed.length, pool: POOL, partial: args.length > 0 },
+    ]);
+  } catch (e) {
+    console.log(`▸ time ledger not written (${e.message})`);
+  }
+  console.log(`\n▸ run took ${(runMs / 1000).toFixed(1)} s${LEDGER ? `; time ledger ${LEDGER}` : ''}`);
+  if (slow.length) {
+    console.log(`\n▸ ${slow.length} file${slow.length === 1 ? '' : 's'} took at least twice the median of the`
+      + ` time ledger and ${SLOW_MIN_DELTA_MS / 1000} s more:`);
+    for (const f of slow) console.log(`  ${f.name}: ${(f.ms / 1000).toFixed(1)} s, median ${(f.median / 1000).toFixed(1)} s`);
+  }
   const skippedChecks = skipped.reduce((sum, file) => sum + file.lines.length, 0);
   const skippedSummary = `${skippedChecks} check${skippedChecks === 1 ? '' : 's'} skipped in `
     + `${skipped.length} file${skipped.length === 1 ? '' : 's'}`;

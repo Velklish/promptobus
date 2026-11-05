@@ -123,6 +123,7 @@ const productLocations = new Set([
   'integrations/bb/dist/build-manifest.json',
   '.promptobus/message-order.json',
   '.bb/plugins.json',
+  'node_modules/.cache/promptobus-test-ledger.jsonl',
 ]);
 
 function isPlaceholder(clean, fromRel) {

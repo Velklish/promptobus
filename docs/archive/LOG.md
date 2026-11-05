@@ -635,3 +635,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-374.1"></a>`PB-374.1-bb-terminal-parent-live-measurement` · 2026-11-04 · completed · — · Measure BB child-outcome turns and confirm a stopped parent stays stopped live
 - <a id="pb-373.16"></a>`PB-373.16-bb-acp-live-workflows` · 2026-11-04 · completed · — · Run the approved Cursor and OpenCode BB workflows live
 - <a id="pb-420"></a>`PB-420-stand-race-timers` · 2026-11-05 · completed · — · live-codex-stand and live-mixed-stand idle on uncleared race timers after their last check, and the runner names a file that idles after its last verdict
+- <a id="pb-421"></a>`PB-421-runner-time-ledger` · 2026-11-05 · completed · — · The runner keeps a per-file time ledger, hands files to the pool longest first, takes the pool width from PROMPTOBUS_TEST_POOL and names files that became twice as slow

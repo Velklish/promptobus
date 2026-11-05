@@ -24,6 +24,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox } from './sandbox.mjs';
 import { HARNESS_IDENTITY_VARS, INHERITED_VARS, RUN_VARS, applyHygiene, envKey } from './hygiene.mjs';
+import { LEDGER_ENV } from './ledger.mjs';
 
 const SB = makeSandbox('promptobus-runner-');
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -112,6 +113,7 @@ function plant(dir, source, { watchdog = false, helper = checkSrc } = {}) {
   copyFileSync(path.join(here, 'kernel-read-shapes.mjs'), path.join(dir, 'kernel-read-shapes.mjs'));
   writeFileSync(path.join(dir, 'home.mjs'), watchdog ? homeCopy : homeSrc);
   writeFileSync(path.join(dir, 'check.mjs'), helper);
+  copyFileSync(path.join(here, 'ledger.mjs'), path.join(dir, 'ledger.mjs'));
   writeFileSync(path.join(dir, 'tmpdir-sweep.mjs'), sweepCopy);
 }
 plant(SB, copy);
@@ -152,7 +154,7 @@ async function runCopy(dir, env = {}) {
   const log = path.join(dir, 'run.log');
   const fd = openSync(log, 'w');
   const child = spawn(process.execPath, [path.join(dir, 'run.mjs')],
-    { stdio: ['ignore', fd, fd], detached: true, env: { ...process.env, ...env } });
+    { stdio: ['ignore', fd, fd], detached: true, env: { ...process.env, [LEDGER_ENV]: path.join(dir, 'ledger.jsonl'), ...env } });
   const code = await new Promise((resolve) => {
     const timer = setTimeout(() => {
       try { process.kill(-child.pid, 'SIGKILL'); } catch { /* group already dead */ }
@@ -192,6 +194,52 @@ check(': a file held by a timer after its last verdict is named with its idle ti
   idleRun.status === 0 && /^1 file idled after the last verdict/.test(idleSection)
   && /\n {2}a-idle\.test\.mjs: 1\.\d s/.test(idleSection) && !idleSection.includes('b-prompt'),
   `status=${idleRun.status} · ${idleRun.out.slice(-600)}`);
+
+// Time ledger: a seeded history sets the hand-out, a width of one makes the print order the
+// hand-out order, and the slow threshold is swapped so a 1.5 s fixture crosses it.
+const SLOW_CAP_MS = 200;
+const slowCopy = src.replace(/const SLOW_MIN_DELTA_MS = [\d_]+;/, `const SLOW_MIN_DELTA_MS = ${SLOW_CAP_MS};`);
+check('slow threshold in the copy is swapped — we exercise the shortened one, not the real one',
+  slowCopy !== src && slowCopy.includes(`const SLOW_MIN_DELTA_MS = ${SLOW_CAP_MS};`));
+const SB_LEDGER = makeSandbox('promptobus-runner-ledger-');
+plant(SB_LEDGER, slowCopy);
+writeFileSync(path.join(SB_LEDGER, 'a-long.test.mjs'),
+  "import { check } from './check.mjs';\nawait new Promise((r) => { setTimeout(r, 1500); });\ncheck('long', true);\n");
+writeFileSync(path.join(SB_LEDGER, 'b-new.test.mjs'), "console.log('new file');\n");
+writeFileSync(path.join(SB_LEDGER, 'c-short.test.mjs'), "console.log('short file');\n");
+writeFileSync(path.join(SB_LEDGER, 'd-red.test.mjs'), "import { check } from './check.mjs';\ncheck('red', false);\n");
+const seededLedger = path.join(SB_LEDGER, 'ledger.jsonl');
+writeFileSync(seededLedger, ['r1', 'r2', 'r3'].flatMap((run) => [
+  { kind: 'file', run, at: run, file: 'a-long.test.mjs', outcome: 'pass', ms: 100 },
+  { kind: 'file', run, at: run, file: 'c-short.test.mjs', outcome: 'pass', ms: 5000 },
+]).map((line) => `${JSON.stringify(line)}\n`).join(''));
+const ledgerRun = await runCopy(SB_LEDGER, { PROMPTOBUS_TEST_POOL: '1' });
+const printed = ['b-new', 'd-red', 'c-short', 'a-long'].map((n) => ledgerRun.out.indexOf(`\n▸ ${n}.test.mjs — `));
+check(': the pool hands out a file without history first, then from the longest ledger median to the shortest',
+  printed.every((at) => at >= 0) && printed.every((at, i) => i === 0 || at > printed[i - 1]),
+  `${printed.join(', ')} · ${ledgerRun.out.slice(0, 600)}`);
+check(': PROMPTOBUS_TEST_POOL sets the pool width',
+  /in a pool of 1,/.test(ledgerRun.out) && /▸ pool peak: 1\n/.test(ledgerRun.out), ledgerRun.out.slice(0, 600));
+const written = readFileSync(seededLedger, 'utf8').trim().split('\n').slice(6).map((line) => JSON.parse(line));
+const fileLines = written.filter((line) => line.kind === 'file');
+const runLine = written.find((line) => line.kind === 'run');
+check(': the run appends one ledger line per file with its outcome and time, and one line for the run',
+  written.length === 5 && fileLines.length === 4 && new Set(fileLines.map((line) => line.run)).size === 1
+  && fileLines.find((line) => line.file === 'd-red.test.mjs')?.outcome === 'fail'
+  && fileLines.filter((line) => line.outcome === 'pass').length === 3
+  && fileLines.find((line) => line.file === 'a-long.test.mjs')?.ms >= 1500
+  && runLine?.run === fileLines[0].run && runLine.files === 4 && runLine.failed === 1 && runLine.pool === 1
+  && runLine.partial === false && runLine.ms >= 1500, JSON.stringify(written));
+const slowSection = /\n▸ (\d+ files? took at least twice the median.*\n(?: {2}.*\n?)*)/.exec(ledgerRun.out)?.[1] ?? '';
+check(': the summary names a file that took twice its ledger median, and not one that stayed under it',
+  ledgerRun.status === 1 && /^1 file took at least twice/.test(slowSection)
+  && /\n {2}a-long\.test\.mjs: \d+\.\d s, median 0\.1 s/.test(slowSection) && !slowSection.includes('c-short'),
+  `status=${ledgerRun.status} · ${ledgerRun.out.slice(-600)}`);
+const refusedWidth = await runCopy(SB_LEDGER, { PROMPTOBUS_TEST_POOL: '0' });
+check(': an invalid pool width refuses before any file starts',
+  refusedWidth.status === 1 && /✖ PROMPTOBUS_TEST_POOL=0: the pool width is a whole number from 1 to 99/.test(refusedWidth.out)
+  && !/▸ [a-d]-[a-z]+\.test\.mjs — /.test(refusedWidth.out)
+  && readFileSync(seededLedger, 'utf8').trim().split('\n').length === 11, refusedWidth.out.slice(-400));
 
 writeFileSync(path.join(SB_SKIP, 'c-red.test.mjs'),
   "import { check } from './check.mjs';\ncheck('ordinary failure', false, 'probe');\n");
