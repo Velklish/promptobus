@@ -1,10 +1,11 @@
 # PB-423 · Four suite files copy process.execPath and fail on a Node build linked against a shared libnode
 
-- **Order:** 410
 - **Scope:** [Suite isolation](../../guides/contributing.md#suite-isolation)
 - **Created:** 2026-11-05
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 410
+- **Taken:** 2026-11-05
 
 ## Context
 
