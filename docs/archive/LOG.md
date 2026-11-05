@@ -643,3 +643,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-424"></a>`PB-424-runner-test-into-pool` · 2026-11-05 · completed · — · runner.test.mjs leaves the serial group, and the runner's register names why each remaining serial file needs a still machine
 - <a id="pb-425.1"></a>`PB-425.1-live-mixed-raised-torn-read` · 2026-11-05 · completed · — · Two live-mixed fixtures parse the raised-file once and abort on a torn read under load
 - <a id="pb-423"></a>`PB-423-copied-node-shared-libnode` · 2026-11-05 · completed · — · Four suite files copy process.execPath and fail on a Node build linked against a shared libnode
+- <a id="pb-422.2"></a>`PB-422.2-claude-relift-stopall-under-load` · 2026-11-06 · completed · — · claude-relift left one participant process after stopAll once at load average 30

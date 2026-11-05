@@ -513,6 +513,10 @@ check('docs: a fixture that starts a copy of the Node executable copies it with 
   && has(suiteIsolation, 'puts a symlink beside the copy to each one it finds in the executable\'s own rpath directories')
   && has(section(read('CHANGELOG.md'), '## [Unreleased]'), 'linked against a shared libnode, such as Homebrew'),
   'suite isolation no longer says how a copied Node executable gets its shared library');
+check('docs: a stand that kills its participants waits for them to die by the clock',
+  has(suiteIsolation, 'sends SIGTERM to every participant and then waits for all of them to exit, up to `timeoutMs` in total, ten seconds by default')
+  && has(section(read('CHANGELOG.md'), '## [Unreleased]'), 'The stub stand waits for killed participants to exit for up to ten seconds'),
+  'suite isolation no longer says how long stopAll waits for a killed participant');
 check('docs: models probes by default in the orchestrate skill, abandon refuses a BB task, and the sweep ADR keeps artifacts',
   has(orchestrateSkill, '[--refresh | --no-probe] [--json]')
   && has(orchestrateSkill, 'It probes the harnesses by default and updates the availability cache; `--no-probe` reads the cached readings only.')

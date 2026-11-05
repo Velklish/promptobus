@@ -390,12 +390,13 @@ export async function startOwnedClaudeFixtureSession(argv) {
 // Wait for the process to die before removing the record: removing it under a live
 // participant would let that participant rewrite its file at the end of the turn, and
 // `agents --json` would show a killed session as alive.
-async function awaitDeath(pid, { tries = 40, delayMs = 25 } = {}) {
-  for (let i = 0; i < tries; i += 1) {
-    if (!pidAlive(pid)) return true;
+async function awaitDeath(pid, timeoutMs, delayMs = 25) {
+  const edge = Date.now() + timeoutMs;
+  while (pidAlive(pid)) {
+    if (Date.now() >= edge) return false;
     await settle(delayMs);
   }
-  return false;
+  return true;
 }
 
 /**
@@ -585,12 +586,15 @@ function armCleanup(home) {
   }
 }
 
-/** Kill everything that is left: a test safety net in `finally`, not part of the scenario. */
-export async function stopAll(home) {
+/** Kill everything that is left: a test safety net in `finally`, not part of the scenario.
+ * A participant closes its MCP client before it exits, so all of them share `timeoutMs` to die. */
+export async function stopAll(home, { timeoutMs = 10_000 } = {}) {
+  const records = harnessSessions(home);
+  for (const record of records) killSession(record);
+  const edge = Date.now() + timeoutMs;
   const left = [];
-  for (const record of harnessSessions(home)) {
-    killSession(record);
-    if (!await awaitDeath(record.pid, { tries: 20 })) left.push(record.id);
+  for (const record of records) {
+    if (!await awaitDeath(record.pid, Math.max(0, edge - Date.now()))) left.push(record.id);
     rmSync(sessionFile(home, record.id), { force: true });
   }
   return left;

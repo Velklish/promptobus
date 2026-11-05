@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The suite files that start a copy of the Node executable pass on a Node build
   linked against a shared libnode, such as Homebrew's on macOS: the copy gets a
   symlink to the library beside it.
+- The stub stand waits for killed participants to exit for up to ten seconds
+  in total, by the clock, instead of twenty polls each.
 
 ### Changed
 
