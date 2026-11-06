@@ -36,7 +36,7 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   childProcess.spawn = function(command, args, ...rest) {
     const child = originalSpawn.call(this, command, args, ...rest);
     const held = birthGate;
-    if (held && command === '/bin/ps' && JSON.stringify(args) === JSON.stringify(['-p', String(process.pid), '-o', 'stat=', '-o', 'lstart='])) {
+    if (held && command === '/bin/ps' && JSON.stringify(args) === JSON.stringify(['-p', String(held.pid ?? process.pid), '-o', 'stat=', '-o', 'lstart='])) {
       const emit = child.emit;
       child.emit = function(event, ...values) {
         if (event === 'close' && !held.entered) {
@@ -49,7 +49,7 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   };
   fsPromises.readFile = async function(file, ...args) {
     const value = await originalReadFile.call(this, file, ...args), held = birthGate;
-    if (held && file === `/proc/${process.pid}/stat` && !held.entered) { held.entered = true; await held.promise; }
+    if (held && file === `/proc/${held.pid ?? process.pid}/stat` && !held.entered) { held.entered = true; await held.promise; }
     return value;
   };
   syncBuiltinESMExports();
@@ -267,13 +267,36 @@ if (!['darwin', 'linux'].includes(process.platform)) {
       && managedActor.env.PROMPTOBUS_CODEX_SESSION === managedRecord && resolveSessionIdentity(managedActor.env).id === nativeId, JSON.stringify(managedActor));
     check('ordinary owned Codex bus join hands over the matching managed launch contact point', managedPage.status === 200 && !managedPage.json.result?.isError
       && wake?.session === nativeId && wake.socket === `${launch.rpcSocket}#3`, JSON.stringify(wake));
-    const managedState = state();
     const publishedLaunch = readSession(managedRef, codexEnv);
+    for (const name of ['promptobus_task', 'promptobus_send']) {
+      const held = birthGate = { ...gate(`managed-native-${name}`), pid: app.pid };
+      const body = `one ${name} after native proof revision`;
+      const inFlight = tool(managed, managedRoute, name, name === 'promptobus_send'
+        ? { to: 'orchestrator', type: 'status', body } : {});
+      await until(() => held.entered);
+      writeSession({ ...publishedLaunch, lastEvent: 'account/rateLimits/updated' }, codexEnv);
+      held.release(); birthGate = null;
+      const refreshed = await inFlight;
+      const committed = strictTaskFacts(home, task, { statusLine: true }).messages.filter(message => message.firstLine === body).length;
+      check(`${name} refreshes a benign revision during actual native process proof without repeating effects`,
+        refreshed.status === 200 && !refreshed.json.result?.isError && committed === (name === 'promptobus_send' ? 1 : 0), refreshed.text);
+    }
+    const heldNative = birthGate = { ...gate('managed-native-replaced'), pid: app.pid };
+    const replacedBody = 'replaced identity during native proof must not commit';
+    const nativeRequest = tool(managed, managedRoute, 'promptobus_send', { to: 'orchestrator', type: 'status', body: replacedBody });
+    await until(() => heldNative.entered);
+    writeSession({ ...publishedLaunch, launchId: 'replaced-native-proof-launch' }, codexEnv);
+    heldNative.release(); birthGate = null;
+    const nativeReplaced = await nativeRequest;
+    check('a changed launch during actual native proof refuses without dispatching the tool', nativeReplaced.status === 401
+      && !strictTaskFacts(home, task, { statusLine: true }).messages.some(message => message.firstLine === replacedBody), nativeReplaced.text);
+    writeSession(publishedLaunch, codexEnv);
+    const afterNativeProof = state();
     writeFileSync(managedRecord, JSON.stringify({ ...publishedLaunch, launchId: 'replaced-launch' }));
     const managedReplaced = await tool(managed, managedRoute, 'promptobus_send', { to: 'orchestrator', type: 'status', body: 'replaced managed launch must not commit' });
     writeFileSync(managedRecord, JSON.stringify(publishedLaunch));
     check('replaced managed lifetime proof refuses even with matching native metadata and cached context', managedReplaced.status === 401
-      && state() === managedState, managedReplaced.text);
+      && state() === afterNativeProof, managedReplaced.text);
     for (const [name, replace] of [['revoked', false], ['replaced', true]]) {
       const held = gate(name), credential = await register({ FACTORY_GATE: name });
       const route = await initialize(credential);

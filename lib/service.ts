@@ -27,7 +27,7 @@ import type { ProcessIdentity, RecordVersion, ServiceDiscovery, ServicePaths } f
 import { claimStandaloneIdentity, claudeStartupTranscript, prepareStandaloneResume, requireStartupCandidateFence, publishStandaloneClient, requireStandaloneRoot, revokeStandaloneRoot,
   readStandaloneLaunch, readStandaloneProfile, standaloneClientRevoked, standaloneExpired, standaloneReference } from './standalone-root-state.js';
 import type { StandaloneRootReference } from './standalone-root-state.js';
-import { nativeStoreForServiceClient, requireKnownNativeOutcomes, requireManagedNativeBinding, reserveManagedNativeIdentity, standaloneBindingForRecovery } from './native-admission.js';
+import { ManagedNativeRevisionDrift, nativeStoreForServiceClient, requireKnownNativeOutcomes, requireManagedNativeBinding, reserveManagedNativeIdentity, standaloneBindingForRecovery } from './native-admission.js';
 
 export type ServiceHostFactory = (context: { cwd: string; env: Readonly<NodeJS.ProcessEnv> }) => PromptobusHost | Promise<PromptobusHost>;
 export type ServiceClientLifetime =
@@ -513,6 +513,7 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         catch (error) {
           if (!(error instanceof ManagedRevisionDrift)) throw error;
           if (attempt >= MANAGED_PROOF_ATTEMPTS) throw new ManagedRevisionDrift(`exhausted ${MANAGED_PROOF_ATTEMPTS}`);
+          await new Promise(resolve => setTimeout(resolve, 25));
         }
       }
     };
@@ -533,7 +534,11 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         pin.identity ??= managedIdentity(participant);
         proof = { revision, participant };
       }
-      await requireManagedNativeBinding(paths, current, { host, env: current.pollEnv });
+      try { await requireManagedNativeBinding(paths, current, { host, env: current.pollEnv }); }
+      catch (error) {
+        if (error instanceof ManagedNativeRevisionDrift) throw new ManagedRevisionDrift('native proof');
+        throw error;
+      }
       authorizeCurrent(grant, proof);
       if (proof) {
         let snapshot: SessionSnapshot = null;

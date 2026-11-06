@@ -1813,6 +1813,14 @@ An unavailable observation returns HTTP 503 while retaining the credential, sess
 and prior receipts. Grant, participant and record revision are checked again after
 asynchronous preparation and at synchronous lock acquisition.
 
+If a session record changes during native process proof or the later managed
+observation, admission makes at most three complete attempts for the same grant,
+participant and native launch. Each attempt obtains fresh process and session
+proof and waits 25 ms before a retry so pending record publications can finish;
+a stable attempt is required before dispatch. A changed identity or grant
+is refused, and unavailable proof is not retried. Persistent record drift returns
+HTTP 409. Only authorization is retried; tool effects are never repeated.
+
 Managed synchronous dispatch takes its own task lock before creating a request
 receipt and refuses contention immediately. Its nested target, alias and message
 commit locks also do not wait on earlier native proof. A refusal before dispatch

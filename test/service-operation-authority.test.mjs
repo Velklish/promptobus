@@ -2,21 +2,23 @@
 import { readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import { check } from './check.mjs';
+import { ManagedNativeRevisionDrift } from '../lib/native-admission.js';
 
 const source = readFileSync(new URL('../lib/service.js', import.meta.url), 'utf8');
 const start = source.indexOf('    const authorizeCurrent =');
 const authorization = source.slice(start, source.indexOf('    const authenticateClient =', start));
 class HttpFailure extends Error { constructor(status, message) { super(message); this.status = status; } }
 for (const scenario of ['busy dead', 'cached alive but dead', 'unknown', 'revision drift', 'sustained revision drift',
+  'native proof revision drift', 'sustained native proof revision drift', 'native proof unavailable', 'pending native publication',
   'participant swap between attempts', 'revoked during observation', 'revision drift before write', 'participant drift before write',
   'owner claim during operation', 'fresh alive twice']) {
   const participant = { address: 'reporter', harness: 'codex', metadata: { sessionRef: 'native-one', sessionId: 'native-one' } };
   const grant = { id: 'owned', lifetime: { kind: 'managed', record: '/owned/launch', launchId: 'one' } };
-  let revision = 1, liveParticipant = participant, validGrant = true, observations = 0, processChecks = 0, release;
+  let revision = 1, liveParticipant = participant, validGrant = true, observations = 0, processChecks = 0, nativeChecks = 0, publicationPending = false, release;
   const held = new Promise(resolve => { release = resolve; });
   const state = scenario.includes('dead') ? 'dead' : scenario === 'unknown' ? 'unknown' : 'alive';
   const dependencies = {
-    HttpFailure, isDeepStrictEqual, paths: { home: '/owned' },
+    HttpFailure, ManagedNativeRevisionDrift, isDeepStrictEqual, paths: { home: '/owned' },
     currentGrant: value => { if (!validGrant) throw new HttpFailure(401, 'Client binding is absent or expired'); return value; },
     requireProcessLifetime: async () => {
       processChecks += 1;
@@ -25,7 +27,19 @@ for (const scenario of ['busy dead', 'cached alive but dead', 'unknown', 'revisi
       }
     },
     // This extracted unit controls the observation/revision fence; real native admission is covered by service fixtures.
-    requireManagedNativeBinding: async () => {}, standaloneExpired: () => false, host: {},
+    requireManagedNativeBinding: async () => {
+      nativeChecks += 1;
+      if (scenario.includes('native proof')) await held;
+      if (scenario === 'pending native publication' && nativeChecks === 1) {
+        publicationPending = true;
+        setTimeout(() => { publicationPending = false; }, 0);
+      }
+      if (publicationPending) throw new ManagedNativeRevisionDrift();
+      if (scenario === 'sustained native proof revision drift' || (scenario === 'native proof revision drift' && nativeChecks === 1)) {
+        revision += 1; throw new ManagedNativeRevisionDrift();
+      }
+      if (scenario === 'native proof unavailable') throw new HttpFailure(503, 'Native process proof unavailable');
+    }, standaloneExpired: () => false, host: {},
     requireLifetime: (_grant, _home, observe) => {
       if (observe.managed(grant, participant) === 'dead') throw new HttpFailure(401, 'Client lifetime is already expired or replaced');
     },
@@ -56,17 +70,22 @@ for (const scenario of ['busy dead', 'cached alive but dead', 'unknown', 'revisi
   if (typeof fence === 'function') { try { fence(); } catch (caught) { error = caught; } }
   if (scenario === 'fresh alive twice') { const next = await authorize(grant, 'body'); if (typeof next === 'function') next(); }
   const expected = scenario.includes('dead') || scenario === 'revoked during observation' ? 401
-    : scenario === 'unknown' ? 503 : scenario !== 'revision drift' && (scenario.includes('drift') || scenario.includes('swap')) ? 409 : null;
-  const stage = { 'sustained revision drift': ' [stage: exhausted 3]', 'revision drift before write': ' [stage: returned fence: body]',
+    : scenario === 'unknown' || scenario === 'native proof unavailable' ? 503
+      : !['revision drift', 'native proof revision drift'].includes(scenario) && (scenario.includes('drift') || scenario.includes('swap')) ? 409 : null;
+  const stage = { 'sustained revision drift': ' [stage: exhausted 3]', 'sustained native proof revision drift': ' [stage: exhausted 3]',
+    'revision drift before write': ' [stage: returned fence: body]',
     'participant drift before write': ' [stage: returned fence: body: participant identity]' }[scenario];
   const expectedMessage = stage ? `Managed lifetime changed after observation; retry with current owner proof${stage}`
     : scenario === 'participant swap between attempts' ? 'Managed participant identity changed during authorization' : null;
-  const expectedObservations = { 'fresh alive twice': 2, 'revision drift': 2, 'sustained revision drift': 3 }[scenario] ?? 1;
+  const expectedObservations = { 'fresh alive twice': 2, 'revision drift': 2, 'sustained revision drift': 3,
+    'sustained native proof revision drift': 0, 'native proof unavailable': 0 }[scenario] ?? 1;
+  const expectedNativeChecks = { 'native proof revision drift': 2, 'sustained native proof revision drift': 3, 'native proof unavailable': 1,
+    'pending native publication': 2 }[scenario];
   check(`operation authority: ${scenario} uses fresh proof and fences the same grant/record/participant`, withheld
     && (expected ? error?.status === expected : !error && typeof fence === 'function')
     && (expectedMessage === null || error?.message === expectedMessage)
-    && observations === expectedObservations,
-  JSON.stringify({ withheld, observations, status: error?.status, error: error?.message, fence: typeof fence }));
+    && observations === expectedObservations && (expectedNativeChecks === undefined || nativeChecks === expectedNativeChecks),
+  JSON.stringify({ withheld, observations, nativeChecks, status: error?.status, error: error?.message, fence: typeof fence }));
 }
 const cacheStart = source.indexOf('    const cachedObservation =');
 const cache = source.slice(cacheStart, source.indexOf('    const requireProcessLifetime =', cacheStart));

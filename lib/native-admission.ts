@@ -20,6 +20,9 @@ export interface NativeAdmissionBinding {
 }
 interface NativeAdmissionLedger { schemaVersion: 2; root: string; home: string; bindings: NativeAdmissionBinding[] }
 export interface NativeAdmissionContext { host: PromptobusHost; env: NodeJS.ProcessEnv }
+export class ManagedNativeRevisionDrift extends Error {
+  constructor() { super('Managed native source changed during proof observation'); }
+}
 const fileOf = (paths: ServicePaths) => path.join(paths.directory, 'native-admission.json');
 const markerOf = (paths: ServicePaths) => path.join(paths.directory, 'native-admission.initialized.json');
 const nativeId = (value: unknown): value is string => typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,255}$/.test(value);
@@ -509,7 +512,7 @@ async function managedPublication(paths: ServicePaths, grant: Pick<ServiceClient
     const participant = participantOf(readTask(paths.home, primary.task), primary.address);
     if (participant?.metadata?.sessionRecord !== source.record || participant.metadata.sessionId !== nativeId) throw new Error('Managed alias primary participant no longer owns its native source');
   }
-  if (!sameRecordVersion(version) || (primaryVersion && !sameRecordVersion(primaryVersion))) throw new Error('Managed native source changed during proof observation');
+  if (!sameRecordVersion(version) || (primaryVersion && !sameRecordVersion(primaryVersion))) throw new ManagedNativeRevisionDrift();
   return { version, record, primaryVersion, binding: { harness: grant.nativeBinding.kind, nativeStore, nativeId,
     source: 'managed' as const, runtime: grant.runtime, ownerKey: proof.launchId, process, nonce: proof.launchId } };
 }

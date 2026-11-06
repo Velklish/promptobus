@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Managed HTTP calls refresh their full authorization proof when the session
+  record changes during native process observation, instead of returning HTTP
+  500. Retries yield briefly for pending publications instead of exhausting all
+  three attempts in one burst. The existing limit and identity checks still
+  apply; tool effects are not retried.
 - A Cursor participant whose turn ended within 20 s of its injection no longer
   reads busy for the rest of that window, so the next delivery is not held back.
 - Live suites no longer abort when they read a half-written marker file under
