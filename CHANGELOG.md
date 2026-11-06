@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   symlink to the library beside it.
 - The stub stand waits for killed participants to exit for up to ten seconds
   in total, by the clock, instead of twenty polls each.
+- Two suite files, the Cursor bounded Stop and the shared-service native store,
+  stretch their fixed deadlines and waits by the measured load of the machine;
+  a launch that misses its hook receipt turns its checks red instead of aborting
+  the file.
 
 ### Changed
 

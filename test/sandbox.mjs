@@ -46,7 +46,7 @@
 // was unified onto one language to avoid.
 import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import path from 'node:path';
@@ -187,6 +187,26 @@ function keepUntilExit(dir, { signalCleanup = true } = {}) {
 
 export function makeSandbox(prefix, { signalCleanup = true } = {}) {
   return keepUntilExit(mkdtempSync(path.join(os.tmpdir(), prefix)), { signalCleanup });
+}
+
+// A fixture step is a Node process, many times slower under load, while a fixed window stays as written. The factor
+// is how many times longer a child takes on the clock to burn `cpuMs` of CPU time, from 1 to `cap`; a failure counts as `cap`.
+const loadScaleCache = new Map();
+export const loadScaleProbe = (cpuMs, wallMs = cpuMs * 100) => ['-e', `const cpu=()=>{const u=process.cpuUsage();return(u.user+u.system)/1000};const from=cpu(),began=Date.now();`
+  + `while(cpu()-from<${cpuMs}&&Date.now()-began<${wallMs});console.log(Date.now()-began)`];
+export async function loadScale({ cpuMs = 40, cap = 10, command = process.execPath, args = null, maxAgeMs = 10_000 } = {}) {
+  const argv = args ?? loadScaleProbe(cpuMs), key = JSON.stringify([cpuMs, cap, command, argv]), cached = loadScaleCache.get(key);
+  if (cached && Date.now() - cached.at < maxAgeMs) return cached.value;
+  const run = () => new Promise((resolve) => {
+    let out = '';
+    const child = spawn(command, argv, { stdio: ['ignore', 'pipe', 'ignore'] });
+    child.stdout.on('data', (chunk) => { out += chunk; });
+    child.once('error', () => resolve(Infinity));
+    child.once('close', () => resolve(out.trim() !== '' && Number.isFinite(Number(out)) ? Number(out) / cpuMs : Infinity));
+  });
+  const value = Math.min(cap, Math.max(1, await run(), await run()));
+  loadScaleCache.set(key, { at: Date.now(), value });
+  return value;
 }
 
 // A Node build linked against a shared libnode (Homebrew on macOS) loads it from beside the executable,

@@ -2,7 +2,7 @@ import { check, skip } from './check.mjs';
 import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
-import { makeSandbox, stubCommand, withStubPath } from './sandbox.mjs';
+import { makeSandbox, loadScale, stubCommand, withStubPath } from './sandbox.mjs';
 import { waitFor } from './harness.mjs';
 import { cursorDriver } from '../lib/driver-cursor.js';
 import { dropSession, readSession, sessionFile, writeSession } from '../lib/cursor-persist.js';
@@ -16,9 +16,12 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   const previousHome = process.env.PROMPTOBUS_CURSOR_HOME;
   process.env.PROMPTOBUS_CURSOR_HOME = path.join(root, 'registry');
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  // Every window below is written for an idle machine and stretched by `loadScale`: each stub command and
+  // each `ps` read is a Node start, so the steps before the awaited event grow with the machine's start time.
+  const stretch = (ms, scale) => Math.round(ms * scale);
   const rows = () => existsSync(ledger) ? readFileSync(ledger, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) : [];
   const note = (kind, detail) => appendFileSync(ledger, `${JSON.stringify({ kind, at: Date.now(), ...detail })}\n`);
-  const actor = async (name, mode) => {
+  const actor = async (name, mode, extra = {}) => {
     const child = spawn(process.execPath, ['-e', "process.stdout.write('ready\\n'); process.stdin.resume()"], { stdio: ['pipe', 'pipe', 'ignore'] });
     children.push(child);
     await new Promise((resolve, reject) => { child.once('error', reject); child.stdout.once('data', resolve); });
@@ -26,7 +29,7 @@ if (!['darwin', 'linux'].includes(process.platform)) {
     identities.push(identity);
     const record = { ref: name, sessionName: name, tmuxServer: name, chatId: `chat-${name}`, panePid: child.pid,
       workspaceHash: `hash-${name}`, launchId: `launch-${name}`, cwd: root, bin: path.join(bins, 'agent') };
-    writeFileSync(native, JSON.stringify({ ...record, mode })); writeSession(record);
+    writeFileSync(native, JSON.stringify({ ...record, mode, ...extra })); writeSession(record);
     const current = { name, mode, child, identity, native, record, release: path.join(root, `${name}.release`) };
     actors.push(current); note('fixture/owned-pane', { name, identity, mode }); return current;
   };
@@ -50,13 +53,13 @@ const log=kind=>appendFileSync(${JSON.stringify(ledger)},JSON.stringify({kind,na
 if(process.argv.includes('kill-session')) {
   log('fallback/requested');
   const record=existsSync(file)?JSON.parse(readFileSync(file,'utf8')):null;
-  if(record?.mode==='fallback-delayed') await new Promise(resolve=>setTimeout(resolve,3500));
+  if(record?.mode==='fallback-delayed') await new Promise(resolve=>setTimeout(resolve,record.delayMs));
   if(record) {process.kill(record.panePid,'SIGTERM');rmSync(file);log('fallback/mutated');}
 } else if(process.argv.includes('list-sessions')) {
   const counter=file+'.reads',count=existsSync(counter)?Number(readFileSync(counter,'utf8'))+1:1;writeFileSync(counter,String(count));
   const record=existsSync(file)?JSON.parse(readFileSync(file,'utf8')):null;
   if(record?.mode.startsWith('observation-') && count===3) {
-    log('observation/held');const edge=Date.now()+3500;
+    log('observation/held');const edge=Date.now()+record.holdMs;
     while(!existsSync(${JSON.stringify(root)}+'/'+server+'.release') && Date.now()<edge) await new Promise(resolve=>setTimeout(resolve,5));
     log(existsSync(${JSON.stringify(root)}+'/'+server+'.release')?'observation/released':'observation/expired');
   }
@@ -66,10 +69,11 @@ if(process.argv.includes('kill-session')) {
   const restore = withStubPath(bins);
   try {
     for (const mode of ['fallback-delayed', 'fallback-positive']) {
-      const current = await actor(mode, mode), began = Date.now(), edge = began + 1500;
+      const scale = await loadScale(), current = await actor(mode, mode, { delayMs: stretch(3500, scale) });
+      const began = Date.now(), edge = began + stretch(1500, scale);
       let settled = false, settledAt = null;
       const pending = cursorDriver.stop(current.name, { timeoutMs: Math.max(0, edge - Date.now()) }).then(value => { settled = true; settledAt = Date.now(); return value; });
-      await waitFor(() => rows().some(row => row.name === current.name && row.kind === 'fallback/requested'), { timeoutMs: 5000 });
+      await waitFor(() => rows().some(row => row.name === current.name && row.kind === 'fallback/requested'), { timeoutMs: stretch(5000, scale) });
       const requested = rows().find(row => row.name === current.name && row.kind === 'fallback/requested');
       let fallbackIdentity = null;
       try { if (requested) fallbackIdentity = requireProcess(requested.pid); } catch {}
@@ -77,8 +81,8 @@ if(process.argv.includes('kill-session')) {
         && !!fallbackIdentity && processState(fallbackIdentity) === 'alive' && Date.now() < edge,
       JSON.stringify({ settled, settledAt, fallbackIdentity, requested, began, edge }));
       const result = await pending, returned = Date.now();
-      if (mode === 'fallback-delayed' && requested) await wait(Math.max(0, requested.at + 3700 - Date.now()));
-      const trace = { mode, began, edge, settledAt, returned, result, pane: current.identity, paneState: processState(current.identity),
+      if (mode === 'fallback-delayed' && requested) await wait(Math.max(0, requested.at + stretch(3700, scale) - Date.now()));
+      const trace = { mode, scale, began, edge, settledAt, returned, result, pane: current.identity, paneState: processState(current.identity),
         fallbackIdentity, fallbackState: fallbackIdentity ? processState(fallbackIdentity) : 'not observed alive',
         recordPresent: !!readSession(current.name), homePresent: existsSync(path.dirname(sessionFile(current.name))),
         nativePresent: existsSync(current.native), rows: rows().filter(row => row.name === current.name) };
@@ -92,11 +96,12 @@ if(process.argv.includes('kill-session')) {
         && trace.rows.some(row => row.kind === 'native/refused') && trace.rows.some(row => row.kind === 'fallback/mutated'), JSON.stringify(trace));
     }
     for (const mode of ['observation-exhausted', 'observation-replaced']) {
-      const first = await actor(mode, mode), second = await actor(`${mode}-second`, 'native-positive');
-      const edge = Date.now() + (mode === 'observation-exhausted' ? 1800 : 5000);
+      const scale = await loadScale(), first = await actor(mode, mode, { holdMs: stretch(3500, scale) });
+      const second = await actor(`${mode}-second`, 'native-positive');
+      const edge = Date.now() + stretch(mode === 'observation-exhausted' ? 1800 : 5000, scale);
       let firstSettled = false, firstSettledAt = null;
       const pending = cursorDriver.stop(first.name, { timeoutMs: Math.max(0, edge - Date.now()) }).then(value => { firstSettled = true; firstSettledAt = Date.now(); return value; });
-      await waitFor(() => rows().some(row => row.name === first.name && row.kind === 'observation/held'), { timeoutMs: 5000 });
+      await waitFor(() => rows().some(row => row.name === first.name && row.kind === 'observation/held'), { timeoutMs: stretch(5000, scale) });
       const held = rows().find(row => row.name === first.name && row.kind === 'observation/held');
       let observerIdentity = null;
       try { if (held) observerIdentity = requireProcess(held.pid); } catch {}
@@ -115,8 +120,8 @@ if(process.argv.includes('kill-session')) {
         writeFileSync(first.release, 'release after actual other Stop and exact record revision change');
       }
       const result = await pending;
-      if (mode === 'observation-exhausted' && held) await wait(Math.max(0, held.at + 3700 - Date.now()));
-      const trace = { mode, edge, firstSettledAt, otherBegan, otherTimeoutMs, otherSettledAt, result, firstPane: first.identity, firstPaneState: processState(first.identity), observerIdentity,
+      if (mode === 'observation-exhausted' && held) await wait(Math.max(0, held.at + stretch(3700, scale) - Date.now()));
+      const trace = { mode, scale, edge, firstSettledAt, otherBegan, otherTimeoutMs, otherSettledAt, result, firstPane: first.identity, firstPaneState: processState(first.identity), observerIdentity,
         observerState: observerIdentity ? processState(observerIdentity) : 'not observed alive', otherConfirmedBeforeRelease,
         recordPresent: !!readSession(first.name), nativePresent: existsSync(first.native), rows: rows().filter(row => row.name === first.name) };
       writeSync(1, `  · bounded-observation-receipt: ${JSON.stringify(trace)}\n`);

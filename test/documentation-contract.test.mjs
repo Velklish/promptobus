@@ -517,6 +517,10 @@ check('docs: a stand that kills its participants waits for them to die by the cl
   has(suiteIsolation, 'sends SIGTERM to every participant and then waits for all of them to exit, up to `timeoutMs` in total, ten seconds by default')
   && has(section(read('CHANGELOG.md'), '## [Unreleased]'), 'The stub stand waits for killed participants to exit for up to ten seconds'),
   'suite isolation no longer says how long stopAll waits for a killed participant');
+check('docs: a window fixed in milliseconds is stretched by the load of the machine',
+  has(suiteIsolation, '`loadScale()` in [test/sandbox.mjs](../../test/sandbox.mjs) starts a child that burns 40 ms of CPU time and reports how long that took on the clock')
+  && has(section(read('CHANGELOG.md'), '## [Unreleased]'), 'stretch their fixed deadlines and waits by the measured load of the machine'),
+  'suite isolation no longer says how fixed windows are stretched on a loaded machine');
 check('docs: models probes by default in the orchestrate skill, abandon refuses a BB task, and the sweep ADR keeps artifacts',
   has(orchestrateSkill, '[--refresh | --no-probe] [--json]')
   && has(orchestrateSkill, 'It probes the harnesses by default and updates the availability cache; `--no-probe` reads the cached readings only.')

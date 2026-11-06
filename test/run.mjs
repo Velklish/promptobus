@@ -225,7 +225,7 @@ const loadLine = () => os.loadavg().map((n) => n.toFixed(2)).join(' ');
 // - `shared-service-standalone-root.test.mjs`: its native fixtures
 //   hold cross-process barriers of 1000 ms;
 // - `cursor-stop-bounded.test.mjs`: Cursor Stop checks a 1500 ms
-//   cross-process deadline.
+//   cross-process deadline, stretched by the load factor of the machine.
 // - `model-routing-preflight.test.mjs`: its wall-clock guards cover a
 //   200 ms budget, a 400 ms in-flight probe, a 1 s memoised binary
 //   resolve, and 400 ms budgeted resolves. The counted interval check
