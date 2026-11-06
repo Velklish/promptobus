@@ -645,3 +645,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-423"></a>`PB-423-copied-node-shared-libnode` · 2026-11-05 · completed · — · Four suite files copy process.execPath and fail on a Node build linked against a shared libnode
 - <a id="pb-422.2"></a>`PB-422.2-claude-relift-stopall-under-load` · 2026-11-06 · completed · — · claude-relift left one participant process after stopAll once at load average 30
 - <a id="pb-425.2"></a>`PB-425.2-cursor-stop-bounded-red-under-load` · 2026-11-06 · completed · — · cursor-stop-bounded.test.mjs goes red on the base commit under heavy machine load
+- <a id="pb-425.3"></a>`PB-425.3-native-store-hook-wait-under-load` · 2026-11-06 · completed · — · shared-service-native-store.test.mjs aborts on its fixed 5 s wait for the hook receipt under machine load

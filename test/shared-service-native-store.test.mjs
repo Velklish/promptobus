@@ -10,7 +10,8 @@ import { runWorkspaceService } from '../lib/service.js';
 import { registerServiceClient, serviceControl } from '../lib/service-client.js';
 import { privateDirectory, processStateAsync, readDiscovery, readPrivate, requireProcess, runtimeIdentity, servicePaths, writePrivate } from '../lib/service-state.js';
 import { observeRootProcess } from '../lib/root-process.js';
-import { copyNodeExecutable, makeSandbox, writeHostConfig } from './sandbox.mjs';
+import { readCompleteJson } from './harness.mjs';
+import { copyNodeExecutable, makeSandbox, loadScale, writeHostConfig } from './sandbox.mjs';
 
 // Real owned exec/hook/client paths with private known-binding seeds, not native genesis or Claude compatibility.
 const root = realpathSync(makeSandbox('promptobus-service-stores-'));
@@ -25,11 +26,11 @@ for (const key of Object.keys(env)) if (/^(BB_|PROMPTOBUS_(CLIENT_|ROOT_|OWNER_E
 writeHostConfig(root, { tools: [] });
 const host = createStandaloneHost({ cwd: root, binPath: bin, version }), paths = servicePaths(host, env), runtime = runtimeIdentity(host);
 const native = path.join(root, 'native.mjs'), children = [];
-writeFileSync(native, `import{spawn}from'node:child_process';import{writeFileSync}from'node:fs';
+writeFileSync(native, `import{spawn}from'node:child_process';import{readFileSync,writeFileSync}from'node:fs';
 import{acquireServiceLock,readPrivate,writePrivate}from${JSON.stringify(fileURLToPath(new URL('../lib/service-state.js', import.meta.url)))};
 const[output,bin,profile,id,transcriptStore]=process.argv.slice(2),directory=${JSON.stringify(paths.directory)};
 const launch=readPrivate(process.env.PROMPTOBUS_ROOT_LAUNCH_FILE),approved=readPrivate(directory+'/root-profile-'+profile+'.json');
-let release=null;const deadline=Date.now()+5000;
+let release=null;const deadline=Date.now()+Number(readFileSync(output+'.wait','utf8'));
 while(!release){release=await acquireServiceLock(directory+'/root-admission.lock');if(!release){if(Date.now()>=deadline)throw new Error('Owned seed transaction stayed busy');await new Promise(resolve=>setTimeout(resolve,10));}}
 try{const file=directory+'/native-admission.json',ledger=readPrivate(file);writePrivate(file,{...ledger,bindings:[...ledger.bindings,{
 harness:'claude',nativeStore:approved.nativeStore,nativeId:id,source:'standalone',runtime:launch.runtime,ownerKey:launch.nonce,
@@ -39,23 +40,30 @@ const hook=spawn(${JSON.stringify(process.execPath)},[bin,'guard','--standalone-
 let error='';hook.stderr.on('data',bytes=>{error+=bytes});hook.stdin.end(JSON.stringify({hook_event_name:'SessionStart',source:'startup',session_id:id,cwd:process.cwd(),transcript_path:transcript}));
 const code=await new Promise(resolve=>hook.once('close',resolve));writeFileSync(output,JSON.stringify({code,error}),{mode:0o600});setInterval(()=>{},1000);
 `);
-const until = async test => { const deadline = Date.now() + 5000; while (!test()) { if (Date.now() >= deadline) throw new Error('Owned native-store fixture did not reach its hook receipt'); await new Promise(resolve => setTimeout(resolve, 10)); } };
+const until = async (test, ceilingMs) => { const deadline = Date.now() + ceilingMs; while (!test()) { if (Date.now() >= deadline) return false; await new Promise(resolve => setTimeout(resolve, 10)); } return true; };
+const ceilingNow = async () => 5000 * await loadScale({ cap: 4 });
 const launch = async (profile, id, transcriptStore) => {
-  const output = path.join(root, `result-${randomUUID()}.json`);
+  const output = path.join(root, `result-${randomUUID()}.json`), ceiling = await ceilingNow();
+  writeFileSync(`${output}.wait`, String(ceiling));
   const child = spawn('/bin/sh', [wrapper, '--profile', profile, '--service-home', base, '--', nativeExecutable, native, output, bin, profile, id, ...(transcriptStore ? [transcriptStore] : [])],
     { cwd: root, env, stdio: ['ignore', 'ignore', 'pipe'] });
   child.failure = ''; child.stderr.on('data', bytes => { child.failure += bytes; }); child.closed = new Promise(resolve => child.once('close', resolve)); children.push(child);
-  await until(() => existsSync(output) || child.exitCode !== null);
-  if (!existsSync(output)) throw new Error(`Owned store launch failed before hook: ${child.failure}`);
+  const began = Date.now(), ended = () => child.exitCode !== null || child.signalCode !== null;
+  const arrived = await until(() => readCompleteJson(output) !== null || ended(), ceiling);
+  if (ended()) await child.closed;
+  const receipt = readCompleteJson(output);
+  if (!receipt) return { code: null, launch: {}, error: arrived ? `Owned native-store fixture exited without a hook receipt: ${child.failure}`
+    : `TIMEOUT after ${Date.now() - began} ms waiting for ${path.basename(output)} (ceiling ${ceiling} ms) — no hook receipt yet: machine load and a hung product hook both look like this, read the stderr that follows. ${child.failure}` };
   const saved = readdirSync(paths.directory).filter(name => /^standalone-launch-.*\.json$/.test(name))
-    .map(name => readPrivate(path.join(paths.directory, name))).find(value => value.process.pid === child.pid);
-  return { ...JSON.parse(readFileSync(output)), launch: saved };
+    .map(name => readPrivate(path.join(paths.directory, name))).filter(Boolean).find(value => value.process?.pid === child.pid);
+  return { ...receipt, launch: saved ?? {} };
 };
-const credential = launched => readPrivate(path.join(paths.clients, `${launched.launch.clientId}.json`));
+const credential = launched => readPrivate(path.join(paths.clients, `${launched.launch.clientId}.json`)) ?? {};
 let ownerError;
 const running = runWorkspaceService({ host, env, createHost: context => createStandaloneHost({ cwd: context.cwd, binPath: bin, version }) }).catch(error => { ownerError = error; });
 try {
-  await until(() => readDiscovery(paths) || ownerError); if (ownerError) throw ownerError;
+  if (!await until(() => readDiscovery(paths) || ownerError, await ceilingNow())) throw new Error('Owned native-store service did not publish its discovery record in time');
+  if (ownerError) throw ownerError;
   for (const profile of ['store-a', 'store-b', 'store-c']) {
     const store = path.join(root, profile); mkdirSync(store);
     await approveStandaloneRootProfile(host, { id: profile, harness: 'claude', nativeStore: store, executable: nativeExecutable }, env);
@@ -63,15 +71,17 @@ try {
   for (const order of [['store-a', 'store-b'], ['store-b', 'store-a']]) {
     const id = randomUUID(), first = await launch(order[0], id), second = await launch(order[1], id);
     check(`${order.join(' then ')}: live same native ID binds independently in two approved stores`, first.code === 0 && second.code === 0
-      && credential(first).nativeBinding.sessionId === id && credential(second).nativeBinding.sessionId === id, second.error);
+      && credential(first).nativeBinding?.sessionId === id && credential(second).nativeBinding?.sessionId === id,
+    [first.error, second.error].filter(Boolean).join(' · '));
   }
   const id = randomUUID(), pair = await Promise.all([launch('store-a', id), launch('store-b', id)]);
   check('concurrent same-ID roots in distinct proved stores both reach bound clients', pair.every(value => value.code === 0
-    && credential(value).nativeBinding.state === 'bound'), JSON.stringify(pair.map(value => ({ code: value.code, error: value.error }))));
+    && credential(value).nativeBinding?.state === 'bound'), JSON.stringify(pair.map(value => ({ code: value.code, error: value.error }))));
   const foreignTranscript = await launch('store-a', randomUUID(), path.join(root, 'store-b'));
   check('an owned same-ID transcript in another approved store cannot realize this launch', foreignTranscript.code !== 0
     && /actual session transcript inside the approved account store/.test(foreignTranscript.error)
     && foreignTranscript.launch.revoked === true && foreignTranscript.launch.nativeId === null
+    && typeof foreignTranscript.launch.clientId === 'string'
     && !existsSync(path.join(paths.clients, `${foreignTranscript.launch.clientId}.json`)), foreignTranscript.error);
   const bbId = randomUUID(), stateDirectory = path.join(paths.directory, 'root-admission'); privateDirectory(stateDirectory);
   writePrivate(path.join(stateDirectory, 'state.json'), { schemaVersion: 2, root: paths.root, home: paths.home,
@@ -85,7 +95,8 @@ try {
   await serviceControl(paths, { operation: 'realize', runtime, clientId: unknown.clientId, threadId: id });
   const refused = await launch('store-c', id);
   check('unknown-store bound client still blocks related root ID despite a raw native-store hint', refused.code !== 0
-    && /already binds this actual identity/.test(refused.error) && !existsSync(path.join(paths.clients, `${refused.launch.clientId}.json`)), refused.error);
+    && /already binds this actual identity/.test(refused.error) && typeof refused.launch.clientId === 'string'
+    && !existsSync(path.join(paths.clients, `${refused.launch.clientId}.json`)), refused.error);
   const occupant = await observeRootProcess(children[0].pid);
   if (!occupant) throw new Error('Owned replacement occupant has no comparable identity');
   let oldBirth;
