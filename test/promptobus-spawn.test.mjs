@@ -127,7 +127,7 @@ const store = await import(path.join(here, '..', 'lib', 'store.js'));
 const { hostOf } = await import(path.join(here, '..', 'lib', 'host.js'));
 const { planApprover } = await import(path.join(here, '..', 'lib', 'approver.js'));
 const throughput = await import(path.join(here, '..', 'lib', 'model-routing', 'telemetry.js'));
-const { GUARD_HOOK_EVENT, guardHookCommand, guardHookSettings } = await import(path.join(here, '..', 'dist', 'hooks.js'));
+const { GUARD_HOOK_EVENT, managedGuardHookCommand, guardHookSettings } = await import(path.join(here, '..', 'dist', 'hooks.js'));
 const { shellQuote } = await import(path.join(here, '..', 'lib', 'util.js'));
 
 function rulesBlock(text, role, expectedFiles) {
@@ -266,6 +266,13 @@ store.createTask(HOME, {
 
 const opts = { repo: 'orders-api', brief: BRIEF, task: TASK, effort: 'high' };
 const plan = await planSpawn(WS, opts);
+const splitRuntimeHost = hostOf(WS);
+splitRuntimeHost.guardArgv = args => ['/installed/layout-entry.mjs', 'bus', ...args];
+const splitRuntimePlan = await planSpawn(splitRuntimeHost, { ...opts, worker: 'current-runtime' });
+check('worker owned hooks use busArgv when the project guard has a distinct installed entry',
+  splitRuntimePlan.launch.settings.hooks.Stop[0].hooks[0].command.includes(`"${splitRuntimeHost.busArgv([])[0]}"`)
+  && !splitRuntimePlan.launch.settings.hooks.Stop[0].hooks[0].command.includes('/installed/layout-entry.mjs'),
+  JSON.stringify(splitRuntimePlan.launch.settings.hooks));
 check('prompt: worker sees its absolute worktree and the session roots',
   path.isAbsolute(plan.worktreePath)
   && plan.prompt.includes(`Your working directory is ${plan.worktreePath},`)
@@ -516,15 +523,15 @@ const written426 = JSON.parse(readFileSync(plan.settingsPath, 'utf8'));
 const guardGroup = written426.hooks?.[GUARD_HOOK_EVENT]?.[0]?.hooks?.[0];
 const guardIdentity = { address: plan.address, taskId: plan.taskId, home: plan.home };
 const wsHost = hostOf(WS);
-check(': the participant settings file carries the loop-guard Stop hook — the same command as the layout\'s',
+check(': the participant settings file carries the loop-guard Stop hook — the current runtime command',
   guardGroup?.type === 'command'
-  && guardGroup?.command === guardHookCommand(wsHost, guardIdentity),
+  && guardGroup?.command === managedGuardHookCommand(wsHost, guardIdentity),
   JSON.stringify(written426.hooks ?? null));
 check('SessionStart uses one ordered handler for native binding and the ordinary guard',
   written426.hooks?.SessionStart?.length === 1
   && written426.hooks.SessionStart[0].hooks?.length === 1
   && written426.hooks.SessionStart[0].hooks[0].type === 'command'
-  && written426.hooks.SessionStart[0].hooks[0].command === `${guardHookCommand(wsHost, guardIdentity)} ${workerServiceArgs.map(shellQuote).join(' ')}`,
+  && written426.hooks.SessionStart[0].hooks[0].command === `${managedGuardHookCommand(wsHost, guardIdentity)} ${workerServiceArgs.map(shellQuote).join(' ')}`,
   JSON.stringify(written426.hooks ?? null));
 check(': the participant hook command carries their identity as arguments, the layout hook does not',
   guardGroup?.command?.includes(` --role ${shellQuote(plan.address)} --task ${shellQuote(plan.taskId)}`

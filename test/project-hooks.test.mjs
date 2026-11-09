@@ -12,7 +12,7 @@ const { resolveProjectRoot } = await import(path.join(here, '..', 'lib', 'instal
 const { WORKTREE_DIR_REL } = await import(path.join(here, '..', 'lib', 'worktree.js'));
 const { createStandaloneHost } = await import(path.join(here, '..', 'dist', 'host-index.js'));
 const { admitsAddress, registryOf } = await import(path.join(here, '..', 'dist', 'index.js'));
-const { guardHookCommand } = await import(path.join(here, '..', 'dist', 'hooks.js'));
+const { guardHookCommand, managedGuardHookCommand } = await import(path.join(here, '..', 'dist', 'hooks.js'));
 
 const SB = makeSandbox('promptobus-project-hooks-');
 const projectWith = (name, files) => {
@@ -169,9 +169,20 @@ check(': a declaration handed in as text stands in for the file on disk, and nul
 const customHost = { nodePath: () => '/usr/bin/node', guardArgv: (args) => ['/x/mytool.js', 'bus', ...args] };
 const customGuard = guardHookCommand(customHost, { address: 'worker:a', taskId: 't', home: '/h' });
 const installedCustomGuard = guardHookCommand(customHost);
+const splitHost = { ...customHost, busArgv: args => ['/current/entry.js', 'live-bus', ...args] };
+check('explicit managed renderer uses current bus argv while the default keeps installed guard argv',
+  managedGuardHookCommand(splitHost, { address: 'worker:a', taskId: 't', home: '/h with space' })
+    === '"/usr/bin/node" "/current/entry.js" live-bus guard --role worker:a --task t --home \'/h with space\''
+  && guardHookCommand(splitHost) === installedCustomGuard);
 const customSpellings = [installedCustomGuard, 'node /x/mytool.js bus guard'];
 const customTrusted = projectWith('custom-guard', { 'promptobus.json': json({ trustedHooks: { codex: { Stop: customSpellings } } }) });
 const customHooks = { Stop: customSpellings.map((command) => codexRecord(command)) };
+const currentGuard = managedGuardHookCommand(splitHost, { address: 'worker:a', taskId: 't', home: '/h' });
+const bothGuards = judgeHookRecords(codexFile({ Stop: [installedCustomGuard, currentGuard].map(command => codexRecord(command)) }), customTrusted, 'codex', {
+  declaration: json({ trustedHooks: { codex: { Stop: [installedCustomGuard, currentGuard] } } }), guard: currentGuard, projectGuard: customGuard,
+});
+check('foreign project records cannot retain either the persisted or the managed custom guard',
+  bothGuards.accepted.length === 0 && bothGuards.refused.length === 2, JSON.stringify(bothGuards));
 const withoutOwnGuard = judgeHookRecords(codexFile(customHooks), customTrusted, 'codex');
 const withOwnGuard = judgeHookRecords(codexFile(customHooks), customTrusted, 'codex', { guard: customGuard });
 check(': a listed guard of a host whose guard argv names no promptobus is refused by the lift\'s own guard command',

@@ -652,3 +652,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-428"></a>`PB-428-claude-admission-before-execution` · 2026-11-09 · completed · — · Admit fresh Claude sessions before model execution
 - <a id="pb-428.1"></a>`PB-428.1-cursor-stop-child-accounting` · 2026-11-09 · completed · — · Preserve bounded Cursor Stop child accounting
 - <a id="pb-428.2"></a>`PB-428.2-malformed-owner-fixture-isolation` · 2026-11-09 · completed · — · Isolate malformed owner controls from admission service
+- <a id="pb-428.3"></a>`PB-428.3-managed-hook-runtime` · 2026-11-09 · completed · — · Route private managed hooks through the current bus runtime

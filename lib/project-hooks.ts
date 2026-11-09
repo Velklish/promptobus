@@ -65,7 +65,7 @@ export function trustRule(root: string, harness: HookHarness) {
 
 /** Trusted records as `{ key, command }`, every other record as its text, and why the declaration is unusable.
  * `declaration` stands in for the declaration file's text (`null`: none); `guard` is the lift's guard command. */
-export function judgeHookRecords(text: string, root: string, harness: HookHarness, { declaration, guard = null }: { declaration?: string | null; guard?: string | null } = {}): HookJudgment {
+export function judgeHookRecords(text: string, root: string, harness: HookHarness, { declaration, guard = null, projectGuard = null }: { declaration?: string | null; guard?: string | null; projectGuard?: string | null } = {}): HookJudgment {
   const accepted: HookJudgment['accepted'] = [];
   const refused: string[] = [];
   const { commands, broken } = trustedHookCommands(root, harness, declaration);
@@ -96,7 +96,7 @@ export function judgeHookRecords(text: string, root: string, harness: HookHarnes
     for (const entry of entries) {
       const ok = hasKeys(entry, shape.entry) && (!shape.grouped || entry.type === 'command')
         && EVENT_KEYS[harness].includes(key) && (commands[key] ?? []).includes(entry.command as string)
-        && !isBusGuard(entry.command as string, guard);
+        && !isBusGuard(entry.command as string, guard) && !isBusGuard(entry.command as string, projectGuard);
       if (ok) accepted.push({ key, command: entry.command as string });
       else refused.push(`${key}: ${JSON.stringify(entry)}`);
     }

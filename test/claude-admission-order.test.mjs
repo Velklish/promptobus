@@ -11,7 +11,8 @@ import { copyNodeExecutable, makeSandbox, makeSockDir, stubCommand, withStubPath
 const runtimeDirectory = process.argv[2];
 const runtime = runtimeDirectory ? pathToFileURL(`${path.resolve(runtimeDirectory)}/`) : new URL('../', import.meta.url);
 const { createStandaloneHost } = await import(new URL('dist/host-index.js', runtime));
-const { guardHookCommand } = await import(new URL('dist/hooks.js', runtime));
+const { guardHookCommand, managedGuardHookCommand, guardHookSettings } = await import(new URL('dist/hooks.js', runtime));
+const { shellQuote } = await import(new URL('dist/fs/shell.js', runtime));
 const { claudeDriver } = await import(new URL('lib/driver-claude.js', runtime));
 const { createOwnerEnvironment, finalizeManagedServiceLaunch } = await import(new URL('lib/service-launch.js', runtime));
 const { runWorkspaceService } = await import(new URL('lib/service.js', runtime));
@@ -47,6 +48,12 @@ const version = JSON.parse(readFileSync(new URL('package.json', runtime))).versi
 const env = { ...process.env, PROMPTOBUS_HOME: home, PROMPTOBUS_SERVICE_HOME: serviceHome, CLAUDE_CONFIG_DIR: nativeStore, PROMPTOBUS_WARDEN: 'off' };
 for (const key of Object.keys(env)) if (/^PROMPTOBUS_(CLIENT_|OWNER_ENV_FILE$|ROLE$|TASK$|.*_SESSION$)/.test(key)) delete env[key];
 const host = createStandaloneHost({ cwd: root, binPath, version }), paths = servicePaths(host, env);
+const layoutEntry = path.join(root, 'installed-layout.mjs');
+writeFileSync(layoutEntry, `import {runPromptobus} from ${JSON.stringify(new URL('lib/cli.js', runtime).href)};
+import {createStandaloneHost} from ${JSON.stringify(new URL('dist/host-index.js', runtime).href)};
+const host=createStandaloneHost({cwd:process.cwd(),binPath:${JSON.stringify(layoutEntry)},version:${JSON.stringify(version)}});
+process.exitCode=await runPromptobus(process.argv.slice(2),{host,input:process.stdin,output:process.stdout,env:process.env});\n`);
+host.guardArgv = args => [layoutEntry, ...args];
 const launches = [], children = [], sessions = [], nativeParents = [];
 let serviceError;
 const running = runWorkspaceService({ host, env, createHost: context => createStandaloneHost({ cwd: context.cwd, binPath, version }) })
@@ -108,7 +115,7 @@ const fresh = async (name, ownedNative = false) => {
   const plan = claudeDriver.prepare({ ref, role: 'worker', model: 'fixture', prompt: 'fixture', cwd: root,
     mcp: { home, task, address, servers: { promptobus: { command: 'unused' } } },
     mcpConfigPath: path.join(root, `${name}.mcp.json`), settingsPath: path.join(root, `${name}.settings.json`),
-    guardCommand: guardHookCommand(host, { home, taskId: task, address }) });
+    guardCommand: managedGuardHookCommand(host, { home, taskId: task, address }) });
   const finalized = await finalizeManagedServiceLaunch(host, { launch: plan, driver: claudeDriver, home, task, address, ref, cwd: root,
     env: { ...env, PROMPTOBUS_OWNER_ENV_FILE: createOwnerEnvironment(host, env) }, commonEnv: env });
   launches.push(finalized.service);
@@ -132,7 +139,7 @@ try {
   bus(home, { cli: version });
   const immediate = await fresh('immediate');
   writeFileSync(immediate.transcript, '{}\n', { mode: 0o600 });
-  const started = await phase(immediate, immediate.event);
+  const started = await phase(immediate, immediate.event, true);
   check('actual fresh SessionStart producer admits its exact owned native parent and store', started.code === 0
     && readPrivate(immediate.service.credentialFile).nativeBinding.state === 'bound', JSON.stringify(started));
   const immediatePrompt = { hook_event_name: 'UserPromptSubmit', session_id: immediate.nativeId, cwd: root, transcript_path: immediate.transcript };
@@ -143,6 +150,22 @@ try {
   await connect(immediate);
   const readyPrompt = await phase(immediate, immediatePrompt, true);
   check('native startup and initialized owned MCP connection allow the first prompt', readyPrompt.code === 0 && !blocked(readyPrompt), JSON.stringify(readyPrompt));
+  check('persisted hook settings still use the installed layout entry', guardHookSettings(host).Stop[0].hooks[0].command.includes(layoutEntry));
+  for (const event of ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'Stop']) {
+    const command = immediate.plan.settings.hooks[event][0].hooks[0].command;
+    check(`owned managed ${event} uses the current bus entry instead of the installed layout`, command.includes(`"${binPath}"`)
+      && !command.includes(layoutEntry), command);
+  }
+  const matchingTool = await phase(immediate, { ...immediatePrompt, hook_event_name: 'PreToolUse' }, true);
+  check('configured current runtime accepts the matching credential for tool admission', matchingTool.code === 0 && !blocked(matchingTool), JSON.stringify(matchingTool));
+  const matchingStop = await phase(immediate, { ...immediatePrompt, hook_event_name: 'Stop' }, true);
+  check('configured current runtime executes Stop with its matching managed credential', matchingStop.code === 0 && !blocked(matchingStop), JSON.stringify(matchingStop));
+  const foreignRuntime = await phase({ ...immediate, plan: { settings: { hooks: { UserPromptSubmit: [{ hooks: [{
+    command: guardHookCommand(host, { home, taskId: immediate.task, address: immediate.address })
+      + ' ' + ['--client-file', immediate.service.credentialFile, '--service-home', serviceHome].map(shellQuote).join(' '),
+  }] }] } } } }, immediatePrompt, true);
+  check('installed foreign runtime still rejects the current managed credential', blocked(foreignRuntime)
+    && /Managed client has no native launch binding/.test(foreignRuntime.stderr + foreignRuntime.stdout), JSON.stringify(foreignRuntime));
   for (const hook of ['UserPromptSubmit', 'PreToolUse']) {
     const event = { ...immediatePrompt, hook_event_name: hook };
     for (const [name, input] of [
@@ -165,6 +188,10 @@ try {
     }
   }
   const missing = await fresh('missing-start');
+  const foreignCredential = await phase({ ...immediate, plan: { settings: { hooks: { UserPromptSubmit: [{ hooks: [{
+    command: immediate.plan.settings.hooks.UserPromptSubmit[0].hooks[0].command.replace(immediate.service.credentialFile, missing.service.credentialFile),
+  }] }] } } } }, immediatePrompt, true);
+  check('configured current runtime refuses another managed task credential', blocked(foreignCredential), JSON.stringify(foreignCredential));
   const prompt = { hook_event_name: 'UserPromptSubmit', session_id: missing.nativeId, cwd: root, transcript_path: missing.transcript };
   const unstarted = await phase(missing, prompt, true);
   const modelEffect = path.join(root, 'unadmitted-model-write');

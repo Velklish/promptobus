@@ -50,6 +50,13 @@ const task = 'root-t20260927-010000';
 store.createTask(home, { id: task, title: 'Root', owner: 'root-session' });
 const opts = { task, brief, slug: 'group-one' };
 const planned = await planTeamlead(host, opts);
+const splitRuntimeHost = Object.create(host);
+splitRuntimeHost.guardArgv = args => ['/installed/layout-entry.mjs', 'bus', ...args];
+const splitRuntimePlan = await planTeamlead(splitRuntimeHost, opts);
+check('teamlead owned hooks use busArgv when the project guard has a distinct installed entry',
+  splitRuntimePlan.launch.settings.hooks.Stop[0].hooks[0].command.includes(`"${host.busArgv([])[0]}"`)
+  && !splitRuntimePlan.launch.settings.hooks.Stop[0].hooks[0].command.includes('/installed/layout-entry.mjs'),
+  JSON.stringify(splitRuntimePlan.launch.settings.hooks));
 const dry = await captureSplit(() => spawnTeamlead(host, { ...opts, dryRun: true }));
 const dryChild = dry.out.match(/child task: ([a-z0-9-]+)/)?.[1];
 check('teamlead dry-run names the child, root, address and install cwd without starting',

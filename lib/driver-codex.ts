@@ -285,19 +285,19 @@ function foreignProjectFile(lookupDir: string, writtenDir: string, name: string)
   return discovered;
 }
 
-function judgedProjectHooks(file: string, guard: string | null) {
+function judgedProjectHooks(file: string, guard: string | null, projectGuard: string | null) {
   try {
     if (!lstatSync(file).isFile()) return { refused: ['not a regular file'], broken: null };
-    return judgeHookRecords(readFileSync(file, 'utf8'), path.dirname(path.dirname(file)), CODEX, { guard });
+    return judgeHookRecords(readFileSync(file, 'utf8'), path.dirname(path.dirname(file)), CODEX, { guard, projectGuard });
   } catch (error) {
     return { refused: [`unreadable (${(error as NodeJS.ErrnoException).code ?? (error as Error).message})`], broken: null };
   }
 }
 
 /** Refuse foreign hooks, then validate clone-root config with the selected binary at lift. */
-export function refuseForeignProjectLayer(lookupDir: string, writtenDir: string, tool: LibToolBin | null = null, guardCommand: string | null = null) {
+export function refuseForeignProjectLayer(lookupDir: string, writtenDir: string, tool: LibToolBin | null = null, guardCommand: string | null = null, projectGuardCommand: string | null = null) {
   const hooks = foreignProjectFile(lookupDir, writtenDir, 'hooks.json');
-  const judged: { refused: string[]; broken?: string | null } = hooks ? judgedProjectHooks(hooks, guardCommand) : { refused: [] };
+  const judged: { refused: string[]; broken?: string | null } = hooks ? judgedProjectHooks(hooks, guardCommand, projectGuardCommand) : { refused: [] };
   if (judged.refused.length) throw new GateError(foreignHooksMessage(hooks!, judged));
   if (!tool?.bin) return;
   const config = foreignProjectFile(lookupDir, writtenDir, 'config.toml');
@@ -799,7 +799,7 @@ function prepare({
   mcp, prompt, model, effort = null, permissionMode = null, addDirs = [], readFiles = [], readSkillDirs = [], cwd, denyTools = null,
   ref, role = WORKER, task = null, address = null, root = null, skillsRoot = root, selectedContext = null, settingsPath = null,
   executionKind = roleEntry(registryOf(null), role)?.kind,
-  rootTask = null, rootAddress = null, guardCommand = null, env = process.env,
+  rootTask = null, rootAddress = null, guardCommand = null, projectGuardCommand = guardCommand, env = process.env,
 }: CodexPrepareContext): CodexLaunchPlan {
   checkSessionDirectory(env);
   const privateHome = ['teamlead', 'reporter', 'orchestrator'].includes(role);
@@ -879,7 +879,7 @@ function prepare({
   const files: LaunchFile[] = privateHome ? [] : [
     { path: path.join(fileRoot, CODEX_DIR, '.gitignore'), text: '*\n', secret: false },
   ];
-  if (!privateHome) refuseForeignProjectLayer(sessionDir, fileRoot, null, guardCommand);
+  if (!privateHome) refuseForeignProjectLayer(sessionDir, fileRoot, null, guardCommand, projectGuardCommand);
   // A linked worktree's own hooks file is not read by Codex, and a tracked one must stay clean.
   const homeHooks = guardCommand && !privateHome && linkedWorktree(fileRoot) ? hooksDocument(guardCommand) : null;
   if (guardCommand && !privateHome && !homeHooks) files.push({

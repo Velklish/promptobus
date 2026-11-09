@@ -119,13 +119,24 @@ export function pathOutsideRoot(root: string, candidate: string): boolean {
 `syncHint()` returns `<commandName> install`.
 
 `guardArgv(args)` is a required member of `PromptobusHost`, next to
-`layoutBinPath()`. It returns the complete argv for the loop guard, without a
+`layoutBinPath()`. It returns the complete argv for persisted project guards, without a
 leading `node`; `args` starts with `guard`. A host whose command lives below a
 prefix includes that prefix in the answer, for example
 `[layoutBinPath(), 'promptobus', 'guard', …]`. `guardHookCommand` quotes this
 host-provided argv and does not infer a command word. Existing host
 implementations must provide this member before calling `install`, `spawn`, or
-`review`; otherwise guard hook assembly throws `TypeError`.
+`review`; otherwise project guard hook assembly throws `TypeError`.
+
+`managedGuardHookCommand(host, identity, platform?)` renders ephemeral owned
+launch hooks through `host.busArgv(['guard'])`, using the same Node executable,
+quoting and participant identity flags as `guardHookCommand`. Worker, reviewer,
+approver, teamlead and reporter assembly use this renderer for every owned hook. Claude
+also uses that command for its prompt and tool admission barriers. These hooks
+must call the runtime that issued the managed service credential, even when the
+Host's installed layout points to another runtime. The default
+`guardHookCommand`, `guardHookSettings` and `planHookInstall` retain `guardArgv`.
+Foreign project hook classification still recognizes both the persisted and
+managed guard commands.
 
 For the standalone host, the default `promptobus` entry retains the established
 optional prefix for byte-compatible installs.

@@ -69,7 +69,7 @@ function stoppedCodexFixture(home, task) {
 }
 const { status } = await import(path.join(here, '..', 'lib', 'status.js'));
 const { hostOf } = await import(path.join(here, '..', 'lib', 'host.js'));
-const { GUARD_HOOK_EVENT, guardHookCommand } = await import(path.join(here, '..', 'dist', 'hooks.js'));
+const { GUARD_HOOK_EVENT, managedGuardHookCommand } = await import(path.join(here, '..', 'dist', 'hooks.js'));
 // The participant file path under `workers/` — in the journal, next to `workersDir`:
 // spawn, review, and cleanup all compute it, and it's the only thing shared by these
 // three.
@@ -250,6 +250,13 @@ check(': a directory outside git — a refusal with no ready-made command',
   notARepo.threw && /not in a git repository/.test(notARepo.msg)
   && !notARepo.msg.includes('repeat with it'), notARepo.msg);
 const plan = planReview(WS, { target: REPO, title: 'orchestrator work in orders-api' });
+const splitRuntimeHost = hostOf(WS);
+splitRuntimeHost.guardArgv = args => ['/installed/layout-entry.mjs', 'bus', ...args];
+const splitRuntimePlan = planReview(splitRuntimeHost, { target: REPO, title: 'orchestrator work in orders-api' });
+check('reviewer owned hooks use busArgv when the project guard has a distinct installed entry',
+  splitRuntimePlan.launch.settings.hooks.Stop[0].hooks[0].command.includes(`"${splitRuntimeHost.busArgv([])[0]}"`)
+  && !splitRuntimePlan.launch.settings.hooks.Stop[0].hooks[0].command.includes('/installed/layout-entry.mjs'),
+  JSON.stringify(splitRuntimePlan.launch.settings.hooks));
 check(`plan: the reviewer's address comes from the repository name`, plan.address === 'reviewer:orders-api', plan.address);
 check('prompt: the reviewer is told it may write only the orchestrator of its new task',
   plan.prompt.includes(`## Whom you may write\n\n- orchestrator (all seven types) in task ${plan.taskId}\n\nThe bus refuses`),
@@ -905,14 +912,14 @@ const reviewerSettings = JSON.parse(readFileSync(
 ));
 const reviewerGuard = reviewerSettings.hooks?.[GUARD_HOOK_EVENT]?.[0]?.hooks?.[0];
 const reviewerIdentity = { address: 'reviewer:orders-api', taskId: pendingTask.id, home };
-check(`: the reviewer's settings carry the loop-warden Stop hook — the same command as the layout's`,
+check(`: the reviewer's settings carry the loop-warden Stop hook — the current runtime command`,
   reviewerGuard?.type === 'command'
-  && reviewerGuard?.command === guardHookCommand(hostOf(WS), reviewerIdentity),
+  && reviewerGuard?.command === managedGuardHookCommand(hostOf(WS), reviewerIdentity),
   JSON.stringify(reviewerSettings.hooks ?? null));
 check(`the reviewer's SessionStart carries its scoped guard and exact owned service credential`,
   reviewerSettings.hooks?.SessionStart?.length === 1 && reviewerSettings.hooks.SessionStart[0].hooks?.length === 1
   && reviewerSettings.hooks.SessionStart[0].hooks[0].type === 'command'
-  && reviewerSettings.hooks.SessionStart[0].hooks[0].command === guardHookCommand(hostOf(WS), reviewerIdentity)
+  && reviewerSettings.hooks.SessionStart[0].hooks[0].command === managedGuardHookCommand(hostOf(WS), reviewerIdentity)
     + ' ' + ['--client-file', relaunchedPlan.env.PROMPTOBUS_CLIENT_FILE,
       '--service-home', relaunchedPlan.env.PROMPTOBUS_SERVICE_HOME].map(shellQuote).join(' '),
   JSON.stringify(reviewerSettings.hooks ?? null));

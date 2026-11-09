@@ -2895,6 +2895,12 @@ check(': a log write under a removed registry does not rebuild the tree',
   const customPrepare = thrown(() => codexDriver.prepare({
     ...ctx, cwd: plainPart?.metadata?.worktree, guardCommand: customGuard, task: FTASK, address: 'worker:fcustom',
   }));
+  const splitPrepare = thrown(() => codexDriver.prepare({
+    ...ctx, cwd: plainPart?.metadata?.worktree, guardCommand: '"/usr/bin/node" "/current/entry.js" live-bus guard',
+    projectGuardCommand: customGuard, task: FTASK, address: 'worker:fcustom',
+  }));
+  check('distinct managed command does not admit the installed custom guard from a foreign Codex project layer',
+    splitPrepare.threw && splitPrepare.msg.includes('/x/mytool.js'), splitPrepare.msg);
   check(': a listed guard of a host whose guard argv names no promptobus refuses a Codex lift that carries that guard',
     !customWithoutGuard.threw && customWithGuard.threw && customWithGuard.msg.includes('/x/mytool.js')
     && customPrepare.threw && customPrepare.msg.includes(mainHooks),

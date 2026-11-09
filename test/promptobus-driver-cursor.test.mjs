@@ -682,7 +682,7 @@ check(': a relift merges from the tracked bytes, not from its own earlier write 
   reliftHooks.hooks.stop.length === 2 && reliftHooks.hooks.stop[0].command === ctx.guardCommand,
   JSON.stringify(reliftHooks));
 // The same tracked hooks with an unrelated trusted command, and with a tracker config but no declaration.
-const trustClone = (name, files, { onDisk = {}, guardCommand = ctx.guardCommand } = {}) => {
+const trustClone = (name, files, { onDisk = {}, guardCommand = ctx.guardCommand, projectGuardCommand } = {}) => {
   const clone = path.join(SB, name);
   mkdirSync(path.join(clone, '.cursor'), { recursive: true });
   gitAt(clone, 'init', '-q', '-b', 'master');
@@ -695,7 +695,7 @@ const trustClone = (name, files, { onDisk = {}, guardCommand = ctx.guardCommand 
   let warned = '';
   const warn0 = console.warn;
   console.warn = (m) => { warned += `${m}\n`; };
-  writeLaunchFiles(cursorDriver.prepare({ ...ctx, cwd: wt, root: null, guardCommand }).files, cursorDriver.options.launchDirs);
+  writeLaunchFiles(cursorDriver.prepare({ ...ctx, cwd: wt, root: null, guardCommand, projectGuardCommand }).files, cursorDriver.options.launchDirs);
   console.warn = warn0;
   return { merged: JSON.parse(readFileSync(path.join(wt, '.cursor', 'hooks.json'), 'utf8')), warned };
 };
@@ -735,6 +735,15 @@ const customGuardLift = trustClone('custom-guard-clone', {
   '.cursor/hooks.json': `${JSON.stringify({ version: 1, hooks: { stop: [{ command: installedCustomGuard }] } })}\n`,
   'promptobus.json': `${JSON.stringify({ trustedHooks: { cursor: { stop: [installedCustomGuard] } } })}\n`,
 }, { guardCommand: customGuard });
+const splitGuard = '"/usr/bin/node" "/current/entry.js" live-bus guard';
+const splitGuardLift = trustClone('split-guard-clone', {
+  '.cursor/hooks.json': `${JSON.stringify({ version: 1, hooks: { stop: [{ command: installedCustomGuard }] } })}\n`,
+  'promptobus.json': `${JSON.stringify({ trustedHooks: { cursor: { stop: [installedCustomGuard] } } })}\n`,
+}, { guardCommand: splitGuard, projectGuardCommand: customGuard });
+check('distinct managed command keeps the installed custom guard out of Cursor owned hooks',
+  splitGuardLift.merged.hooks.stop.map(record => record.command).join('|') === splitGuard
+  && splitGuardLift.warned.includes(installedCustomGuard.replaceAll('"', '\\"')),
+  `${JSON.stringify(splitGuardLift.merged)} · ${splitGuardLift.warned}`);
 check(': a listed guard of a host whose guard argv names no promptobus is kept out — one guard, the lift\'s',
   customGuardLift.merged.hooks.stop.map((r) => r.command).join('|') === customGuard
   && customGuardLift.warned.includes(installedCustomGuard.replaceAll('"', '\\"')),

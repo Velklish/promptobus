@@ -7,7 +7,7 @@ import path from 'node:path';
 import { ok, info, warn, fail, gitIn, PROC_MAX_OUTPUT, GIT_NET_TIMEOUT_MS } from './util.js';
 import { normalize } from './fuzzy.js';
 import { hostOf } from './host.js';
-import { guardHookCommand } from '../dist/hooks.js';
+import { guardHookCommand, managedGuardHookCommand } from '../dist/hooks.js';
 import {
   activeTasks, addressOf, attachmentsOf, bindIfOwner, canonicalPath, claimRoute, contactsOf, createTask, currentResult, filesDir,
   foreignTaskLine, GateError, journalMessageBody, newTaskIdentity, numberedName, occupyTaskFile, ownership,
@@ -615,7 +615,8 @@ export function planReview(rootOrHost: unknown, { target, base, task, title, mod
   const reReview = buildReReview({ diffPath, repoDir, stepName, instructions, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles });
 
   const settingsPath = participantSettingsPath(home, taskId, address);
-  const guardCommand = guardHookCommand(host, { address, taskId, home }, process.platform);
+  const guardCommand = managedGuardHookCommand(host, { address, taskId, home }, process.platform);
+  const projectGuardCommand = guardHookCommand(host, { address, taskId, home }, process.platform);
   // Not every harness takes a skills directory — the same rule as for the worker.
   const pluginDir = !selectedContext && driver.options.skillsDir ? participantPluginDir(host, repoDir) : null;
   // Canonical MCP list — the same path as for the worker: read-only is held by tool stripping.
@@ -650,7 +651,7 @@ export function planReview(rootOrHost: unknown, { target, base, task, title, mod
     pluginDir,
     mcpConfigPath,
     settingsPath,
-    guardCommand,
+    guardCommand, projectGuardCommand,
     denyTools,
     extraSettings: selectedContext ? {} : skillSettings(host, repoDir), selectedContext,
     root,

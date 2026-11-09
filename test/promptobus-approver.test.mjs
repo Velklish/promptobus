@@ -294,6 +294,13 @@ check(': planApprover names an approver worktree under the clone',
   JSON.stringify({ address: plan.address, cloneRoot: plan.cloneRoot, worktree: plan.worktreePath }));
 
 const claudePlan = planApprover(WS, { target: REPO, task: TASK, dryRun: true, harness: 'claude' });
+const splitRuntimeHost = hostOf(WS);
+splitRuntimeHost.guardArgv = args => ['/installed/layout-entry.mjs', 'bus', ...args];
+const splitRuntimePlan = planApprover(splitRuntimeHost, { target: REPO, task: TASK, dryRun: true, harness: 'claude' });
+check('approver owned hooks use busArgv when the project guard has a distinct installed entry',
+  splitRuntimePlan.launch.settings.hooks.Stop[0].hooks[0].command.includes(`"${splitRuntimeHost.busArgv([])[0]}"`)
+  && !splitRuntimePlan.launch.settings.hooks.Stop[0].hooks[0].command.includes('/installed/layout-entry.mjs'),
+  JSON.stringify(splitRuntimePlan.launch.settings.hooks));
 check(': approver on Claude keeps edit and shell — package deny list is empty',
   (!claudePlan.launch.settings?.permissions?.deny?.length),
   JSON.stringify(claudePlan.launch.settings));

@@ -36,6 +36,7 @@ export interface LibPrepareContext extends Pick<SpawnContext,
   rootAddress?: string | null;
   executionKind?: StepKind | null;
   sessionId?: string;
+  projectGuardCommand?: string | null;
 }
 export type LibToolBin = Omit<HostToolBin, 'version'> & { version?: string | null };
 export interface LibSpawnContext extends Pick<SpawnContext, 'ref' | 'home' | 'task' | 'address' | 'cwd'> {
@@ -78,7 +79,7 @@ export interface LibDriver extends Omit<Driver,
   replaceMcpServers?(plan: LibLaunchPlan, servers: Record<string, LibMcpServer>): void;
   resumeState?(ref: string, context: Parameters<NonNullable<Driver['resumeState']>>[1]): { threadId?: string | null; sandbox?: string };
   normalizeTool?(tool: LibToolBin, context?: { env?: NodeJS.ProcessEnv }): LibToolBin;
-  refuseForeignProjectLayer?(lookupDir: string, writtenDir: string, tool?: LibToolBin | null, guardCommand?: string | null): void;
+  refuseForeignProjectLayer?(lookupDir: string, writtenDir: string, tool?: LibToolBin | null, guardCommand?: string | null, projectGuardCommand?: string | null): void;
   prepare?: (context: LibPrepareContext) => LibLaunchPlan;
   spawn?: (plan: LibLaunchPlan, runtime: LibSpawnContext) => Promise<LibSpawnResult>;
   saidLiftoff?: (result: LibSpawnResult & { name: string }) => void;

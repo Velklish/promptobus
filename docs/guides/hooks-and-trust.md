@@ -22,6 +22,12 @@ Owned records are identified by exact install ids first, not by file position. G
 
 ## A participant's hooks are not the workspace's
 
+Owned managed launch hooks use the Host's current `busArgv` entry for startup,
+prompt and tool admission, and Stop. The service credential and its hooks must
+belong to the same runtime. Persisted project hooks use `guardArgv` and the
+installed layout entry. A launch still checks foreign project records against
+that persisted guard before assembling its own hooks.
+
 `promptobus install` writes hook files at the workspace root. A worker works in its worktree, an approver in its own worktree, and a diff reviewer in a separate directory or sandbox. Teamlead and reporter sessions work at the install root (`lib/spawn.js:726`, `lib/report.js:180`). Drivers prepare participant hooks with that participant's identity (`--role`, `--task`, `--home`); the workspace guard carries none. A root hook can therefore also be in the project layer of a teamlead or reporter session.
 
 For a Codex worker, reviewer or approver, that directory is also the only project the participant trusts: the lift records `[projects."<realpath of the working directory>"]` in the participant's home, and nothing else. In a reviewer sandbox the hooks file goes beside the skills copy, in `.codex/` of the working directory, under the same self-ignoring `.gitignore` that keeps a worker's diff clean. A worker's or approver's linked worktree gets it in the participant home instead, as described below. Managed Codex roots, teamleads and reporters use private homes with hooks disabled in both the home config and the thread config. Their holder and warden deliver turns through the app-server; they do not depend on project hooks at the install root.

@@ -324,7 +324,7 @@ function spawnArgv({
  * argv — Cursor has its own plugin format, and the skills canon travels as `.cursor/skills` files. */
 function prepare({
   mcp, prompt, model, effort = null, permissionMode = null, addDirs = [], settingsPath,
-  cwd, guardCommand, denyTools = null, root = null, skillsRoot = root, selectedContext = null, ref = null, role = WORKER, env = process.env,
+  cwd, guardCommand, projectGuardCommand = guardCommand, denyTools = null, root = null, skillsRoot = root, selectedContext = null, ref = null, role = WORKER, env = process.env,
 }: Omit<CursorPrepareContext, 'ref'> & { ref?: string | null }): LibLaunchPlan {
   const readOnly = role === REVIEWER || (role !== APPROVER && !!denyTools?.length);
   const isolated = readOnly;
@@ -335,7 +335,7 @@ function prepare({
   const hooksPath = path.join(configDir, CURSOR_DIR, 'hooks.json');
   const tracked = isolated ? null : trackedText(configDir, path.join(CURSOR_DIR, 'hooks.json'));
   const project: Omit<ReturnType<typeof judgeHookRecords>, 'broken'> & { broken?: string | null } = tracked === null ? { accepted: [], refused: [] } : judgeHookRecords(tracked, configDir, CURSOR, {
-    declaration: trackedText(configDir, TRUST_CONFIG), guard: guardCommand,
+    declaration: trackedText(configDir, TRUST_CONFIG), guard: guardCommand, projectGuard: projectGuardCommand,
   });
   if (project.refused.length) {
     warn(`${hooksPath}: records kept out of this lift's hooks file — ${project.refused.join('; ')}. `

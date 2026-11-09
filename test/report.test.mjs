@@ -61,6 +61,13 @@ check('Codex reporter prompt permits read-only journal reads and prohibits build
   /File writes, builds and tests are forbidden/.test(codexPlan.prompt)
   && /Read journal files with read-only shell commands/.test(codexPlan.prompt));
 const planned = await planReport(host, { task: TASK, dryRun: true });
+const splitRuntimeHost = Object.create(host);
+splitRuntimeHost.guardArgv = args => ['/installed/layout-entry.mjs', 'bus', ...args];
+const splitRuntimePlan = await planReport(splitRuntimeHost, { task: TASK, harness: 'claude', dryRun: true });
+check('reporter owned hooks use busArgv when the project guard has a distinct installed entry',
+  ['SessionStart', 'Stop'].every(event => splitRuntimePlan.launch.settings.hooks[event][0].hooks[0].command.includes(`"${host.busArgv([])[0]}"`)
+    && !splitRuntimePlan.launch.settings.hooks[event][0].hooks[0].command.includes('/installed/layout-entry.mjs')),
+  JSON.stringify(splitRuntimePlan.launch.settings.hooks));
 check('reporter prompt says the bus lets it write nobody',
   planned.prompt.includes('## Whom you may write\n\n- nobody: the bus refuses every send from your address'), planned.prompt);
 let unratedReport = null;

@@ -10,7 +10,7 @@ import {
   PROC_MAX_OUTPUT, GIT_NET_TIMEOUT_MS, PROC_INSTALL_TIMEOUT_MS, toPosix,
 } from './util.js';
 import { hostOf, HostResolveError } from './host.js';
-import { guardHookCommand } from '../dist/hooks.js';
+import { guardHookCommand, managedGuardHookCommand } from '../dist/hooks.js';
 import {
   activeTasks, addressOf, bindIfOwner, boundTaskId, bus, canonicalPath, claimRoute, contactsOf, contactText, createTask,
   dropStaleWake, ensureRootRecord, filesDir, inboxDir,
@@ -96,7 +96,7 @@ export interface SpawnPlan {
   slug: string; address: string; ownerName: string; nsPath: string; repoAbs: string; via: string;
   brief: string; selectedContext: Selection; name: string; workTitle: string; wtName: string;
   worktreePath: string; branch: string; base: string; model: string; effort: string | null;
-  permissionMode: string | null; settingsPath: string; guardCommand: string; pluginDir: string | null;
+  permissionMode: string | null; settingsPath: string; guardCommand: string; projectGuardCommand: string; pluginDir: string | null;
   mcpConfigPath: string; mcpNote: McpNote; retitle: Retitle | null; titleKept: string | null; driver: LibDriver;
   routing: Routed['metadata'] | null; decision: Routed['decision'] | null; routingSkipped: string | null;
   launch: LibLaunchPlan; argv: string[]; mcpConfig: unknown; settings: unknown; rules: string[]; ruleDirs: string[];
@@ -880,7 +880,8 @@ export async function planTeamlead(rootOrHost: unknown, opts: SpawnOptions): Pro
   const ruleDirs = [...new Set(rules.filter((file) => !file.startsWith(root + path.sep)).map(path.dirname))];
   const mcpConfigPath = participantMcpPath(home, rootTask, address);
   const settingsPath = participantSettingsPath(home, rootTask, address);
-  const guardCommand = guardHookCommand(host, { address, taskId: rootTask, home }, process.platform);
+  const guardCommand = managedGuardHookCommand(host, { address, taskId: rootTask, home }, process.platform);
+  const projectGuardCommand = guardHookCommand(host, { address, taskId: rootTask, home }, process.platform);
   const pluginDir = selectedContext ? null : participantPluginDir(host);
   const commonEnv = { ...process.env, ...host.extraEnv() };
   const env = driver.sessionEnv(commonEnv);
@@ -900,7 +901,7 @@ export async function planTeamlead(rootOrHost: unknown, opts: SpawnOptions): Pro
   const prompt = teamleadPrompt({ host, driver, rootTask, childTask, address, rootAddress, brief, siblings, rules, contacts }) + nativeContextPrompt(selectedContext);
   const launch = driver.prepare!({
     ref: name, role: 'teamlead', mcp: mcp.descriptor, prompt, model, effort, permissionMode,
-    addDirs: ruleDirs, pluginDir, mcpConfigPath, settingsPath, guardCommand,
+    addDirs: ruleDirs, pluginDir, mcpConfigPath, settingsPath, guardCommand, projectGuardCommand,
     extraSettings: selectedContext ? {} : skillSettings(host), selectedContext,
     cwd: root, root, home, task: childTask, address: ORCHESTRATOR, rootTask, rootAddress: address, env,
   });
@@ -1219,14 +1220,10 @@ export async function planSpawn(rootOrHost: unknown, opts: SpawnOptions): Promis
   const model = routed?.model ?? opts.model ?? driver.options.defaultModel;
   const effort = resolveEffort(routed ? (routed.effort ?? undefined) : opts.effort, driver);
   const permissionMode = resolvePermissionMode(opts.permissionMode, driver);
-  // The participant settings file is written by the driver: its shape is the harness
-  // contract. What arrives here is only the loop-guard command and the workspace keys
-  // addressed to the participant. What sits in the workspace's own settings would not
-  // reach the participant: its cwd is the clone worktree, not the workspace root. The
-  // command is the same as the orchestrator's — absolute node and the workspace binary,
-  // it resolves from any cwd.
+  // Owned participant hooks carry identity and call the current runtime from any cwd.
   const settingsPath = participantSettingsPath(home, taskId, address);
-  const guardCommand = guardHookCommand(host, { address, taskId, home }, process.platform);
+  const guardCommand = managedGuardHookCommand(host, { address, taskId, home }, process.platform);
+  const projectGuardCommand = guardHookCommand(host, { address, taskId, home }, process.platform);
   // Not every harness takes a skills directory from the workspace: for Claude Code it is
   // a one-lift flag (`--plugin-dir`). For Cursor the canon travels as `.cursor/skills`
   // files — the driver itself writes them into the worktree from the workspace root.
@@ -1276,7 +1273,7 @@ export async function planSpawn(rootOrHost: unknown, opts: SpawnOptions): Promis
     pluginDir: pluginDirPath,
     mcpConfigPath,
     settingsPath,
-    guardCommand,
+    guardCommand, projectGuardCommand,
     extraSettings: selectedContext ? {} : skillSettings(host, repoAbs),
     root,
     skillsRoot: selectedContext ? null : participantSkillsRoot(host, repoAbs), selectedContext,
@@ -1319,13 +1316,13 @@ export async function planSpawn(rootOrHost: unknown, opts: SpawnOptions): Promis
   // A missing worktree is read as the main checkout. The refusal stands here,
   // before the first write of this lift, and `--dry-run` takes the same plan.
   if (typeof driver.refuseForeignProjectLayer === 'function') {
-    driver.refuseForeignProjectLayer(existsSync(worktreePath) ? worktreePath : repoAbs, worktreePath, null, guardCommand);
+    driver.refuseForeignProjectLayer(existsSync(worktreePath) ? worktreePath : repoAbs, worktreePath, null, guardCommand, projectGuardCommand);
   }
 
   return {
     home, taskId, createNew, participant, slug, address, ownerName, nsPath, repoAbs, via: resolved.via, brief, selectedContext,
     name, workTitle, wtName, worktreePath, branch, base, model, effort, permissionMode,
-    settingsPath, guardCommand, pluginDir: pluginDirPath,
+    settingsPath, guardCommand, projectGuardCommand, pluginDir: pluginDirPath,
     mcpConfigPath, mcpNote: mcpNote(mcp, 'participant'), retitle, titleKept, driver,
     routing: routed?.metadata ?? null, decision: routed?.decision ?? null, routingSkipped,
     launch, argv: launch.argv, mcpConfig: launch.mcpConfig, settings: launch.settings,
@@ -1906,7 +1903,7 @@ export async function spawn(rootOrHost: unknown, opts: SpawnOptions): Promise<Sp
   if (!tool.ok) fail(tool.reason);
   const ultra = optionRefusal(plan.driver, plan.effort, tool, plan.host);
   if (ultra) fail(ultra);
-  plan.driver.refuseForeignProjectLayer?.(plan.repoAbs, plan.worktreePath, tool, plan.guardCommand);
+  plan.driver.refuseForeignProjectLayer?.(plan.repoAbs, plan.worktreePath, tool, plan.guardCommand, plan.projectGuardCommand);
   const provenance = launchProvenance(plan.host, tool);
   info(provenanceLine(provenance));
 
