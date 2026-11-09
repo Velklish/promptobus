@@ -1,14 +1,17 @@
 import { replaceLaunchMcpConfig } from './driver-runtime.js';
 import { createHash, randomUUID } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn as spawnProcess, spawnSync } from 'node:child_process';
 import {
-  chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync,
+  accessSync, chmodSync, closeSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync,
   statSync, writeFileSync,
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { installSelectedNativeFiles, selectedNativeFiles } from './native-participant-context.js';
+import { assertSelectedNativeFiles, installSelectedNativeFiles, openSelectedNativeSource, selectedNativeFiles } from './native-participant-context.js';
+import type { PreservedDirectoryVerifier } from './native-participant-context.js';
+import { CodexRpc } from './codex-rpc.js';
+import { resolveCommand } from './exec.js';
 import { info, warn } from './util.js';
 import { launchProvenance, provenanceLine } from './provenance.js';
 import { PROMPTOBUS_SERVER } from './contract.js';
@@ -83,6 +86,121 @@ export const MIN_CODEX_VERSION = '0.158.0';
 // value would put the session back in the owner's home. A caller naming one explicitly still wins.
 export const SESSION_ENV_DROP = [...PARENT_SESSION_ENV];
 const CODEX_DRY_RUN_COMMAND = `${CODEX} ${PARTICIPANT_ARGV.join(' ')} (prompt via turn/start request)`;
+
+type SystemSkillsVerifier = PreservedDirectoryVerifier;
+
+function systemSkillSnapshot(directory: string, prefix = '', result = new Map<string, Buffer | null>()) {
+  const entry = lstatSync(directory);
+  if (entry.isSymbolicLink() || !entry.isDirectory() || realpathSync(directory) !== directory) {
+    throw new GateError(`Codex system skills require a canonical directory without symbolic links: ${directory}`);
+  }
+  for (const name of readdirSync(directory).sort()) {
+    const file = path.join(directory, name), relative = path.join(prefix, name), stat = lstatSync(file);
+    if (stat.isSymbolicLink()) throw new GateError(`Codex system skills refuse a symbolic link: ${file}`);
+    if (stat.isDirectory()) { result.set(relative, null); systemSkillSnapshot(file, relative, result); }
+    else if (stat.isFile()) {
+      const source = openSelectedNativeSource(file);
+      try { result.set(relative, readFileSync(source.fd)); } finally { closeSync(source.fd); }
+      const current = lstatSync(file);
+      if (current.isSymbolicLink() || realpathSync(file) !== file || current.dev !== source.stat.dev || current.ino !== source.stat.ino) {
+        throw new GateError(`Codex system skill changed while reading: ${file}`);
+      }
+    }
+    else throw new GateError(`Codex system skills require regular files: ${file}`);
+  }
+  const current = lstatSync(directory);
+  if (current.isSymbolicLink() || realpathSync(directory) !== directory || current.dev !== entry.dev || current.ino !== entry.ino) {
+    throw new GateError(`Codex system skills directory changed while reading: ${directory}`);
+  }
+  return result;
+}
+
+function systemSkillsRuntimeIdentity(bin: string) {
+  if (!path.isAbsolute(bin)) throw new GateError('Codex system skills require the resolved launch executable');
+  const canonical = realpathSync(bin), stat = lstatSync(canonical);
+  if (!stat.isFile()) throw new GateError(`Codex system skills runtime is not a regular file: ${bin}`);
+  return JSON.stringify([canonical, stat.dev, stat.ino, stat.size, stat.mtimeMs,
+    createHash('sha256').update(readFileSync(canonical)).digest('hex')]);
+}
+
+function resolvedCodexExecutable(bin: string, env: NodeJS.ProcessEnv, cwd: string) {
+  const candidates = process.platform === 'win32'
+    ? [resolveCommand(bin, { env })].filter((file): file is string => file !== null)
+    : bin.includes(path.sep) || path.isAbsolute(bin) ? [bin]
+      : (env.PATH ?? '/usr/bin:/bin').split(path.delimiter).map(directory => path.join(directory || '.', bin));
+  for (const candidate of candidates) {
+    try {
+      const file = realpathSync(path.resolve(cwd, candidate));
+      accessSync(file, constants.X_OK);
+      if (statSync(file).isFile()) return file;
+    } catch { /* Continue the native executable search. */ }
+  }
+  throw new GateError(`Codex launch executable is unavailable: ${bin}`);
+}
+
+export async function pristineCodexSystemSkills(bin: string, env: NodeJS.ProcessEnv = process.env): Promise<SystemSkillsVerifier> {
+  const runtime = realpathSync(bin);
+  const identity = systemSkillsRuntimeIdentity(bin);
+  if (systemSkillsRuntimeIdentity(runtime) !== identity) throw new GateError('Codex system skills runtime changed before bootstrap');
+  const home = mkdtempSync(path.join(realpathSync(tmpdir()), 'promptobus-codex-system-'));
+  let reference: Map<string, Buffer | null>;
+  try {
+    const child = spawnProcess(runtime, ['app-server', '--stdio'], {
+      cwd: home, env: { PATH: env.PATH, SystemRoot: env.SystemRoot, WINDIR: env.WINDIR,
+        HOME: home, USERPROFILE: home, CODEX_HOME: home, TMPDIR: home, TEMP: home, TMP: home },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let failure: string | undefined, requestId: unknown, replies = 0, bytes = 0;
+    child.on('error', error => { failure = error.message; });
+    child.stdin.on('error', () => {});
+    const timer = setTimeout(() => { failure = 'terminal bootstrap deadline exceeded'; child.kill('SIGKILL'); }, 20_000);
+    const rpc = CodexRpc(child, { onLog: (direction, raw) => {
+      const message = raw as { id?: unknown; method?: unknown };
+      if (direction === 'out' && message.method === 'initialize') requestId = message.id;
+      if (direction === 'in' && message.id === requestId) replies++;
+      if (direction === 'raw') failure = 'invalid bootstrap protocol output';
+    } });
+    for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => {
+      bytes += chunk.length;
+      if (bytes > 2 * 1024 * 1024) { failure = 'bootstrap output exceeds 2 MiB'; child.kill('SIGKILL'); }
+    });
+    const ended = new Promise<void>(resolve => child.once('close', (code, signal) => {
+      if (code !== 0 || signal) failure ??= `exit ${code}, signal ${signal}`;
+      clearTimeout(timer); rpc.close(); resolve();
+    }));
+    try {
+      const response = await rpc.request('initialize', { clientInfo: { name: 'promptobus-system-skills', version: '1' } }, 20_000) as {
+        result?: { codexHome?: string }; error?: unknown;
+      };
+      child.stdin.end();
+      await ended;
+      if (failure) throw new GateError(`Codex system skills bootstrap refused: ${failure}`);
+      if (replies !== 1 || response.error || response.result?.codexHome !== home) {
+        throw new GateError('Codex system skills bootstrap has no unambiguous owned-home initialize response');
+      }
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      await ended;
+    }
+    reference = systemSkillSnapshot(path.join(home, 'skills', '.system'));
+    const marker = reference.get('.codex-system-skills.marker');
+    if (!marker?.length || ![...reference.keys()].some(name => path.basename(name) === 'SKILL.md')) {
+      throw new GateError('Codex system skills bootstrap produced an incomplete reference');
+    }
+    if (systemSkillsRuntimeIdentity(bin) !== identity) throw new GateError('Codex system skills runtime changed during bootstrap');
+  } catch (error) {
+    if (error instanceof GateError) throw error;
+    throw new GateError(`Codex system skills reference unavailable: ${(error as Error).message}`);
+  } finally { rmSync(home, { recursive: true, force: true }); }
+  return directory => {
+    if (systemSkillsRuntimeIdentity(bin) !== identity) throw new GateError('Codex system skills runtime changed after bootstrap');
+    const actual = systemSkillSnapshot(directory);
+    if (actual.size !== reference.size || [...reference].some(([name, bytes]) => {
+      const value = actual.get(name);
+      return bytes === null ? value !== null : !Buffer.isBuffer(value) || !bytes.equals(value);
+    })) throw new GateError(`Codex system skills refuse foreign paths, types or bytes: ${directory}`);
+  };
+}
 
 // The tool name a Codex session calls an MCP server's tool by: the CONFIG key stays raw, only the
 // name is sanitised — [02-host.md](../docs/reference/02-host.md#consumer-identity-inside-a-harness).
@@ -597,8 +715,8 @@ function copyPrivateSkills(src: string, dest: string) {
   }
 }
 
-export function installPrivateHomeLayer(plan: Pick<CodexLaunchPlan, 'privateHomeFiles' | 'privateHomeSkills'>, codexHome: string) {
-  if (plan.privateHomeFiles) { installSelectedNativeFiles(plan.privateHomeFiles); return; }
+export function installPrivateHomeLayer(plan: Pick<CodexLaunchPlan, 'privateHomeFiles' | 'privateHomeSkills'>, codexHome: string, verifySystem?: SystemSkillsVerifier) {
+  if (plan.privateHomeFiles) { installSelectedNativeFiles(plan.privateHomeFiles, verifySystem); return; }
   if (plan.privateHomeSkills) copyPrivateSkills(plan.privateHomeSkills, path.join(codexHome, 'skills'));
 }
 
@@ -734,7 +852,7 @@ function prepare({
   const dest = privateHome
     ? path.join(realpathSync(tmpdir()), HOMES_DIR, path.basename(home), 'skills')
     : path.join(fileRoot, CODEX_SKILLS_REL);
-  const selectedFiles = selectedContext ? selectedNativeFiles(selectedContext, dest) : [];
+  const selectedFiles = selectedContext ? selectedNativeFiles(selectedContext, dest, privateHome ? '.system' : undefined) : [];
   if (isolated) {
     const busHome = cfg.mcpServers[PROMPTOBUS_SERVER]?.env?.PROMPTOBUS_HOME;
     const indexPath = !selectedContext && skillsRoot && existsSync(skillsRoot) ? path.join(realpathSync(skillsRoot), '.agents', 'skills-index.md') : null;
@@ -1184,11 +1302,23 @@ async function spawn(input: LibLaunchPlan, {
   checkSessionDirectory(env ?? process.env);
   // The registry pairs this driver with the launch plan its own prepare returned.
   const plan = input as CodexLaunchPlan;
+  const workdir = plan.cwd ?? cwd;
+  const needsSystemReference = plan.privateHomeFiles?.some(file => file.preserveDirectory
+    && lstatSync(path.join(file.path, '.system'), { throwIfNoEntry: false }));
+  if (needsSystemReference) tool = { ...tool, bin: resolvedCodexExecutable(tool.bin, env ?? process.env, workdir) };
+  const runtimeIdentity = needsSystemReference ? systemSkillsRuntimeIdentity(tool.bin) : null;
+  const assertRuntime = () => {
+    if (runtimeIdentity !== null && systemSkillsRuntimeIdentity(tool.bin) !== runtimeIdentity) {
+      throw new GateError('Codex launch runtime changed after executable admission');
+    }
+  };
+  const verifySystem = needsSystemReference ? await pristineCodexSystemSkills(tool.bin, env) : undefined;
+  assertRuntime();
+  if (plan.privateHomeFiles) assertSelectedNativeFiles(plan.privateHomeFiles, verifySystem);
   const registry = registryOf(host);
   const who = (liftWords(registry, role) ?? liftWords(registry, WORKER))!.acc;
   // The working directory is taken from the plan, not the caller's cwd: for a reviewer that is its
   // own sandbox. Both are on disk by this point, and app-server is handed the path as the thread cwd.
-  const workdir = plan.cwd ?? cwd;
   const sandbox = plan.settings?.sandbox
     ?? (role === REVIEWER ? 'read-only' : 'workspace-write');
   const prompt = plan.prompt;
@@ -1376,7 +1506,7 @@ async function spawn(input: LibLaunchPlan, {
   }
   try {
     if (role === REVIEWER && runtimeHome && runtimeTask) mkdirSync(filesDir(runtimeHome, runtimeTask), { recursive: true });
-    if (plan.trustProject === false) installPrivateHomeLayer(plan, codexHome);
+    if (plan.trustProject === false) installPrivateHomeLayer(plan, codexHome, verifySystem);
     else writeRedirectedHooks(plan, workdir, codexHome);
   } catch (error) {
     return revokeFailedManagedLaunch(plan, error, discardLaunch);
@@ -1386,6 +1516,7 @@ async function spawn(input: LibLaunchPlan, {
   let holder;
   try {
     await plan.service?.beforeStart(sessionFile(ref, env));
+    assertRuntime();
     holder = startHolder(ref, sessionEnv(env ?? process.env, { CODEX_HOME: codexHome }));
   } catch (error) {
     return revokeFailedManagedLaunch(plan, error, () => {

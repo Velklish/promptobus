@@ -17,7 +17,7 @@ import { planApprover } from '../lib/approver.js';
 import { runPromptobus } from '../lib/cli.js';
 import { claudeDriver } from '../lib/driver-claude.js';
 import { cursorDriver } from '../lib/driver-cursor.js';
-import { codexDriver, installPrivateHomeLayer } from '../lib/driver-codex.js';
+import { codexDriver, installPrivateHomeLayer, makeParticipantHome, pristineCodexSystemSkills } from '../lib/driver-codex.js';
 import { opencodeDriver } from '../lib/driver-opencode.js';
 import { assertNativeContextDriver, contextCliOptions, nativeContextMetadata, nativeContextPrompt, prepareNativeContext, selectedNativeFiles } from '../lib/native-participant-context.js';
 import { createTask, participantRecord, readTask, sendMessage, sessionIdentity, upsertParticipant } from '../lib/store.js';
@@ -25,6 +25,8 @@ import { REGISTRY } from '../lib/drivers.js';
 import { openParticipant } from '../dist/index.js';
 import { reviewerFiles } from '../lib/reviewer-files.js';
 import { capture } from './console.mjs';
+import { createStandaloneHost } from '../dist/host-index.js';
+import { readSession, reapHolder, writeSession } from '../lib/codex-session.js';
 
 const sandbox = realpathSync(makeSandbox('promptobus-native-context-'));
 process.env.CLAUDE_CODE_SESSION_ID = 'native-context-owner';
@@ -442,15 +444,16 @@ function withAliasedTemp(name, run) {
   symlinkSync(canonical, alias, 'dir');
   const variables = ['TMPDIR', 'TEMP', 'TMP'];
   const saved = variables.map(key => process.env[key]);
+  const restore = () => variables.forEach((key, index) => {
+    if (saved[index] === undefined) delete process.env[key];
+    else process.env[key] = saved[index];
+  });
   try {
     for (const key of variables) process.env[key] = alias;
-    return run({ canonical, alias });
-  } finally {
-    variables.forEach((key, index) => {
-      if (saved[index] === undefined) delete process.env[key];
-      else process.env[key] = saved[index];
-    });
-  }
+    const result = run({ canonical, alias });
+    if (result?.then) return result.finally(restore);
+    restore(); return result;
+  } catch (error) { restore(); throw error; }
 }
 
 test('managed selected contexts canonicalize explicit external store and clone roots before owned descendants', async () => {
@@ -573,6 +576,240 @@ const privateSelectedPlan = role => codexDriver.prepare({
   ref: `temp-alias-${role}`, role, task: selection.task.id, address: role, cwd: root, root,
   selectedContext: selection, permissionMode: role === 'reporter' ? 'read-only' : 'full-access',
   mcp: { servers: {} }, env: process.env,
+});
+
+const systemFixture = { '.codex-system-skills.marker': 'fixture-generation\n',
+  'skill-creator/SKILL.md': '# Generated system skill fixture\n', 'skill-creator/assets/data.bin': '\u0000\u0001\u0002' };
+
+function systemRuntime(name, extra = '', participant = false) {
+  const dir = path.join(sandbox, name), trace = path.join(dir, 'trace.json');
+  stubCommand(dir, 'codex', `import fs from 'node:fs'; import path from 'node:path';
+import readline from 'node:readline';
+${participant ? `if (process.env.PROMPTOBUS_E2E_CODEX) {
+fs.writeFileSync(${JSON.stringify(trace + '.participant')}, JSON.stringify({script:process.argv[1],home:process.env.CODEX_HOME}));
+const {codexMain}=await import(${JSON.stringify(new URL('./harness-codex.mjs', import.meta.url).href)});
+await codexMain(process.argv.slice(2));
+} else` : ''}
+readline.createInterface({input:process.stdin}).on('line', line => {
+const request=JSON.parse(line), home=process.env.CODEX_HOME;
+fs.writeFileSync(${JSON.stringify(trace)}, JSON.stringify({home,args:process.argv.slice(2),env:Object.keys(process.env)}));
+for(const [name,body] of Object.entries(${JSON.stringify(systemFixture)})) {
+  const file=path.join(home,'skills','.system',name); fs.mkdirSync(path.dirname(file),{recursive:true}); fs.writeFileSync(file,body);
+}
+${extra}
+console.log(JSON.stringify({id:request.id,result:{codexHome:home}}));
+});`);
+  return { bin: path.join(dir, process.platform === 'win32' ? 'codex.cmd' : 'codex'), trace };
+}
+
+function seedSystem(directory) {
+  for (const [name, bytes] of Object.entries(systemFixture)) put(path.join(directory, name), bytes);
+}
+
+for (const [kind, title] of [
+  ['retained', 'pins the bootstrap executable through retained context and a cwd decoy'],
+  ['foreign', 'refuses foreign system bytes before provider writes'],
+  ['runtime-change', 'refuses executable replacement between bootstrap and holder launch'],
+  ['missing-path', 'refuses a cwd decoy when no executable is on PATH'],
+]) test(`Codex standalone PATH launch ${title}`, async () => {
+  await withAliasedTemp(`system-path-${kind}`, async () => {
+    const runtime = systemRuntime(`system-path-runtime-${kind}`, '', true);
+    const decoy = systemRuntime(`system-path-decoy-${kind}`, '', true);
+    const cwd = path.dirname(decoy.bin), harness = path.join(sandbox, `system-path-harness-${kind}`);
+    for (const name of ['scripts', 'trace', 'threads', 'state']) mkdirSync(path.join(harness, name), { recursive: true });
+    const env = { ...process.env, PATH: path.dirname(runtime.bin) + path.delimiter + process.env.PATH,
+      PROMPTOBUS_E2E_CODEX: harness, PROMPTOBUS_CODEX_HOME: path.join(harness, 'state') };
+    const standalone = createStandaloneHost({ cwd, commandName: 'promptobus' });
+    const tool = standalone.resolveToolBin('codex');
+    assert.equal(tool.bin, 'codex');
+    if (kind === 'missing-path') { const empty = path.join(harness, 'empty-path'); mkdirSync(empty); env.PATH = empty; }
+    const ref = `system-path-launch-${kind}`;
+    const plan = codexDriver.prepare({ ref, role: 'orchestrator', task: selection.task.id, address: 'orchestrator',
+      cwd, root, selectedContext: selection, permissionMode: 'full-access', mcp: { servers: {} }, env });
+    makeParticipantHome({ dir: plan.codexHome, env });
+    writeSession({ ref, codexHome: plan.codexHome, state: 'stopped' }, env);
+    installPrivateHomeLayer(plan, plan.codexHome);
+    const system = path.join(plan.canonicalSkillsDir, '.system'); seedSystem(system);
+    const before = fs.statSync(system);
+    const config = path.join(plan.codexHome, 'config.toml'), retainedConfig = readFileSync(config);
+    if (kind === 'foreign') writeFileSync(path.join(system, 'skill-creator', 'SKILL.md'), 'Foreign bytes');
+    const busCommand = standalone.busCommand;
+    // Changing PATH after admission must not redirect the holder to another executable.
+    standalone.busCommand = (...args) => {
+      env.PATH = cwd + path.delimiter + process.env.PATH;
+      return busCommand(...args);
+    };
+    const originalWrite = fs.writeFileSync;
+    let replaced = false;
+    if (kind === 'runtime-change') {
+      fs.writeFileSync = function(file, ...args) {
+        const result = originalWrite.call(this, file, ...args);
+        if (String(file) === path.join(plan.canonicalSkillsDir, '.promptobus-context.json')) {
+          fs.appendFileSync(runtime.bin, '\n# replaced after bootstrap\n'); replaced = true;
+        }
+        return result;
+      };
+      syncBuiltinESMExports();
+    }
+    const previousCwd = process.cwd(); process.chdir(cwd);
+    try {
+      const launch = () => codexDriver.spawn(plan, { tool, ref, role: 'orchestrator', cwd, env, host: standalone,
+        persist: () => {} });
+      if (kind !== 'retained') {
+        const expected = kind === 'foreign' ? /foreign paths, types or bytes/
+          : kind === 'runtime-change' ? /launch runtime changed after executable admission/ : /launch executable is unavailable/;
+        await assert.rejects(launch, expected);
+        assert.equal(existsSync(runtime.trace + '.participant'), false);
+        assert.equal(existsSync(decoy.trace), false);
+        assert.equal(existsSync(decoy.trace + '.participant'), false);
+        if (kind === 'foreign' || kind === 'missing-path') assert.deepEqual(readFileSync(config), retainedConfig);
+        if (kind === 'foreign') assert.equal(readFileSync(path.join(system, 'skill-creator', 'SKILL.md'), 'utf8'), 'Foreign bytes');
+        if (kind === 'runtime-change') assert.equal(replaced, true);
+        return;
+      }
+      const result = await launch();
+      assert.ok(result.session);
+      assert.equal(readSession(ref, env).bin, realpathSync(runtime.bin));
+      assert.equal(JSON.parse(readFileSync(runtime.trace + '.participant', 'utf8')).script,
+        path.join(path.dirname(runtime.bin), 'codex.stub.mjs'));
+      assert.equal(existsSync(decoy.trace), false);
+      assert.equal(existsSync(decoy.trace + '.participant'), false);
+      assert.equal(fs.statSync(system).ino, before.ino);
+      for (const [name, bytes] of Object.entries(systemFixture)) assert.deepEqual(readFileSync(path.join(system, name)), Buffer.from(bytes));
+    } finally {
+      fs.writeFileSync = originalWrite; syncBuiltinESMExports();
+      process.chdir(previousCwd); await reapHolder(ref, env);
+    }
+  });
+});
+
+test('Codex generated system skills survive selected private-home reinstall', async () => {
+  await withAliasedTemp('system-preserve', async () => {
+    const runtime = systemRuntime('system-runtime');
+    for (const role of ['orchestrator', 'reporter', 'teamlead']) {
+      const plan = privateSelectedPlan(role);
+      installPrivateHomeLayer(plan, plan.codexHome);
+      const system = path.join(plan.canonicalSkillsDir, '.system');
+      seedSystem(system);
+      const before = fs.statSync(system), skill = path.join(system, 'skill-creator', 'SKILL.md');
+      const skillBefore = fs.statSync(skill);
+      const verify = await pristineCodexSystemSkills(runtime.bin);
+      const repeat = privateSelectedPlan(role);
+      installPrivateHomeLayer(repeat, repeat.codexHome, verify);
+      installPrivateHomeLayer(repeat, repeat.codexHome, verify);
+      assert.equal(fs.statSync(system).ino, before.ino);
+      assert.equal(fs.statSync(skill).ino, skillBefore.ino);
+      assert.equal(fs.statSync(skill).mtimeMs, skillBefore.mtimeMs);
+      for (const [name, bytes] of Object.entries(systemFixture)) assert.deepEqual(readFileSync(path.join(system, name)), Buffer.from(bytes));
+      assert.equal(readFileSync(path.join(plan.canonicalSkillsDir, 'alpha', 'SKILL.md'), 'utf8'), readFileSync(alpha, 'utf8'));
+      const trace = JSON.parse(readFileSync(runtime.trace, 'utf8'));
+      assert.deepEqual(trace.args, ['app-server', '--stdio']);
+      assert.equal(existsSync(trace.home), false, 'bootstrap home cleaned after terminal exit');
+      assert.equal(trace.env.includes('OPENAI_API_KEY'), false);
+    }
+  });
+});
+
+for (const kind of ['extra', 'bytes', 'missing', 'type', 'empty-dir', 'leaf-link', 'dir-link', 'root-link']) {
+  test(`Codex generated system skills refuse ${kind} without changing retained files`, async () => {
+    await withAliasedTemp(`system-foreign-${kind}`, async () => {
+      const runtime = systemRuntime(`system-runtime-${kind}`), plan = privateSelectedPlan('orchestrator');
+      installPrivateHomeLayer(plan, plan.codexHome);
+      const system = path.join(plan.canonicalSkillsDir, '.system');
+      seedSystem(system);
+      const repeat = privateSelectedPlan('orchestrator'), verify = await pristineCodexSystemSkills(runtime.bin);
+      const skill = path.join(system, 'skill-creator', 'SKILL.md');
+      const outside = put(path.join(sandbox, `outside-${kind}`, 'SKILL.md'), 'Foreign target bytes\n');
+      if (kind === 'extra') put(path.join(system, 'foreign.md'), 'Foreign bytes');
+      if (kind === 'bytes') writeFileSync(skill, 'Foreign bytes');
+      if (kind === 'missing') unlinkSync(skill);
+      if (kind === 'empty-dir') mkdirSync(path.join(system, 'foreign-empty'));
+      if (kind === 'type') { unlinkSync(skill); mkdirSync(skill); }
+      if (kind === 'leaf-link') { unlinkSync(skill); symlinkSync(outside, skill); }
+      if (kind === 'dir-link') { renameSync(path.dirname(skill), `${path.dirname(skill)}-retained`); symlinkSync(path.dirname(outside), path.dirname(skill), 'dir'); }
+      if (kind === 'root-link') { renameSync(system, `${system}-retained`); symlinkSync(path.dirname(outside), system, 'dir'); }
+      const selected = path.join(plan.canonicalSkillsDir, 'alpha', 'SKILL.md'), before = readFileSync(selected);
+      assert.throws(() => installPrivateHomeLayer(repeat, repeat.codexHome, verify), /foreign|symbolic link/);
+      assert.deepEqual(readFileSync(selected), before);
+      assert.equal(readFileSync(outside, 'utf8'), 'Foreign target bytes\n');
+      if (kind === 'bytes') assert.equal(readFileSync(skill, 'utf8'), 'Foreign bytes');
+    });
+  });
+}
+
+test('Codex system skills require a reference at installation even for a retained plan', () => {
+  withAliasedTemp('system-late', () => {
+    const plan = privateSelectedPlan('orchestrator');
+    installPrivateHomeLayer(plan, plan.codexHome);
+    seedSystem(path.join(plan.canonicalSkillsDir, '.system'));
+    assert.throws(() => installPrivateHomeLayer(plan, plan.codexHome), /require a pristine launch-runtime reference/);
+  });
+});
+
+for (const [kind, extra] of [
+  ['missing', "fs.rmSync(path.join(home,'skills','.system'),{recursive:true});"],
+  ['incomplete', "fs.rmSync(path.join(home,'skills','.system','skill-creator'),{recursive:true});"],
+  ['symlink', "fs.symlinkSync(home,path.join(home,'skills','.system','escape'));"],
+  ['ambiguous', "console.log(JSON.stringify({id:request.id,result:{codexHome:home}}));"],
+  ['exit', 'process.exit(7);'],
+  ['signal', "process.kill(process.pid,'SIGTERM');"],
+  ['protocol', "console.log('invalid-protocol');"],
+  ['runtime-change', "fs.appendFileSync(path.join(path.dirname(process.argv[1]),process.platform==='win32'?'codex.cmd':'codex'),'\\n# changed runtime\\n');"],
+  ['wrong-home', "console.log(JSON.stringify({id:request.id,result:{codexHome:'/foreign'}})); process.exit(0);"],
+]) {
+  test(`Codex system reference fails closed on ${kind} bootstrap and cleans its owned home`, async () => {
+    const runtime = systemRuntime(`system-reference-${kind}`, extra);
+    await assert.rejects(() => pristineCodexSystemSkills(runtime.bin), /reference|bootstrap|symbolic link|runtime changed/);
+    assert.equal(existsSync(JSON.parse(readFileSync(runtime.trace, 'utf8')).home), false);
+  });
+}
+
+test('Codex system reference refuses a changed launch runtime instead of reusing its authority', async () => {
+  const runtime = systemRuntime('system-reference-runtime-change');
+  const verify = await pristineCodexSystemSkills(runtime.bin), directory = path.join(sandbox, 'runtime-change-system');
+  seedSystem(directory);
+  fs.appendFileSync(runtime.bin, '\n# runtime changed\n');
+  assert.throws(() => verify(directory), /runtime changed after bootstrap/);
+});
+
+test('Codex driver validates system bytes with the admitted executable before provider writes', async () => {
+  const runtime = systemRuntime('system-driver-runtime');
+  await withAliasedTemp('system-driver-write-boundary', async () => {
+    const plan = privateSelectedPlan('orchestrator');
+    installPrivateHomeLayer(plan, plan.codexHome);
+    seedSystem(path.join(plan.canonicalSkillsDir, '.system'));
+    const retained = put(path.join(plan.codexHome, 'config.toml'), '# retained provider config\n');
+    const receipt = readFileSync(path.join(plan.canonicalSkillsDir, '.promptobus-context.json'));
+    writeFileSync(path.join(plan.canonicalSkillsDir, '.system', 'skill-creator', 'SKILL.md'), 'Foreign bytes');
+    const repeat = privateSelectedPlan('orchestrator');
+    await assert.rejects(() => codexDriver.spawn(repeat, { tool: { bin: runtime.bin }, env: process.env }), /foreign paths, types or bytes/)
+      .then(() => {
+        assert.equal(readFileSync(retained, 'utf8'), '# retained provider config\n');
+        assert.deepEqual(readFileSync(path.join(plan.canonicalSkillsDir, '.promptobus-context.json')), receipt);
+        assert.deepEqual(JSON.parse(readFileSync(runtime.trace, 'utf8')).args, ['app-server', '--stdio']);
+      });
+  });
+});
+
+test('Codex system snapshot refuses an equal-byte leaf symlink substitution', async () => {
+  const runtime = systemRuntime('system-snapshot-race'), directory = path.join(sandbox, 'system-snapshot-race-tree');
+  seedSystem(directory);
+  const file = path.join(directory, 'skill-creator', 'SKILL.md');
+  const outside = put(path.join(sandbox, 'system-snapshot-race-outside.md'), systemFixture['skill-creator/SKILL.md']);
+  const verify = await pristineCodexSystemSkills(runtime.bin), original = fs.lstatSync;
+  let swapped = false;
+  fs.lstatSync = function(candidate, ...args) {
+    const stat = original.call(this, candidate, ...args);
+    if (String(candidate) === file && !swapped) {
+      renameSync(file, `${file}.retained`); symlinkSync(outside, file); swapped = true;
+    }
+    return stat;
+  };
+  syncBuiltinESMExports();
+  try { assert.throws(() => verify(directory), /canonical|symbolic link|ELOOP|changed/); }
+  finally { fs.lstatSync = original; syncBuiltinESMExports(); }
+  assert.equal(swapped, true);
+  assert.equal(readFileSync(outside, 'utf8'), systemFixture['skill-creator/SKILL.md']);
 });
 
 test('Codex private selected skills use a canonical temp base without changing home identity', () => {

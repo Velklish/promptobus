@@ -49,6 +49,7 @@ The canonical project documentation. For current work, use `npx --no-install bac
 | [adr/adr-039-terminal-send-barrier.md](adr/adr-039-terminal-send-barrier.md) | Task close fences new intent publication; committed fan-out and already-public artifacts remain recoverable | Accepted |
 | [adr/adr-040-shared-workspace-service.md](adr/adr-040-shared-workspace-service.md) | One authenticated process per canonical workspace/store serves isolated HTTP MCP clients and task wardens; a launcher starts it and idle exit respects client/work lifetime | Accepted |
 | [adr/adr-041-bb-plugin-release-collection.md](adr/adr-041-bb-plugin-release-collection.md) | Versioned BB plugin release collection | Accepted |
+| [adr/adr-042-codex-generated-system-skills-reference.md](adr/adr-042-codex-generated-system-skills-reference.md) | Verify and preserve generated Codex system skills against a fresh no-model reference from the admitted executable | Accepted |
 
 ## Cross-cutting principles
 

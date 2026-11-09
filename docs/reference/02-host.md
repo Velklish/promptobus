@@ -1164,7 +1164,17 @@ task-owned bootstrap file with a short CLI pointer; only its owned directory joi
 rechecked before writes. Declared skill-internal or sibling `_shared` files also
 retain supported relative paths. Unsupported dependency layouts and non-owned
 destination collisions, including foreign or symlinked Claude manifests, refuse
-before writes or launch. Existing repository/provider/global discovery
+before writes or launch. Private Codex homes can also contain harness-generated
+`skills/.system` files. Planning checks their topology; before provider writes,
+the admitted launch executable must generate an exact pristine reference in a
+fresh isolated home without a model turn. When these retained files need validation,
+bare host command names resolve through
+the participant's PATH before bootstrap; the session record pins that executable
+for the holder and rejects a subsequent identity change. Reinstall preserves a matching system
+subtree in place. Extra paths, changed types or bytes, symlinks and an unavailable
+reference refuse. The generated marker alone establishes no ownership. See
+[the private-home boundary](05-drivers.md#generated-system-skills-and-selected-context-reinstall).
+Existing repository/provider/global discovery
 can still supply independent instructions; selection does not rewrite those
 sources or prove complete session isolation. Delivered bytes are local evidence,
 not measured input, cache, output or tool tokens.

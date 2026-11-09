@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Codex selected-context resume accepts a host's bare PATH command and pins the
+  same resolved executable for system-skill bootstrap and participant launch.
+  Later PATH changes cannot redirect the holder; executable replacement refuses.
+- Selected-context resume preserves Codex-generated private-home system skills
+  after comparing their full paths, types and bytes with a fresh no-model
+  bootstrap from the admitted launch executable. Foreign content and unavailable
+  references refuse before replacement.
 - Managed HTTP calls refresh their full authorization proof when the session
   record changes during native process observation, instead of returning HTTP
   500. Retries yield briefly for pending publications instead of exhausting all

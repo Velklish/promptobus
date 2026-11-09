@@ -213,6 +213,8 @@ export interface LaunchFile {
   copyFrom?: string;
   copyFileFrom?: string;
   clearDirectory?: boolean;
+  /** Retain this child only after the driver's verifier accepts it before writes. */
+  preserveDirectory?: string;
   selectedContext?: PreparedHostParticipantContextSelection;
   selectedPaths?: string[];
 }

@@ -5,6 +5,7 @@ import { normalizeContextDeclaration, selectParticipantContext } from './partici
 import { GateError } from '../dist/index.js';
 import type { PreparedHostParticipantContextSelection, HostParticipantContextPurpose, HostTaskContextDeclaration, Driver, LaunchFile } from '../dist/index.js';
 import type { ParticipantContextHost, ParticipantContextCeiling } from './participant-context.js';
+export type PreservedDirectoryVerifier = (directory: string) => void;
 
 type Selection = PreparedHostParticipantContextSelection | null | undefined;
 interface NativeContextOptions { contextDeclaration?: unknown; contextPurpose?: string }
@@ -97,7 +98,7 @@ export function nativeContextPrompt(selection: Selection) {
   ].join('\n');
 }
 
-function openSelectedNativeSource(file: string) {
+export function openSelectedNativeSource(file: string) {
   if (realpathSync(file) !== file) throw new GateError(`Selected native context source changed its canonical path: ${file}`);
   const before = statSync(file);
   const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -139,7 +140,7 @@ function filesUnder(root: string, prefix = '', skipIgnored = true): { relative: 
   return files;
 }
 
-function checkDestination(destination: string, selection: PreparedHostParticipantContextSelection, expected: string[]) {
+function checkDestination(destination: string, selection: PreparedHostParticipantContextSelection, expected: string[], preserveDirectory?: string) {
   let parent = path.dirname(destination), parentEntry;
   while (!(parentEntry = existingEntry(parent))) parent = path.dirname(parent);
   if (parentEntry.isSymbolicLink() || realpathSync(parent) !== parent) throw new GateError(`Selected native context destination traverses a symbolic link: ${destination}`);
@@ -155,6 +156,7 @@ function checkDestination(destination: string, selection: PreparedHostParticipan
   if (previous?.owner !== 'promptobus-selected-context' || !isDeepStrictEqual(previous.task, selection.task)
     || !Array.isArray(previous.paths)) throw new GateError(`Selected native context refuses a pre-existing unowned skills container: ${destination}`);
   for (const file of filesUnder(destination, '', false)) {
+    if (preserveDirectory && file.relative.startsWith(`${preserveDirectory}${path.sep}`)) continue;
     if (file.relative !== MARKER && !previous.paths.includes(file.relative)) throw new GateError(`Selected native context refuses an unowned destination: ${path.join(destination, file.relative)}`);
   }
   for (const relative of expected) if (path.isAbsolute(relative) || relative.split(path.sep).includes('..')) throw new GateError(`Selected native context destination escapes its container: ${relative}`);
@@ -203,10 +205,13 @@ export function selectedNativePrompt(selection: Selection, prompt: string, direc
   };
 }
 
-export function selectedNativeFiles(selection: Selection, destination: string | null): LaunchFile[] {
+export function selectedNativeFiles(selection: Selection, destination: string | null, preserveDirectory?: string): LaunchFile[] {
   if (!selection) return [];
+  if (preserveDirectory && (path.basename(preserveDirectory) !== preserveDirectory
+    || ['.', '..', MARKER].includes(preserveDirectory))) throw new GateError('Preserved native directory must name one child');
   const sources = new Map<string, string>();
   const add = (relative: string, source: string) => {
+    if (preserveDirectory && relative.split(path.sep)[0] === preserveDirectory) throw new GateError('Selected native skill collides with Codex system skills');
     if (relative === MARKER || relative.startsWith(`${MARKER}${path.sep}`)
       || [...sources.keys()].some(prior => prior.startsWith(`${relative}${path.sep}`) || relative.startsWith(`${prior}${path.sep}`))) {
       throw new GateError(`Selected native context destination collision: ${relative}`);
@@ -233,16 +238,22 @@ export function selectedNativeFiles(selection: Selection, destination: string | 
   }
   const paths = [...sources.keys()].sort();
   if (!destination) return [];
-  checkDestination(destination, selection, paths);
+  checkDestination(destination, selection, paths, preserveDirectory);
   return [
-    { path: destination, clearDirectory: true, selectedContext: selection, selectedPaths: paths, text: '', secret: false },
+    { path: destination, clearDirectory: true, ...(preserveDirectory ? { preserveDirectory } : {}), selectedContext: selection, selectedPaths: paths, text: '', secret: false },
     ...[...sources].map(([relative, source]) => ({ path: path.join(destination, relative), copyFileFrom: source, text: '', secret: false })),
     { path: path.join(destination, MARKER), text: `${JSON.stringify({ owner: 'promptobus-selected-context', task: selection.task, paths })}\n`, secret: false },
   ];
 }
 
-export function assertSelectedNativeFiles(files: LaunchFile[]) {
-  for (const file of files) if (file.clearDirectory) checkDestination(file.path, file.selectedContext!, file.selectedPaths!);
+export function assertSelectedNativeFiles(files: LaunchFile[], verifySystem?: PreservedDirectoryVerifier) {
+  for (const file of files) if (file.clearDirectory) {
+    checkDestination(file.path, file.selectedContext!, file.selectedPaths!, file.preserveDirectory);
+    if (file.preserveDirectory && existingEntry(path.join(file.path, file.preserveDirectory))) {
+      if (!verifySystem) throw new GateError('Codex system skills require a pristine launch-runtime reference before writes');
+      verifySystem(path.join(file.path, file.preserveDirectory));
+    }
+  }
   for (const file of files) if (file.selectedContext && path.basename(file.path) === 'plugin.json'
     && path.basename(path.dirname(file.path)) === '.claude-plugin') {
     assertNativePluginManifest(path.dirname(path.dirname(file.path)), file.selectedContext, file.text);
@@ -253,8 +264,14 @@ export function assertSelectedNativeFiles(files: LaunchFile[]) {
   }
 }
 
-export function writeSelectedNativeFile(file: LaunchFile) {
-  if (file.clearDirectory) { rmSync(file.path, { recursive: true, force: true }); mkdirSync(file.path, { recursive: true }); }
+export function writeSelectedNativeFile(file: LaunchFile, verifySystem?: PreservedDirectoryVerifier) {
+  if (file.clearDirectory) {
+    assertSelectedNativeFiles([file], verifySystem);
+    if (file.preserveDirectory) {
+      mkdirSync(file.path, { recursive: true });
+      for (const name of readdirSync(file.path)) if (name !== file.preserveDirectory) rmSync(path.join(file.path, name), { recursive: true, force: true });
+    } else { rmSync(file.path, { recursive: true, force: true }); mkdirSync(file.path, { recursive: true }); }
+  }
   else if (file.copyFileFrom) {
     const source = openSelectedNativeSource(file.copyFileFrom);
     let destination;
@@ -274,10 +291,10 @@ export function writeSelectedNativeFile(file: LaunchFile) {
   return true;
 }
 
-export function installSelectedNativeFiles(files: LaunchFile[]) {
-  assertSelectedNativeFiles(files);
+export function installSelectedNativeFiles(files: LaunchFile[], verifySystem?: PreservedDirectoryVerifier) {
+  assertSelectedNativeFiles(files, verifySystem);
   for (const file of files) {
-    if (writeSelectedNativeFile(file)) continue;
+    if (writeSelectedNativeFile(file, verifySystem)) continue;
     mkdirSync(path.dirname(file.path), { recursive: true });
     writeFileSync(file.path, file.text);
   }

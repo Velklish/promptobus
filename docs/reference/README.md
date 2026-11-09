@@ -8,7 +8,7 @@ How promptobus works today — from the code, not intention. Intent and rational
 | [02-host.md](02-host.md) | `PromptobusHost`, standalone host, session identity, the host integration entry point |
 | [03-cli.md](03-cli.md) | Commands, harness flags, shared HTTP service, warden and guard |
 | [04-protocol.md](04-protocol.md) | Addresses, message types, engine, artifacts, when a new record field can be sent, and what `send` refuses in a handover record, including a performed probe with no `coverage` |
-| [05-drivers.md](05-drivers.md) | Harness driver contracts and what was measured on each binary |
+| [05-drivers.md](05-drivers.md) | Harness driver contracts, pinned Codex executable and private-home system-skill ownership, and what was measured on each binary |
 | [reporter-channel.md](reporter-channel.md) | Human questions to the retained read-only Codex reporter |
 
 A performed probe's boundary is the sentence [The handover record](04-protocol.md#the-handover-record) states:

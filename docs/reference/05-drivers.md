@@ -1767,6 +1767,46 @@ may subsequently write its session rollout into the home.
 
 Personal `~/.agents/skills` follows `HOME`, not `CODEX_HOME`. The holder reads `skills/list` before `thread/start` and suppresses only user-scoped copies whose names collide with a skill loaded from its canonical directory, using exact-path `skills.config` session overrides. The private canonical copy is retained even when it has user scope. Unrelated personal skills remain visible, and no personal file or global config is changed. On codex-cli 0.158.0 both worker and read-only reviewer turns used canonical content; their rollouts carried zero colliding personal descriptors and retained the unrelated personal descriptor. [Live evidence](../../test/fixtures/codex-app-server/0.158.0/CanonicalSkills-0.158.0-2026-10-01.json).
 
+#### Generated system skills and selected-context reinstall
+
+Codex can generate `skills/.system` after the mechanism installs selected skills.
+A selected private-home reinstall retains this directory and its files in place,
+including their bytes and filesystem identities. The selected-context receipt
+still owns the surrounding container; a system marker alone cannot claim it.
+Selected skills cannot occupy the reserved `.system` name. Other harnesses and
+Codex worktree destinations retain their existing ownership checks.
+
+Before provider configuration or selected files are replaced, the driver runs the
+admitted launch executable as `app-server --stdio` in a fresh owned temporary
+home. Executable resolution and its early refusal apply when this retained subtree
+needs validation. The host may supply a bare command name. Before bootstrap, the driver resolves
+it through the participant's PATH and working directory and pins its canonical
+executable path in the session record. The holder launches that same path even if
+PATH changes later; a cwd file is a candidate only when PATH selects it or the
+host supplies a relative path. The driver rechecks the admitted executable's
+identity immediately before starting the holder.
+Its only request is `initialize`, followed by input closure; it starts no
+thread or model turn. The bootstrap receives an isolated home, working directory
+and temporary directory, without participant credentials or MCP configuration.
+A successful terminal exit, one response naming that home, a generated marker
+and a skill file are required. The executable's canonical path, identity and
+SHA-256 must stay unchanged across generation and subsequent checks.
+
+The reference records every relative directory, regular-file path and byte.
+Reads use checked no-follow descriptors and recheck canonical file and directory
+identities, so a link substituted after a type check cannot supply accepted bytes.
+Symlinks, extra paths, changed types or bytes, missing files and an incomplete or
+unavailable reference refuse before replacement. The writer rechecks the retained
+plan and clears only the selected container's other children. It never removes
+or recreates `.system`. The reference lives in memory; its temporary home is
+removed after process exit, including on failure. There is no disk cache to reuse
+or trust after a runtime update. A changed installed runtime must generate its own
+reference, and an old home whose system bytes differ refuses without modification.
+
+The no-model controls in `test/native-participant-context.test.mjs` cover this
+ownership boundary and bootstrap cleanup. They do not establish a model's use of
+the delivered skills or complete isolation from independent skill discovery.
+
 #### The built-in `codex_apps` server stays off in the participant home
 
 codex-cli 0.156.1 runs an MCP server of its own in any home whose `apps` feature is on, and
