@@ -506,20 +506,20 @@ check('docs: a fetch-then-send pause waits for the delivery mark, and a hold sta
   'suite isolation still tells every scripted pause to poll, or drops the hold that stays a sleep');
 check('docs: a probe that parses a file another process writes reads it through readCompleteJson',
   has(suiteIsolation, 'must not let a half-written file throw out of the wait: `readCompleteJson` in `test/harness.mjs` reads a missing or unfinished file as `null` so the wait retries, while a bare `JSON.parse` in the probe aborts the whole suite file')
-  && has(section(read('CHANGELOG.md'), '## [Unreleased]'), 'Live suites no longer abort when they read a half-written marker file under'),
+  && has(section(read('CHANGELOG.md'), '## [0.32.5] — 2026-11-09'), 'Live suites no longer abort when they read a half-written marker file under'),
   'suite isolation no longer names readCompleteJson for the torn read of a file another process writes');
 check('docs: a fixture that starts a copy of the Node executable copies it with copyNodeExecutable',
   has(suiteIsolation, 'A fixture that starts a copy of the Node executable copies it with `copyNodeExecutable`')
   && has(suiteIsolation, 'puts a symlink beside the copy to each one it finds in the executable\'s own rpath directories')
-  && has(section(read('CHANGELOG.md'), '## [Unreleased]'), 'linked against a shared libnode, such as Homebrew'),
+  && has(section(read('CHANGELOG.md'), '## [0.32.5] — 2026-11-09'), 'linked against a shared libnode, such as Homebrew'),
   'suite isolation no longer says how a copied Node executable gets its shared library');
 check('docs: a stand that kills its participants waits for them to die by the clock',
   has(suiteIsolation, 'sends SIGTERM to every participant and then waits for all of them to exit, up to `timeoutMs` in total, ten seconds by default')
-  && has(section(read('CHANGELOG.md'), '## [Unreleased]'), 'The stub stand waits for killed participants to exit for up to ten seconds'),
+  && has(section(read('CHANGELOG.md'), '## [0.32.5] — 2026-11-09'), 'The stub stand waits for killed participants to exit for up to ten seconds'),
   'suite isolation no longer says how long stopAll waits for a killed participant');
 check('docs: a window fixed in milliseconds is stretched by the load of the machine',
   has(suiteIsolation, '`loadScale()` in [test/sandbox.mjs](../../test/sandbox.mjs) starts a child that burns 40 ms of CPU time and reports how long that took on the clock')
-  && has(section(read('CHANGELOG.md'), '## [Unreleased]'), 'stretch their fixed deadlines and waits by the measured load of the machine'),
+  && has(section(read('CHANGELOG.md'), '## [0.32.5] — 2026-11-09'), 'stretch their fixed deadlines and waits by the measured load of the machine'),
   'suite isolation no longer says how fixed windows are stretched on a loaded machine');
 check('docs: models probes by default in the orchestrate skill, abandon refuses a BB task, and the sweep ADR keeps artifacts',
   has(orchestrateSkill, '[--refresh | --no-probe] [--json]')
