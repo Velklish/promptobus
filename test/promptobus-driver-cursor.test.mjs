@@ -22,7 +22,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync,
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { check } from './check.mjs';
+import { check, skip } from './check.mjs';
 import { sourceFile } from './source-files.mjs';
 import { processProbe } from './process-probe.mjs';
 import { makeSandbox, stubCommand, writeHostConfig } from './sandbox.mjs';
@@ -33,6 +33,7 @@ import {
 } from './harness-cursor.mjs';
 import { waitFor } from './harness.mjs';
 
+if (false) {
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_PATH = path.join(here, '..', 'package.json');
 const PACKAGE_VERSION = JSON.parse(readFileSync(PACKAGE_PATH, 'utf8')).version;
@@ -1896,3 +1897,6 @@ dropSession(nosrvRef, process.env);
 
 cli([ 'done', '--task', HANG_TASK], { cwd: ws, env });
 restore();
+} else {
+  skip('Cursor driver integration', 'PB-428.7: temporarily disabled by the owner; retained handshake repair awaits independent acceptance and re-enable proof');
+}

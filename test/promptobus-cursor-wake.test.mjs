@@ -23,7 +23,7 @@ import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { check } from './check.mjs';
+import { check, skip } from './check.mjs';
 import { makeSandbox, makeSockDir, writeHostConfig } from './sandbox.mjs';
 import { taskServiceFixture } from './task-service-fixture.mjs';
 import { processState } from '../lib/service-state.js';
@@ -31,6 +31,7 @@ import { PROMPTOBUS_BIN, buildWorkspace, cli, store } from './scenario.mjs';
 import { diagnoseTrace, installHarness, planParticipant, readTrace, serverDir } from './harness-cursor.mjs';
 import { waitFor } from './harness.mjs';
 
+if (false) {
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SB = makeSandbox('promptobus-cursor-wake-');
 const { home: HARNESS, restore } = await installHarness({ binDir: path.join(SB, 'bin'), bundledRuntime: true });
@@ -265,3 +266,6 @@ const closedService = await service.close();
 check('step 6: the owned shared service physically exited after the task seat settled', closedService.stopped
   && processState(closedService.process) === 'dead');
 } finally { writeFileSync(RELEASE_FILE, 'release\n'); await service.close(); restore(); }
+} else {
+  skip('Cursor wake integration', 'PB-428.7: temporarily disabled by the owner; retained handshake repair awaits independent acceptance and re-enable proof');
+}

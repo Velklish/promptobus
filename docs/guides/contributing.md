@@ -195,6 +195,12 @@ Git input, the actual runner and a selected dependent assertion that fails.
 
 ## Suite isolation
 
+The Cursor driver and wake integration files are temporarily disabled while
+their prepared HTTP handshake repair awaits independent acceptance. Both
+finish naturally through the existing skip helper and report zero integration
+checks passed. Other tests remain active. Re-enable both bodies only after the
+repair is accepted and the required full validation is complete.
+
 The aliased-temp standalone Codex fixture uses `makeSockDir` on POSIX and
 checks its socket path against the portable 103-byte limit before launch.
 Its temporary alias still exercises canonical context paths; the shared
