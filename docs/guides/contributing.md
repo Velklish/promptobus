@@ -195,6 +195,11 @@ Git input, the actual runner and a selected dependent assertion that fails.
 
 ## Suite isolation
 
+The aliased-temp standalone Codex fixture uses `makeSockDir` on POSIX and
+checks its socket path against the portable 103-byte limit before launch.
+Its temporary alias still exercises canonical context paths; the shared
+fixture helper owns cleanup independently of the runner's temporary directory.
+
 The E2E scenario waits for persisted notification health within its existing
 step deadline. A socket postcard receipt can precede the end of the warden
 round that writes the channel and knock count; the receipt alone does not

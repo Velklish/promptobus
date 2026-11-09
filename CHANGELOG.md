@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.32.6] — 2026-11-09
+
+### Fixed
+
+- The aliased-temp standalone Codex fixture uses a short owned socket directory
+  and checks the portable path limit before launch, including under long CI
+  temporary roots.
+
 ## [0.32.5] — 2026-11-09
 
 ### Fixed

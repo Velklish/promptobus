@@ -655,3 +655,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-428.3"></a>`PB-428.3-managed-hook-runtime` · 2026-11-09 · completed · — · Route private managed hooks through the current bus runtime
 - <a id="pb-428.4"></a>`PB-428.4-managed-claude-hook-capability` · 2026-11-09 · completed · — · Refuse managed Claude launches without fail-closed hook support
 - <a id="pb-428.5"></a>`PB-428.5-e2e-health-publication` · 2026-11-09 · completed · — · Wait for persisted notification health within the E2E step deadline
+- <a id="pb-428.6"></a>`PB-428.6-portable-aliased-temp-socket-fixture` · 2026-11-09 · completed · — · Bound the aliased-temp standalone fixture socket path

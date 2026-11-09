@@ -7,7 +7,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSy
 import { syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
 import test from 'node:test';
-import { makeSandbox, resetCliCaches, stubCommand, writeHostConfig } from './sandbox.mjs';
+import { makeSandbox, makeSockDir, resetCliCaches, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { hostOf } from '../lib/host.js';
 import { planSpawn, planTeamlead, writeLaunchFiles } from '../lib/spawn.js';
 import { planReview, review } from '../lib/review.js';
@@ -26,7 +26,7 @@ import { openParticipant } from '../dist/index.js';
 import { reviewerFiles } from '../lib/reviewer-files.js';
 import { capture } from './console.mjs';
 import { createStandaloneHost } from '../dist/host-index.js';
-import { readSession, reapHolder, writeSession } from '../lib/codex-session.js';
+import { readSession, reapHolder, socketPath, writeSession } from '../lib/codex-session.js';
 
 const sandbox = realpathSync(makeSandbox('promptobus-native-context-'));
 process.env.CLAUDE_CODE_SESSION_ID = 'native-context-owner';
@@ -439,7 +439,8 @@ test('Codex private root home receives selected content and reviewer exact roots
 });
 
 function withAliasedTemp(name, run) {
-  const canonical = path.join(sandbox, name), alias = `${canonical}-alias`;
+  const base = process.platform === 'win32' ? sandbox : makeSockDir('pb-ctx-').dir;
+  const canonical = path.join(base, name), alias = `${canonical}-alias`;
   mkdirSync(canonical);
   symlinkSync(canonical, alias, 'dir');
   const variables = ['TMPDIR', 'TEMP', 'TMP'];
@@ -667,6 +668,8 @@ for (const [kind, title] of [
         if (kind === 'runtime-change') assert.equal(replaced, true);
         return;
       }
+      if (process.platform !== 'win32') assert.ok(Buffer.byteLength(socketPath(ref, env)) <= 103,
+        'standalone fixture socket path exceeds the portable 103-byte limit');
       const result = await launch();
       assert.ok(result.session);
       assert.equal(readSession(ref, env).bin, realpathSync(runtime.bin));
