@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The E2E scenario waits for persisted notification health within the existing
+  step deadline before checking its channel and knock count. Socket delivery
+  can complete before the warden publishes those fields.
+
 - Managed Claude launch refuses native versions below 2.1.295 and missing or
   unparseable versions before starting the native process. This ensures the
   prompt and tool hooks support `onFailure: "block"`.

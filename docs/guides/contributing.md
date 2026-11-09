@@ -195,6 +195,11 @@ Git input, the actual runner and a selected dependent assertion that fails.
 
 ## Suite isolation
 
+The E2E scenario waits for persisted notification health within its existing
+step deadline. A socket postcard receipt can precede the end of the warden
+round that writes the channel and knock count; the receipt alone does not
+establish those persisted fields.
+
 Native Codex fixtures use the generated HTTP configuration with their own bearer
 and actual thread metadata. A completed turn alone does not prove its bus action:
 the fixture checks the successful tool response in its trace. Managed launch

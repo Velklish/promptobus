@@ -704,8 +704,12 @@ export async function runScenario({
       card?.auth === true && card?.tokenOk === true && card?.msgV === 1 && card?.from === 'promptobus-warden'
       && !!question && String(card?.body).includes(`— question from ${WORKER}`) && !String(card?.body).includes(MARK.status),
       `${stub} · ${JSON.stringify(inbox.seen)}`);
+    const notifiedHealth = await waitFor(() => {
+      const health = healthOf(store.ORCHESTRATOR);
+      return health.channel === 'socket' && (health.knocks ?? 0) >= 1 ? health : null;
+    }, { timeoutMs: Math.max(0, step - (Date.now() - t3)) });
     check('step 3: orchestrator health names the channel as a socket and counts knocks',
-      healthOf(store.ORCHESTRATOR).channel === 'socket' && (healthOf(store.ORCHESTRATOR).knocks ?? 0) >= 1,
+      notifiedHealth !== null,
       JSON.stringify(healthOf(store.ORCHESTRATOR)));
     at(STEPS[2], Date.now() - t3);
 
