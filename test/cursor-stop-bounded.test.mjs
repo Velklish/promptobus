@@ -2,11 +2,15 @@ import { check, skip } from './check.mjs';
 import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
-import { makeSandbox, loadScale, stubCommand, withStubPath } from './sandbox.mjs';
-import { waitFor } from './harness.mjs';
-import { cursorDriver } from '../lib/driver-cursor.js';
-import { dropSession, readSession, sessionFile, writeSession } from '../lib/cursor-persist.js';
-import { processState, requireProcess } from '../lib/service-state.js';
+import { pathToFileURL } from 'node:url';
+const runtime = process.argv[2] ? pathToFileURL(`${path.resolve(process.argv[2])}/`) : new URL('../', import.meta.url);
+const { makeSandbox, loadScale, stubCommand, withStubPath } = await import(new URL('test/sandbox.mjs', runtime));
+const { waitFor } = await import(new URL('test/harness.mjs', runtime));
+const { cursorDriver } = await import(new URL('lib/driver-cursor.js', runtime));
+const { dropSession, readSession, sessionFile, writeSession } = await import(new URL('lib/cursor-persist.js', runtime));
+const { processState, requireProcess } = await import(new URL('lib/service-state.js', runtime));
+const { shellQuote } = await import(new URL('dist/fs/shell.js', runtime));
+const lateFallbackStart = process.argv.includes('--late-fallback-start');
 
 if (!['darwin', 'linux'].includes(process.platform)) {
   skip('bounded Cursor native Stop commands', 'This platform has no process-birth observer');
@@ -16,8 +20,8 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   const previousHome = process.env.PROMPTOBUS_CURSOR_HOME;
   process.env.PROMPTOBUS_CURSOR_HOME = path.join(root, 'registry');
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-  // Every window below is written for an idle machine and stretched by `loadScale`: each stub command and
-  // each `ps` read is a Node start, so the steps before the awaited event grow with the machine's start time.
+  // Keep the original load-scaled budgets; static fallback observations are ready before Stop.
+  // The existing launcher publishes its PID before exec preserves that process through Node startup.
   const stretch = (ms, scale) => Math.round(ms * scale);
   const rows = () => existsSync(ledger) ? readFileSync(ledger, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) : [];
   const note = (kind, detail) => appendFileSync(ledger, `${JSON.stringify({ kind, at: Date.now(), ...detail })}\n`);
@@ -30,6 +34,7 @@ if (!['darwin', 'linux'].includes(process.platform)) {
     const record = { ref: name, sessionName: name, tmuxServer: name, chatId: `chat-${name}`, panePid: child.pid,
       workspaceHash: `hash-${name}`, launchId: `launch-${name}`, cwd: root, bin: path.join(bins, 'agent') };
     writeFileSync(native, JSON.stringify({ ...record, mode, ...extra })); writeSession(record);
+    writeFileSync(path.join(root, `${name}.session`), [name, 0, 1, child.pid, 1, record.workspaceHash, record.chatId, '', ''].join('|') + '\n');
     const current = { name, mode, child, identity, native, record, release: path.join(root, `${name}.release`) };
     actors.push(current); note('fixture/owned-pane', { name, identity, mode }); return current;
   };
@@ -51,8 +56,9 @@ import {appendFileSync,existsSync,readFileSync,rmSync,writeFileSync} from 'node:
 const server=process.argv[process.argv.indexOf('-L')+1],file=${JSON.stringify(root)}+'/'+server+'.json';
 const log=kind=>appendFileSync(${JSON.stringify(ledger)},JSON.stringify({kind,name:server,pid:process.pid,at:Date.now()})+'\\n');
 if(process.argv.includes('kill-session')) {
-  log('fallback/requested');
   const record=existsSync(file)?JSON.parse(readFileSync(file,'utf8')):null;
+  if(record?.bodyAt) await new Promise(resolve=>setTimeout(resolve,Math.max(0,record.bodyAt-Date.now())));
+  log('fallback/requested');
   if(record?.mode==='fallback-delayed') await new Promise(resolve=>setTimeout(resolve,record.delayMs));
   if(record) {process.kill(record.panePid,'SIGTERM');rmSync(file);log('fallback/mutated');}
 } else if(process.argv.includes('list-sessions')) {
@@ -66,24 +72,48 @@ if(process.argv.includes('kill-session')) {
   if(record) process.stdout.write([server,0,1,record.panePid,1,record.workspaceHash,record.chatId,'',''].join('|')+'\\n');
 }
 `);
+  const tmuxLauncher = path.join(bins, 'tmux');
+  const readiness = `server=
+previous=
+for argument do
+  if [ "$previous" = "-L" ]; then server="$argument"; fi
+  previous="$argument"
+done
+case "$*" in
+  *kill-session*) printf '%s\\n' "$$" > ${shellQuote(root)}/"$server.command-pid" ;;
+  *list-sessions*)
+    case "$server" in
+      fallback-*)
+        if [ -f ${shellQuote(root)}/"$server.json" ]; then
+          IFS= read -r session < ${shellQuote(root)}/"$server.session"
+          printf '%s\\n' "$session"
+        fi
+        exit 0 ;;
+    esac ;;
+esac
+`;
+  writeFileSync(tmuxLauncher, readFileSync(tmuxLauncher, 'utf8').replace('#!/bin/sh\n', () => `#!/bin/sh\n${readiness}`));
   const restore = withStubPath(bins);
   try {
     for (const mode of ['fallback-delayed', 'fallback-positive']) {
-      const scale = await loadScale(), current = await actor(mode, mode, { delayMs: stretch(3500, scale) });
+      const scale = lateFallbackStart ? 1 : await loadScale(), current = await actor(mode, mode, { delayMs: stretch(3500, scale) });
       const began = Date.now(), edge = began + stretch(1500, scale);
+      if (lateFallbackStart && mode === 'fallback-delayed') writeFileSync(current.native, JSON.stringify({ ...JSON.parse(readFileSync(current.native, 'utf8')), bodyAt: edge + 50 }));
       let settled = false, settledAt = null;
       const pending = cursorDriver.stop(current.name, { timeoutMs: Math.max(0, edge - Date.now()) }).then(value => { settled = true; settledAt = Date.now(); return value; });
-      await waitFor(() => rows().some(row => row.name === current.name && row.kind === 'fallback/requested'), { timeoutMs: stretch(5000, scale) });
-      const requested = rows().find(row => row.name === current.name && row.kind === 'fallback/requested');
+      const commandFile = path.join(root, `${current.name}.command-pid`);
+      const commandPid = () => existsSync(commandFile) ? Number(readFileSync(commandFile, 'utf8').trim()) : null;
+      await waitFor(() => settled || commandPid() > 0, { timeoutMs: stretch(5000, scale) });
+      const launchedPid = commandPid(), launchObservedAt = Date.now();
       let fallbackIdentity = null;
-      try { if (requested) fallbackIdentity = requireProcess(requested.pid); } catch {}
+      try { if (launchedPid) fallbackIdentity = requireProcess(launchedPid); } catch {}
       if (mode === 'fallback-delayed') check('a delayed native fallback yields while its exact child is still alive', !settled
         && !!fallbackIdentity && processState(fallbackIdentity) === 'alive' && Date.now() < edge,
-      JSON.stringify({ settled, settledAt, fallbackIdentity, requested, began, edge }));
+      JSON.stringify({ settled, settledAt, fallbackIdentity, launchedPid, launchObservedAt, began, edge }));
       const result = await pending, returned = Date.now();
-      if (mode === 'fallback-delayed' && requested) await wait(Math.max(0, requested.at + stretch(3700, scale) - Date.now()));
+      if (mode === 'fallback-delayed') await wait(stretch(3700, scale));
       const trace = { mode, scale, began, edge, settledAt, returned, result, pane: current.identity, paneState: processState(current.identity),
-        fallbackIdentity, fallbackState: fallbackIdentity ? processState(fallbackIdentity) : 'not observed alive',
+        launchedPid, launchObservedAt, fallbackIdentity, fallbackState: fallbackIdentity ? processState(fallbackIdentity) : 'not observed alive',
         recordPresent: !!readSession(current.name), homePresent: existsSync(path.dirname(sessionFile(current.name))),
         nativePresent: existsSync(current.native), rows: rows().filter(row => row.name === current.name) };
       writeSync(1, `  · bounded-fallback-receipt: ${JSON.stringify(trace)}\n`);

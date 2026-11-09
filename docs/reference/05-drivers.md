@@ -423,6 +423,15 @@ allowance; a failed or cancelled fallback returns unconfirmed without later clea
 mutation. Registry-backed stops fence the exact record revision after each await
 and immediately before native mutation and record retirement.
 
+The bounded Stop fixture records the existing command launcher's PID before its
+Node body starts. The shell's exec retains that PID and process birth, so a late
+body does not hide the child from yield and terminal-death checks. Static fallback
+session replies are prepared before Stop and read by that launcher. The original
+load-scaled Stop allowance is unchanged. A fixture-only `--late-fallback-start`
+control uses the original 1500 ms idle allowance and holds the Node body past it;
+yield, physical command death,
+UNKNOWN retention and absence of later mutation remain separate assertions.
+
 `timeoutMs: 0` remains a valid argument and grants no time for native shutdown.
 There is no separate observation allowance and no unconditional forced Stop.
 Missing registry state can still be a scoped no-op; an unread live binding is

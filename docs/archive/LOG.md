@@ -650,3 +650,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-427"></a>`PB-427-codex-generated-system-skills-bootstrap` · 2026-11-09 · completed · — · Codex generated system skills block selected-context resume
 - <a id="pb-427.1"></a>`PB-427.1-native-retirement-fixture-drain` · 2026-11-09 · completed · — · Managed retirement suite can abort while service observations drain
 - <a id="pb-428"></a>`PB-428-claude-admission-before-execution` · 2026-11-09 · completed · — · Admit fresh Claude sessions before model execution
+- <a id="pb-428.1"></a>`PB-428.1-cursor-stop-child-accounting` · 2026-11-09 · completed · — · Preserve bounded Cursor Stop child accounting
