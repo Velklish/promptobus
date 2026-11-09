@@ -566,10 +566,10 @@ pin a mutable updater path and probe the version of that same concrete binary. I
 the host's `HostToolBin` passes through unchanged. It is not a capability and is not required
 of drivers whose binaries do not need this normalization.
 
-`refuseForeignProjectLayer?(lookupDir, writtenDir, tool?, guardCommand?)` is optional. Spawn
+`refuseForeignProjectLayer?(lookupDir, writtenDir, tool?, guardCommand?, projectGuardCommand?)` is optional. Spawn
 calls it at plan time without a binary and again with the selected binary before the first
-write of the lift, and passes the lift's guard command each time, so a project record that
-carries it is never trusted. It throws GateError naming the file, and returns nothing when there is nothing
+write of the lift. Each call passes the managed launch guard and persisted project guard
+commands, so a project record carrying either command is never trusted. It throws GateError naming the file, and returns nothing when there is nothing
 to refuse. A string return is not a refusal: spawn does not read one. The Codex driver
 throws when Codex would run a clone-root hook record its repository's `promptobus.json`
 does not trust ([ADR-025](../adr/adr-025-foreign-project-hook-records.md)) or cannot parse the
