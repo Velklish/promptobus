@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after comparing their full paths, types and bytes with a fresh no-model
   bootstrap from the admitted launch executable. Foreign content and unavailable
   references refuse before replacement.
+- Managed Claude launches wait for verified startup before first native admission.
+  A transcript created after SessionStart completes admission at the first prompt
+  using the captured native process and store. Prompt and tool hooks block
+  unproved startup and missing MCP setup, and failed admission stops its owned
+  session. Command-failure containment requires Claude Code 2.1.295 or later.
+  Managed hooks also block malformed, missing or unfinished stdin input, and
+  deferred admission publishes its native wake contact before the first prompt.
 - Managed HTTP calls refresh their full authorization proof when the session
   record changes during native process observation, instead of returning HTTP
   500. Retries yield briefly for pending publications instead of exhausting all

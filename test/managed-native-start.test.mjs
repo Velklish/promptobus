@@ -3,7 +3,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox } from './sandbox.mjs';
-import { bindManagedNativeStart } from '../lib/drivers.js';
+const runtime = process.argv[2] ? pathToFileURL(`${path.resolve(process.argv[2])}/`) : new URL('../', import.meta.url);
+const { bindManagedNativeStart } = await import(new URL('lib/drivers.js', runtime));
 import { closeTask, createTask, participantOf, participantRecord, readTask, taskExists, taskFile, upsertParticipant, readWake } from '../lib/store.js';
 import { readPrivate, recordVersion, writePrivate } from '../lib/service-state.js';
 
@@ -92,10 +93,11 @@ export const processParent = async pid => pid === fixture.shell.pid ? fixture.pa
 export const processExecutable = async identity => { fixture.onExecutable?.(identity); return identity === fixture.shell ? '/bin/bash' : fixture.nativeImage; };
 `);
 const observationUrl = pathToFileURL(observations).href;
-let source = readFileSync(new URL('../lib/native-start.js', import.meta.url), 'utf8');
-for (const module of ['root-process', 'drivers', 'service-launch', 'service-state']) {
-  const original = `from './${module}.js'`, replacement = module === 'service-state'
-    ? new URL('../lib/service-state.js', import.meta.url).href : observationUrl;
+let source = readFileSync(new URL('lib/native-start.js', runtime), 'utf8');
+for (const module of ['root-process', 'drivers', 'service-launch', 'service-state', 'store']) {
+  const original = `from './${module}.js'`, replacement = ['service-state', 'store'].includes(module)
+    ? new URL(`lib/${module}.js`, runtime).href : observationUrl;
+  if (module === 'store' && !source.includes(original)) continue;
   if (!source.includes(original)) throw new Error(`Native start fixture could not replace ${module} boundary`);
   source = source.replaceAll(original, `from ${JSON.stringify(replacement)}`);
 }

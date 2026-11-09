@@ -337,6 +337,17 @@ import { runPromptobus } from 'promptobus/cli';
 
 Managed participant HTTP tools require the owner-realized actual native ID; a planned UUID or session-record pointer alone grants no tool access.
 
+Managed Claude prompts and tools also require verified fresh startup and an
+initialized MCP connection owned by that launch. A transcript that appears after
+SessionStart completes admission at the first prompt with the same captured
+native process and store. Execution hooks block admission and MCP setup failures;
+their command-failure policy requires Claude Code 2.1.295 or later. See the
+[native binding contract](https://github.com/Velklish/promptobus/blob/v0.32.4/docs/reference/05-drivers.md#shared-http-native-binding)
+for fixture coverage and native verification limits.
+Malformed or incomplete managed hook input blocks execution. Admission completed
+at the first prompt also publishes the supplied native wake contact before that
+prompt returns, without completing a turn.
+
 For stdio configurations prepared directly by a driver, an MCP child whose harness omits its session variable receives a session-record pointer in the generated bus entry. The adapter accepts the pointer only when record and process resolve to the same physical home and name the exact task and address, even if the harness id is still null. Claude Code receives a preselected session UUID through `--session-id`; actual managed admission still requires its native startup proof. A manually registered orchestrator stdio entry without a pointer has no session identity in the measured Codex and Cursor MCP child paths, so its mailbox call returns a copy and leaves the originals unread. See [02-host § Session identity](https://github.com/Velklish/promptobus/blob/v0.32.4/docs/reference/02-host.md#session-identity) and [ADR-019](https://github.com/Velklish/promptobus/blob/v0.32.4/docs/adr/adr-019-session-address-per-task-lands.md).
 
 ## Development

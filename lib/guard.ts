@@ -67,9 +67,13 @@ function readGuardMark(file: string): GuardMark | null | undefined {
 
 // `Stop` payload on stdin. Reading it is REQUIRED — `CLAUDE_CODE_SESSION_ID` is not promised
 // to a hook process — and `isTTY` is the hang gate for a subcommand started by hand.
-export async function readEvent(stdin: GuardInput): Promise<Record<string, unknown>> {
-  if (stdin.isTTY) return {};
+export async function readEvent(stdin: GuardInput, strict = false): Promise<Record<string, unknown>> {
+  if (stdin.isTTY) {
+    if (strict) throw new Error('Managed native hook requires complete JSON object input');
+    return {};
+  }
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
   try {
     let raw = '';
     stdin.setEncoding('utf8');
@@ -80,16 +84,21 @@ export async function readEvent(stdin: GuardInput): Promise<Record<string, unkno
       })(),
       new Promise<string | null>((resolve) => {
         timer = setTimeout(() => {
+          timedOut = true;
           try { stdin.destroy?.(); } catch { /* nothing to close */ }
           resolve(null);
         }, HOOK_STDIN_MS);
       }),
     ]);
     clearTimeout(timer);
+    if (strict && (timedOut || result === null)) throw new Error('Managed native hook input did not finish');
     const event: unknown = JSON.parse(result ?? raw);
-    return event && typeof event === 'object' && !Array.isArray(event) ? event as Record<string, unknown> : {};
+    if (event && typeof event === 'object' && !Array.isArray(event)) return event as Record<string, unknown>;
+    if (strict) throw new Error('Managed native hook input is not an object');
+    return {};
   } catch {
     clearTimeout(timer);
+    if (strict) throw new Error('Managed native hook requires complete JSON object input');
     return {};
   }
 }
@@ -571,22 +580,49 @@ async function decide(args: GuardArgs, env: NodeJS.ProcessEnv, cwd: string, even
 }
 
 export async function guard(args: GuardArgs = {}, env = process.env, cwd = process.cwd(), stdin: GuardInput = process.stdin) {
-  const event = await readEvent(stdin);
+  const refuseManaged = (error: unknown) => {
+    process.stdout.write(`${JSON.stringify({ continue: false, stopReason: 'Managed Claude native admission failed; inspect the owned launch before retrying.' })}\n`);
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  };
+  let event: Record<string, unknown>;
+  try { event = await readEvent(stdin, Boolean(args.clientFile)); }
+  catch (error) {
+    if (!args.clientFile) throw error;
+    refuseManaged(error); return;
+  }
   if (args.clientFile) {
-    if (!args.host || args.rootProfile || args.standaloneProfile) throw new Error('Managed hook requires one owned client reference');
-    const scoped = { ...env, PROMPTOBUS_CLIENT_FILE: args.clientFile,
-      ...(args.serviceHome ? { PROMPTOBUS_SERVICE_HOME: args.serviceHome } : {}) };
-    const { readManagedServiceHookContext } = await import('./service-launch.js');
-    const context = readManagedServiceHookContext(args.host, args.clientFile, { env: scoped });
-    if (context.harness !== 'claude' || typeof args.home !== 'string' || canonicalPath(args.home) !== context.home
-      || args.task !== context.task || args.role !== context.address) throw new Error('Managed hook scope does not match its client');
-    const published = await (await import('./native-start.js')).authorizeManagedNativeStart(args.host, event, scoped, cwd);
-    if (published) withTaskLock(context.home, context.task, () => {
-      readManagedServiceHookContext(args.host!, args.clientFile!, { env: scoped });
-      const current = participantOf(readTask(context.home, context.task), context.address);
-      if (current?.harness !== 'claude' || current.sessionRef !== context.ref || current.metadata.sessionRecord !== context.record) return;
-      driverOrLift(current).registerWake!(context.home, context.task, context.address, env, String(event.session_id));
-    });
+    try {
+      if (typeof event.hook_event_name !== 'string' || !['SessionStart', 'UserPromptSubmit', 'PreToolUse'].includes(event.hook_event_name)) {
+        throw new Error('Managed native hook requires a supported event phase');
+      }
+      if (!args.host || args.rootProfile || args.standaloneProfile) throw new Error('Managed hook requires one owned client reference');
+      const scoped = { ...env, PROMPTOBUS_CLIENT_FILE: args.clientFile,
+        ...(args.serviceHome ? { PROMPTOBUS_SERVICE_HOME: args.serviceHome } : {}) };
+      const { readManagedServiceHookContext } = await import('./service-launch.js');
+      const context = readManagedServiceHookContext(args.host, args.clientFile, { env: scoped });
+      if (context.harness !== 'claude' || typeof args.home !== 'string' || canonicalPath(args.home) !== context.home
+        || args.task !== context.task || args.role !== context.address) throw new Error('Managed hook scope does not match its client');
+      const handoffWake = () => withTaskLock(context.home, context.task, () => {
+        readManagedServiceHookContext(args.host!, args.clientFile!, { env: scoped });
+        const task = readTask(context.home, context.task), current = participantOf(task, context.address);
+        if (task.status !== 'active' || current?.harness !== 'claude' || current.sessionRef !== context.ref || current.metadata.sessionRecord !== context.record
+          || current.metadata.sessionId !== event.session_id) throw new Error('Managed native participant changed before wake handoff');
+        if (driverOrLift(current).registerWake!(context.home, context.task, context.address, env, String(event.session_id)) === false) {
+          throw new Error('Managed native wake contact could not be published');
+        }
+      });
+      if (event.hook_event_name === 'UserPromptSubmit' || event.hook_event_name === 'PreToolUse') {
+        await (await import('./native-start.js')).authorizeManagedClaudeExecution(args.host, event, scoped, cwd);
+        (await import('./service-launch.js')).requireManagedClaudeMcp(args.host, args.clientFile, { env: scoped, cwd });
+        handoffWake();
+        return;
+      }
+      const published = await (await import('./native-start.js')).authorizeManagedNativeStart(args.host, event, scoped, cwd);
+      if (published) handoffWake();
+    } catch (error) {
+      refuseManaged(error);
+      return;
+    }
   } else if (args.host && env.PROMPTOBUS_CLIENT_FILE) {
     await (await import('./native-start.js')).authorizeManagedNativeStart(args.host, event, env, cwd);
   } else if (args.host && args.rootProfile) {

@@ -320,7 +320,13 @@ const actualClaudeId = '11111111-1111-4111-8111-111111111111', hintEvents = [];
 const nativeFixtures = path.join(scratch, 'native-fixtures');
 stubCommand(nativeFixtures, 'claude-hinted', `console.log('backgrounded · ${actualClaudeId.slice(0, 8)} · ${hintedRef}');`);
 hintedPlan.service = { launchId: 'hinted-claude-launch', clientId: 'hinted-client', credentialFile: '/private/hinted-client',
-  beforeStart: async () => { hintEvents.push('before-start'); },
+  beforeStart: async file => {
+    hintEvents.push('before-start');
+    const record = JSON.parse(readFileSync(file, 'utf8'));
+    // This service unit supplies the producer precondition; the physical producer has its own fixture.
+    writeFileSync(file, JSON.stringify({ ...record, nativeAdmission: { nativeId: actualClaudeId },
+      nativeAdmissionEvidence: { source: 'startup' } }));
+  },
   realize: async id => {
     hintEvents.push('realize');
     check(': Claude realizes only its actual confirmed native id after publishing the owned record',

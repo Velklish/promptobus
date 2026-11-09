@@ -1,5 +1,6 @@
 import { check, skip } from './check.mjs';
 import { request } from 'node:http';
+import { Readable } from 'node:stream';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,6 +31,15 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   const owner = input => serviceControl(paths, { runtime, ...input });
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
   const until = async predicate => { const deadline = Date.now() + 5000; while (!predicate()) { if (Date.now() >= deadline) throw new Error('Fixture readiness timed out'); await wait(10); } };
+  const managedHook = async (args, hookEnv, event) => {
+    const stdout = process.stdout.write, stderr = process.stderr.write;
+    let output = '', error = '';
+    process.stdout.write = chunk => { output += chunk; return true; };
+    process.stderr.write = chunk => { error += chunk; return true; };
+    try { await guard(args, hookEnv, root, Readable.from([JSON.stringify(event)])); }
+    finally { process.stdout.write = stdout; process.stderr.write = stderr; }
+    return { output, error };
+  };
   const rpc = (credential, connection, method, params = {}, id = 1) => new Promise((resolve, reject) => {
     const body = JSON.stringify({ jsonrpc: '2.0', ...(id === null ? {} : { id }), method, params });
     const call = request(credential.busUrl, { method: 'POST', headers: { authorization: `Bearer ${credential.token}`, accept: 'application/json, text/event-stream',
@@ -175,11 +185,12 @@ if (!['darwin', 'linux'].includes(process.platform)) {
       writePrivate(finalized.service.credentialFile, { ...readPrivate(finalized.service.credentialFile), runtime: credential.runtime, env: credential.env });
     }
     for (const changed of [{ task: 'another-task' }, { role: 'worker:foreign' }, { home: root }, { rootProfile: 'conflicting-root' }]) {
-      let refused = false;
-      try { await guard({ host, home, task, role: address, clientFile: finalized.service.credentialFile, serviceHome: paths.base, ...changed }, env, root,
-        { async *[Symbol.asyncIterator]() { yield JSON.stringify({ hook_event_name: 'SessionStart', session_id: nativeId }); } }); }
-      catch { refused = true; }
-      check('managed SessionStart refuses a mismatched explicit hook scope or root profile', refused);
+      const before = readFileSync(finalized.service.credentialFile, 'utf8');
+      const refused = await managedHook({ host, home, task, role: address, clientFile: finalized.service.credentialFile, serviceHome: paths.base, ...changed }, env,
+        { hook_event_name: 'SessionStart', session_id: nativeId });
+      const expected = changed.rootProfile ? 'Managed hook requires one owned client reference' : 'Managed hook scope does not match its client';
+      check('managed SessionStart refuses a mismatched explicit hook scope or root profile', JSON.parse(refused.output).continue === false
+        && refused.error.trim() === expected && readFileSync(finalized.service.credentialFile, 'utf8') === before, refused.error);
     }
     let wrongIdRefused = false; try { await finalized.service.realize('unproven-native'); } catch (error) { wrongIdRefused = /owned launch record/.test(error.message); }
     check('owner realization cannot invent a native ID absent from the owned record', wrongIdRefused && readPrivate(finalized.service.credentialFile).nativeBinding.state === 'pending');
@@ -220,9 +231,9 @@ if (!['darwin', 'linux'].includes(process.platform)) {
       && latePlan.mcpConfig.mcpServers.parent_bus.command === undefined);
     check('a future owner stages its record without creating a fake task or actor Host', !existsSync(path.join(home, 'tasks', lateTask))
       && readPrivate(late.service.credentialFile).lifetime.kind === 'reservation');
-    await guard({ host, home, task: lateTask, role: 'orchestrator', clientFile: late.service.credentialFile, serviceHome: paths.base },
-      { ...env, CLAUDE_CODE_MESSAGING_SOCKET: '/unpublished-contact.sock', CLAUDE_CODE_MESSAGING_TOKEN: 'unpublished-contact-token' }, root,
-      { async *[Symbol.asyncIterator]() { yield JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'late-native' }); } });
+    await managedHook({ host, home, task: lateTask, role: 'orchestrator', clientFile: late.service.credentialFile, serviceHome: paths.base },
+      { ...env, CLAUDE_CODE_MESSAGING_SOCKET: '/unpublished-contact.sock', CLAUDE_CODE_MESSAGING_TOKEN: 'unpublished-contact-token' },
+      { hook_event_name: 'SessionStart', session_id: 'late-native' });
     check('an unpublished deferred SessionStart cannot publish a native contact point', readWake(home, lateTask, 'orchestrator') === null
       && !existsSync(path.join(home, 'tasks', lateTask)));
     createTask(home, { id: lateTask, title: 'published owner', owner: 'late-native' });

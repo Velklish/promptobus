@@ -711,9 +711,46 @@ supply it. The real hook must correlate its same-ID regular transcript inside
 that store and its direct native parent (or one observed `/bin/sh` command child)
 with the captured executable and current process birth. The registry rechecks the
 original record revision, ref, launch ID, executable and immutable native tuple
-under the existing task lock before publishing. Missing or changed observations
-retain an unresolved actual ID without first tool admission. This source route
-still requires installed native startup/transcript/order verification.
+under the existing task lock before publishing. If the transcript does not exist
+at startup, the hook retains a private startup candidate with the captured native
+process, executable, store, session ID and launch generation. It neither creates
+the transcript nor admits the native identity. The owned `UserPromptSubmit` hook
+completes that same producer after the transcript exists, rechecking the original
+tuple and actual native parent. Unknown resume IDs cannot supply this candidate.
+After successful deferred admission, the first prompt publishes the native hook's
+socket and token under the same launch-generation and participant checks as
+SessionStart. The contact is available before that prompt returns; this handoff
+does not run Stop logic or complete a turn.
+
+Managed Claude settings also install owned `UserPromptSubmit` and `PreToolUse`
+command hooks. Before a prompt or tool runs, they require complete startup
+admission and an initialized HTTP MCP connection belonging to this launch for
+the bus and, when granted, reviewer files. They do not create an MCP connection
+or call a bus tool to manufacture that evidence. A refusal returns the native
+`continue: false` JSON decision. Both execution hooks set `onFailure: "block"`,
+so a missing command, crash or timeout blocks the action on Claude Code 2.1.295
+and later; the field's behavior is documented in the
+[native hook contract](https://code.claude.com/docs/en/hooks#block-the-action-when-a-hook-fails).
+A failed SessionStart command alone does not establish containment.
+
+Owned managed hooks require a complete JSON object and a supported string event
+phase before entering the ordinary guard. Empty, malformed or non-object input,
+missing or unknown phases, and stdin read failures return `continue: false`.
+The stdin deadline also refuses complete JSON whose input stream has not ended.
+The ordinary Stop reader retains its existing tolerant behavior.
+
+The launcher waits up to 10 seconds for verified startup publication before its
+own grant realization; a listed background session alone cannot trigger first
+admission. On failure after an actual ID was confirmed, cleanup revokes the grant
+and stops only the matching owned native session. Changed ownership or an
+unconfirmed stop retains an explicit cleanup failure for inspection.
+
+`test/claude-admission-order.test.mjs` exercises the actual CLI guard, native Node
+parent observation and owned service without a model. Its optional absolute
+runtime-directory argument runs the same checks against a frozen package.
+These fixtures establish startup/transcript ordering, prompt/tool refusal and
+HTTP connection ownership; installed Claude startup, MCP connection ordering and
+hook enforcement still require native verification.
 
 The shared service constructs every managed tool context from the actual trusted
 client binding, replacing inherited harness identity variables. Claude's bearer

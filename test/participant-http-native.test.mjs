@@ -4,27 +4,29 @@ import test from 'node:test';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { createStandaloneHost } from '../dist/host-index.js';
-import { guardHookCommand } from '../dist/hooks.js';
-import { claudeDriver } from '../lib/driver-claude.js';
-import { bindManagedNativeStart } from '../lib/drivers.js';
-import { createOwnerEnvironment, finalizeManagedServiceLaunch } from '../lib/service-launch.js';
-import { runWorkspaceService } from '../lib/service.js';
-import { serviceControl } from '../lib/service-client.js';
-import { readDiscovery, readPrivate, recordVersion, requireProcess, runtimeIdentity, servicePaths } from '../lib/service-state.js';
-import { bus, createTask, participantRecord, readWake, upsertParticipant, writeJsonAtomic } from '../lib/store.js';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { makeSandbox, makeSockDir, stubCommand, withStubPath, writeHostConfig } from './sandbox.mjs';
 import { DAEMON_IDENTITY } from './harness.mjs';
 import { openScriptedHttp, scriptedHttpHelperBinary, connectionHeaders as nativeConnectionHeaders } from './participant-http.mjs';
+
+const runtime = process.argv[2] ? pathToFileURL(`${path.resolve(process.argv[2])}/`) : new URL('../', import.meta.url);
+const { createStandaloneHost } = await import(new URL('dist/host-index.js', runtime));
+const { guardHookCommand } = await import(new URL('dist/hooks.js', runtime));
+const { claudeDriver } = await import(new URL('lib/driver-claude.js', runtime));
+const { bindManagedNativeStart } = await import(new URL('lib/drivers.js', runtime));
+const { createOwnerEnvironment, finalizeManagedServiceLaunch } = await import(new URL('lib/service-launch.js', runtime));
+const { runWorkspaceService } = await import(new URL('lib/service.js', runtime));
+const { serviceControl } = await import(new URL('lib/service-client.js', runtime));
+const { readDiscovery, readPrivate, recordVersion, requireProcess, runtimeIdentity, servicePaths } = await import(new URL('lib/service-state.js', runtime));
+const { bus, createTask, participantRecord, readWake, upsertParticipant, writeJsonAtomic } = await import(new URL('lib/store.js', runtime));
 
 test('configured SessionStart realizes a verified fixture tuple; omitting it leaves HTTP tools denied', async () => {
   const root = realpathSync(makeSandbox('promptobus-harness-http-native-'));
   const serviceHome = path.join(makeSockDir('a2h-').dir, 'service');
   const home = path.join(root, '.promptobus'), task = 'participant-http-t20261101-000001', address = 'worker:http';
   const ref = 'scripted HTTP native participant', nativeId = randomUUID();
-  const binPath = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url));
-  const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+  const binPath = fileURLToPath(new URL('bin/promptobus.js', runtime));
+  const version = JSON.parse(readFileSync(new URL('package.json', runtime), 'utf8')).version;
   const nativeStore = path.join(root, 'native-account'), bin = path.join(root, 'bin');
   mkdirSync(nativeStore); mkdirSync(bin);
   stubCommand(bin, 'claude', `if(process.argv[2]==='agents')console.log(JSON.stringify([{name:${JSON.stringify(ref)},id:${JSON.stringify(nativeId.slice(0,8))},sessionId:${JSON.stringify(nativeId)},pid:${process.pid},status:'idle'}]));else process.exitCode=1;`);
@@ -106,7 +108,7 @@ test('configured SessionStart realizes a verified fixture tuple; omitting it lea
     assert.equal(readWake(home, task, address)?.token, sessionEnv.CLAUDE_CODE_MESSAGING_TOKEN);
     const ownWake = readWake(home, task, address);
     await assert.rejects(openScriptedHttp(config, { settings, env: { ...sessionEnv, CLAUDE_CODE_MESSAGING_SOCKET: '/foreign.sock' },
-      cwd: root, nativeId: randomUUID() }), /Scripted SessionStart hook exited/);
+      cwd: root, nativeId: randomUUID() }), process.argv[2] ? /Scripted SessionStart hook exited/ : /Scripted SessionStart hook refused this session/);
     assert.deepEqual(readWake(home, task, address), ownWake, 'a foreign native ID cannot replace the owned contact point');
     assert.equal(readPrivate(launch.credentialFile).nativeBinding.sessionId, nativeId,
       'the actual configured hook realizes the same pending client before the authenticated scoped read');

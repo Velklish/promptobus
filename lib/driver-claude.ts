@@ -13,7 +13,7 @@ import {
   taskExists, withTaskLock, workersDir, writeJsonAtomic, writeWake,
 } from './store.js';
 import { wouldResolve } from './exec.js';
-import { recordVersion } from './service-state.js';
+import { readPrivate, recordOf, recordVersion } from './service-state.js';
 import { PARENT_SESSION_ENV } from './session-env.js';
 import {
   bgSessions, findSession, liftoffParticipant, readBgSessions, resetBgSessionsCache, runClaude, sayLiftoff,
@@ -677,6 +677,11 @@ function replaceMcpServers(plan: LibLaunchPlan, servers: Record<string, LibMcpSe
     }
     hooks[0]!.command += ' ' + ['--client-file', plan.service.credentialFile,
       '--service-home', plan.env.PROMPTOBUS_SERVICE_HOME].map(shellQuote).join(' ');
+    const executionHook = { type: 'command', command: hooks[0]!.command, onFailure: 'block' };
+    for (const event of ['UserPromptSubmit', 'PreToolUse']) {
+      settings.hooks = { ...settings.hooks, [event]: [...(settings.hooks?.[event as keyof typeof settings.hooks] ?? []),
+        { hooks: [executionHook] }] };
+    }
     file.text = `${JSON.stringify(settings, null, 2)}\n`;
   }
   const former = plan.mcpConfig as LibMcpConfig;
@@ -742,6 +747,7 @@ async function spawn(plan: LibLaunchPlan, { tool, ref, role, cwd, env, home, tas
   persist, awaitOptions, host, noun, requireFullSession, requireLaunchMatch }: LibSpawnContext) {
   const pointer = plan.service ? plan.prelaunchBinding?.sessionRecord ?? path.join(workersDir(home, task), 'orchestrator.session.json') : null;
   let launchTool = tool;
+  let actualId: string | null = null;
   try {
     const previousParticipant = role === 'teamlead' && taskExists(home, task)
       ? withTaskLock(home, task, () => structuredClone(participantOf(readTask(home, task), address) ?? null)) : undefined;
@@ -749,7 +755,7 @@ async function spawn(plan: LibLaunchPlan, { tool, ref, role, cwd, env, home, tas
       const previous = readRecordAt<ClaudeBindingRecord>(pointer);
       if (previous) delete previous.expectedSessionId;
       if (previous) {
-        for (const key of ['nativeAdmission', 'nativeAdmissionEvidence', 'nativeStartEvidence', 'nativeAdmissionUnknown']) delete (previous as Record<string, unknown>)[key];
+        for (const key of ['nativeAdmission', 'nativeAdmissionEvidence', 'nativeStartEvidence', 'nativeAdmissionUnknown', 'nativeStartupCandidate']) delete (previous as Record<string, unknown>)[key];
       }
       const selected = wouldResolve(tool.bin!, env, cwd);
       if (!selected) throw new GateError('Claude managed launch has no resolved native executable');
@@ -773,9 +779,21 @@ async function spawn(plan: LibLaunchPlan, { tool, ref, role, cwd, env, home, tas
           ...(previousParticipant !== undefined ? { previousParticipant } : {}) },
         beforeStart: () => plan.service!.beforeStart(pointer!),
         afterBind: async (id: string) => {
+          actualId = id;
           if (bindHandshake(home, task, address, { ...env, [SESSION_RECORD_VAR]: pointer! }, id,
             { ref, launchId: plan.service!.launchId }) !== 'bound') {
             throw new GateError('Claude native session did not bind its owned launch record');
+          }
+          const deadline = Date.now() + 10_000;
+          for (;;) {
+            const record = readPrivate(pointer!);
+            if (!recordOf(record) || record.launchId !== plan.service!.launchId || record.ref !== ref || record.sessionId !== id) {
+              throw new GateError('Claude launch changed before its verified native startup completed');
+            }
+            if (recordOf(record.nativeAdmission) && record.nativeAdmission.nativeId === id
+              && recordOf(record.nativeAdmissionEvidence) && record.nativeAdmissionEvidence.source === 'startup') break;
+            if (Date.now() >= deadline) throw new GateError('Claude native startup admission did not complete before the launch deadline');
+            await new Promise(resolve => setTimeout(resolve, 25));
           }
           await plan.service!.realize(id);
         },
@@ -785,7 +803,21 @@ async function spawn(plan: LibLaunchPlan, { tool, ref, role, cwd, env, home, tas
       sayLimit: (output) => markLimitAtStart(host, output),
     });
   } catch (error) {
-    return revokeFailedManagedLaunch(plan, error);
+    return revokeFailedManagedLaunch(plan, error, async () => {
+      if (!actualId || !pointer) return;
+      const record = readPrivate(pointer);
+      if (!recordOf(record) || record.launchId !== plan.service?.launchId || record.ref !== ref || record.sessionId !== actualId) {
+        throw new GateError('Failed Claude launch changed ownership before native stop; retain it for inspection');
+      }
+      const listed = readBgSessions({ fresh: true });
+      if (listed.missing || listed.list === null) throw new GateError('Failed Claude launch has no readable native registry for stop');
+      const owned = findSession(listed.list, ref, actualId);
+      if (!owned) return;
+      const stopped = runClaude(['stop', String(owned.id ?? actualId)]);
+      if (stopped.missing || stopped.r?.status !== 0 || await awaitSessionGone(ref) !== 'gone') {
+        throw new GateError('Failed Claude native admission could not confirm its owned session stopped');
+      }
+    });
   }
 }
 
