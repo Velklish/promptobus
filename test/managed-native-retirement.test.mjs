@@ -31,6 +31,19 @@ const serviceBin = path.resolve(import.meta.dirname, '../bin/promptobus.js');
 const version = JSON.parse(readFileSync(path.resolve(import.meta.dirname, '../package.json'), 'utf8')).version;
 const serviceHost = createStandaloneHost({ cwd: root, binPath: serviceBin, version });
 const paths = servicePaths(serviceHost, serviceEnv), launches = [], promptFailures = new Map();
+async function stopRetirementService({ timeoutMs = 5000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try { return await serviceControl(paths, { operation: 'stop', runtime: runtimeIdentity(serviceHost) }); }
+    catch (error) {
+      if (!/^Shared service still has live clients or active work \[clients: 0, activeWork: true, pendingObservations: [1-9][0-9]*, requests: 1\]$/.test(error?.message ?? '')) throw error;
+      if (Date.now() >= deadline) throw new Error('Owned retirement observations did not settle before shutdown', { cause: error });
+      const status = await serviceControl(paths, { operation: 'status' });
+      if (status.clients || status.warden.tasks.length) throw error;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  }
+}
 let serviceError, serviceStderr = '';
 let owner = cp.spawn(process.execPath, [serviceBin, 'service', 'run'], { cwd: root, env: serviceEnv, stdio: ['ignore', 'ignore', 'pipe'] });
 owner.stderr.on('data', bytes => { serviceStderr += bytes; }); owner.once('error', error => { serviceError = error; });
@@ -238,7 +251,7 @@ try {
   for (const child of children) if (child.ownedIdentity && processState(child.ownedIdentity) === 'alive') await reapHolder(child.pid, { identity: child.ownedIdentity });
   for (const launch of launches) if (existsSync(launch.credentialFile)) await launch.revoke();
   if (owner.exitCode === null && owner.signalCode === null) {
-    if (!serviceError && readDiscovery(paths)?.process.pid === owner.pid) await serviceControl(paths, { operation: 'stop', runtime: runtimeIdentity(serviceHost) });
+    if (!serviceError && readDiscovery(paths)?.process.pid === owner.pid) await stopRetirementService();
     else owner.kill('SIGTERM');
   }
   await running;
@@ -298,7 +311,25 @@ writeFileSync(p.snapshot,JSON.stringify({record:readFileSync(p.file,'utf8'),part
 `);
 
 const cursorServiceEnv = { ...serviceEnv, ...process.env, PROMPTOBUS_HOME: home, PROMPTOBUS_SERVICE_HOME: serviceHome, PROMPTOBUS_WARDEN: 'off' };
-owner = cp.spawn(process.execPath, [serviceBin, 'service', 'run'], { cwd: root, env: cursorServiceEnv, stdio: ['ignore', 'ignore', 'pipe'] });
+const drain = Object.fromEntries(['hold', 'entered', 'release', 'releaseOnRefusal', 'trace'].map(name => [name, path.join(root, `retirement-drain.${name}`)]));
+const drainLoader = path.join(root, 'retirement-drain.mjs');
+writeFileSync(drainLoader, `import {Worker,isMainThread} from 'node:worker_threads';import {Server} from 'node:http';
+import {existsSync,writeFileSync,appendFileSync} from 'node:fs';
+if(isMainThread){const files=${JSON.stringify(drain)},emitWorker=Worker.prototype.emit,emitServer=Server.prototype.emit;
+const trace=value=>appendFileSync(files.trace,JSON.stringify({at:Date.now(),pid:process.pid,...value})+'\\n');let held=false;
+trace({kind:'service-start',argv:[process.execPath,...process.execArgv,...process.argv.slice(1)],cwd:process.cwd(),env:process.env});
+Worker.prototype.emit=function(event,...args){
+if(event==='message'&&args[0]?.kind==='observed'&&existsSync(files.hold)&&!held){held=true;
+writeFileSync(files.entered,'owned observation held');trace({kind:'observation-held',id:args[0].id});
+const timer=setInterval(()=>{if(!existsSync(files.release))return;clearInterval(timer);trace({kind:'observation-released',id:args[0].id});emitWorker.call(this,event,...args);},5);return true;}
+return emitWorker.call(this,event,...args);};
+Server.prototype.emit=function(event,...args){if(event==='request'){const[request,response]=args;let body='',operation;
+request.on('data',bytes=>{body+=bytes;});request.once('end',()=>{try{operation=JSON.parse(body).operation;}catch{}});
+response.once('finish',()=>{if(operation==='stop'){trace({kind:'stop-response',status:response.statusCode});
+if(response.statusCode===409&&existsSync(files.releaseOnRefusal))writeFileSync(files.release,'released by actual refused stop');}});}
+return emitServer.call(this,event,...args);};}
+`);
+owner = cp.spawn(process.execPath, ['--import', drainLoader, serviceBin, 'service', 'run'], { cwd: root, env: cursorServiceEnv, stdio: ['ignore', 'ignore', 'pipe'] });
 serviceError = null; serviceStderr = '';
 owner.stderr.on('data', bytes => { serviceStderr += bytes; }); owner.once('error', error => { serviceError = error; });
 running = new Promise(resolve => owner.once('close', resolve));
@@ -429,6 +460,20 @@ try {
           && !readTmuxSessions().sessions.some(session => session.name === current.native.sessionName)
           && readTmuxSessions().sessions.some(session => session.name === successor.native.sessionName), stopped.note);
       rmSync(fault, { force: true });
+      writeFileSync(drain.hold, 'hold the next actual observation before fixture shutdown');
+      const deadline = Date.now() + 5000;
+      let pendingStatus;
+      while (!existsSync(drain.entered) && Date.now() < deadline) {
+        pendingStatus = await serviceControl(paths, { operation: 'status' });
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      pendingStatus = await serviceControl(paths, { operation: 'status' });
+      check('retirement teardown holds an actual owned observation before final native Stop',
+        existsSync(drain.entered) && pendingStatus.warden.observations === 1, JSON.stringify(pendingStatus));
+      let liveRefusal;
+      try { await stopRetirementService({ timeoutMs: 100 }); } catch (error) { liveRefusal = error; }
+      check('retirement fixture keeps live-client shutdown rejection intact',
+        /^Shared service still has live clients or active work \[clients: [1-9][0-9]*,/.test(liveRefusal?.message ?? ''), liveRefusal?.stack);
       const successorStopped = await cursorDriver.stop(successor.ref);
       check('Cursor replacement fixture separately confirms cleanup of the actual successor through its original seat', successorStopped.ok && successorStopped.stopped, successorStopped.note);
       dropCursor(ref);
@@ -440,10 +485,27 @@ try {
   rmSync(fault, { force: true });
   for (const launch of launches) if (existsSync(launch.credentialFile)) await launch.revoke();
   if (owner.exitCode === null && owner.signalCode === null) {
-    if (!serviceError && readDiscovery(paths)?.process.pid === owner.pid) await serviceControl(paths, { operation: 'stop', runtime: runtimeIdentity(serviceHost) });
+    if (!serviceError && readDiscovery(paths)?.process.pid === owner.pid) {
+      const began = Date.now();
+      let undrained;
+      try { await stopRetirementService({ timeoutMs: 100 }); } catch (error) { undrained = error; }
+      check('retirement fixture preserves a bounded refusal while its owned observation never drains',
+        /Owned retirement observations did not settle/.test(undrained?.message ?? '') && Date.now() - began >= 100
+          && undrained?.cause?.message.includes('pendingObservations: 1')
+          && (await serviceControl(paths, { operation: 'status' })).warden.observations === 1, undrained?.stack);
+      writeFileSync(drain.releaseOnRefusal, 'release only after the next actual refused Stop');
+      let failure;
+      try { await stopRetirementService(); } catch (error) { failure = error; }
+      check('retirement fixture shutdown waits for its owned pending observation', !failure, failure?.stack);
+      if (failure) { writeFileSync(drain.release, 'owned failure cleanup'); owner.kill('SIGTERM'); }
+    }
     else owner.kill('SIGTERM');
   }
-  await running; rmSync(serviceHome, { recursive: true, force: true }); harness.restore();
+  await running;
+  check('retirement fixture confirms terminal service exit after releasing its owned observation', owner.exitCode !== null || owner.signalCode !== null);
+  console.log('  retirement-drain-terminal: ' + JSON.stringify({ at: Date.now(), pid: owner.pid, code: owner.exitCode, signal: owner.signalCode, runtime: runtimeIdentity(serviceHost) }));
+  if (existsSync(drain.trace)) console.log('  retirement-drain-evidence: ' + readFileSync(drain.trace, 'utf8').trim().split('\n').join(' | '));
+  rmSync(serviceHome, { recursive: true, force: true }); harness.restore();
   if (priorConfig === undefined) delete process.env.CURSOR_CONFIG_DIR; else process.env.CURSOR_CONFIG_DIR = priorConfig;
 }
 if (serviceError) throw serviceError;

@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Codex selected-context resume accepts a host's bare PATH command and pins the
   same resolved executable for system-skill bootstrap and participant launch.
   Later PATH changes cannot redirect the holder; executable replacement refuses.
+- The managed-retirement suite drains its owned lifetime observation before
+  completing service shutdown. A non-draining observation produces a bounded
+  fixture failure; live-client and other active-work refusals remain intact.
 - Selected-context resume preserves Codex-generated private-home system skills
   after comparing their full paths, types and bytes with a fresh no-model
   bootstrap from the admitted launch executable. Foreign content and unavailable

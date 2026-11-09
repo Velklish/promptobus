@@ -206,6 +206,16 @@ PATH, so process observers remain available until shutdown is confirmed.
 checks this order with an actual owned service. Fixture teardown is not a native
 Stop receipt.
 
+The managed-retirement fixture holds an actual worker observation across its
+last native Stop and client revocation. Teardown retries the owner's Stop only
+when its refusal names pending observations, zero clients and no other requests,
+and diagnostics show no task work. Observation draining is bounded to 5000 ms.
+A non-draining observation fails with the original refusal as its cause; a live
+client or other active work remains a refusal. The fixture records the actual
+held/released observation, Stop responses and terminal service exit. Its fallback
+cleanup releases only its own observation and stops only its owned child, while
+retaining the failing verdict.
+
 Scripted Claude participants retain their stdio path and read generated HTTP
 descriptors through [participant-http.mjs](../../test/participant-http.mjs).
 HTTP startup executes the configured SessionStart commands with the native input

@@ -1731,6 +1731,9 @@ That last case is the one this exists for. A cleanup hook reaps a holder only wh
 | `service exec-plan --profile <id> [--service-home <path>] [--dry-run] -- <native-command> [args...]` | Private wrapper transport: ensure the approved owner and return a one-shot POSIX plan. Standalone admission stays pending until actual native proof; dry-run only prints a pure summary. |
 | `service preflight --standalone --profile <id> --native-id <actual-id> [--service-home <path>]` | Explicit owner recovery for the same proved native PID/birth/nonce/store. A trusted owner hook receipt is required; the old client stays revoked. Pending recovery can be repeated explicitly. In-flight or uncertain mutations refuse. Prints only the scoped result, then the native MCP server must reconnect. |
 
+Pending lifetime observations remain active work after client revocation.
+The owner refuses shutdown until those observations settle.
+
 `promptobus-root` is the package's POSIX handoff wrapper for `service exec-plan`.
 It takes the same flags and command separator, sources the private plan and
 replaces itself with the native command. An approved profile, a matching runtime

@@ -19,6 +19,15 @@ A performed mutation probe carries `coverage`: `establishes` names what the redd
 
 The [contributing guide](../guides/contributing.md) describes the verification gates; `npm run audit` also enforces the English authoring claim in the [roadmap](../ROADMAP.md).
 
+The managed-retirement fixture checks the shutdown boundary with an actual held
+worker observation and confirmed service exit; see
+[suite isolation](../guides/contributing.md#suite-isolation).
+
+<!-- quote:03-cli.md -->
+Pending lifetime observations remain active work after client revocation.
+The owner refuses shutdown until those observations settle.
+<!-- /quote -->
+
 `npm run test:local -- --base <commit>` selects local iteration groups from an
 explicit Git base plus current dirty input. It reports selected and omitted groups
 and test files, and unknown or shared inputs fall back to the full suite. `--list`
