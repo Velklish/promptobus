@@ -40,15 +40,9 @@ export const HARNESS_HOME_VAR = 'PROMPTOBUS_E2E_HARNESS';
 /** Session socket path template — `@` in place of the name. Why a template, not a directory — below. */
 export const SOCK_BASE_VAR = 'PROMPTOBUS_E2E_SOCK';
 
-// The version the stub binary answers with is not a literal, but the same constant the
-// whole parse sits on: the wire form and the `agents --json` format were taken from it.
-// A private copy of the number would silently drift from `contract.js`, and the stand
-// would pretend to be a build that no longer exists.
-// The stand has its own name: from the outside this is «the harness version», and it is
-// called by that name below.
-import { PROVEN_CLAUDE_VERSION } from '../lib/driver-claude.js';
-
-export const HARNESS_VERSION = PROVEN_CLAUDE_VERSION;
+// Synthetic managed fixtures support fail-closed hooks; their wire samples retain the
+// historical native measurements. This declaration does not raise the driver's proven version.
+export const HARNESS_VERSION = '2.1.295';
 
 // File key from the participant address: a colon is not legal in a file name everywhere,
 // and the address is the only thing the test and the participant use to recognise each

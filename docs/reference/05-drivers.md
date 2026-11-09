@@ -741,6 +741,10 @@ so a missing command, crash or timeout blocks the action on Claude Code 2.1.295
 and later; the field's behavior is documented in the
 [native hook contract](https://code.claude.com/docs/en/hooks#block-the-action-when-a-hook-fails).
 A failed SessionStart command alone does not establish containment.
+The managed driver's spawn path requires a parseable native version of at least
+2.1.295 before staging or starting the native process. Missing, unparseable and
+older versions refuse and revoke the owned pending service grant. Unmanaged
+Claude launches do not acquire this managed-hook minimum.
 
 Owned managed hooks require a complete JSON object and a supported string event
 phase before entering the ordinary guard. Empty, malformed or non-object input,

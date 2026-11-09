@@ -110,13 +110,10 @@ planParticipant(HARNESS, ADDR, {
 
 // --- lift ---------------------------------------------------------------------
 
-// The number is a literal on purpose: `HARNESS_VERSION` is `PROVEN_CLAUDE_VERSION` under
-// the stand name, and checking the constant against itself would check nothing. The
-// literal makes a version bump red — that is, it reminds us to re-check the wire form
-// and `agents --json`.
+// The fixture declares managed hook support without changing the historically proven native version.
 const version = claude('--version');
-check('the stub claude names the version the format was taken from',
-  version.stdout.trim().startsWith('2.1.280'), version.stdout);
+check('the stub claude declares the managed hook capability version',
+  version.stdout.trim().startsWith('2.1.295'), version.stdout);
 const emptyList = claude('agents', '--json');
 check('an empty registry prints as an empty array, not a refusal',
   emptyList.stdout.trim() === '[]', emptyList.stdout);

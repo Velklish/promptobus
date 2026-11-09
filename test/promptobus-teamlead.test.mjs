@@ -174,7 +174,7 @@ for (const harness of ['cursor']) {
 const installStub = (sessions, launchId = sessions.at(-1)?.id) => stubCommand(bin, 'claude', `
 import { appendFileSync } from 'node:fs';
 const args = process.argv.slice(2);
-if (args[0] === '--version') { process.stdout.write('2.1.280\\n'); process.exit(0); }
+if (args[0] === '--version') { process.stdout.write('2.1.295\\n'); process.exit(0); }
 if (args[0] === 'agents') { process.stdout.write(${JSON.stringify(JSON.stringify(sessions))}); process.exit(0); }
 if (args[0] === '--bg') {
   appendFileSync(${JSON.stringify(marker)}, 'x');
@@ -186,7 +186,7 @@ process.stdout.write('backgrounded · ${launchId}\\n');
 `);
 const sid1 = '11111111-1111-1111-1111-111111111111';
 const sid2 = '22222222-2222-2222-2222-222222222222';
-const tool = () => ({ ok: true, bin: path.join(bin, 'claude'), version: '2.1.280' });
+const tool = () => ({ ok: true, bin: path.join(bin, 'claude'), version: '2.1.295' });
 installStub([{ id: 'aabbccdd', sessionId: sid1, name: planned.name, state: 'working', pid: 4242 }]);
 const launched = await quiet(() => spawnTeamlead(host, { ...opts, tool: tool() }));
 const child = store.readTask(home, launched.childTask);

@@ -27,7 +27,7 @@ const reserve = (driver, ref, launchId) => {
   const address = `worker:${ref}`;
   upsertParticipant(home, task, participantRecord(address, { harness: driver.id, mode: 'managed', sessionRef: ref,
     ...(driver.id === 'codex' ? { nativeLaunchId: launchId } : {}) }));
-  return { tool: { bin: process.execPath }, host, home, task, address, ref, role: 'worker', cwd: root, env: process.env, persist: () => {} };
+  return { tool: { bin: process.execPath, version: driver.id === 'claude' ? '2.1.295' : undefined }, host, home, task, address, ref, role: 'worker', cwd: root, env: process.env, persist: () => {} };
 };
 async function driverAndCaller(driver, plan, runtime) {
   let driverError, callerError;

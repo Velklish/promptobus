@@ -253,7 +253,7 @@ try {
   };
   syncBuiltinESMExports();
   try {
-    launched = await claudeDriver.spawn(lateProducer.plan, { tool: { bin: nativeExecutable }, host, home, task: lateProducer.task,
+    launched = await claudeDriver.spawn(lateProducer.plan, { tool: { bin: nativeExecutable, version: '2.1.295' }, host, home, task: lateProducer.task,
       address: lateProducer.address, ref: 'late-producer', role: 'worker', cwd: root, env: lateProducer.env, persist() {},
       awaitOptions: { sessions: () => sessions, tries: 1 } });
   } catch (error) { launchError = error; }
@@ -288,7 +288,7 @@ try {
     };
     syncBuiltinESMExports();
     try {
-      await claudeDriver.spawn(failed.plan, { tool: { bin: nativeExecutable }, host, home, task: failed.task,
+      await claudeDriver.spawn(failed.plan, { tool: { bin: nativeExecutable, version: '2.1.295' }, host, home, task: failed.task,
         address: failed.address, ref: replace ? 'replaced-failure' : 'owned-failure', role: 'worker', cwd: root, env: failed.env,
         persist() {}, awaitOptions: { sessions: () => sessions, tries: 1 } });
     } catch (caught) { failure = caught; }

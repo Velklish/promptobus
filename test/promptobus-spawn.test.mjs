@@ -122,7 +122,7 @@ const spawnWorker = (root, opts = {}) => spawnRaw(root, {
 const { installWorktreeDeps, npmCiCommand } = await import(path.join(here, '..', 'lib', 'worktree.js'));
 const { IDENTITY_VARS } = await import(path.join(here, 'hygiene.mjs'));
 const { claudeDriver } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
-const CLAUDE_MIN = '2.0.0';
+const CLAUDE_MIN = '2.1.295';
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
 const { hostOf } = await import(path.join(here, '..', 'lib', 'host.js'));
 const { planApprover } = await import(path.join(here, '..', 'lib', 'approver.js'));
@@ -242,7 +242,7 @@ const PATH0 = process.env.PATH;
 // `#!/bin/sh`: a file with no extension is not found on Windows at all
 // (`resolveCommand` walks PATH × PATHEXT), and the test would go red there on
 // working code.
-const claudeSays = (sessions, bgStatus = 0, version = '2.1.237 (Claude Code)', warning = '') => {
+const claudeSays = (sessions, bgStatus = 0, version = '2.1.295 (Claude Code)', warning = '') => {
   stubCommand(BIN, 'claude', `${nativeSessionFixture(sessions, bgStatus)}
 const args = process.argv.slice(2);
 if (args[0] === '--version') { process.stdout.write(${JSON.stringify(`${version}\n`)}); process.exit(0); }
@@ -315,7 +315,7 @@ SESSION_ID = actualNativeId(plan.name);
 const record = store.participantOf(store.readTask(HOME, TASK), 'worker:orders-api');
 const written = record?.metadata;
 check(': spawn wrote the participant into the task journal', !!written, JSON.stringify(written));
-const STUB_VERSION = '2.1.237 (Claude Code)';
+const STUB_VERSION = '2.1.295 (Claude Code)';
 const liftProvenance = 'promptobus copy: cli=' + plan.host.binPath()
   + ' package=' + PACKAGE_PATH + '@' + PACKAGE_VERSION + ' host=' + plan.host.version
   + ' participant=' + stubClaude() + ' version=' + STUB_VERSION;
@@ -923,10 +923,10 @@ for (const [worker, status, output] of [
   ['ultra-reject', 2, 'error: unsupported --effort ultracode'],
   ['ultra-ack', 0, 'effort acknowledged: ultracode'],
 ]) {
-  claudeSays([], 0, '2.0.0 (Claude Code)');
+  claudeSays([], 0, '2.1.295 (Claude Code)');
   const request = { repo: 'orders-api', brief: BRIEF, task: ULTRA_TASK, worker, effort: 'ultracode' };
   const planned = await planSpawn(WS, request);
-  claudeSays([{ id: `sess-${worker}`, name: planned.name, state: 'working', pid: 4246 }], status, '2.0.0 (Claude Code)', output);
+  claudeSays([{ id: `sess-${worker}`, name: planned.name, state: 'working', pid: 4246 }], status, '2.1.295 (Claude Code)', output);
   const actual = spawnRun(request);
   const text = `${actual.stdout}${actual.stderr}`;
   check(`Claude actual ${worker} output and exit remain visible`,
@@ -961,7 +961,7 @@ const offPathBin = path.join(SB, 'off-path');
 claudeSays([{ id: 'sess-0003', name: foundPlan.name, state: 'working', pid: 4244 }]);
 stubCommand(offPathBin, 'claude', `${nativeSessionFixture([{id:'sess-0003', name:foundPlan.name, state:'working',pid:4244}])}
 const args = process.argv.slice(2);
-if (args[0] === '--version') { process.stdout.write('2.1.237 (Claude Code)\\n'); process.exit(0); }
+if (args[0] === '--version') { process.stdout.write('2.1.295 (Claude Code)\\n'); process.exit(0); }
 if (args[0] === 'agents') { process.stdout.write(${JSON.stringify(JSON.stringify([{ id: 'sess-0003', name: foundPlan.name, state: 'working', pid: 4244 }]))}); process.exit(0); }
 process.stdout.write('backgrounded · ' + nativeId + '\\n');`);
 const foundBin = path.join(offPathBin, process.platform === 'win32' ? 'claude.cmd' : 'claude');
@@ -1074,7 +1074,7 @@ stubCommand(BIN, 'claude', `import { appendFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 appendFileSync(${JSON.stringify(PROBE_MARK)}, args.join(' ') + '\\n');
 ${nativeSessionFixture(JSON.parse(drySessions))}
-if (args[0] === '--version') { process.stdout.write('2.1.237 (Claude Code)\\n'); process.exit(0); }
+if (args[0] === '--version') { process.stdout.write('2.1.295 (Claude Code)\\n'); process.exit(0); }
 if (args[0] === 'agents') { process.stdout.write(${JSON.stringify(drySessions)}); process.exit(0); }
 process.stdout.write('backgrounded · sess-dry\\n');`);
 process.env.PATH = `${BIN}${path.delimiter}${PATH0}`;
@@ -1274,7 +1274,7 @@ const sessions426 = JSON.stringify([{ id: 'sess-0426', name: plan426.name, state
 stubCommand(BIN, 'claude', `${nativeSessionFixture(JSON.parse(sessions426))}
 import { writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
-if (args[0] === '--version') { process.stdout.write('2.1.251 (Claude Code)\\n'); process.exit(0); }
+if (args[0] === '--version') { process.stdout.write('2.1.295 (Claude Code)\\n'); process.exit(0); }
 if (args[0] === 'agents') { process.stdout.write(${JSON.stringify(sessions426)}); process.exit(0); }
 writeFileSync(${JSON.stringify(ENV_MARK)}, JSON.stringify({
   role: process.env.PROMPTOBUS_ROLE ?? null,

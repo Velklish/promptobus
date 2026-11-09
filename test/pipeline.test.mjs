@@ -184,7 +184,7 @@ test('gate instructions reach real lifts, live re-review, and dead-session relif
   const live = path.join(standDir, 'live.json');
   stubCommand(standDir, 'claude', `import { existsSync, readFileSync, appendFileSync, writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
-if (args[0] === '--version') { process.stdout.write('2.1.280\\n'); process.exit(0); }
+if (args[0] === '--version') { process.stdout.write('2.1.295\\n'); process.exit(0); }
 if (args[0] === '--bg') {
   const name = args[args.indexOf('--name') + 1];
   appendFileSync(${JSON.stringify(launched)}, JSON.stringify(args) + '\\n');
@@ -206,7 +206,7 @@ process.exit(0);`);
   const restorePath = withStubPath(standDir);
   const priorWarden = process.env.PROMPTOBUS_WARDEN;
   process.env.PROMPTOBUS_WARDEN = 'off';
-  const tool = { ok: true, bin: path.join(standDir, 'claude'), version: '2.1.280' };
+  const tool = { ok: true, bin: path.join(standDir, 'claude'), version: '2.1.295' };
   const lift = (stepName, taskId = task, extra = {}) => step(host, {
     target: repo, task: taskId, stepName, harness: 'claude', tool, ...extra,
   });

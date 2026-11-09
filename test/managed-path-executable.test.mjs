@@ -24,6 +24,7 @@ if (process.platform === 'win32') {
     const env = { ...process.env, PATH: bin, CLAUDE_CONFIG_DIR: nativeStore, XDG_DATA_HOME: dataHome,
       OPENCODE_DB: path.join(dataHome, 'owned.db'), PROMPTOBUS_OPENCODE_HOME: path.join(root, 'opencode-registry') };
     const tool = host.resolveToolBin(name), file = participantSessionPath(home, task, address);
+    if (name === 'claude') tool.version = '2.1.295';
     upsertParticipant(home, task, participantRecord(address, { harness: name, mode: 'managed', sessionRef: ref, sessionRecord: file }));
     const original = new Error(`${name} reached its captured-image prelaunch seam`);
     let staged, revokes = 0, revoked = false, failure;

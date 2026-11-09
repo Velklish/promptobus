@@ -247,7 +247,7 @@ for (const driver of [claudeDriver, cursorDriver, opencodeDriver]) {
   };
   try {
     try {
-      await driver.spawn(failedPlan, { tool: { bin: process.execPath }, home, task, address: failedAddress,
+      await driver.spawn(failedPlan, { tool: { bin: process.execPath, version: driver.id === 'claude' ? '2.1.295' : undefined }, home, task, address: failedAddress,
         ref: failedRef, role: 'worker', cwd: scratch, env: process.env, persist: () => {} });
     } catch (error) { driverFailure = error; }
     try { await revokeFailedManagedLaunch(failedPlan, driverFailure); }
@@ -335,7 +335,7 @@ hintedPlan.service = { launchId: 'hinted-claude-launch', clientId: 'hinted-clien
   }, revoke: async () => { hintEvents.push('revoke'); } };
 let hintedResult, hintedFailure;
 try {
-  hintedResult = await claudeDriver.spawn(hintedPlan, { tool: { bin: path.join(nativeFixtures, 'claude-hinted') }, home, task, address: hintedAddress, ref: hintedRef,
+  hintedResult = await claudeDriver.spawn(hintedPlan, { tool: { bin: path.join(nativeFixtures, 'claude-hinted'), version: '2.1.295' }, home, task, address: hintedAddress, ref: hintedRef,
     role: 'worker', cwd: scratch, env: process.env, persist: (id, state, full) => {
       hintEvents.push('persist');
       persistLegacyParticipant(home, task, { ...hintedReserved, metadata: { ...hintedReserved.metadata,
@@ -360,7 +360,7 @@ let swappedRealizations = 0, swappedPersistCalls = 0, swappedFailure, replacemen
 swappedPlan.service = { launchId: 'original-claude-generation', clientId: 'swapped-client', credentialFile: '/private/swapped-client',
   beforeStart: async () => {}, realize: async () => { swappedRealizations += 1; }, revoke: async () => {} };
 try {
-  await claudeDriver.spawn(swappedPlan, { tool: { bin: path.join(nativeFixtures, 'claude-swapped') }, home, task, address: swappedAddress, ref: swappedRef,
+  await claudeDriver.spawn(swappedPlan, { tool: { bin: path.join(nativeFixtures, 'claude-swapped'), version: '2.1.295' }, home, task, address: swappedAddress, ref: swappedRef,
     role: 'worker', cwd: scratch, env: process.env, persist: (id, state, full) => {
       swappedPersistCalls += 1;
       persistLegacyParticipant(home, task, { ...swappedReserved, metadata: { ...swappedReserved.metadata,

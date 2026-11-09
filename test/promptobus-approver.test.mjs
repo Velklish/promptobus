@@ -562,7 +562,7 @@ mkdirSync(BIN, { recursive: true });
 const BG_RAISED = path.join(SB, 'bg-raised.txt');
 stubCommand(BIN, 'claude', `import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
-if (args[0] === '--version') { process.stdout.write('stub 1.0.0\\n'); process.exit(0); }
+if (args[0] === '--version') { process.stdout.write('2.1.295 (Claude Code)\\n'); process.exit(0); }
 if (args[0] === '--bg') {
   const name = args[args.indexOf('--name') + 1] ?? '';
   writeFileSync(${JSON.stringify(BG_RAISED)}, name);
@@ -765,7 +765,7 @@ mkdirSync(LIVE_BIN, { recursive: true });
 const LIVE_BG = path.join(LIVE, 'bg-raised.txt');
 stubCommand(LIVE_BIN, 'claude', `import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
-if (args[0] === '--version') { process.stdout.write('stub 1.0.0\\n'); process.exit(0); }
+if (args[0] === '--version') { process.stdout.write('2.1.295 (Claude Code)\\n'); process.exit(0); }
 if (args[0] === '--bg') {
   const name = args[args.indexOf('--name') + 1] ?? '';
   const nativeId = args[args.indexOf('--session-id') + 1];
@@ -927,7 +927,7 @@ const FAIL_BIN = path.join(LIVE, 'fail-bin');
 mkdirSync(FAIL_BIN, { recursive: true });
 stubCommand(FAIL_BIN, 'claude', `import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
-if (args[0] === '--version') { process.stdout.write('stub 1.0.0\\n'); process.exit(0); }
+if (args[0] === '--version') { process.stdout.write('2.1.295 (Claude Code)\\n'); process.exit(0); }
 if (args[0] === '--bg') { process.stderr.write('launch refused\\n'); process.exit(1); }
 if (args[0] === 'agents' && existsSync(${JSON.stringify(LIVE_BG)})) {
   const raised = JSON.parse(readFileSync(${JSON.stringify(LIVE_BG)}, 'utf8'));
@@ -1065,9 +1065,9 @@ const ultraApprover = spawnSync(process.execPath, ['--input-type=module', '-e',
   env: { ...process.env, PROMPTOBUS_HOME: HOME, PATH: `${ULTRA_BIN}${path.delimiter}${PATH0}` },
 });
 const ultraApproverText = `${ultraApprover.stdout}${ultraApprover.stderr}`;
-check(': an approver without a tool seam reads version telemetry and preserves actual launch refusal',
+check(': an approver without a tool seam refuses unsupported managed hook capability',
   ultraApprover.status === 1 && ultraApproverText.includes('2.0.0')
-    && ultraApproverText.includes('no live session') && !/DEFAULT effort/.test(ultraApproverText),
+    && ultraApproverText.includes('Claude Code >=2.1.295') && !/DEFAULT effort/.test(ultraApproverText),
   `status=${ultraApprover.status} ${ultraApproverText}`);
 
 const { claudeDriver } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
@@ -1076,7 +1076,7 @@ const RETRY_BIN = path.join(SB, 'retry-bin');
 const RETRY_BG = path.join(SB, 'retry-session.txt');
 stubCommand(RETRY_BIN, 'claude', `import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
-if (args[0] === '--version') { process.stdout.write('2.1.280\\n'); process.exit(0); }
+if (args[0] === '--version') { process.stdout.write('2.1.295\\n'); process.exit(0); }
 if (args[0] === '--bg') {
   const name = args[args.indexOf('--name') + 1] ?? '';
   const nativeId = args[args.indexOf('--session-id') + 1];
@@ -1106,7 +1106,7 @@ claudeDriver.prepare = (context) => {
 process.env.PATH = `${RETRY_BIN}${path.delimiter}${NODE_BIN}${path.delimiter}${priorPath ?? ''}`;
 process.env.PROMPTOBUS_WARDEN = 'off';
 try {
-  const liftOptions = { target: REPO, task: TASK, harness: 'claude', tool: { ok: true, bin: path.join(RETRY_BIN, 'claude'), version: '2.1.280' } };
+  const liftOptions = { target: REPO, task: TASK, harness: 'claude', tool: { ok: true, bin: path.join(RETRY_BIN, 'claude'), version: '2.1.295' } };
   await capture(() => approverLift(WS, liftOptions));
   const first = store.participantOf(store.readTask(HOME, TASK), 'approver:orders-api');
   const layerFile = path.join(first.metadata.worktree, '.claude', 'role-layer.txt');
@@ -1230,7 +1230,7 @@ const GEN_BIN = path.join(SB, 'gen-bin');
 const GEN_BG = path.join(SB, 'gen-session.txt');
 stubCommand(GEN_BIN, 'claude', `import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
-if (args[0] === '--version') { process.stdout.write('2.1.280\\n'); process.exit(0); }
+if (args[0] === '--version') { process.stdout.write('2.1.295\\n'); process.exit(0); }
 if (args[0] === '--bg') {
   const name = args[args.indexOf('--name') + 1] ?? '';
   const nativeId = args[args.indexOf('--session-id') + 1];
@@ -1288,7 +1288,7 @@ async function liftWithGenerator(name, generate, npmSource, { enclosing = false 
   try {
     out = await capture(() => approverLift(WS, {
       target: repo, task, harness: 'claude',
-      tool: { ok: true, bin: path.join(GEN_BIN, 'claude'), version: '2.1.280' },
+      tool: { ok: true, bin: path.join(GEN_BIN, 'claude'), version: '2.1.295' },
     }));
   } finally {
     process.env.PATH = priorPath;

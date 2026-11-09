@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Managed Claude launch refuses native versions below 2.1.295 and missing or
+  unparseable versions before starting the native process. This ensures the
+  prompt and tool hooks support `onFailure: "block"`.
+
 - Owned managed hooks use the current bus runtime for startup, prompt and tool
   admission, and Stop, so an older installed layout cannot receive a different
   runtime's service credential. Persisted project hooks retain the layout entry.

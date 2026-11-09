@@ -133,7 +133,7 @@ if (!['darwin', 'linux'].includes(process.platform)) {
         };
         for (const file of launch.files) { mkdirSync(path.dirname(file.path), { recursive: true }); writeFileSync(file.path, file.text); }
         try {
-          await driver.spawn(launch, { tool: { bin: process.execPath }, host, home, task, address, ref, role: 'worker', cwd: root,
+          await driver.spawn(launch, { tool: { bin: process.execPath, version: driver.id === 'claude' ? '2.1.295' : undefined }, host, home, task, address, ref, role: 'worker', cwd: root,
             env: finalized.env, persist: () => {} });
         } catch (error) { observedFailure = error; }
         check(`${driver.id} actual worker beforeStart stages its owned 0600 record in the ordinary 0755 workers directory under umask022`,

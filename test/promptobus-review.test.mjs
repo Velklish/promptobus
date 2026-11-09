@@ -741,6 +741,7 @@ const BG_NATIVE_ID = path.join(SB, 'bg-native-id.txt');
 const claudeStub = (body, succeeds = true) => {
   stubCommand(BIN, 'claude', `import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
+if (args[0] === '--version') { console.log('2.1.295 (Claude Code)'); process.exit(0); }
 if (args[0] === '--bg') {
   writeFileSync(${JSON.stringify(BG_ARGV)}, args.join('\\n'));
   // STUB_SILENT_FAIL — a silent daemon failure: "backgrounded", code 0, no session.
@@ -2860,7 +2861,7 @@ claudeSays('[]');
 const altOut = await capture(() => review(WS, {
   target: REPO,
   task: altTask.id,
-  tool: { ok: true, bin: ALT_BIN, version: '2.1.237', note: `claude not found in PATH — taken from ${ALT}` },
+  tool: { ok: true, bin: ALT_BIN, version: '2.1.295', note: `claude not found in PATH — taken from ${ALT}` },
 }));
 check(`: the reviewer was raised by the binary from the resolve, not the same-named one from PATH`,
   existsSync(ALT_ARGV) && readFileSync(ALT_ARGV, 'utf8').includes('--bg'), String(existsSync(ALT_ARGV)));
@@ -2871,7 +2872,7 @@ const reviewHost = hostOf(WS);
 check(': reviewer lift line records launch provenance',
   altOut.includes('promptobus copy: cli=' + reviewHost.binPath()
     + ' package=' + PACKAGE_PATH + '@' + PACKAGE_VERSION + ' host=' + reviewHost.version
-    + ' participant=' + ALT_BIN + ' version=2.1.237'),
+    + ' participant=' + ALT_BIN + ' version=2.1.295'),
   altOut.split('\n').filter((l) => /promptobus copy:/.test(l)).join(' | '));
 
 // A version refusal carries the process away through fail() — a separate process, the
@@ -2911,9 +2912,9 @@ const ultraReview = spawnSync(process.execPath, ['--input-type=module', '-e',
   env: { ...process.env, PATH: `${ULTRA_REVIEW_BIN}${path.delimiter}${PATH0}` },
 });
 const ultraReviewText = `${ultraReview.stdout}${ultraReview.stderr}`;
-check(': a review without a tool seam reads version telemetry and preserves actual launch refusal',
+check(': a review without a tool seam refuses unsupported managed hook capability',
   ultraReview.status === 1 && ultraReviewText.includes('2.0.0')
-    && ultraReviewText.includes('no live session') && !/DEFAULT effort/.test(ultraReviewText),
+    && ultraReviewText.includes('Claude Code >=2.1.295') && !/DEFAULT effort/.test(ultraReviewText),
   `status=${ultraReview.status} ${ultraReviewText}`);
 
 // --- : on a re-review the MCP set isn't announced -----------------------------

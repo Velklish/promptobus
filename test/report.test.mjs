@@ -254,7 +254,7 @@ const args = process.argv.slice(2);
 const file = ${JSON.stringify(stubState)};
 const launches = ${JSON.stringify(stubLaunches)};
 const stops = ${JSON.stringify(stubStops)};
-if (args[0] === '--version') { console.log('2.1.280'); process.exit(0); }
+if (args[0] === '--version') { console.log('2.1.295'); process.exit(0); }
 if (args[0] === 'stop') { appendFileSync(stops, args[1] + '\\n'); process.exit(0); }
 if (args[0] === '--bg') {
   const name = args[args.indexOf('--name') + 1];
@@ -289,7 +289,7 @@ process.env.PROMPTOBUS_WARDEN = 'off';
 let liftError = '';
 try {
   await capture(() => report(hostOf(LIFT_ROOT), {
-    task: LIFT_TASK, tool: { ok: true, bin: path.join(stubBin, 'claude'), version: '2.1.280' },
+    task: LIFT_TASK, tool: { ok: true, bin: path.join(stubBin, 'claude'), version: '2.1.295' },
   }));
 } catch (error) {
   liftError = error.stack ?? error.message;
@@ -304,7 +304,7 @@ check('real report path records the reporter before launching its managed sessio
     && lifted?.metadata?.sessionId === JSON.parse(readFileSync(stubState, 'utf8')).sessionId,
   liftError || JSON.stringify(lifted?.metadata));
 
-const launchTool = { ok: true, bin: path.join(stubBin, 'claude'), version: '2.1.280' };
+const launchTool = { ok: true, bin: path.join(stubBin, 'claude'), version: '2.1.295' };
 const RACE_TASK = 'report-race-t20260927-000000';
 store.createTask(LIFT_HOME, { id: RACE_TASK, title: 'report race', owner: 'owner-session' });
 process.env.PATH = `${stubBin}${path.delimiter}${oldPath}`;
@@ -473,7 +473,7 @@ writeFileSync(statusState, JSON.stringify([{ id: 'reporter-session', sessionId: 
 stubCommand(statusBin, 'claude', `
 import { readFileSync } from 'node:fs';
 if (process.argv[2] === 'agents') console.log(readFileSync(${JSON.stringify(statusState)}, 'utf8'));
-else if (process.argv[2] === '--version') console.log('2.1.280');
+else if (process.argv[2] === '--version') console.log('2.1.295');
 else process.exit(2);
 `);
 const mcp = spawn(process.execPath, [BIN, 'mcp'], {

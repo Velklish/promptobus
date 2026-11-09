@@ -104,7 +104,7 @@ process.env.PATH = `${BIN}${path.delimiter}${process.env.PATH}`;
 const claudeSays = (sessions) => stubCommand(BIN, 'claude', `import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 const live = ${JSON.stringify(path.join(BIN, 'claude-live.json'))};
-if (args[0] === '--version') { process.stdout.write('2.1.237 (Claude Code)\\n'); process.exit(0); }
+if (args[0] === '--version') { process.stdout.write('2.1.295 (Claude Code)\\n'); process.exit(0); }
 if (args[0] === 'agents') { process.stdout.write(existsSync(live) ? readFileSync(live, 'utf8') : ${JSON.stringify(JSON.stringify(sessions))}); process.exit(0); }
 if (args[0] === '--bg') {
   const nativeId = args[args.indexOf('--session-id') + 1], name = args[args.indexOf('--name') + 1];

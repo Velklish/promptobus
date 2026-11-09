@@ -27,7 +27,7 @@ import {
 } from '../dist/index.js';
 import { orderBody as commonOrderBody } from './notification.js';
 import {
-  readRecordAt, revokeFailedManagedLaunch, sayForeignWrite as commonSayForeignWrite, sessionEnvFor,
+  parseVersion, readRecordAt, revokeFailedManagedLaunch, sayForeignWrite as commonSayForeignWrite, sessionEnvFor, versionLess,
 } from './driver-common.js';
 
 import type { Socket } from 'node:net';
@@ -749,6 +749,9 @@ async function spawn(plan: LibLaunchPlan, { tool, ref, role, cwd, env, home, tas
   let launchTool = tool;
   let actualId: string | null = null;
   try {
+    if (plan.service && (!parseVersion(tool.version) || versionLess(tool.version, '2.1.295'))) {
+      throw new GateError(`Managed Claude launch requires Claude Code >=2.1.295 for fail-closed prompt and tool hooks; found ${tool.version?.trim() || 'unknown'}`);
+    }
     const previousParticipant = role === 'teamlead' && taskExists(home, task)
       ? withTaskLock(home, task, () => structuredClone(participantOf(readTask(home, task), address) ?? null)) : undefined;
     if (pointer) {
