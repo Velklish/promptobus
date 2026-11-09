@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after comparing their full paths, types and bytes with a fresh no-model
   bootstrap from the admitted launch executable. Foreign content and unavailable
   references refuse before replacement.
+- Standalone-root malformed-credential controls use their own service process
+  and home. A deterministic check covers fail-closed owner termination and
+  survival of the healthy admission service.
 - Bounded Cursor Stop fixtures observe the command process before Node startup
   and prepare static fallback replies before Stop. The original deadline and
   separate yield, physical termination and UNKNOWN controls remain in place.

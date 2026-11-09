@@ -1,16 +1,17 @@
 import { check } from './check.mjs';
 import { randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createStandaloneHost } from '../dist/host-index.js';
-import { approveStandaloneRootProfile, authorizeStandaloneRootStart, standaloneRootExecPlan } from '../lib/standalone-root.js';
-import { planHookInstall } from '../lib/integration.js';
-import { runWorkspaceService } from '../lib/service.js';
-import { serviceControl } from '../lib/service-client.js';
-import { readDiscovery, readPrivate, runtimeIdentity, servicePaths, writePrivate } from '../lib/service-state.js';
-import { copyNodeExecutable, makeSandbox, writeHostConfig } from './sandbox.mjs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+const selectedRuntime = process.argv[2] ? pathToFileURL(path.resolve(process.argv[2]) + '/') : new URL('../', import.meta.url);
+const { createStandaloneHost } = await import(new URL('dist/host-index.js', selectedRuntime));
+const { approveStandaloneRootProfile, authorizeStandaloneRootStart, standaloneRootExecPlan } = await import(new URL('lib/standalone-root.js', selectedRuntime));
+const { planHookInstall } = await import(new URL('lib/integration.js', selectedRuntime));
+const { runWorkspaceService } = await import(new URL('lib/service.js', selectedRuntime));
+const { serviceControl } = await import(new URL('lib/service-client.js', selectedRuntime));
+const { processState, readDiscovery, readPrivate, runtimeIdentity, servicePaths, writePrivate } = await import(new URL('lib/service-state.js', selectedRuntime));
+const { copyNodeExecutable, makeSandbox, writeHostConfig } = await import(new URL('test/sandbox.mjs', selectedRuntime));
 
 const root = realpathSync(makeSandbox('promptobus-standalone-root-'));
 const runnerExecutable = statSync(process.execPath);
@@ -18,9 +19,9 @@ process.stdout.write(`  · fixture runner executable: ${JSON.stringify({ isFile:
 const nativeExecutable = path.join(root, 'native-node');
 copyNodeExecutable(nativeExecutable);
 const base = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-root-'));
-const bin = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url));
-const wrapper = fileURLToPath(new URL('../bin/promptobus-root', import.meta.url));
-const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version;
+const bin = fileURLToPath(new URL('bin/promptobus.js', selectedRuntime));
+const wrapper = fileURLToPath(new URL('bin/promptobus-root', selectedRuntime));
+const version = JSON.parse(readFileSync(new URL('package.json', selectedRuntime))).version;
 const env = { ...process.env,
   PROMPTOBUS_HOME: path.join(root, '.promptobus'), PROMPTOBUS_SERVICE_HOME: base,
   PROMPTOBUS_WARDEN: 'off', PROMPTOBUS_SERVICE_IDLE_MS: '60000' };
@@ -223,10 +224,10 @@ syncBuiltinESMExports();
 `);
   writeFileSync(native, `import {existsSync,readFileSync,writeFileSync,readdirSync,mkdirSync,unlinkSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
-import {shellQuote} from ${JSON.stringify(fileURLToPath(new URL('../dist/fs/shell.js', import.meta.url)))};
+import {shellQuote} from ${JSON.stringify(fileURLToPath(new URL('dist/fs/shell.js', selectedRuntime)))};
 import {spawn} from 'node:child_process';
-import {serviceControl} from ${JSON.stringify(fileURLToPath(new URL('../lib/service-client.js', import.meta.url)))};
-import {readPrivate,writePrivate} from ${JSON.stringify(fileURLToPath(new URL('../lib/service-state.js', import.meta.url)))};
+import {serviceControl} from ${JSON.stringify(fileURLToPath(new URL('lib/service-client.js', selectedRuntime)))};
+import {readPrivate,writePrivate} from ${JSON.stringify(fileURLToPath(new URL('lib/service-state.js', selectedRuntime)))};
 const [output,bin,profile,actualId,...literal]=process.argv.slice(2);
 const launch=JSON.parse(readFileSync(process.env.PROMPTOBUS_ROOT_LAUNCH_FILE));
 const directory=process.env.PROMPTOBUS_ROOT_LAUNCH_FILE.replace(/[^/]+$/,'');
@@ -467,20 +468,6 @@ writeFileSync(output,JSON.stringify({hooks,race,clientId:retained.clientId,oldTo
   check('idempotent missing-client revoke still requires current runtime and exact client ID',
     await deniedControl({ operation: 'revoke', runtime: runtime + '-foreign', clientId: conflict.clientId }) === 'Owner request belongs to a different shared service runtime'
     && await deniedControl({ operation: 'revoke', runtime, clientId: '../foreign' }) === 'Invalid client id');
-  const corruptId = randomUUID(), corruptFile = path.join(paths.clients, corruptId + '.json');
-  try {
-    writeFileSync(corruptFile, 'null', { mode: 0o600 });
-    const denial = await deniedControl({ operation: 'revoke', runtime, clientId: corruptId });
-    check('owner revoke refuses and retains an existing private JSON null credential', denial === 'Client binding not found'
-      && readFileSync(corruptFile, 'utf8') === 'null' && (lstatSync(corruptFile).mode & 0o777) === 0o600, denial);
-  } finally { unlinkSync(corruptFile); }
-  const missingTarget = path.join(root, 'absent-credential-target.json');
-  try {
-    symlinkSync(missingTarget, corruptFile);
-    const denial = await deniedControl({ operation: 'revoke', runtime, clientId: corruptId });
-    check('owner revoke refuses a dangling credential symlink without following or removing it', typeof denial === 'string'
-      && lstatSync(corruptFile).isSymbolicLink() && readlinkSync(corruptFile) === missingTarget && !existsSync(missingTarget), denial);
-  } finally { unlinkSync(corruptFile); }
   const deferredStart = async mode => {
     const deferredId = randomUUID(), deferredOutput = path.join(root, `deferred-start-${mode}.json`);
     const deferredTranscript = path.join(nativeStore, 'projects', `future-${mode}`, `${deferredId}.jsonl`);
@@ -676,13 +663,85 @@ writeFileSync(${JSON.stringify(execOutput)},JSON.stringify(result));
     { env, dryRun: true, cwd: root }).then(() => null, error => error);
   check('the same unsupported exec argv also refuses in a dry run', /not a supported NEW form or resume selection/.test(String(unsupportedPreview?.message)),
     String(unsupportedPreview?.message));
+
+  const malformedRoot = path.join(root, 'malformed-owner');
+  mkdirSync(malformedRoot);
+  writeHostConfig(malformedRoot, { tools: [] });
+  const malformedBase = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-root-'));
+  const malformedEnv = { ...env, HOME: malformedRoot, USERPROFILE: malformedRoot,
+    PROMPTOBUS_HOME: path.join(malformedRoot, '.promptobus'), PROMPTOBUS_SERVICE_HOME: malformedBase };
+  const malformedHost = createStandaloneHost({ cwd: malformedRoot, binPath: bin, version });
+  const malformedPaths = servicePaths(malformedHost, malformedEnv), malformedRuntime = runtimeIdentity(malformedHost);
+  let malformedSpawnError, malformedExit, malformedTerminal = false, malformedError = '';
+  const malformedProcess = spawn(process.execPath, [bin, 'service', 'run'],
+    { cwd: malformedRoot, env: malformedEnv, stdio: ['ignore', 'ignore', 'pipe'] });
+  children.add(malformedProcess);
+  malformedProcess.stderr.on('data', bytes => { malformedError += bytes; });
+  malformedProcess.once('error', error => { malformedSpawnError = error; });
+  const malformedRunning = new Promise(resolve => malformedProcess.once('close', (code, signal) => {
+    malformedTerminal = true; malformedExit = { code, signal }; children.delete(malformedProcess); resolve(malformedExit);
+  }));
+  const healthyOwner = { paths, runtime }, malformedOwner = { paths: malformedPaths, runtime: malformedRuntime };
+  const corruptOwner = malformedOwner;
+  const corruptId = randomUUID(), corruptFile = path.join(corruptOwner.paths.clients, corruptId + '.json');
+  try {
+    const readyEdge = Date.now() + 5000;
+    while (readDiscovery(malformedPaths)?.process.pid !== malformedProcess.pid && !malformedTerminal && !malformedSpawnError
+      && Date.now() < readyEdge) await new Promise(resolve => setTimeout(resolve, 10));
+    if (malformedSpawnError) throw malformedSpawnError;
+    const malformedIdentity = readDiscovery(malformedPaths)?.process;
+    if (malformedIdentity?.pid !== malformedProcess.pid) throw new Error(`Owned malformed fixture service did not start: ${malformedError}`);
+    const healthyBefore = await serviceControl(healthyOwner.paths, { operation: 'status', runtime: healthyOwner.runtime });
+    const malformedDenial = async () => {
+      try { await serviceControl(corruptOwner.paths, { operation: 'revoke', runtime: corruptOwner.runtime, clientId: corruptId }); return null; }
+      catch (error) { return error.message; }
+    };
+    const missingTarget = path.join(malformedRoot, 'absent-credential-target.json');
+    try {
+      symlinkSync(missingTarget, corruptFile);
+      const denial = await malformedDenial();
+      check('owner revoke refuses a dangling credential symlink without following or removing it', typeof denial === 'string'
+        && lstatSync(corruptFile).isSymbolicLink() && readlinkSync(corruptFile) === missingTarget && !existsSync(missingTarget), denial);
+    } finally { unlinkSync(corruptFile); }
+    try {
+      writeFileSync(corruptFile, 'null', { mode: 0o600 });
+      const denial = await malformedDenial();
+      check('owner revoke refuses and retains an existing private JSON null credential', denial === 'Client binding not found'
+        && readFileSync(corruptFile, 'utf8') === 'null' && (lstatSync(corruptFile).mode & 0o777) === 0o600, denial);
+      const terminalEdge = Date.now() + 1500;
+      while (!malformedTerminal && Date.now() < terminalEdge) await new Promise(resolve => setTimeout(resolve, 5));
+      const healthyAfter = await serviceControl(healthyOwner.paths, { operation: 'status', runtime: healthyOwner.runtime }).catch(error => ({ error: error.message }));
+      const healthyAlive = !ownerError && healthyAfter.url === healthyBefore.url
+        && healthyAfter.process?.pid === healthyBefore.process.pid && healthyAfter.process?.birth === healthyBefore.process.birth;
+      const receipt = { isolatedHomes: malformedPaths.home !== paths.home, isolatedServices: malformedPaths.directory !== paths.directory,
+        malformedTerminal, malformedExit, malformedFailClosed: malformedError.includes('Invalid shared service client grant'),
+        malformedProcessDead: processState(malformedIdentity) === 'dead', malformedSocketAbsent: !existsSync(malformedPaths.controlSocket),
+        healthyAlive, healthyError: ownerError?.message ?? null };
+      writeSync(1, '  · malformed-owner-receipt: ' + JSON.stringify(receipt) + '\n');
+      check('malformed owner fails closed while the separate healthy admission owner survives the same stimulus',
+        receipt.isolatedHomes && receipt.isolatedServices && receipt.malformedTerminal
+        && receipt.malformedExit?.code === 1 && receipt.malformedExit.signal === null && receipt.malformedFailClosed
+        && receipt.malformedProcessDead && receipt.malformedSocketAbsent && receipt.healthyAlive,
+        JSON.stringify(receipt));
+    } finally { unlinkSync(corruptFile); }
+  } finally {
+    if (!malformedTerminal) {
+      if (readDiscovery(malformedPaths)?.process.pid === malformedProcess.pid) await serviceControl(malformedPaths, { operation: 'stop', runtime: malformedRuntime });
+      else malformedProcess.kill('SIGTERM');
+    }
+    await malformedRunning;
+    rmSync(malformedBase, { recursive: true, force: true });
+  }
+
 } finally {
   await Promise.all([...children].map(child => new Promise(resolve => { child.once('close', resolve); child.kill('SIGTERM'); })));
-  for (const name of existsSync(paths.clients) ? readdirSync(paths.clients) : []) {
-    if (/^[a-f0-9-]{36}\.json$/.test(name)) await serviceControl(paths, { operation: 'revoke', clientId: name.slice(0, -5), runtime });
+  if (!ownerError) {
+    for (const name of existsSync(paths.clients) ? readdirSync(paths.clients) : []) {
+      if (/^[a-f0-9-]{36}\.json$/.test(name)) await serviceControl(paths, { operation: 'revoke', clientId: name.slice(0, -5), runtime });
+    }
+    if (readDiscovery(paths)) await serviceControl(paths, { operation: 'stop', runtime });
   }
-  if (!ownerError && readDiscovery(paths)) await serviceControl(paths, { operation: 'stop', runtime });
   await running;
   rmSync(base, { recursive: true, force: true });
 }
-if (ownerError) throw ownerError;
+check('healthy admission owner completes without a service failure', !ownerError, ownerError?.message);

@@ -651,3 +651,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-427.1"></a>`PB-427.1-native-retirement-fixture-drain` · 2026-11-09 · completed · — · Managed retirement suite can abort while service observations drain
 - <a id="pb-428"></a>`PB-428-claude-admission-before-execution` · 2026-11-09 · completed · — · Admit fresh Claude sessions before model execution
 - <a id="pb-428.1"></a>`PB-428.1-cursor-stop-child-accounting` · 2026-11-09 · completed · — · Preserve bounded Cursor Stop child accounting
+- <a id="pb-428.2"></a>`PB-428.2-malformed-owner-fixture-isolation` · 2026-11-09 · completed · — · Isolate malformed owner controls from admission service

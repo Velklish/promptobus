@@ -761,6 +761,16 @@ These fixtures establish startup/transcript ordering, prompt/tool refusal and
 HTTP connection ownership; installed Claude startup, MCP connection ordering and
 hook enforcement still require native verification.
 
+The standalone-root fixture gives malformed-credential controls a separate owned
+workspace, store home and foreground service process. Exact revoke refusal,
+credential bytes and mode, and symlink retention remain checked through the real
+owner API. It then retains the malformed input through a periodic scan and checks
+the owner's error exit, physical process death and removed socket. The healthy
+admission owner's status must retain its endpoint, PID and process birth through
+the same stimulus. The production fail-closed policy and service scheduling are
+unchanged; the fixture reports any unexpected healthy-owner failure as a named
+verdict after terminal cleanup.
+
 The shared service constructs every managed tool context from the actual trusted
 client binding, replacing inherited harness identity variables. Claude's bearer
 header contains no native session-ID hint. A requested launch UUID cannot replace
