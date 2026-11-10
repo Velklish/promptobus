@@ -527,8 +527,8 @@ export function refuseParticipantPrefix(slug: string, route: string, registry: R
     const stem = participantFileStem(address);
     const occupied = participants.find((participant) => {
       const other = addressOf(participant);
-      return other!.includes(':') && other !== address
-        && participantFileStem(other!) === stem;
+      return other !== null && other.includes(':') && other !== address
+        && participantFileStem(other) === stem;
     });
     if (occupied) {
       throw new GateError(`the owner step name "${slug}" shares workers/${stem}.mcp.json `
