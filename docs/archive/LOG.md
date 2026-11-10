@@ -657,3 +657,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-428.5"></a>`PB-428.5-e2e-health-publication` · 2026-11-09 · completed · — · Wait for persisted notification health within the E2E step deadline
 - <a id="pb-428.6"></a>`PB-428.6-portable-aliased-temp-socket-fixture` · 2026-11-09 · completed · — · Bound the aliased-temp standalone fixture socket path
 - <a id="pb-325.2"></a>`PB-325.2-spawn-null-participant-address` · 2026-11-10 · completed · — · Spawn without --task crashes with a TypeError when the only active task holds a participant record with a null address
+- <a id="pb-407"></a>`PB-407-root-done-after-child-claim` · 2026-11-10 · completed · — · Root done refuses forever after the orchestrator claimed a closed Codex teamlead's child task
