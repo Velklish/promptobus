@@ -22,7 +22,7 @@ import { requireNativeTerminal, retainNativeStop, withNativeStopLocks } from './
 import {
   PARTICIPANT_ARGV, SESSION_ENV_VAR, pidAlive, dropSession, findSessionByAddress, holderAlive, holderAsk, patchSession,
   rateLimitNote, rateLimitReached, readSession, readyMs, reapHolder, sessionFile, startHolder, STOP_TIMEOUT_MS,
-  tailLog, waitReady, writeParticipantWake, writeSession, withSessionLaunch, sessionKey, codexMcpName, codexMcpPrefix,
+  tailLog, waitReady, writeParticipantWake, writeSession, withSessionLaunch, sessionKey, selfStopLogFile, codexMcpName, codexMcpPrefix,
   bindParticipantHomeRemoval, codexMcpServers, registrySessions, scanSessions, sessionsDir, turnWaitMs, turnIdleMs, turnFailed, holderLockState,
   managedCodexResumeDeath, retireCodexResumeHolderLock,
 } from './codex-session.js';
@@ -1634,9 +1634,34 @@ function saidLiftoff({ output, seen: receipt }: LibSpawnResult & { name?: string
   else info('hook trust for this thread is bypass_hook_trust on thread/start; a linked worktree also has that hooks file in its Codex home');
 }
 
+export function retireConfirmedCodex(ref: string, launchId: string, threadId: string | null | undefined, deadline: number) {
+  const record = readSession(ref);
+  if (!record || record.launchId !== launchId || record.threadId !== threadId) throw new Error('Codex launch identity changed before retirement');
+  let receiptFile: string | undefined;
+  const retired = withNativeStopLocks(record, () => {
+    if (Date.now() >= deadline) throw new Error('Stop deadline elapsed before record retirement');
+    const current = readSession(ref);
+    if (!current || current.launchId !== launchId || current.threadId !== threadId || !current.stopConfirmed
+      || current.ref !== record.ref || current.home !== record.home || current.task !== record.task || current.address !== record.address
+      || current.holderPid !== record.holderPid || current.appPid !== record.appPid
+      || holderAlive(ref) || pidAlive(current.appPid)) return false;
+    receiptFile = path.join(harnessStateHome(CODEX), 'receipts', sessionKey(ref), sessionKey(launchId) + '.jsonl');
+    if (current.commandReceiptFile !== receiptFile) return false;
+    const confirmation = readStopConfirmation(receiptFile, current);
+    if (!confirmation.ok) throw new Error(confirmation.note);
+    if (Date.now() >= deadline) throw new Error('Stop deadline elapsed while validating record retirement');
+    retainNativeStop(current, receiptFile);
+    if (Date.now() >= deadline) throw new Error('Stop deadline elapsed while retaining terminal proof');
+    dropSession(ref);
+    return true;
+  }, { deadlineAt: deadline });
+  if (!retired) throw new Error('launch ownership or finalization changed before record retirement');
+  return receiptFile;
+}
+
 /** Stop confirms terminal command accounting before retiring the matching launch.
  * Unresolved stops retain their record, participant home and selected lifecycle receipts. */
-async function stop(ref: string, { timeoutMs = STOP_TIMEOUT_MS } = {}) {
+async function stop(ref: string, { timeoutMs = STOP_TIMEOUT_MS, deferSelf = false } = {}) {
   const record = readSession(ref);
   if (!record) {
     return {
@@ -1652,6 +1677,51 @@ async function stop(ref: string, { timeoutMs = STOP_TIMEOUT_MS } = {}) {
   const deadline = Date.now() + Math.min(STOP_TIMEOUT_MS, timeoutMs);
   if (!record.launchId) return unresolved('launch identity is missing; no shutdown issued');
   if (Date.now() >= deadline) return unresolved('Stop deadline elapsed before shutdown or recovery');
+  if (deferSelf) {
+    const requesterThreadId = process.env.CODEX_THREAD_ID;
+    if (!requesterThreadId || requesterThreadId !== record.threadId || record.stopConfirmed || !holderAlive(ref))
+      return unresolved('Self-Stop requester does not match a live owned native thread');
+    let finalizer: ReturnType<typeof spawnProcess> | undefined;
+    try {
+      finalizer = spawnProcess(process.execPath, [fileURLToPath(new URL('./codex-retire.js', import.meta.url)),
+        ref, record.launchId, requesterThreadId, String(deadline + STOP_TIMEOUT_MS)],
+        { env: process.env, detached: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+      const child = finalizer;
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => finish(new Error('self-Stop finalizer readiness timed out')), Math.max(1, deadline - Date.now()));
+        const finish = (error?: Error) => {
+          clearTimeout(timer);
+          child.off('message', onMessage); child.off('error', onError); child.off('exit', onExit);
+          if (error) reject(error); else resolve();
+        };
+        const onMessage = (message: unknown) => {
+          if (!recordOf(message) || message.ready !== true || message.ref !== ref || message.launchId !== record.launchId
+            || message.threadId !== requesterThreadId) return finish(new Error('self-Stop finalizer returned invalid readiness'));
+          finish();
+        };
+        const onError = (error: Error) => finish(error);
+        const onExit = () => finish(new Error('self-Stop finalizer exited before readiness'));
+        child.once('message', onMessage); child.once('error', onError); child.once('exit', onExit);
+      });
+      finalizer.disconnect();
+      finalizer.unref();
+    } catch (error) {
+      if (finalizer) {
+        finalizer.on('error', () => {});
+        if (finalizer.connected) finalizer.disconnect();
+        if (finalizer.exitCode === null && finalizer.signalCode === null) finalizer.kill('SIGTERM');
+        finalizer.unref();
+      }
+      return unresolved(`self-Stop finalizer could not start: ${(error as Error).message}`);
+    }
+    try {
+      const answer = await holderAsk(ref, 'shutdown', { launchId: record.launchId, deadlineAt: deadline, deferSelf: true, requesterThreadId }, process.env,
+        Math.max(1, deadline - Date.now()));
+      if (!answer.ok || !answer.deferred || answer.stopped || answer.launchId !== record.launchId)
+        return unresolved(answer.note ?? 'holder did not accept deferred Stop');
+      return { ok: true, stopped: false, deferred: true, note: `thread ${id}: Stop accepted; confirmation pending; finalizer log ${selfStopLogFile(ref, record.launchId)}` };
+    } catch (error) { return unresolved(`deferred shutdown outcome unresolved: ${(error as Error).message}`); }
+  }
   if (!record.stopConfirmed || holderAlive(ref)) {
     let answer;
     try {
@@ -1664,26 +1734,9 @@ async function stop(ref: string, { timeoutMs = STOP_TIMEOUT_MS } = {}) {
   }
   while (holderAlive(ref) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
   if (holderAlive(ref)) return unresolved('holder exit was not confirmed before the Stop deadline');
-  let retired, receiptFile;
-  try {
-    const retire = () => {
-      if (Date.now() >= deadline) throw new Error('Stop deadline elapsed before record retirement');
-      const current = readSession(ref);
-      if (!current || current.launchId !== record.launchId || !current.stopConfirmed
-        || holderAlive(ref) || pidAlive(current.appPid)) return false;
-      receiptFile = path.join(harnessStateHome(CODEX), 'receipts', sessionKey(ref), sessionKey(record.launchId) + '.jsonl');
-      if (current.commandReceiptFile !== receiptFile) return false;
-      const confirmation = readStopConfirmation(receiptFile, current);
-      if (!confirmation.ok) throw new Error(confirmation.note);
-      if (Date.now() >= deadline) throw new Error('Stop deadline elapsed while validating record retirement');
-      retainNativeStop(current, receiptFile);
-      if (Date.now() >= deadline) throw new Error('Stop deadline elapsed while retaining terminal proof');
-      dropSession(ref);
-      return true;
-    };
-    retired = withNativeStopLocks(record, retire, { deadlineAt: deadline });
-  } catch (error) { return unresolved(`record retirement unresolved: ${(error as Error).message}`); }
-  if (!retired) return unresolved('launch ownership or finalization changed before record retirement');
+  let receiptFile;
+  try { receiptFile = retireConfirmedCodex(ref, record.launchId, record.threadId, deadline); }
+  catch (error) { return unresolved(`record retirement unresolved: ${(error as Error).message}`); }
   return {
     ok: true,
     stopped: true,
@@ -1764,6 +1817,7 @@ export const codexDriver = {
   saidLiftoff,
   inspect,
   stop,
+  stopSelf: (ref: string) => stop(ref, { deferSelf: true }),
   activate,
   renderNotification,
   stallRoute,

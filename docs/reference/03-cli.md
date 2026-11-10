@@ -1202,7 +1202,12 @@ the task lock. Active, unknown, pending or unresolved native work refuses before
 the task journal, telemetry or cleanup changes, including with `--keep-sessions`.
 Call `stop <address>` first. Stop retains a digest-bound `metadata.nativeStop`
 reference to its selected receipt before deleting the disposable session record.
-Missing or mismatched proof is unresolved, not an idle session.
+Missing or mismatched proof is unresolved, not an idle session. A managed Codex
+orchestrator stopping its own session receives a pending acknowledgement so the
+requesting command can finish. Confirmation requires every actual command outcome
+and app-server closure; an exact-launch finalizer then retains the proof and removes
+the session record. Inspect status and participant proof from another authorized
+session; the acknowledgement alone is not confirmation.
 
 `abandon [<address>]` is the route for a session that harness already reports
 dead and that has no Stop receipt. The mailbox owner calls it. The owner's

@@ -70,7 +70,13 @@ export async function stop(rootOrHost: unknown, { task, address }: { task?: stri
   // Named before the call, as `done` names its list: the stop is irreversible, and a person
   // reading the output should see what is closing now rather than what closed.
   info(`stopping the session of participant ${address} — the task stays open and the other participants keep working`);
-  const r = await stopParticipant(p!, coreRegistry(registry));
+  const deferSelf = state === 'alive' && address === ORCHESTRATOR && driver.id === 'codex' && typeof session === 'string'
+    && session !== '' && session === p!.metadata.sessionId;
+  const r = await stopParticipant(p!, coreRegistry(registry), deferSelf ? { deferSelf: true } : undefined);
+  if (r?.ok && r.deferred && !r.stopped) {
+    info(`self-Stop requested for participant ${address}; completion is pending: ${r.note}; check status and retained Stop proof from another authorized session`);
+    return 0;
+  }
   if (!r?.ok) {
     fail(`could not close the session of participant ${address}: ${r?.note ?? 'reason unknown'} `
       + `— close it yourself from ${driver.phrases.sessions}`);

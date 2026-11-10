@@ -144,6 +144,9 @@ const stopped = cli(['stop', 'orchestrator', '--task', task],
 check('stop cleans a dead managed Codex root home without closing its task',
   stopped.status === 0 && second?.codexHome && !existsSync(second.codexHome) && ref && !readSession(ref, env)
   && (await metaOf(task))?.status === 'active', `${stopped.status} ${stopped.stdout}${stopped.stderr}`);
+check('dead self-owned root uses synchronous Stop and retains verified native proof',
+  stopped.status === 0 && !/completion is pending/.test(stopped.stdout) && !!(await owner())?.metadata?.nativeStop,
+  `${stopped.status} ${stopped.stdout}${stopped.stderr}`);
 writeFileSync(path.join(ownerHome, 'auth.json'), '{"stub":"credentials"}\n');
 writeFileSync(brief, '# Failed first turn\nKeep recovery history.\n');
 const failedTask = 'lead-lifecycle-t20261001-000002';

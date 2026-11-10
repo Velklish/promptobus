@@ -137,12 +137,12 @@ export function publishCodexNativeAdmission(ref: string, input: CodexAdmissionPu
   });
 }
 export interface CodexHolderResult extends Partial<CodexSessionRecord> {
-  ok?: boolean; stopped?: boolean; attempted?: boolean; note?: string | null; receiptFile?: string;
+  ok?: boolean; stopped?: boolean; attempted?: boolean; deferred?: boolean; note?: string | null; receiptFile?: string;
   threadStatus?: string | { type?: string } | null; turnStarted?: boolean; activeTurns?: (string | null | undefined)[];
   appClosed?: boolean; holderExitRequested?: boolean; commandReceiptError?: string | null;
 }
 interface HolderEnvelope { id?: unknown; error?: string | CodexError; result?: CodexHolderResult }
-interface HolderRequest { id?: unknown; op?: string; method: string; params?: CodexParams; timeoutMs?: number; launchId?: string; deadlineAt?: number }
+interface HolderRequest { id?: unknown; op?: string; method: string; params?: CodexParams; timeoutMs?: number; launchId?: string; deadlineAt?: number; deferSelf?: boolean; requesterThreadId?: string }
 interface HolderState {
   threadId: string | null | undefined; busy: boolean; activeTurns: Set<string | null | undefined>; turnStarted: boolean;
   currentTurnId: string | null | undefined; threadStatus: string | CodexParams | null; rateLimits: CodexRateLimits | null;
@@ -216,6 +216,10 @@ export function socketPath(ref: string, env = process.env): string {
     .update(sessionsDir(env) + '\0' + refText)
     .digest('hex').slice(0, 12) + '.sock';
   return path.join(tmpdir(), 'pb-cdx-' + fallback);
+}
+
+export function selfStopLogFile(ref: string, launchId: string, env = process.env) {
+  return path.join(sessionsDir(env), `${sessionKey(ref)}.self-stop-${createHash('sha256').update(launchId).digest('hex').slice(0, 16)}.log`);
 }
 
 export function holderLogFile(ref: string, env = process.env) {
@@ -1592,8 +1596,12 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
     if (req.op === 'shutdown') {
       if (!ownsLaunch() || (req.launchId !== undefined && req.launchId !== record.launchId))
         return { ok: false, stopped: false, note: 'Codex launch ownership changed; no shutdown issued' };
+      if (req.deferSelf && (typeof req.requesterThreadId !== 'string' || !req.requesterThreadId.trim()
+        || req.requesterThreadId !== readSession(ref, env)?.threadId || req.requesterThreadId !== state.threadId))
+        return { ok: false, stopped: false, note: 'Self-Stop requester does not match the owned native thread' };
       if (shutdownResult) return shutdownResult;
-      if (shutdownInFlight) return shutdownInFlight;
+      if (shutdownInFlight) return req.deferSelf
+        ? { ok: true, stopped: false, deferred: true, launchId: record.launchId } : shutdownInFlight;
       stopping = true;
       patchHeld(ref, { stopping: true }, env);
       const requestedDeadline = Number.isFinite(req.deadlineAt) ? req.deadlineAt : Date.now() + 5_000;
@@ -1601,8 +1609,13 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
       shutdownInFlight = finalizeStop(deadline).then(result => {
         if (result.ok) shutdownResult = result;
         return result;
+      }).catch(error => {
+        const note = `Stop failed before confirmation: ${(error as Error).message}`;
+        try { receipts.append('stop/unresolved', { note, activeTurns: [...state.activeTurns], commands: receipts.snapshot().commands }); } catch {}
+        try { patchHeld(ref, { stopping: true, stopError: note }, env); } catch {}
+        return { ok: false, attempted: true, stopped: false, launchId: record.launchId ?? null, note, receiptFile };
       }).finally(() => { shutdownInFlight = null; });
-      return shutdownInFlight;
+      return req.deferSelf ? { ok: true, stopped: false, deferred: true, launchId: record.launchId } : shutdownInFlight;
     }
     throw new Error(`unknown holder operation «${req.op}»`);
   }

@@ -401,7 +401,7 @@ export type Notification =
   { kind: 'unread'; task: string; address: string; unread: number; messages: NotificationMessage[] };
 
 /** Stop outcome. Two flags, not one: `ok` says the operation did not refuse, `stopped` that a session
- * was actually stopped — nothing to stop is success, and must not print as "session closed". */
+ * was actually stopped — nothing to stop is success. A deferred self-Stop is accepted but not confirmed. */
 export interface StopResult {
   ok: boolean;
   /** Native Stop confirms terminal command accounting before retiring its owned launch.
@@ -411,6 +411,7 @@ export interface StopResult {
   /** The driver ISSUED the stop and could not confirm the session vanished. Without this flag
    * `stopped: false` would also mean "there was no session", and cleanup leaves the directory. */
   attempted?: boolean;
+  deferred?: boolean;
 }
 
 /** Activation outcome. This does not give a “delivered” flag — that one is the mailbox having been taken. */
@@ -492,6 +493,8 @@ export interface Driver {
   /** Stop the session. **It returns when the harness already has NO session**, or with an honest
    * `stopped: false` and a reason — cleanup follows the stop. The outcome may be a promise. */
   stop?(ref: string): StopResult | Promise<StopResult>;
+  /** Accept an owned self-Stop for later confirmation without waiting on its caller. */
+  stopSelf?(ref: string): StopResult | Promise<StopResult>;
   /** Availability adapter of this harness: what the ACCOUNT can do, asked before any session exists.
    * Its absence is a state, not an error — the registry answers `unknown` / `probe_failed`. */
   readonly availability?: AvailabilityAdapter;
@@ -618,7 +621,7 @@ export function isManaged(participant: ParticipantV1 | null | undefined): boolea
 
 /** Stop a participant session — a driver operation, not a command. Only `managed` may be stopped, and
  * the refusal is explicit; the outcome is awaited, since the driver may wait for the harness. */
-export async function stopParticipant(participant: ParticipantV1, registry: Registry): Promise<StopResult> {
+export async function stopParticipant(participant: ParticipantV1, registry: Registry, options?: { deferSelf?: boolean }): Promise<StopResult> {
   const driver = driverFor(registry, harnessOf(participant, registry));
   requireCapability(driver, 'stop');
   const mode = modeOf(participant);
@@ -629,6 +632,10 @@ export async function stopParticipant(participant: ParticipantV1, registry: Regi
     const said = mode ?? (raw ? `«${raw}» — the contract does not know this mode` : 'there is no session behind it');
     throw new GateError(`participant ${named(participant)}: mode ${mode ? `«${mode}»` : said} — `
       + `driver «${driver.id}» did not launch this session and has no right to dispose of it`);
+  }
+  if (options?.deferSelf) {
+    if (!driver.stopSelf) throw new GateError(`driver «${driver.id}» cannot defer a self-Stop`);
+    return driver.stopSelf(sessionRefOf(participant)!);
   }
   return driver.stop!(sessionRefOf(participant)!);
 }

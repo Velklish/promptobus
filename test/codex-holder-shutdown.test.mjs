@@ -4,7 +4,8 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import Ajv from 'ajv';
-import { makeSandbox, stubCommand } from './sandbox.mjs';
+import { makeSandbox, stubCommand, writeHostConfig } from './sandbox.mjs';
+import { createTask, participantRecord, upsertParticipant, readTask, participantOf } from '../lib/store.js';
 import { waitFor } from './harness.mjs';
 import { dropSession, holderAsk, holderLogFile, pidAlive, readSession, sessionFile, waitReady, writeSession } from '../lib/codex-session.js';
 import { codexDriver, MIN_CODEX_VERSION, PROVEN_CODEX_VERSION } from '../lib/driver-codex.js';
@@ -79,7 +80,9 @@ for await (const line of readline.createInterface({input:process.stdin})) {
 }
 `);
 
-async function scenario(name, work, { expected, hanging = false, unresolved = false, failedCleanup = false, failRecordFsync = null, budget = 5000, after, driver = false, receiptBlocked = false, rawTools = false, rawResume = false } = {}) {
+const selfOnly = process.argv.includes('--self-only');
+async function scenario(name, work, { expected, hanging = false, unresolved = false, failedCleanup = false, failRecordFsync = null, budget = 5000, after, driver = false, receiptBlocked = false, rawTools = false, rawResume = false, selfStop = false } = {}) {
+  if (selfOnly && name !== 'self-stop-e2e') return;
   const dir = path.join(root, name);
   mkdirSync(dir);
   if (receiptBlocked) writeFileSync(path.join(dir, 'receipts'), 'not a directory');
@@ -94,14 +97,15 @@ async function scenario(name, work, { expected, hanging = false, unresolved = fa
       'CODEX_EXEC_SERVER_NOISE_ENVIRONMENT_ID', 'CODEX_EXEC_SERVER_NOISE_AUTH_TOKEN',
       'CODEX_EXEC_SERVER_NOISE_CHATGPT_ACCOUNT_ID']) delete env[key];
   }
-  const ref = name;
+  const ref = name, task = 'self-stop-t20261110-000000', home = path.join(dir, '.promptobus');
+  if (selfStop) { writeHostConfig(dir, { tools: ['codex'] }); env.PROMPTOBUS_HOME = home; createTask(home, { id: task, title: 'self Stop', owner: 'thread' }); }
   if (failRecordFsync) {
     Object.assign(env, { NODE_OPTIONS: `--import=${pathToFileURL(fsyncRefusal).href}`,
       FIXTURE_SESSION_FILE: sessionFile(ref, env), FIXTURE_FSYNC_REFUSAL: failRecordFsync,
       FIXTURE_FSYNC_SWITCH: path.join(dir, 'fsync-blocked') });
     writeFileSync(env.FIXTURE_FSYNC_SWITCH, 'fixture refusal');
   }
-  writeSession({ ref, launchId: 'launch-' + name, bin: path.join(binDir, 'codex'), cwd: dir, role: 'worker', state: 'starting',
+  writeSession({ ref, launchId: 'launch-' + name, ...(selfStop ? { home, task, address: 'orchestrator' } : {}), bin: path.join(binDir, 'codex'), cwd: dir, role: 'worker', state: 'starting',
     ...(rawTools ? { codexHome } : {}),
     ...(rawResume ? { resumeThreadId: 'existing-thread' } : {}),
     sandbox: 'read-only', approvalPolicy: 'on-request', prompt: 'First', addDirs: [], model: null }, env);
@@ -150,6 +154,8 @@ async function scenario(name, work, { expected, hanging = false, unresolved = fa
     check(`shutdown ${name}: actual holder started`, ready.ok, JSON.stringify(ready));
     if (!ready.ok) return;
     held = readSession(ref, env);
+    if (selfStop) upsertParticipant(home, task, participantRecord('orchestrator', { harness: 'codex', mode: 'managed', sessionRef: ref,
+      sessionId: 'thread', owner: 'thread', sessionRecord: sessionFile(ref, env), nativeLaunchId: 'launch-' + name }));
     if (rawTools) check(`shutdown ${name}: fresh thread opts into experimental raw events`,
       messages().find(m => m.method === 'thread/start')?.params.experimentalRawEvents === true);
     if (name === 'completed-A-reserved-B') {
@@ -159,8 +165,9 @@ async function scenario(name, work, { expected, hanging = false, unresolved = fa
           && log.includes('event hook/completed sessionStart completed /hooks.json'), log);
     }
     const status = () => holderAsk(ref, 'status', {}, env);
-    await work({ start, accepted, control, rpc, messages, shutdown, status, ref, env, holder });
+    await work({ start, accepted, control, rpc, messages, shutdown, status, ref, env, holder, task, home, dir, exited });
     const originalFailedReceipt = failedCleanup ? readFileSync(readSession(ref, env).commandReceiptFile, 'utf8') : null;
+    if (!ack && selfStop) { ack = { ok: true, stopped: false, deferred: true }; duration = 0; }
     if (!ack) await shutdown();
     check(`shutdown ${name}: unresolved interrupt cannot report successful Stop`,
       ack.ok === !unresolved, JSON.stringify(ack));
@@ -316,6 +323,56 @@ await scenario('finite-active-command-natural-completion', async ({ control, shu
     receipts.findIndex(r => r.kind === 'item/completed') < receipts.findIndex(r => r.kind === 'stop/interrupt')
       && receipts.at(-1).kind === 'stop/confirmed' && receipts.at(-1).commands[0].exitCode === 0, JSON.stringify(receipts));
 } });
+
+await scenario('self-stop-e2e', async ({ control, messages, ref, env, task, home, dir, holder, exited, shutdown }) => {
+  for (const requesterThreadId of process.argv.includes('--baseline') ? [] : [undefined, 'foreign-thread']) {
+    const refused = await holderAsk(ref, 'shutdown', { launchId: 'launch-self-stop-e2e', deferSelf: true, requesterThreadId }, env);
+    check('self-Stop refuses absent or foreign requester without stopping', !refused.ok && !refused.stopped
+      && !(await holderAsk(ref, 'status', {}, env)).stopping, JSON.stringify(refused));
+  }
+  const gate = path.join(dir, 'start-stop');
+  const cli = spawn('/bin/sh', ['-c', 'while [ ! -f "$1" ]; do sleep 0.01; done; shift; exec "$@"',
+    'self-stop-fixture', gate, process.execPath, path.resolve('bin/promptobus.js'), 'stop', 'orchestrator', '--task', task],
+    { cwd: dir, env: { ...env, CODEX_THREAD_ID: 'thread' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const other = spawn(process.execPath, ['-e', 'process.stdin.resume()'], { stdio: ['pipe', 'ignore', 'ignore'] });
+  const otherClosed = new Promise(resolve => other.once('close', (code, signal) => resolve({ code, signal })));
+  let stdout = '', stderr = '';
+  cli.stdout.on('data', data => { stdout += data; }); cli.stderr.on('data', data => { stderr += data; });
+  const closed = new Promise(resolve => cli.once('close', (code, signal) => resolve({ code, signal })));
+  const event = (id, method, exitCode = null) => ({ method, params: { threadId: 'thread', turnId: 'A',
+    item: { type: 'commandExecution', id, command: id === 'self' ? 'promptobus stop orchestrator' : 'independent command', cwd: dir,
+      processId: String(id === 'self' ? cli.pid : other.pid), status: method === 'item/started' ? 'inProgress' : 'completed', exitCode } } });
+  try {
+  await control({ events: [event('self', 'item/started'), event('other', 'item/started')] });
+  writeFileSync(gate, 'go');
+  const outcome = await closed;
+  check('self-Stop CLI returns accepted without claiming confirmation', outcome.code === 0 && outcome.signal === null
+    && /completion is pending/.test(stdout) && !/session of participant orchestrator closed/.test(stdout), JSON.stringify({ outcome, stdout, stderr }));
+  await control({ events: [event('self', 'item/completed', outcome.code)] });
+  await new Promise(resolve => setTimeout(resolve, 60));
+  check('self-Stop leaves independent command blocking interruption', !messages().some(m => m.method === 'turn/interrupt'));
+  other.stdin.end();
+  const otherOutcome = await otherClosed;
+  check('self-Stop independent process exits with a real outcome', otherOutcome.code === 0 && otherOutcome.signal === null, JSON.stringify(otherOutcome));
+  await control({ events: [event('other', 'item/completed', otherOutcome.code)] });
+  if (outcome.code !== 0 && process.argv.includes('--baseline')) await shutdown();
+  const holderExited = await waitFor(() => holder.exitCode !== null || holder.signalCode !== null, { timeoutMs: 12000, stepMs: 20 });
+  if (!holderExited) throw new Error('self-Stop fixture holder did not exit within its bound');
+  await exited;
+  const gone = await waitFor(() => !existsSync(sessionFile(ref, env)), { timeoutMs: 3000 });
+  const participant = participantOf(readTask(home, task), 'orchestrator');
+  check('self-Stop finalizer retains proof and removes the exact record after holder exit', gone && !!participant.metadata.nativeStop);
+  const rows = participant.metadata.nativeStop ? readFileSync(participant.metadata.nativeStop.receiptFile, 'utf8').trim().split('\n').map(JSON.parse) : [];
+  const confirmed = rows.find(row => row.kind === 'stop/confirmed');
+  check('self-Stop confirms only the real outcomes of both commands after app closure', confirmed?.appClose?.code === 0
+    && confirmed.commands.find(item => item.itemId === 'self')?.exitCode === outcome.code
+    && confirmed.commands.find(item => item.itemId === 'other')?.exitCode === otherOutcome.code
+    && rows.findIndex(row => row.kind === 'item/completed' && row.itemId === 'other') < rows.indexOf(confirmed), JSON.stringify(confirmed));
+  } finally {
+    if (cli.exitCode === null && cli.signalCode === null) cli.kill('SIGKILL');
+    if (other.exitCode === null && other.signalCode === null) other.kill('SIGKILL');
+  }
+}, { expected: ['A'], selfStop: true });
 
 const rawTool = item => ({ method: 'rawResponseItem/completed', params: { threadId: 'thread', turnId: 'A', item } });
 await scenario('raw-resume-refused', async () => {}, { rawTools: true, rawResume: true });

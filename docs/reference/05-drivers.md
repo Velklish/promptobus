@@ -1314,6 +1314,16 @@ unknown turn identity, broken output and receipt write failure return `ok: false
 `attempted: true`, `stopped: false`; the record and participant home remain recoverable.
 Repeated unresolved Stop does not resend an interrupt whose outcome was already consumed.
 
+A managed Codex orchestrator can request its own Stop through the ordinary owner gate.
+The CLI returns after the holder accepts the request and reports completion as pending.
+The holder waits for every actual command outcome, including the requesting command, before
+interrupting the turn. A bounded finalizer waits for the holder and app-server to exit,
+then validates the matching retained receipt and launch before retiring the session record.
+It does not send another shutdown. A failed finalizer leaves the record for diagnosis; its
+log is beside the session record as `<session-key>.self-stop-<launch-hash>.log`.
+Acceptance is not Stop confirmation; inspect the retained participant proof and session
+status from another authorized session. External Stop remains synchronous.
+
 The holder appends selected `commandExecution` start/completion, output deltas and terminal
 turn events to private, fsynced JSONL under the explicit Codex state home's
 `receipts/<session-key>/<launch-key>.jsonl`. `commandReceiptFile` on the record names it.

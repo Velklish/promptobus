@@ -108,6 +108,8 @@ coverage/
 /lib/prune.d.ts
 /lib/codex-hold.js
 /lib/codex-hold.d.ts
+/lib/codex-retire.js
+/lib/codex-retire.d.ts
 /lib/digest.js
 /lib/digest.d.ts
 /lib/driver-opencode.js

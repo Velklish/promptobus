@@ -358,6 +358,9 @@ check('docs: the generate dry-run rule does not read as the trustedHooks rule',
 
 const installGuide = read('docs/guides/install.md');
 const orchestrateSkill = read('skills/orchestrate/SKILL.md');
+check('docs: managed root self-Stop acknowledgement is pending until retained proof',
+  has(orchestrateSkill, 'A managed Codex root stopping itself receives a pending acknowledgement:')
+  && has(orchestrateSkill, 'check the retained Stop proof from another authorized session'));
 check('docs: every description of the lift order runs the generator after the dependency install',
   has(spawn, 'It runs **after the dependency install**, so a generator may run a tool the repository pins in its own lock')
   && has(installGuide, '`spawn` runs it in the fresh worktree after the checkout and after `npm ci`')
@@ -490,7 +493,7 @@ check('skills: shipped guidance requires confirmed native Stop before done and a
   && has(orchestrateSkill, 'Before each model input, the holder refuses changed owner access and requires a fresh lift; restoring the old file does not clear the refusal.')
   && !has(orchestrateSkill, 'the holder reloads fresh access from the original owner account')
   && has(orchestrateSkill, 'first refusing while any native Codex participant lacks confirmed Stop (`--keep-sessions` included)')
-  && has(orchestrateSkill, 'A Codex stop that cannot confirm terminal command accounting exits 1 and keeps the record and private home.')
+  && has(orchestrateSkill, 'An unresolved Codex Stop keeps the record and private home.')
   && has(soloReviewSkill, 'For a Codex reviewer the order is required: `done` refuses while a native Codex participant lacks confirmed Stop.')
   && !has(soloReviewSkill, 'The two halves are independent'),
   'a shipped skill still says done stops native Codex sessions or that the holder reloads changed owner access in place');
