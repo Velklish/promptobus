@@ -1,10 +1,11 @@
 # PB-407 · Root done refuses forever after the orchestrator claimed a closed Codex teamlead's child task
 
-- **Order:** 340
 - **Scope:** [03. CLI § Spawn](../../reference/03-cli.md#spawn)
 - **Created:** 2026-10-29
 - **Dependencies:** none
 - **Cost:** major. The root task cannot be closed and its merged worktrees cannot be swept by `done`; nothing is lost, and the participants are already stopped.
+- **Previous order:** 340
+- **Taken:** 2026-11-10
 
 ## Context
 
