@@ -402,6 +402,13 @@ check('docs: this checkout restores its generated adapters with the command its 
 
 const addresses = section(protocol, '## Addresses');
 const teamleadSkill = section(read('skills/orchestrate/SKILL.md'), '## Teamleads and siblings');
+check('docs: stopped Codex teamlead recovery closes the claimed child before the root and keeps Stop proof',
+  [spawn, teamleadSkill].every(text => has(text, 'The closed child and the teamlead\'s matching retained Stop proof permit root close after the claim.')
+    && has(text, 'promptobus_mailbox { claim: true, task: <child> }')
+    && has(text, 'done --task <child>') && has(text, 'done --task <root>')
+    && has(text, 'Claiming a live mailbox does not prove Stop.'))
+  && has(read('README.md'), 'root `done` accepts the matching retained Stop proof.'),
+  'Spawn, orchestrate or README omits claim-then-close or treats a mailbox claim as terminal evidence');
 check('docs: a teamlead has one mailbox over its child and root slots, and no drain is documented',
   has(addresses, '**A participant has one mailbox, and its addresses in tasks are address aliases of it**')
   && has(addresses, '| `orchestrator` of a root task | `teamlead:<slug>` | all seven | lands in the root slot `teamlead-<slug>`, part of the teamlead\'s one mailbox |')

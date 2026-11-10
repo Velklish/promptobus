@@ -1,6 +1,7 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import fs, { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
@@ -10,7 +11,7 @@ import { hostOf } from '../lib/host.js';
 import * as store from '../lib/store.js';
 import { recoverTeamleadRebind, spawnTeamlead } from '../lib/spawn.js';
 import { codexDriver } from '../lib/driver-codex.js';
-import { commandReceipts } from '../lib/codex-command-receipts.js';
+import { commandReceipts, readStopConfirmation } from '../lib/codex-command-receipts.js';
 import { codexStateHome, sessionFile, sessionKey, writeSession } from '../lib/codex-session.js';
 import { done } from '../lib/done.js';
 import { sweep } from '../lib/sweep.js';
@@ -83,6 +84,61 @@ for (const operation of ['done', 'sweep']) test(`native teamlead Stop permits pa
 const seat = (f, task, address) => store.participantOf(store.readTask(f.home, task), address);
 const change = (f, task, address, fn) => store.upsertParticipant(f.home, task, fn(seat(f, task, address)));
 const bytes = f => [f.parent, f.child].map(task => readFileSync(store.taskFile(f.home, task), 'utf8'));
+
+test('native teamlead stopped child claim permits parent done', async () => {
+  const f = await fixture();
+  assert.equal((await codexDriver.stop(f.record.ref)).stopped, true);
+  const proof = seat(f, f.parent, f.address).metadata.nativeStop;
+  assert.equal(store.claimOwnership(f.home, f.child, 'root-owner'), 'native-thread');
+  await quiet(() => close(f, f.child));
+  assert.equal(store.readTask(f.home, f.child).status, 'done');
+  const closed = bytes(f)[1], receipt = readFileSync(f.file);
+  await quiet(() => close(f, f.parent));
+  assert.equal(store.readTask(f.home, f.parent).status, 'done');
+  assert.equal(bytes(f)[1], closed);
+  assert.deepEqual(seat(f, f.parent, f.address).metadata.nativeStop, proof);
+  assert.deepEqual(readFileSync(f.file), receipt);
+});
+
+for (const damage of ['active-child', 'child-thread', 'child-proof', 'alias-task', 'live-record', 'live-holder', 'live-app', 'missing-proof', 'receipt-bytes']) {
+  test(`native teamlead claimed child refuses ${damage} before parent done changes either task`, async () => {
+    const f = await fixture();
+    assert.equal((await codexDriver.stop(f.record.ref)).stopped, true);
+    store.claimOwnership(f.home, f.child, 'root-owner');
+    if (damage !== 'active-child') await quiet(() => close(f, f.child));
+    if (damage === 'child-thread') change(f, f.child, 'orchestrator', p => ({ ...p,
+      metadata: { ...p.metadata, sessionId: 'foreign-thread' } }));
+    if (damage === 'child-proof') change(f, f.child, 'orchestrator', p => ({ ...p,
+      metadata: { ...p.metadata, nativeStop: null } }));
+    if (damage === 'alias-task') change(f, f.parent, f.address, p => ({ ...p,
+      metadata: { ...p.metadata, nativeStop: { ...p.metadata.nativeStop, alias: { task: f.child, address: f.address } } } }));
+    if (damage === 'live-record') writeSession({ ...f.record, holderPid: process.pid, state: 'alive', stopConfirmed: false });
+    if (damage === 'live-holder' || damage === 'live-app') {
+      const field = damage === 'live-holder' ? 'holderPid' : 'appPid';
+      const rows = readFileSync(f.file, 'utf8').trim().split('\n').map(JSON.parse);
+      for (const row of rows.filter(row => ['launch', 'stop/confirmed'].includes(row.kind))) row[field] = process.pid;
+      writeFileSync(f.file, rows.map(row => JSON.stringify(row)).join('\n') + '\n');
+      const sha256 = createHash('sha256').update(readFileSync(f.file)).digest('hex');
+      for (const [task, address] of [[f.parent, f.address], [f.child, 'orchestrator']])
+        change(f, task, address, p => ({ ...p, metadata: { ...p.metadata,
+          nativeStop: { ...p.metadata.nativeStop, [field]: process.pid, sha256 } } }));
+      assert.equal(readStopConfirmation(f.file, seat(f, f.parent, f.address).metadata.nativeStop).ok, true);
+    }
+    if (damage === 'missing-proof') change(f, f.parent, f.address, p => ({ ...p,
+      metadata: { ...p.metadata, nativeStop: null } }));
+    if (damage === 'receipt-bytes') writeFileSync(f.file, readFileSync(f.file, 'utf8') + '\n');
+    const before = bytes(f), receipt = readFileSync(f.file);
+    await assert.rejects(() => quiet(() => close(f, f.parent)), error => {
+      assert.match(error.message, /native work is active or unresolved/);
+      assert.ok(error.message.includes(f.address), error.message);
+      assert.ok(error.message.includes(f.child), error.message);
+      return true;
+    });
+    assert.deepEqual(bytes(f), before);
+    assert.deepEqual(readFileSync(f.file), receipt);
+    if (damage === 'live-record') assert.equal(existsSync(sessionFile(f.record.ref)), true);
+  });
+}
 
 async function relift(f, options = {}) {
   const original = codexDriver.spawn;

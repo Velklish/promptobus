@@ -56,34 +56,35 @@ function hasRecord(ref: string, env = process.env) {
   catch (caught) { const error = caught as NodeJS.ErrnoException; if (error.code === 'ENOENT') return false; throw error; }
 }
 
-function terminalProof(home: string | undefined, task: string, address: string | null, participant: ParticipantV1, proof: NativeStopProof | null | undefined, env: NodeJS.ProcessEnv) {
+function terminalProof(home: string | undefined, task: string, address: string | null, participant: ParticipantV1, proof: NativeStopProof | null | undefined, env: NodeJS.ProcessEnv, subject = participant.id) {
   const ref = participant.sessionRef;
-  if (participant.metadata.nativePendingLaunchId) refuse(participant.id);
-  if (!ref || hasRecord(ref, env)) refuse(participant.id);
+  if (participant.metadata.nativePendingLaunchId) refuse(subject);
+  if (!ref || hasRecord(ref, env)) refuse(subject);
   if (typeof participant.metadata.nativeLaunchId === 'string' && participant.metadata.nativeLaunchId
     && participant.metadata.nativeUnlaunched === participant.metadata.nativeLaunchId) return;
   if (!proof || proof.ref !== ref
     || !sameStoreHome(proof.home, home) || proof.task !== task || proof.address !== address
     || proof.threadId !== participant.metadata.sessionId
     || proof.launchId !== participant.metadata.nativeLaunchId
-    || typeof proof.launchId !== 'string' || !proof.launchId) refuse(participant.id);
+    || typeof proof.launchId !== 'string' || !proof.launchId) refuse(subject);
   const expected = path.join(codexStateHome(env), 'receipts', sessionKey(ref), sessionKey(proof.launchId) + '.jsonl');
   try {
     if (proof.receiptFile !== expected || hash(expected) !== proof.sha256
-      || !readStopConfirmation(expected, proof).ok || pidAlive(proof.holderPid) || pidAlive(proof.appPid)) refuse(participant.id);
-  } catch { refuse(participant.id); }
+      || !readStopConfirmation(expected, proof).ok || pidAlive(proof.holderPid) || pidAlive(proof.appPid)) refuse(subject);
+  } catch { refuse(subject); }
 }
 
-function linkedTeamlead(home: string, child: TaskV1, record: NativeRecord) {
+function linkedTeamlead(home: string, child: TaskV1, record: NativeRecord,
+  { allowClosedClaim = false, subject = record.address }: { allowClosedClaim?: boolean; subject?: string | null } = {}) {
   const parent = readTask(home, child.parent!);
   const leads = parent.participants.filter(p => p.role === 'teamlead' && p.metadata.childTask === child.id);
   const owner = participantOf(child, ORCHESTRATOR), lead = leads[0];
   if (parent.parent !== undefined || child.parent !== parent.id || leads.length !== 1
     || !native(lead) || lead.mode !== 'managed' || !native(owner) || owner.mode !== 'attached'
-    || child.owner !== owner.id || owner.metadata.owner !== record.threadId
+    || child.owner !== owner.id || (owner.metadata.owner !== record.threadId && !(allowClosedClaim && child.status === 'done'))
     || record.address !== ORCHESTRATOR || record.task !== child.id
     || [lead, owner].some(p => p.sessionRef !== record.ref || p.metadata.sessionId !== record.threadId
-      || (p.metadata.nativeLaunchId && p.metadata.nativeLaunchId !== record.launchId))) refuse(record.address);
+      || (p.metadata.nativeLaunchId && p.metadata.nativeLaunchId !== record.launchId))) refuse(subject);
   return { parent, lead, owner };
 }
 
@@ -114,20 +115,22 @@ export function abandonmentAllowsClose(participant: ParticipantV1 | null | undef
 
 export function requireNativeTerminal(home: string | undefined, meta: Pick<TaskV1, 'id' | 'parent'>, participant: ParticipantV1, env = process.env, { taskLocked = false }: { taskLocked?: boolean } = {}) {
   const proof = participant.metadata.nativeStop as NativeStopProof | null | undefined;
-  if (!proof?.alias) return terminalProof(home, meta.id, addressOf(participant), participant, proof, env);
+  const subject = participant.role === 'teamlead'
+    ? addressOf(participant) + ' (child task ' + participant.metadata.childTask + ')' : participant.id;
+  if (!proof?.alias) return terminalProof(home, meta.id, addressOf(participant), participant, proof, env, subject);
   if (participant.role !== 'teamlead' || meta.parent !== undefined || proof.alias.task !== meta.id
     || proof.alias.address !== addressOf(participant) || Object.keys(proof.alias).length !== 2
-    || typeof proof.task !== 'string' || proof.task !== participant.metadata.childTask) refuse(participant.id);
+    || typeof proof.task !== 'string' || proof.task !== participant.metadata.childTask) refuse(subject);
   const inspect = () => withTaskLock(home!, proof.task!, () =>
     withSessionLaunch(participant.sessionRef!, env, () => {
       const current = participantOf(readTask(home!, meta.id), addressOf(participant));
       const { alias, ...original } = proof;
-      const { parent, lead, owner } = linkedTeamlead(home!, readTask(home!, proof.task!), original);
+      const { parent, lead, owner } = linkedTeamlead(home!, readTask(home!, proof.task!), original, { allowClosedClaim: true, subject });
       if (parent.id !== meta.id || lead.id !== participant.id
         || JSON.stringify(binding(current)) !== JSON.stringify(binding(participant))
         || !isDeepStrictEqual(current!.metadata.nativeStop, proof)
-        || !isDeepStrictEqual(owner.metadata.nativeStop, original)) refuse(participant.id);
-      terminalProof(home, proof.task!, ORCHESTRATOR, current!, original, env);
+        || !isDeepStrictEqual(owner.metadata.nativeStop, original)) refuse(subject);
+      terminalProof(home, proof.task!, ORCHESTRATOR, current!, original, env, subject);
     }));
   return taskLocked ? inspect() : withTaskLock(home!, meta.id, inspect);
 }
