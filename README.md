@@ -149,6 +149,8 @@ The installer edits `.claude/settings.json`, `.cursor/hooks.json` and `.codex/ho
 
 Write the assignment in a Markdown brief.
 
+Spawn tolerates participant records with missing or null addresses while preserving task ownership checks and sidecar name collision refusals.
+
 For a managed Codex root, start coordination from the brief:
 
 ```bash

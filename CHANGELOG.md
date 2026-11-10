@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.32.7] — 2026-11-09
 
+### Fixed
+
+- Spawn skips participant records without an address during its prefix scan, so automatic and explicit worker names no longer crash; task ownership and sidecar collision guards remain active.
+
 ### Changed
 
 - Temporarily disable the Cursor driver and wake integration files while their

@@ -706,6 +706,21 @@ const guardRun = (session, ...args) => {
     { encoding: 'utf8', cwd: WS, env: { ...process.env, CLAUDE_CODE_SESSION_ID: session, PATH: `${BIN}${path.delimiter}${PATH0}` } });
   return { status: r.status, text: `${r.stdout}${r.stderr}` };
 };
+const unaddressedFile = store.taskFile(HOME, GUARD_TASK);
+const unaddressedTask = JSON.parse(readFileSync(unaddressedFile, 'utf8'));
+const unaddressedRecord = store.participantRecord('worker:unaddressed', { repo: 'other/repo' });
+unaddressedRecord.metadata.address = null;
+unaddressedTask.participants.push(unaddressedRecord);
+writeFileSync(unaddressedFile, JSON.stringify(unaddressedTask, null, 2) + '\n');
+for (const workerArgs of [[], ['--worker', 'named']]) {
+  const unaddressedRun = guardRun('sess-hozyain', ...workerArgs, '--dry-run');
+  check(`spawn: the sole active task tolerates a null participant address (${workerArgs.length ? 'explicit' : 'automatic'} worker)`,
+    unaddressedRun.status === 0 && unaddressedRun.text.includes(GUARD_TASK)
+    && !/TypeError|\n\s+at /.test(unaddressedRun.text),
+    `status=${unaddressedRun.status} ${unaddressedRun.text}`);
+}
+check('spawn: planning leaves the unaddressed participant unchanged',
+  readFileSync(unaddressedFile, 'utf8') === JSON.stringify(unaddressedTask, null, 2) + '\n');
 const foreignRun = guardRun('sess-gost', '--dry-run');
 check(`: the command refuses a foreign spawn without --task — owner, title, and route in the text`,
   foreignRun.status === 1 && foreignRun.text.includes('sess-hozyain') && foreignRun.text.includes('sess-gost')
