@@ -1855,7 +1855,11 @@ states the owner's obligations and effective environment.
 The default idle interval is 30 seconds without clients, reservations, requests
 or attached work. A live client with no current HTTP request keeps its service;
 optional SSE/DELETE behavior is not the lifetime proof. Unknown managed liveness
-is retained and reported by status. Status observations do not authorize operations.
+is retained and reported by status. A managed Codex client whose launch record is gone
+can retire after its retained Stop receipt proves the same task, address, reference,
+thread and launch, and its holder and app process are no longer alive. The service
+holds the task and session locks while rechecking the grant and removing that client.
+Missing or mismatched proof and live processes retain the client. For a teamlead alias it also locks the linked child before the session and verifies both participants against the original receipt. Status observations do not authorize operations.
 Each managed HTTP admission awaits a fresh native observation for the exact launch
 record revision; pending or unknown proof permits no mutation or saved-response replay.
 An unavailable observation returns HTTP 503 while retaining the credential, session

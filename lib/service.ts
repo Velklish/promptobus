@@ -12,6 +12,7 @@ import { mcpTools } from '../dist/mcp/tools.js';
 import { busConnection } from './server.js';
 import { canonicalPath, participantOf, readTask, withTaskLock } from './store.js';
 import { participantSession } from './status.js';
+import { withVerifiedManagedNativeStop } from './native-lifecycle.js';
 import { actorIdentityVariables, REGISTRY } from './drivers.js';
 import { bindServiceHarnessContext, requireServiceHarnessContext } from './harness-home.js';
 import { ServiceWarden } from './service-warden.js';
@@ -449,6 +450,21 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         if (record?.client === id) removeSession(record.id);
       }
     };
+    const retireConfirmedManaged = (grant: ServiceClientGrant) => {
+      const proof = grant.lifetime;
+      if (proof.kind !== 'managed' || grant.runtime !== runtime || !expectedHarness.homes.codex) return false;
+      const nativeEnv = { ...env, PROMPTOBUS_CODEX_HOME: expectedHarness.homes.codex };
+      try {
+        return withVerifiedManagedNativeStop(paths.home, proof, nativeEnv, participant => {
+          if (grant.nativeBinding && (grant.nativeBinding.kind !== 'codex'
+            || (grant.nativeBinding.state === 'bound' && grant.nativeBinding.threadId !== participant.metadata.sessionId))) return false;
+          const current = readPrivate(clientFile(paths, grant.id));
+          if (!current || !isDeepStrictEqual(grantOf(current), grant)) return false;
+          removeClient(grant.id);
+          return true;
+        });
+      } catch { return false; }
+    };
     const state = () => {
       let clients = 0, reservations = 0, unknownClients = 0, unknownManaged = 0;
       const values = grants();
@@ -462,6 +478,7 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         try { expired = standaloneExpired(grant, paths); } catch { unknownRoot = true; }
         const life = unknownRoot ? 'unknown' : expired ? 'dead' : lifetimeState(grant, paths.home, managedState);
         if (life === 'dead') { removeClient(grant.id); continue; }
+        if (!unknownRoot && life === 'unknown' && retireConfirmedManaged(grant)) continue;
         clients += 1;
         if (grant.lifetime.kind === 'reservation') reservations += 1;
         if (life === 'unknown') {

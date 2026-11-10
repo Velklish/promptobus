@@ -4,7 +4,7 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { readStopConfirmation } from './codex-command-receipts.js';
 import { codexStateHome, pidAlive, sessionFile, sessionKey, sessionsDir, withSessionLaunch } from './codex-session.js';
-import { addressOf, GateError, ORCHESTRATOR, participantOf, readTask, sameStoreHome, taskExists, upsertParticipant, withTaskLock } from './store.js';
+import { addressOf, canonicalPath, GateError, ORCHESTRATOR, participantOf, readTask, sameStoreHome, taskExists, upsertParticipant, withTaskLock } from './store.js';
 
 import type { ParticipantV1, TaskV1 } from '../dist/index.js';
 import { libOpenParticipant } from './driver-runtime.js';
@@ -113,11 +113,14 @@ export function abandonmentAllowsClose(participant: ParticipantV1 | null | undef
   return sessionDead === true;
 }
 
-export function requireNativeTerminal(home: string | undefined, meta: Pick<TaskV1, 'id' | 'parent'>, participant: ParticipantV1, env = process.env, { taskLocked = false }: { taskLocked?: boolean } = {}) {
+export function requireNativeTerminal(home: string | undefined, meta: Pick<TaskV1, 'id' | 'parent'>, participant: ParticipantV1, env = process.env, { taskLocked = false, onVerified, lockWaitMs }: { taskLocked?: boolean; onVerified?: () => void; lockWaitMs?: number } = {}) {
   const proof = participant.metadata.nativeStop as NativeStopProof | null | undefined;
   const subject = participant.role === 'teamlead'
     ? addressOf(participant) + ' (child task ' + participant.metadata.childTask + ')' : participant.id;
-  if (!proof?.alias) return terminalProof(home, meta.id, addressOf(participant), participant, proof, env, subject);
+  if (!proof?.alias) {
+    terminalProof(home, meta.id, addressOf(participant), participant, proof, env, subject);
+    return onVerified?.();
+  }
   if (participant.role !== 'teamlead' || meta.parent !== undefined || proof.alias.task !== meta.id
     || proof.alias.address !== addressOf(participant) || Object.keys(proof.alias).length !== 2
     || typeof proof.task !== 'string' || proof.task !== participant.metadata.childTask) refuse(subject);
@@ -131,8 +134,37 @@ export function requireNativeTerminal(home: string | undefined, meta: Pick<TaskV
         || !isDeepStrictEqual(current!.metadata.nativeStop, proof)
         || !isDeepStrictEqual(owner.metadata.nativeStop, original)) refuse(subject);
       terminalProof(home, proof.task!, ORCHESTRATOR, current!, original, env, subject);
-    }));
+      onVerified?.();
+    }, { waitMs: lockWaitMs }), { waitMs: lockWaitMs });
   return taskLocked ? inspect() : withTaskLock(home!, meta.id, inspect);
+}
+
+export function withVerifiedManagedNativeStop(home: string,
+  proof: { task: string; address: string; ref: string; launchId: string; record: string },
+  env: NodeJS.ProcessEnv, onVerified: (participant: ParticipantV1) => boolean) {
+  const nativeRecord = canonicalPath(sessionFile(proof.ref, env));
+  return withTaskLock(home, proof.task, () => {
+    const task = readTask(home, proof.task), participant = participantOf(task, proof.address);
+    const terminal = participant?.metadata.nativeStop as NativeStopProof | null | undefined;
+    if (task.status !== 'active' || participant?.harness !== 'codex'
+      || participant.sessionRef !== proof.ref || participant.metadata.sessionRecord !== proof.record
+      || participant.metadata.nativeLaunchId !== proof.launchId || participant.metadata.nativeUnlaunched === proof.launchId
+      || !terminal || (!terminal.alias && nativeRecord !== canonicalPath(proof.record))) return false;
+    let retired = false;
+    const verified = () => {
+      if (terminal.alias) {
+        if (typeof terminal.task !== 'string') return;
+        const owner = participantOf(readTask(home, terminal.task), ORCHESTRATOR);
+        if (typeof owner?.metadata.sessionRecord !== 'string'
+          || canonicalPath(owner.metadata.sessionRecord) !== nativeRecord) return;
+      }
+      retired = onVerified(participant);
+    };
+    const verify = () => requireNativeTerminal(home, task, participant, env, { taskLocked: true, onVerified: verified, lockWaitMs: 0 });
+    if (terminal.alias) verify();
+    else withSessionLaunch(proof.ref, env, verify, { waitMs: 0 });
+    return retired;
+  }, { waitMs: 0 });
 }
 
 function deadHolderRecord(record: NativeRecord | null | undefined) {

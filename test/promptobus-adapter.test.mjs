@@ -1034,6 +1034,7 @@ const DRIVER_OWN = new Set([
   'lib/codex-rpc.js',
   'lib/codex-session.js',
   'lib/codex-hold.js',
+  'lib/codex-retire.js',
   'lib/model-routing/adapter-codex.js',
 ].map(sourceRel));
 
@@ -1044,7 +1045,7 @@ const DRIVER_OWN = new Set([
 // adapter imports no driver module at all, so it needs no exemption — but the
 // driver's own dictionary reaches it as an argument, and nothing else in the
 // mechanism has business calling a harness probe directly.
-const DRIVER_PRIVATE = /(?:^|\/)(driver-claude|adapter-claude|liftoff|driver-cursor|cursor-persist|driver-codex|codex-rpc|codex-session|codex-hold|adapter-codex)\.js$/;
+const DRIVER_PRIVATE = /(?:^|\/)(driver-claude|adapter-claude|liftoff|driver-cursor|cursor-persist|driver-codex|codex-rpc|codex-session|codex-hold|codex-retire|adapter-codex)\.js$/;
 
 // A module specifier in a static import, a re-export, and a dynamic `import(...)`. Prose is
 // not affected by this: `from` or `import` must stand right before the quote.
@@ -1053,12 +1054,13 @@ const MODULE_SPEC = /(?:\bfrom|\bimport)\s*\(?\s*(['"])(.+?)\1/g;
 const adapterFiles = ['lib', 'bin'].flatMap((dir) => sourceFilesUnder(path.join(MECHANISM_ROOT, dir)))
   .map((file) => [path.relative(MECHANISM_ROOT, file).split(path.sep).join('/'), file]);
 
+const privateCrossing = (rel, specifier) => !DRIVER_OWN.has(rel) && DRIVER_PRIVATE.test(specifier);
 const crossings = [];
 for (const [rel, file] of adapterFiles) {
   if (DRIVER_OWN.has(rel)) continue;
   const text = readFileSync(file, 'utf8');
   for (const m of text.matchAll(MODULE_SPEC)) {
-    if (!DRIVER_PRIVATE.test(m[2])) continue;
+    if (!privateCrossing(rel, m[2])) continue;
     const statement = text.slice(0, m.index).split('\n').at(-1) + m[0].replace(/"([^"]+)"$/, "'$1'");
     if (rel === sourceRel('lib/bb-reviewer.js') && statement === "import { CodexRpc } from './codex-rpc.js'") continue;
     if (rel === sourceRel('lib/report-channel.js') && statement === "import { holderAlive, holderAsk, readSession } from './codex-session.js'") continue;
@@ -1077,6 +1079,11 @@ check(': the boundary gate sees the mechanism files — there is something to ch
 
 check(': driver internals stay behind the registry except exact native lifecycle, reporter contact and BB reviewer RPC imports',
   crossings.length === 0, crossings.join(' | '));
+
+check(': the Codex retirement executable is private to the driver boundary',
+  DRIVER_OWN.has(sourceRel('lib/codex-retire.js'))
+  && privateCrossing(sourceRel('lib/status.js'), './codex-retire.js')
+  && privateCrossing(sourceRel('bin/promptobus.js'), '../lib/codex-retire.js'));
 
 // There is one door, and it is not empty: the map itself must import a driver — otherwise the
 // gate above would be green on a mechanism that has no drivers at all.
