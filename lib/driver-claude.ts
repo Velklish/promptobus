@@ -773,11 +773,11 @@ async function spawn(plan: LibLaunchPlan, { tool, ref, role, cwd, env, home, tas
     return await liftoffParticipant({
       tool: launchTool, argv: plan.argv, cwd, env, name: ref, role, registry: registryOf(host), launchFailNote, deadNote, unboundNote, persist,
       awaitOptions, home, task, address,
+      launch: plan,
       preboundSessionId: role === 'teamlead' ? null : plan.prelaunchBinding?.sessionId,
       preboundSessionRecord: role === 'teamlead' ? null : plan.prelaunchBinding?.sessionRecord ?? null,
       noun, requireFullSession, requireLaunchMatch,
       ...(plan.service ? {
-        launch: plan,
         expectedBinding: { ref, record: pointer!, launchId: plan.service.launchId, deferTaskBinding: role === 'teamlead',
           ...(previousParticipant !== undefined ? { previousParticipant } : {}) },
         beforeStart: () => plan.service!.beforeStart(pointer!),
@@ -820,6 +820,7 @@ async function spawn(plan: LibLaunchPlan, { tool, ref, role, cwd, env, home, tas
       if (stopped.missing || stopped.r?.status !== 0 || await awaitSessionGone(ref) !== 'gone') {
         throw new GateError('Failed Claude native admission could not confirm its owned session stopped');
       }
+      plan.liveSeat?.stopped();
     });
   }
 }

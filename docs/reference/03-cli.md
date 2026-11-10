@@ -1059,6 +1059,48 @@ The decision reports what the caller pinned in `constraints`, and `applied` ther
 
 The pair `test/fixtures/model-routing/decision.json` and `models.txt` is reproduced from `catalog.json` and `snapshot.json` twice, and the two runs are not a duplicate of each other: `test/model-routing-resolver.test.mjs` calls the pure function with synthetic paths, and `test/model-routing.test.mjs` runs the `models` command itself against a real host and substitutes the paths that run actually has. Both compare the JSON after the normalisation [its README](../../test/fixtures/model-routing/README.md) states, and the text byte for byte.
 
+### Live-cap admission
+
+Every fresh worker, reviewer, approver and supported teamlead lift checks
+`caps.liveParticipants.<harness>` under the task lock before starting its harness.
+The refusal names the effective cap and the overlay path that supplied it.
+Admission counts live and unknown participants, including attached participants
+and teamleads without a model, together with provisional reservations. One address
+counts once while its reservation becomes a published participant.
+
+The task's private reservation journal records a unique token, address,
+harness, session reference, launcher PID and process birth, and launch phase.
+Native creation starts only after the reservation advances from `reserved` to
+`launching`. A confirmed native identity advances it to `registered` before
+participant publication or child linking. Successful publication replaces the
+reservation. A failed launch releases it only after confirmed native cleanup;
+a live but unbound session retains its seat.
+
+Automatic recovery requires verified launcher death and a fresh observation that
+the session is dead. An unregistered launch remains unresolved after launcher
+death: a Claude daemon can register later. Unknown process identity or incomplete
+registry data retains the reservation. The task owner stops the recorded launcher,
+then runs `promptobus stop ADDRESS --task TASK`. This route also handles a teamlead
+reservation whose child link does not exist. It releases the seat only after
+verified launcher and session exit. Restore unreadable observations before
+repeating recovery. `done` refuses while a reservation remains unresolved.
+
+Recovery holds the seat while Stop runs. A dead launcher that never issued native
+creation can leave a startup record: recovery retires that record only when its
+exact launch generation and empty native identity/process fields still match.
+Known dead holder and app processes can prove an interrupted launch dead even
+before it acquired a native ID. Missing process observations remain unknown.
+Reclaiming a seat does not create a Stop receipt or replace native accounting.
+
+The resolver's `balance` projection described in the preceding section keeps its
+scoring and fallback rules. Real lift admission applies to every strategy and to
+explicit model choices. `models` and `--dry-run` reserve no seat; a dry run names
+the cap, overlay path and journal occupancy without polling native liveness or
+promising later admission. A malformed routing layer retains the existing dry-run
+warning; real admission requires readable cap configuration.
+Synthetic fixture results establish source behavior, not an installed runtime's
+native account limit.
+
 ### Participant telemetry
 
 The catalog's ratings come from published benchmarks, and two frontier models a point apart on one leaderboard share a band; nothing else in the tool learns from what actually happens on this machine. So `promptobus done` appends one record per harness generation of a participant to `telemetry.jsonl`, JSON Lines, beside the availability cache the host names ([02-host](02-host.md)), mode `0600`. This is the collecting half only: it does not score models, calibrate bands or propose routing; the typed public entry `promptobus/telemetry` exposes `telemetryStats` and `telemetrySummary` as a descriptive aggregation of persisted rows. `lib/model-routing/telemetry.ts` re-exports `telemetrySummary` from the compiled core (`src/telemetry.ts`) rather than holding a second copy of the algorithm — the pattern `lib/warden.js` already used for its own threshold — so a fix to the algorithm cannot land on one side and not the other. A turn-end hook appends numeric throughput evidence to a per-participant sidecar beside the task's guard mark; `done` reads each sidecar once and projects its run totals into the record. A new lift at the same address truncates that sidecar before replacing the participant record; after close it remains with the task until normal task pruning. The reading half is [`models calibrate`](#commands), which groups these records and proposes overlay lines a person then agrees to.

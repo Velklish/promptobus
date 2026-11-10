@@ -23,6 +23,7 @@ import {
 } from './drivers.js';
 import { participantSession, sessionReportedDead, unknownWhy } from './status.js';
 import { requireNativeIdle } from './native-lifecycle.js';
+import { requireNoLiveReservations } from './live-reservation.js';
 
 import { coreRegistry, libDriverFor as driverFor } from './driver-runtime.js';
 import type { LibRegistry } from './driver-runtime.js';
@@ -346,6 +347,7 @@ export async function done(rootOrHost: unknown, opts: DoneOptions = {}) {
     const meta = readTask(home, id);
     if (!ownership(home, id, ORCHESTRATOR, sessionIdentity()).allowed) fail('task owner changed before close');
     if (meta.status === 'done') return false;
+    requireNoLiveReservations(host, home, id);
     requireNativeIdle(home, meta, null, { taskLocked: true, sessionDead: sessionReportedDead });
     closeTask(home, id);
     return true;

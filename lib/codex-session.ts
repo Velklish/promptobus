@@ -62,6 +62,7 @@ export interface CodexSessionRecord extends HarnessSessionRecord {
   sandbox?: string; approvalPolicy?: string; model?: string | null; effort?: string | null; addDirs?: string[];
   holderPid?: number | null; appPid?: number | null; state?: string; busy?: boolean; error?: string | null;
   holderProcess?: ProcessIdentity | null; appProcess?: ProcessIdentity | null; nativeAdmissionSchema?: 1;
+  launcherProcess?: ProcessIdentity | null;
   turns?: number; stopping?: boolean; stopConfirmed?: boolean; stopError?: string | null;
   rawToolReceipts?: boolean; commandReceiptFile?: string; canonicalSkillsDir?: string | null; resumeThreadId?: string | null;
   startedAt?: string; mcpPrefix?: string; initialPrompt?: string; initialAssignmentInjected?: boolean; bindBeforeFirstTurn?: boolean; rolloutPath?: string | null;
@@ -238,6 +239,7 @@ export const writeSession = codexRegistry.writeSession;
 export const patchSession = codexRegistry.patchSession;
 export const dropSession = codexRegistry.dropSession;
 export const registrySessions = codexRegistry.registrySessions;
+export const scanSessions = codexRegistry.scanSessions;
 export const pidAlive = codexRegistry.pidAlive;
 
 export function findSessionByAddress(home: string, task: string, address: string, env = process.env) {
@@ -446,6 +448,15 @@ export function holderAlive(ref: string, env = process.env) {
 function holderLockPid(ref: string, env: NodeJS.ProcessEnv) {
   try { return Number((JSON.parse(readFileSync(lockFile(ref, env), 'utf8')) as { pid?: unknown }).pid); }
   catch { return null; }
+}
+
+export function holderLockState(ref: string, env = process.env): 'alive' | 'dead' | 'unknown' {
+  try {
+    const lock: unknown = JSON.parse(readFileSync(lockFile(ref, env), 'utf8'));
+    const pid = (lock as { pid?: unknown } | null)?.pid;
+    if (!Number.isSafeInteger(pid) || Number(pid) <= 0) return 'unknown';
+    return pidAlive(pid as number) ? 'alive' : 'dead';
+  } catch (error) { return (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'dead' : 'unknown'; }
 }
 
 export function startHolder(ref: string, env = process.env) {

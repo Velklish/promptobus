@@ -51,6 +51,21 @@ export type { ParticipantMode } from './v1/model.js';
  * OBSERVER, not the session. No consumer treats unknown as death. */
 export type SessionState = 'alive' | 'stale' | 'gone' | 'unknown';
 
+/** Reservation observation; unknown retains capacity. */
+export type ReservationState = 'alive' | 'dead' | 'unknown';
+export interface ReservationLookup {
+  ref: string;
+  registryHome: string;
+}
+/** Retirement requires fresh proof matching this launch generation and process birth. */
+export interface UnstartedReservation extends ReservationLookup {
+  home: string;
+  task: string;
+  address: string;
+  launchId: string;
+  owner: { pid: number; birth: string };
+}
+
 /** A harness refusal that names a time to retry after: the harness's words for that time, and the
  * instant they parse to — `null` when they do not. [05-drivers.md § A refusal that names a reset](../docs/reference/05-drivers.md#a-refusal-that-names-a-reset) */
 export interface NamedReset {
@@ -425,6 +440,10 @@ export interface Driver {
   /** What was said about the launch after success: unconfirmed check, unparsed id. */
   saidLiftoff?(result: unknown): void;
   inspect?(ref: string): SessionView | null;
+  /** Side-effect-free fresh observation. Missing hooks use the strict generic fallback. */
+  reservationState?(request: ReservationLookup): ReservationState;
+  /** Retire only the current proven unstarted record; false or failure retains the reservation. */
+  retireUnstarted?(request: UnstartedReservation): boolean;
   /** Validate an inactive retained managed owner before native thread resumption. */
   resumeState?(ref: string, context: {
     home: string; cwd: string; task: string; address: string; threadId: string;

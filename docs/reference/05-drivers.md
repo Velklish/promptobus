@@ -17,6 +17,34 @@ including its phrases and operations. Looking up `DRIVER_DECLARATIONS` from
 `promptobus/integration` returns only `id`, `capabilities` and `options`; it does
 not promise phrases or operations. Missing and unknown harness names still refuse.
 
+### Reservation observation and retirement
+
+`Driver` has two optional methods. Existing drivers can omit both. Their absence
+uses the generic registry and session inspection path, which retains capacity
+when a record, process or registry cannot be read completely.
+
+`reservationState(request: ReservationLookup): ReservationState` observes one
+session without writes or process changes. The request has `ref` and an absolute
+`registryHome` selected by the Host. The result is `alive`, `dead` or `unknown`.
+An exception, invalid return or incomplete observation means `unknown`, never an
+empty registry. A live process, including an `EPERM` process observation, retains
+the seat. Codex additionally observes its holder lock.
+
+`retireUnstarted(request: UnstartedReservation): boolean` may remove only the
+current owned record of a proven unstarted launch. Its request extends the
+lookup with `home`, `task`, `address`, `launchId` and `owner: { pid, birth }`.
+The driver freshly verifies that exact scope, generation and recorded launcher
+birth, a dead owner, no native identifier or process, and no live or unknown
+holder lock. Caller metadata alone is insufficient: the current record must
+still match immediately before removal. A changed generation, missing proof,
+exception, invalid result or `false` retains the record and seat. Retirement
+does not stop an active process or create a native Stop receipt. Recovery also
+retains a changed native generation before attempting Stop.
+
+These structural types are exported by `promptobus/driver` and `promptobus`.
+They carry no provider environment or private session record. Codex implements
+both methods; other built-in drivers use the strict generic fallback.
+
 ## BB provider selection
 
 The optional BB facade selects an explicit SDK provider and model. It records
@@ -1708,6 +1736,13 @@ driver.
 ### `sweepParticipantHomes` — remove every home of this registry that no session record names
 
 Source: `lib/driver-codex.ts`, `sweepParticipantHomes`.
+
+A registry scan distinguishes an absent directory (`ENOENT`) from an incomplete
+observation. An unreadable directory, unreadable or malformed record, or record
+without a valid absolute participant home preserves every home and reports the
+incomplete state. An absent registry follows the empty-state contract. Only a
+complete scan permits orphan removal; it preserves every referenced live home.
+Live-cap reservation recovery also treats incomplete Codex observations as unknown.
 
 The homes root is one directory, `$TMPDIR/promptobus-codex-homes`. A home is a direct child of it.
 `removeParticipantHome` still refuses anything that is not: the owner's `~/.codex`, a nested path,

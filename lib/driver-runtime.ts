@@ -9,6 +9,7 @@ export interface ManagedServiceLaunch {
   revoke(): Promise<void>;
 }
 export interface LibLaunchPlan extends LaunchPlan {
+  liveSeat?: { starting(): void; stopped(): void; staged(record: string, launchId: string): void };
   service?: ManagedServiceLaunch;
   serviceScopes?: { server: string; task: string; address: string; record: string }[];
   serviceFiles?: { roots: string[]; canonicalFiles?: string[] };

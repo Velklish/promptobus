@@ -245,6 +245,13 @@ Line by line:
 
 ## Checking a file
 
+The cap's resolver projection keeps its `balance` fallback and scoring rules.
+Before a real lift, [live-cap admission](../reference/03-cli.md#live-cap-admission)
+reserves a seat under the task lock for every strategy, including an explicit
+model choice. It counts pending launches and unknown observations. A full cap
+refuses before harness launch and names the supplying overlay path. `models`
+and dry runs remain informative without reserving a seat.
+
 `promptobus models validate` reads the shipped catalog and every overlay the host names, and reports:
 
 | Kind | What it covers |

@@ -666,6 +666,7 @@ async function spawn(plan: LibLaunchPlan, {
   const locked = <T>(fn: () => T): T => taskExists(runtimeHome, runtimeTask) ? withTaskLock(runtimeHome, runtimeTask, fn) : fn();
   locked(() => writeSession({
     launchId,
+    launcherProcess: processIdentity(process.pid),
     ref,
     cwd: sessionDir,
     bin,
@@ -700,6 +701,7 @@ async function spawn(plan: LibLaunchPlan, {
   }, env));
   const undo = bindBeforeLaunch(runtimeHome, runtimeTask, runtimeAddress, plan.prelaunchBinding);
   const recordFile = sessionFile(ref, env);
+  plan.liveSeat?.staged(recordFile, launchId);
   const publishOwned = (patch: Partial<CursorSessionRecord>, version: RecordVersion) => locked(() => {
     const current = readSession(ref, env);
     const owner = taskExists(runtimeHome, runtimeTask) ? participantOf(readTask(runtimeHome, runtimeTask), runtimeAddress) : null;
@@ -814,6 +816,7 @@ async function spawn(plan: LibLaunchPlan, {
         }
       };
     }
+    plan.liveSeat?.starting();
     lifted = await liftSession({
       ref,
       bin: nativeBin,
@@ -912,6 +915,7 @@ async function spawn(plan: LibLaunchPlan, {
         undo();
         dropSession(ref, env);
       });
+      plan.liveSeat?.stopped();
     });
   }
 }

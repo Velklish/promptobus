@@ -1,4 +1,5 @@
 import { coreRegistry, libDriverFor as driverFor } from './driver-runtime.js';
+import { recoverLiveSeat } from './live-reservation.js';
 import type { LibRegistry } from './driver-runtime.js';
 // Stop ONE participant's session and leave the task open. Why a verb of its own rather
 // than a flag on `done` or `dismiss`: ADR-012, and 03-cli § Status, done, dismiss…
@@ -35,6 +36,10 @@ export async function stop(rootOrHost: unknown, { task, address }: { task?: stri
   const known = addressesOf(meta);
   const route = `${host.busCommand(['stop', '<address>', `--task ${id}`])}. Task participants: ${known.join(', ')}`;
   if (!address) fail(`name the participant address: ${route}`);
+  if (await recoverLiveSeat(host, home, id, address!)) {
+    ok(`reservation for ${address} recovered after verified launcher and session exit; the task stays open`);
+    return 0;
+  }
   const p = participantOf(meta, address!);
   if (!p) fail(`task ${id} has no participant "${address}" — nobody to stop. ${route}`);
   // A session the mechanism did not start is not the mechanism's to close: an attached

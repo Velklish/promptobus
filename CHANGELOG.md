@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fresh participant lifts reserve a live-cap seat under the task lock before harness launch, including teamleads before child linking. Unknown launches retain their seat until verified recovery through `stop`; refusals name the cap and overlay path. Incomplete Codex registry scans preserve every participant home.
+- Drivers can optionally provide reservation observation and unstarted-record retirement through public structural requests. Missing methods preserve compatibility; failed or uncertain proof retains the seat and current record.
+
 ## [0.32.8] — 2026-11-10
 
 ### Fixed

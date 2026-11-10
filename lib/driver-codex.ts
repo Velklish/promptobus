@@ -23,7 +23,7 @@ import {
   PARTICIPANT_ARGV, SESSION_ENV_VAR, pidAlive, dropSession, findSessionByAddress, holderAlive, holderAsk, patchSession,
   rateLimitNote, rateLimitReached, readSession, readyMs, reapHolder, sessionFile, startHolder, STOP_TIMEOUT_MS,
   tailLog, waitReady, writeParticipantWake, writeSession, withSessionLaunch, sessionKey, codexMcpName, codexMcpPrefix,
-  bindParticipantHomeRemoval, codexMcpServers, registrySessions, sessionsDir, turnWaitMs, turnIdleMs, turnFailed,
+  bindParticipantHomeRemoval, codexMcpServers, registrySessions, scanSessions, sessionsDir, turnWaitMs, turnIdleMs, turnFailed, holderLockState,
   managedCodexResumeDeath, retireCodexResumeHolderLock,
 } from './codex-session.js';
 import { probeCodex } from './model-routing/adapter-codex.js';
@@ -42,7 +42,7 @@ import { codexPrompts } from './prompts/codex.js';
 import { readStopConfirmation } from './codex-command-receipts.js';
 export { participantAuthSnapshot } from './codex-participant-auth.js';
 
-import type { DriverPhrases, HostMcpTool, LaunchFile, Notification, NotificationMessage, SessionView, WakeProbe, ActivationTarget, ActivateResult, ParticipantV1 } from '../dist/index.js';
+import type { DriverPhrases, HostMcpTool, LaunchFile, Notification, NotificationMessage, SessionView, WakeProbe, ActivationTarget, ActivateResult, ParticipantV1, ReservationLookup, ReservationState, UnstartedReservation } from '../dist/index.js';
 import type { CodexSessionRecord, CodexPendingRequest, ManagedCodexResumeDeath } from './codex-session.js';
 import type { LibDriver, LibLaunchPlan, LibPrepareContext, LibSpawnContext, LibSpawnResult, LibStall, LibMcpConfig, LibMcpServer, LibToolBin } from './driver-runtime.js';
 
@@ -633,10 +633,14 @@ export function sweepParticipantHomes(env = process.env) {
   }
   let live;
   try {
-    live = new Set(registrySessions(env).map((r) => r.codexHome && canonicalPath(r.codexHome)).filter(Boolean));
-  } catch {
-    // The registry home is not declared, so no record can be read and every home here
-    // would look orphaned. Sweeping on that reading would remove live sessions' homes.
+    const scan = scanSessions(env);
+    if (!scan.complete) throw new GateError(`Codex registry observation is incomplete: ${scan.issues.join('; ')}`);
+    const records = scan.records;
+    if (records.some(r => typeof r.codexHome !== 'string' || !path.isAbsolute(r.codexHome)))
+      throw new GateError('a Codex registry record has no valid absolute participant home');
+    live = new Set(records.map(r => canonicalPath(r.codexHome!)));
+  } catch (error) {
+    warn(`Codex participant-home sweep retained every home: registry observation is incomplete (${(error as Error).message})`);
     return [];
   }
   const swept: string[] = [];
@@ -647,6 +651,46 @@ export function sweepParticipantHomes(env = process.env) {
     if (removeParticipantHome(dir)) swept.push(dir);
   }
   return swept;
+}
+
+function validReservationLookup(input: ReservationLookup) {
+  return !!input && typeof input.ref === 'string' && !!input.ref && typeof input.registryHome === 'string'
+    && path.isAbsolute(input.registryHome);
+}
+
+function reservationState(input: ReservationLookup): ReservationState {
+  try {
+    if (!validReservationLookup(input)) return 'unknown';
+    const { ref } = input, env = { PROMPTOBUS_CODEX_HOME: input.registryHome };
+    const scan = scanSessions(env), lock = holderLockState(ref, env);
+    if (!scan.complete || lock === 'unknown') return 'unknown';
+    const record = scan.records.find(r => r.ref === ref);
+    if (lock === 'alive' || pidAlive(record?.holderPid) || pidAlive(record?.appPid)) return 'alive';
+    if (!record) return 'dead';
+    const settled = Number.isSafeInteger(record.holderPid) && Number(record.holderPid) > 0
+      && Number.isSafeInteger(record.appPid) && Number(record.appPid) > 0;
+    return (!record.threadId && !settled) || !['starting', 'alive', 'dead', 'idle', 'busy'].includes(String(record.state)) ? 'unknown' : 'dead';
+  } catch { return 'unknown'; }
+}
+
+function retireUnstarted(input: UnstartedReservation) {
+  if (!validReservationLookup(input) || !path.isAbsolute(input.home) || !input.task || !input.address || !input.launchId
+    || !Number.isSafeInteger(input.owner?.pid) || input.owner.pid <= 0 || typeof input.owner.birth !== 'string') return false;
+  const env = { PROMPTOBUS_CODEX_HOME: input.registryHome };
+  return withSessionLaunch(input.ref, env, () => {
+    const scan = scanSessions(env);
+    if (!scan.complete || holderLockState(input.ref, env) !== 'dead' || processState(input.owner) !== 'dead') return false;
+    const record = scan.records.find(r => r.ref === input.ref);
+    if (!record || !sameStoreHome(record.home, input.home) || record.task !== input.task || record.address !== input.address
+      || record.launchId !== input.launchId || record.launcherPid !== input.owner.pid
+      || record.launcherProcess?.pid !== input.owner.pid || record.launcherProcess.birth !== input.owner.birth
+      || record.threadId || record.holderPid || record.appPid || record.nativeCreationPending || record.state !== 'starting') return false;
+    const version = recordVersion(sessionFile(input.ref, env));
+    if (JSON.stringify(readSession(input.ref, env)) !== JSON.stringify(record)
+      || !sameRecordVersion(version)) return false;
+    dropSession(input.ref, env);
+    return true;
+  });
 }
 
 /** The harness state of one closed participant that lives outside its worktree — a reviewer has
@@ -1353,6 +1397,7 @@ async function spawn(input: LibLaunchPlan, {
         || current.task !== runtimeTask || current.address !== runtimeAddress || !sameRecordVersion(version)) {
         throw new GateError(`Codex launch ${ref} changed ownership before retirement; replacement retained`);
       }
+      if (holderAlive(ref, env) || pidAlive(current.appPid)) throw new GateError(`Codex launch ${ref} still has a live native process; reservation retained`);
       if (resume) {
         const owner = participantOf(readTask(runtimeHome, runtimeTask), runtimeAddress);
         if (owner?.harness !== 'codex' || owner.mode !== 'managed' || owner.sessionRef !== ref
@@ -1372,6 +1417,7 @@ async function spawn(input: LibLaunchPlan, {
       }
     });
     if (taskExists(runtimeHome, runtimeTask)) withTaskLock(runtimeHome, runtimeTask, discard); else discard();
+    plan.liveSeat?.stopped();
   };
   const authOwnerHome = ownerCodexHome(env ?? process.env);
   const provenance = launchProvenance(host, tool);
@@ -1389,6 +1435,7 @@ async function spawn(input: LibLaunchPlan, {
         nativeId: resume.nativeId, nativeStore: resume.nativeStore, cwd: resume.cwd },
       launcherReservation: { previous: resume.previousLauncherPid, current: resume.launcherPid } } } : {}),
     launcherPid: process.pid,
+    launcherProcess: processIdentity(process.pid),
     cwd: workdir,
     bin: tool.bin,
     provenance: provenanceLine(provenance),
@@ -1451,6 +1498,7 @@ async function spawn(input: LibLaunchPlan, {
   };
   if (resume) withTaskLock(runtimeHome, runtimeTask, () => withSessionLaunch(ref, env, stageRecord));
   else withSessionLaunch(ref, env, stageRecord);
+  plan.liveSeat?.staged(sessionFile(ref, env), launchId);
   if (plan.service) plan.sessionRecord = sessionFile(ref, env);
   for (const scope of plan.service ? plan.serviceScopes ?? [] : []) writeJsonAtomic(scope.record, {
     ref, launchId, home: runtimeHome, task: scope.task, address: scope.address, threadId: null,
@@ -1517,6 +1565,7 @@ async function spawn(input: LibLaunchPlan, {
   try {
     await plan.service?.beforeStart(sessionFile(ref, env));
     assertRuntime();
+    plan.liveSeat?.starting();
     holder = startHolder(ref, sessionEnv(env ?? process.env, { CODEX_HOME: codexHome }));
   } catch (error) {
     return revokeFailedManagedLaunch(plan, error, () => {
@@ -1643,6 +1692,8 @@ async function stop(ref: string, { timeoutMs = STOP_TIMEOUT_MS } = {}) {
 }
 
 export const codexDriver = {
+  reservationState,
+  retireUnstarted,
   id: CODEX,
   capabilities: {
     spawn: true,

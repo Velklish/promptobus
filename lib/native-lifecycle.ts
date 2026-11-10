@@ -199,8 +199,11 @@ export function reserveNativeParticipant(home: string, task: string, participant
     const meta = readTask(home, task);
     if (meta.status !== 'active') throw new GateError('task ' + task + ' is closed');
     const current = participantOf(meta, addressOf(participant));
-    if (!native(participant) && !native(expected) && !native(current))
+    if (!native(participant) && !native(expected) && !native(current)) {
+      if (!isDeepStrictEqual(current ?? null, expected ?? null))
+        throw new GateError(`participant ${participant.id} changed while its lift was planned; no harness was launched`);
       return libOpenParticipant(home, task, participant, registry, { assignment: true });
+    }
     if (JSON.stringify(binding(current)) !== JSON.stringify(binding(expected))) refuse(participant.id);
     if (native(current)) requireNativeTerminal(home, meta, current);
     const record = native(participant)

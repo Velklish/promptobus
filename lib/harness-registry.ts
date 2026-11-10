@@ -15,6 +15,9 @@ export interface HarnessSessionRecord {
   hostVersion?: string | null; binaryPath?: string | null; binaryVersion?: string | null; bin?: string | null;
   [key: string]: unknown;
 }
+export interface RegistryObservation<T> {
+  complete: boolean; absent: boolean; records: T[]; issues: string[];
+}
 interface RegistryOptions<T extends HarnessSessionRecord> {
   harness?: string; sidecars?: (ref: string, env: NodeJS.ProcessEnv) => string[];
   onDrop?: (record: T, env: NodeJS.ProcessEnv) => void;
@@ -67,21 +70,38 @@ export function createHarnessRegistry<T extends HarnessSessionRecord = HarnessSe
     rmSync(sessionFile(ref, env), { force: true });
   }
 
-  function registrySessions(env = process.env): T[] {
+  function scanSessions(env = process.env): RegistryObservation<T> {
     let names;
     try {
       names = readdirSync(sessionsDir(env));
     } catch (e) {
       if (e instanceof GateError) throw e;
-      return [];
+      const absent = (e as NodeJS.ErrnoException).code === 'ENOENT';
+      return { complete: absent, absent, records: [], issues: absent ? [] : [`${sessionsDir(env)}: ${(e as Error).message}`] };
     }
-    return names.filter((name) => name.endsWith('.json')).map((name) => {
+    const records: T[] = [], issues: string[] = [];
+    for (const name of names.filter((name) => name.endsWith('.json'))) {
+      const file = path.join(sessionsDir(env), name);
       try {
-        return JSON.parse(readFileSync(path.join(sessionsDir(env), name), 'utf8'));
-      } catch {
-        return null;
+        const record: unknown = JSON.parse(readFileSync(file, 'utf8'));
+        if (!record || typeof record !== 'object' || Array.isArray(record)
+          || typeof (record as T).ref !== 'string' || !(record as T).ref.trim()
+          || sessionFile((record as T).ref, env) !== file) throw new Error('invalid session record or ref');
+        const row = record as T;
+        if (['holderPid', 'appPid', 'panePid'].some(key => row[key] !== undefined && row[key] !== null
+          && (!Number.isSafeInteger(row[key]) || Number(row[key]) <= 0))
+          || ['codexHome', 'recordPath', 'threadId', 'sessionId', 'sessionName', 'state', 'launchId'].some(key => row[key] !== undefined
+            && row[key] !== null && typeof row[key] !== 'string')) throw new Error('invalid session observation fields');
+        records.push(record as T);
+      } catch (error) {
+        issues.push(`${file}: ${(error as Error).message}`);
       }
-    }).filter(Boolean) as T[];
+    }
+    return { complete: issues.length === 0, absent: false, records, issues };
+  }
+
+  function registrySessions(env = process.env): T[] {
+    return scanSessions(env).records;
   }
 
   return {
@@ -95,6 +115,7 @@ export function createHarnessRegistry<T extends HarnessSessionRecord = HarnessSe
     patchSession,
     dropSession,
     registrySessions,
+    scanSessions,
     pidAlive,
   };
 }

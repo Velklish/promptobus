@@ -131,6 +131,23 @@ An owner may declare `account.<harness>.capacity.<kind>` for `session`, `weekly`
 
 **13. Participant metadata.** The decision is kept in `metadata.routing`. The protocol version is not raised: `metadata` is open in `schemas/v1/participant.schema.json`.
 
+Live-cap admission uses a private task reservation under the task lock before any
+fresh harness launch. It counts live and unknown participants and provisional
+seats, including a teamlead before its child link exists. The reservation records
+the launcher process birth, native generation and phase. Recovery requires dead
+launcher and dead-session observations; incomplete observations retain the seat.
+The owner recovers it through `stop`. `models` and dry runs reserve no seat, and
+the resolver's plan-aware scoring, capacity values and `balance` fallback remain
+unchanged. See [live-cap admission](../reference/03-cli.md#live-cap-admission).
+
+The existing driver registry carries optional reservation observation and
+unstarted-record retirement methods. Public structural requests identify the
+registry and launch generation without exposing private records or a provider
+environment. Existing drivers retain the strict generic fallback. Failure or
+unknown evidence retains capacity; retirement requires fresh matching scope,
+launcher process birth and verified native absence. See the
+[driver contract](../reference/05-drivers.md#reservation-observation-and-retirement).
+
 **14. Host methods this decision uses, and no others.** `declaredTools()`, `resolveToolBin(name)`, `routingPaths()`. An adapter reports `binary_missing` from the host's verdict rather than searching `PATH` itself.
 
 **15. `models calibrate`.** Every band it compares against is the shipped catalog's, never the merged stack's. Running it twice on one telemetry file proposes the same thing twice. The evidence threshold is 5 runs per key for `quotaCost`, and five usable throughput observations pooled per `(harness, model)` for `speed`. The eligible key with the most runs is the local anchor for `quotaCost` and keeps its catalog bands; a tie keeps the earlier key in lexicographic `(harness, model, effort)` order. The most-observed model with enough throughput observations is the speed pivot; one speed proposal applies to every rated effort rung of that model. A one-band difference implies a factor of 1.25. A surprise of at least 1.5× moves one band; at least 3× moves two. One run is capped at ±2 and clamps to 1…10. `speed` moves up when throughput is unexpectedly higher; `quotaCost` moves up when the window delta is unexpectedly higher. A zero or missing denominator omits that rating, and so does a measured zero throughput. Completion `durationSec` is printed and is never used to calibrate `speed`. On 2026-09-10 the owner decided that `speed` means published output throughput. `quality` is never proposed. `--write` merges only the ratings that moved into the host layer whose id is `user`, per tuple and per rating, and raises a version-1 overlay to `schemaVersion` 2. Without a TTY the command refuses unless `--yes` is also present. `--yes` is valid only with `--write`. Under `--json` every refusal happens before the one document is printed.

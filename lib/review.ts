@@ -1,4 +1,5 @@
 import { finalizeManagedServiceLaunch, revokeFailedManagedLaunch } from './service-launch.js';
+import { LiveAdmissionError, liveCapNote, reservedSpawn, withReservationIdle } from './live-reservation.js';
 import { persistLegacyParticipant, persistNativeParticipant, releaseNativeReservation, requireCurrentNativeLaunch, reserveNativeParticipant } from './native-lifecycle.js';
 import { renderReviewerInstructions, renderReviewProcedure } from './prompts/roles.js';
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
@@ -811,6 +812,8 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
   }
 
   if (opts.dryRun) {
+    const cap = liveCapNote(plan.host, plan.home, plan.taskId, plan.driver.id, plan.address);
+    if (cap && !plan.reuse) info(cap);
     info(`repository: ${plan.nsPath} → ${plan.repoDir} · ${plan.baseLine} · ${plan.snapshot.line}`);
     warnDirtySnapshot(plan);
     info(`task: ${plan.taskId}${plan.createNew ? ` (will be created: ${plan.createNew.title})` : ''}${titleNote(plan)}`);
@@ -887,7 +890,7 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
     ok(`task ${plan.taskId}: ${plan.createNew.title}`);
     warnSecondTask(plan);
   }
-  const reserve = () => {
+  const reserve = () => withReservationIdle(plan.home, plan.taskId, plan.address, () => {
     const assignedAt = new Date().toISOString();
     const harnessHistory = harnessHistoryForLift(plan.participant, plan.rebind, assignedAt, plan);
     return reserveNativeParticipant(plan.home, plan.taskId, participantRecord(plan.address, {
@@ -926,7 +929,7 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
       binaryPath: liftProvenance!.binaryPath,
       binaryVersion: liftProvenance!.binaryVersion,
     }, registryOf(plan.host)), plan.participant, REGISTRY);
-  };
+  });
   const reserved = !plan.reuse ? reserve() : null;
 
   let record: ParticipantV1, tool: ReturnType<typeof withToolVersion>;
@@ -1013,7 +1016,7 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
   }
 
   // Start and the "session lifted" check — a helper shared with the worker inside the driver.
-  const { output, session, seen } = await plan.driver.spawn!(plan.launch, {
+  const { output, session, seen } = await reservedSpawn(plan.driver, plan.launch, {
     tool: tool as LibToolBin & { bin: string },
     // Address, task and bus home go to the driver TOGETHER with the plan: a harness whose wake
     // channel the mechanism drives has to hand contact points to its own machinery.
@@ -1054,7 +1057,9 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
       });
     },
     awaitOptions: opts.awaitOptions,
-  }).catch(error => revokeFailedManagedLaunch(plan.launch, error));
+  }).catch(error => revokeFailedManagedLaunch(plan.launch, error, () => {
+    if (error instanceof LiveAdmissionError && reserved) releaseNativeReservation(plan.home, plan.taskId, reserved.record);
+  }));
   ok(`reviewer ${plan.address} started in ${plan.nsPath}${session ? ` (session ${session})` : ''}`);
   // The warden is started right after the participant: without it the reviewer would not learn about
   // a message — it fetches the mailbox only on its own turn.

@@ -224,3 +224,5 @@ coverage/
 
 /lib/service-launch.js
 /lib/service-launch.d.ts
+/lib/live-reservation.js
+/lib/live-reservation.d.ts
