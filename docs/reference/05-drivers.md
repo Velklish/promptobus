@@ -700,6 +700,12 @@ Planning and dry runs neither start the owner nor reserve credentials.
 The managed owner snapshot drops `PROMPTOBUS_ROOT_*` and `PROMPTOBUS_CLIENT_*`
 capability references while retaining the trusted account environment.
 
+Codex holder event and rate-limit publications may finish during a synchronous
+HTTP dispatch. After a stable full proof, the service permits changes limited
+to `lastEvent`, `lastEventAt` and `rateLimits`; every other record field, the
+grant and the participant retain their authority checks. Native admission and
+asynchronous observation still require the exact record revision.
+
 Each managed launch stages its own private record before native start. Claude
 and OpenCode worker records remain mode `0600` in ordinary task directories;
 staging does not change those directories' permissions. Claude

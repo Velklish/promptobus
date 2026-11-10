@@ -1497,6 +1497,16 @@ naming where the proof failed: `exhausted 3`,
 synchronous recheck after authorization returns (`authenticate`, `finalize`,
 `body`, `dispatch`), with `: participant identity` when the identity moved.
 
+After a complete stable proof, a synchronous Codex fence can refresh a record
+publication that changes only `lastEvent`, `lastEventAt` or `rateLimits`.
+These holder telemetry fields do not change the authority already observed.
+The service reads the current private record between matching file revisions
+and compares every other field with the proved record. A byte-identical rewrite,
+unknown field change, Stop state, native identity, process, permission or launch
+change still refuses. Grant and participant checks still run at each fence;
+other harnesses and the asynchronous proof attempts retain exact revisions.
+This refresh neither reruns a tool nor changes its saved outcome.
+
 Cursor startup reads its native record and participant together under their
 shared task lock. Process and database proofs run outside that lock, then the
 final locked check still rejects a changed owner generation.

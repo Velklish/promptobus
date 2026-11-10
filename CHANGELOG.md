@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Codex event and rate-limit telemetry published after a stable managed HTTP proof no longer causes a false synchronous lifetime refusal. Other record changes and asynchronous proof revisions remain strict; request outcomes are not replayed.
 - Root `done` accepts a stopped Codex teamlead after another session claims and closes its child task, preserving receipt and liveness checks. Link failures name the teamlead and child task.
 
 ## [0.32.7] — 2026-11-09

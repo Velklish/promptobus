@@ -37,9 +37,15 @@ else {writeFileSync(${JSON.stringify(entered)},'actual Worker provider inspect')
 while(!existsSync(${JSON.stringify(release)})) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,5);
 console.log('[]');}
 `, { mode: 0o755 });
+  let beforeBusVersion = null;
   const make = ({ cwd }) => {
     const host = createStandaloneHost({ cwd, binPath, version }), resolve = host.resolveToolBin;
     host.resolveToolBin = tool => tool === 'claude' ? { ok: true, bin: fake } : resolve(tool);
+    const hostVersion = host.version;
+    Object.defineProperty(host, 'version', { get() {
+      const publish = beforeBusVersion; beforeBusVersion = null;
+      publish?.(); return hostVersion;
+    } });
     return host;
   };
   const host = make({ cwd: root }), paths = servicePaths(host, env);
@@ -236,6 +242,41 @@ console.log('[]');}
     const replaced = await publishedOnce({ actor: churn, ...changed });
     check('a changed participant generation during the proof is refused without a fresh retry or effect', replaced.status === 409
       && questions(churn) === 1 && !existsSync(receipt(churn, changedId)), replaced.text);
+
+    const telemetry = await actor('telemetry');
+    const warm = await question(telemetry, 'warm cached context before telemetry');
+    if (warm.status !== 200 || JSON.parse(warm.text).result?.isError) throw new Error('Owned telemetry fixture failed to warm its context');
+    for (const patch of [{ lastEvent: 'item/started' }, { lastEventAt: '2026-11-10T00:00:00.000Z' },
+      { rateLimits: { primary: { usedPercent: 51 } } }]) {
+      const id = ++sequence, before = questions(telemetry);
+      let published = false;
+      beforeBusVersion = () => {
+        writeFileSync(telemetry.record, JSON.stringify({ ...JSON.parse(readFileSync(telemetry.record, 'utf8')), ...patch }));
+        published = true;
+      };
+      const sent = await question(telemetry, 'one mutation after telemetry publication', id);
+      check(`Codex ${Object.keys(patch)[0]} publication during dispatch retains unchanged authority`, published && sent.status === 200
+        && !JSON.parse(sent.text).result?.isError && questions(telemetry) === before + 1
+        && existsSync(receipt(telemetry, id)), JSON.stringify({ sent, questions: questions(telemetry), before, published }));
+      const replay = await question(telemetry, 'one mutation after telemetry publication', id);
+      check('a telemetry-tolerant dispatch still commits and replays exactly one outcome', replay.text === sent.text
+        && questions(telemetry) === before + 1, replay.text);
+    }
+    for (const patch of [{}, { stopping: true }, { threadId: 'another-owned-thread' }, { launchId: 'another-owned-launch' },
+      { appPid: 1 }, { sandbox: 'full-access' }, { unrecognizedAuthority: true }]) {
+      const id = ++sequence, before = questions(telemetry), original = readFileSync(telemetry.record);
+      let published = false;
+      beforeBusVersion = () => {
+        writeFileSync(telemetry.record, JSON.stringify({ ...JSON.parse(original), ...patch,
+          ...(Object.keys(patch).length ? { lastEvent: `changed-${id}` } : {}) }));
+        published = true;
+      };
+      const refused = await question(telemetry, 'must not accept other record publications', id);
+      writeFileSync(telemetry.record, original);
+      check(`returned dispatch fence refuses ${Object.keys(patch)[0] ?? 'byte-identical rewrite'} despite telemetry`, published
+        && (refused.status !== 200 || JSON.parse(refused.text).result?.isError === true)
+        && questions(telemetry) === before, refused.text);
+    }
 
     const owner = await actor('claim', 'orchestrator');
     const claim = await rpc(owner, 'tools/call', { name: 'promptobus_mailbox', arguments: { claim: true }, _meta: { threadId: owner.thread } });

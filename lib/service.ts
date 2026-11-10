@@ -66,7 +66,7 @@ type Endpoint = 'bus' | 'reviewer_files';
 interface Connection { handle: (message: JsonRpcMessage) => object | null }
 interface ClientContext { grant: ServiceClientGrant; host: PromptobusHost; env: Readonly<NodeJS.ProcessEnv> }
 interface RequestReceipt { digest: string; state: 'started' | 'completed'; readOnly: boolean; response?: object | null }
-interface ManagedAuthorization { revision: RecordVersion; participant: ParticipantV1 }
+interface ManagedAuthorization { revision: RecordVersion; participant: ParticipantV1; record: Record<string, unknown> | null }
 class HttpFailure extends Error {
   constructor(readonly status: number, message: string) { super(message); }
 }
@@ -74,6 +74,21 @@ const HTTP_PROTOCOLS = PROTOCOL_VERSIONS.filter(version => version !== '2024-11-
 const CLIENT_ID = /^[a-f0-9-]{36}$/;
 const MAX_BODY = 16 * 1024 * 1024;
 const REPLAYABLE_READS = new Set(['read_file', 'read_files', 'list_files', 'search_text']);
+function codexAuthorityRecord(record: Record<string, unknown>) {
+  const authority = { ...record };
+  delete authority.lastEvent; delete authority.lastEventAt; delete authority.rateLimits;
+  return authority;
+}
+function refreshCodexTelemetry(proof: ManagedAuthorization) {
+  if (!proof.record) return false;
+  try {
+    const revision = recordVersion(proof.revision.file), record = readPrivate(revision.file);
+    if (!recordOf(record) || !sameRecordVersion(revision) || isDeepStrictEqual(record, proof.record)
+      || !isDeepStrictEqual(codexAuthorityRecord(record), codexAuthorityRecord(proof.record))) return false;
+    proof.revision = revision; proof.record = record;
+    return true;
+  } catch { return false; }
+}
 const field = (value: unknown) => typeof value === 'string' && value.length > 0 ? value : null;
 const tokenEquals = (a: string, b: string) => {
   const first = Buffer.from(a), second = Buffer.from(b);
@@ -484,7 +499,7 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
       }
       return current;
     };
-    const authorizeCurrent = (grant: ServiceClientGrant, proof: ManagedAuthorization | null = null) => {
+    const authorizeCurrent = (grant: ServiceClientGrant, proof: ManagedAuthorization | null = null, returned = false) => {
       const current = currentGrant(grant);
       if (standaloneExpired(current, paths)) throw new HttpFailure(401, 'Standalone root admission expired or was revoked');
       if (current.lifetime.kind !== 'managed') {
@@ -494,7 +509,8 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
       if (!proof || !participant || !isDeepStrictEqual(managedIdentity(participant), managedIdentity(proof.participant))) {
         throw new ManagedIdentityDrift('within-attempt participant identity');
       }
-      if (!sameRecordVersion(proof.revision)) throw new ManagedRevisionDrift('within attempt');
+      if (!sameRecordVersion(proof.revision) && !(returned && participant.harness === 'codex'
+        && current.nativeBinding?.kind === 'codex' && refreshCodexTelemetry(proof))) throw new ManagedRevisionDrift('within attempt');
     };
     const MANAGED_DRIFT = 'Managed lifetime changed after observation; retry with current owner proof';
     class ManagedRevisionDrift extends HttpFailure {
@@ -532,7 +548,13 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
           throw new HttpFailure(409, 'Managed participant identity changed during authorization');
         }
         pin.identity ??= managedIdentity(participant);
-        proof = { revision, participant };
+        let record: Record<string, unknown> | null = null;
+        if (participant.harness === 'codex' && current.nativeBinding?.kind === 'codex') {
+          const value = readPrivate(revision.file);
+          if (!recordOf(value)) throw new HttpFailure(401, 'Managed lifetime has no matching task, participant and launch record');
+          record = value;
+        }
+        proof = { revision, participant, record };
       }
       try { await requireManagedNativeBinding(paths, current, { host, env: current.pollEnv }); }
       catch (error) {
@@ -550,7 +572,7 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
       }
       authorizeCurrent(grant, proof);
       return () => {
-        try { authorizeCurrent(grant, proof); }
+        try { authorizeCurrent(grant, proof, true); }
         catch (error) {
           if (error instanceof ManagedRevisionDrift) throw new ManagedRevisionDrift(`returned fence: ${label}`);
           if (error instanceof ManagedIdentityDrift) throw new ManagedIdentityDrift(`returned fence: ${label}: participant identity`);

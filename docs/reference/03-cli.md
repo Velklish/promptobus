@@ -1828,6 +1828,12 @@ a stable attempt is required before dispatch. A changed identity or grant
 is refused, and unavailable proof is not retried. Persistent record drift returns
 HTTP 409. Only authorization is retried; tool effects are never repeated.
 
+After a stable full proof, the synchronous Codex checks tolerate an actual
+publication changing only `lastEvent`, `lastEventAt` or `rateLimits`, provided
+the current private record is stable and all other fields match that proof.
+Byte-identical rewrites and other record changes remain refusals. This exception
+does not retry a request or replay an effect; saved-response rules stay intact.
+
 Managed synchronous dispatch takes its own task lock before creating a request
 receipt and refuses contention immediately. Its nested target, alias and message
 commit locks also do not wait on earlier native proof. A refusal before dispatch
