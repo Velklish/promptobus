@@ -1322,7 +1322,9 @@ then validates the matching retained receipt and launch before retiring the sess
 It does not send another shutdown. A failed finalizer leaves the record for diagnosis; its
 log is beside the session record as `<session-key>.self-stop-<launch-hash>.log`.
 Acceptance is not Stop confirmation; inspect the retained participant proof and session
-status from another authorized session. External Stop remains synchronous.
+status from another authorized session. External Stop remains synchronous. `Driver.stopSelf(ref)` is optional:
+the Codex implementation returns a deferred result for this owner path. A driver without
+that method refuses the deferred request; the acknowledgement does not establish `stopped`.
 
 The holder appends selected `commandExecution` start/completion, output deltas and terminal
 turn events to private, fsynced JSONL under the explicit Codex state home's

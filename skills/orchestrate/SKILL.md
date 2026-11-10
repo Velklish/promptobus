@@ -208,7 +208,7 @@ Role quality floors are soft; on the ten-point scale they default to worker 5, a
 
 `balance` is not a row of the quality ladder and does not move with the price of a mistake: it answers which ACCOUNT to spend from, and orders tuples inside a harness by `balanced`. It is the strategy for a person paying several subscriptions who wants the work spread over all of them instead of exhausting one — reach for it when `models` says an account is running short, or when the run is long enough that the spend matters, not as a general default. The reviewer is inside it like a worker: **nothing in this package pins the reviewer to a harness** ([solo-review](../solo-review/SKILL.md) § Reviewer strategy).
 
-Each live participant of the task on a harness costs its tuples 5 score points by default (`penalties.liveParticipantPerHarness`), at most 20 (`penalties.liveParticipantCap`), under every strategy. `balance` chooses the harness by pace, so the penalty only orders the tied band; under `balance` alone, `caps.liveParticipants.<harness>` is the ceiling (03-cli § `balance`: which account to spend from).
+Each live participant of the task on a harness costs its tuples 5 score points by default (`penalties.liveParticipantPerHarness`), at most 20 (`penalties.liveParticipantCap`), under every strategy. `balance` chooses the harness by pace, so the penalty only orders the tied band. The `balance` projection uses `caps.liveParticipants.<harness>` as a ceiling; live-cap admission enforces it for every strategy and explicit model choice (03-cli § Live-cap admission).
 
 ### When `models` says an account is running short
 

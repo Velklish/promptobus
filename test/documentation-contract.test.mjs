@@ -361,6 +361,12 @@ const orchestrateSkill = read('skills/orchestrate/SKILL.md');
 check('docs: managed root self-Stop acknowledgement is pending until retained proof',
   has(orchestrateSkill, 'A managed Codex root stopping itself receives a pending acknowledgement:')
   && has(orchestrateSkill, 'check the retained Stop proof from another authorized session'));
+check('docs: live-cap admission applies across strategies and explicit model choices',
+  has(orchestrateSkill, 'live-cap admission enforces it for every strategy and explicit model choice'));
+check('docs: Stop decision and driver contract distinguish pending self-Stop from confirmation',
+  has(read('docs/adr/adr-012-stopping-one-participant-is-a-verb-of-its-own.md'), 'A managed orchestrator is eligible')
+  && has(read('docs/adr/adr-012-stopping-one-participant-is-a-verb-of-its-own.md'), 'own Stop receives a pending acknowledgement')
+  && has(read('docs/reference/05-drivers.md'), '`Driver.stopSelf(ref)` is optional:'));
 check('docs: every description of the lift order runs the generator after the dependency install',
   has(spawn, 'It runs **after the dependency install**, so a generator may run a tool the repository pins in its own lock')
   && has(installGuide, '`spawn` runs it in the fresh worktree after the checkout and after `npm ci`')

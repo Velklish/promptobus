@@ -45,21 +45,19 @@ the record, because the record's owner is the driver.
 
 - **The owner gate is the one `done` and `dismiss` use.** The session belongs to the task mailbox
   owner's run, and a foreign hand would take a worker off work somebody else is watching.
-- **It refuses three addresses rather than guessing:** one that is not a participant of this task
-  — the line names who is; the orchestrator, which has no session this mechanism started, being
-  the one that started the others; and a participant lifted `attached`, whose session is a
-  person's own window that `spawn` never owned. Each refusal is checked in the suite by its exit
-  AND by the driver not having been called: a refusal that returns non-zero after doing the work
-  is not a refusal.
+- **It refuses an unknown or attached participant.** The refusal names known addresses or explains
+  that the person's own session was not started by the mechanism. A managed orchestrator is eligible
+  under the same owner gate. Each refusal is checked by its exit and by the driver not being called.
 - **A participant with no live session is not an error.** There is nothing to stop and the task
   is still open, so the command says that and exits 0.
 - **The record is retired because the driver retires it.** The command calls `stopParticipant`,
   which dispatches to the driver's own `stop` — `dropSession` for Codex and Cursor, the registry
   entry leaving for Claude. The command adds no record-keeping of its own, and that is deliberate:
   a second place that retires records would drift from the first.
-- **An unconfirmed stop is not a success.** When the driver ran its command and could not confirm
-  the session is gone, the record may still read alive; the command says so, names the harness's
-  registry, and exits non-zero.
+- **An unconfirmed stop is not a confirmed closure.** A synchronous Stop that cannot confirm the
+  session is gone exits non-zero and retains the record. A managed Codex orchestrator requesting its
+  own Stop receives a pending acknowledgement; confirmation follows actual command completion and
+  app-server closure. Another authorized session can inspect the retained proof.
 - **The watch is untouched.** `stop` does not do `dismiss`'s work behind its back, and the
   suite asserts the participant is still watched after its session is stopped.
 
