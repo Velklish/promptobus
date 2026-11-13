@@ -664,3 +664,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-397.1"></a>`PB-397.1-native-lifecycle-close` · 2026-11-13 · completed · — · Native lifecycle admission and close barriers
 - <a id="pb-397.3"></a>`PB-397.3-native-implicit-cwd` · 2026-11-13 · completed · — · Bind implicit native command cwd to accepted fixed context
 - <a id="pb-373.12"></a>`PB-373.12-bb-stop-test-node-baseline` · 2026-11-13 · completed · — · Confirm the Node baseline of the BB Stop test
+- <a id="pb-187.3"></a>`PB-187.3-codex-hidden-model-turn-unmeasured` · 2026-11-13 · completed · — · codex-hidden-model-turn-unmeasured
