@@ -668,3 +668,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-335.2"></a>`PB-335.2-root-dev-fast-uri-advisory` · 2026-11-13 · completed · — · Root development dependency fast-uri has a moderate advisory
 - <a id="pb-416.18"></a>`PB-416.18-managed-lifetime-revision-409-observations` · 2026-11-13 · merged into PB-416.5 · — · Investigate managed-lifetime revision conflicts with an unchanged owner
 - <a id="pb-419.5"></a>`PB-419.5-align-current-bb-provider-version-documentation` · 2026-11-13 · merged into PB-429 · — · Align current BB provider version documentation
+- <a id="pb-419.15"></a>`PB-419.15-correct-obsolete-node-prerequisite-in-deferred-sdk-task` · 2026-11-13 · merged into PB-412 · — · Correct obsolete Node prerequisite in deferred SDK task
