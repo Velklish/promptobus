@@ -2,7 +2,7 @@
 
 The npm package name is `promptobus`. Version in `package.json` is `0.32.9`. License is MIT. Node.js `>=26`.
 
-That number is written out by hand, and the suite compares it to `package.json`, the first dated release heading in `CHANGELOG.md`, and an exact `v<version>` git tag when `HEAD` has one (`test/promptobus-package.test.mjs`): it moves in the commit that cuts a release, and in no other. A reader who needs the version of the tree in front of them asks the tree — `promptobus --version` prints it without a host file.
+That number is maintained by the contributor release command, and the suite compares it to `package.json`, the first dated release heading in `CHANGELOG.md`, and an exact `v<version>` git tag when `HEAD` has one (`test/promptobus-package.test.mjs`): it moves in the commit that cuts a release, and in no other. A reader who needs the version of the tree in front of them asks the tree — `promptobus --version` prints it without a host file.
 
 ## Entry points
 
@@ -31,21 +31,11 @@ The package test installs the packed artifact and resolves each public specifier
 
 `package.json` ships the README and the two process skills, but not `docs/`, `CHANGELOG.md`, `backslop.json` or `.github/`. Links from shipped Markdown to those source-only files use `https://github.com/Velklish/promptobus/blob/v<package version>/…` so an installed package keeps the documentation of its own release. The installer copies skill text without rewriting it (`lib/install.js`); links between the two installed skills remain relative, and the instructions needed to run the workflow are in the skill text. None of the shipped files names the repository's development tracker, except for one manifest field ([contributing § Public surface](../guides/contributing.md#public-surface)).
 
-After changing `package.json`'s version for a release, refresh all package documentation links and installation examples with this one command before the release commit and tag:
+The contributor command `npm run release -- prepare X.Y.Z --date YYYY-MM-DD --receipt /durable/candidate.json` updates an explicit metadata list: `package.json` version, both root versions in `package-lock.json`, the overview version above, the `Unreleased` changelog heading, and release-pinned blob links and installation examples in `README.md`, `docs/guides/install.md` and `skills/orchestrate/SKILL.md`. Every listed path must exist and be tracked. It checks their agreement and commits the candidate before verification; it never creates a tag.
 
-```bash
-node --input-type=module -e '
-import fs from "node:fs";
-const version = JSON.parse(fs.readFileSync("package.json", "utf8")).version;
-for (const file of ["README.md", "docs/guides/install.md", "skills/orchestrate/SKILL.md"]) {
-  const text = fs.readFileSync(file, "utf8");
-  fs.writeFileSync(file, text
-    .replace(/https:\/\/github\.com\/Velklish\/promptobus\/blob\/v\d+\.\d+\.\d+\//g, `https://github.com/Velklish/promptobus/blob/v${version}/`)
-    .replace(/github:Velklish\/promptobus#v\d+\.\d+\.\d+/g, `github:Velklish/promptobus#v${version}`));
-}'
-```
+`npm run release -- verify --receipt /durable/candidate.json` checks metadata before starting build or gates. Receipts retain the candidate commit/tree, exact command argv, required runtime identity, attempts, logs, exit codes, durations and explicit skips/not-run results outside all registered worktrees. Only successful commands with the same source, argv and required context are reused. The [release guide](../guides/releasing.md) defines the required context and the separate publication acceptance.
 
-The documentation check compares every such tag with `package.json`. On `main` between releases, these links still open the last tagged release's pages; the current source pages are in this checkout. A version bump before its tag exists briefly points to a future destination, so publish the release commit and tag together.
+The package documentation check still compares every pinned tag with `package.json`. On `main` between releases, these links open the last tagged release's pages; current source pages are in this checkout. A prepared candidate points to a future destination until its release commit and tag are published together. An absent public tag is not proof of a successful remote installation.
 
 The `.` entry point exports `Engine` and its public input and result types, including
 `SendInput` and `SendSyncInput`; consumers do not need a deep import to name either send contract.

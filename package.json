@@ -27,7 +27,8 @@
     "probe": "node scripts/mutation-probe.mjs",
     "codex-schema": "node scripts/check-codex-schema.mjs",
     "schema-skew": "node scripts/check-schema-skew.mjs",
-    "bb:release": "node scripts/build-bb-release.mjs"
+    "bb:release": "node scripts/build-bb-release.mjs",
+    "release": "node scripts/release.mjs"
   },
   "engines": {
     "node": ">=26"

@@ -163,10 +163,14 @@ check('PB-292 shipped and installed documentation links use release targets',
     && allReleaseLinks.every((target) => pinnedTarget(target) !== null)
     && relativeLinks('skills/orchestrate/SKILL.md').includes('../solo-review/SKILL.md')
     && packageOverview.includes('`package.json` ships the README and the two process skills, but not `docs/`')
-    && packageOverview.includes('After changing `package.json`\'s version for a release, refresh all package documentation links and installation examples with this one command')
-    && packageOverview.includes('for (const file of ["README.md", "docs/guides/install.md", "skills/orchestrate/SKILL.md"])')
-    && packageOverview.includes('On `main` between releases, these links still open the last tagged release\'s pages')
-    && packageOverview.includes('A version bump before its tag exists briefly points to a future destination'),
+    && packageOverview.includes('The contributor command `npm run release -- prepare X.Y.Z --date YYYY-MM-DD --receipt /durable/candidate.json` updates an explicit metadata list')
+    && packageOverview.includes('`package.json` version, both root versions in `package-lock.json`, the overview version above, the `Unreleased` changelog heading')
+    && packageOverview.includes('release-pinned blob links and installation examples in `README.md`, `docs/guides/install.md` and `skills/orchestrate/SKILL.md`')
+    && packageOverview.includes('checks their agreement and commits the candidate before verification')
+    && packageOverview.includes('`npm run release -- verify --receipt /durable/candidate.json` checks metadata before starting build or gates')
+    && packageOverview.includes('On `main` between releases, these links open the last tagged release\'s pages')
+    && packageOverview.includes('A prepared candidate points to a future destination until its release commit and tag are published together')
+    && packageOverview.includes('An absent public tag is not proof of a successful remote installation'),
   'Packaged relative links must resolve and source links must name this package version');
 if (tagAvailable) {
   const broken = allReleaseLinks.find((target) => !reachesTag(target));

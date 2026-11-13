@@ -99,6 +99,7 @@ export const SUITE_PREFIXES = [
   'promptobus-admission-', 'promptobus-lifecycle-closure-', 'promptobus-lifecycle-', 'promptobus-close-repeat-',
   'review-file-swap-', 'pb-git-metadata-', 'promptobus-turn-reservation-', 'promptobus-lock-',
   'promptobus-approver-', 'promptobus-auth-', 'promptobus-lead-', 'promptobus-review-files-',
+  'promptobus-release-fixture-',
   // Three prefixes without the package name, and they stay as the files spell
   // them: `hooks.test.mjs` and `install.test.mjs` write `pb-`, and renaming
   // their literals to match the list would be an edit in someone else's file

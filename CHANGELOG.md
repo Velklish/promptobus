@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - A focused local lifecycle check covers Stop, retirement, lead recovery and adapter boundaries before full acceptance.
+- A contributor release command prepares consistent version metadata and commits a candidate before verification. Durable command receipts resume the same clean candidate and refuse source, argv or required runtime changes; tagging and publication remain separate.
 
 ### Changed
 
