@@ -1,10 +1,11 @@
 # PB-433 · Reduce real waits in the measured slow release scenarios
 
-- **Order:** 450
 - **Scope:** [Host lifecycle](../../reference/02-host.md), [Suite isolation](../../guides/contributing.md#suite-isolation)
 - **Created:** 2026-11-13
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 450
+- **Taken:** 2026-11-14
 
 ## Context
 
