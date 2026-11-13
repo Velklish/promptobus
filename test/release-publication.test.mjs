@@ -1,6 +1,7 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -74,14 +75,35 @@ const ci = { id:123,workflow_id:7,path:'.github/workflows/ci.yml',name:'ci',
 const steps = ['Install and check tmux','Install dependencies','Install ast-grep','Build','Test',
   'Publicity audit','Pin gate','backslop init','backslop lint'].filter(name=>name!==state.missingStep)
   .map(name=>({name,status:'completed',conclusion:name===state.badStep ? state.stepConclusion : 'success'}));
-const job = {name:'Node 26 / ubuntu-latest',head_sha:head,run_id:123,status:'completed',conclusion:'success',
+const job = {id:456,name:'Node 26 / ubuntu-latest',head_sha:head,run_id:123,status:'completed',conclusion:'success',
   labels:['ubuntu-latest'],steps,...state.job};
+const rawLog = () => {
+  if(state.changeSource) writeFileSync('README.md',readFileSync('README.md','utf8')+'dirty\\n');
+  if(state.changeAttempt) writeFileSync('.fixture/ci.json',JSON.stringify({run:{run_attempt:2}}));
+  let lines = state.otherStepLogs ? ['##[group]Run npm run build','build passed','Cleaning up orphan processes']
+    : ['##[group]Run npm test','##[endgroup]','↷ SKIP optional integration — deliberate fixture',
+      'installed check notRun: fixture','280/280 test files passed','Cleaning up orphan processes'];
+  if(state.missingTestGroup) lines=lines.filter(line=>line!=='##[group]Run npm test');
+  if(state.missingTestFooter) lines=lines.filter(line=>!line.includes('test files passed'));
+  if(state.missingCleanup) lines=lines.filter(line=>line!=='Cleaning up orphan processes');
+  if(state.unequalCount) lines=lines.map(line=>line.includes('test files passed')?'279/280 test files passed':line);
+  if(state.zeroCount) lines=lines.map(line=>line.includes('test files passed')?'0/0 test files passed':line);
+  if(state.partialDownload) lines=lines.slice(0,3);
+  if(state.longLog) lines.splice(2,0,'x'.repeat(80_000));
+  return state.emptyLogs ? '' : lines.map(line=>'2026-11-13T00:00:00.0000000Z '+line).join('\\n')+'\\n';
+};
 if(args[0]==='api') {
   assert.equal(args[1],'--hostname'); assert.equal(args[2],'github.com');
   const endpoint=args.at(-1);
   if(state.apiFailure) {console.error('fixture API unavailable');process.exit(8);}
   if(endpoint==='repos/Velklish/promptobus/actions/workflows/ci.yml') console.log(JSON.stringify(workflow));
   else if(endpoint==='repos/Velklish/promptobus/actions/runs/123') console.log(JSON.stringify(ci));
+  else if(endpoint==='repos/Velklish/promptobus/actions/jobs/456/logs') {
+    assert.equal(args.length,4);
+    process.stdout.write(rawLog());
+    if(state.signalDownload) process.kill(process.pid,'SIGTERM');
+    if(state.downloadFailure||state.partialDownload) { console.error('fixture interrupted raw download');process.exit(8); }
+  }
   else {
     assert.deepEqual(args.slice(3,5),['--paginate','--slurp']);
     assert.equal(endpoint,'repos/Velklish/promptobus/actions/runs/123/attempts/1/jobs?per_page=100');
@@ -91,7 +113,8 @@ if(args[0]==='api') {
   assert.deepEqual(args,['run','view','123','--repo','github.com/Velklish/promptobus','--attempt','1','--log']);
   if(state.changeSource) writeFileSync('README.md',readFileSync('README.md','utf8')+'dirty\\n');
   if(state.changeAttempt) writeFileSync('.fixture/ci.json',JSON.stringify({run:{run_attempt:2}}));
-  console.log(state.emptyLogs?'':'Test 2026-11-13T00:00:00Z ↷ SKIP optional integration — deliberate fixture\\nTest installed check notRun: fixture');
+  console.log(state.emptyLogs?'':state.otherStepLogs||state.longLog?'Build rendered fragment':
+    'Test 2026-11-13T00:00:00Z ↷ SKIP optional integration — deliberate fixture\\nTest installed check notRun: fixture');
 }
 `);
   const command = (args) => exec(['npm', 'run', 'release', '--', ...args, '--receipt', file]);
@@ -110,6 +133,78 @@ if(args[0]==='api') {
   const calls = () => existsSync(path.join(root, '.fixture/calls')) ? read(path.join(root, '.fixture/calls')).trim().split('\n').map(JSON.parse) : [];
   return { root, bare, file, head, put, exec, git, state, receipt, save, refs, publish, smoke, command, calls };
 }
+
+test('completed receipt requires full runtime identity before any GitHub call', () => {
+  const f = fixture();
+  const original = f.receipt();
+  const contexts = [undefined, null, false, 0, 'captured', [], {}, {...original.context,tools:null},
+    {...original.context,nodeSha256:'invalid'}, {...original.context,tools:{npm:null}},
+    {...original.context,dependenciesSha256:undefined}, {...original.context,tmpdir:42}];
+  for (const key of Object.keys(original.context)) {
+    const incomplete = structuredClone(original.context);
+    delete incomplete[key];
+    contexts.push(incomplete);
+  }
+  const brokenTool = structuredClone(original.context);
+  brokenTool.tools.npm = {path:'',sha256:original.context.tools.npm.sha256};
+  contexts.push(brokenTool);
+  for (const key of ['npm','npx','git','codex']) {
+    const incomplete = structuredClone(original.context);
+    delete incomplete.tools[key];
+    contexts.push(incomplete);
+  }
+  for (const context of contexts) {
+    f.save({...original,context});
+    refused(f.publish(), /runtime identity/);
+    assert.equal(f.calls().length, 0);
+    assert.equal(f.refs(), '');
+    assert.equal(f.git('tag','--list'), '');
+  }
+});
+
+test('raw required job logs refuse missing Test proof or incomplete download before publication', () => {
+  const f = fixture();
+  for (const state of [{otherStepLogs:true}, {missingTestGroup:true}, {missingTestFooter:true},
+    {missingCleanup:true}, {unequalCount:true}, {zeroCount:true}, {downloadFailure:true},
+    {partialDownload:true}, {signalDownload:true}]) {
+    const directory = path.dirname(f.file);
+    const previous = new Set(readdirSync(directory));
+    f.state(state);
+    refused(f.publish(), /Incomplete required Linux job log|Linux job log download failed/);
+    assert.equal(f.refs(), '');
+    assert.equal(f.git('tag','--list'), '');
+    const evidence = readdirSync(directory).find(name=>!previous.has(name)&&name.endsWith('.json'));
+    assert.ok(evidence);
+    const download = JSON.parse(read(path.join(directory,evidence))).download;
+    const body = readFileSync(path.join(directory,evidence.replace(/\.json$/,'.log')));
+    assert.equal(download.bytes, body.length);
+    assert.equal(download.sha256, createHash('sha256').update(body).digest('hex'));
+    if(state.downloadFailure||state.partialDownload) assert.equal(download.exitCode,8);
+    if(state.signalDownload) assert.equal(download.signal,'SIGTERM');
+  }
+});
+
+test('raw required job logs preserve diagnostics after an over-64KiB line', () => {
+  const f = fixture();
+  f.state({longLog:true});
+  passed(f.publish());
+  const proof = f.receipt().qualification;
+  assert.equal(proof.skips.length, 1);
+  assert.equal(proof.notRun.length, 1);
+  assert.ok(read(proof.log).includes('x'.repeat(80_000)));
+  assert.equal(proof.jobId, 456);
+  assert.equal(proof.bytes, readFileSync(proof.log).length);
+  assert.equal(proof.sha256, createHash('sha256').update(readFileSync(proof.log)).digest('hex'));
+  assert.ok(f.calls().some(args=>args.at(-1)==='repos/Velklish/promptobus/actions/jobs/456/logs'));
+  assert.ok(f.calls().every(args=>args[0]==='api'));
+});
+
+test('release guide distinguishes preparation from publication side effects', () => {
+  const intro = read(path.join(repo,'docs/guides/releasing.md')).split('\n\n')[1];
+  assert.match(intro, /\`prepare\` and \`verify\` never push or create, move or delete a tag/);
+  assert.match(intro, /\`publish\` creates an annotated tag and pushes/);
+  assert.doesNotMatch(intro, /The contributor command never pushes/);
+});
 
 test('every incomplete or non-success CI state refuses before public tag creation', () => {
   const f = fixture();

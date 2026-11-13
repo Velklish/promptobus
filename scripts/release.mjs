@@ -231,11 +231,13 @@ function qualify(receipt, file, id) {
     && ci.repository?.full_name === repository && ci.head_repository?.full_name === repository
     && ci.event === 'push' && ci.head_branch === 'main' && ci.head_sha === receipt.source.commit,
   'Linux CI repository/workflow/main candidate SHA mismatch');
-  requireThat(ci.status === 'completed' && ci.conclusion === 'success', 'Linux CI must be completed with success');
+  requireThat(ci.status === 'completed' && ci.conclusion === 'success'
+    && Number.isSafeInteger(ci.run_attempt) && ci.run_attempt > 0, 'Linux CI must be completed with success');
   const pages = api(`actions/runs/${id}/attempts/${ci.run_attempt}/jobs?per_page=100`, true);
   const jobs = pages.flatMap((page) => page.jobs);
   save(`${prefix}.json`, { workflow, run: ci, jobs });
   requireThat(jobs.length === 1 && jobs[0].name === 'Node 26 / ubuntu-latest'
+    && Number.isSafeInteger(jobs[0].id) && jobs[0].id > 0
     && jobs[0].head_sha === receipt.source.commit && jobs[0].run_id === ci.id
     && jobs[0].status === 'completed' && jobs[0].conclusion === 'success'
     && jobs[0].labels?.includes('ubuntu-latest'), 'Missing successful required Linux job');
@@ -244,13 +246,28 @@ function qualify(receipt, file, id) {
     requireThat(steps.length === 1 && steps[0].status === 'completed' && steps[0].conclusion === 'success',
       `Missing successful required Linux step: ${name}`);
   }
-  const logs = run(['gh', 'run', 'view', id, '--repo', `github.com/${repository}`, '--attempt', String(ci.run_attempt), '--log']);
-  writeFileSync(`${prefix}.log`, `${logs}\n`, { mode: 0o600 });
+  const argv = ['gh', 'api', '--hostname', 'github.com', `repos/${repository}/actions/jobs/${jobs[0].id}/logs`];
+  const download = launch(argv[0], argv.slice(1), { cwd: root, encoding: 'buffer' });
+  const body = download.stdout ?? Buffer.alloc(0);
+  writeFileSync(`${prefix}.log`, body, { mode: 0o600 });
+  writeFileSync(`${prefix}.stderr`, download.stderr ?? Buffer.alloc(0), { mode: 0o600 });
+  save(`${prefix}.json`, { workflow, run: ci, jobs, download: { argv, exitCode: download.status,
+    signal: download.signal, error: download.error?.message, bytes: body.length, sha256: hash(body) } });
+  requireThat(download.status === 0 && download.signal === null && !download.error,
+    `Linux job log download failed: exit ${download.status}, signal ${download.signal}`);
+  const logs = body.toString('utf8');
   requireThat(logs.length > 0, 'Linux CI logs are required for skip accounting');
+  const lines = logs.split(/\r?\n/).map((line) => line.replace(/^\uFEFF?\d{4}-\d\d-\d\dT[\d:.]+Z /, ''));
+  const testStart = lines.indexOf('##[group]Run npm test');
+  const testEnd = lines.findIndex((line, index) => index > testStart && /^([1-9]\d*)\/\1 test files passed(?:;.*)?$/.test(line));
+  const cleanup = lines.indexOf('Cleaning up orphan processes', testEnd + 1);
+  requireThat(testStart >= 0 && testEnd > testStart && cleanup > testEnd,
+    'Incomplete required Linux job log: require Test group, successful file-count footer and job cleanup');
   const after = current();
   requireThat(after.head_sha === ci.head_sha && after.run_attempt === ci.run_attempt
     && after.status === 'completed' && after.conclusion === 'success', 'Linux CI changed during qualification');
-  return { runId: ci.id, attempt: ci.run_attempt, sha: ci.head_sha, url: ci.html_url,
+  return { runId: ci.id, attempt: ci.run_attempt, jobId: jobs[0].id, sha: ci.head_sha, url: ci.html_url,
+    bytes: body.length, sha256: hash(body),
     evidence: `${prefix}.json`, log: `${prefix}.log`,
     skips: logs.split('\n').filter((line) => /↷ SKIP |# SKIP\b|(?:# |ℹ )(?:skipped|todo) [1-9]/.test(line)),
     notRun: logs.split('\n').filter((line) => /\bnotRun:/.test(line)) };
@@ -258,7 +275,18 @@ function qualify(receipt, file, id) {
 
 function publish(file, id) {
   const receipt = candidate(file);
-  requireThat(receipt.context !== null && receipt.steps.every((step) => step.status === 'passed'),
+  const identity = receipt.context;
+  const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const text = (value) => typeof value === 'string' && value.length > 0;
+  const digest = (value) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+  requireThat(object(identity)
+    && ['node', 'executable', 'npm', 'git', 'platform', 'arch', 'osRelease', 'tmpdir'].every((key) => text(identity[key]))
+    && ['nodeSha256', 'environmentSha256'].every((key) => digest(identity[key]))
+    && Object.hasOwn(identity, 'dependenciesSha256') && (identity.dependenciesSha256 === null || digest(identity.dependenciesSha256))
+    && object(identity.tools) && ['npm', 'npx', 'git', 'codex'].every((name) => Object.hasOwn(identity.tools, name)
+      && (identity.tools[name] === null || (object(identity.tools[name]) && text(identity.tools[name].path) && digest(identity.tools[name].sha256)))),
+  'Completed local receipt requires full runtime identity');
+  requireThat(receipt.steps.every((step) => step.status === 'passed'),
     'Complete local candidate verification before publication');
   const qualification = qualify(receipt, file, id);
   clean();
