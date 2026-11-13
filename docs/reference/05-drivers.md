@@ -333,8 +333,9 @@ One side effect in the warden: with the binary missing, a Claude participant's s
 carried through that round, because its state is unknown rather than the whole snapshot being absent
 — the behaviour a Cursor or Codex participant already has when its registry home is not named.
 
-The other drivers: Codex's `inspect` and `stop` read its registry files and signal pids, and run no
-binary. Cursor's `stop` re-resolves the recorded agent path through `PATH` and its install
+The other drivers: Codex's `inspect` and `stop` read its registry files. Stop asks the holder
+for shutdown and checks terminal proof; it does not invoke the Codex binary.
+Cursor's `stop` re-resolves the recorded agent path through `PATH` and its install
 directories (`liveBin`), and its `tmux` calls search the same places and run tmux by absolute
 path ([Cursor: tmux by absolute path](#cursor-tmux-by-absolute-path)).
 
@@ -1337,7 +1338,7 @@ unchanged.
 For a child, its sessionless root route requires the matching parent/child native
 binding and the current parent's confirmed Stop. A live or unresolved parent,
 changed generation or malformed routing record still refuses child closure.
-The CLI returns after the holder accepts the request and reports completion as pending.
+The self-Stop command returns after the holder accepts the request and reports completion as pending.
 The holder waits for every actual command outcome, including the requesting command, before
 interrupting the turn. A bounded finalizer waits for the holder and app-server to exit,
 then validates the matching retained receipt and launch before retiring the session record.
