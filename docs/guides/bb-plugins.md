@@ -1,7 +1,7 @@
 # BB plugin delivery
 
 The adapter and native dashboard ship together as a versioned Git collection.
-The current profile requires BB 0.48.1, Plugin SDK 0.6.104 and Node 26 or newer.
+The current profile requires BB 0.49.0, Plugin SDK 0.6.132 and Node 26 or newer.
 The core package alone does not install either plugin. Existing task bindings
 from an older plugin are not migrated; qualify each release with new tasks.
 

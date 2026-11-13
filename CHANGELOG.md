@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A focused local lifecycle check covers Stop, retirement, lead recovery and adapter boundaries before full acceptance.
 
+### Changed
+
+- Target the exact BB 0.49.0 / Plugin SDK 0.6.132 pair for both BB plugins and align Zod with the SDK. Source checks do not establish an installed live workflow.
+
 ## [0.32.9] — 2026-11-10
 
 ### Fixed

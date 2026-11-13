@@ -2210,12 +2210,12 @@ writer quiescence and byte/ID/order verification remain operator obligations;
 the command starts no actors. See [message-order maintenance](../../integrations/bb/README.md#message-order-maintenance).
 
 These adapter commands use public `threads.storageLocation`, `environments.get`
-and `system.config` contracts. The source package pins SDK 0.6.79 and admits
-the exact BB 0.47.1 / SDK 0.6.79 pair in its app/SDK engine declarations.
-The Host provider bridge requires the SDK in runtime dependencies. Historical
+and `system.config` contracts. The source package pins SDK 0.6.132 and admits
+the exact BB 0.49.0 / SDK 0.6.132 pair in its app/SDK engine declarations.
+The build freezes the SDK and bundles the public Host provider bridge. Historical
 BB 0.45.0 / SDK 0.6.15 observations do not extend this current manifest's range.
 Public type compatibility does not
-establish a live acceptance run on BB 0.47.1 or upgrade the historical readiness
+establish a live acceptance run on BB 0.49.0 or upgrade the historical readiness
 matrix. Real worker-native checked add, commit, final test, independent review,
 approver integration, logical acceptance and Stop require their original receipts
 on the exact executing generation.

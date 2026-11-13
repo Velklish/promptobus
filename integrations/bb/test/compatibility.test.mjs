@@ -11,21 +11,30 @@ import { z } from 'zod';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const read = file => JSON.parse(readFileSync(path.join(root, file), 'utf8'));
 
-test('current package admits only the checked BB 0.48.1 and SDK 0.6.104 pair', () => {
+test('current package admits only the checked BB 0.49.0 and SDK 0.6.132 pair', () => {
   const manifest = read('package.json');
-  assert.deepEqual(manifest.engines, { bb: '0.48.1', bbPluginSdk: '0.6.104', node: '>=26' },
+  const panel = JSON.parse(readFileSync(path.join(root, '../bb-native-observer/package.json'), 'utf8'));
+  assert.deepEqual(panel.engines, manifest.engines);
+  assert.equal(panel.devDependencies['@get-bb/plugin-sdk'], '0.6.132');
+  assert.equal(panel.dependencies.zod, '4.6.7');
+  const panelLock = JSON.parse(readFileSync(path.join(root, '../bb-native-observer/package-lock.json'), 'utf8'));
+  assert.deepEqual(panelLock.packages[''].engines, panel.engines);
+  assert.equal(panelLock.packages['node_modules/@get-bb/plugin-sdk'].version, '0.6.132');
+  assert.equal(panelLock.packages['node_modules/zod'].version, '4.6.7');
+  assert.equal(panelLock.packages['node_modules/@get-bb/plugin-sdk/node_modules/zod'], undefined);
+  assert.deepEqual(manifest.engines, { bb: '0.49.0', bbPluginSdk: '0.6.132', node: '>=26' },
     'admit the checked installed pair without claiming adjacent or future host versions');
 });
 
 test('current public provider bridge SDK is exactly pinned as a build dependency', () => {
   const manifest = read('package.json'), lock = read('package-lock.json');
-  assert.equal(manifest.devDependencies['@get-bb/plugin-sdk'], '0.6.104');
+  assert.equal(manifest.devDependencies['@get-bb/plugin-sdk'], '0.6.132');
   assert.equal(manifest.dependencies['@get-bb/plugin-sdk'], undefined);
-  assert.equal(lock.packages[''].devDependencies['@get-bb/plugin-sdk'], '0.6.104');
+  assert.equal(lock.packages[''].devDependencies['@get-bb/plugin-sdk'], '0.6.132');
   assert.deepEqual(lock.packages[''].engines, manifest.engines);
-  assert.equal(lock.packages['node_modules/@get-bb/plugin-sdk'].version, '0.6.104');
+  assert.equal(lock.packages['node_modules/@get-bb/plugin-sdk'].version, '0.6.132');
   const sdk = JSON.parse(readFileSync(path.join(root, 'node_modules/@get-bb/plugin-sdk/package.json'), 'utf8'));
-  assert.equal(sdk.version, '0.6.104');
+  assert.equal(sdk.version, '0.6.132');
   const require = createRequire(path.join(root, 'package.json'));
   assert.ok(require.resolve('@get-bb/plugin-sdk/provider-bridge'));
   assert.ok(require.resolve('@get-bb/plugin-sdk/host'));
@@ -33,12 +42,12 @@ test('current public provider bridge SDK is exactly pinned as a build dependency
 
 test('runtime schemas and SDK share the exact patched Zod dependency', () => {
   const manifest = read('package.json'), lock = read('package-lock.json');
-  assert.equal(manifest.dependencies.zod, '4.6.6');
-  assert.equal(lock.packages[''].dependencies.zod, '4.6.6');
+  assert.equal(manifest.dependencies.zod, '4.6.7');
+  assert.equal(lock.packages[''].dependencies.zod, '4.6.7');
   const installed = JSON.parse(readFileSync(path.join(root, 'node_modules/zod/package.json'), 'utf8'));
-  assert.equal(installed.version, '4.6.6');
+  assert.equal(installed.version, '4.6.7');
   assert.deepEqual(Object.entries(lock.packages).filter(([name]) => /(?:^|\/)node_modules\/zod$/.test(name))
-    .map(([name, dependency]) => [name, dependency.version]), [['node_modules/zod', '4.6.6']]);
+    .map(([name, dependency]) => [name, dependency.version]), [['node_modules/zod', '4.6.7']]);
 });
 
 test('oversized runtime arrays refuse before validating their items', () => {
@@ -50,10 +59,14 @@ test('oversized runtime arrays refuse before validating their items', () => {
 test('setup and package overview name the exact current pair separately from historical observations', () => {
   const readme = readFileSync(path.join(root, 'README.md'), 'utf8');
   const overview = readFileSync(path.join(root, 'PLUGIN_OVERVIEW.md'), 'utf8');
-  assert.match(readme, /Use BB 0.48.1 and Plugin SDK 0.6.104/);
+  assert.match(readme, /Use BB 0.49.0 and Plugin SDK 0.6.132/);
   assert.match(readme, /that exact app\/SDK pair; adjacent and future versions require a separate/);
-  assert.match(overview, /BB 0.48.1, Plugin SDK 0.6.104/);
+  assert.match(overview, /BB 0.49.0, Plugin SDK 0.6.132/);
   assert.match(overview, /historical profiles do not\nadmit other versions/);
+  const reference = readFileSync(path.join(root, '../../docs/reference/05-drivers.md'), 'utf8');
+  assert.match(reference, /exact BB 0\.49\.0 \/ SDK 0\.6\.132 pair/);
+  assert.doesNotMatch(readme, /The host range is BB `>=0\.45\.0 <0\.47\.0`/);
+  assert.doesNotMatch(reference, /source package pins SDK 0\.6\.79/);
 });
 
 function assertPublicSdkImports(packageRoot) {
