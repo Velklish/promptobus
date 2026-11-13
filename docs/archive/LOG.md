@@ -660,3 +660,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-407"></a>`PB-407-root-done-after-child-claim` · 2026-11-10 · completed · — · Root done refuses forever after the orchestrator claimed a closed Codex teamlead's child task
 - <a id="pb-406.6"></a>`PB-406.6-live-cap-reservation` · 2026-11-10 · completed · — · Enforce live participant caps through one reservation lifecycle
 - <a id="pb-416.23"></a>`PB-416.23-receipt-backed-service-client-retirement` · 2026-11-10 · completed · — · Retire owned shared-service clients using confirmed normal Stop receipts
+- <a id="pb-373.8"></a>`PB-373.8-bb-bindings-output-limit` · 2026-11-13 · completed · — · BB bindings inventory exceeds the public CLI output limit
