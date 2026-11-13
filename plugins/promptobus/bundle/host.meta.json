@@ -1,12 +1,12 @@
 {
   "sdkMajor": 0,
-  "sdkVersion": "0.6.104",
+  "sdkVersion": "0.6.132",
   "artifactFormatVersion": 1,
   "pluginId": "promptobus",
-  "pluginVersion": "0.2.0",
+  "pluginVersion": "0.2.1",
   "builtWith": {
-    "bbVersion": "0.48.1",
-    "pluginSdkVersion": "0.6.104"
+    "bbVersion": "0.49.0",
+    "pluginSdkVersion": "0.6.132"
   },
-  "artifactDigest": "6eec0f4d4e410320b12544ff05bb8bc411f2b58a12a4f173f3d0df32dcd0f8bc"
+  "artifactDigest": "92d4cd78c474f4bf19ecd002883cd91be2a6533bb471c1d31e1c71b7fdabfe42"
 }

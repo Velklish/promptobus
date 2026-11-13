@@ -10,6 +10,11 @@ export interface ManagedServiceLaunch {
     revoke(): Promise<void>;
 }
 export interface LibLaunchPlan extends LaunchPlan {
+    liveSeat?: {
+        starting(): void;
+        stopped(): void;
+        staged(record: string, launchId: string): void;
+    };
     service?: ManagedServiceLaunch;
     serviceScopes?: {
         server: string;
@@ -45,6 +50,7 @@ export interface LibPrepareContext extends Pick<SpawnContext, 'ref' | 'address' 
     rootAddress?: string | null;
     executionKind?: StepKind | null;
     sessionId?: string;
+    projectGuardCommand?: string | null;
 }
 export type LibToolBin = Omit<HostToolBin, 'version'> & {
     version?: string | null;
@@ -106,7 +112,7 @@ export interface LibDriver extends Omit<Driver, 'availability' | 'prepare' | 'sp
     normalizeTool?(tool: LibToolBin, context?: {
         env?: NodeJS.ProcessEnv;
     }): LibToolBin;
-    refuseForeignProjectLayer?(lookupDir: string, writtenDir: string, tool?: LibToolBin | null, guardCommand?: string | null): void;
+    refuseForeignProjectLayer?(lookupDir: string, writtenDir: string, tool?: LibToolBin | null, guardCommand?: string | null, projectGuardCommand?: string | null): void;
     prepare?: (context: LibPrepareContext) => LibLaunchPlan;
     spawn?: (plan: LibLaunchPlan, runtime: LibSpawnContext) => Promise<LibSpawnResult>;
     saidLiftoff?: (result: LibSpawnResult & {

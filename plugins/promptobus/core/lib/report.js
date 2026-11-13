@@ -13,7 +13,7 @@ import { forgetSessions, snapshotOf } from './drivers.js';
 import { run } from './exec.js';
 import { contactsSection, dryRunToolNote, guardHookNote, liftHarness, mcpNote, mcpServerLines, normalizeLaunchTool, optionRefusal, participantMcp, participantPluginDir, PROMPTOBUS_SERVER, resolveEffort, resolvePermissionMode, sayMcp, sayTool, sessionEnvNote, shortTitle, skillSettings, skillsNote, toolName, withToolVersion, writeLaunchFiles, } from './spawn.js';
 import { reviewerDenyTools } from './review.js';
-import { guardHookCommand } from '../dist/hooks.js';
+import { managedGuardHookCommand } from '../dist/hooks.js';
 import { routeLift, routingLine, sayDecision } from './models.js';
 import { loadCatalog } from './model-routing/catalog.js';
 import { participantSession, unknownWhy } from './status.js';
@@ -104,7 +104,7 @@ export async function planReport(rootOrHost, opts = {}) {
     const addDirs = [...new Set([...ruleDirs, home])];
     const mcpConfigPath = participantMcpPath(home, task, REPORTER);
     const settingsPath = participantSettingsPath(home, task, REPORTER);
-    const guardCommand = guardHookCommand(host, { address: REPORTER, taskId: task, home }, process.platform);
+    const guardCommand = managedGuardHookCommand(host, { address: REPORTER, taskId: task, home }, process.platform);
     const commonEnv = { ...process.env, ...host.extraEnv() };
     const env = driver.sessionEnv(commonEnv);
     const mcp = participantMcp(host, { address: REPORTER, taskId: task, home }, driver);

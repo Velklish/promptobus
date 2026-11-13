@@ -4,7 +4,8 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { readStopConfirmation } from './codex-command-receipts.js';
 import { codexStateHome, pidAlive, sessionFile, sessionKey, sessionsDir, withSessionLaunch } from './codex-session.js';
-import { addressOf, GateError, ORCHESTRATOR, participantOf, readTask, sameStoreHome, taskExists, upsertParticipant, withTaskLock } from './store.js';
+import { addrDir, addressOf, canonicalPath, FALLBACK_HARNESS, GateError, ORCHESTRATOR, participantOf, readTask, rootAddressOf, sameStoreHome, taskExists, upsertParticipant, withTaskLock } from './store.js';
+import { ownerOf, sessionIdOf } from '../dist/index.js';
 import { libOpenParticipant } from './driver-runtime.js';
 const native = (p) => p?.harness === 'codex';
 const refuse = address => {
@@ -48,12 +49,12 @@ function hasRecord(ref, env = process.env) {
         throw error;
     }
 }
-function terminalProof(home, task, address, participant, proof, env) {
+function terminalProof(home, task, address, participant, proof, env, subject = participant.id) {
     const ref = participant.sessionRef;
     if (participant.metadata.nativePendingLaunchId)
-        refuse(participant.id);
+        refuse(subject);
     if (!ref || hasRecord(ref, env))
-        refuse(participant.id);
+        refuse(subject);
     if (typeof participant.metadata.nativeLaunchId === 'string' && participant.metadata.nativeLaunchId
         && participant.metadata.nativeUnlaunched === participant.metadata.nativeLaunchId)
         return;
@@ -62,28 +63,28 @@ function terminalProof(home, task, address, participant, proof, env) {
         || proof.threadId !== participant.metadata.sessionId
         || proof.launchId !== participant.metadata.nativeLaunchId
         || typeof proof.launchId !== 'string' || !proof.launchId)
-        refuse(participant.id);
+        refuse(subject);
     const expected = path.join(codexStateHome(env), 'receipts', sessionKey(ref), sessionKey(proof.launchId) + '.jsonl');
     try {
         if (proof.receiptFile !== expected || hash(expected) !== proof.sha256
             || !readStopConfirmation(expected, proof).ok || pidAlive(proof.holderPid) || pidAlive(proof.appPid))
-            refuse(participant.id);
+            refuse(subject);
     }
     catch {
-        refuse(participant.id);
+        refuse(subject);
     }
 }
-function linkedTeamlead(home, child, record) {
+function linkedTeamlead(home, child, record, { allowClosedClaim = false, subject = record.address } = {}) {
     const parent = readTask(home, child.parent);
     const leads = parent.participants.filter(p => p.role === 'teamlead' && p.metadata.childTask === child.id);
     const owner = participantOf(child, ORCHESTRATOR), lead = leads[0];
     if (parent.parent !== undefined || child.parent !== parent.id || leads.length !== 1
         || !native(lead) || lead.mode !== 'managed' || !native(owner) || owner.mode !== 'attached'
-        || child.owner !== owner.id || owner.metadata.owner !== record.threadId
+        || child.owner !== owner.id || (owner.metadata.owner !== record.threadId && !(allowClosedClaim && child.status === 'done'))
         || record.address !== ORCHESTRATOR || record.task !== child.id
         || [lead, owner].some(p => p.sessionRef !== record.ref || p.metadata.sessionId !== record.threadId
             || (p.metadata.nativeLaunchId && p.metadata.nativeLaunchId !== record.launchId)))
-        refuse(record.address);
+        refuse(subject);
     return { parent, lead, owner };
 }
 export function withNativeStopLocks(record, fn, { deadlineAt } = {}) {
@@ -116,26 +117,84 @@ export function abandonmentAllowsClose(participant, sessionDead) {
         return false;
     return sessionDead === true;
 }
-export function requireNativeTerminal(home, meta, participant, env = process.env, { taskLocked = false } = {}) {
+export function requireNativeTerminal(home, meta, participant, env = process.env, { taskLocked = false, onVerified, lockWaitMs } = {}) {
     const proof = participant.metadata.nativeStop;
-    if (!proof?.alias)
-        return terminalProof(home, meta.id, addressOf(participant), participant, proof, env);
+    const subject = participant.role === 'teamlead'
+        ? addressOf(participant) + ' (child task ' + participant.metadata.childTask + ')' : participant.id;
+    if (!proof?.alias) {
+        terminalProof(home, meta.id, addressOf(participant), participant, proof, env, subject);
+        return onVerified?.();
+    }
     if (participant.role !== 'teamlead' || meta.parent !== undefined || proof.alias.task !== meta.id
         || proof.alias.address !== addressOf(participant) || Object.keys(proof.alias).length !== 2
         || typeof proof.task !== 'string' || proof.task !== participant.metadata.childTask)
-        refuse(participant.id);
+        refuse(subject);
     const inspect = () => withTaskLock(home, proof.task, () => withSessionLaunch(participant.sessionRef, env, () => {
         const current = participantOf(readTask(home, meta.id), addressOf(participant));
         const { alias, ...original } = proof;
-        const { parent, lead, owner } = linkedTeamlead(home, readTask(home, proof.task), original);
+        const { parent, lead, owner } = linkedTeamlead(home, readTask(home, proof.task), original, { allowClosedClaim: true, subject });
         if (parent.id !== meta.id || lead.id !== participant.id
             || JSON.stringify(binding(current)) !== JSON.stringify(binding(participant))
             || !isDeepStrictEqual(current.metadata.nativeStop, proof)
             || !isDeepStrictEqual(owner.metadata.nativeStop, original))
-            refuse(participant.id);
-        terminalProof(home, proof.task, ORCHESTRATOR, current, original, env);
-    }));
+            refuse(subject);
+        terminalProof(home, proof.task, ORCHESTRATOR, current, original, env, subject);
+        onVerified?.();
+    }, { waitMs: lockWaitMs }), { waitMs: lockWaitMs });
     return taskLocked ? inspect() : withTaskLock(home, meta.id, inspect);
+}
+/** The caller holds the parent and child task locks, in that order. */
+export function requireNativeRootRoute(home, child, route, env = process.env) {
+    const childOwner = participantOf(child, ORCHESTRATOR);
+    const proof = childOwner?.metadata.nativeStop;
+    if (!child.parent || !proof || route.role !== 'root' || route.harness !== FALLBACK_HARNESS
+        || route.mode !== 'attached' || route.sessionRef || sessionIdOf(route)
+        || ['owner', 'session', 'sessionId', 'sessionRef', 'sessionRecord', 'nativeLaunchId', 'nativeStop', 'nativePendingLaunchId', 'nativeUnlaunched']
+            .some(key => route.metadata[key] !== undefined && route.metadata[key] !== null)
+        || child.participants.filter(p => p.role === 'root').length !== 1)
+        refuse(route.id);
+    const { parent, lead } = linkedTeamlead(home, child, proof, { allowClosedClaim: true, subject: route.id });
+    const owner = participantOf(parent, ORCHESTRATOR);
+    if (!lead.metadata.nativeStop?.alias
+        || lead.metadata.nativeUnlaunched === lead.metadata.nativeLaunchId
+        || parent.adapter?.bb || route.metadata.rootTask !== parent.id || addressOf(route) !== rootAddressOf(parent)
+        || route.id !== addrDir(rootAddressOf(parent))
+        || !native(owner) || owner.mode !== 'managed' || parent.owner !== owner.id
+        || !ownerOf(owner) || ownerOf(owner) !== sessionIdOf(owner) || !owner.metadata.nativeStop
+        || owner.metadata.nativeUnlaunched === owner.metadata.nativeLaunchId)
+        refuse(route.id);
+    requireNativeIdle(home, parent, ORCHESTRATOR, { taskLocked: true });
+    requireNativeTerminal(home, parent, lead, env, { taskLocked: true });
+}
+export function withVerifiedManagedNativeStop(home, proof, env, onVerified) {
+    const nativeRecord = canonicalPath(sessionFile(proof.ref, env));
+    return withTaskLock(home, proof.task, () => {
+        const task = readTask(home, proof.task), participant = participantOf(task, proof.address);
+        const terminal = participant?.metadata.nativeStop;
+        if (task.status !== 'active' || participant?.harness !== 'codex'
+            || participant.sessionRef !== proof.ref || participant.metadata.sessionRecord !== proof.record
+            || participant.metadata.nativeLaunchId !== proof.launchId || participant.metadata.nativeUnlaunched === proof.launchId
+            || !terminal || (!terminal.alias && nativeRecord !== canonicalPath(proof.record)))
+            return false;
+        let retired = false;
+        const verified = () => {
+            if (terminal.alias) {
+                if (typeof terminal.task !== 'string')
+                    return;
+                const owner = participantOf(readTask(home, terminal.task), ORCHESTRATOR);
+                if (typeof owner?.metadata.sessionRecord !== 'string'
+                    || canonicalPath(owner.metadata.sessionRecord) !== nativeRecord)
+                    return;
+            }
+            retired = onVerified(participant);
+        };
+        const verify = () => requireNativeTerminal(home, task, participant, env, { taskLocked: true, onVerified: verified, lockWaitMs: 0 });
+        if (terminal.alias)
+            verify();
+        else
+            withSessionLaunch(proof.ref, env, verify, { waitMs: 0 });
+        return retired;
+    }, { waitMs: 0 });
 }
 function deadHolderRecord(record) {
     return !pidAlive(record?.holderPid) && !pidAlive(record?.appPid);
@@ -224,8 +283,11 @@ export function reserveNativeParticipant(home, task, participant, expected, regi
         if (meta.status !== 'active')
             throw new GateError('task ' + task + ' is closed');
         const current = participantOf(meta, addressOf(participant));
-        if (!native(participant) && !native(expected) && !native(current))
+        if (!native(participant) && !native(expected) && !native(current)) {
+            if (!isDeepStrictEqual(current ?? null, expected ?? null))
+                throw new GateError(`participant ${participant.id} changed while its lift was planned; no harness was launched`);
             return libOpenParticipant(home, task, participant, registry, { assignment: true });
+        }
         if (JSON.stringify(binding(current)) !== JSON.stringify(binding(expected)))
             refuse(participant.id);
         if (native(current))

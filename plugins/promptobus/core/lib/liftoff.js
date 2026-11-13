@@ -32,6 +32,7 @@ export async function liftoffParticipant({ tool, argv, cwd, env, name, role, reg
     const refuse = (message) => { throw new GateError(message); };
     try {
         await beforeStart?.();
+        launch.liveSeat?.starting();
         // The shared minute bounds this `--bg` registration call, not the session's
         // lifetime; session appearance is retried separately by awaitSession below.
         const r = run(tool.bin, argv, {

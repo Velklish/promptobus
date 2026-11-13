@@ -6,7 +6,7 @@ import { existsSync, lstatSync, readFileSync, readlinkSync, readdirSync, realpat
 import path from 'node:path';
 import { ok, info, warn, fail, runProc } from './util.js';
 import { hostOf } from './host.js';
-import { guardHookCommand } from '../dist/hooks.js';
+import { guardHookCommand, managedGuardHookCommand } from '../dist/hooks.js';
 import { addressOf, bindIfOwner, contactsOf, currentResult, GateError, participantMcpPath, participantOf, participantRecord, participantSettingsPath, readTask, sessionIdentity, strictTaskFacts, taskExists, unreadNote, ORCHESTRATOR, } from './store.js';
 import { contactsSection, dryRunToolNote, guardHookNote, keepBrief, liftHarness, machineName, memoryRule, mcpNote, mcpServerLines, normalizeLaunchTool, optionRefusal, participantMcp, participantPluginDir, participantSkillsRoot, PROMPTOBUS_SERVER, readBrief, repoGenerator, repoSkillsLine, runRepoGenerator, sayRepoSkills, sayWorktreeDeps, withToolVersion, resolveEffort, resolvePermissionMode, sayMcp, sayModule, sayTool, sessionEnvNote, sessionName, skillSettings, skillsNote, toolName, worktreeDepsLine, writeLaunchFiles, } from './spawn.js';
 import { participantSession } from './status.js';
@@ -263,7 +263,8 @@ export function planApprover(rootOrHost, { target, task, model, effort: effortOp
             ...ruleDirs,
         ].filter(Boolean))];
     const settingsPath = participantSettingsPath(home, task, address);
-    const guardCommand = guardHookCommand(host, { address, taskId: task, home }, process.platform);
+    const guardCommand = managedGuardHookCommand(host, { address, taskId: task, home }, process.platform);
+    const projectGuardCommand = guardHookCommand(host, { address, taskId: task, home }, process.platform);
     const pluginDir = !selectedContext && driver.options.skillsDir ? participantPluginDir(host, cloneRoot) : null;
     const mcpConfigPath = participantMcpPath(home, task, address);
     const mcp = participantMcp(host, { address, taskId: task, home, repoDir: cloneRoot }, driver);
@@ -301,7 +302,7 @@ export function planApprover(rootOrHost, { target, task, model, effort: effortOp
             ref: name, address, task: task, home, role: APPROVER, env: liftEnv, mcp: mcp.descriptor,
             executionKind: WRITES_MAIN_TREE,
             prompt, cwd: worktreePath, model: resolvedModel, effort, permissionMode, addDirs,
-            pluginDir, mcpConfigPath, settingsPath, guardCommand, denyTools: deny.tools,
+            pluginDir, mcpConfigPath, settingsPath, guardCommand, projectGuardCommand, denyTools: deny.tools,
             extraSettings: selectedContext ? {} : skillSettings(host, cloneRoot), root, selectedContext,
             readFiles: selectedContext ? [...rules, ...selectedContext.resources.map(resource => resource.path)] : undefined,
             readSkillDirs: selectedContext ? selectedContext.skills.map(skill => skill.root) : undefined,
@@ -313,14 +314,14 @@ export function planApprover(rootOrHost, { target, task, model, effort: effortOp
     const commonEnv = { ...process.env, ...host.extraEnv() };
     const liftEnv = driver.sessionEnv(commonEnv);
     const { prompt, launch } = buildLaunch();
-    driver.refuseForeignProjectLayer?.(cloneRoot, worktreePath, null, guardCommand);
+    driver.refuseForeignProjectLayer?.(cloneRoot, worktreePath, null, guardCommand, projectGuardCommand);
     return {
         home, taskId: task, slug, stepName, address, reviewAddr, name, nsPath, repoDir, cloneRoot, worktreeDir, selectedContext,
         worktreePath, wtName, branch, base, brief, instructions,
         briefStem: `brief-${stepName}-${slug}`,
         workerAddress, workerBranch, owner, participant, sessionState, unlaunched, reuse, rules, ruleDirs, addDirs, prompt,
         module: host.moduleNote(cloneRoot), pluginDir,
-        settingsPath, guardCommand, mcpConfigPath, mcpNote: mcpNote(mcp, 'the approver'),
+        settingsPath, guardCommand, projectGuardCommand, mcpConfigPath, mcpNote: mcpNote(mcp, 'the approver'),
         launch, argv: launch.argv, mcpConfig: launch.mcpConfig, settings: launch.settings,
         model: resolvedModel, effort, permissionMode, driver,
         refusal: harnessRefusal ?? deny.refusal,
@@ -454,7 +455,7 @@ export async function approverLift(rootOrHost, opts) {
     const refusal = optionRefusal(plan.driver, plan.effort, tool, plan.host);
     if (refusal)
         fail(refusal);
-    plan.driver.refuseForeignProjectLayer?.(plan.cloneRoot, plan.worktreePath, tool, plan.guardCommand);
+    plan.driver.refuseForeignProjectLayer?.(plan.cloneRoot, plan.worktreePath, tool, plan.guardCommand, plan.projectGuardCommand);
     if (liftProvenance === null) {
         const t = harnessTool();
         liftProvenance = launchProvenance(plan.host, t);
@@ -544,7 +545,7 @@ export async function approverLift(rootOrHost, opts) {
         plan.settings = rebuilt.launch.settings;
         plan.repoSkills = repoSkills;
         plan.worktreeDeps = worktreeDeps;
-        plan.driver.refuseForeignProjectLayer?.(plan.worktreePath, plan.worktreePath, null, plan.guardCommand);
+        plan.driver.refuseForeignProjectLayer?.(plan.worktreePath, plan.worktreePath, null, plan.guardCommand, plan.projectGuardCommand);
         approverLayer(plan.launch, plan.worktreePath, priorLayer);
         plan.env = (await finalizeManagedServiceLaunch(plan.host, {
             ...plan, task: plan.taskId, ref: plan.name, cwd: plan.worktreePath,

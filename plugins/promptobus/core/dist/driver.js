@@ -173,7 +173,7 @@ export function isManaged(participant) {
 }
 /** Stop a participant session — a driver operation, not a command. Only `managed` may be stopped, and
  * the refusal is explicit; the outcome is awaited, since the driver may wait for the harness. */
-export async function stopParticipant(participant, registry) {
+export async function stopParticipant(participant, registry, options) {
     const driver = driverFor(registry, harnessOf(participant, registry));
     requireCapability(driver, 'stop');
     const mode = modeOf(participant);
@@ -184,6 +184,11 @@ export async function stopParticipant(participant, registry) {
         const said = mode ?? (raw ? `«${raw}» — the contract does not know this mode` : 'there is no session behind it');
         throw new GateError(`participant ${named(participant)}: mode ${mode ? `«${mode}»` : said} — `
             + `driver «${driver.id}» did not launch this session and has no right to dispose of it`);
+    }
+    if (options?.deferSelf) {
+        if (!driver.stopSelf)
+            throw new GateError(`driver «${driver.id}» cannot defer a self-Stop`);
+        return driver.stopSelf(sessionRefOf(participant));
     }
     return driver.stop(sessionRefOf(participant));
 }

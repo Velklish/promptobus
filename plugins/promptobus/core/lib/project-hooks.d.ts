@@ -12,8 +12,9 @@ interface HookJudgment {
 export declare function trustRule(root: string, harness: HookHarness): string;
 /** Trusted records as `{ key, command }`, every other record as its text, and why the declaration is unusable.
  * `declaration` stands in for the declaration file's text (`null`: none); `guard` is the lift's guard command. */
-export declare function judgeHookRecords(text: string, root: string, harness: HookHarness, { declaration, guard }?: {
+export declare function judgeHookRecords(text: string, root: string, harness: HookHarness, { declaration, guard, projectGuard }?: {
     declaration?: string | null;
     guard?: string | null;
+    projectGuard?: string | null;
 }): HookJudgment;
 export {};

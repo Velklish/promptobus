@@ -1,9 +1,41 @@
 import { lstatSync, realpathSync } from 'node:fs';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { isSupportedPosixShell, observeRootProcess, processExecutable, processParent } from './root-process.js';
 import { contained, readPrivate, recordOf, recordVersion, sameRecordVersion } from './service-state.js';
 import { bindManagedNativeStart } from './drivers.js';
 import { CLIENT_FILE, readManagedServiceHookContext, realizeManagedServiceClient } from './service-launch.js';
+import { withTaskLock, writeJsonAtomic, taskExists } from './store.js';
+async function hookParent() {
+    let nativeProcess = await observeRootProcess(process.ppid);
+    if (nativeProcess && await isSupportedPosixShell(nativeProcess)) {
+        const parent = await processParent(nativeProcess.pid);
+        nativeProcess = parent ? await observeRootProcess(parent) : null;
+    }
+    return nativeProcess;
+}
+export async function authorizeManagedClaudeExecution(host, event, env, cwd) {
+    const file = env[CLIENT_FILE];
+    if (!file)
+        throw new Error('Claude execution requires its owned staged client');
+    const context = readManagedServiceHookContext(host, file, { env, cwd });
+    const record = readPrivate(context.record);
+    const evidence = recordOf(record) ? record.nativeAdmissionEvidence ?? record.nativeStartupCandidate : null;
+    const command = recordOf(record) && recordOf(record.nativeCommand) ? record.nativeCommand : null;
+    if (context.harness !== 'claude' || !recordOf(record) || record.sessionId !== event.session_id
+        || !recordOf(evidence) || evidence.kind !== 'native-session-start' || evidence.source !== 'startup'
+        || !command || evidence.nativeStore !== command.nativeStore || !isDeepStrictEqual(evidence.executable, command.executable)
+        || (!record.nativeAdmissionEvidence && (evidence.launchId !== context.launchId || evidence.ref !== context.ref))
+        || evidence.nativeId !== event.session_id || typeof evidence.transcript !== 'string'
+        || (event.transcript_path !== undefined && event.transcript_path !== evidence.transcript)
+        || !isDeepStrictEqual(evidence.process, await hookParent())) {
+        throw new Error('Claude execution requires the same verified fresh startup and native process');
+    }
+    const published = await authorizeManagedNativeStart(host, { hook_event_name: 'SessionStart', source: 'startup',
+        session_id: event.session_id, transcript_path: evidence.transcript }, env, cwd);
+    if (!published)
+        throw new Error('Claude execution has no complete native startup admission');
+}
 export async function authorizeManagedNativeStart(host, event, env, cwd) {
     const file = env[CLIENT_FILE];
     if (!file || (event.hook_event_name !== 'SessionStart' && event.hook_event_name !== 'sessionStart'))
@@ -33,27 +65,52 @@ export async function authorizeManagedNativeStart(host, event, env, cwd) {
             || !contained(command.nativeStore, event.transcript_path) || path.basename(event.transcript_path) !== `${nativeId}.jsonl`) {
             throw new Error('Claude startup lacks its exact owned command and same-ID native transcript/store');
         }
-        let transcript = command.nativeStore;
-        for (const part of path.relative(command.nativeStore, event.transcript_path).split(path.sep)) {
-            transcript = path.join(transcript, part);
-            const entry = lstatSync(transcript);
-            if (entry.isSymbolicLink() || (process.getuid && entry.uid !== process.getuid()) || (entry.mode & 0o022) !== 0)
-                throw new Error('Claude native transcript path is not owned');
-        }
-        if (!lstatSync(transcript).isFile() || realpathSync(transcript) !== transcript)
-            throw new Error('Claude native transcript is not a regular file');
-        let nativeProcess = await observeRootProcess(process.ppid);
-        if (nativeProcess && await isSupportedPosixShell(nativeProcess)) {
-            const parent = await processParent(nativeProcess.pid);
-            nativeProcess = parent ? await observeRootProcess(parent) : null;
-        }
+        const nativeProcess = await hookParent();
         if (!nativeProcess || await processExecutable(nativeProcess) !== command.executable.file || !sameRecordVersion(version)) {
             throw new Error('Claude startup has no exact owned native process/image generation');
         }
         const executable = { file: command.executable.file, version: command.executable.version };
+        const evidence = { kind: 'native-session-start', source: 'startup', nativeStore: command.nativeStore, nativeId,
+            process: nativeProcess, transcript: event.transcript_path, executable };
+        const candidate = { ...evidence, launchId: context.launchId, ref: context.ref };
+        if (recordOf(record) && record.nativeStartupCandidate !== undefined && !isDeepStrictEqual(record.nativeStartupCandidate, candidate)) {
+            throw new Error('Claude startup candidate changed its exact launch, native process or store');
+        }
+        let transcript = command.nativeStore;
+        let missing = false;
+        for (const part of path.relative(command.nativeStore, event.transcript_path).split(path.sep)) {
+            transcript = path.join(transcript, part);
+            let entry;
+            try {
+                entry = lstatSync(transcript);
+            }
+            catch (error) {
+                if (error.code !== 'ENOENT')
+                    throw error;
+                missing = true;
+                break;
+            }
+            if (entry.isSymbolicLink() || (process.getuid && entry.uid !== process.getuid()) || (entry.mode & 0o022) !== 0)
+                throw new Error('Claude native transcript path is not owned');
+        }
+        if (missing) {
+            const stage = () => {
+                if (!sameRecordVersion(version))
+                    throw new Error('Claude startup record changed before candidate publication');
+                writeJsonAtomic(context.record, { ...record, nativeStartupCandidate: candidate }, { mode: 0o600 });
+            };
+            if (taskExists(context.home, context.task))
+                withTaskLock(context.home, context.task, stage);
+            else
+                stage();
+            return false;
+        }
+        if (!lstatSync(transcript).isFile() || realpathSync(transcript) !== transcript)
+            throw new Error('Claude native transcript is not a regular file');
+        if (!sameRecordVersion(version))
+            throw new Error('Claude startup record changed during native observation');
         nativeProof = { version, binding: { harness: 'claude', nativeStore: command.nativeStore, nativeId, process: nativeProcess },
-            evidence: { kind: 'native-session-start', source: 'startup', nativeStore: command.nativeStore, nativeId,
-                process: nativeProcess, transcript, executable } };
+            evidence };
     }
     if (nativeProof)
         ({ published } = bindManagedNativeStart({ ...context, nativeId, transcript: event.transcript_path, nativeProof }));

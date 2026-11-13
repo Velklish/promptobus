@@ -415,9 +415,12 @@ async function spawn(rawPlan, { tool, home, task, address, cwd, env, ref, role, 
         ...holderRecord({ home, task, address, password: plan.holder?.password ?? runEnv.OPENCODE_SERVER_PASSWORD ?? null,
             log, cwd: plan.cwd ?? cwd }),
         ref, launchId: plan.service?.launchId ?? plan.launchId ?? randomUUID(),
+        launcherProcess: processIdentity(process.pid),
     };
     if (file)
         underRecordTask(record, () => writeJsonAtomic(file, record, { mode: 0o600 }));
+    if (file)
+        plan.liveSeat?.staged(file, record.launchId);
     const ownsRecord = () => !file || (() => {
         const current = readRecordAt(file);
         return current?.ref === ref && current.launchId === record.launchId
@@ -465,6 +468,7 @@ async function spawn(rawPlan, { tool, home, task, address, cwd, env, ref, role, 
             await plan.service.beforeStart(file);
         }
         const stagedVersion = plan.service && file ? recordVersion(file) : null;
+        plan.liveSeat?.starting();
         child = startHolder(nativeBin, plan.argv, { cwd: plan.cwd ?? cwd, env: runEnv, log });
         const started = await new Promise((resolve) => {
             child.once('error', resolve);
@@ -581,6 +585,7 @@ async function spawn(rawPlan, { tool, home, task, address, cwd, env, ref, role, 
                 if (file)
                     rmSync(file, { force: true });
             });
+            plan.liveSeat?.stopped();
         });
     }
 }

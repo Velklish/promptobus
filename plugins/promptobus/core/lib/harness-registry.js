@@ -51,7 +51,7 @@ export function createHarnessRegistry({ harness, sidecars = () => [], onDrop = (
             onDrop(record, env);
         rmSync(sessionFile(ref, env), { force: true });
     }
-    function registrySessions(env = process.env) {
+    function scanSessions(env = process.env) {
         let names;
         try {
             names = readdirSync(sessionsDir(env));
@@ -59,16 +59,34 @@ export function createHarnessRegistry({ harness, sidecars = () => [], onDrop = (
         catch (e) {
             if (e instanceof GateError)
                 throw e;
-            return [];
+            const absent = e.code === 'ENOENT';
+            return { complete: absent, absent, records: [], issues: absent ? [] : [`${sessionsDir(env)}: ${e.message}`] };
         }
-        return names.filter((name) => name.endsWith('.json')).map((name) => {
+        const records = [], issues = [];
+        for (const name of names.filter((name) => name.endsWith('.json'))) {
+            const file = path.join(sessionsDir(env), name);
             try {
-                return JSON.parse(readFileSync(path.join(sessionsDir(env), name), 'utf8'));
+                const record = JSON.parse(readFileSync(file, 'utf8'));
+                if (!record || typeof record !== 'object' || Array.isArray(record)
+                    || typeof record.ref !== 'string' || !record.ref.trim()
+                    || sessionFile(record.ref, env) !== file)
+                    throw new Error('invalid session record or ref');
+                const row = record;
+                if (['holderPid', 'appPid', 'panePid'].some(key => row[key] !== undefined && row[key] !== null
+                    && (!Number.isSafeInteger(row[key]) || Number(row[key]) <= 0))
+                    || ['codexHome', 'recordPath', 'threadId', 'sessionId', 'sessionName', 'state', 'launchId'].some(key => row[key] !== undefined
+                        && row[key] !== null && typeof row[key] !== 'string'))
+                    throw new Error('invalid session observation fields');
+                records.push(record);
             }
-            catch {
-                return null;
+            catch (error) {
+                issues.push(`${file}: ${error.message}`);
             }
-        }).filter(Boolean);
+        }
+        return { complete: issues.length === 0, absent: false, records, issues };
+    }
+    function registrySessions(env = process.env) {
+        return scanSessions(env).records;
     }
     return {
         harness,
@@ -81,6 +99,7 @@ export function createHarnessRegistry({ harness, sidecars = () => [], onDrop = (
         patchSession,
         dropSession,
         registrySessions,
+        scanSessions,
         pidAlive,
     };
 }

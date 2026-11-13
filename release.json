@@ -1,12 +1,12 @@
 {
   "format": 1,
-  "version": "0.2.0",
-  "sourceRevision": "cb06fff67efa6612fb0d41da95bbdbdcec486481",
+  "version": "0.2.1",
+  "sourceRevision": "614317505608c22aa50ed1ab416485f856315d7e",
   "adapterIdentity": {
     "format": 1,
-    "buildId": "c9944a6b-491d-43a7-92ad-0c84ac4144f3",
-    "pluginVersion": "0.2.0",
-    "inputSha256": "c6da78a37dc0e01785189c2ad47a430481dff7b32c24d14e75bffc953ba1018b",
+    "buildId": "407f0257-76f2-452e-8d8d-edfd87ded431",
+    "pluginVersion": "0.2.1",
+    "inputSha256": "e427f39d01e5f98156a2cb5229c2cb51e90a1e656a8406e18ab8dbf240fc5847",
     "inputs": {
       "commandCompiler": [
         {
@@ -30,26 +30,26 @@
           "sha256": "4fb1814c23602191fc5e48f576555e9978e554a2053708368bc632bcb1402f34"
         }
       ],
-      "sourceSha256": "5dbc37f236c1e9aa522cfad52d25fbcd5b79aed4994c186cb94616f9fbc3be3d",
-      "sourceRevision": "cb06fff67efa6612fb0d41da95bbdbdcec486481",
+      "sourceSha256": "e597eab0425934f58248248942188fc8838a25003896dd41282abd9962be397e",
+      "sourceRevision": "614317505608c22aa50ed1ab416485f856315d7e",
       "sourceDirty": false,
-      "lockSha256": "8901c03fe3786aafc8b3a54b2e85e75a0e5198c160541058d0e8771a8e0d0ae6",
-      "builderVersion": "0.48.1",
+      "lockSha256": "0210004744645a4dd9ead445d7e4455aabc63b109d6cc79a41639856d11590c2",
+      "builderVersion": "0.49.0",
       "dependencies": [
         {
           "name": "@get-bb/plugin-sdk",
-          "version": "0.6.104",
-          "sha256": "6d69496bda0875aeaa27e83f1f5091381a5822e6d9177cbe13a7808eed806a48"
+          "version": "0.6.132",
+          "sha256": "15faaccae094247d5a4b62bd53a9861b3efe6c55cd16058ea151455ab8f146a7"
         },
         {
           "name": "@tanstack/query-core",
-          "version": "5.105.0",
-          "sha256": "916707c09ba2a2410c2b7e9a8e6bb0ebb8afaf93e2dccf7cf826f03dabdff677"
+          "version": "5.107.1",
+          "sha256": "1e7b207b2943b958a2e9262920bf27630aa9e8e2ba38178307ae06d0e5caf794"
         },
         {
           "name": "@tanstack/react-query",
-          "version": "5.105.0",
-          "sha256": "556c9dcf1031c1c3fb19b3952bb6b742027bbf3052ed791615287b8d1048f157"
+          "version": "5.107.1",
+          "sha256": "6bfa73f60433b6c95103d485b84c47f6613f18bce145a8809bcdd001ce59d5bd"
         },
         {
           "name": "cross-spawn",
@@ -68,8 +68,8 @@
         },
         {
           "name": "promptobus",
-          "version": "0.32.4",
-          "sha256": "f2c1879b657afa7a6404302c776e23da7a546b1ec2848502741a94716a977796"
+          "version": "0.33.0",
+          "sha256": "3127941ff24c2227b90a11b562005ebb0d3eec65b62ee12b6aae9cc3ebdc568b"
         },
         {
           "name": "shebang-command",
@@ -88,8 +88,8 @@
         },
         {
           "name": "zod",
-          "version": "4.6.6",
-          "sha256": "16c37972bd7c3e91b95a2bc063566accba697b59793df55b2de0890f092efec2"
+          "version": "4.6.7",
+          "sha256": "a5b78c4af0625019ac05135eb546bae1793ad2a88a065b146ec387abce6d56ca"
         }
       ],
       "consumerIntegrationSha256": null,
@@ -111,27 +111,27 @@
     ],
     [
       "plugins/native-panel/bundle/app.js",
-      "07a2953bdb5675eeb91af867904740e4019e9a61a6966952978419dafc1141bc"
+      "178bc38ef06d15f10f538c1dca436ba3437b47a76561324aecec346bcbdd2b4c"
     ],
     [
       "plugins/native-panel/bundle/app.meta.json",
-      "7473ad33a469694d8f1de8d7c89d1293de3f36d678c8f630f59f018d58af8e1d"
+      "7fac469df690c42f077845ff09a5b63014be178dd4e576876e27bd7f2baea19f"
     ],
     [
       "plugins/native-panel/bundle/build-provenance.json",
-      "3466b1f46d3b38148ed11c37959e5b7acb7cc0334b55e548c1b22e370c858ee3"
+      "5a02fcf16d44670e32c7ffafaad7433d81a479c5c7775eeaa070d7fad4533b51"
     ],
     [
       "plugins/native-panel/bundle/host.js",
-      "c107f1e225fef461b41569abb7251dda3ac1163ded525d6205abfd5895471628"
+      "3fc3fe8b2fee251451b6d683d93d151382b7c570227f6be14ef416964aa510a4"
     ],
     [
       "plugins/native-panel/bundle/host.js.map",
-      "f97db6c8a86c83cf64968fc9c765dbe2b51b7a099346e3deb3322c623f7f5ed3"
+      "840e9d241af0b100802026932d2a67d3192c0004e6ccd383428368d59d92a940"
     ],
     [
       "plugins/native-panel/bundle/host.meta.json",
-      "f228ea7890c8883bc21d040162869c6dd17073a00b533ddc06d4ff9a4a3cf707"
+      "95c8649462aa8233fa8a4f6ad99d3c5a037da1310b95c9f331e6299231024997"
     ],
     [
       "plugins/native-panel/bundle/package.json",
@@ -139,15 +139,15 @@
     ],
     [
       "plugins/native-panel/bundle/server.js",
-      "7c6d4cbd66c821de1d31626b4fc6e4f47f4e9d36af182f54229fbc64126aab4d"
+      "1a268615ad8f4ac9b34a451d6ee0a7844545a7480192b3a7d96eec255b9310da"
     ],
     [
       "plugins/native-panel/bundle/server.js.map",
-      "708f2234edaf15020bcff705acf739551aa1a121faf3a859e7d2f94332a3f7ba"
+      "cc0087c3ded0277c39d53d026b0fc5798b80bd12bcaa9a46894820f7935aeea4"
     ],
     [
       "plugins/native-panel/bundle/server.meta.json",
-      "62eadc1943d323f277fd8f8879844c803b912a7b8e6fe1dc83d94d1634153ac5"
+      "93cb3c5095e3044b8a938a92e7dcc0971271c1885f857b3b68b27309a2a8db43"
     ],
     [
       "plugins/native-panel/host.mjs",
@@ -159,15 +159,15 @@
     ],
     [
       "plugins/native-panel/package.json",
-      "23e0efdce09c3fec588d05316b014cdd7aa3aaeb8b4ba35d5ebd45b3e7ff8642"
+      "875cda997307519dfa6d6e4220d91cde8da7446ff22674d64c784b25c9e7ccc8"
     ],
     [
       "plugins/native-panel/PLUGIN_OVERVIEW.md",
-      "477b6a32253cf25270756906ab214ae23a985b861663b6a19984b22001a0a696"
+      "2417954820befd1ee5a57da4a600d31b47d6e7767e43a6c5fa0ed0be05b25307"
     ],
     [
       "plugins/native-panel/README.md",
-      "a8ca4a5d98c436dbfad94beafba18cbdbaa5ddc494aa606df58d960667965a82"
+      "c09de25cb51b64beae29fbec89b1a263c165991cb704c06ef49b41d2c38d7cb2"
     ],
     [
       "plugins/native-panel/server.mjs",
@@ -179,19 +179,19 @@
     ],
     [
       "plugins/promptobus/bundle/build-manifest.json",
-      "7ef5ea1ce6ed559a96b4ee65dee32c2dc85be656c10463a4b5a2c36d70977717"
+      "d98389471a5c0a946c15fef3105153407073b222da877ad8c2b3cd7ff7de64b3"
     ],
     [
       "plugins/promptobus/bundle/host.js",
-      "6eec0f4d4e410320b12544ff05bb8bc411f2b58a12a4f173f3d0df32dcd0f8bc"
+      "92d4cd78c474f4bf19ecd002883cd91be2a6533bb471c1d31e1c71b7fdabfe42"
     ],
     [
       "plugins/promptobus/bundle/host.js.map",
-      "616c8152f8ebd1c7885eeac8b6b629d21875fc4341ffac41c839db39292955b1"
+      "8a65696ba749c5e738ee16eda716254abff1035c53b6a3ba0ec1f02e4bb093ab"
     ],
     [
       "plugins/promptobus/bundle/host.meta.json",
-      "822adb60ce7036bef5d1996db64d09b8bf9a69bda78ac0e5a92bc1eed4558094"
+      "bd55d020d58d4d3d6047e84b73b689cf89d51fa7b04a8fefca61b155062c25b1"
     ],
     [
       "plugins/promptobus/bundle/package.json",
@@ -199,19 +199,19 @@
     ],
     [
       "plugins/promptobus/bundle/server.js",
-      "fc1d4394cb5bfdac82c9066dd64333d0a592a4a3ea1d15e9904810147030e1ea"
+      "ed9149d1946f34404c37da8111df0cdab958e8245a000a725c86c23a2debc33f"
     ],
     [
       "plugins/promptobus/bundle/server.js.map",
-      "51d3ff7618b304f2e2a77f2204d5f1774c32777606fe71eaa4c1040107044d60"
+      "2550d7b9e95beb90cc963f5136014e05af6098471068c25184a88240c643cffd"
     ],
     [
       "plugins/promptobus/bundle/server.meta.json",
-      "805c0c09b3a93eb780fe83fa96b6e448048ca287c5087f28b1b6ee81029a233f"
+      "9e16741393a8c2e1100a10b00f9fba2a93e311a992b87ca9e215e2c0103b8747"
     ],
     [
       "plugins/promptobus/commands/build-identity.js",
-      "8860f9781d9a9ac3931ca71ce9559a5b20333faf38f06b32062ce7309839e6a5"
+      "def46ed8020fa1cd5a92d1f287133387308327337902691ac4b526f2bf08074f"
     ],
     [
       "plugins/promptobus/commands/command-admission.js",
@@ -283,11 +283,11 @@
     ],
     [
       "plugins/promptobus/core/dist/driver.d.ts",
-      "f78a6f68923c0ea82b8bf387e2b2ae1cd2bed667a774b951513f18840387e873"
+      "2e0eaa39cc9f45eb17b3f083f8d86ac2a10e4a9ad2cf9bdafacdfedeece32ee0"
     ],
     [
       "plugins/promptobus/core/dist/driver.js",
-      "328bb9fca2cb32bc62ee2b4849166cf4c47044cad08c0d58359ed5b0cbd80b08"
+      "f23722e8b6ae493255c5a739bb07a117bdedd97da183b9b0c68b62beea4a78f7"
     ],
     [
       "plugins/promptobus/core/dist/fs/atomic.d.ts",
@@ -323,11 +323,11 @@
     ],
     [
       "plugins/promptobus/core/dist/hooks.d.ts",
-      "c10b76b59192d842f6b8f5828b0e5ba3809b6bcaba999eae79ecc6d6fa46af84"
+      "b7710537c49c47fef706bbf839ead6fa4590101b7cfbdfe0e6b523187c243f98"
     ],
     [
       "plugins/promptobus/core/dist/hooks.js",
-      "833013d8093a87e28c963778824a695cb8d75a4aa3646852b83d5f121dedbbae"
+      "5cb33d934e2de71087d6b7293203fd83d41a16c687b04889f03439bb814b3a94"
     ],
     [
       "plugins/promptobus/core/dist/host-index.d.ts",
@@ -339,7 +339,7 @@
     ],
     [
       "plugins/promptobus/core/dist/host.d.ts",
-      "ea88b721b6f9a250ffc88fa8996af0e5e783624d2a8cf6c104f2556a61e93a78"
+      "e67cd368f53d31557ffd3878519e929a5f0c16532da0c3b5d805825a849dfd4b"
     ],
     [
       "plugins/promptobus/core/dist/host.js",
@@ -547,11 +547,11 @@
     ],
     [
       "plugins/promptobus/core/lib/approver.d.ts",
-      "7387ed7618bcf29ead5b6d563bfdf723094465dbc373b30a999d6a35b6eb116f"
+      "95d390aeb7706ae34a22311a81acec896478f41a38f4060b7e407aaf66bc7e03"
     ],
     [
       "plugins/promptobus/core/lib/approver.js",
-      "d2faa2584b714a1cd5334d9bbdadf6c8b79e427ddba4d2f618daeb70e087a5a0"
+      "111162f879d5a4f040e61af98f293f75135817e25a96c56323427d4f02bafc77"
     ],
     [
       "plugins/promptobus/core/lib/bb-direct-command.d.ts",
@@ -591,7 +591,7 @@
     ],
     [
       "plugins/promptobus/core/lib/cli.js",
-      "8cab19fb9fed9a019dcce7f73623b3cb6bbbe7d875bb0f017c672a9c238349e3"
+      "166c925fcc25c6892f87a20165f0774459f975ed46d2045f16ddb131c199c2cd"
     ],
     [
       "plugins/promptobus/core/lib/codex-command-receipts.d.ts",
@@ -626,6 +626,14 @@
       "8495df4acbc16cb477d71d6a30f6fbe74faaaed4fe679b9e9c2d4e93714af261"
     ],
     [
+      "plugins/promptobus/core/lib/codex-retire.d.ts",
+      "43e818adf60173644896298637f47b01d5819b17eda46eaa32d0c7d64724d012"
+    ],
+    [
+      "plugins/promptobus/core/lib/codex-retire.js",
+      "4028b8e11a53f298a02b30d206c86f841e090865b2ad1f6fee0fb8b07caef34e"
+    ],
+    [
       "plugins/promptobus/core/lib/codex-rpc.d.ts",
       "e3077343e474e344471de0ce40999a4f824de9d04ee300a144bd03962990a0d5"
     ],
@@ -635,11 +643,11 @@
     ],
     [
       "plugins/promptobus/core/lib/codex-session.d.ts",
-      "ddb7793931d2beb0d47975fd0143ea45c283e318c10ce3ece56777fc343b040a"
+      "d66c86a49366429c1b31e15b12f22b85f8e612e2db451289b5c08cac9f8bad83"
     ],
     [
       "plugins/promptobus/core/lib/codex-session.js",
-      "fb1bbb646a23d39c02d799f4a0117763538ab61ac59f5022a6fd546f70ab6cc8"
+      "b6c1d2450447163e0a95efcc63bba416a10a8323b1fcc3bdc825df94cbdbb33c"
     ],
     [
       "plugins/promptobus/core/lib/contract.d.ts",
@@ -651,11 +659,11 @@
     ],
     [
       "plugins/promptobus/core/lib/cursor-persist.d.ts",
-      "28c8bd3f4157600bf10ee688aad3797d29f66dd2293aaf200624d1af64e90d58"
+      "8372feb8b6026e15cebaa6b348b9be1d9d361c86d704035ee22b13a1ac675c1b"
     ],
     [
       "plugins/promptobus/core/lib/cursor-persist.js",
-      "d478c3982c3cc80b3ba6beb17619e1d29cb24655abd6c8cc9d5481392103a1e6"
+      "a17b46633f807aaf1a1a7d5cd505bd72946946e3c030e5389c50db8f78304822"
     ],
     [
       "plugins/promptobus/core/lib/digest.d.ts",
@@ -679,7 +687,7 @@
     ],
     [
       "plugins/promptobus/core/lib/done.js",
-      "2f893e56dff770185e1634a4866318864f18d43e7384728b1d5e2a71ceb63a56"
+      "3a0f9f78ad6c4021861c26a04d7e2b6abe7525f97ce5aacccd98b89509db103b"
     ],
     [
       "plugins/promptobus/core/lib/driver-claude.d.ts",
@@ -687,15 +695,15 @@
     ],
     [
       "plugins/promptobus/core/lib/driver-claude.js",
-      "4388b7aaa61c2281efc5a99e6af5b68e064cda26297859f6119f4c00534b9c2d"
+      "7c1e42d97f8b9eb33ac9cb2e8ade1aacbb9a8472dff463df73fb669106b2c629"
     ],
     [
       "plugins/promptobus/core/lib/driver-codex.d.ts",
-      "3fc4eaccaec703a5252fe3dfdac713c3a1956bc0556e12330e22cd886e943aa1"
+      "d21928dc02f7e2c1f39b3dededbf8be11bee9e3f8aec700e66d4c20a585da8c9"
     ],
     [
       "plugins/promptobus/core/lib/driver-codex.js",
-      "0743e8add621cc68191b9e451fe0263947429017a8b0614fa9d55e2112181d27"
+      "48bed77e7c0ef56dc17438d0aa2f4aad81ebeff610157326d79e047509a2b453"
     ],
     [
       "plugins/promptobus/core/lib/driver-common.d.ts",
@@ -707,23 +715,23 @@
     ],
     [
       "plugins/promptobus/core/lib/driver-cursor.d.ts",
-      "754e4e7f687baa6fa06da6a5faf92dc8ac83ad2984149a5b323e7c657b686d1f"
+      "d3644cd235581d48d2c77a1872ed72405ffe13298c35e149e1ec57d43ccf89f7"
     ],
     [
       "plugins/promptobus/core/lib/driver-cursor.js",
-      "3cb0aa3570e80c5113d559d4da203aeb62f99d2df7ae78f9d35f63cc8a28b113"
+      "2ddfbdbcf7b4983340373918b1cb9318b198ae64991f5473eeefbdfa7aa3ee39"
     ],
     [
       "plugins/promptobus/core/lib/driver-opencode.d.ts",
-      "d1c7e2ded23f104b921701bce841c62c9b4537b4ccc6289a36f05b0b5572def1"
+      "2651c4d5afc999d02b24ef37aff222eedbcd1a62a3f2d3147d12482d9f028eb1"
     ],
     [
       "plugins/promptobus/core/lib/driver-opencode.js",
-      "183972e488de2efbacf3f3c19d12437026e32396166543239100b4a9167ba43a"
+      "ced38fc61a61be254208feed6dd3120b1d163f8fb73ddd512093884ca8255cde"
     ],
     [
       "plugins/promptobus/core/lib/driver-runtime.d.ts",
-      "694c2098999d1beb4c5ba20cde6a342d4746a3c8a0609b9ea67087e595f7c8cd"
+      "ae9b1c29907bc0d2989245252a3739e23f7e75b8a76a584cb011ed0bdce6238c"
     ],
     [
       "plugins/promptobus/core/lib/driver-runtime.js",
@@ -735,7 +743,7 @@
     ],
     [
       "plugins/promptobus/core/lib/drivers.js",
-      "7aeac6fead4c1e1b381f38a62c1b952e0e64e6de09870cc48570814ac2f65852"
+      "4c46561398aa27ffd3f4985d451e27a1a6a95062ea3b4eab20df9a23b12927bb"
     ],
     [
       "plugins/promptobus/core/lib/exec.d.ts",
@@ -755,11 +763,11 @@
     ],
     [
       "plugins/promptobus/core/lib/guard.d.ts",
-      "199570a87914af3d3c39c0121aec3ee73a2abc502ec855f6661b15af3444c951"
+      "1e15e44361fb8c358b388a06840bf2ce858129cf16d27d871f010fb7304402de"
     ],
     [
       "plugins/promptobus/core/lib/guard.js",
-      "1a94ed38f1c794b5fba012dde2337714bce10c4bd0c308f2a7856750bc8cb201"
+      "dae6d645d84aecd62d1ee14db91e69f1b69fed0c9bd4a247f2ad42a736454182"
     ],
     [
       "plugins/promptobus/core/lib/handoff.d.ts",
@@ -779,11 +787,11 @@
     ],
     [
       "plugins/promptobus/core/lib/harness-registry.d.ts",
-      "c7550372f54a51a824f2e963aff67338d328d3ce3a78e0a36e10aaf23dfd490a"
+      "9839bce2616012ceeea53d605e1a77ae6f0e1d5aa43fcb41452e9282fc1fb8f7"
     ],
     [
       "plugins/promptobus/core/lib/harness-registry.js",
-      "92a6ee11fabd5c0e50895235523f8c515ef686a829fec60d8269ea5be23715fd"
+      "18330874e67d4d4b48534fb7525de14bdfd055f329f7f043b7a2f70bdb78d877"
     ],
     [
       "plugins/promptobus/core/lib/history.d.ts",
@@ -855,7 +863,7 @@
     ],
     [
       "plugins/promptobus/core/lib/liftoff.js",
-      "628a8de842e13b33dd3b7ef28dfb0c118bf7bc59e9716b8c2925bed4299c9fff"
+      "efb56ebe312d840536e1bf5f0bdb4e8074fef2814872dd627b30bdf6873a602d"
     ],
     [
       "plugins/promptobus/core/lib/link.d.ts",
@@ -864,6 +872,14 @@
     [
       "plugins/promptobus/core/lib/link.js",
       "d3761b21adac74a8eb7a50921ad561a81efa5826b1d359e6964f1b9f6788ade1"
+    ],
+    [
+      "plugins/promptobus/core/lib/live-reservation.d.ts",
+      "d63c747994bbdbbf36f411f7e39e5cd652eae8da8ced078048192d0297dc4d51"
+    ],
+    [
+      "plugins/promptobus/core/lib/live-reservation.js",
+      "4ce9b788688d69189f18657c57d317090e451d3115168205fe1584409231747d"
     ],
     [
       "plugins/promptobus/core/lib/model-routing/adapter-claude.d.ts",
@@ -979,35 +995,35 @@
     ],
     [
       "plugins/promptobus/core/lib/native-admission.d.ts",
-      "81bdbef0badb53feb0573ccf9d47e1a99cf420dec2b5280a14d3620cb95a60d7"
+      "9c9d79c5f60dc8810457244c0776213fe41e9876dc79a9c149efb7bdcd26244e"
     ],
     [
       "plugins/promptobus/core/lib/native-admission.js",
-      "3a8286b6d350470039afcb54433ce16b32a3436a62941424eddfeab9c42a4f7b"
+      "f46e4864b9f7b07678d6c93abb3e42b226dbd7db72f083e5f165b731fe839dcd"
     ],
     [
       "plugins/promptobus/core/lib/native-lifecycle.d.ts",
-      "eaf421952a2302e1d70eaf1de0723c8920444dfb91b58da42379729a8110e2e5"
+      "148247a73f1bcaff3081d41a2eeee8cd6e5c11172622a2852b91b3c061914659"
     ],
     [
       "plugins/promptobus/core/lib/native-lifecycle.js",
-      "2b92a5b988b79b10890070269d405db43c1b16af241a8cc4e0f0602f57364082"
+      "84b748b707c6345396db41d2aacbefc1749feb6f3ebbd88e51be5d844a2352d1"
     ],
     [
       "plugins/promptobus/core/lib/native-participant-context.d.ts",
-      "3faac441488cd3fb027f09975c72d74ec6d49cdf155fcc11085d8865f3f782e1"
+      "2f90c17f50f95208225ef8ba52ad7233a3133950264bfb914609d9ce5815b551"
     ],
     [
       "plugins/promptobus/core/lib/native-participant-context.js",
-      "9cd70ccd330f07edce258978283a59aa76b48f4297b9d42d44131e08422378a6"
+      "4b00af1cef5ea14ad52ae0c72e0f4f608bb8f5570eb76178c839d18dd20ae8af"
     ],
     [
       "plugins/promptobus/core/lib/native-start.d.ts",
-      "495568df0e806157da7c03c7a528f48aae9623b6ad3e39cbfc270321d4d3f947"
+      "1855ceba6ec7fe1199f8c8d9b54f66b48e7b6d24ef0dd34ad84b63a60b8d575e"
     ],
     [
       "plugins/promptobus/core/lib/native-start.js",
-      "13bd6f9164c6285d5dd19b1264e5344c1d8d9aefe778f813bb015eaf4fd424c9"
+      "52e608f4fd66a567d530c574fa9bab4c7461eb49d210d590f633062da444ab11"
     ],
     [
       "plugins/promptobus/core/lib/notification.d.ts",
@@ -1035,11 +1051,11 @@
     ],
     [
       "plugins/promptobus/core/lib/project-hooks.d.ts",
-      "63026254682aa4a6af5bf12d0d9afae471b91b61eea21fa5c9f00c47850df31a"
+      "a7a3cb5247652420c3efd129381617113f7854773b067bbe56be04e2f0f5ccdd"
     ],
     [
       "plugins/promptobus/core/lib/project-hooks.js",
-      "174ca479c58b3f2508ed09ecd14eae1f9ec65f601080bd8af9188966498fdf70"
+      "1f2a8edde836e841059db81269210179354d037fe4a20747a8bf2fcd35102a13"
     ],
     [
       "plugins/promptobus/core/lib/prompts/bb.d.ts",
@@ -1099,7 +1115,7 @@
     ],
     [
       "plugins/promptobus/core/lib/report.js",
-      "bb0d85a84d55b97e96ae9753d89375842692e6c676f442cecc5adb02d5ebcba4"
+      "3f6319cb8580aaa24fa780a2b7f0a393f21fd360e8fe4b4851ae307e88f29862"
     ],
     [
       "plugins/promptobus/core/lib/review.d.ts",
@@ -1107,7 +1123,7 @@
     ],
     [
       "plugins/promptobus/core/lib/review.js",
-      "2ff8d5682574da51a353c43b9b8c08da9143a0872e673d2481894789d1bc1c44"
+      "61106fe53b64e404108aa92c8ff413a9e3c7b7b6aa3e832c3e84d2397cfb45a4"
     ],
     [
       "plugins/promptobus/core/lib/reviewer-files.d.ts",
@@ -1175,19 +1191,19 @@
     ],
     [
       "plugins/promptobus/core/lib/service-client.d.ts",
-      "aaac2f6334c393c4ce4438517e45a59c6b0622daa74338df35e060f32c18495a"
+      "06ebee444521ef2073c0214044a7e6beeba7a59b00921b36e440fc232a17bbda"
     ],
     [
       "plugins/promptobus/core/lib/service-client.js",
-      "46e8e1b11566daeee51fca34309b2ec8d77a8fd93032f5f5055f329702f3ac9b"
+      "66db016480715efe657a27380258addfb6ba3939f76735f03b080112cbb9417c"
     ],
     [
       "plugins/promptobus/core/lib/service-launch.d.ts",
-      "80a72ca2606e20a1d862b034b0445499d1b4c578104ffda33625b537774f09e5"
+      "a3612ebc408e58c7ed3b8a398d7d96a2bf9272f5943ff4f54d0ca8d085be8ef0"
     ],
     [
       "plugins/promptobus/core/lib/service-launch.js",
-      "2df8bdbf1c963f564301b1580c54ce3741b000733671a7660c15b0aeb5941e34"
+      "d5e4fb9a9f670bf10ae21a305e2c90a672cc4904d1b3611c72002b3f6a26cc82"
     ],
     [
       "plugins/promptobus/core/lib/service-state.d.ts",
@@ -1211,7 +1227,7 @@
     ],
     [
       "plugins/promptobus/core/lib/service.js",
-      "259a50223f525f2b2e621e2f543d8730cfd32fd02fc74237ab9350f647ca9c5f"
+      "9f9eddd2d975de858f30a9312afae64233f88e9e38f6196f563c492d4a51f22a"
     ],
     [
       "plugins/promptobus/core/lib/session-env.d.ts",
@@ -1223,11 +1239,11 @@
     ],
     [
       "plugins/promptobus/core/lib/spawn.d.ts",
-      "d37fee36690e2ef7bc5afb706bd99c290aeec25c530637337f00b70fe65a9e9d"
+      "5a1f9dc5ad2dbdd6ca36c92a5c1539784385734289df591655b0415d36689409"
     ],
     [
       "plugins/promptobus/core/lib/spawn.js",
-      "0d5ac3fa6253074438c7111d1af89691c45f51a2403f78ef8247158f558efd48"
+      "80d4de0ffd52a0a9f30a9faa46ee44cceae95b8e8cdcece17f61759726fc63b3"
     ],
     [
       "plugins/promptobus/core/lib/stalls.d.ts",
@@ -1267,7 +1283,7 @@
     ],
     [
       "plugins/promptobus/core/lib/stop.js",
-      "23cd038581c7a6b1c55ec4b1ed5087b6d90803ae3b2ff19388f5b9384051ec61"
+      "c9dc70107a98c1d6ffca5b52c195f16aa2b21dc349bff96adc77ef2ae70d0da2"
     ],
     [
       "plugins/promptobus/core/lib/store.d.ts",
@@ -1327,11 +1343,11 @@
     ],
     [
       "plugins/promptobus/core/package.json",
-      "b308104c71a89f45f8957c194fbff5a11c6354c2ffb2c725919f8f53de0868a9"
+      "640ade5fc822679e1121b32e51199af1e3ec0abc6e22841608922c8e281223fa"
     ],
     [
       "plugins/promptobus/core/README.md",
-      "04b68bc1929e18fa792001e5830cfc44898a94c176490fe000128ff3a5a88f32"
+      "2422e2c8c408306064312f3609f78210bd7d3e0ad6ad4c6562acdc6bd6f1f391"
     ],
     [
       "plugins/promptobus/core/schemas/model-routing/catalog.schema.json",
@@ -1387,7 +1403,7 @@
     ],
     [
       "plugins/promptobus/core/skills/orchestrate/SKILL.md",
-      "e85c3b6236e55f0e4f1e2c28aee9dbf2b6cd07689d049ee4680e7b03b9cc25dc"
+      "258999cf220d9900bb919e1b03062c15e3f0caf11d34c772226898bfbb65c510"
     ],
     [
       "plugins/promptobus/core/skills/solo-review/SKILL.md",
@@ -1403,15 +1419,15 @@
     ],
     [
       "plugins/promptobus/package.json",
-      "a21754b68554bd73da3e6c55e8111f3e6003e99d34ede7723738a7d726d21a93"
+      "3b21f2504e9709707917238d3547a0641df3a0a6eadfc3c16ec8f337d4f5dbcd"
     ],
     [
       "plugins/promptobus/PLUGIN_OVERVIEW.md",
-      "4983c91f16e0660cac4436daaf17e6ee79d543715f96a49d20536198f0570fd3"
+      "cb67018077bfe4f0b281dda07a7c6321e845f30d33370366fc2fa7b63d3fdc6b"
     ],
     [
       "plugins/promptobus/README.md",
-      "4fc83abbfc3a247fa21e2c717834fa08ca06fcbb26bf3569a8792afa6b6282ac"
+      "a2b84a3b3ae355a10a03984ad644a81bf7b3186415ce5dd6b33807053239fb2a"
     ],
     [
       "plugins/promptobus/server.mjs",

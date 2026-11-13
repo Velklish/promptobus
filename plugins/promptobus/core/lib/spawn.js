@@ -1,4 +1,5 @@
 import { finalizeManagedServiceLaunch, revokeFailedManagedLaunch } from './service-launch.js';
+import { LiveAdmissionError, liveCapNote, reservedSpawn, withReservationIdle } from './live-reservation.js';
 import { persistLegacyParticipant, persistNativeParticipant, releaseNativeReservation, requireNativeTerminal, reserveNativeParticipant } from './native-lifecycle.js';
 import { renderTeamleadInstructions, renderWorkerInstructions } from './prompts/roles.js';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -7,7 +8,7 @@ import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
 import { ok, info, warn, fail, runLogged, runProc, shellQuote, PROC_MAX_OUTPUT, GIT_NET_TIMEOUT_MS, PROC_INSTALL_TIMEOUT_MS, toPosix, } from './util.js';
 import { hostOf, HostResolveError } from './host.js';
-import { guardHookCommand } from '../dist/hooks.js';
+import { guardHookCommand, managedGuardHookCommand } from '../dist/hooks.js';
 import { activeTasks, addressOf, bindIfOwner, boundTaskId, bus, canonicalPath, claimRoute, contactsOf, contactText, createTask, dropStaleWake, ensureRootRecord, filesDir, inboxDir, foreignTaskLine, GateError, newTaskIdentity, occupyTaskFile, ORCHESTRATOR, ownership, participantFileStem, participantMcpPath, participantOf, participantRecord, participantSettingsPath, readTask, retitleTask, rootAddressOf, taskFile, sessionIdentity, SLUG_MAX, slugify, TASK_TITLE_SEP, taskExists, titleFromLines, upsertParticipant, withTaskLock, workerAddress, writeJsonAtomic, } from './store.js';
 import { writeTask as writeTaskJournal } from '../dist/v1/store.js';
 import { PROMPTOBUS_SERVER, TEAMLEAD_HARNESSES, harnessName } from './contract.js';
@@ -416,7 +417,7 @@ export function refuseParticipantPrefix(slug, route, registry, participants = []
         const stem = participantFileStem(address);
         const occupied = participants.find((participant) => {
             const other = addressOf(participant);
-            return other.includes(':') && other !== address
+            return other !== null && other.includes(':') && other !== address
                 && participantFileStem(other) === stem;
         });
         if (occupied) {
@@ -773,7 +774,8 @@ export async function planTeamlead(rootOrHost, opts) {
     const ruleDirs = [...new Set(rules.filter((file) => !file.startsWith(root + path.sep)).map(path.dirname))];
     const mcpConfigPath = participantMcpPath(home, rootTask, address);
     const settingsPath = participantSettingsPath(home, rootTask, address);
-    const guardCommand = guardHookCommand(host, { address, taskId: rootTask, home }, process.platform);
+    const guardCommand = managedGuardHookCommand(host, { address, taskId: rootTask, home }, process.platform);
+    const projectGuardCommand = guardHookCommand(host, { address, taskId: rootTask, home }, process.platform);
     const pluginDir = selectedContext ? null : participantPluginDir(host);
     const commonEnv = { ...process.env, ...host.extraEnv() };
     const env = driver.sessionEnv(commonEnv);
@@ -793,7 +795,7 @@ export async function planTeamlead(rootOrHost, opts) {
     const prompt = teamleadPrompt({ host, driver, rootTask, childTask, address, rootAddress, brief, siblings, rules, contacts }) + nativeContextPrompt(selectedContext);
     const launch = driver.prepare({
         ref: name, role: 'teamlead', mcp: mcp.descriptor, prompt, model, effort, permissionMode,
-        addDirs: ruleDirs, pluginDir, mcpConfigPath, settingsPath, guardCommand,
+        addDirs: ruleDirs, pluginDir, mcpConfigPath, settingsPath, guardCommand, projectGuardCommand,
         extraSettings: selectedContext ? {} : skillSettings(host), selectedContext,
         cwd: root, root, home, task: childTask, address: ORCHESTRATOR, rootTask, rootAddress: address, env,
     });
@@ -1112,14 +1114,10 @@ export async function planSpawn(rootOrHost, opts) {
     const model = routed?.model ?? opts.model ?? driver.options.defaultModel;
     const effort = resolveEffort(routed ? (routed.effort ?? undefined) : opts.effort, driver);
     const permissionMode = resolvePermissionMode(opts.permissionMode, driver);
-    // The participant settings file is written by the driver: its shape is the harness
-    // contract. What arrives here is only the loop-guard command and the workspace keys
-    // addressed to the participant. What sits in the workspace's own settings would not
-    // reach the participant: its cwd is the clone worktree, not the workspace root. The
-    // command is the same as the orchestrator's — absolute node and the workspace binary,
-    // it resolves from any cwd.
+    // Owned participant hooks carry identity and call the current runtime from any cwd.
     const settingsPath = participantSettingsPath(home, taskId, address);
-    const guardCommand = guardHookCommand(host, { address, taskId, home }, process.platform);
+    const guardCommand = managedGuardHookCommand(host, { address, taskId, home }, process.platform);
+    const projectGuardCommand = guardHookCommand(host, { address, taskId, home }, process.platform);
     // Not every harness takes a skills directory from the workspace: for Claude Code it is
     // a one-lift flag (`--plugin-dir`). For Cursor the canon travels as `.cursor/skills`
     // files — the driver itself writes them into the worktree from the workspace root.
@@ -1168,7 +1166,7 @@ export async function planSpawn(rootOrHost, opts) {
         pluginDir: pluginDirPath,
         mcpConfigPath,
         settingsPath,
-        guardCommand,
+        guardCommand, projectGuardCommand,
         extraSettings: selectedContext ? {} : skillSettings(host, repoAbs),
         root,
         skillsRoot: selectedContext ? null : participantSkillsRoot(host, repoAbs), selectedContext,
@@ -1211,12 +1209,12 @@ export async function planSpawn(rootOrHost, opts) {
     // A missing worktree is read as the main checkout. The refusal stands here,
     // before the first write of this lift, and `--dry-run` takes the same plan.
     if (typeof driver.refuseForeignProjectLayer === 'function') {
-        driver.refuseForeignProjectLayer(existsSync(worktreePath) ? worktreePath : repoAbs, worktreePath, null, guardCommand);
+        driver.refuseForeignProjectLayer(existsSync(worktreePath) ? worktreePath : repoAbs, worktreePath, null, guardCommand, projectGuardCommand);
     }
     return {
         home, taskId, createNew, participant, slug, address, ownerName, nsPath, repoAbs, via: resolved.via, brief, selectedContext,
         name, workTitle, wtName, worktreePath, branch, base, model, effort, permissionMode,
-        settingsPath, guardCommand, pluginDir: pluginDirPath,
+        settingsPath, guardCommand, projectGuardCommand, pluginDir: pluginDirPath,
         mcpConfigPath, mcpNote: mcpNote(mcp, 'participant'), retitle, titleKept, driver,
         routing: routed?.metadata ?? null, decision: routed?.decision ?? null, routingSkipped,
         launch, argv: launch.argv, mcpConfig: launch.mcpConfig, settings: launch.settings,
@@ -1559,6 +1557,9 @@ export async function spawnTeamlead(rootOrHost, opts) {
     if (plan.routing)
         info(routingLine(plan.routing));
     if (opts.dryRun) {
+        const cap = liveCapNote(plan.host, plan.home, plan.rootTask, plan.driver.id, plan.address);
+        if (cap)
+            info(cap);
         info(`root task: ${plan.rootTask} · child task: ${plan.childTask}${plan.childMeta ? ' (relift)' : ' (will be created)'}`);
         info(`teamlead address: ${plan.address} · session: "${plan.name}" · harness: ${harnessName(plan.driver.id)} · model: ${plan.model}`
             + `${plan.effort ? ` · requested effort: ${plan.effort}` : ''}`);
@@ -1635,7 +1636,7 @@ export async function spawnTeamlead(rootOrHost, opts) {
     const formerTokenLogs = tokenLogHistoryOf(plan.host, plan.home, plan.rootTask, plan.former);
     const formerChildTokenLogs = plan.childMeta
         ? tokenLogHistoryOf(plan.host, plan.home, plan.childTask, participantOf(plan.childMeta, ORCHESTRATOR)) : [];
-    const { output, session, seen } = await plan.driver.spawn(plan.launch, {
+    const { output, session, seen } = await reservedSpawn(plan.driver, plan.launch, {
         tool: tool, host: plan.host, home: plan.home, task: plan.childTask, address: ORCHESTRATOR,
         cwd: plan.root, env: plan.env, ref: plan.name, role: 'teamlead', noun: 'teamlead',
         requireFullSession: true, requireLaunchMatch: true,
@@ -1717,7 +1718,10 @@ export async function spawnTeamlead(rootOrHost, opts) {
                 throw new GateError(`${plan.address} rebind changed while this lift started; retry spawn to recover the current intent`);
             }
         },
-    }).catch(error => revokeFailedManagedLaunch(plan.launch, error));
+    }, { task: plan.rootTask, address: plan.address, previous: plan.former }).catch(error => revokeFailedManagedLaunch(plan.launch, error, () => {
+        if (error instanceof LiveAdmissionError && nativeReservation)
+            clearTeamleadReservation(plan, nativeLaunchId);
+    }));
     if (plan.driver.id === 'codex' && plan.launch.rootSessionRecord && !plan.launch.service) {
         writeJsonAtomic(plan.launch.rootSessionRecord, {
             home: plan.home, task: plan.rootTask, address: plan.address, threadId: session,
@@ -1752,6 +1756,9 @@ export async function spawn(rootOrHost, opts) {
     if (plan.routing)
         info(routingLine(plan.routing));
     if (opts.dryRun) {
+        const cap = liveCapNote(plan.host, plan.home, plan.taskId, plan.driver.id, plan.address);
+        if (cap)
+            info(cap);
         info(`repository: ${plan.nsPath} (source: ${plan.via}) → ${plan.repoAbs}`);
         info(`task: ${plan.taskId}${plan.createNew ? ` (will be created: ${plan.createNew.title})` : ''}`
             + `${plan.retitle ? ` (will be renamed: ${plan.retitle.preview ?? plan.retitle.title})` : ''}`);
@@ -1817,7 +1824,7 @@ export async function spawn(rootOrHost, opts) {
     const ultra = optionRefusal(plan.driver, plan.effort, tool, plan.host);
     if (ultra)
         fail(ultra);
-    plan.driver.refuseForeignProjectLayer?.(plan.repoAbs, plan.worktreePath, tool, plan.guardCommand);
+    plan.driver.refuseForeignProjectLayer?.(plan.repoAbs, plan.worktreePath, tool, plan.guardCommand, plan.projectGuardCommand);
     const provenance = launchProvenance(plan.host, tool);
     info(provenanceLine(provenance));
     // The set the participant is lifted with is announced by the same rules block as in
@@ -1831,7 +1838,7 @@ export async function spawn(rootOrHost, opts) {
     for (const f of plan.rules)
         console.log(`  ${f}`);
     let baseSha = plan.knownBaseSha;
-    const reserve = () => reserveNativeParticipant(plan.home, plan.taskId, participantRecord(plan.address, {
+    const reserve = () => withReservationIdle(plan.home, plan.taskId, plan.address, () => reserveNativeParticipant(plan.home, plan.taskId, participantRecord(plan.address, {
         ...nativeContextMetadata(plan.selectedContext),
         // Record harness is the one that lifts it. Without it the registry would assign
         // the participant `fallback`, and all further work with its session — state, stop,
@@ -1866,7 +1873,7 @@ export async function spawn(rootOrHost, opts) {
         hostVersion: provenance.hostVersion,
         binaryPath: provenance.binaryPath,
         binaryVersion: provenance.binaryVersion,
-    }, registryOf(plan.host)), plan.participant, REGISTRY);
+    }, registryOf(plan.host)), plan.participant, REGISTRY));
     let reserved;
     if (plan.driver.id === 'codex') {
         if (plan.createNew)
@@ -1990,7 +1997,7 @@ export async function spawn(rootOrHost, opts) {
     // survives only on the native binary; `claude.cmd` pulls cmd.exe, and the helper gives
     // a clear refusal instead of a mangled command. Start and the "session came up" check
     // are shared with the reviewer in liftoff.js, and they live on the driver.
-    const { output, session, seen } = await plan.driver.spawn(plan.launch, {
+    const { output, session, seen } = await reservedSpawn(plan.driver, plan.launch, {
         tool: tool,
         // Address, task, and bus home travel to the driver TOGETHER with the plan: a harness
         // whose wake channel is driven by the mechanism itself has to hand contact points to
@@ -2024,7 +2031,10 @@ export async function spawn(rootOrHost, opts) {
                 } });
         },
         awaitOptions: opts.awaitOptions,
-    }).catch(error => revokeFailedManagedLaunch(plan.launch, error));
+    }).catch(error => revokeFailedManagedLaunch(plan.launch, error, () => {
+        if (error instanceof LiveAdmissionError && reserved)
+            releaseNativeReservation(plan.home, plan.taskId, reserved.record);
+    }));
     ok(`worker ${plan.address} lifted in ${plan.nsPath}, branch ${plan.branch}${session ? ` (session ${session})` : ''}`);
     // The warden is lifted right after the participant. Spawn does not hand over its own
     // contact point — each participant hands it over itself, from its own bus process.

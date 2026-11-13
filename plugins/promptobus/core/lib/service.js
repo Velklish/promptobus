@@ -7,8 +7,10 @@ import { admitsAddress, registryOf, sessionIdOf, sessionRefOf, TICK_MS } from '.
 import { withSynchronousAuthority } from '../dist/fs/lock.js';
 import { mcpTools } from '../dist/mcp/tools.js';
 import { busConnection } from './server.js';
-import { canonicalPath, participantOf, readTask, withTaskLock } from './store.js';
+import { canonicalPath, closeTask, ORCHESTRATOR, participantOf, readTask, withTaskLock } from './store.js';
 import { participantSession } from './status.js';
+import { requireNativeIdle, requireNativeRootRoute, requireNativeTerminal, withVerifiedManagedNativeStop } from './native-lifecycle.js';
+import { requireNoLiveReservations } from './live-reservation.js';
 import { actorIdentityVariables, REGISTRY } from './drivers.js';
 import { bindServiceHarnessContext, requireServiceHarnessContext } from './harness-home.js';
 import { ServiceWarden } from './service-warden.js';
@@ -17,7 +19,7 @@ import { REVIEW_FILE_TOOLS, reviewerFiles } from './reviewer-files.js';
 import { PROMPTOBUS_SERVER, PROTOCOL_VERSIONS } from './contract.js';
 import { acquireServiceLock, contained, prepareControlSocket, prepareServicePaths, privateDirectory, processRecord, readDiscovery, readPrivate, recordOf, recordVersion, requireProcess, runtimeIdentity, processStateAsync, sameRecordVersion, servicePaths, writePrivate, } from './service-state.js';
 import { claimStandaloneIdentity, claudeStartupTranscript, prepareStandaloneResume, requireStartupCandidateFence, publishStandaloneClient, requireStandaloneRoot, revokeStandaloneRoot, readStandaloneLaunch, readStandaloneProfile, standaloneClientRevoked, standaloneExpired, standaloneReference } from './standalone-root-state.js';
-import { nativeStoreForServiceClient, requireKnownNativeOutcomes, requireManagedNativeBinding, reserveManagedNativeIdentity, standaloneBindingForRecovery } from './native-admission.js';
+import { ManagedNativeRevisionDrift, nativeStoreForServiceClient, requireKnownNativeOutcomes, requireManagedNativeBinding, reserveManagedNativeIdentity, standaloneBindingForRecovery } from './native-admission.js';
 class HttpFailure extends Error {
     status;
     constructor(status, message) {
@@ -29,6 +31,29 @@ const HTTP_PROTOCOLS = PROTOCOL_VERSIONS.filter(version => version !== '2024-11-
 const CLIENT_ID = /^[a-f0-9-]{36}$/;
 const MAX_BODY = 16 * 1024 * 1024;
 const REPLAYABLE_READS = new Set(['read_file', 'read_files', 'list_files', 'search_text']);
+function codexAuthorityRecord(record) {
+    const authority = { ...record };
+    delete authority.lastEvent;
+    delete authority.lastEventAt;
+    delete authority.rateLimits;
+    return authority;
+}
+function refreshCodexTelemetry(proof) {
+    if (!proof.record)
+        return false;
+    try {
+        const revision = recordVersion(proof.revision.file), record = readPrivate(revision.file);
+        if (!recordOf(record) || !sameRecordVersion(revision) || isDeepStrictEqual(record, proof.record)
+            || !isDeepStrictEqual(codexAuthorityRecord(record), codexAuthorityRecord(proof.record)))
+            return false;
+        proof.revision = revision;
+        proof.record = record;
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
 const field = (value) => typeof value === 'string' && value.length > 0 ? value : null;
 const tokenEquals = (a, b) => {
     const first = Buffer.from(a), second = Buffer.from(b);
@@ -458,6 +483,27 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
                     removeSession(record.id);
             }
         };
+        const retireConfirmedManaged = (grant) => {
+            const proof = grant.lifetime;
+            if (proof.kind !== 'managed' || grant.runtime !== runtime || !expectedHarness.homes.codex)
+                return false;
+            const nativeEnv = { ...env, PROMPTOBUS_CODEX_HOME: expectedHarness.homes.codex };
+            try {
+                return withVerifiedManagedNativeStop(paths.home, proof, nativeEnv, participant => {
+                    if (grant.nativeBinding && (grant.nativeBinding.kind !== 'codex'
+                        || (grant.nativeBinding.state === 'bound' && grant.nativeBinding.threadId !== participant.metadata.sessionId)))
+                        return false;
+                    const current = readPrivate(clientFile(paths, grant.id));
+                    if (!current || !isDeepStrictEqual(grantOf(current), grant))
+                        return false;
+                    removeClient(grant.id);
+                    return true;
+                });
+            }
+            catch {
+                return false;
+            }
+        };
         const state = () => {
             let clients = 0, reservations = 0, unknownClients = 0, unknownManaged = 0;
             const values = grants();
@@ -483,6 +529,8 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
                     removeClient(grant.id);
                     continue;
                 }
+                if (!unknownRoot && life === 'unknown' && retireConfirmedManaged(grant))
+                    continue;
                 clients += 1;
                 if (grant.lifetime.kind === 'reservation')
                     reservations += 1;
@@ -526,7 +574,7 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
             }
             return current;
         };
-        const authorizeCurrent = (grant, proof = null) => {
+        const authorizeCurrent = (grant, proof = null, returned = false) => {
             const current = currentGrant(grant);
             if (standaloneExpired(current, paths))
                 throw new HttpFailure(401, 'Standalone root admission expired or was revoked');
@@ -538,7 +586,8 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
             if (!proof || !participant || !isDeepStrictEqual(managedIdentity(participant), managedIdentity(proof.participant))) {
                 throw new ManagedIdentityDrift('within-attempt participant identity');
             }
-            if (!sameRecordVersion(proof.revision))
+            if (!sameRecordVersion(proof.revision) && !(returned && participant.harness === 'codex'
+                && current.nativeBinding?.kind === 'codex' && refreshCodexTelemetry(proof)))
                 throw new ManagedRevisionDrift('within attempt');
         };
         const MANAGED_DRIFT = 'Managed lifetime changed after observation; retry with current owner proof';
@@ -562,6 +611,7 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
                         throw error;
                     if (attempt >= MANAGED_PROOF_ATTEMPTS)
                         throw new ManagedRevisionDrift(`exhausted ${MANAGED_PROOF_ATTEMPTS}`);
+                    await new Promise(resolve => setTimeout(resolve, 25));
                 }
             }
         };
@@ -584,9 +634,23 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
                     throw new HttpFailure(409, 'Managed participant identity changed during authorization');
                 }
                 pin.identity ??= managedIdentity(participant);
-                proof = { revision, participant };
+                let record = null;
+                if (participant.harness === 'codex' && current.nativeBinding?.kind === 'codex') {
+                    const value = readPrivate(revision.file);
+                    if (!recordOf(value))
+                        throw new HttpFailure(401, 'Managed lifetime has no matching task, participant and launch record');
+                    record = value;
+                }
+                proof = { revision, participant, record };
             }
-            await requireManagedNativeBinding(paths, current, { host, env: current.pollEnv });
+            try {
+                await requireManagedNativeBinding(paths, current, { host, env: current.pollEnv });
+            }
+            catch (error) {
+                if (error instanceof ManagedNativeRevisionDrift)
+                    throw new ManagedRevisionDrift('native proof');
+                throw error;
+            }
             authorizeCurrent(grant, proof);
             if (proof) {
                 let snapshot = null;
@@ -604,7 +668,7 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
             authorizeCurrent(grant, proof);
             return () => {
                 try {
-                    authorizeCurrent(grant, proof);
+                    authorizeCurrent(grant, proof, true);
                 }
                 catch (error) {
                     if (error instanceof ManagedRevisionDrift)
@@ -742,6 +806,52 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
                 return { ...discovery, ...state() };
             if (input.runtime !== runtime)
                 throw new HttpFailure(409, 'Owner request belongs to a different shared service runtime');
+            if (input.operation === 'close-task') {
+                if (typeof input.task !== 'string')
+                    throw new HttpFailure(400, 'Task closure requires a task');
+                const callerEnv = environmentOf(input.env);
+                requireServiceHarnessContext(expectedHarness, host, callerEnv, REGISTRY, environmentOf(input.pollEnv ?? callerEnv));
+                if (requests > 1)
+                    throw new HttpFailure(409, 'Task closure requires settled service requests');
+                const task = input.task;
+                const parent = readTask(paths.home, task).parent;
+                const close = () => withTaskLock(paths.home, task, () => {
+                    const meta = readTask(paths.home, task), root = participantOf(meta, ORCHESTRATOR);
+                    if (meta.parent !== parent)
+                        throw new HttpFailure(409, 'Task parent changed before closure');
+                    if (meta.adapter?.bb || root?.harness !== 'codex' || !root.metadata.nativeStop
+                        || root.metadata.nativeUnlaunched === root.metadata.nativeLaunchId) {
+                        throw new HttpFailure(409, 'Service owner closure requires a confirmed native Codex root Stop; BB lifecycle is separate');
+                    }
+                    requireNoLiveReservations(host, paths.home, task);
+                    requireNativeIdle(paths.home, meta, null, { taskLocked: true });
+                    if (parent !== undefined) {
+                        const route = meta.participants.find(participant => participant.role === 'root');
+                        if (!route)
+                            throw new HttpFailure(409, 'Child task closure requires its canonical native root route');
+                        requireNoLiveReservations(host, paths.home, parent);
+                        requireNativeRootRoute(paths.home, meta, route, env);
+                    }
+                    for (const participant of meta.participants) {
+                        if (participant.harness !== 'codex') {
+                            if (participant.role === 'root' && parent !== undefined)
+                                continue;
+                            if (participant.role !== 'user' || participant.sessionRef || sessionIdOf(participant) || participant.mode === 'managed') {
+                                throw new HttpFailure(409, 'Service owner closure supports only confirmed native Codex participants');
+                            }
+                            continue;
+                        }
+                        requireNativeTerminal(paths.home, meta, participant, env, { taskLocked: true });
+                    }
+                    closeTask(paths.home, task);
+                });
+                if (parent === undefined)
+                    close();
+                else
+                    withTaskLock(paths.home, parent, close);
+                await warden.abort(task);
+                return { task, closed: true };
+            }
             if (input.operation === 'warden-ensure' || input.operation === 'warden-abort') {
                 if (typeof input.task !== 'string')
                     throw new HttpFailure(400, 'Task warden requires a task');

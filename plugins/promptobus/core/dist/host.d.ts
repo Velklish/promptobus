@@ -242,8 +242,8 @@ export interface PromptobusHost {
     /** How to LAUNCH a bus subcommand: the whole argv, no leading `node`. The package must not build
      * it — a wrong guess lands in the consumer help, silently, because that exits 0. */
     busArgv(args: string[]): string[];
-    /** How to LAUNCH the loop guard hook: the whole argv, no leading `node`. Unlike `busArgv` this uses
-     * `layoutBinPath()` — the hook is written into project settings and must call that layout's entry. */
+    /** How to LAUNCH persisted project guard hooks: the whole argv, no leading `node`. This uses
+     * `layoutBinPath()`; ephemeral managed hooks use the current runtime's `busArgv` instead. */
     guardArgv(args: string[]): string[];
     cloneHint(nsPath: string): string;
     syncHint(): string;

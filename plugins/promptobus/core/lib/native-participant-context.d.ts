@@ -1,5 +1,6 @@
 import type { PreparedHostParticipantContextSelection, HostTaskContextDeclaration, Driver, LaunchFile } from '../dist/index.js';
 import type { ParticipantContextHost, ParticipantContextCeiling } from './participant-context.js';
+export type PreservedDirectoryVerifier = (directory: string) => void;
 type Selection = PreparedHostParticipantContextSelection | null | undefined;
 interface NativeContextOptions {
     contextDeclaration?: unknown;
@@ -35,6 +36,10 @@ export declare function assertNativeContextDriver(selection: Selection, driver: 
 export declare function nativeContextMetadata(selection: Selection): {};
 export declare function contextRules(selection: Selection, legacyRules: () => string[], from?: string | null, to?: string | null, verify?: boolean): string[];
 export declare function nativeContextPrompt(selection: Selection): string;
+export declare function openSelectedNativeSource(file: string): {
+    fd: number;
+    stat: import("fs").Stats;
+};
 export declare function assertNativeContainer(directory: string, allowed: string[]): void;
 export declare function assertNativePluginManifest(plugin: string, selection: PreparedHostParticipantContextSelection, manifestText: string): void;
 export declare function selectedNativePrompt(selection: Selection, prompt: string, directory: string): {
@@ -42,8 +47,8 @@ export declare function selectedNativePrompt(selection: Selection, prompt: strin
     files: LaunchFile[];
     addDirs: string[];
 };
-export declare function selectedNativeFiles(selection: Selection, destination: string | null): LaunchFile[];
-export declare function assertSelectedNativeFiles(files: LaunchFile[]): void;
-export declare function writeSelectedNativeFile(file: LaunchFile): boolean;
-export declare function installSelectedNativeFiles(files: LaunchFile[]): void;
+export declare function selectedNativeFiles(selection: Selection, destination: string | null, preserveDirectory?: string): LaunchFile[];
+export declare function assertSelectedNativeFiles(files: LaunchFile[], verifySystem?: PreservedDirectoryVerifier): void;
+export declare function writeSelectedNativeFile(file: LaunchFile, verifySystem?: PreservedDirectoryVerifier): boolean;
+export declare function installSelectedNativeFiles(files: LaunchFile[], verifySystem?: PreservedDirectoryVerifier): void;
 export {};

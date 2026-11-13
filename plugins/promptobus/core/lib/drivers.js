@@ -89,8 +89,10 @@ export function bindManagedNativeStart(input) {
                 ...(nativeProof ? { nativeAdmission: nativeProof.binding, nativeAdmissionEvidence: nativeProof.evidence } : {}),
                 ...(!record.nativeAdmission && !nativeProof ? { nativeAdmissionUnknown: { harness, nativeId,
                         reason: 'actual native store and process birth require owned launch readback' } } : {}) };
-            if (nativeProof)
+            if (nativeProof) {
                 delete next.nativeAdmissionUnknown;
+                delete next.nativeStartupCandidate;
+            }
             if (!isDeepStrictEqual(record, next))
                 writeJsonAtomic(file, next, { mode: 0o600 });
             if (published && participant.metadata.sessionId !== nativeId) {

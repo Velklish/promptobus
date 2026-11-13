@@ -10,7 +10,7 @@ import { PROMPTOBUS_SERVER } from './contract.js';
 import { assertNativePluginManifest, selectedNativeFiles, selectedNativePrompt } from './native-participant-context.js';
 import { canonicalPath, foreignSession, participantOf, participantSessionPath, readTask, readWake, upsertParticipant, wakeAddressOf, taskExists, withTaskLock, workersDir, writeJsonAtomic, writeWake, } from './store.js';
 import { wouldResolve } from './exec.js';
-import { recordVersion } from './service-state.js';
+import { readPrivate, recordOf, recordVersion } from './service-state.js';
 import { PARENT_SESSION_ENV } from './session-env.js';
 import { bgSessions, findSession, liftoffParticipant, readBgSessions, resetBgSessionsCache, runClaude, sayLiftoff, sessionLiveness, } from './liftoff.js';
 import { claudeAvailability } from './model-routing/adapter-claude.js';
@@ -18,7 +18,7 @@ import { markExhausted } from './model-routing/cache.js';
 import { GUARD_HOOK_EVENT } from '../dist/hooks.js';
 import { APPROVER, GateError, KNOCK_RETRY_SEC, namedReset, registryOf, resetAhead, REVIEWER, } from '../dist/index.js';
 import { orderBody as commonOrderBody } from './notification.js';
-import { readRecordAt, revokeFailedManagedLaunch, sayForeignWrite as commonSayForeignWrite, sessionEnvFor, } from './driver-common.js';
+import { parseVersion, readRecordAt, revokeFailedManagedLaunch, sayForeignWrite as commonSayForeignWrite, sessionEnvFor, versionLess, } from './driver-common.js';
 // Claude Code harness driver: EVERYTHING that knows about Claude lives here, and nothing outside
 // imports this file — the engine reaches it through the registry ([drivers.js](drivers.js)).
 /** Harness name in the participant record and the key in the registry map. */
@@ -621,6 +621,11 @@ function replaceMcpServers(plan, servers) {
         }
         hooks[0].command += ' ' + ['--client-file', plan.service.credentialFile,
             '--service-home', plan.env.PROMPTOBUS_SERVICE_HOME].map(shellQuote).join(' ');
+        const executionHook = { type: 'command', command: hooks[0].command, onFailure: 'block' };
+        for (const event of ['UserPromptSubmit', 'PreToolUse']) {
+            settings.hooks = { ...settings.hooks, [event]: [...(settings.hooks?.[event] ?? []),
+                    { hooks: [executionHook] }] };
+        }
         file.text = `${JSON.stringify(settings, null, 2)}\n`;
     }
     const former = plan.mcpConfig;
@@ -681,7 +686,11 @@ function inspect(ref, sessions = undefined) {
 async function spawn(plan, { tool, ref, role, cwd, env, home, task, address, launchFailNote, deadNote, unboundNote, persist, awaitOptions, host, noun, requireFullSession, requireLaunchMatch }) {
     const pointer = plan.service ? plan.prelaunchBinding?.sessionRecord ?? path.join(workersDir(home, task), 'orchestrator.session.json') : null;
     let launchTool = tool;
+    let actualId = null;
     try {
+        if (plan.service && (!parseVersion(tool.version) || versionLess(tool.version, '2.1.295'))) {
+            throw new GateError(`Managed Claude launch requires Claude Code >=2.1.295 for fail-closed prompt and tool hooks; found ${tool.version?.trim() || 'unknown'}`);
+        }
         const previousParticipant = role === 'teamlead' && taskExists(home, task)
             ? withTaskLock(home, task, () => structuredClone(participantOf(readTask(home, task), address) ?? null)) : undefined;
         if (pointer) {
@@ -689,7 +698,7 @@ async function spawn(plan, { tool, ref, role, cwd, env, home, task, address, lau
             if (previous)
                 delete previous.expectedSessionId;
             if (previous) {
-                for (const key of ['nativeAdmission', 'nativeAdmissionEvidence', 'nativeStartEvidence', 'nativeAdmissionUnknown'])
+                for (const key of ['nativeAdmission', 'nativeAdmissionEvidence', 'nativeStartEvidence', 'nativeAdmissionUnknown', 'nativeStartupCandidate'])
                     delete previous[key];
             }
             const selected = wouldResolve(tool.bin, env, cwd);
@@ -707,17 +716,31 @@ async function spawn(plan, { tool, ref, role, cwd, env, home, task, address, lau
         return await liftoffParticipant({
             tool: launchTool, argv: plan.argv, cwd, env, name: ref, role, registry: registryOf(host), launchFailNote, deadNote, unboundNote, persist,
             awaitOptions, home, task, address,
+            launch: plan,
             preboundSessionId: role === 'teamlead' ? null : plan.prelaunchBinding?.sessionId,
             preboundSessionRecord: role === 'teamlead' ? null : plan.prelaunchBinding?.sessionRecord ?? null,
             noun, requireFullSession, requireLaunchMatch,
             ...(plan.service ? {
-                launch: plan,
                 expectedBinding: { ref, record: pointer, launchId: plan.service.launchId, deferTaskBinding: role === 'teamlead',
                     ...(previousParticipant !== undefined ? { previousParticipant } : {}) },
                 beforeStart: () => plan.service.beforeStart(pointer),
                 afterBind: async (id) => {
+                    actualId = id;
                     if (bindHandshake(home, task, address, { ...env, [SESSION_RECORD_VAR]: pointer }, id, { ref, launchId: plan.service.launchId }) !== 'bound') {
                         throw new GateError('Claude native session did not bind its owned launch record');
+                    }
+                    const deadline = Date.now() + 10_000;
+                    for (;;) {
+                        const record = readPrivate(pointer);
+                        if (!recordOf(record) || record.launchId !== plan.service.launchId || record.ref !== ref || record.sessionId !== id) {
+                            throw new GateError('Claude launch changed before its verified native startup completed');
+                        }
+                        if (recordOf(record.nativeAdmission) && record.nativeAdmission.nativeId === id
+                            && recordOf(record.nativeAdmissionEvidence) && record.nativeAdmissionEvidence.source === 'startup')
+                            break;
+                        if (Date.now() >= deadline)
+                            throw new GateError('Claude native startup admission did not complete before the launch deadline');
+                        await new Promise(resolve => setTimeout(resolve, 25));
                     }
                     await plan.service.realize(id);
                 },
@@ -728,7 +751,25 @@ async function spawn(plan, { tool, ref, role, cwd, env, home, task, address, lau
         });
     }
     catch (error) {
-        return revokeFailedManagedLaunch(plan, error);
+        return revokeFailedManagedLaunch(plan, error, async () => {
+            if (!actualId || !pointer)
+                return;
+            const record = readPrivate(pointer);
+            if (!recordOf(record) || record.launchId !== plan.service?.launchId || record.ref !== ref || record.sessionId !== actualId) {
+                throw new GateError('Failed Claude launch changed ownership before native stop; retain it for inspection');
+            }
+            const listed = readBgSessions({ fresh: true });
+            if (listed.missing || listed.list === null)
+                throw new GateError('Failed Claude launch has no readable native registry for stop');
+            const owned = findSession(listed.list, ref, actualId);
+            if (!owned)
+                return;
+            const stopped = runClaude(['stop', String(owned.id ?? actualId)]);
+            if (stopped.missing || stopped.r?.status !== 0 || await awaitSessionGone(ref) !== 'gone') {
+                throw new GateError('Failed Claude native admission could not confirm its owned session stopped');
+            }
+            plan.liveSeat?.stopped();
+        });
     }
 }
 // Ceiling for waiting on session death, and the poll step — both measured, not chosen:

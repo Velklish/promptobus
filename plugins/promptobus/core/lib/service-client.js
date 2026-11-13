@@ -208,3 +208,7 @@ export async function abortTaskWarden(host, task, options = {}) {
     return serviceControl(servicePaths(host, options.env), { operation: 'warden-abort', runtime: runtimeIdentity(host), task,
         pollEnv: options.pollEnv ?? options.env ?? process.env });
 }
+export async function closeServiceTask(host, task, options = {}) {
+    return serviceControl(servicePaths(host, options.env), { operation: 'close-task', runtime: runtimeIdentity(host), task,
+        env: options.env ?? process.env, pollEnv: options.pollEnv ?? options.env ?? process.env });
+}

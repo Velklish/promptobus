@@ -31,9 +31,20 @@ export declare function withNativeStopLocks<T>(record: NativeRecord, fn: () => T
     deadlineAt?: number;
 }): T;
 export declare function abandonmentAllowsClose(participant: ParticipantV1 | null | undefined, sessionDead: boolean): boolean;
-export declare function requireNativeTerminal(home: string | undefined, meta: Pick<TaskV1, 'id' | 'parent'>, participant: ParticipantV1, env?: NodeJS.ProcessEnv, { taskLocked }?: {
+export declare function requireNativeTerminal(home: string | undefined, meta: Pick<TaskV1, 'id' | 'parent'>, participant: ParticipantV1, env?: NodeJS.ProcessEnv, { taskLocked, onVerified, lockWaitMs }?: {
     taskLocked?: boolean;
+    onVerified?: () => void;
+    lockWaitMs?: number;
 }): void;
+/** The caller holds the parent and child task locks, in that order. */
+export declare function requireNativeRootRoute(home: string, child: TaskV1, route: ParticipantV1, env?: NodeJS.ProcessEnv): void;
+export declare function withVerifiedManagedNativeStop(home: string, proof: {
+    task: string;
+    address: string;
+    ref: string;
+    launchId: string;
+    record: string;
+}, env: NodeJS.ProcessEnv, onVerified: (participant: ParticipantV1) => boolean): boolean;
 export declare function requireNativeIdle(home: string, meta: TaskV1, address?: string | null, { taskLocked, sessionDead }?: NativeIdleOptions): void;
 export declare function retainNativeStop(record: NativeRecord, receiptFile: string): void;
 export declare function reserveNativeParticipant(home: string, task: string, participant: ParticipantV1, expected: ParticipantV1 | null | undefined, registry: LibRegistry): Omit<{

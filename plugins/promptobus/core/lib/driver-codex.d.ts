@@ -1,9 +1,10 @@
+import type { PreservedDirectoryVerifier } from './native-participant-context.js';
 import type { RecordVersion } from './service-state.js';
 import { codexMcpPrefix } from './codex-session.js';
 import { probeCodex } from './model-routing/adapter-codex.js';
 import { sayForeignWrite as commonSayForeignWrite } from './driver-common.js';
 export { participantAuthSnapshot } from './codex-participant-auth.js';
-import type { HostMcpTool, LaunchFile, Notification, NotificationMessage, SessionView, WakeProbe, ActivationTarget, ActivateResult, ParticipantV1 } from '../dist/index.js';
+import type { HostMcpTool, LaunchFile, Notification, NotificationMessage, SessionView, WakeProbe, ActivationTarget, ActivateResult, ParticipantV1, ReservationLookup, ReservationState, UnstartedReservation } from '../dist/index.js';
 import type { CodexSessionRecord, ManagedCodexResumeDeath } from './codex-session.js';
 import type { LibDriver, LibLaunchPlan, LibPrepareContext, LibSpawnContext, LibSpawnResult, LibStall, LibMcpConfig, LibMcpServer, LibToolBin } from './driver-runtime.js';
 interface CodexPrepareContext extends Omit<LibPrepareContext, 'task' | 'address' | 'mcpConfigPath' | 'settingsPath' | 'guardCommand'> {
@@ -67,9 +68,11 @@ export declare const PERMISSION_MODES: string[];
 export declare const DEFAULT_PERMISSION_MODE = "workspace-write";
 export declare const DEFAULT_MODEL = "gpt-6-astra";
 export declare const REVIEWER_DENY: string[];
-export declare const PROVEN_CODEX_VERSION = "0.166.0";
+export declare const PROVEN_CODEX_VERSION = "0.167.2";
 export declare const MIN_CODEX_VERSION = "0.158.0";
 export declare const SESSION_ENV_DROP: string[];
+type SystemSkillsVerifier = PreservedDirectoryVerifier;
+export declare function pristineCodexSystemSkills(bin: string, env?: NodeJS.ProcessEnv): Promise<SystemSkillsVerifier>;
 export declare const codexToolSegment: (s: unknown) => string;
 export declare const PHRASES: {
     workerOrchestrator: string;
@@ -101,7 +104,7 @@ export declare const CODEX_SKILLS_REL: string;
  * discovery path is judged by its records, not by these bytes. */
 export declare function hooksDocument(command: string): string;
 /** Refuse foreign hooks, then validate clone-root config with the selected binary at lift. */
-export declare function refuseForeignProjectLayer(lookupDir: string, writtenDir: string, tool?: LibToolBin | null, guardCommand?: string | null): void;
+export declare function refuseForeignProjectLayer(lookupDir: string, writtenDir: string, tool?: LibToolBin | null, guardCommand?: string | null, projectGuardCommand?: string | null): void;
 /** The owner's Codex home — the only thing a participant home copies from, and read-only to the
  * mechanism. The durable host override precedes `CODEX_HOME`, else `~/.codex`. */
 export declare function ownerCodexHome(env?: NodeJS.ProcessEnv): string;
@@ -148,13 +151,15 @@ export declare function removeParticipantHome(dir: unknown): boolean;
 /** Remove every home of this registry that no session record names.
  * [reference/05-drivers.md#sweepparticipanthomes--remove-every-home-of-this-registry-that-no-session-record-names](../docs/reference/05-drivers.md#sweepparticipanthomes--remove-every-home-of-this-registry-that-no-session-record-names) */
 export declare function sweepParticipantHomes(env?: NodeJS.ProcessEnv): string[];
+declare function reservationState(input: ReservationLookup): ReservationState;
+declare function retireUnstarted(input: UnstartedReservation): boolean;
 /** The harness state of one closed participant that lives outside its worktree — a reviewer has
  * none and its home holds the same credentials copy. Rebuilt from task and address when needed. */
 export declare function sweepParticipant(participant: CodexParticipant, taskId: string, env?: NodeJS.ProcessEnv): boolean;
 /** The Codex skills canon at the workspace root — the only source, since a person's copies under
  * `~/.codex` are not addressed to the participant. No directory means `null`. */
 export declare function workspaceSkillsDir(root: string | null | undefined): string | null;
-export declare function installPrivateHomeLayer(plan: Pick<CodexLaunchPlan, 'privateHomeFiles' | 'privateHomeSkills'>, codexHome: string): void;
+export declare function installPrivateHomeLayer(plan: Pick<CodexLaunchPlan, 'privateHomeFiles' | 'privateHomeSkills'>, codexHome: string, verifySystem?: SystemSkillsVerifier): void;
 /** The lift line about workspace skills names the destination each role actually reads. */
 export declare function skillsNoteOf({ src, dest, count }: {
     src: string | null;
@@ -169,7 +174,7 @@ export declare function mcpDenyTools(tools: readonly HostMcpTool[]): {
     tool: string;
 }[];
 /** Lift plan from harness-neutral context; writes and launches nothing. */
-declare function prepare({ mcp, prompt, model, effort, permissionMode, addDirs, readFiles, readSkillDirs, cwd, denyTools, ref, role, task, address, root, skillsRoot, selectedContext, settingsPath, executionKind, rootTask, rootAddress, guardCommand, env, }: CodexPrepareContext): CodexLaunchPlan;
+declare function prepare({ mcp, prompt, model, effort, permissionMode, addDirs, readFiles, readSkillDirs, cwd, denyTools, ref, role, task, address, root, skillsRoot, selectedContext, settingsPath, executionKind, rootTask, rootAddress, guardCommand, projectGuardCommand, env, }: CodexPrepareContext): CodexLaunchPlan;
 declare function replaceMcpServers(plan: LibLaunchPlan, servers: Record<string, LibMcpServer>): void;
 declare const sessionEnv: (base?: NodeJS.ProcessEnv, extra?: NodeJS.ProcessEnv) => {
     [x: string]: string | undefined;
@@ -192,21 +197,31 @@ declare function spawn(input: LibLaunchPlan, { tool, ref, role, cwd, env, host, 
 declare function saidLiftoff({ output, seen: receipt }: LibSpawnResult & {
     name?: string;
 }): void;
+export declare function retireConfirmedCodex(ref: string, launchId: string, threadId: string | null | undefined, deadline: number): string | undefined;
 /** Stop confirms terminal command accounting before retiring the matching launch.
  * Unresolved stops retain their record, participant home and selected lifecycle receipts. */
-declare function stop(ref: string, { timeoutMs }?: {
+declare function stop(ref: string, { timeoutMs, deferSelf }?: {
+    deferSelf?: boolean | undefined;
     timeoutMs?: number | undefined;
 }): Promise<{
     ok: boolean;
     stopped: boolean;
     note: string;
+    deferred?: undefined;
 } | {
     ok: boolean;
     attempted: boolean;
     stopped: boolean;
     note: string;
+} | {
+    ok: boolean;
+    stopped: boolean;
+    deferred: boolean;
+    note: string;
 }>;
 export declare const codexDriver: {
+    reservationState: typeof reservationState;
+    retireUnstarted: typeof retireUnstarted;
     id: string;
     capabilities: {
         spawn: true;
@@ -279,6 +294,22 @@ export declare const codexDriver: {
     saidLiftoff: typeof saidLiftoff;
     inspect: typeof inspect;
     stop: typeof stop;
+    stopSelf: (ref: string) => Promise<{
+        ok: boolean;
+        stopped: boolean;
+        note: string;
+        deferred?: undefined;
+    } | {
+        ok: boolean;
+        attempted: boolean;
+        stopped: boolean;
+        note: string;
+    } | {
+        ok: boolean;
+        stopped: boolean;
+        deferred: boolean;
+        note: string;
+    }>;
     activate: typeof activate;
     renderNotification: typeof renderNotification;
     stallRoute: typeof stallRoute;

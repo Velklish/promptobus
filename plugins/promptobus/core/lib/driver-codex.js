@@ -1,18 +1,20 @@
 import { replaceLaunchMcpConfig } from './driver-runtime.js';
 import { createHash, randomUUID } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync, } from 'node:fs';
+import { spawn as spawnProcess, spawnSync } from 'node:child_process';
+import { accessSync, chmodSync, closeSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync, } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { installSelectedNativeFiles, selectedNativeFiles } from './native-participant-context.js';
+import { assertSelectedNativeFiles, installSelectedNativeFiles, openSelectedNativeSource, selectedNativeFiles } from './native-participant-context.js';
+import { CodexRpc } from './codex-rpc.js';
+import { resolveCommand } from './exec.js';
 import { info, warn } from './util.js';
 import { launchProvenance, provenanceLine } from './provenance.js';
 import { PROMPTOBUS_SERVER } from './contract.js';
 import { canonicalPath, filesDir, foreignSession, participantOf, readTask, sameStoreHome, taskExists, upsertParticipant, wakeAddressOf, withTaskLock, writeJsonAtomic, writeWake } from './store.js';
 import { processIdentity, processState, readPrivate, recordOf, recordVersion, sameRecordVersion, writePrivate } from './service-state.js';
 import { requireNativeTerminal, retainNativeStop, withNativeStopLocks } from './native-lifecycle.js';
-import { PARTICIPANT_ARGV, SESSION_ENV_VAR, pidAlive, dropSession, findSessionByAddress, holderAlive, holderAsk, patchSession, rateLimitNote, rateLimitReached, readSession, readyMs, reapHolder, sessionFile, startHolder, STOP_TIMEOUT_MS, tailLog, waitReady, writeParticipantWake, writeSession, withSessionLaunch, sessionKey, codexMcpName, codexMcpPrefix, bindParticipantHomeRemoval, codexMcpServers, registrySessions, sessionsDir, turnWaitMs, turnIdleMs, turnFailed, managedCodexResumeDeath, retireCodexResumeHolderLock, } from './codex-session.js';
+import { PARTICIPANT_ARGV, SESSION_ENV_VAR, pidAlive, dropSession, findSessionByAddress, holderAlive, holderAsk, patchSession, rateLimitNote, rateLimitReached, readSession, readyMs, reapHolder, sessionFile, startHolder, STOP_TIMEOUT_MS, tailLog, waitReady, writeParticipantWake, writeSession, withSessionLaunch, sessionKey, selfStopLogFile, codexMcpName, codexMcpPrefix, bindParticipantHomeRemoval, codexMcpServers, registrySessions, scanSessions, sessionsDir, turnWaitMs, turnIdleMs, turnFailed, holderLockState, managedCodexResumeDeath, retireCodexResumeHolderLock, } from './codex-session.js';
 import { probeCodex } from './model-routing/adapter-codex.js';
 import { APPROVER, EDITS_TREE, GateError, KNOCK_RETRY_SEC, liftWords, namedReset, registryOf, resetAhead, REVIEWER, roleEntry, WORKER, WRITES_MAIN_TREE, } from '../dist/index.js';
 import { GUARD_HOOK_EVENT, GUARD_START_EVENT } from '../dist/hooks.js';
@@ -36,12 +38,155 @@ export const DEFAULT_PERMISSION_MODE = 'workspace-write';
 export const DEFAULT_MODEL = 'gpt-6-astra';
 export const REVIEWER_DENY = ['workspace-write'];
 // Capture labels are provenance, not native admission rules.
-export const PROVEN_CODEX_VERSION = '0.166.0';
+export const PROVEN_CODEX_VERSION = '0.167.2';
 export const MIN_CODEX_VERSION = '0.158.0';
 // An INHERITED `CODEX_HOME` never reaches a participant: the lift sets its own, and an ancestor's
 // value would put the session back in the owner's home. A caller naming one explicitly still wins.
 export const SESSION_ENV_DROP = [...PARENT_SESSION_ENV];
 const CODEX_DRY_RUN_COMMAND = `${CODEX} ${PARTICIPANT_ARGV.join(' ')} (prompt via turn/start request)`;
+function systemSkillSnapshot(directory, prefix = '', result = new Map()) {
+    const entry = lstatSync(directory);
+    if (entry.isSymbolicLink() || !entry.isDirectory() || realpathSync(directory) !== directory) {
+        throw new GateError(`Codex system skills require a canonical directory without symbolic links: ${directory}`);
+    }
+    for (const name of readdirSync(directory).sort()) {
+        const file = path.join(directory, name), relative = path.join(prefix, name), stat = lstatSync(file);
+        if (stat.isSymbolicLink())
+            throw new GateError(`Codex system skills refuse a symbolic link: ${file}`);
+        if (stat.isDirectory()) {
+            result.set(relative, null);
+            systemSkillSnapshot(file, relative, result);
+        }
+        else if (stat.isFile()) {
+            const source = openSelectedNativeSource(file);
+            try {
+                result.set(relative, readFileSync(source.fd));
+            }
+            finally {
+                closeSync(source.fd);
+            }
+            const current = lstatSync(file);
+            if (current.isSymbolicLink() || realpathSync(file) !== file || current.dev !== source.stat.dev || current.ino !== source.stat.ino) {
+                throw new GateError(`Codex system skill changed while reading: ${file}`);
+            }
+        }
+        else
+            throw new GateError(`Codex system skills require regular files: ${file}`);
+    }
+    const current = lstatSync(directory);
+    if (current.isSymbolicLink() || realpathSync(directory) !== directory || current.dev !== entry.dev || current.ino !== entry.ino) {
+        throw new GateError(`Codex system skills directory changed while reading: ${directory}`);
+    }
+    return result;
+}
+function systemSkillsRuntimeIdentity(bin) {
+    if (!path.isAbsolute(bin))
+        throw new GateError('Codex system skills require the resolved launch executable');
+    const canonical = realpathSync(bin), stat = lstatSync(canonical);
+    if (!stat.isFile())
+        throw new GateError(`Codex system skills runtime is not a regular file: ${bin}`);
+    return JSON.stringify([canonical, stat.dev, stat.ino, stat.size, stat.mtimeMs,
+        createHash('sha256').update(readFileSync(canonical)).digest('hex')]);
+}
+function resolvedCodexExecutable(bin, env, cwd) {
+    const candidates = process.platform === 'win32'
+        ? [resolveCommand(bin, { env })].filter((file) => file !== null)
+        : bin.includes(path.sep) || path.isAbsolute(bin) ? [bin]
+            : (env.PATH ?? '/usr/bin:/bin').split(path.delimiter).map(directory => path.join(directory || '.', bin));
+    for (const candidate of candidates) {
+        try {
+            const file = realpathSync(path.resolve(cwd, candidate));
+            accessSync(file, constants.X_OK);
+            if (statSync(file).isFile())
+                return file;
+        }
+        catch { /* Continue the native executable search. */ }
+    }
+    throw new GateError(`Codex launch executable is unavailable: ${bin}`);
+}
+export async function pristineCodexSystemSkills(bin, env = process.env) {
+    const runtime = realpathSync(bin);
+    const identity = systemSkillsRuntimeIdentity(bin);
+    if (systemSkillsRuntimeIdentity(runtime) !== identity)
+        throw new GateError('Codex system skills runtime changed before bootstrap');
+    const home = mkdtempSync(path.join(realpathSync(tmpdir()), 'promptobus-codex-system-'));
+    let reference;
+    try {
+        const child = spawnProcess(runtime, ['app-server', '--stdio'], {
+            cwd: home, env: { PATH: env.PATH, SystemRoot: env.SystemRoot, WINDIR: env.WINDIR,
+                HOME: home, USERPROFILE: home, CODEX_HOME: home, TMPDIR: home, TEMP: home, TMP: home },
+            stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        let failure, requestId, replies = 0, bytes = 0;
+        child.on('error', error => { failure = error.message; });
+        child.stdin.on('error', () => { });
+        const timer = setTimeout(() => { failure = 'terminal bootstrap deadline exceeded'; child.kill('SIGKILL'); }, 20_000);
+        const rpc = CodexRpc(child, { onLog: (direction, raw) => {
+                const message = raw;
+                if (direction === 'out' && message.method === 'initialize')
+                    requestId = message.id;
+                if (direction === 'in' && message.id === requestId)
+                    replies++;
+                if (direction === 'raw')
+                    failure = 'invalid bootstrap protocol output';
+            } });
+        for (const stream of [child.stdout, child.stderr])
+            stream.on('data', chunk => {
+                bytes += chunk.length;
+                if (bytes > 2 * 1024 * 1024) {
+                    failure = 'bootstrap output exceeds 2 MiB';
+                    child.kill('SIGKILL');
+                }
+            });
+        const ended = new Promise(resolve => child.once('close', (code, signal) => {
+            if (code !== 0 || signal)
+                failure ??= `exit ${code}, signal ${signal}`;
+            clearTimeout(timer);
+            rpc.close();
+            resolve();
+        }));
+        try {
+            const response = await rpc.request('initialize', { clientInfo: { name: 'promptobus-system-skills', version: '1' } }, 20_000);
+            child.stdin.end();
+            await ended;
+            if (failure)
+                throw new GateError(`Codex system skills bootstrap refused: ${failure}`);
+            if (replies !== 1 || response.error || response.result?.codexHome !== home) {
+                throw new GateError('Codex system skills bootstrap has no unambiguous owned-home initialize response');
+            }
+        }
+        finally {
+            if (child.exitCode === null && child.signalCode === null)
+                child.kill('SIGKILL');
+            await ended;
+        }
+        reference = systemSkillSnapshot(path.join(home, 'skills', '.system'));
+        const marker = reference.get('.codex-system-skills.marker');
+        if (!marker?.length || ![...reference.keys()].some(name => path.basename(name) === 'SKILL.md')) {
+            throw new GateError('Codex system skills bootstrap produced an incomplete reference');
+        }
+        if (systemSkillsRuntimeIdentity(bin) !== identity)
+            throw new GateError('Codex system skills runtime changed during bootstrap');
+    }
+    catch (error) {
+        if (error instanceof GateError)
+            throw error;
+        throw new GateError(`Codex system skills reference unavailable: ${error.message}`);
+    }
+    finally {
+        rmSync(home, { recursive: true, force: true });
+    }
+    return directory => {
+        if (systemSkillsRuntimeIdentity(bin) !== identity)
+            throw new GateError('Codex system skills runtime changed after bootstrap');
+        const actual = systemSkillSnapshot(directory);
+        if (actual.size !== reference.size || [...reference].some(([name, bytes]) => {
+            const value = actual.get(name);
+            return bytes === null ? value !== null : !Buffer.isBuffer(value) || !bytes.equals(value);
+        }))
+            throw new GateError(`Codex system skills refuse foreign paths, types or bytes: ${directory}`);
+    };
+}
 // The tool name a Codex session calls an MCP server's tool by: the CONFIG key stays raw, only the
 // name is sanitised — [02-host.md](../docs/reference/02-host.md#consumer-identity-inside-a-harness).
 export const codexToolSegment = (s) => String(s ?? '').replace(/[^A-Za-z0-9_]/g, '_');
@@ -122,20 +267,20 @@ function foreignProjectFile(lookupDir, writtenDir, name) {
     }
     return discovered;
 }
-function judgedProjectHooks(file, guard) {
+function judgedProjectHooks(file, guard, projectGuard) {
     try {
         if (!lstatSync(file).isFile())
             return { refused: ['not a regular file'], broken: null };
-        return judgeHookRecords(readFileSync(file, 'utf8'), path.dirname(path.dirname(file)), CODEX, { guard });
+        return judgeHookRecords(readFileSync(file, 'utf8'), path.dirname(path.dirname(file)), CODEX, { guard, projectGuard });
     }
     catch (error) {
         return { refused: [`unreadable (${error.code ?? error.message})`], broken: null };
     }
 }
 /** Refuse foreign hooks, then validate clone-root config with the selected binary at lift. */
-export function refuseForeignProjectLayer(lookupDir, writtenDir, tool = null, guardCommand = null) {
+export function refuseForeignProjectLayer(lookupDir, writtenDir, tool = null, guardCommand = null, projectGuardCommand = null) {
     const hooks = foreignProjectFile(lookupDir, writtenDir, 'hooks.json');
-    const judged = hooks ? judgedProjectHooks(hooks, guardCommand) : { refused: [] };
+    const judged = hooks ? judgedProjectHooks(hooks, guardCommand, projectGuardCommand) : { refused: [] };
     if (judged.refused.length)
         throw new GateError(foreignHooksMessage(hooks, judged));
     if (!tool?.bin)
@@ -492,11 +637,16 @@ export function sweepParticipantHomes(env = process.env) {
     }
     let live;
     try {
-        live = new Set(registrySessions(env).map((r) => r.codexHome && canonicalPath(r.codexHome)).filter(Boolean));
+        const scan = scanSessions(env);
+        if (!scan.complete)
+            throw new GateError(`Codex registry observation is incomplete: ${scan.issues.join('; ')}`);
+        const records = scan.records;
+        if (records.some(r => typeof r.codexHome !== 'string' || !path.isAbsolute(r.codexHome)))
+            throw new GateError('a Codex registry record has no valid absolute participant home');
+        live = new Set(records.map(r => canonicalPath(r.codexHome)));
     }
-    catch {
-        // The registry home is not declared, so no record can be read and every home here
-        // would look orphaned. Sweeping on that reading would remove live sessions' homes.
+    catch (error) {
+        warn(`Codex participant-home sweep retained every home: registry observation is incomplete (${error.message})`);
         return [];
     }
     const swept = [];
@@ -510,6 +660,54 @@ export function sweepParticipantHomes(env = process.env) {
             swept.push(dir);
     }
     return swept;
+}
+function validReservationLookup(input) {
+    return !!input && typeof input.ref === 'string' && !!input.ref && typeof input.registryHome === 'string'
+        && path.isAbsolute(input.registryHome);
+}
+function reservationState(input) {
+    try {
+        if (!validReservationLookup(input))
+            return 'unknown';
+        const { ref } = input, env = { PROMPTOBUS_CODEX_HOME: input.registryHome };
+        const scan = scanSessions(env), lock = holderLockState(ref, env);
+        if (!scan.complete || lock === 'unknown')
+            return 'unknown';
+        const record = scan.records.find(r => r.ref === ref);
+        if (lock === 'alive' || pidAlive(record?.holderPid) || pidAlive(record?.appPid))
+            return 'alive';
+        if (!record)
+            return 'dead';
+        const settled = Number.isSafeInteger(record.holderPid) && Number(record.holderPid) > 0
+            && Number.isSafeInteger(record.appPid) && Number(record.appPid) > 0;
+        return (!record.threadId && !settled) || !['starting', 'alive', 'dead', 'idle', 'busy'].includes(String(record.state)) ? 'unknown' : 'dead';
+    }
+    catch {
+        return 'unknown';
+    }
+}
+function retireUnstarted(input) {
+    if (!validReservationLookup(input) || !path.isAbsolute(input.home) || !input.task || !input.address || !input.launchId
+        || !Number.isSafeInteger(input.owner?.pid) || input.owner.pid <= 0 || typeof input.owner.birth !== 'string')
+        return false;
+    const env = { PROMPTOBUS_CODEX_HOME: input.registryHome };
+    return withSessionLaunch(input.ref, env, () => {
+        const scan = scanSessions(env);
+        if (!scan.complete || holderLockState(input.ref, env) !== 'dead' || processState(input.owner) !== 'dead')
+            return false;
+        const record = scan.records.find(r => r.ref === input.ref);
+        if (!record || !sameStoreHome(record.home, input.home) || record.task !== input.task || record.address !== input.address
+            || record.launchId !== input.launchId || record.launcherPid !== input.owner.pid
+            || record.launcherProcess?.pid !== input.owner.pid || record.launcherProcess.birth !== input.owner.birth
+            || record.threadId || record.holderPid || record.appPid || record.nativeCreationPending || record.state !== 'starting')
+            return false;
+        const version = recordVersion(sessionFile(input.ref, env));
+        if (JSON.stringify(readSession(input.ref, env)) !== JSON.stringify(record)
+            || !sameRecordVersion(version))
+            return false;
+        dropSession(input.ref, env);
+        return true;
+    });
 }
 /** The harness state of one closed participant that lives outside its worktree — a reviewer has
  * none and its home holds the same credentials copy. Rebuilt from task and address when needed. */
@@ -584,9 +782,9 @@ function copyPrivateSkills(src, dest) {
         }
     }
 }
-export function installPrivateHomeLayer(plan, codexHome) {
+export function installPrivateHomeLayer(plan, codexHome, verifySystem) {
     if (plan.privateHomeFiles) {
-        installSelectedNativeFiles(plan.privateHomeFiles);
+        installSelectedNativeFiles(plan.privateHomeFiles, verifySystem);
         return;
     }
     if (plan.privateHomeSkills)
@@ -674,7 +872,7 @@ function checkSessionDirectory(env) {
     }
 }
 /** Lift plan from harness-neutral context; writes and launches nothing. */
-function prepare({ mcp, prompt, model, effort = null, permissionMode = null, addDirs = [], readFiles = [], readSkillDirs = [], cwd, denyTools = null, ref, role = WORKER, task = null, address = null, root = null, skillsRoot = root, selectedContext = null, settingsPath = null, executionKind = roleEntry(registryOf(null), role)?.kind, rootTask = null, rootAddress = null, guardCommand = null, env = process.env, }) {
+function prepare({ mcp, prompt, model, effort = null, permissionMode = null, addDirs = [], readFiles = [], readSkillDirs = [], cwd, denyTools = null, ref, role = WORKER, task = null, address = null, root = null, skillsRoot = root, selectedContext = null, settingsPath = null, executionKind = roleEntry(registryOf(null), role)?.kind, rootTask = null, rootAddress = null, guardCommand = null, projectGuardCommand = guardCommand, env = process.env, }) {
     checkSessionDirectory(env);
     const privateHome = ['teamlead', 'reporter', 'orchestrator'].includes(role);
     const readOnly = role === REVIEWER || role === 'reporter' || permissionMode === 'read-only';
@@ -728,7 +926,7 @@ function prepare({ mcp, prompt, model, effort = null, permissionMode = null, add
     const dest = privateHome
         ? path.join(realpathSync(tmpdir()), HOMES_DIR, path.basename(home), 'skills')
         : path.join(fileRoot, CODEX_SKILLS_REL);
-    const selectedFiles = selectedContext ? selectedNativeFiles(selectedContext, dest) : [];
+    const selectedFiles = selectedContext ? selectedNativeFiles(selectedContext, dest, privateHome ? '.system' : undefined) : [];
     if (isolated) {
         const busHome = cfg.mcpServers[PROMPTOBUS_SERVER]?.env?.PROMPTOBUS_HOME;
         const indexPath = !selectedContext && skillsRoot && existsSync(skillsRoot) ? path.join(realpathSync(skillsRoot), '.agents', 'skills-index.md') : null;
@@ -756,7 +954,7 @@ function prepare({ mcp, prompt, model, effort = null, permissionMode = null, add
         { path: path.join(fileRoot, CODEX_DIR, '.gitignore'), text: '*\n', secret: false },
     ];
     if (!privateHome)
-        refuseForeignProjectLayer(sessionDir, fileRoot, null, guardCommand);
+        refuseForeignProjectLayer(sessionDir, fileRoot, null, guardCommand, projectGuardCommand);
     // A linked worktree's own hooks file is not read by Codex, and a tracked one must stay clean.
     const homeHooks = guardCommand && !privateHome && linkedWorktree(fileRoot) ? hooksDocument(guardCommand) : null;
     if (guardCommand && !privateHome && !homeHooks)
@@ -1171,11 +1369,25 @@ async function spawn(input, { tool, ref, role, cwd, env, host, home: runtimeHome
     checkSessionDirectory(env ?? process.env);
     // The registry pairs this driver with the launch plan its own prepare returned.
     const plan = input;
+    const workdir = plan.cwd ?? cwd;
+    const needsSystemReference = plan.privateHomeFiles?.some(file => file.preserveDirectory
+        && lstatSync(path.join(file.path, '.system'), { throwIfNoEntry: false }));
+    if (needsSystemReference)
+        tool = { ...tool, bin: resolvedCodexExecutable(tool.bin, env ?? process.env, workdir) };
+    const runtimeIdentity = needsSystemReference ? systemSkillsRuntimeIdentity(tool.bin) : null;
+    const assertRuntime = () => {
+        if (runtimeIdentity !== null && systemSkillsRuntimeIdentity(tool.bin) !== runtimeIdentity) {
+            throw new GateError('Codex launch runtime changed after executable admission');
+        }
+    };
+    const verifySystem = needsSystemReference ? await pristineCodexSystemSkills(tool.bin, env) : undefined;
+    assertRuntime();
+    if (plan.privateHomeFiles)
+        assertSelectedNativeFiles(plan.privateHomeFiles, verifySystem);
     const registry = registryOf(host);
     const who = (liftWords(registry, role) ?? liftWords(registry, WORKER)).acc;
     // The working directory is taken from the plan, not the caller's cwd: for a reviewer that is its
     // own sandbox. Both are on disk by this point, and app-server is handed the path as the thread cwd.
-    const workdir = plan.cwd ?? cwd;
     const sandbox = plan.settings?.sandbox
         ?? (role === REVIEWER ? 'read-only' : 'workspace-write');
     const prompt = plan.prompt;
@@ -1208,6 +1420,8 @@ async function spawn(input, { tool, ref, role, cwd, env, host, home: runtimeHome
                 || current.task !== runtimeTask || current.address !== runtimeAddress || !sameRecordVersion(version)) {
                 throw new GateError(`Codex launch ${ref} changed ownership before retirement; replacement retained`);
             }
+            if (holderAlive(ref, env) || pidAlive(current.appPid))
+                throw new GateError(`Codex launch ${ref} still has a live native process; reservation retained`);
             if (resume) {
                 const owner = participantOf(readTask(runtimeHome, runtimeTask), runtimeAddress);
                 if (owner?.harness !== 'codex' || owner.mode !== 'managed' || owner.sessionRef !== ref
@@ -1235,6 +1449,7 @@ async function spawn(input, { tool, ref, role, cwd, env, host, home: runtimeHome
             withTaskLock(runtimeHome, runtimeTask, discard);
         else
             discard();
+        plan.liveSeat?.stopped();
     };
     const authOwnerHome = ownerCodexHome(env ?? process.env);
     const provenance = launchProvenance(host, tool);
@@ -1252,6 +1467,7 @@ async function spawn(input, { tool, ref, role, cwd, env, host, home: runtimeHome
                     nativeId: resume.nativeId, nativeStore: resume.nativeStore, cwd: resume.cwd },
                 launcherReservation: { previous: resume.previousLauncherPid, current: resume.launcherPid } } } : {}),
         launcherPid: process.pid,
+        launcherProcess: processIdentity(process.pid),
         cwd: workdir,
         bin: tool.bin,
         provenance: provenanceLine(provenance),
@@ -1316,6 +1532,7 @@ async function spawn(input, { tool, ref, role, cwd, env, host, home: runtimeHome
         withTaskLock(runtimeHome, runtimeTask, () => withSessionLaunch(ref, env, stageRecord));
     else
         withSessionLaunch(ref, env, stageRecord);
+    plan.liveSeat?.staged(sessionFile(ref, env), launchId);
     if (plan.service)
         plan.sessionRecord = sessionFile(ref, env);
     for (const scope of plan.service ? plan.serviceScopes ?? [] : [])
@@ -1378,7 +1595,7 @@ async function spawn(input, { tool, ref, role, cwd, env, host, home: runtimeHome
         if (role === REVIEWER && runtimeHome && runtimeTask)
             mkdirSync(filesDir(runtimeHome, runtimeTask), { recursive: true });
         if (plan.trustProject === false)
-            installPrivateHomeLayer(plan, codexHome);
+            installPrivateHomeLayer(plan, codexHome, verifySystem);
         else
             writeRedirectedHooks(plan, workdir, codexHome);
     }
@@ -1389,6 +1606,8 @@ async function spawn(input, { tool, ref, role, cwd, env, host, home: runtimeHome
     let holder;
     try {
         await plan.service?.beforeStart(sessionFile(ref, env));
+        assertRuntime();
+        plan.liveSeat?.starting();
         holder = startHolder(ref, sessionEnv(env ?? process.env, { CODEX_HOME: codexHome }));
     }
     catch (error) {
@@ -1467,9 +1686,41 @@ function saidLiftoff({ output, seen: receipt }) {
     else
         info('hook trust for this thread is bypass_hook_trust on thread/start; a linked worktree also has that hooks file in its Codex home');
 }
+export function retireConfirmedCodex(ref, launchId, threadId, deadline) {
+    const record = readSession(ref);
+    if (!record || record.launchId !== launchId || record.threadId !== threadId)
+        throw new Error('Codex launch identity changed before retirement');
+    let receiptFile;
+    const retired = withNativeStopLocks(record, () => {
+        if (Date.now() >= deadline)
+            throw new Error('Stop deadline elapsed before record retirement');
+        const current = readSession(ref);
+        if (!current || current.launchId !== launchId || current.threadId !== threadId || !current.stopConfirmed
+            || current.ref !== record.ref || current.home !== record.home || current.task !== record.task || current.address !== record.address
+            || current.holderPid !== record.holderPid || current.appPid !== record.appPid
+            || holderAlive(ref) || pidAlive(current.appPid))
+            return false;
+        receiptFile = path.join(harnessStateHome(CODEX), 'receipts', sessionKey(ref), sessionKey(launchId) + '.jsonl');
+        if (current.commandReceiptFile !== receiptFile)
+            return false;
+        const confirmation = readStopConfirmation(receiptFile, current);
+        if (!confirmation.ok)
+            throw new Error(confirmation.note);
+        if (Date.now() >= deadline)
+            throw new Error('Stop deadline elapsed while validating record retirement');
+        retainNativeStop(current, receiptFile);
+        if (Date.now() >= deadline)
+            throw new Error('Stop deadline elapsed while retaining terminal proof');
+        dropSession(ref);
+        return true;
+    }, { deadlineAt: deadline });
+    if (!retired)
+        throw new Error('launch ownership or finalization changed before record retirement');
+    return receiptFile;
+}
 /** Stop confirms terminal command accounting before retiring the matching launch.
  * Unresolved stops retain their record, participant home and selected lifecycle receipts. */
-async function stop(ref, { timeoutMs = STOP_TIMEOUT_MS } = {}) {
+async function stop(ref, { timeoutMs = STOP_TIMEOUT_MS, deferSelf = false } = {}) {
     const record = readSession(ref);
     if (!record) {
         return {
@@ -1488,6 +1739,63 @@ async function stop(ref, { timeoutMs = STOP_TIMEOUT_MS } = {}) {
         return unresolved('launch identity is missing; no shutdown issued');
     if (Date.now() >= deadline)
         return unresolved('Stop deadline elapsed before shutdown or recovery');
+    if (deferSelf) {
+        const requesterThreadId = process.env.CODEX_THREAD_ID;
+        if (!requesterThreadId || requesterThreadId !== record.threadId || record.stopConfirmed || !holderAlive(ref))
+            return unresolved('Self-Stop requester does not match a live owned native thread');
+        let finalizer;
+        try {
+            finalizer = spawnProcess(process.execPath, [fileURLToPath(new URL('./codex-retire.js', import.meta.url)),
+                ref, record.launchId, requesterThreadId, String(deadline + STOP_TIMEOUT_MS)], { env: process.env, detached: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+            const child = finalizer;
+            await new Promise((resolve, reject) => {
+                const timer = setTimeout(() => finish(new Error('self-Stop finalizer readiness timed out')), Math.max(1, deadline - Date.now()));
+                const finish = (error) => {
+                    clearTimeout(timer);
+                    child.off('message', onMessage);
+                    child.off('error', onError);
+                    child.off('exit', onExit);
+                    if (error)
+                        reject(error);
+                    else
+                        resolve();
+                };
+                const onMessage = (message) => {
+                    if (!recordOf(message) || message.ready !== true || message.ref !== ref || message.launchId !== record.launchId
+                        || message.threadId !== requesterThreadId)
+                        return finish(new Error('self-Stop finalizer returned invalid readiness'));
+                    finish();
+                };
+                const onError = (error) => finish(error);
+                const onExit = () => finish(new Error('self-Stop finalizer exited before readiness'));
+                child.once('message', onMessage);
+                child.once('error', onError);
+                child.once('exit', onExit);
+            });
+            finalizer.disconnect();
+            finalizer.unref();
+        }
+        catch (error) {
+            if (finalizer) {
+                finalizer.on('error', () => { });
+                if (finalizer.connected)
+                    finalizer.disconnect();
+                if (finalizer.exitCode === null && finalizer.signalCode === null)
+                    finalizer.kill('SIGTERM');
+                finalizer.unref();
+            }
+            return unresolved(`self-Stop finalizer could not start: ${error.message}`);
+        }
+        try {
+            const answer = await holderAsk(ref, 'shutdown', { launchId: record.launchId, deadlineAt: deadline, deferSelf: true, requesterThreadId }, process.env, Math.max(1, deadline - Date.now()));
+            if (!answer.ok || !answer.deferred || answer.stopped || answer.launchId !== record.launchId)
+                return unresolved(answer.note ?? 'holder did not accept deferred Stop');
+            return { ok: true, stopped: false, deferred: true, note: `thread ${id}: Stop accepted; confirmation pending; finalizer log ${selfStopLogFile(ref, record.launchId)}` };
+        }
+        catch (error) {
+            return unresolved(`deferred shutdown outcome unresolved: ${error.message}`);
+        }
+    }
     if (!record.stopConfirmed || holderAlive(ref)) {
         let answer;
         try {
@@ -1505,36 +1813,13 @@ async function stop(ref, { timeoutMs = STOP_TIMEOUT_MS } = {}) {
         await new Promise(resolve => setTimeout(resolve, 20));
     if (holderAlive(ref))
         return unresolved('holder exit was not confirmed before the Stop deadline');
-    let retired, receiptFile;
+    let receiptFile;
     try {
-        const retire = () => {
-            if (Date.now() >= deadline)
-                throw new Error('Stop deadline elapsed before record retirement');
-            const current = readSession(ref);
-            if (!current || current.launchId !== record.launchId || !current.stopConfirmed
-                || holderAlive(ref) || pidAlive(current.appPid))
-                return false;
-            receiptFile = path.join(harnessStateHome(CODEX), 'receipts', sessionKey(ref), sessionKey(record.launchId) + '.jsonl');
-            if (current.commandReceiptFile !== receiptFile)
-                return false;
-            const confirmation = readStopConfirmation(receiptFile, current);
-            if (!confirmation.ok)
-                throw new Error(confirmation.note);
-            if (Date.now() >= deadline)
-                throw new Error('Stop deadline elapsed while validating record retirement');
-            retainNativeStop(current, receiptFile);
-            if (Date.now() >= deadline)
-                throw new Error('Stop deadline elapsed while retaining terminal proof');
-            dropSession(ref);
-            return true;
-        };
-        retired = withNativeStopLocks(record, retire, { deadlineAt: deadline });
+        receiptFile = retireConfirmedCodex(ref, record.launchId, record.threadId, deadline);
     }
     catch (error) {
         return unresolved(`record retirement unresolved: ${error.message}`);
     }
-    if (!retired)
-        return unresolved('launch ownership or finalization changed before record retirement');
     return {
         ok: true,
         stopped: true,
@@ -1542,6 +1827,8 @@ async function stop(ref, { timeoutMs = STOP_TIMEOUT_MS } = {}) {
     };
 }
 export const codexDriver = {
+    reservationState,
+    retireUnstarted,
     id: CODEX,
     capabilities: {
         spawn: true,
@@ -1615,6 +1902,7 @@ export const codexDriver = {
     saidLiftoff,
     inspect,
     stop,
+    stopSelf: (ref) => stop(ref, { deferSelf: true }),
     activate,
     renderNotification,
     stallRoute,

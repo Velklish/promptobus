@@ -61,7 +61,7 @@ export function trustRule(root, harness) {
 }
 /** Trusted records as `{ key, command }`, every other record as its text, and why the declaration is unusable.
  * `declaration` stands in for the declaration file's text (`null`: none); `guard` is the lift's guard command. */
-export function judgeHookRecords(text, root, harness, { declaration, guard = null } = {}) {
+export function judgeHookRecords(text, root, harness, { declaration, guard = null, projectGuard = null } = {}) {
     const accepted = [];
     const refused = [];
     const { commands, broken } = trustedHookCommands(root, harness, declaration);
@@ -100,7 +100,7 @@ export function judgeHookRecords(text, root, harness, { declaration, guard = nul
         for (const entry of entries) {
             const ok = hasKeys(entry, shape.entry) && (!shape.grouped || entry.type === 'command')
                 && EVENT_KEYS[harness].includes(key) && (commands[key] ?? []).includes(entry.command)
-                && !isBusGuard(entry.command, guard);
+                && !isBusGuard(entry.command, guard) && !isBusGuard(entry.command, projectGuard);
             if (ok)
                 accepted.push({ key, command: entry.command });
             else

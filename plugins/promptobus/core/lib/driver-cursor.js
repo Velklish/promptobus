@@ -286,7 +286,7 @@ function spawnArgv({ cwd, model, effort = null, permissionMode = null, addDirs =
 }
 /** Lift plan from harness-neutral context; writes and launches nothing. `--plugin-dir` is not in
  * argv — Cursor has its own plugin format, and the skills canon travels as `.cursor/skills` files. */
-function prepare({ mcp, prompt, model, effort = null, permissionMode = null, addDirs = [], settingsPath, cwd, guardCommand, denyTools = null, root = null, skillsRoot = root, selectedContext = null, ref = null, role = WORKER, env = process.env, }) {
+function prepare({ mcp, prompt, model, effort = null, permissionMode = null, addDirs = [], settingsPath, cwd, guardCommand, projectGuardCommand = guardCommand, denyTools = null, root = null, skillsRoot = root, selectedContext = null, ref = null, role = WORKER, env = process.env, }) {
     const readOnly = role === REVIEWER || (role !== APPROVER && !!denyTools?.length);
     const isolated = readOnly;
     const configDir = isolated ? reviewSandbox(settingsPath) : cwd;
@@ -296,7 +296,7 @@ function prepare({ mcp, prompt, model, effort = null, permissionMode = null, add
     const hooksPath = path.join(configDir, CURSOR_DIR, 'hooks.json');
     const tracked = isolated ? null : trackedText(configDir, path.join(CURSOR_DIR, 'hooks.json'));
     const project = tracked === null ? { accepted: [], refused: [] } : judgeHookRecords(tracked, configDir, CURSOR, {
-        declaration: trackedText(configDir, TRUST_CONFIG), guard: guardCommand,
+        declaration: trackedText(configDir, TRUST_CONFIG), guard: guardCommand, projectGuard: projectGuardCommand,
     });
     if (project.refused.length) {
         warn(`${hooksPath}: records kept out of this lift's hooks file — ${project.refused.join('; ')}. `
@@ -623,6 +623,7 @@ async function spawn(plan, { tool, ref, role, cwd, env, host, home: runtimeHome,
     const locked = (fn) => taskExists(runtimeHome, runtimeTask) ? withTaskLock(runtimeHome, runtimeTask, fn) : fn();
     locked(() => writeSession({
         launchId,
+        launcherProcess: processIdentity(process.pid),
         ref,
         cwd: sessionDir,
         bin,
@@ -657,6 +658,7 @@ async function spawn(plan, { tool, ref, role, cwd, env, host, home: runtimeHome,
     }, env));
     const undo = bindBeforeLaunch(runtimeHome, runtimeTask, runtimeAddress, plan.prelaunchBinding);
     const recordFile = sessionFile(ref, env);
+    plan.liveSeat?.staged(recordFile, launchId);
     const publishOwned = (patch, version) => locked(() => {
         const current = readSession(ref, env);
         const owner = taskExists(runtimeHome, runtimeTask) ? participantOf(readTask(runtimeHome, runtimeTask), runtimeAddress) : null;
@@ -788,6 +790,7 @@ async function spawn(plan, { tool, ref, role, cwd, env, host, home: runtimeHome,
                 }
             };
         }
+        plan.liveSeat?.starting();
         lifted = await liftSession({
             ref,
             bin: nativeBin,
@@ -899,6 +902,7 @@ async function spawn(plan, { tool, ref, role, cwd, env, host, home: runtimeHome,
                 undo();
                 dropSession(ref, env);
             });
+            plan.liveSeat?.stopped();
         });
     }
 }

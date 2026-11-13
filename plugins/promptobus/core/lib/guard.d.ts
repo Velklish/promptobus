@@ -25,7 +25,7 @@ export declare const GUARD_MARK = "LOOP GUARD";
 export declare const GUARD_BLOCK_LIMIT = 2;
 export declare function guardMarkFile(home: string, task: string, addr: string): string;
 export declare function successorMarkFile(home: string, task: string, session: unknown): string;
-export declare function readEvent(stdin: GuardInput): Promise<Record<string, unknown>>;
+export declare function readEvent(stdin: GuardInput, strict?: boolean): Promise<Record<string, unknown>>;
 export declare function guardVerdict(home: string, task: string, addr: string, session?: string | null): {
     key: string;
     reason: string;

@@ -1,6 +1,6 @@
 import { shellQuote } from '../dist/fs/shell.js';
 import { randomUUID } from 'node:crypto';
-import { realpathSync, rmSync } from 'node:fs';
+import { readdirSync, realpathSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { actorIdentityVariables, replaceManagedMcpServers } from './drivers.js';
 import { PROMPTOBUS_SERVER } from './contract.js';
@@ -134,6 +134,21 @@ export async function realizeManagedServiceClient(host, file, nativeId, options 
             launchId: context.launchId, record: context.record }, options);
     }
     await realizeServiceClient(host, id, nativeId, options);
+}
+export function requireManagedClaudeMcp(host, file, options = {}) {
+    const { id, paths, value } = managedCredential(host, file, options);
+    const context = readManagedServiceHookContext(host, file, options);
+    if (context.harness !== 'claude' || !recordOf(value.nativeBinding) || value.nativeBinding.state !== 'bound') {
+        throw new Error('Claude execution requires its admitted native MCP client');
+    }
+    const connections = readdirSync(paths.sessions).filter(name => /^[a-f0-9-]{36}\.json$/.test(name))
+        .map(name => readPrivate(path.join(paths.sessions, name)))
+        .filter(record => recordOf(record) && record.client === id && record.initialized === true);
+    for (const endpoint of ['bus', ...(value.files ? ['reviewer_files'] : [])]) {
+        if (!connections.some(record => recordOf(record) && record.endpoint === endpoint)) {
+            throw new Error(`Claude native MCP setup has no initialized ${endpoint} connection for this launch`);
+        }
+    }
 }
 export async function finalizeManagedServiceLaunch(host, input) {
     const { launch, driver, home, task, address, ref, cwd, env, commonEnv, files, deferTaskBinding = false } = input;

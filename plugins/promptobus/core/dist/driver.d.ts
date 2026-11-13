@@ -34,6 +34,23 @@ export type { ParticipantMode } from './v1/model.js';
 /** Session state in the snapshot: `alive`, `stale`, `gone` — and `unknown`, which is about the
  * OBSERVER, not the session. No consumer treats unknown as death. */
 export type SessionState = 'alive' | 'stale' | 'gone' | 'unknown';
+/** Reservation observation; unknown retains capacity. */
+export type ReservationState = 'alive' | 'dead' | 'unknown';
+export interface ReservationLookup {
+    ref: string;
+    registryHome: string;
+}
+/** Retirement requires fresh proof matching this launch generation and process birth. */
+export interface UnstartedReservation extends ReservationLookup {
+    home: string;
+    task: string;
+    address: string;
+    launchId: string;
+    owner: {
+        pid: number;
+        birth: string;
+    };
+}
 /** A harness refusal that names a time to retry after: the harness's words for that time, and the
  * instant they parse to — `null` when they do not. [05-drivers.md § A refusal that names a reset](../docs/reference/05-drivers.md#a-refusal-that-names-a-reset) */
 export interface NamedReset {
@@ -132,6 +149,8 @@ export interface LaunchFile {
     copyFrom?: string;
     copyFileFrom?: string;
     clearDirectory?: boolean;
+    /** Retain this child only after the driver's verifier accepts it before writes. */
+    preserveDirectory?: string;
     selectedContext?: PreparedHostParticipantContextSelection;
     selectedPaths?: string[];
 }
@@ -303,7 +322,7 @@ export type Notification = {
     messages: NotificationMessage[];
 };
 /** Stop outcome. Two flags, not one: `ok` says the operation did not refuse, `stopped` that a session
- * was actually stopped — nothing to stop is success, and must not print as "session closed". */
+ * was actually stopped — nothing to stop is success. A deferred self-Stop is accepted but not confirmed. */
 export interface StopResult {
     ok: boolean;
     /** Native Stop confirms terminal command accounting before retiring its owned launch.
@@ -313,6 +332,7 @@ export interface StopResult {
     /** The driver ISSUED the stop and could not confirm the session vanished. Without this flag
      * `stopped: false` would also mean "there was no session", and cleanup leaves the directory. */
     attempted?: boolean;
+    deferred?: boolean;
 }
 /** Activation outcome. This does not give a “delivered” flag — that one is the mailbox having been taken. */
 export interface ActivateResult {
@@ -342,6 +362,10 @@ export interface Driver {
     /** What was said about the launch after success: unconfirmed check, unparsed id. */
     saidLiftoff?(result: unknown): void;
     inspect?(ref: string): SessionView | null;
+    /** Side-effect-free fresh observation. Missing hooks use the strict generic fallback. */
+    reservationState?(request: ReservationLookup): ReservationState;
+    /** Retire only the current proven unstarted record; false or failure retains the reservation. */
+    retireUnstarted?(request: UnstartedReservation): boolean;
     /** Validate an inactive retained managed owner before native thread resumption. */
     resumeState?(ref: string, context: {
         home: string;
@@ -404,6 +428,8 @@ export interface Driver {
     /** Stop the session. **It returns when the harness already has NO session**, or with an honest
      * `stopped: false` and a reason — cleanup follows the stop. The outcome may be a promise. */
     stop?(ref: string): StopResult | Promise<StopResult>;
+    /** Accept an owned self-Stop for later confirmation without waiting on its caller. */
+    stopSelf?(ref: string): StopResult | Promise<StopResult>;
     /** Availability adapter of this harness: what the ACCOUNT can do, asked before any session exists.
      * Its absence is a state, not an error — the registry answers `unknown` / `probe_failed`. */
     readonly availability?: AvailabilityAdapter;
@@ -454,7 +480,9 @@ export declare function modeOf(participant: ParticipantV1 | null | undefined): P
 export declare function isManaged(participant: ParticipantV1 | null | undefined): boolean;
 /** Stop a participant session — a driver operation, not a command. Only `managed` may be stopped, and
  * the refusal is explicit; the outcome is awaited, since the driver may wait for the harness. */
-export declare function stopParticipant(participant: ParticipantV1, registry: Registry): Promise<StopResult>;
+export declare function stopParticipant(participant: ParticipantV1, registry: Registry, options?: {
+    deferSelf?: boolean;
+}): Promise<StopResult>;
 /** Driver fields in the participant record: harness, mode and the capabilities snapshot. */
 export declare function participantDriverFields(driver: Driver, { mode, ref }: {
     mode: ParticipantMode;

@@ -102,6 +102,7 @@ export interface CodexParams extends CodexRateLimits {
     server?: unknown;
     mode?: unknown;
     grantRoot?: unknown;
+    kind?: unknown;
 }
 interface CodexResult {
     id?: string;
@@ -150,6 +151,7 @@ export interface CodexSessionRecord extends HarnessSessionRecord {
     holderProcess?: ProcessIdentity | null;
     appProcess?: ProcessIdentity | null;
     nativeAdmissionSchema?: 1;
+    launcherProcess?: ProcessIdentity | null;
     turns?: number;
     stopping?: boolean;
     stopConfirmed?: boolean;
@@ -222,6 +224,7 @@ export interface CodexHolderResult extends Partial<CodexSessionRecord> {
     ok?: boolean;
     stopped?: boolean;
     attempted?: boolean;
+    deferred?: boolean;
     note?: string | null;
     receiptFile?: string;
     threadStatus?: string | {
@@ -259,7 +262,8 @@ export declare function codexInitParams(record: CodexSessionRecord | null | unde
         optOutNotificationMethods: string[];
     };
 };
-export declare function socketPath(ref: string, env?: NodeJS.ProcessEnv): string;
+export declare function socketPath(ref: string, env?: NodeJS.ProcessEnv, launchId?: string | null): string;
+export declare function selfStopLogFile(ref: string, launchId: string, env?: NodeJS.ProcessEnv): string;
 export declare function holderLogFile(ref: string, env?: NodeJS.ProcessEnv): string;
 export declare const codexStateHome: (env?: NodeJS.ProcessEnv) => string;
 export declare const sessionsDir: (env?: NodeJS.ProcessEnv) => string;
@@ -274,6 +278,7 @@ export declare const patchSession: (ref: string, patch: Partial<CodexSessionReco
 } & Omit<CodexSessionRecord, "provenance">) | null;
 export declare const dropSession: (ref: string, env?: NodeJS.ProcessEnv) => void;
 export declare const registrySessions: (env?: NodeJS.ProcessEnv) => CodexSessionRecord[];
+export declare const scanSessions: (env?: NodeJS.ProcessEnv) => import("./harness-registry.js").RegistryObservation<CodexSessionRecord>;
 export declare const pidAlive: typeof import("./store.js").pidAlive;
 export declare function findSessionByAddress(home: string, task: string, address: string, env?: NodeJS.ProcessEnv): CodexSessionRecord | null;
 export declare function bindParticipantHomeRemoval(fn: ((home: string) => unknown) | null): void;
@@ -320,6 +325,7 @@ export declare function takeHolderLock(ref: string, env?: NodeJS.ProcessEnv): {
 export declare function dropHolderLock(ref: string, env?: NodeJS.ProcessEnv): void;
 export declare function holderAsk<T = CodexHolderResult>(ref: string, op: string, extra?: Record<string, unknown>, env?: NodeJS.ProcessEnv, timeoutMs?: number): Promise<T>;
 export declare function holderAlive(ref: string, env?: NodeJS.ProcessEnv): boolean;
+export declare function holderLockState(ref: string, env?: NodeJS.ProcessEnv): 'alive' | 'dead' | 'unknown';
 export declare function startHolder(ref: string, env?: NodeJS.ProcessEnv): import("child_process").ChildProcess;
 export declare function waitReady(ref: string, env?: NodeJS.ProcessEnv, timeoutMs?: number, readyState?: string): Promise<{
     ok: boolean;

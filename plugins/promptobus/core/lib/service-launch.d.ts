@@ -63,6 +63,7 @@ export declare function managedServiceHeaders(host: PromptobusHost, file: string
     Authorization: string;
 };
 export declare function realizeManagedServiceClient(host: PromptobusHost, file: string, nativeId: string, options?: ServiceCallOptions): Promise<void>;
+export declare function requireManagedClaudeMcp(host: PromptobusHost, file: string, options?: ServiceCallOptions): void;
 export declare function finalizeManagedServiceLaunch(host: PromptobusHost, input: ManagedServiceLaunchInput): Promise<{
     service: ManagedServiceLaunch;
     env: NodeJS.ProcessEnv;

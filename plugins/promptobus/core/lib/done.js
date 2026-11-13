@@ -11,6 +11,7 @@ import { addressList, harnessOf, isManaged, participantFileStem, SHIPPED_REGISTR
 import { adapterOf, driverOrLift, forgetSessions, liftDriver, REGISTRY, snapshotOf, } from './drivers.js';
 import { participantSession, sessionReportedDead, unknownWhy } from './status.js';
 import { requireNativeIdle } from './native-lifecycle.js';
+import { requireNoLiveReservations } from './live-reservation.js';
 import { coreRegistry, libDriverFor as driverFor } from './driver-runtime.js';
 // Close a task and clean up after it — after EVERY closed task, not only this one:
 // [03-cli.md](../docs/reference/03-cli.md#status-done-sweep-dismiss-history).
@@ -360,6 +361,7 @@ export async function done(rootOrHost, opts = {}) {
             fail('task owner changed before close');
         if (meta.status === 'done')
             return false;
+        requireNoLiveReservations(host, home, id);
         requireNativeIdle(home, meta, null, { taskLocked: true, sessionDead: sessionReportedDead });
         closeTask(home, id);
         return true;

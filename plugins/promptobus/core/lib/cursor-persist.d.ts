@@ -75,7 +75,7 @@ export declare const ENTER_SETTLE_MS = 400;
 /** Ceiling of SILENCE in the transcript, not of a turn's total time — a real turn runs for minutes.
  * It kills nothing: the threshold gives `inspect` a verdict, and the decision stays with a person. */
 export declare const TURN_IDLE_MS = 180000;
-/** Window in which an injection counts as a started turn though the transcript is still silent:
+/** Window in which an injection counts as a started turn while the transcript is silent after it:
  * measured 3.09 and 8.03 s to the first line, and without it the warden would wake twice. */
 export declare const INJECT_GRACE_MS = 20000;
 /** How long we wait for the persist session to appear in the tmux list; measured 1.17–1.39 s. The

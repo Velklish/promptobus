@@ -6,7 +6,7 @@ tools and refuses shell execution, source edits and unclassified external tools.
 
 ## Requirements
 
-BB 0.48.1, Plugin SDK 0.6.104 and a signed-in Codex account are required.
+BB 0.49.0, Plugin SDK 0.6.132 and a signed-in Codex account are required.
 The current package declares this exact app/SDK pair; historical profiles do not
 admit other versions through its manifest.
 The reviewer admits Codex by its effective restrictions and supported protocol capabilities, without a numeric version bound. Execution and file reads use one local host. Each reviewer receives a
@@ -22,7 +22,7 @@ switch. Inspect executing server/selected-host snapshot identity
 with `bb promptobus runtime describe [--host <id>] [--json]`. JSON is the default;
 matching embedded build ids and input digests return `complete` with exit 0,
 otherwise `incomplete` with exit 1. The standalone runtime skill covers this
-read-only check. [Runtime identity](https://github.com/Velklish/promptobus/blob/cb06fff67efa6612fb0d41da95bbdbdcec486481/docs/reference/02-host.md#bb-executing-runtime-identity)
+read-only check. [Runtime identity](https://github.com/Velklish/promptobus/blob/614317505608c22aa50ed1ab416485f856315d7e/docs/reference/02-host.md#bb-executing-runtime-identity)
 defines capture, activation and external runtime boundaries; the id does not hash
 BB's current loader cache bytes. The source root is not a supported install target, and automatic
 npm/Git plugin delivery is not claimed.

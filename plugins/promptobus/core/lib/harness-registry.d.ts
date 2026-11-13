@@ -14,6 +14,12 @@ export interface HarnessSessionRecord {
     bin?: string | null;
     [key: string]: unknown;
 }
+export interface RegistryObservation<T> {
+    complete: boolean;
+    absent: boolean;
+    records: T[];
+    issues: string[];
+}
 interface RegistryOptions<T extends HarnessSessionRecord> {
     harness?: string;
     sidecars?: (ref: string, env: NodeJS.ProcessEnv) => string[];
@@ -35,6 +41,7 @@ export declare function createHarnessRegistry<T extends HarnessSessionRecord = H
     } & Omit<T, "provenance">) | null;
     dropSession: (ref: string, env?: NodeJS.ProcessEnv) => void;
     registrySessions: (env?: NodeJS.ProcessEnv) => T[];
+    scanSessions: (env?: NodeJS.ProcessEnv) => RegistryObservation<T>;
     pidAlive: typeof pidAlive;
 };
 export {};

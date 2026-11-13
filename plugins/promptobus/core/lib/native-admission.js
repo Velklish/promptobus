@@ -7,6 +7,9 @@ import { openEngine, sessionIdOf, sessionRefOf } from '../dist/index.js';
 import { processExecutable, processHasOpenFile } from './root-process.js';
 import { readRootAdmissionState } from './root-admission.js';
 import { participantOf, readTask } from './store.js';
+export class ManagedNativeRevisionDrift extends Error {
+    constructor() { super('Managed native source changed during proof observation'); }
+}
 const fileOf = (paths) => path.join(paths.directory, 'native-admission.json');
 const markerOf = (paths) => path.join(paths.directory, 'native-admission.initialized.json');
 const nativeId = (value) => typeof value === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,255}$/.test(value);
@@ -597,7 +600,7 @@ async function managedPublication(paths, grant, nativeId, observeCurrentProcess 
             throw new Error('Managed alias primary participant no longer owns its native source');
     }
     if (!sameRecordVersion(version) || (primaryVersion && !sameRecordVersion(primaryVersion)))
-        throw new Error('Managed native source changed during proof observation');
+        throw new ManagedNativeRevisionDrift();
     return { version, record, primaryVersion, binding: { harness: grant.nativeBinding.kind, nativeStore, nativeId,
             source: 'managed', runtime: grant.runtime, ownerKey: proof.launchId, process, nonce: proof.launchId } };
 }

@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import { appendFileSync, chmodSync, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync, } from 'node:fs';
 import net from 'node:net';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
@@ -124,8 +123,8 @@ const SOCK_MAX = 103;
 function lockFile(ref, env = process.env) {
     return path.join(sessionsDir(env), sessionKey(ref) + '.lock');
 }
-export function socketPath(ref, env = process.env) {
-    const refText = String(ref ?? '');
+export function socketPath(ref, env = process.env, launchId) {
+    const refText = String(ref ?? '') + (launchId ? '\0' + launchId : '');
     const name = createHash('sha1').update(refText).digest('hex').slice(0, 12) + '.sock';
     const nested = path.join(sessionsDir(env), name);
     if (Buffer.byteLength(nested) <= SOCK_MAX)
@@ -133,14 +132,17 @@ export function socketPath(ref, env = process.env) {
     const fallback = createHash('sha1')
         .update(sessionsDir(env) + '\0' + refText)
         .digest('hex').slice(0, 12) + '.sock';
-    return path.join(tmpdir(), 'pb-cdx-' + fallback);
+    return path.join('/tmp', 'pb-cdx-' + fallback);
+}
+export function selfStopLogFile(ref, launchId, env = process.env) {
+    return path.join(sessionsDir(env), `${sessionKey(ref)}.self-stop-${createHash('sha256').update(launchId).digest('hex').slice(0, 16)}.log`);
 }
 export function holderLogFile(ref, env = process.env) {
     return path.join(sessionsDir(env), sessionKey(ref) + '.log');
 }
 const codexRegistry = createHarnessRegistry({
     harness: CODEX_HARNESS,
-    sidecars: (ref, env) => [socketPath(ref, env), lockFile(ref, env), holderLogFile(ref, env)],
+    sidecars: (ref, env) => [lockFile(ref, env), holderLogFile(ref, env)],
     onDrop: (record) => {
         if (record?.codexHome)
             dropParticipantHome(record.codexHome);
@@ -155,6 +157,7 @@ export const writeSession = codexRegistry.writeSession;
 export const patchSession = codexRegistry.patchSession;
 export const dropSession = codexRegistry.dropSession;
 export const registrySessions = codexRegistry.registrySessions;
+export const scanSessions = codexRegistry.scanSessions;
 export const pidAlive = codexRegistry.pidAlive;
 export function findSessionByAddress(home, task, address, env = process.env) {
     return registrySessions(env).find((r) => sameStoreHome(r.home, home) && r.task === task && r.address === address) ?? null;
@@ -359,6 +362,18 @@ function holderLockPid(ref, env) {
     }
     catch {
         return null;
+    }
+}
+export function holderLockState(ref, env = process.env) {
+    try {
+        const lock = JSON.parse(readFileSync(lockFile(ref, env), 'utf8'));
+        const pid = lock?.pid;
+        if (!Number.isSafeInteger(pid) || Number(pid) <= 0)
+            return 'unknown';
+        return pidAlive(pid) ? 'alive' : 'dead';
+    }
+    catch (error) {
+        return error.code === 'ENOENT' ? 'dead' : 'unknown';
     }
 }
 export function startHolder(ref, env = process.env) {
@@ -815,6 +830,15 @@ export function decideApproval(method, params, record, configuredServers) {
     if (!known) {
         return { allow: false, why: `unknown approval request type «${method}»`, unknown: true };
     }
+    if (method === 'item/commandExecution/requestApproval') {
+        const kind = params && Object.hasOwn(params, 'kind') ? params.kind : 'command';
+        if (kind === 'humanCommand') {
+            return { allow: false, why: 'humanCommand requires a fresh human decision; the holder has no human approval capability' };
+        }
+        if (kind !== 'command' && kind !== 'writeStdin') {
+            return { allow: false, why: 'unknown or malformed command approval kind' };
+        }
+    }
     if ((method === 'applyPatchApproval' || method === 'item/fileChange/requestApproval')
         && typeof params?.grantRoot === 'string' && params.grantRoot.trim()) {
         return { allow: false, why: `grantRoot escalation denied: ${params.grantRoot}` };
@@ -1064,11 +1088,20 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
     const configuredServers = configuredMcpServers(record);
     writeFileSync(logFile, '', { mode: 0o600 });
     log(record.provenance ?? provenanceLine(provenanceFromRecord(record)));
-    const sock = socketPath(ref, env);
-    rmSync(sock, { force: true });
+    const sock = socketPath(ref, env, record.launchId);
+    let ownedSocket = null;
     const cleanupHeld = () => withSessionLaunch(ref, env, () => {
-        if (ownsLaunch())
-            rmSync(sock, { force: true });
+        if (ownsLaunch() && ownedSocket) {
+            try {
+                const current = lstatSync(sock);
+                if (current.dev === ownedSocket.dev && current.ino === ownedSocket.ino)
+                    rmSync(sock);
+            }
+            catch (error) {
+                if (error.code !== 'ENOENT')
+                    throw error;
+            }
+        }
         dropHolderLock(ref, env);
     });
     const rawLocalStartup = env.PROMPTOBUS_CODEX_RAW_TOOL_RECEIPTS === '1';
@@ -1544,10 +1577,14 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
         if (req.op === 'shutdown') {
             if (!ownsLaunch() || (req.launchId !== undefined && req.launchId !== record.launchId))
                 return { ok: false, stopped: false, note: 'Codex launch ownership changed; no shutdown issued' };
+            if (req.deferSelf && (typeof req.requesterThreadId !== 'string' || !req.requesterThreadId.trim()
+                || req.requesterThreadId !== readSession(ref, env)?.threadId || req.requesterThreadId !== state.threadId))
+                return { ok: false, stopped: false, note: 'Self-Stop requester does not match the owned native thread' };
             if (shutdownResult)
                 return shutdownResult;
             if (shutdownInFlight)
-                return shutdownInFlight;
+                return req.deferSelf
+                    ? { ok: true, stopped: false, deferred: true, launchId: record.launchId } : shutdownInFlight;
             stopping = true;
             patchHeld(ref, { stopping: true }, env);
             const requestedDeadline = Number.isFinite(req.deadlineAt) ? req.deadlineAt : Date.now() + 5_000;
@@ -1556,8 +1593,19 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
                 if (result.ok)
                     shutdownResult = result;
                 return result;
+            }).catch(error => {
+                const note = `Stop failed before confirmation: ${error.message}`;
+                try {
+                    receipts.append('stop/unresolved', { note, activeTurns: [...state.activeTurns], commands: receipts.snapshot().commands });
+                }
+                catch { }
+                try {
+                    patchHeld(ref, { stopping: true, stopError: note }, env);
+                }
+                catch { }
+                return { ok: false, attempted: true, stopped: false, launchId: record.launchId ?? null, note, receiptFile };
             }).finally(() => { shutdownInFlight = null; });
-            return shutdownInFlight;
+            return req.deferSelf ? { ok: true, stopped: false, deferred: true, launchId: record.launchId } : shutdownInFlight;
         }
         throw new Error(`unknown holder operation «${req.op}»`);
     }
@@ -1724,6 +1772,8 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
     const listenHolder = () => new Promise((resolve, reject) => {
         server.on('error', reject);
         server.listen(sock, () => {
+            const entry = lstatSync(sock);
+            ownedSocket = { dev: entry.dev, ino: entry.ino };
             try {
                 chmodSync(sock, 0o600);
             }

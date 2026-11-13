@@ -42,3 +42,4 @@ export declare function ensureTaskWarden(host: PromptobusHost, home: string, tas
     state: string;
 }>;
 export declare function abortTaskWarden(host: PromptobusHost, task: string, options?: ServiceCallOptions): Promise<unknown>;
+export declare function closeServiceTask(host: PromptobusHost, task: string, options?: ServiceCallOptions): Promise<unknown>;

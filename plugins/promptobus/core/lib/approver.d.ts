@@ -47,6 +47,7 @@ export interface ApproverPlan {
     pluginDir: string | null;
     settingsPath: string;
     guardCommand: string;
+    projectGuardCommand: string;
     mcpConfigPath: string;
     mcpNote: ReturnType<typeof mcpNote>;
     launch: LibLaunchPlan;

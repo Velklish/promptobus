@@ -30,6 +30,9 @@ export interface NativeAdmissionContext {
     host: PromptobusHost;
     env: NodeJS.ProcessEnv;
 }
+export declare class ManagedNativeRevisionDrift extends Error {
+    constructor();
+}
 export declare function requireKnownNativeOutcomes(paths: ServicePaths, nonce: string): void;
 export declare function requireNativeAdmissionState(paths: ServicePaths): void;
 export declare function initializeNativeAdmissionState(paths: ServicePaths): void;

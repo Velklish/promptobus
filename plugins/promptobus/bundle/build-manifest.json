@@ -1,9 +1,9 @@
 {
   "identity": {
     "format": 1,
-    "buildId": "c9944a6b-491d-43a7-92ad-0c84ac4144f3",
-    "pluginVersion": "0.2.0",
-    "inputSha256": "c6da78a37dc0e01785189c2ad47a430481dff7b32c24d14e75bffc953ba1018b",
+    "buildId": "407f0257-76f2-452e-8d8d-edfd87ded431",
+    "pluginVersion": "0.2.1",
+    "inputSha256": "e427f39d01e5f98156a2cb5229c2cb51e90a1e656a8406e18ab8dbf240fc5847",
     "inputs": {
       "commandCompiler": [
         {
@@ -27,26 +27,26 @@
           "sha256": "4fb1814c23602191fc5e48f576555e9978e554a2053708368bc632bcb1402f34"
         }
       ],
-      "sourceSha256": "5dbc37f236c1e9aa522cfad52d25fbcd5b79aed4994c186cb94616f9fbc3be3d",
-      "sourceRevision": "cb06fff67efa6612fb0d41da95bbdbdcec486481",
+      "sourceSha256": "e597eab0425934f58248248942188fc8838a25003896dd41282abd9962be397e",
+      "sourceRevision": "614317505608c22aa50ed1ab416485f856315d7e",
       "sourceDirty": false,
-      "lockSha256": "8901c03fe3786aafc8b3a54b2e85e75a0e5198c160541058d0e8771a8e0d0ae6",
-      "builderVersion": "0.48.1",
+      "lockSha256": "0210004744645a4dd9ead445d7e4455aabc63b109d6cc79a41639856d11590c2",
+      "builderVersion": "0.49.0",
       "dependencies": [
         {
           "name": "@get-bb/plugin-sdk",
-          "version": "0.6.104",
-          "sha256": "6d69496bda0875aeaa27e83f1f5091381a5822e6d9177cbe13a7808eed806a48"
+          "version": "0.6.132",
+          "sha256": "15faaccae094247d5a4b62bd53a9861b3efe6c55cd16058ea151455ab8f146a7"
         },
         {
           "name": "@tanstack/query-core",
-          "version": "5.105.0",
-          "sha256": "916707c09ba2a2410c2b7e9a8e6bb0ebb8afaf93e2dccf7cf826f03dabdff677"
+          "version": "5.107.1",
+          "sha256": "1e7b207b2943b958a2e9262920bf27630aa9e8e2ba38178307ae06d0e5caf794"
         },
         {
           "name": "@tanstack/react-query",
-          "version": "5.105.0",
-          "sha256": "556c9dcf1031c1c3fb19b3952bb6b742027bbf3052ed791615287b8d1048f157"
+          "version": "5.107.1",
+          "sha256": "6bfa73f60433b6c95103d485b84c47f6613f18bce145a8809bcdd001ce59d5bd"
         },
         {
           "name": "cross-spawn",
@@ -65,8 +65,8 @@
         },
         {
           "name": "promptobus",
-          "version": "0.32.4",
-          "sha256": "f2c1879b657afa7a6404302c776e23da7a546b1ec2848502741a94716a977796"
+          "version": "0.33.0",
+          "sha256": "3127941ff24c2227b90a11b562005ebb0d3eec65b62ee12b6aae9cc3ebdc568b"
         },
         {
           "name": "shebang-command",
@@ -85,17 +85,17 @@
         },
         {
           "name": "zod",
-          "version": "4.6.6",
-          "sha256": "16c37972bd7c3e91b95a2bc063566accba697b59793df55b2de0890f092efec2"
+          "version": "4.6.7",
+          "sha256": "a5b78c4af0625019ac05135eb546bae1793ad2a88a065b146ec387abce6d56ca"
         }
       ],
       "consumerIntegrationSha256": null,
       "consumerBundleSha256": null
     }
   },
-  "installationDirectory": ".runtime/c9944a6b-491d-43a7-92ad-0c84ac4144f3",
+  "installationDirectory": ".runtime/407f0257-76f2-452e-8d8d-edfd87ded431",
   "snapshot": {
-    "sha256": "3183590157b00b2886d6d631cb5a65834b9dc730ff8d4bca939a80917049f4a0",
+    "sha256": "a8ac49b7fa3d02e8a44b4305d9131fa2598be9308e2e44a36cd2b7e2d98097a2",
     "entries": [
       "inputs",
       "source",
@@ -137,7 +137,7 @@
   "commandRecorder": "commands/record-command.js",
   "evidencePreparer": "commands/evidence-prepare.js",
   "artifacts": {
-    "commands/build-identity.js": "8860f9781d9a9ac3931ca71ce9559a5b20333faf38f06b32062ce7309839e6a5",
+    "commands/build-identity.js": "def46ed8020fa1cd5a92d1f287133387308327337902691ac4b526f2bf08074f",
     "commands/command-admission.js": "8bb0f5cbf10a76768041b83e82050eda79781fec1b4a9b358ad7f49da8cfdc8f",
     "commands/command-runner.js": "7a4d0d611331b7804cdeece93059557c573807b6d2882aa21c6cc188a5960aa6",
     "commands/control-schema.js": "335633b40962d965f3d4ad6eaf3ce616bf193a16409782dac39cd73a86216d2b",
@@ -148,11 +148,11 @@
     "commands/protocol.js": "1207963d1d945cb29be1611339f25c251792767fa26f6a87b8a4640e6c933d56",
     "commands/record-command.js": "67f05958d5d8f2badb99a987946ae37411298acfd96f89ac1213a11ff81b0b21",
     "commands/review-evidence.js": "c13e6884bb2e18fa0b04127e4dde9d60b6a5291265053d9e8e6c48eda4745c97",
-    "server.js": "fc1d4394cb5bfdac82c9066dd64333d0a592a4a3ea1d15e9904810147030e1ea",
-    "host.js": "6eec0f4d4e410320b12544ff05bb8bc411f2b58a12a4f173f3d0df32dcd0f8bc"
+    "server.js": "ed9149d1946f34404c37da8111df0cdab958e8245a000a725c86c23a2debc33f",
+    "host.js": "92d4cd78c474f4bf19ecd002883cd91be2a6533bb471c1d31e1c71b7fdabfe42"
   },
   "builtWith": {
-    "bbVersion": "0.48.1",
-    "pluginSdkVersion": "0.6.104"
+    "bbVersion": "0.49.0",
+    "pluginSdkVersion": "0.6.132"
   }
 }

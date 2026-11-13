@@ -227,6 +227,9 @@ Participant launch options: --context-purpose technical|user-facing|author-voice
   ${cmd} service run
                               internal shared service entry; the consumer supplies
                               its Host factory through runPromptobus options
+  ${cmd} service close-task --task <id> [--json]
+                              service owner closes one confirmed native Codex task
+                              and drains its watch; close child tasks before their parent
   ${cmd} service profile --id <id> --native-store <path>
                               approve a BB Codex root profile and print its HTTP
                               and ordered SessionStart configuration
@@ -318,6 +321,14 @@ export async function runPromptobus(argv, { host: suppliedHost, cwd, env, input,
             }
             case 'service': {
                 const [operation, ...flags] = rest;
+                if (operation === 'close-task') {
+                    const { values } = parse(at('service close-task'), flags, { options: { task: { type: 'string' }, json: { type: 'boolean' } } });
+                    if (!values.task)
+                        throw new GateError('service close-task requires --task');
+                    const result = await (await import('./service-client.js')).closeServiceTask(host, values.task, { cwd, env });
+                    writeLine(output, values.json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
+                    return 0;
+                }
                 if (operation === 'exec-plan') {
                     const separator = flags.indexOf('--');
                     if (separator < 0 || !flags[separator + 1])
@@ -379,7 +390,7 @@ export async function runPromptobus(argv, { host: suppliedHost, cwd, env, input,
                     return 0;
                 }
                 if (!['ensure', 'run', 'status', 'stop'].includes(operation ?? ''))
-                    throw new GateError('service requires ensure, run, status, stop, profile, headers, exec-plan or preflight');
+                    throw new GateError('service requires ensure, run, status, stop, close-task, profile, headers, exec-plan or preflight');
                 const { values } = parse(at(`service ${operation}`), flags, { options: { json: { type: 'boolean' } } });
                 if (operation === 'run') {
                     if (!createHost)

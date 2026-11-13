@@ -1,4 +1,5 @@
 import { finalizeManagedServiceLaunch, revokeFailedManagedLaunch } from './service-launch.js';
+import { LiveAdmissionError, liveCapNote, reservedSpawn, withReservationIdle } from './live-reservation.js';
 import { persistLegacyParticipant, persistNativeParticipant, releaseNativeReservation, requireCurrentNativeLaunch, reserveNativeParticipant } from './native-lifecycle.js';
 import { renderReviewerInstructions, renderReviewProcedure } from './prompts/roles.js';
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
@@ -7,7 +8,7 @@ import path from 'node:path';
 import { ok, info, warn, fail, gitIn, PROC_MAX_OUTPUT, GIT_NET_TIMEOUT_MS } from './util.js';
 import { normalize } from './fuzzy.js';
 import { hostOf } from './host.js';
-import { guardHookCommand } from '../dist/hooks.js';
+import { guardHookCommand, managedGuardHookCommand } from '../dist/hooks.js';
 import { activeTasks, addressOf, attachmentsOf, bindIfOwner, canonicalPath, claimRoute, contactsOf, createTask, currentResult, filesDir, foreignTaskLine, GateError, journalMessageBody, newTaskIdentity, numberedName, occupyTaskFile, ownership, participantMcpPath, participantOf, participantRecord, participantSettingsPath, readTask, sendMessage, sessionIdentity, slugify, stampReviewAssignment, stampSnapshot, strictTaskFacts, taskExists, unreadNote, upsertParticipant, watchParticipant, withTaskLock, ORCHESTRATOR, } from './store.js';
 import { contactsSection, dryRunToolNote, guardHookNote, liftHarness, memoryRule, mcpNote, mcpServerLines, normalizeLaunchTool, optionRefusal, participantMcp, participantPluginDir, participantSkillsRoot, PROMPTOBUS_SERVER, resolveEffort, resolvePermissionMode, withToolVersion, sayMcp, sayModule, sayTool, sessionEnvNote, sessionName, skillSettings, skillsNote, toolName, writeLaunchFiles, } from './spawn.js';
 import { participantSession, unknownWhy } from './status.js';
@@ -533,7 +534,8 @@ export function planReview(rootOrHost, { target, base, task, title, model, effor
     const prompt = buildPrompt({ taskId, nsPath, repoDir, address, stepName, instructions, diffPath, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles, rules, skill, driver, host, contacts, priorFindings }) + nativeContextPrompt(selectedContext);
     const reReview = buildReReview({ diffPath, repoDir, stepName, instructions, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles });
     const settingsPath = participantSettingsPath(home, taskId, address);
-    const guardCommand = guardHookCommand(host, { address, taskId, home }, process.platform);
+    const guardCommand = managedGuardHookCommand(host, { address, taskId, home }, process.platform);
+    const projectGuardCommand = guardHookCommand(host, { address, taskId, home }, process.platform);
     // Not every harness takes a skills directory — the same rule as for the worker.
     const pluginDir = !selectedContext && driver.options.skillsDir ? participantPluginDir(host, repoDir) : null;
     // Canonical MCP list — the same path as for the worker: read-only is held by tool stripping.
@@ -567,7 +569,7 @@ export function planReview(rootOrHost, { target, base, task, title, model, effor
         pluginDir,
         mcpConfigPath,
         settingsPath,
-        guardCommand,
+        guardCommand, projectGuardCommand,
         denyTools,
         extraSettings: selectedContext ? {} : skillSettings(host, repoDir), selectedContext,
         root,
@@ -723,6 +725,9 @@ async function reviewLift(rootOrHost, opts) {
         return plan;
     }
     if (opts.dryRun) {
+        const cap = liveCapNote(plan.host, plan.home, plan.taskId, plan.driver.id, plan.address);
+        if (cap && !plan.reuse)
+            info(cap);
         info(`repository: ${plan.nsPath} → ${plan.repoDir} · ${plan.baseLine} · ${plan.snapshot.line}`);
         warnDirtySnapshot(plan);
         info(`task: ${plan.taskId}${plan.createNew ? ` (will be created: ${plan.createNew.title})` : ''}${titleNote(plan)}`);
@@ -807,7 +812,7 @@ async function reviewLift(rootOrHost, opts) {
         ok(`task ${plan.taskId}: ${plan.createNew.title}`);
         warnSecondTask(plan);
     }
-    const reserve = () => {
+    const reserve = () => withReservationIdle(plan.home, plan.taskId, plan.address, () => {
         const assignedAt = new Date().toISOString();
         const harnessHistory = harnessHistoryForLift(plan.participant, plan.rebind, assignedAt, plan);
         return reserveNativeParticipant(plan.home, plan.taskId, participantRecord(plan.address, {
@@ -846,7 +851,7 @@ async function reviewLift(rootOrHost, opts) {
             binaryPath: liftProvenance.binaryPath,
             binaryVersion: liftProvenance.binaryVersion,
         }, registryOf(plan.host)), plan.participant, REGISTRY);
-    };
+    });
     const reserved = !plan.reuse ? reserve() : null;
     let record, tool;
     try {
@@ -936,7 +941,7 @@ async function reviewLift(rootOrHost, opts) {
         });
     }
     // Start and the "session lifted" check — a helper shared with the worker inside the driver.
-    const { output, session, seen } = await plan.driver.spawn(plan.launch, {
+    const { output, session, seen } = await reservedSpawn(plan.driver, plan.launch, {
         tool: tool,
         // Address, task and bus home go to the driver TOGETHER with the plan: a harness whose wake
         // channel the mechanism drives has to hand contact points to its own machinery.
@@ -977,7 +982,10 @@ async function reviewLift(rootOrHost, opts) {
             });
         },
         awaitOptions: opts.awaitOptions,
-    }).catch(error => revokeFailedManagedLaunch(plan.launch, error));
+    }).catch(error => revokeFailedManagedLaunch(plan.launch, error, () => {
+        if (error instanceof LiveAdmissionError && reserved)
+            releaseNativeReservation(plan.home, plan.taskId, reserved.record);
+    }));
     ok(`reviewer ${plan.address} started in ${plan.nsPath}${session ? ` (session ${session})` : ''}`);
     // The warden is started right after the participant: without it the reviewer would not learn about
     // a message — it fetches the mailbox only on its own turn.

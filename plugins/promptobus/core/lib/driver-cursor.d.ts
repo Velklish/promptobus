@@ -73,7 +73,7 @@ export declare const PROVEN_HOOK_EVENTS: string[];
 export declare const KNOWN_HOOK_EVENTS: string[];
 /** Lift plan from harness-neutral context; writes and launches nothing. `--plugin-dir` is not in
  * argv — Cursor has its own plugin format, and the skills canon travels as `.cursor/skills` files. */
-declare function prepare({ mcp, prompt, model, effort, permissionMode, addDirs, settingsPath, cwd, guardCommand, denyTools, root, skillsRoot, selectedContext, ref, role, env, }: Omit<CursorPrepareContext, 'ref'> & {
+declare function prepare({ mcp, prompt, model, effort, permissionMode, addDirs, settingsPath, cwd, guardCommand, projectGuardCommand, denyTools, root, skillsRoot, selectedContext, ref, role, env, }: Omit<CursorPrepareContext, 'ref'> & {
     ref?: string | null;
 }): LibLaunchPlan;
 declare function replaceMcpServers(plan: LibLaunchPlan, servers: Record<string, LibMcpServer>): void;

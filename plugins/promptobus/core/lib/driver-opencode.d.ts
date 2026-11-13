@@ -12,6 +12,7 @@ interface OpenCodeRecord {
     sessionId: string | null;
     holderPid?: number;
     holderProcess?: ProcessIdentity | null;
+    launcherProcess?: ProcessIdentity | null;
     nativeAdmissionUnknown?: {
         harness: 'opencode';
         nativeId: string;

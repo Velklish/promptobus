@@ -1,11 +1,11 @@
 {
   "name": "bb-plugin-promptobus-native-panel",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "license": "MIT",
   "engines": {
-    "bb": "0.48.1",
-    "bbPluginSdk": "0.6.104",
+    "bb": "0.49.0",
+    "bbPluginSdk": "0.6.132",
     "node": ">=26"
   },
   "bb": {
@@ -22,9 +22,9 @@
     ]
   },
   "dependencies": {
-    "zod": "4.6.6"
+    "zod": "4.6.7"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.6.104"
+    "@get-bb/plugin-sdk": "0.6.132"
   }
 }

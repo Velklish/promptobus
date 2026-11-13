@@ -10,6 +10,7 @@ export interface GuardIdentity {
     home: string;
 }
 export declare function guardHookCommand(host: Pick<PromptobusHost, 'nodePath' | 'guardArgv'>, identity?: GuardIdentity | null, platform?: string): string;
+export declare function managedGuardHookCommand(host: Pick<PromptobusHost, 'nodePath' | 'busArgv'>, identity: GuardIdentity, platform?: string): string;
 export declare function guardHookSettings(host: Pick<PromptobusHost, 'nodePath' | 'guardArgv'>, identity?: GuardIdentity | null, platform?: string): Record<string, unknown>;
 export interface HookPlan {
     settings: Record<string, unknown>;

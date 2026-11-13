@@ -41,7 +41,7 @@ export const ENTER_SETTLE_MS = 400;
 /** Ceiling of SILENCE in the transcript, not of a turn's total time — a real turn runs for minutes.
  * It kills nothing: the threshold gives `inspect` a verdict, and the decision stays with a person. */
 export const TURN_IDLE_MS = 180_000;
-/** Window in which an injection counts as a started turn though the transcript is still silent:
+/** Window in which an injection counts as a started turn while the transcript is silent after it:
  * measured 3.09 and 8.03 s to the first line, and without it the warden would wake twice. */
 export const INJECT_GRACE_MS = 20_000;
 /** How long we wait for the persist session to appear in the tmux list; measured 1.17–1.39 s. The
@@ -604,8 +604,9 @@ export function turnState(record, env = process.env) {
         ? record.transcript : findTranscript(record?.chatId, env);
     const seen = file ? readTranscript(file) : null;
     const injected = injectedAt(record, env);
+    const answered = seen?.touchedAt != null && Math.floor(seen.touchedAt) > injected;
     const fresh = Number.isFinite(injected) && Date.now() - injected < INJECT_GRACE_MS
-        && !seen?.busy;
+        && !seen?.busy && !answered;
     const busy = !!seen?.busy || fresh;
     const idleMs = seen?.touchedAt ? Date.now() - seen.touchedAt : null;
     return {

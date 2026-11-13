@@ -147,6 +147,7 @@ export interface SpawnPlan {
     permissionMode: string | null;
     settingsPath: string;
     guardCommand: string;
+    projectGuardCommand: string;
     pluginDir: string | null;
     mcpConfigPath: string;
     mcpNote: McpNote;

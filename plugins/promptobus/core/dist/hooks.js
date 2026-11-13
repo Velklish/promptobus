@@ -1,4 +1,4 @@
-// Generation of project-level bus hooks. The record shape is the harness
+// Generation of project and managed bus hooks. The record shape is the harness
 // contract; the command is the host: absolute node and bin.
 import { PROMPTOBUS_SERVER as BUS_SERVER } from './contract.js';
 import { shellQuote } from './fs/shell.js';
@@ -14,7 +14,12 @@ function quoteFlag(value, platform) {
         : shellQuote(value);
 }
 export function guardHookCommand(host, identity = null, platform = 'posix') {
-    const argv = host.guardArgv(['guard']);
+    return renderGuardCommand(host.nodePath(), host.guardArgv(['guard']), identity, platform);
+}
+export function managedGuardHookCommand(host, identity, platform = 'posix') {
+    return renderGuardCommand(host.nodePath(), host.busArgv(['guard']), identity, platform);
+}
+function renderGuardCommand(nodePath, argv, identity, platform) {
     const identityFlags = identity
         ? [
             '--role', quoteFlag(identity.address, platform),
@@ -23,7 +28,7 @@ export function guardHookCommand(host, identity = null, platform = 'posix') {
         ]
         : [];
     return [
-        `"${host.nodePath()}"`,
+        `"${nodePath}"`,
         ...argv.map((arg, index) => index === 0 ? `"${arg}"` : arg),
         ...identityFlags,
     ].join(' ');
