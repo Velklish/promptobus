@@ -1,10 +1,11 @@
-// Hold an owned native cleanup past the unchanged 30s abort wait; exit must retain UNKNOWN.
+// Hold an owned native cleanup past the abort wait; exit must retain UNKNOWN. Only the abort mode waits the real 30 s;
+// the transfer mode proves the same retained state on a shortened copy (contributing § Live harness scenarios).
 import { spawn } from 'node:child_process';
 import { appendFileSync, cpSync, existsSync, readFileSync, rmSync, symlinkSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
-import { makeSandbox } from './sandbox.mjs';
+import { loadScale, makeSandbox } from './sandbox.mjs';
 import { readCompleteJson, waitFor } from './harness.mjs';
 import { proveStandIsolation, STUB_BIN } from '../scripts/live-entry.mjs';
 import { RUN_OWNER_FILE, sweepLiveRuns } from '../scripts/canary-runs.mjs';
@@ -15,7 +16,9 @@ import { cursorDriver } from '../lib/driver-cursor.js';
 import { processState } from '../lib/service-state.js';
 
 const PACKAGE = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const REAL_ABORT_WAIT = '}, { waitMs: 30_000 });';
 for (const mode of ['abort cleanup', 'normal cleanup transfer']) {
+  const waitMs = mode === 'abort cleanup' ? 30_000 : Math.min(30_000, Math.round(5_000 * await loadScale()));
   const ROOT = makeSandbox('promptobus-promptobus-mixed-timeout-retention-'), bins = path.join(ROOT, 'bin');
   const cursor = await cursorStub.installHarness({ binDir: bins, bundledRuntime: true }), codex = await codexStub.installHarness({ binDir: bins });
   const mechanism = path.join(ROOT, 'mechanism');
@@ -26,7 +29,8 @@ for (const mode of ['abort cleanup', 'normal cleanup transfer']) {
   const stopStarted = path.join(ROOT, 'Stop-started'), stopRelease = path.join(ROOT, 'Stop-release');
   const source = readFileSync(entry, 'utf8'), anchor = "  workerRef = wp?.sessionRef ?? '';";
   if (source.split(anchor).length !== 2) throw new Error('mixed timeout fixture lost the owned worker boundary');
-  writeFileSync(entry, source.replace(anchor, anchor + `
+  if (source.split(REAL_ABORT_WAIT).length !== 2) throw new Error('mixed timeout fixture lost the 30 s abort wait');
+  writeFileSync(entry, source.replace(REAL_ABORT_WAIT, `}, { waitMs: ${waitMs} });`).replace(anchor, anchor + `
     const {requireProcess: fixtureProcess}=await import('../lib/service-state.js');
     const fixtureNative=cursorPersist.readSession(workerRef),fixtureOwner=store.liveWarden(home,TASK);
     writeFileSync(${JSON.stringify(raisedFile)},JSON.stringify({ref:workerRef,pane:fixtureProcess(fixtureNative.panePid),
@@ -49,9 +53,11 @@ for (const mode of ['abort cleanup', 'normal cleanup transfer']) {
       PROMPTOBUS_CURSOR_USER_HOME: cursor.userHome, [codexStub.CODEX_HOME_VAR]: codex.home, PROMPTOBUS_CODEX_HOME: codex.stateHome }, env: process.env });
   if (!proved.ok) throw new Error(`owned timeout fixture isolation refused: ${proved.reason}`);
   const child = spawn(process.execPath, [entry], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, [STUB_BIN]: bins } });
-  let out = '', exit = null, raised;
+  let out = '', exit = null, raised, signalledAt = null;
   child.stdout.on('data', bytes => { out += bytes; }); child.stderr.on('data', bytes => { out += bytes; });
-  const done = new Promise(resolve => child.on('close', (code, signal) => { exit = { code, signal }; resolve(exit); }));
+  const done = new Promise(resolve => child.on('close', (code, signal) => {
+    exit = { code, signal, elapsedMs: signalledAt === null ? null : Date.now() - signalledAt }; resolve(exit);
+  }));
   try {
     raised = await waitFor(() => readCompleteJson(raisedFile) ?? (exit ? { earlyExit: exit } : null), { timeoutMs: 120000 });
     check(`mixed ${mode} timeout: actual owned native pane and service owner are alive before cancellation`,
@@ -60,19 +66,20 @@ for (const mode of ['abort cleanup', 'normal cleanup transfer']) {
       writeFileSync(scenarioRelease, 'enter normal cleanup');
       await waitFor(() => existsSync(stopStarted), { timeoutMs: 10000 });
     }
+    signalledAt = Date.now();
     child.kill('SIGTERM');
-    await Promise.race([done, new Promise(resolve => setTimeout(resolve, 45000).unref())]);
+    await Promise.race([done, new Promise(resolve => setTimeout(resolve, waitMs + 15000).unref())]);
     const stopped = existsSync(stopStarted) ? JSON.parse(readFileSync(stopStarted, 'utf8')) : null;
     const calls = existsSync(stopStarted + '.calls.jsonl') ? readFileSync(stopStarted + '.calls.jsonl', 'utf8').trim().split('\n').map(line => JSON.parse(line)) : [];
     const record = raised?.ref ? cursorSession.readSession(raised.ref) : null, sandbox = raised?.sandbox;
     const marker = sandbox && existsSync(path.join(sandbox, RUN_OWNER_FILE)) ? JSON.parse(readFileSync(path.join(sandbox, RUN_OWNER_FILE), 'utf8')) : null;
     writeSync(1, `  · mixed-timeout-retention-receipt: ${JSON.stringify({ runtimeDirectory: mechanism,
-      mode, raised, stopped, calls, exit, marker, sandboxPresentAfterExit: sandbox ? existsSync(sandbox) : null,
+      mode, waitMs, raised, stopped, calls, exit, marker, sandboxPresentAfterExit: sandbox ? existsSync(sandbox) : null,
       recordPresentAfterExit: !!record, homePresentAfterExit: record?.cwd ? existsSync(record.cwd) : null,
       paneStateAfterExit: raised?.pane ? processState(raised.pane) : 'unknown', ownerStateAfterExit: raised?.owner ? processState(raised.owner) : 'unknown' })}\n`);
-    check(`mixed ${mode} timeout: unchanged abort wait exits 143 while the native Stop outcome is still pending`,
-      exit?.code === 143 && calls.length === 1 && stopped?.ref === raised?.ref && stopped?.timeoutMs > 0 && stopped?.timeoutMs <= 5000
-      && out.includes('cleanup after SIGTERM did not end in 30000 ms'), JSON.stringify({ exit, stopped, out }));
+    check(`mixed ${mode} timeout: the abort wait runs out in full, then exits 143 while the native Stop outcome is still pending`,
+      exit?.code === 143 && exit.elapsedMs >= waitMs - 100 && calls.length === 1 && stopped?.ref === raised?.ref && stopped?.timeoutMs > 0 && stopped?.timeoutMs <= 5000
+      && out.includes(`cleanup after SIGTERM did not end in ${waitMs} ms`), JSON.stringify({ exit, waitMs, stopped, out }));
     check(`mixed ${mode} timeout: child exit preserves the same live pane record, home and unresolved sandbox`,
       !!record?.cwd && existsSync(record.cwd) && !!sandbox && existsSync(sandbox) && marker?.cleanup?.state === 'unresolved'
       && processState(raised.pane) === 'alive', JSON.stringify({ raised, stopped, marker, recordHome: record?.cwd, out }));

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The mixed timeout-retention suite waits the unchanged 30000 ms abort deadline
+  once, in its abort mode, and now requires the exit to come no earlier than it.
+  The normal cleanup transfer mode checks the same retained state on a fixture
+  copy with a shortened, load-scaled wait. The live-mixed stand polls its
+  post-abort insurance view for up to 6 s instead of sleeping 6 s.
+
 ### Fixed
 
 - The Cursor driver and wake integration files run again. The Cursor fixture

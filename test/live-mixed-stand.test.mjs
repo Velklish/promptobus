@@ -239,8 +239,10 @@ check('abort: the child sampled its own participants before teardown — matchin
   && preExit.reviewer.stop?.ok === true && preExit.reviewer.stop?.stopped === true
   && preExit.warden?.stopped === true && preExit.warden.seat === null && preExit.warden.process && processState(preExit.warden.process) === 'dead',
   JSON.stringify({ preExit, sandbox, workerPid, reviewerPids, receiptText }));
-// Delay the parent's PID read past the record watch; only the child's sample proves stop.
-await sleep(6000);
+// The parent waits for its own view, bounded past the record watch; only the child's sample proves stop.
+const goneLate = () => Number.isInteger(workerPid) && !pidAlive(workerPid)
+  && reviewerPids.length === 2 && reviewerPids.every((p) => !pidAlive(p)) && !existsSync(sandbox);
+await waitFor(goneLate, { timeoutMs: 6000 });
 const workerGoneLate = Number.isInteger(workerPid) && !pidAlive(workerPid);
 const reviewerGoneLate = reviewerPids.length === 2 && reviewerPids.every((p) => !pidAlive(p));
 check('abort: after the holder\'s record watch the parent sees the same — insurance, the verdict was the child\'s pre-exit sample',
