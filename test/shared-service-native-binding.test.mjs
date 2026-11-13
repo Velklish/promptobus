@@ -31,8 +31,15 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   const env = { ...process.env, PROMPTOBUS_SERVICE_HOME: privateHome, PROMPTOBUS_HOME: home,
     PROMPTOBUS_SERVICE_IDLE_MS: '60000', PROMPTOBUS_WARDEN: 'off' };
   const options = { cwd: root, env }, clients = [], factories = [], validations = [], gates = new Map(), nativeApps = [];
-  const originalSpawn = childProcess.spawn, originalReadFile = fsPromises.readFile;
-  let birthGate = null;
+  const originalSpawn = childProcess.spawn, originalReadFile = fsPromises.readFile, originalInterval = globalThis.setInterval;
+  let birthGate = null, housekeeping, holdHousekeeping = false, pendingHousekeeping = false;
+  globalThis.setInterval = (callback, ...args) => {
+    if (String(callback).includes('idleSince') && String(callback).includes('activeWork')) {
+      housekeeping = () => { if (holdHousekeeping) pendingHousekeeping = true; else callback(); };
+      return originalInterval(housekeeping, ...args);
+    }
+    return originalInterval(callback, ...args);
+  };
   childProcess.spawn = function(command, args, ...rest) {
     const child = originalSpawn.call(this, command, args, ...rest);
     const held = birthGate;
@@ -137,6 +144,8 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   try {
     await until(() => readDiscovery(paths) !== null || serviceError);
     if (serviceError) throw serviceError;
+    globalThis.setInterval = originalInterval;
+    if (!housekeeping) throw new Error('Owned service housekeeping callback was not captured');
     bus(home, { cli: version });
     createTask(home, { id: task, title: 'native binding fixture', owner: nativeId });
     upsertParticipant(home, task, participantRecord('user'));
@@ -291,12 +300,20 @@ if (!['darwin', 'linux'].includes(process.platform)) {
     check('a changed launch during actual native proof refuses without dispatching the tool', nativeReplaced.status === 401
       && !strictTaskFacts(home, task, { statusLine: true }).messages.some(message => message.firstLine === replacedBody), nativeReplaced.text);
     writeSession(publishedLaunch, codexEnv);
+    holdHousekeeping = true;
     const afterNativeProof = state();
     writeFileSync(managedRecord, JSON.stringify({ ...publishedLaunch, launchId: 'replaced-launch' }));
-    const managedReplaced = await tool(managed, managedRoute, 'promptobus_send', { to: 'orchestrator', type: 'status', body: 'replaced managed launch must not commit' });
-    writeFileSync(managedRecord, JSON.stringify(publishedLaunch));
+    housekeeping();
+    let managedReplaced;
+    try {
+      managedReplaced = await tool(managed, managedRoute, 'promptobus_send', { to: 'orchestrator', type: 'status', body: 'replaced managed launch must not commit' });
+    } finally {
+      writeFileSync(managedRecord, JSON.stringify(publishedLaunch));
+    }
     check('replaced managed lifetime proof refuses even with matching native metadata and cached context', managedReplaced.status === 401
       && state() === afterNativeProof, managedReplaced.text);
+    check('owned housekeeping callback is held until managed metadata is restored', pendingHousekeeping);
+    holdHousekeeping = false; if (pendingHousekeeping) { pendingHousekeeping = false; housekeeping(); }
     for (const [name, replace] of [['revoked', false], ['replaced', true]]) {
       const held = gate(name), credential = await register({ FACTORY_GATE: name });
       const route = await initialize(credential);
@@ -367,7 +384,30 @@ if (!['darwin', 'linux'].includes(process.platform)) {
     check('realize racing with revoke cannot recreate a removed grant', controls.length === 2 && !existsSync(race.credentialFile));
     const removed = await tool(race, connection, 'promptobus_task');
     check('a revoked native credential cannot borrow an existing session', removed.status === 401, removed.text);
+    const cleanupClient = await register({ PROMPTOBUS_ROLE: managedAddress }, readRoot, managedProof);
+    const cleanupRoute = await initialize(cleanupClient);
+    const cleanupRealized = await realize(cleanupClient, nativeId);
+    if (cleanupRealized.error) throw new Error(`Cleanup fixture realization refused: ${cleanupRealized.error}`);
+    const cleanupWarm = await tool(cleanupClient, cleanupRoute, 'promptobus_task');
+    if (cleanupWarm.status !== 200 || cleanupWarm.json.result?.isError) throw new Error('Cleanup fixture failed to warm its context');
+    const sessionFile = path.join(paths.sessions, `${cleanupRoute.session}.json`), replayDir = path.join(paths.requests, cleanupRoute.session);
+    const cleanupId = ++sequence, outcome = path.join(replayDir, `${createHash('sha256').update(JSON.stringify(cleanupId)).digest('hex')}.json`);
+    const busBeforeCleanup = JSON.stringify(snapshot(home)), receiptsBeforeCleanup = snapshot(replayDir);
+    const cleanupBefore = { grant: existsSync(cleanupClient.credentialFile), session: existsSync(sessionFile),
+      replay: existsSync(replayDir), receipts: receiptsBeforeCleanup, outcome: existsSync(outcome) };
+    writeFileSync(managedRecord, JSON.stringify({ ...publishedLaunch, launchId: 'replaced-cleanup-launch' }));
+    try {
+      const refused = await tool(cleanupClient, cleanupRoute, 'promptobus_send', { to: 'orchestrator', type: 'status', body: 'cleanup must not publish' }, { threadId: nativeId }, cleanupId);
+      await owner({ operation: 'status' });
+      const cleanupAfter = { grant: existsSync(cleanupClient.credentialFile), session: existsSync(sessionFile),
+        replay: existsSync(replayDir), outcome: existsSync(outcome), busUnchanged: JSON.stringify(snapshot(home)) === busBeforeCleanup };
+      check('owner status retires invalid managed authority without a bus effect or new outcome', cleanupBefore.grant && cleanupBefore.session
+        && cleanupBefore.replay && cleanupBefore.receipts.length > 0 && !cleanupBefore.outcome && refused.status === 401
+        && cleanupAfter.busUnchanged && !cleanupAfter.grant && !cleanupAfter.session && !cleanupAfter.replay && !cleanupAfter.outcome,
+      JSON.stringify({ status: refused.status, before: cleanupBefore, after: cleanupAfter, response: refused.text }));
+    } finally { writeFileSync(managedRecord, JSON.stringify(publishedLaunch)); }
   } finally {
+    globalThis.setInterval = originalInterval; holdHousekeeping = false;
     for (const held of gates.values()) held.release();
     childProcess.spawn = originalSpawn; fsPromises.readFile = originalReadFile; syncBuiltinESMExports();
     for (const credential of clients) {

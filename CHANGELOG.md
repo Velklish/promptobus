@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Shared-service authority fixtures isolate negative variants and control housekeeping ordering while retaining refusal, snapshot and cleanup checks.
+
 - The Codex consumed contract selects the installed 0.167.2 schema capture, with
   exact generator and binary provenance. The holder does not advertise human
   approval support and refuses `humanCommand` and unknown or malformed approval

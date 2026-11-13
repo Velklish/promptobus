@@ -264,18 +264,22 @@ console.log('[]');}
     }
     for (const patch of [{}, { stopping: true }, { threadId: 'another-owned-thread' }, { launchId: 'another-owned-launch' },
       { appPid: 1 }, { sandbox: 'full-access' }, { unrecognizedAuthority: true }]) {
-      const id = ++sequence, before = questions(telemetry), original = readFileSync(telemetry.record);
+      const negative = await actor(`negative-${Object.keys(patch)[0] ?? 'identical'}`);
+      const warmed = await question(negative, 'warm cached context before negative publication');
+      if (warmed.status !== 200 || JSON.parse(warmed.text).result?.isError) throw new Error('Owned negative fixture failed to warm its context');
+      const id = ++sequence, before = questions(negative), original = readFileSync(negative.record);
       let published = false;
       beforeBusVersion = () => {
-        writeFileSync(telemetry.record, JSON.stringify({ ...JSON.parse(original), ...patch,
+        writeFileSync(negative.record, JSON.stringify({ ...JSON.parse(original), ...patch,
           ...(Object.keys(patch).length ? { lastEvent: `changed-${id}` } : {}) }));
         published = true;
       };
-      const refused = await question(telemetry, 'must not accept other record publications', id);
-      writeFileSync(telemetry.record, original);
+      const refused = await question(negative, 'must not accept other record publications', id);
+      await workspaceServiceStatus(host, options);
+      writeFileSync(negative.record, original);
       check(`returned dispatch fence refuses ${Object.keys(patch)[0] ?? 'byte-identical rewrite'} despite telemetry`, published
         && (refused.status !== 200 || JSON.parse(refused.text).result?.isError === true)
-        && questions(telemetry) === before, refused.text);
+        && questions(negative) === before, refused.text);
     }
 
     const owner = await actor('claim', 'orchestrator');
