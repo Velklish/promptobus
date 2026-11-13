@@ -167,11 +167,18 @@ The mapping in [test/groups.mjs](../../test/groups.mjs) is deliberately small:
 | `model-routing` | `model-routing.test.mjs` and every `model-routing-*.test.mjs` |
 | `store` | `store.test.mjs`, `v1-engine.test.mjs`, `v1-validate.test.mjs` |
 | `reviewer-files` | `reviewer-files.test.mjs`, `reviewer-files-race.test.mjs` |
+| `lifecycle` | Stop and retirement, lead lifecycle, adapter boundary, scenario and documentation contract files listed in `test/groups.mjs` |
 | `integration` | Every other `test/*.test.mjs`, including CLI and source/documentation checks |
 
-A changed test selects its whole group. The only production paths eligible for a
-reduced run are `lib/fuzzy.ts`, `lib/model-routing/render.ts` and
-`lib/model-routing/calibrate.ts`; each selects both `integration` and
+A changed test selects its whole group; an integration test also selects lifecycle.
+`lib/stop.ts`, `lib/codex-retire.ts` and `lib/lead.ts` (and their emitted JavaScript)
+select lifecycle: Stop and retirement affect lead recovery, while lead recovery and
+the adapter boundary are checked alongside neighbouring scenarios and documentation.
+Run `npm run test:local -- --base <commit> --lifecycle` to request this set directly
+before full acceptance, regardless of changed paths. The automatic selection still
+falls back to the full suite for unknown or shared changes. The other production paths
+eligible for a reduced run are `lib/fuzzy.ts`, `lib/model-routing/render.ts` and
+`lib/model-routing/calibrate.ts`; each selects `integration`, `lifecycle` and
 `model-routing`. Their emitted JavaScript paths select the same groups.
 CLI entry points and fixture helpers import these transitively,
 so selecting only the nearest unit test would omit consumers. The isolated store

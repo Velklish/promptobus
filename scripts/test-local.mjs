@@ -6,16 +6,17 @@ import { changedPaths, selectTests } from '../test/groups.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
-const usage = 'usage: npm run test:local -- --base <commit> [--list]';
+const usage = 'usage: npm run test:local -- --base <commit> [--list] [--lifecycle]';
 try {
   const at = args.indexOf('--base');
   const base = at < 0 ? null : args[at + 1];
   if (!base || base.startsWith('--') || args.filter((arg) => arg === '--base').length !== 1
-      || args.some((arg, i) => i !== at + 1 && arg !== '--base' && arg !== '--list')
-      || args.filter((arg) => arg === '--list').length > 1) throw new Error(usage);
+      || args.some((arg, i) => i !== at + 1 && arg !== '--base' && arg !== '--list' && arg !== '--lifecycle')
+      || args.filter((arg) => arg === '--list').length > 1
+      || args.filter((arg) => arg === '--lifecycle').length > 1) throw new Error(usage);
   const input = changedPaths(root, base);
   const allFiles = readdirSync(path.join(root, 'test')).filter((name) => name.endsWith('.test.mjs'));
-  const plan = selectTests(input.paths, allFiles);
+  const plan = selectTests(input.paths, allFiles, args.includes('--lifecycle'));
   console.log(JSON.stringify({ ...input, ...plan, selectedFileCount: plan.files.length,
     omittedFileCount: plan.omittedFiles.length }, null, 2));
   if (!args.includes('--list')) {

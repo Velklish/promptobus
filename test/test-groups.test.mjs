@@ -1,6 +1,6 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -14,7 +14,8 @@ const selector = await import('./groups.mjs').catch((error) => {
 });
 const files = ['cli.test.mjs', 'model-routing-calibrate.test.mjs',
   'model-routing-resolver.test.mjs', 'promptobus-review.test.mjs',
-  'reviewer-files.test.mjs', 'store.test.mjs', 'v1-engine.test.mjs', 'v1-validate.test.mjs'];
+  'lead-lifecycle.test.mjs', 'promptobus-adapter.test.mjs', 'scenario-delivery.test.mjs',
+  'documentation-contract.test.mjs', 'reviewer-files.test.mjs', 'store.test.mjs', 'v1-engine.test.mjs', 'v1-validate.test.mjs'];
 const select = (paths) => {
   assert.ok(selector, 'local test selection is unavailable');
   return selector.selectTests(paths, files);
@@ -25,20 +26,33 @@ test('one subsystem selects its group and reports omitted groups and files', () 
   assert.equal(plan.full, false);
   assert.deepEqual(plan.selectedGroups, ['model-routing']);
   assert.deepEqual(plan.files, ['model-routing-calibrate.test.mjs', 'model-routing-resolver.test.mjs']);
-  assert.deepEqual(plan.omittedGroups, ['integration', 'reviewer-files', 'store']);
-  assert.equal(plan.omittedFiles.length, 6);
+  assert.deepEqual(plan.omittedGroups, ['integration', 'lifecycle', 'reviewer-files', 'store']);
+  assert.equal(plan.omittedFiles.length, 10);
 });
 
 for (const rel of ['lib/model-routing/calibrate.js', 'lib/model-routing/calibrate.ts', 'lib/fuzzy.ts', 'lib/model-routing/render.ts']) {
   test(`known production dependency ${rel} selects routing and CLI integration together`, () => {
     const plan = select([rel]);
     assert.equal(plan.full, false);
-    assert.deepEqual(plan.selectedGroups, ['integration', 'model-routing']);
+    assert.deepEqual(plan.selectedGroups, ['integration', 'lifecycle', 'model-routing']);
     assert.ok(plan.files.includes('model-routing-calibrate.test.mjs'));
     assert.ok(plan.files.includes('cli.test.mjs'));
     assert.ok(plan.files.includes('promptobus-review.test.mjs'));
   });
 }
+
+
+test('lifecycle paths select the historic failures and neighbouring contracts', () => {
+  for (const rel of ['lib/stop.ts', 'lib/codex-retire.ts', 'lib/lead.ts']) {
+    const plan = select([rel]);
+    assert.equal(plan.full, false, rel);
+    assert.deepEqual(plan.selectedGroups, ['lifecycle']);
+    for (const name of ['lead-lifecycle.test.mjs', 'promptobus-adapter.test.mjs',
+      'scenario-delivery.test.mjs', 'documentation-contract.test.mjs']) assert.ok(plan.files.includes(name), name);
+    assert.ok(plan.omittedFiles.includes('cli.test.mjs'));
+    assert.ok(plan.reasons.some((reason) => reason.includes(rel)));
+  }
+});
 
 test('shared protocol and transport dependencies require the complete suite', () => {
   for (const rel of ['src/protocol.ts', 'src/v1/model.ts', 'src/mcp/tools.ts', 'lib/exec.js']) {
@@ -101,7 +115,7 @@ test('Git deletion retains the removed production path for dependent selection',
   git(dir, 'rm', '-q', 'lib/model-routing/calibrate.js');
   const input = changes(dir, base);
   assert.ok(input.paths.includes('lib/model-routing/calibrate.js'));
-  assert.deepEqual(select(input.paths).selectedGroups, ['integration', 'model-routing']);
+  assert.deepEqual(select(input.paths).selectedGroups, ['integration', 'lifecycle', 'model-routing']);
 });
 
 test('Git selection includes committed, staged, unstaged and untracked dirty input', () => {
@@ -160,7 +174,7 @@ test('a deliberately broken dependent test is selected and actually reddens its 
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.match(result.stdout, /dependent review verdict/);
   assert.match(result.stdout, /1 !== 2/);
-  assert.match(result.stderr, /1 of 4 files failed/);
+  assert.match(result.stderr, /1 of 8 files failed/);
   assert.doesNotMatch(result.stdout, /▸ store.test.mjs/);
 });
 
@@ -200,7 +214,8 @@ test('local command executes its selected scope and propagates the dependent fai
   }
   copyFileSync(path.join(here, 'groups.mjs'), path.join(dir, 'test/groups.mjs'));
   copyFileSync(path.join(here, '../scripts/test-local.mjs'), path.join(dir, 'scripts/test-local.mjs'));
-  writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { build: 'node -e ""' } }));
+  writeFileSync(path.join(dir, 'build.cjs'), "require('fs').writeFileSync('built', 'yes')");
+  writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { build: 'node build.cjs' } }));
   for (const name of files) writeFileSync(path.join(dir, 'test', name), "console.log('1/1 passed');\n");
   git(dir, 'init', '-q');
   git(dir, 'config', 'user.email', 'test@example.invalid');
@@ -209,7 +224,7 @@ test('local command executes its selected scope and propagates the dependent fai
   git(dir, 'commit', '-qm', 'local command base');
   const base = git(dir, 'rev-parse', 'HEAD');
   writeFileSync(path.join(dir, 'test/model-routing-calibrate.test.mjs'),
-    "import assert from 'node:assert/strict'; import test from 'node:test'; test('local dependent verdict', () => assert.equal(1, 2));\n");
+    "import assert from 'node:assert/strict'; import { existsSync } from 'node:fs'; import test from 'node:test'; test('local dependent verdict', () => { assert.ok(existsSync('built')); assert.equal(1, 2); });\n");
   const invoke = (...args) => spawnSync(process.execPath, [path.join(dir, 'scripts/test-local.mjs'),
     '--base', base, ...args], { encoding: 'utf8', timeout: 20_000 });
   const listed = invoke('--list');
@@ -217,9 +232,11 @@ test('local command executes its selected scope and propagates the dependent fai
   const plan = JSON.parse(listed.stdout);
   assert.deepEqual(plan.selectedGroups, ['model-routing']);
   assert.equal(plan.selectedFileCount, 2);
-  assert.equal(plan.omittedFileCount, 6);
+  assert.equal(plan.omittedFileCount, 10);
   assert.notEqual(plan.dirty, '');
+  assert.equal((existsSync(path.join(dir, 'built'))), false);
   const result = invoke();
+  assert.equal(existsSync(path.join(dir, 'built')), true);
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.match(result.stdout, /local dependent verdict/);
   assert.match(result.stdout, /1 !== 2/);

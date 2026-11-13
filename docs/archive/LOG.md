@@ -671,3 +671,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-419.15"></a>`PB-419.15-correct-obsolete-node-prerequisite-in-deferred-sdk-task` · 2026-11-13 · merged into PB-412 · — · Correct obsolete Node prerequisite in deferred SDK task
 - <a id="pb-417"></a>`PB-417-codex-consumed-contract-drift` · 2026-11-13 · completed · — · Verify the Codex 0.167.2 approval contract before updating the consumed capture
 - <a id="pb-417.1"></a>`PB-417.1-shared-service-fixture-housekeeping` · 2026-11-13 · completed · — · Make shared-service authority fixtures deterministic across housekeeping
+- <a id="pb-432"></a>`PB-432-focused-lifecycle-contracts` · 2026-11-13 · completed · — · Run focused lifecycle and adapter contracts before full acceptance

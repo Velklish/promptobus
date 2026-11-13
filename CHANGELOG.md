@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   captures and live measurements keep their original versions; schema matching
   does not qualify an ordinary workflow or measure subscription availability.
 
+### Added
+
+- A focused local lifecycle check covers Stop, retirement, lead recovery and adapter boundaries before full acceptance.
+
 ## [0.32.9] — 2026-11-10
 
 ### Fixed
