@@ -169,7 +169,7 @@ check('PB-292 shipped and installed documentation links use release targets',
     && packageOverview.includes('checks their agreement and commits the candidate before verification')
     && packageOverview.includes('`npm run release -- verify --receipt /durable/candidate.json` checks metadata before starting build or gates')
     && packageOverview.includes('On `main` between releases, these links open the last tagged release\'s pages')
-    && packageOverview.includes('A prepared candidate points to a future destination until its release commit and tag are published together')
+    && packageOverview.includes('A prepared candidate points to a future destination until its candidate has passed main CI and its tag is published')
     && packageOverview.includes('An absent public tag is not proof of a successful remote installation'),
   'Packaged relative links must resolve and source links must name this package version');
 if (tagAvailable) {

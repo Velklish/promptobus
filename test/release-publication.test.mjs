@@ -17,7 +17,7 @@ const refused = (r, message) => {
 };
 
 function fixture() {
-  const owner = makeSandbox('promptobus-publication-');
+  const owner = makeSandbox('promptobus-release-fixture-publication-');
   const root = path.join(owner, 'source');
   const bare = path.join(owner, 'public.git');
   const file = path.join(owner, 'receipts/candidate.json');
