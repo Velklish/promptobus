@@ -46,7 +46,8 @@ fs.mkdirSync=(file,...args)=>{if(releasing&&file===directory+'.gate')fs.writeFil
 syncBuiltinESMExports();
 const {acquireServiceLock,readPrivate}=await import(${JSON.stringify(moduleUrl)});
 const release=await acquireServiceLock(directory);
-fs.writeFileSync(marker('ready'),JSON.stringify(readPrivate(ownerFile)));
+fs.writeFileSync(marker('ready.tmp'),JSON.stringify(readPrivate(ownerFile)));
+fs.renameSync(marker('ready.tmp'),marker('ready'));
 until(()=>fs.existsSync(marker('release')));
 fs.writeFileSync(marker('release-started'),'started');
 releasing=true;

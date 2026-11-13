@@ -11,6 +11,8 @@ import { dropSession, holderAsk, holderLogFile, pidAlive, readSession, sessionFi
 import { codexDriver, MIN_CODEX_VERSION, PROVEN_CODEX_VERSION } from '../lib/driver-codex.js';
 import { readStopConfirmation } from '../lib/codex-command-receipts.js';
 import { requireNativeTerminal } from '../lib/native-lifecycle.js';
+import { taskServiceFixture } from './task-service-fixture.mjs';
+import { makeSockDir } from './sandbox.mjs';
 
 const root = makeSandbox('promptobus-codex-');
 const binDir = path.join(root, 'bin');
@@ -330,6 +332,18 @@ await scenario('self-stop-e2e', async ({ control, messages, ref, env, task, home
     check('self-Stop refuses absent or foreign requester without stopping', !refused.ok && !refused.stopped
       && !(await holderAsk(ref, 'status', {}, env)).stopping, JSON.stringify(refused));
   }
+  const service = await taskServiceFixture({ workspace: dir, home, task, socketDirectory: makeSockDir('a2s-').dir,
+    env: { ...env, PROMPTOBUS_SERVICE_IDLE_MS: '60000' } });
+  Object.assign(env, service.env);
+  const run = args => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [path.resolve('bin/promptobus.js'), ...args], { cwd: dir, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    child.stdout.on('data', data => { out += data; }); child.stderr.on('data', data => { out += data; });
+    child.once('error', reject); child.once('close', code => resolve({ code, out }));
+  });
+  const demand = await run(['warden', '--task', task]);
+  const watching = await waitFor(async () => (await service.status()).warden?.tasks.some(row => row.task === task && row.state === 'running'), { timeoutMs: 5000 });
+  check('self-Stop lifetime starts its actual shared task loop', demand.code === 0 && watching, JSON.stringify(demand));
   const gate = path.join(dir, 'start-stop');
   const cli = spawn('/bin/sh', ['-c', 'while [ ! -f "$1" ]; do sleep 0.01; done; shift; exec "$@"',
     'self-stop-fixture', gate, process.execPath, path.resolve('bin/promptobus.js'), 'stop', 'orchestrator', '--task', task],
@@ -368,7 +382,24 @@ await scenario('self-stop-e2e', async ({ control, messages, ref, env, task, home
     && confirmed.commands.find(item => item.itemId === 'self')?.exitCode === outcome.code
     && confirmed.commands.find(item => item.itemId === 'other')?.exitCode === otherOutcome.code
     && rows.findIndex(row => row.kind === 'item/completed' && row.itemId === 'other') < rows.indexOf(confirmed), JSON.stringify(confirmed));
+  const beforeClose = await service.status();
+  const refused = await run(['service', 'stop', '--json']);
+  check('confirmed self-Stop with zero clients still retains task loop work', beforeClose.clients === 0
+    && beforeClose.warden.tasks.some(row => row.task === task) && readTask(home, task).status === 'active'
+    && refused.code === 1 && /clients: 0, activeWork: true/.test(refused.out), JSON.stringify({ beforeClose, refused }));
+  const closedTask = await run(['service', 'close-task', '--task', task, '--json']);
+  check('service owner closes a confirmed self-Stop lifetime without borrowing its identity', closedTask.code === 0
+    && readTask(home, task).status === 'done' && !!participantOf(readTask(home, task), 'orchestrator').metadata.nativeStop,
+    JSON.stringify(closedTask));
+  const stopped = await run(['service', 'stop', '--json']);
+  const final = await service.status();
+  check('public service stop confirms physical exit after self-Stop task closure', stopped.code === 0 && final.running === false, JSON.stringify({ stopped, final }));
+  console.log('  · self-Stop lifetime proof:', JSON.stringify({ sha256: participant.metadata.nativeStop?.sha256,
+    terminalCommands: confirmed?.commands.length, appClose: confirmed?.appClose,
+    holderAbsent: !pidAlive(holder.pid), appAbsent: !pidAlive(participant.metadata.nativeStop?.appPid),
+    closeTask: closedTask, serviceStop: stopped }));
   } finally {
+    await service.close();
     if (cli.exitCode === null && cli.signalCode === null) cli.kill('SIGKILL');
     if (other.exitCode === null && other.signalCode === null) other.kill('SIGKILL');
   }

@@ -215,6 +215,15 @@ Close the task when the work is accepted:
 promptobus done
 ```
 
+After a native Codex root stops itself, the workspace service owner closes each
+stopped child task, then the root task, with
+`promptobus service close-task --task <id> --json`, followed by
+`promptobus service stop --json`. This terminal-only route requires retained Stop
+proof and drains the named task's watch without claiming its mailbox. It retains
+journals, receipts and worktrees; it does not perform `done` cleanup or telemetry.
+Claude and BB tasks are outside this route. See the
+[service closure order](https://github.com/Velklish/promptobus/blob/v0.32.9/docs/reference/03-cli.md#shared-service).
+
 For native Codex participants, call `stop <address>` before `done`: active or unresolved native work refuses close before journal or cleanup changes, even with `--keep-sessions`. When that participant's harness already reports the session dead and there is no Stop receipt, the mailbox owner calls `abandon [<address>]` first, from whichever harness names this session. The journal records the missing receipt and does not invent a Stop receipt; a live session is refused. A repeated native close preserves the first stamps and does not repeat cleanup. Other harnesses retain stop-on-close behavior. A caught preparation failure before driver invocation releases only its exact never-invoked native reservation, retaining the worktree and mail for retry. Native reporter recovery and piece sweep require the same terminal proof as the worker and reviewer. After that check, `done` removes a mechanism-created worktree and its branch once the work is proven merged, and appends local telemetry records at close. It removes contact points for closed tasks and the files of dead, slugged participants; a failed or unresolved cleanup hook leaves that task closed with cleanup pending, preserves its files and worktree, and excludes its journal from retention deletion in that pass. A sessionless `user` keeps its journal and mail without needing participant files.
 
 At the core message boundary, closing refuses sends whose intent has not committed

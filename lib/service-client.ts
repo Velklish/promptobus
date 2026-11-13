@@ -186,3 +186,8 @@ export async function abortTaskWarden(host: PromptobusHost, task: string, option
   return serviceControl(servicePaths(host, options.env), { operation: 'warden-abort', runtime: runtimeIdentity(host), task,
     pollEnv: options.pollEnv ?? options.env ?? process.env });
 }
+
+export async function closeServiceTask(host: PromptobusHost, task: string, options: ServiceCallOptions = {}) {
+  return serviceControl(servicePaths(host, options.env), { operation: 'close-task', runtime: runtimeIdentity(host), task,
+    env: options.env ?? process.env, pollEnv: options.pollEnv ?? options.env ?? process.env });
+}

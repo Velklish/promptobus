@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   timeout even when watch notification is delayed. Controlled checks retain the
   absent-release refusal and the original publication and Stop assertions.
 
+- The shared service owner can explicitly close a confirmed stopped native Codex task with `service close-task --task <id>`, draining its watch before service shutdown without claiming the stopped mailbox. Child tasks close first; their sessionless root route requires exact native parent/child binding and the current parent's confirmed Stop. Live or unresolved native work still refuses closure. Caller registry homes are checked independently of the common poll snapshot.
 - Shared-service authority fixtures isolate negative variants and control housekeeping ordering while retaining refusal, snapshot and cleanup checks.
 
 - The Codex consumed contract selects the installed 0.167.2 schema capture, with

@@ -4,7 +4,8 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { readStopConfirmation } from './codex-command-receipts.js';
 import { codexStateHome, pidAlive, sessionFile, sessionKey, sessionsDir, withSessionLaunch } from './codex-session.js';
-import { addressOf, canonicalPath, GateError, ORCHESTRATOR, participantOf, readTask, sameStoreHome, taskExists, upsertParticipant, withTaskLock } from './store.js';
+import { addrDir, addressOf, canonicalPath, FALLBACK_HARNESS, GateError, ORCHESTRATOR, participantOf, readTask, rootAddressOf, sameStoreHome, taskExists, upsertParticipant, withTaskLock } from './store.js';
+import { ownerOf, sessionIdOf } from '../dist/index.js';
 
 import type { ParticipantV1, TaskV1 } from '../dist/index.js';
 import { libOpenParticipant } from './driver-runtime.js';
@@ -137,6 +138,28 @@ export function requireNativeTerminal(home: string | undefined, meta: Pick<TaskV
       onVerified?.();
     }, { waitMs: lockWaitMs }), { waitMs: lockWaitMs });
   return taskLocked ? inspect() : withTaskLock(home!, meta.id, inspect);
+}
+
+/** The caller holds the parent and child task locks, in that order. */
+export function requireNativeRootRoute(home: string, child: TaskV1, route: ParticipantV1, env = process.env) {
+  const childOwner = participantOf(child, ORCHESTRATOR);
+  const proof = childOwner?.metadata.nativeStop as NativeStopProof | undefined;
+  if (!child.parent || !proof || route.role !== 'root' || route.harness !== FALLBACK_HARNESS
+    || route.mode !== 'attached' || route.sessionRef || sessionIdOf(route)
+    || ['owner', 'session', 'sessionId', 'sessionRef', 'sessionRecord', 'nativeLaunchId', 'nativeStop', 'nativePendingLaunchId', 'nativeUnlaunched']
+      .some(key => route.metadata[key] !== undefined && route.metadata[key] !== null)
+    || child.participants.filter(p => p.role === 'root').length !== 1) refuse(route.id);
+  const { parent, lead } = linkedTeamlead(home, child, proof, { allowClosedClaim: true, subject: route.id });
+  const owner = participantOf(parent, ORCHESTRATOR);
+  if (!(lead.metadata.nativeStop as NativeStopProof | undefined)?.alias
+    || lead.metadata.nativeUnlaunched === lead.metadata.nativeLaunchId
+    || parent.adapter?.bb || route.metadata.rootTask !== parent.id || addressOf(route) !== rootAddressOf(parent)
+    || route.id !== addrDir(rootAddressOf(parent))
+    || !native(owner) || owner.mode !== 'managed' || parent.owner !== owner.id
+    || !ownerOf(owner) || ownerOf(owner) !== sessionIdOf(owner) || !owner.metadata.nativeStop
+    || owner.metadata.nativeUnlaunched === owner.metadata.nativeLaunchId) refuse(route.id);
+  requireNativeIdle(home, parent, ORCHESTRATOR, { taskLocked: true });
+  requireNativeTerminal(home, parent, lead, env, { taskLocked: true });
 }
 
 export function withVerifiedManagedNativeStop(home: string,

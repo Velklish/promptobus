@@ -10,9 +10,10 @@ import { withSynchronousAuthority } from '../dist/fs/lock.js';
 import type { JsonRpcMessage } from '../dist/mcp/server.js';
 import { mcpTools } from '../dist/mcp/tools.js';
 import { busConnection } from './server.js';
-import { canonicalPath, participantOf, readTask, withTaskLock } from './store.js';
+import { canonicalPath, closeTask, ORCHESTRATOR, participantOf, readTask, withTaskLock } from './store.js';
 import { participantSession } from './status.js';
-import { withVerifiedManagedNativeStop } from './native-lifecycle.js';
+import { requireNativeIdle, requireNativeRootRoute, requireNativeTerminal, withVerifiedManagedNativeStop } from './native-lifecycle.js';
+import { requireNoLiveReservations } from './live-reservation.js';
 import { actorIdentityVariables, REGISTRY } from './drivers.js';
 import { bindServiceHarnessContext, requireServiceHarnessContext } from './harness-home.js';
 import { ServiceWarden } from './service-warden.js';
@@ -695,6 +696,43 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
       if (!recordOf(input) || typeof input.operation !== 'string') throw new HttpFailure(400, 'Invalid service control operation');
       if (input.operation === 'status') return { ...discovery, ...state() };
       if (input.runtime !== runtime) throw new HttpFailure(409, 'Owner request belongs to a different shared service runtime');
+      if (input.operation === 'close-task') {
+        if (typeof input.task !== 'string') throw new HttpFailure(400, 'Task closure requires a task');
+        const callerEnv = environmentOf(input.env);
+        requireServiceHarnessContext(expectedHarness, host, callerEnv, REGISTRY, environmentOf(input.pollEnv ?? callerEnv));
+        if (requests > 1) throw new HttpFailure(409, 'Task closure requires settled service requests');
+        const task = input.task;
+        const parent = readTask(paths.home, task).parent;
+        const close = () => withTaskLock(paths.home, task, () => {
+          const meta = readTask(paths.home, task), root = participantOf(meta, ORCHESTRATOR);
+          if (meta.parent !== parent) throw new HttpFailure(409, 'Task parent changed before closure');
+          if (meta.adapter?.bb || root?.harness !== 'codex' || !root.metadata.nativeStop
+            || root.metadata.nativeUnlaunched === root.metadata.nativeLaunchId) {
+            throw new HttpFailure(409, 'Service owner closure requires a confirmed native Codex root Stop; BB lifecycle is separate');
+          }
+          requireNoLiveReservations(host, paths.home, task);
+          requireNativeIdle(paths.home, meta, null, { taskLocked: true });
+          for (const participant of meta.participants) {
+            if (participant.harness !== 'codex') {
+              if (participant.role === 'root' && parent !== undefined) {
+                requireNoLiveReservations(host, paths.home, parent);
+                requireNativeRootRoute(paths.home, meta, participant, env);
+                continue;
+              }
+              if (participant.role !== 'user' || participant.sessionRef || sessionIdOf(participant) || participant.mode === 'managed') {
+                throw new HttpFailure(409, 'Service owner closure supports only confirmed native Codex participants');
+              }
+              continue;
+            }
+            requireNativeTerminal(paths.home, meta, participant, env, { taskLocked: true });
+          }
+          closeTask(paths.home, task);
+        });
+        if (parent === undefined) close();
+        else withTaskLock(paths.home, parent, close);
+        await warden.abort(task);
+        return { task, closed: true };
+      }
       if (input.operation === 'warden-ensure' || input.operation === 'warden-abort') {
         if (typeof input.task !== 'string') throw new HttpFailure(400, 'Task warden requires a task');
         requireServiceHarnessContext(expectedHarness, host, env, REGISTRY, environmentOf(input.pollEnv ?? env));

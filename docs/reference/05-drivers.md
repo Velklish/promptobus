@@ -1328,6 +1328,15 @@ unknown turn identity, broken output and receipt write failure return `ok: false
 Repeated unresolved Stop does not resend an interrupt whose outcome was already consumed.
 
 A managed Codex orchestrator can request its own Stop through the ordinary owner gate.
+After confirmation, the private workspace service owner can close the stopped
+task with `service close-task --task <id>` without taking its mailbox identity.
+Close stopped child tasks before their root, then call `service stop`; the
+[service closure order](03-cli.md#shared-service) retains native terminal proof
+and limits this route to native Codex tasks. Ordinary mailbox-owner `done` remains
+unchanged.
+For a child, its sessionless root route requires the matching parent/child native
+binding and the current parent's confirmed Stop. A live or unresolved parent,
+changed generation or malformed routing record still refuses child closure.
 The CLI returns after the holder accepts the request and reports completion as pending.
 The holder waits for every actual command outcome, including the requesting command, before
 interrupting the turn. A bounded finalizer waits for the holder and app-server to exit,

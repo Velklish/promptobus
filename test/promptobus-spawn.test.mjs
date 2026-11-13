@@ -56,7 +56,7 @@ const {
   liftHarness, participantPluginDir, planSpawn, skillsNote, spawn: spawnRaw, repoSkillsLine,
   runRepoGenerator, sayRepoSkills, sayWorktreeDeps, writeSecret, SKILL_KEYS, skillSettings, withToolVersion,
 } = await import(spawnUrl);
-ownedServiceFixture();
+const serviceFixture = ownedServiceFixture();
 const NATIVE_SESSIONS = path.join(SB, 'native-sessions.json');
 const nativeSessionFixture = (sessions, bgStatus = 0) => `
 import * as nativeFs from 'node:fs';
@@ -2434,4 +2434,10 @@ check('the spawned named owner result opens its main-tree gate without a worker 
   JSON.stringify({ address: ownerAcceptance?.address, owner: ownerAcceptance?.workerAddress, error: ownerAcceptanceError }));
 
 process.env.PATH = PATH0;
+const serviceCleanup = spawnSync(process.execPath, [path.join(here, 'owned-service-cleanup.mjs'), serviceFixture.directory],
+  { encoding: 'utf8', timeout: 15000 });
+if (serviceCleanup.status !== 0) {
+  if (serviceCleanup.stderr) process.stderr.write(serviceCleanup.stderr);
+  throw serviceCleanup.error ?? new Error(`owned shared-service cleanup exited ${serviceCleanup.status} (${serviceCleanup.signal})`);
+}
 rmSync(SB, { recursive: true, force: true });

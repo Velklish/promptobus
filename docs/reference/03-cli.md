@@ -1779,6 +1779,7 @@ That last case is the one this exists for. A cleanup hook reaps a holder only wh
 | `service ensure [--json]` | Reuse the compatible workspace owner or start it through the consumer entry point and wait for readiness. |
 | `service status [--json]` | Read discovery and query the existing owner; it does not start a listener. |
 | `service stop [--json]` | Refuse live clients, startup reservations, in-flight requests or attached work; otherwise request shutdown and confirm physical process exit. |
+| `service close-task --task <id> [--json]` | The private service owner closes one confirmed stopped native Codex task and waits for its task watch to drain. Close children before their parent. |
 | `service run` | Internal detached entry, requiring the consumer-owned Host factory in `runPromptobus` options. |
 | `service profile --standalone --id <id> --harness codex\|claude --native-store <path> --executable <absolute-file>` | Approve a separate process-owned native profile and return credential-free HTTP/start-hook descriptors. |
 | `service exec-plan --profile <id> [--service-home <path>] [--dry-run] -- <native-command> [args...]` | Private wrapper transport: ensure the approved owner and return a one-shot POSIX plan. Standalone admission stays pending until actual native proof; dry-run only prints a pure summary. |
@@ -1786,6 +1787,62 @@ That last case is the one this exists for. A cleanup hook reaps a holder only wh
 
 Pending lifetime observations remain active work after client revocation.
 The owner refuses shutdown until those observations settle.
+
+The service's active-work predicate includes running task loops and pending
+observations, plus any work supplied by the Host. Active task metadata alone is
+not that predicate. `stop orchestrator` leaves its task and watch open, including
+after a confirmed self-Stop. `done` still requires the mailbox owner's own session;
+the private service owner does not acquire that identity or mailbox.
+
+For a finite native Codex root with two teamleads, finish participant work and
+request normal Stop through each participant's authorized session. Wait for all
+three matching retained Stop hashes, complete terminal command accounting,
+`app-server/close` code 0 and actual holder/app absence. Then, from the workspace
+service owner's shell, using the same workspace, service home and harness homes:
+
+```bash
+promptobus service close-task --task <first-child-task> --json
+promptobus service close-task --task <second-child-task> --json
+promptobus service close-task --task <root-task> --json
+promptobus service stop --json
+```
+
+The CLI describes the scoped closure:
+
+<!-- quote:../../lib/cli.js -->
+```text
+                              service owner closes one confirmed native Codex task
+                              and drains its watch; close child tasks before their parent
+```
+<!-- /quote -->
+
+`close-task` uses the existing private owner control credential and matching
+runtime/harness context. Registry homes come from the caller's environment; an
+explicit common poll snapshot remains separate. Missing caller context refuses
+closure. It requires the root's retained native Stop proof,
+existing native terminal checks for participants, no live or unresolved lift
+reservations, and settled service requests. Unknown participants, invalid or
+unresolved receipts and an unclosed child refuse before changing task status.
+A missing PID, inactive metadata or `abandon` alone cannot authorize this route.
+Only native Codex tasks are supported; BB lifecycle and other harness sessions
+are refused. A sessionless user mailbox may remain in the journal.
+
+The sessionless `root:<slug>` record created by a teamlead lift is a route to
+the parent, not a Claude session despite its default harness field. Closure
+accepts only that canonical record, under parent-then-child locks, with a unique
+matching managed teamlead and attached child owner, their exact native Stop
+alias, and confirmed terminal proof from the parent's current native Codex owner.
+Parent reservations, changed bindings and malformed or session-bearing routes
+refuse without changing task metadata or watch demand. All three native Stops
+must therefore precede child closure; an arbitrary root record grants no authority.
+
+Closure changes only the named task through the existing child-close fence and
+drains only its task loop, including any activation already in progress. It
+preserves journals, receipts, worktrees and unrelated tasks/clients. It does not
+run `done` cleanup, retention or telemetry. Repeating it rechecks terminal proof
+and drains the same task without repeating task closure. Remaining clients,
+unrelated task loops, pending observations or Host work still refuse `service stop`;
+only that final command confirms the physical service process exit.
 
 `promptobus-root` is the package's POSIX handoff wrapper for `service exec-plan`.
 It takes the same flags and command separator, sources the private plan and

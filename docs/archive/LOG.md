@@ -675,3 +675,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-418"></a>`PB-418-codex-fallback-socket-bound` · 2026-11-13 · completed · — · Keep Codex fallback sockets within the Unix path bound
 - <a id="pb-430.1"></a>`PB-430.1-owned-startup-release-watch` · 2026-11-13 · completed · — · Consume an owned startup release despite delayed watch notification
 - <a id="pb-430"></a>`PB-430-resumable-release-candidate` · 2026-11-13 · completed · — · Prepare and resume one consistent release candidate
+- <a id="pb-416.26"></a>`PB-416.26-stop-service-after-confirmed-root-self-stop` · 2026-11-13 · completed · — · Close stopped task lifetimes so the shared service can exit
