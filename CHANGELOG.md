@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- The Cursor driver and wake integration files run again. The Cursor fixture
+  client retries one unchanged handshake request after the exact managed record
+  revision-drift refusal (`initialize` at the returned `authenticate` fence,
+  `notifications/initialized` at the returned `body` fence); identity and grant
+  failures, other refusals and tool calls stay terminal.
+
 ## [0.33.0] — 2026-11-13
 
 ### Fixed

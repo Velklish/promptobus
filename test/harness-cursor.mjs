@@ -1222,13 +1222,26 @@ export async function openHttpBus(cfg, env) {
   if (!authorization?.startsWith('Bearer ') || authorization.includes('${')) throw new Error('Cursor fixture HTTP MCP requires its own resolved bearer');
   let session = null, sequence = 0;
   const rpc = async (method, params, notify = false) => {
-    const response = await fetch(cfg.url, { method: 'POST', signal: AbortSignal.timeout(30000), headers: {
+    const url = cfg.url;
+    const retryStage = method === 'initialize' ? 'authenticate' : method === 'notifications/initialized' ? 'body' : null;
+    const request = { method: 'POST', headers: {
       authorization, accept: 'application/json, text/event-stream', 'content-type': 'application/json',
       ...(session ? { 'mcp-session-id': session, 'mcp-protocol-version': '2025-06-18' } : {}),
-    }, body: JSON.stringify({ jsonrpc: '2.0', ...(notify ? {} : { id: ++sequence }), method, params }) });
-    if (!response.ok) throw new Error(`Cursor fixture HTTP MCP ${method}: ${response.status} ${await response.text()}`);
-    session = response.headers.get('mcp-session-id') ?? session;
-    return response.status === 202 ? null : response.json();
+    }, body: JSON.stringify({ jsonrpc: '2.0', ...(notify ? {} : { id: ++sequence }), method, params }) };
+    for (let attempt = 0; ; attempt += 1) {
+      const response = await fetch(url, { ...request, signal: AbortSignal.timeout(30000) });
+      if (!response.ok) {
+        const text = await response.text();
+        let reason = null;
+        try { reason = JSON.parse(text)?.error; } catch { /* A non-JSON refusal is terminal. */ }
+        if (attempt === 0 && retryStage !== null && response.status === 409
+          && cfg.url === url && cfg.headers?.Authorization?.replace(/\$\{env:([^}]+)\}/g, (_, key) => env[key] ?? '') === authorization
+          && reason === `Managed lifetime changed after observation; retry with current owner proof [stage: returned fence: ${retryStage}]`) continue;
+        throw new Error(`Cursor fixture HTTP MCP ${method}: ${response.status} ${text}`);
+      }
+      session = response.headers.get('mcp-session-id') ?? session;
+      return response.status === 202 ? null : response.json();
+    }
   };
   await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'cursor-stub', version: '1' } });
   await rpc('notifications/initialized', {}, true);

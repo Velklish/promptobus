@@ -215,11 +215,18 @@ Git input, the actual runner and a selected dependent assertion that fails.
 
 ## Suite isolation
 
-The Cursor driver and wake integration files are temporarily disabled while
-their prepared HTTP handshake repair awaits independent acceptance. Both
-finish naturally through the existing skip helper and report zero integration
-checks passed. Other tests remain active. Re-enable both bodies only after the
-repair is accepted and the required full validation is complete.
+The Cursor fixture client (`openHttpBus` in
+[test/harness-cursor.mjs](../../test/harness-cursor.mjs)) retries one identical
+`initialize` request after an exact revision-drift 409 at the returned
+`authenticate` fence, and one unchanged `notifications/initialized` request
+after the same refusal at the returned `body` fence. The retry keeps the URL,
+the resolved bearer, the session headers, the serialized body and the request
+id, and it requires both the URL and the resolved bearer to be unchanged when
+the refusal arrives. Every other refusal is terminal: identity and grant
+failures, exhausted proof, other statuses, other fences and every tool call.
+A refusal that repeats ends the handshake after the one retry.
+[test/cursor-http-handshake.test.mjs](../../test/cursor-http-handshake.test.mjs)
+covers these cases with a stubbed `fetch`.
 
 The aliased-temp standalone Codex fixture uses `makeSockDir` on POSIX and
 checks its socket path against the portable 103-byte limit before launch.
