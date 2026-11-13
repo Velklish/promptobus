@@ -666,3 +666,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-373.12"></a>`PB-373.12-bb-stop-test-node-baseline` · 2026-11-13 · completed · — · Confirm the Node baseline of the BB Stop test
 - <a id="pb-187.3"></a>`PB-187.3-codex-hidden-model-turn-unmeasured` · 2026-11-13 · completed · — · codex-hidden-model-turn-unmeasured
 - <a id="pb-335.2"></a>`PB-335.2-root-dev-fast-uri-advisory` · 2026-11-13 · completed · — · Root development dependency fast-uri has a moderate advisory
+- <a id="pb-416.18"></a>`PB-416.18-managed-lifetime-revision-409-observations` · 2026-11-13 · merged into PB-416.5 · — · Investigate managed-lifetime revision conflicts with an unchanged owner
