@@ -47,7 +47,7 @@ export interface CodexParams extends CodexRateLimits {
   proposedNetworkPolicyAmendments?: { host?: unknown }[]; permissions?: { fileSystem?: unknown; network?: { enabled?: unknown } } | null;
   sandbox?: unknown; approvalPolicy?: unknown; cwd?: unknown; fileChanges?: unknown;
   requestedSchema?: { type?: unknown; properties?: unknown } | null; _meta?: Record<string, unknown> | null;
-  serverName?: unknown; server?: unknown; mode?: unknown; grantRoot?: unknown;
+  serverName?: unknown; server?: unknown; mode?: unknown; grantRoot?: unknown; kind?: unknown;
 }
 interface CodexResult {
   id?: string; turn?: CodexTurn; thread?: { id?: string; path?: string; turns?: CodexTurn[] };
@@ -907,6 +907,15 @@ export function decideApproval(method: string, params: CodexParams | null | unde
   const known = APPROVE[method];
   if (!known) {
     return { allow: false, why: `unknown approval request type «${method}»`, unknown: true };
+  }
+  if (method === 'item/commandExecution/requestApproval') {
+    const kind = params && Object.hasOwn(params, 'kind') ? params.kind : 'command';
+    if (kind === 'humanCommand') {
+      return { allow: false, why: 'humanCommand requires a fresh human decision; the holder has no human approval capability' };
+    }
+    if (kind !== 'command' && kind !== 'writeStdin') {
+      return { allow: false, why: 'unknown or malformed command approval kind' };
+    }
   }
   if ((method === 'applyPatchApproval' || method === 'item/fileChange/requestApproval')
     && typeof params?.grantRoot === 'string' && params.grantRoot.trim()) {

@@ -501,7 +501,7 @@ compiles anew.
 To raise `PROVEN_CODEX_VERSION`, run `codex app-server generate-json-schema --out <temporary>`
 with the candidate binary, then run
 `node scripts/generate-codex-schema-contract.mjs <temporary> test/fixtures/codex-app-server/<version> <version>`.
-Update the constant, remove the previous proven contract when it is no longer the minimum,
+Update the constant and preserve previous captures as version-scoped history,
 and run `npm run codex-schema` on that binary. The same generator can derive the minimum
 contract from a historical full capture without installing an older binary: append
 `--historical` to allow its dated non-schema evidence files. Live generator output rejects
@@ -509,7 +509,15 @@ every JSON document without `$schema`. Keep dated live
 evidence at its versioned path; schema captures no longer belong in the working tree.
 Shared holder/mock shape witnesses retain independent actual-emission tests. Mutation probes
 must break a consumed schema and make a named verdict red.
-The current consumed contract comes from the [0.166.0 schema capture](../../test/fixtures/codex-app-server/0.166.0/README.md).
+The current consumed contract comes from the [0.167.2 schema capture](../../test/fixtures/codex-app-server/0.167.2/README.md).
+Its `humanCommand` alternative requires a fresh human decision, not automatic
+containment approval. The holder does not advertise `requiredHumanApproval` and
+refuses that kind and unknown or malformed explicit kinds before role dispatch.
+Finite witnesses cover both historical enums and the reviewed `oneOf`, both
+capability boolean values and malformed values, and audio `fileId`/`url` shapes.
+Mutation probes must break non-advertisement and actual refusal, including a
+contained worker request, rather than only the schema comparison. A matching
+capture does not qualify the selected ordinary workflow or measure available subscriptions.
 Native evidence is version-scoped. The [0.164.0 capture record](../../test/fixtures/codex-app-server/0.164.0/README.md)
 also records live worker, reviewer and approver hook events, a named hidden-model turn,
 an MCP child environment probe and the full rate-limit notification payload. Historical

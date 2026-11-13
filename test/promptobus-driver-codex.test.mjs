@@ -18,7 +18,7 @@ import { listenTestSocket, makeSandbox, ownedServiceFixture, writeHostConfig } f
 import { buildWorkspace, cli, store } from './scenario.mjs';
 import {
   APPROVAL_VAR, CODEX_HOME_VAR, CURRENT_TIME_VAR, ELICIT_HANG_VAR, ELICIT_OVERLAP_VAR, ELICIT_TOOL_LATE, ELICIT_TOOL_VAR, ELICIT_VAR, FAIL_TURN_VAR, FIRST_DELAY_VAR,
-  HANG_AFTER_START_VAR, HANG_FIRST_VAR, LIMIT_VAR, ORPHAN_VAR, PROBE_VAR,
+  HANG_AFTER_START_VAR, HANG_FIRST_VAR, INIT_CAPTURE_VAR, LIMIT_VAR, ORPHAN_VAR, PROBE_VAR,
   diagnoseTrace, installHarness, parseHomeToml, pidAlive, planParticipant, readTrace, traceFile,
 } from './harness-codex.mjs';
 import { waitFor } from './harness.mjs';
@@ -817,9 +817,7 @@ check('PB-88.3: the refusal reply is the measured decline — no amendment arm i
   && !JSON.stringify(approvalReply('item/commandExecution/requestApproval', false)).includes('NetworkPolicyAmendment'),
   JSON.stringify(approvalReply('item/commandExecution/requestApproval', false)));
 
-// The kinds are read from the fixture, so a re-capture that adds a third fails here instead of
-// being decided by containment nobody chose for it.
-const commandKinds = commandApprovalParams.definitions?.CommandExecutionApprovalKind?.enum ?? [];
+const commandKinds = commandApprovalParams.definitions?.CommandExecutionApprovalKind?.oneOf?.[0]?.enum ?? [];
 check('PB-196: a writeStdin command approval is decided by the same containment as a command',
   commandKinds.slice().sort().join(',') === 'command,writeStdin'
   && commandKinds.every((kind) => decideApproval('item/commandExecution/requestApproval',
@@ -2191,7 +2189,8 @@ const limited = cli([ 'spawn', '--repo', repo, '--brief', brief, '--task', TASK,
 check('step 7: account limit — refuse before thread/start',
   limited.status !== 0 && /limit/i.test(limited.out), limited.out.slice(-400));
 
-const approvalEnv = { ...env, [APPROVAL_VAR]: '1' };
+const approvalInitCapture = path.join(SB, 'approval-initialize.json');
+const approvalEnv = { ...env, [APPROVAL_VAR]: '1', [INIT_CAPTURE_VAR]: approvalInitCapture };
 planParticipant(HARNESS, 'worker:apr', {
   turns: [{ do: [{ tool: 'promptobus_send', args: { to: 'orchestrator', type: 'status', body: 'CODEX-APR' } }] }],
 });
@@ -2206,6 +2205,11 @@ const apr = store.participantOf(store.readTask(home, TASK), 'worker:apr');
 const aprSent = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')
   .find((m) => String(m.body ?? '').includes('CODEX-APR')) ?? null, { timeoutMs: 20000 });
 const aprThread = await harnessThread(apr, env);
+const approvalInit = JSON.parse(readFileSync(approvalInitCapture, 'utf8'));
+check('holder initialize on the wire omits the unsupported human approval capability',
+  JSON.stringify(approvalInit.capabilities) === JSON.stringify({
+    experimentalApi: true, optOutNotificationMethods: ['mcpServer/startupStatus/updated'],
+  }), JSON.stringify(approvalInit.capabilities));
 let aprLog = '';
 try { aprLog = readFileSync(holderLogFile(apr?.sessionRef ?? '', env), 'utf8'); } catch { /* none */ }
 check(': the holder answers every user-input question on the wire without inventing an answer',
@@ -2218,6 +2222,10 @@ check('PB-88.3: the live network escalation is declined and the same command wit
   && JSON.stringify(aprThread?.plainApproval) === '{"decision":"accept"}'
   && /approval deny item\/commandExecution\/requestApproval network egress denied: https to packages\.invalid/.test(aprLog),
   `${JSON.stringify({ network: aprThread?.networkApproval, plain: aprThread?.plainApproval })} · ${aprLog.slice(-400)}`);
+check('human command inside the writable root is declined on the holder wire',
+  !!aprSent && JSON.stringify(aprThread?.humanApproval) === '{"decision":"decline"}'
+  && /approval deny item\/commandExecution\/requestApproval humanCommand requires a fresh human decision/.test(aprLog),
+  `${JSON.stringify(aprThread?.humanApproval)} · ${aprLog.slice(-800)}`);
 if (apr?.sessionRef) await codexDriver.stop(apr.sessionRef);
 const rev = store.participantOf(store.readTask(home, TASK), REVIEWER);
 if (rev?.sessionRef) await codexDriver.stop(rev.sessionRef);

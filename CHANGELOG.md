@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- The Codex consumed contract selects the installed 0.167.2 schema capture, with
+  exact generator and binary provenance. The holder does not advertise human
+  approval support and refuses `humanCommand` and unknown or malformed approval
+  kinds before automatic dispatch. `command`, `writeStdin` and legacy omitted-kind
+  approvals retain their network, containment and role restrictions. Historical
+  captures and live measurements keep their original versions; schema matching
+  does not qualify an ordinary workflow or measure subscription availability.
+
 ## [0.32.9] — 2026-11-10
 
 ### Fixed

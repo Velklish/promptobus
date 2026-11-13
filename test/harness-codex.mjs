@@ -964,6 +964,10 @@ async function playTurn(home, started, turnId, params, ask, notify, nativeClient
       threadId: t.id,
       turnId,
     });
+    t.humanApproval = await ask('item/commandExecution/requestApproval', {
+      approvalId: randomUUID(), command: 'true', cwd: t.cwd, kind: 'humanCommand',
+      itemId: randomUUID(), startedAtMs, threadId: t.id, turnId,
+    });
     writeThread(home, t);
     await ask('item/permissions/requestApproval', {
       cwd: t.cwd,

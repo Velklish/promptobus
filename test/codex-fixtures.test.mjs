@@ -11,10 +11,10 @@ import { consumedSchemaNames, readConsumedContract, validateConsumedContract } f
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, 'fixtures', 'codex-app-server');
-check('Codex contract keeps only minimum and proven versions',
+check('Codex contract preserves the minimum, historical 0.166.0 and selected versions',
   JSON.stringify(readdirSync(root).filter(version =>
     existsSync(path.join(root, version, 'contract-provenance.json'))).sort())
-    === JSON.stringify([MIN_CODEX_VERSION, PROVEN_CODEX_VERSION].sort()));
+    === JSON.stringify([MIN_CODEX_VERSION, '0.166.0', PROVEN_CODEX_VERSION].sort()));
 const harnessSource = readFileSync(path.join(here, 'harness-codex.mjs'), 'utf8');
 check('Codex harness selects the proven contract through its version constant',
   /'codex-app-server', PROVEN_CODEX_VERSION/.test(harnessSource));
@@ -24,7 +24,7 @@ const approvals = { execCommandApproval: 'ExecCommandApproval', applyPatchApprov
   'item/fileChange/requestApproval': 'FileChangeRequestApproval',
   'item/permissions/requestApproval': 'PermissionsRequestApproval',
   'item/tool/requestUserInput': 'ToolRequestUserInput', 'mcpServer/elicitation/request': 'McpServerElicitationRequest' };
-for (const version of [MIN_CODEX_VERSION, PROVEN_CODEX_VERSION]) {
+for (const version of [MIN_CODEX_VERSION, '0.166.0', PROVEN_CODEX_VERSION]) {
   const schemas = readConsumedContract(path.join(root, version), version);
   check(`Codex ${version} contract contains exactly the consumed schemas`,
     schemas.size === consumedSchemaNames.length && schemas.has('ClientRequest.json') && schemas.has('ServerRequest.json'));

@@ -175,6 +175,31 @@ test('security inventory and actual approval reply semantics cannot silently wid
   })), /CommandExecutionApprovalKind/);
 });
 
+test('reviewed human approval inventory cannot widen or diverge between the two schema locations', () => {
+  for (const name of ['CommandExecutionRequestApprovalParams.json', 'ServerRequest.json']) {
+    for (const change of [
+      kind => { kind.oneOf[0].enum.push('futureCommand'); },
+      kind => { kind.oneOf[1].enum.push('humanCommandForSession'); },
+      kind => { kind.oneOf[1].type = ['string', 'object']; },
+      kind => { kind.oneOf.push({ type: 'boolean' }); },
+      kind => { kind.oneOf.pop(); },
+      kind => { kind.oneOf[1].description = 'An automatic containment decision'; },
+    ]) assert.throws(() => validateConsumedContract(changed(name, s => change(s.definitions.CommandExecutionApprovalKind))),
+      /CommandExecutionApprovalKind|\/(?:params\.)?kind:/);
+  }
+});
+
+test('reviewed human approval capability cannot be missing or accept a non-boolean value', () => {
+  for (const name of ['ClientRequest.json', 'v1/InitializeParams.json']) {
+    for (const change of [
+      properties => { delete properties.requiredHumanApproval; },
+      properties => { properties.requiredHumanApproval.type = 'string'; },
+      properties => { properties.requiredHumanApproval.type = ['boolean', 'null']; },
+    ]) assert.throws(() => validateConsumedContract(changed(name, s => change(s.definitions.InitializeCapabilities.properties))),
+      /requiredHumanApproval/);
+  }
+});
+
 test('unrelated additive client methods and schema documents remain compatible', () => {
   const value = changed('ClientRequest.json', s => {
     s.oneOf.push({ type: 'object', properties: { method: { enum: ['new/unrelated'] }, id: { type: 'integer' }, params: {} }, required: ['method'] });

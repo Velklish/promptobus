@@ -80,7 +80,7 @@ export const DEFAULT_PERMISSION_MODE = 'workspace-write';
 export const DEFAULT_MODEL = 'gpt-6-astra';
 export const REVIEWER_DENY = ['workspace-write'];
 // Capture labels are provenance, not native admission rules.
-export const PROVEN_CODEX_VERSION = '0.166.0';
+export const PROVEN_CODEX_VERSION = '0.167.2';
 export const MIN_CODEX_VERSION = '0.158.0';
 // An INHERITED `CODEX_HOME` never reaches a participant: the lift sets its own, and an ancestor's
 // value would put the session back in the owner's home. A caller naming one explicitly still wins.

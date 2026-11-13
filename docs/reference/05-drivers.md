@@ -1244,15 +1244,28 @@ must not fall over its own log.
 
 ### Codex protocol versions
 
-The committed contract covers codex-cli 0.158.0, the minimum, and 0.166.0, the proven
+The committed contract covers codex-cli 0.158.0, the minimum, and 0.167.2, the selected
 version. Each version has 52 consumed schemas with the local definition closure.
-The 0.166.0 contract was generated from the installed stable binary on 2026-11-02;
+The [0.167.2 contract](../../test/fixtures/codex-app-server/0.167.2/README.md) was generated from the installed binary on 2026-11-13;
 the minimum was derived from its historical full capture. [Live measurements](../../test/fixtures/codex-app-server/0.164.0/README.md)
-retain the binary version and date. Full historical captures remain in Git history.
+retain the binary version and date. The previous 0.166.0 consumed capture remains historical.
+Full historical captures remain in Git history.
 
 The current contract removes detached review delivery; the finite `inline` review
 witness remains valid. Generic holder RPC forwarding does not certify arbitrary
 review parameters or establish native workflow readiness.
+
+The 0.167.2 approval kind is exactly `command`, `writeStdin` or `humanCommand`.
+The last is a fresh human decision checkpoint, as specified by the
+[tagged upstream contract](https://github.com/openai/codex/blob/ce21072c90d32c40af7a55b60b2fb35c84a43a6a/codex-rs/app-server/README.md#managed-human-command-checkpoints-experimental).
+The holder omits `requiredHumanApproval` from initialize capabilities and refuses
+`humanCommand` before network, containment and role dispatch. Unknown or malformed
+explicit kinds also refuse. An omitted kind retains the older `command` default;
+`command` and `writeStdin` retain the existing network, containment and reviewer
+restrictions. A refusal sends only `decline`, never a session or persistent grant.
+The capture also permits audio input by `fileId` or `url`; this adds no holder input feature.
+Selected-profile ordinary workflow qualification and available-subscription
+measurements on 0.167.2 remain unmeasured.
 
 Native harness version labels are telemetry. The local schema gate validates the committed
 contract before any installed-binary skip, then performs bounded no-model schema generation,

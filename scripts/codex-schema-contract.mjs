@@ -354,7 +354,34 @@ export function validateConsumedContract(schemas) {
   for (const [name, keys] of Object.entries({ NetworkApprovalContext: ['host', 'protocol'], NetworkPolicyAmendment: ['action', 'host'] })) {
     if (!keys.every(key => command.definitions?.[name]?.required?.includes(key))) fail(name, 'required security fields changed');
   }
-  if (JSON.stringify(command.definitions?.CommandExecutionApprovalKind?.enum?.slice().sort()) !== '["command","writeStdin"]') fail('CommandExecutionApprovalKind', 'command/writeStdin security inventory changed');
+  const kindDescription = 'Distinguishes a command approval from input sent to an existing terminal.';
+  const legacyKind = { description: kindDescription, enum: ['command', 'writeStdin'], type: 'string' };
+  const humanKind = { description: kindDescription, oneOf: [
+    { enum: ['command', 'writeStdin'], type: 'string' },
+    { description: 'A managed checkpoint requiring a fresh human decision. Only `accept`, `decline`, and `cancel` are valid. Requires the `requiredHumanApproval` initialize capability. This prompt does not itself start a command execution item.',
+      enum: ['humanCommand'], type: 'string' },
+  ] };
+  const humanApproval = Boolean(command.definitions?.CommandExecutionApprovalKind?.oneOf);
+  for (const [name, root] of [['CommandExecutionRequestApprovalParams', command], ['ServerRequest', server]]) {
+    if (JSON.stringify(root.definitions?.CommandExecutionApprovalKind) !== JSON.stringify(humanApproval ? humanKind : legacyKind)) {
+      fail(`${name}/CommandExecutionApprovalKind`, 'command/writeStdin/humanCommand security inventory changed');
+    }
+    const schema = root.definitions.CommandExecutionApprovalKind;
+    for (const kind of ['command', 'writeStdin', 'humanCommand']) {
+      witness(`${name}/kind/${kind}`, kind, { schema, root, negative: kind === 'humanCommand' && !humanApproval });
+    }
+    for (const kind of [null, false, 1, '', 'futureCommand', [], ['humanCommand'], {}, { type: 'humanCommand' }]) {
+      witness(`${name}/kind`, kind, { schema, root, negative: true });
+    }
+  }
+  if (humanApproval) {
+    for (const name of ['ClientRequest', 'v1/InitializeParams']) {
+      const root = load(name), capability = root.definitions?.InitializeCapabilities?.properties?.requiredHumanApproval;
+      if (capability?.type !== 'boolean') fail(`${name}/requiredHumanApproval`, 'human approval capability must be boolean');
+      for (const value of [true, false]) witness(`${name}/requiredHumanApproval`, value, { schema: capability, root });
+      for (const value of [null, 'true', 1, [], {}]) witness(`${name}/requiredHumanApproval`, value, { schema: capability, root, negative: true });
+    }
+  }
   const thread = { id: 'fixture-thread', cwd: '/fixture/root', turns: [], busy: false, config: { model_reasoning_effort: 'high' } };
   const turn = protocolTurn({ id: 'fixture-turn', status: 'inProgress' });
   const nativeThread = protocolThread(thread);
