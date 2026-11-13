@@ -1,6 +1,6 @@
 # Overview
 
-The npm package name is `promptobus`. Version in `package.json` is `0.32.9`. License is MIT. Node.js `>=26`.
+The npm package name is `promptobus`. Version in `package.json` is `0.33.0`. License is MIT. Node.js `>=26`.
 
 That number is maintained by the contributor release command, and the suite compares it to `package.json`, the first dated release heading in `CHANGELOG.md`, and an exact `v<version>` git tag when `HEAD` has one (`test/promptobus-package.test.mjs`): it moves in the commit that cuts a release, and in no other. A reader who needs the version of the tree in front of them asks the tree — `promptobus --version` prints it without a host file.
 

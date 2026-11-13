@@ -21,13 +21,13 @@ It prints `promptobus` and the version in `package.json`. No version is written 
 As a local library dependency, pin the GitHub release tag (the package is not published on the npm registry):
 
 ```bash
-npm install github:Velklish/promptobus#v0.32.9
+npm install github:Velklish/promptobus#v0.33.0
 ```
 
 For a global CLI on `PATH`, install the same release globally:
 
 ```bash
-npm install -g github:Velklish/promptobus#v0.32.9
+npm install -g github:Velklish/promptobus#v0.33.0
 promptobus --version
 ```
 
