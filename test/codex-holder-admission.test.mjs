@@ -1,15 +1,17 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import net from 'node:net';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { makeSandbox, stubCommand } from './sandbox.mjs';
 import { waitFor } from './harness.mjs';
-import { dropSession, holderAsk, pidAlive, readSession, sessionFile, waitReady, withSessionLaunch, writeSession } from '../lib/codex-session.js';
+import { dropSession, holderAsk, pidAlive, readSession, sessionFile, socketPath, waitReady, withSessionLaunch, writeSession } from '../lib/codex-session.js';
 
-for (const change of ['ownership', 'stopping', 'enqueue-lock']) {
+for (const change of ['ownership', 'stopping', 'enqueue-lock', 'foreign', 'stale', 'replacement', 'cleanup']) {
 test(change === 'enqueue-lock' ? 'holder releases launch lock before awaiting the RPC response'
+  : ['foreign', 'stale', 'replacement', 'cleanup'].includes(change) ? 'holder protects ' + change + ' socket path'
   : 'holder refuses ' + change + ' changed before queued model input', async () => {
   const root = makeSandbox('promptobus-admission-');
   const owner = path.join(root, 'owner'), privateHome = path.join(root, 'private');
@@ -41,13 +43,66 @@ for await (const line of readline.createInterface({input:process.stdin})) {
   writeSession({ ref, launchId: 'old-launch', bin: path.join(bin, 'codex'), cwd: root,
     codexHome: privateHome, authOwnerHome: owner, role: 'worker', state: 'starting',
     sandbox: 'read-only', approvalPolicy: 'on-request', prompt: 'First', addDirs: [], model: null }, env);
+  const sock = socketPath(ref, env, 'old-launch');
+  let other;
+  if (change === 'foreign') {
+    other = net.createServer(c => c.on('data', data => c.write(data)));
+    await new Promise((resolve, reject) => other.once('error', reject).listen(sock, resolve));
+  }
+  if (change === 'stale') {
+    const made = spawnSync(process.execPath, ['--input-type=module', '-e',
+      "import net from 'node:net'; net.createServer().listen(process.argv[1], () => process.exit(0))", sock]);
+    assert.equal(made.status, 0, made.stderr.toString());
+    assert.equal(existsSync(sock), true);
+  }
   const holder = spawn(process.execPath, [path.resolve('lib/codex-hold.js'), sessionFile(ref, env)], { env, stdio: 'ignore' });
   let original;
   try {
     const ready = await waitReady(ref, env, 5000);
+    if (change === 'foreign' || change === 'stale') {
+      assert.equal(ready.ok, false, JSON.stringify(ready));
+      assert.match(ready.error, /EADDRINUSE/);
+      assert.equal(existsSync(sock), true);
+      if (other) {
+        const reply = await new Promise((resolve, reject) => {
+          const client = net.connect(sock, () => client.write('foreign'));
+          client.on('error', reject);
+          client.on('data', data => { client.end(); resolve(data.toString()); });
+        });
+        assert.equal(reply, 'foreign');
+      }
+      dropSession(ref, env);
+      assert.equal(existsSync(sock), true, 'dropping a session must retain an unowned path');
+      return;
+    }
     assert.equal(ready.ok, true, JSON.stringify(ready));
     original = readSession(ref, env);
     assert.equal(await waitFor(() => readSession(ref, env)?.busy === false, { timeoutMs: 3000 }), true, 'fixture first turn must be idle');
+    if (change === 'cleanup') {
+      const stopped = await holderAsk(ref, 'shutdown', { launchId: 'old-launch', deadlineAt: Date.now() + 1500 }, env, 2000);
+      assert.equal(stopped.ok, true, JSON.stringify(stopped));
+      await new Promise(resolve => holder.once('exit', resolve));
+      assert.equal(existsSync(sock), false, 'owned socket must be removed');
+      return;
+    }
+    if (change === 'replacement') {
+      const control = net.connect(sock);
+      await new Promise((resolve, reject) => { control.once('connect', resolve); control.once('error', reject); });
+      rmSync(sock);
+      other = net.createServer(c => c.on('data', data => c.write(data)));
+      await new Promise((resolve, reject) => other.once('error', reject).listen(sock, resolve));
+      const stopped = new Promise((resolve, reject) => {
+        control.once('data', data => resolve(JSON.parse(data.toString())));
+        control.once('error', reject);
+      });
+      control.write(JSON.stringify({ id: 'replacement', op: 'shutdown', launchId: 'old-launch', deadlineAt: Date.now() + 1500 }) + '\n');
+      const answer = await stopped;
+      assert.equal(answer.result.ok, true, JSON.stringify(answer));
+      control.end();
+      await new Promise(resolve => holder.once('exit', resolve));
+      assert.equal(existsSync(sock), true, 'cleanup must retain the replacement');
+      return;
+    }
     if (change === 'enqueue-lock') {
       const pending = holderAsk(ref, 'rpc', { method: 'turn/start', params: { threadId: 'actual-thread',
         input: [{ type: 'text', text: 'pending-enqueue' }] } }, env);
@@ -82,6 +137,8 @@ for await (const line of readline.createInterface({input:process.stdin})) {
     if (pidAlive(original?.appPid)) { try { process.kill(original.appPid, 'SIGKILL'); } catch {} }
     await new Promise(resolve => { if (holder.exitCode !== null || holder.signalCode !== null) resolve(); else holder.once('exit', resolve); });
     dropSession(ref, env);
+    if (other) await new Promise(resolve => other.close(resolve));
+    if (change === 'stale') rmSync(sock, { force: true });
   }
 });
 }

@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import net from 'node:net';
 import { pathToFileURL } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
@@ -79,6 +80,13 @@ check(admitted ? 'positive recovery starts from actual durable fresh admission' 
   admitted ? admission?.ownerKey === initial.launchId && admission.nativeStore === initial.codexHome
     && admission.process?.pid === initial.appProcess.pid && admission.process?.birth === initial.appProcess.birth : !admission,
   JSON.stringify({ admitted, nativeId: initial.threadId, admission }));
+let oldListener, oldEntry;
+if (admitted) {
+  rmSync(initial.rpcSocket);
+  oldListener = net.createServer(c => c.on('data', data => c.write(data)));
+  await new Promise((resolve, reject) => oldListener.once('error', reject).listen(initial.rpcSocket, resolve));
+  oldEntry = lstatSync(initial.rpcSocket);
+}
 const taskBeforeResume = readFileSync(taskFile(host.promptobusHome(), task), 'utf8');
 const resumed = spawnSync(process.execPath, [path.resolve('bin/promptobus.js'), 'lead', '--resume', '--task', task],
   { cwd: root, env, encoding: 'utf8', timeout: 30000 });
@@ -97,6 +105,7 @@ if (!admitted) {
     JSON.stringify({ status: resumed.status, output: resumed.stdout + resumed.stderr, retainedId: retained?.threadId, firstRpc: after.firstRpc,
       samePrompt: retained?.initialPrompt === initial.initialPrompt, injectedCount: after.injectedItems.length,
       changedTaskFields: Object.keys(core.readTask(task)).filter(key => JSON.stringify(core.readTask(task)[key]) !== JSON.stringify(JSON.parse(taskBeforeResume)[key])) }));
+  rmSync(initial.rpcSocket, { force: true });
   harness.restore();
   return;
 }
@@ -106,6 +115,16 @@ const completed = await waitFor(() => {
   const record = readSession(owner.sessionRef, env);
   return record?.turns >= 1 && !record.busy ? record : null;
 }, { timeoutMs: 10000 });
+const oldReply = await new Promise((resolve, reject) => {
+  const client = net.connect(initial.rpcSocket, () => client.write('old-launch'));
+  client.once('error', reject);
+  client.once('data', data => { client.end(); resolve(data.toString()); });
+});
+const retainedEntry = existsSync(initial.rpcSocket) ? lstatSync(initial.rpcSocket) : null;
+check('managed recovery allocates a new launch contact and preserves the old-path listener',
+  completed?.launchId !== initial.launchId && completed?.rpcSocket !== initial.rpcSocket
+  && retainedEntry?.dev === oldEntry.dev && retainedEntry?.ino === oldEntry.ino && oldReply === 'old-launch',
+  JSON.stringify({ oldLaunch: initial.launchId, newLaunch: completed?.launchId, oldSocket: initial.rpcSocket, newSocket: completed?.rpcSocket, oldReply }));
 const nativeAfter = JSON.parse(readFileSync(nativePath, 'utf8'));
 check('recovery preserves owner, creation and original assignment without duplicate model input',
   completed?.threadId === initial.threadId && completed.initialPrompt === initial.initialPrompt
@@ -114,6 +133,7 @@ check('recovery preserves owner, creation and original assignment without duplic
   && !nativeAfter.firstRpc?.params.input[0].text.includes('EMPTY-SCOPE-FIXTURE-9516'),
   JSON.stringify({completed:completed?.threadId,initial:initial.threadId,createdBefore:before.created,createdAfter:core.readTask(task).created,injectedCount:nativeAfter.injectedItems.length,firstInput:nativeAfter.firstRpc?.params.input[0].text}));
 await codexDriver.stop(owner.sessionRef);
+await new Promise(resolve => oldListener.close(resolve));
 harness.restore();
 
 }

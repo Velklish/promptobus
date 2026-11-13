@@ -132,8 +132,8 @@ const collisionSocketA = socketPath(collisionRef, collisionEnvA);
 const collisionSocketB = socketPath(collisionRef, collisionEnvB);
 check(': long registry homes scope fallback socket paths by registry home',
   collisionSocketA !== collisionSocketB
-    && collisionSocketA.startsWith(path.join(tmpdir(), 'pb-cdx-'))
-    && collisionSocketB.startsWith(path.join(tmpdir(), 'pb-cdx-')),
+    && collisionSocketA.startsWith(path.join('/tmp', 'pb-cdx-'))
+    && collisionSocketB.startsWith(path.join('/tmp', 'pb-cdx-')),
   JSON.stringify({ collisionSocketA, collisionSocketB }));
 
 function thrown(fn) {

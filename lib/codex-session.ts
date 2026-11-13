@@ -4,7 +4,6 @@ import {
   readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync,
 } from 'node:fs';
 import net from 'node:net';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawn } from 'node:child_process';
@@ -207,15 +206,15 @@ function lockFile(ref: string, env = process.env): string {
   return path.join(sessionsDir(env), sessionKey(ref) + '.lock');
 }
 
-export function socketPath(ref: string, env = process.env): string {
-  const refText = String(ref ?? '');
+export function socketPath(ref: string, env = process.env, launchId?: string | null): string {
+  const refText = String(ref ?? '') + (launchId ? '\0' + launchId : '');
   const name = createHash('sha1').update(refText).digest('hex').slice(0, 12) + '.sock';
   const nested = path.join(sessionsDir(env), name);
   if (Buffer.byteLength(nested) <= SOCK_MAX) return nested;
   const fallback = createHash('sha1')
     .update(sessionsDir(env) + '\0' + refText)
     .digest('hex').slice(0, 12) + '.sock';
-  return path.join(tmpdir(), 'pb-cdx-' + fallback);
+  return path.join('/tmp', 'pb-cdx-' + fallback);
 }
 
 export function selfStopLogFile(ref: string, launchId: string, env = process.env) {
@@ -228,7 +227,7 @@ export function holderLogFile(ref: string, env = process.env) {
 
 const codexRegistry: ReturnType<typeof createHarnessRegistry<CodexSessionRecord>> = createHarnessRegistry<CodexSessionRecord>({
   harness: CODEX_HARNESS,
-  sidecars: (ref, env) => [socketPath(ref, env), lockFile(ref, env), holderLogFile(ref, env)],
+  sidecars: (ref, env) => [lockFile(ref, env), holderLogFile(ref, env)],
   onDrop: (record) => {
     if (record?.codexHome) dropParticipantHome(record.codexHome);
   },
@@ -1163,11 +1162,16 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
   writeFileSync(logFile, '', { mode: 0o600 });
   log(record.provenance ?? provenanceLine(provenanceFromRecord(record)));
 
-  const sock = socketPath(ref, env);
-  rmSync(sock, { force: true });
+  const sock = socketPath(ref, env, record.launchId);
+  let ownedSocket: { dev: number; ino: number } | null = null;
 
   const cleanupHeld = () => withSessionLaunch(ref, env, () => {
-    if (ownsLaunch()) rmSync(sock, { force: true });
+    if (ownsLaunch() && ownedSocket) {
+      try {
+        const current = lstatSync(sock);
+        if (current.dev === ownedSocket.dev && current.ino === ownedSocket.ino) rmSync(sock);
+      } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    }
     dropHolderLock(ref, env);
   });
 
@@ -1765,6 +1769,8 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
   const listenHolder = () => new Promise<void>((resolve, reject) => {
     server!.on('error', reject);
     server!.listen(sock, () => {
+      const entry = lstatSync(sock);
+      ownedSocket = { dev: entry.dev, ino: entry.ino };
       try { chmodSync(sock, 0o600); } catch { /* platform without chmod on a socket */ }
       log(`listen ${sock}`);
       resolve();
