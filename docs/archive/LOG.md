@@ -662,3 +662,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-416.23"></a>`PB-416.23-receipt-backed-service-client-retirement` · 2026-11-10 · completed · — · Retire owned shared-service clients using confirmed normal Stop receipts
 - <a id="pb-373.8"></a>`PB-373.8-bb-bindings-output-limit` · 2026-11-13 · completed · — · BB bindings inventory exceeds the public CLI output limit
 - <a id="pb-397.1"></a>`PB-397.1-native-lifecycle-close` · 2026-11-13 · completed · — · Native lifecycle admission and close barriers
+- <a id="pb-397.3"></a>`PB-397.3-native-implicit-cwd` · 2026-11-13 · completed · — · Bind implicit native command cwd to accepted fixed context
