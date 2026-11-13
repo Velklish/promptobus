@@ -47,3 +47,7 @@ Recovery audit, 2026-10-20, priority: external dependency decision before promis
 - **Deferred:** 2026-10-20
 - **Reason:** The pinned source-only reproduction confirms the current non-user deny policy; the local proposal is prepared, but no supported BB owner-authorization capability exists in the examined contract.
 - **Return condition:** An official supported BB task-scoped and revocable owner-authorization capability is available for an accurately agent-origin consumer; then assess its contract and separately authorize live acceptance.
+
+## Audit disposition, 2026-11-13
+
+The 0.46.1 source-only policy evidence is historical and does not establish installed 0.49 policy. Reassess the official task-scoped revocable contract before implementation or separately authorized live acceptance; no forged initiator or remote upstream publication follows this move.

@@ -9,7 +9,7 @@
 
 ## Context
 
-The owner requested one shared MCP server and one warden across agent sessions on 2026-10-30. The current participantMcp implementation creates a stdio subprocess for each client, while claimWarden owns one detached process per home/task pair. Sharing the on-disk store does not currently share those processes.
+The owner requested one shared MCP server and one warden across agent sessions on 2026-10-30. At that planning baseline, participantMcp created a stdio subprocess per client and claimWarden owned one detached process per home/task pair. The shared HTTP service, warden and managed launcher now exist in source; this parent tracks integrated acceptance and the remaining contract gaps rather than a new implementation from scratch.
 
 The owner interview selected one physical process per canonical workspace/store, automatic start on first use, and exit after idle time only when there are no clients and no active work. That process serves bus MCP and reviewer_files and runs the shared warden. Logical tool names and per-client rights remain separate. Managed installation/sync moves existing stdio configurations to HTTP with an explicit reconnect; the former stdio route reports the upgrade instructions instead of keeping a persistent fallback subprocess.
 
@@ -19,8 +19,8 @@ The investigation also found retained processes of closed tasks and temporary te
 
 ## Work to do
 
-- Implement the approved execution plan after the five TypeScript stages, with per-workspace scope, launcher-based on-demand lifetime, combined bus/reviewer_files process and coordinated HTTP migration.
-- Define the shared process entry point, concurrent-start ownership, discovery, version compatibility, shutdown and crash recovery. Keep workspace knowledge behind the Host contract rather than copying consumer workspace rules into Promptobus.
+- Integrate and qualify the delivered per-workspace HTTP service, shared warden, launcher-based on-demand lifetime and combined bus/reviewer_files process against every acceptance criterion below. Track workflow/process-footprint qualification in PB-416.5, stopped-task lifetime closure in PB-416.26 and historical-client recovery in PB-416.27; do not infer parent acceptance from child closure.
+- Verify the existing shared process entry point, concurrent-start ownership, discovery, version compatibility, shutdown and crash recovery; complete any demonstrated gaps. Keep workspace knowledge behind the Host contract rather than copying consumer workspace rules into Promptobus.
 - Serve the bus MCP tools to multiple clients without one long-running bus subprocess per client. Preserve each client's task, address, launch and permission binding; process-global environment identity cannot serve as multi-client authorization.
 - Run the task-specific warden state machines in the shared warden, preserving mailbox routing, aliases, wake delivery, retries, deadlines and ownership checks.
 - Update all supported harness launch configurations and the installation/upgrade path. Treat reviewer file tools and Codex holders as separate responsibilities and make their process ownership explicit.
@@ -29,7 +29,7 @@ The investigation also found retained processes of closed tasks and temporary te
 - Deliver client credentials outside all canonical reviewer directory and exact-file grants. Do not place owner or foreign client bearers in repository-local generated configs, journals, artifacts or task files. Discovery may expose the endpoint and service identity, never authority-bearing secrets.
 - Keep native BB engine calls and its dispatch/pause/epoch authority on their existing delivery path. Sharing the CLI MCP/warden process does not grant it ownership of native BB delivery.
 - Preserve the filesystem journal and recovery contracts, CLI/library behavior and consumer-facing package paths unless a specific contract change is agreed and documented.
-- Split implementation into independently accepted child tasks with independent subagent review. Fix critical and major findings before acceptance and register minor findings with evidence.
+- Map the delivered source and independently accepted child tasks to this parent's remaining criteria. Fix critical and major findings before acceptance and register minor findings with evidence.
 
 ## Out of scope
 
@@ -49,3 +49,7 @@ The investigation also found retained processes of closed tasks and temporary te
 - Ordinary public workflows pass for the supported harness/role profiles; unsupported or unavailable live profiles are named explicitly rather than inferred from configuration syntax.
 - Compare process counts, memory footprint and command/message latency against the same baseline scenario with explicit ownership and cleanup.
 - The configured gates pass on the integrated committed source, and final independent review has zero critical and major findings. Every remaining minor finding has a backlog entry and evidence.
+
+## Audit disposition, 2026-11-13
+
+Source inspection at `51867619447b812a2a03fc80fa5b271490e5756c` found that `lib/cli.ts` still routes `promptobus mcp` to the stdio bus, while the selected contract above requires upgrade instructions instead of a persistent fallback. Resolve that explicit compatibility decision and verify the resulting launch path; neither the contract nor the criterion is silently waived. The existing identity/secret isolation, native BB authority, migration, startup/idle, crash recovery, confirmed Stop, all supported profiles, comparative measurements, gates and independent review requirements remain. Tests and live workflows were not run by this audit; historical receipts do not certify this baseline.

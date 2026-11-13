@@ -35,3 +35,7 @@ A consumer workspace deferred the publication on 2026-09-04: the package was sti
 - **Deferred:** 2026-10-29
 - **Reason:** publication is irreversible and the owner's decision; the tag channel works, and PB-335.1 still has to settle the release channel first.
 - **Return condition:** the owner decides to publish to the registry (the name and the first version are part of that decision), or PB-335.1 chooses a channel that makes the registry the natural one.
+
+## Audit disposition, 2026-11-13
+
+Coordinate the registry alternative with PB-335.1 while retaining separate name/first-version rights and irreversible-publication acceptance. Registry availability and owner rights were not checked in this audit.

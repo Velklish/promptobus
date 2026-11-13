@@ -38,3 +38,7 @@ Evidence:
 - **Deferred:** 2026-10-29
 - **Reason:** the record form is a contract; the choice between a stated author's guarantee and an interval field in the schemas is the owner's, and none of the candidates is measured. Until then the author of a run keeps the tree unchanged, and two clean status readings mark only its ends.
 - **Return condition:** the owner chooses the interval guarantee, or a confirmed case appears where a record said `dirty: false` for a run over a dirty interval.
+
+## Audit disposition, 2026-11-13
+
+When the owner returns to this task, constrain the negative fixture to a trusted interval collector or an explicit author obligation under the selected guarantee. A schema with one dirty boolean, or two clean endpoint readings, cannot infer hidden intermediate mutations; do not promise such detection without a collection mechanism.

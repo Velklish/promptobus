@@ -22,3 +22,7 @@ The refusal names a reviewer address built from the clone name, which no partici
 ## Verification
 
 - An approver lift on the clone root of a task with one reviewed worktree names that worktree path in the refusal; a test fails on the old text.
+
+## Batch assignment, 2026-11-13
+
+Execution is assigned to [PB-441 — Show reviewed subjects and document immutable-harness approver recovery](../queue/PB-441-approver-diagnostics.md). This finding remains open with its original evidence, cost and uncertainty until that batch is implemented and accepted; assignment is not completion.
