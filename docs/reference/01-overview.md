@@ -311,16 +311,17 @@ retained progress consumes none of it. Participant stall reporting is unchanged.
 
 Source: `src/supervisor.ts`, `lib/warden.ts`, `lib/guard.ts`.
 
-The task warden is a detached process that watches every mailbox and knocks
-on unread mail. Its decisions live in the package state machine; the process
-loop, `fs.watch`, and auto-start live in `lib/warden.js`.
+The task warden is a logical task loop in the shared workspace service that
+watches every mailbox and knocks on unread mail. Its decisions live in the
+package state machine; the task loop, `fs.watch`, and auto-start live in
+`lib/warden.js`.
 
 **Two lifetime ceilings, measured at the top of `src/supervisor.ts`.**
-`WARDEN_TOTAL_SEC` (6 h) is the working ceiling: it ends the warden process
+`WARDEN_TOTAL_SEC` (6 h) is the working ceiling: it ends the task loop
 for an idle task — no live participants and no unread mail — and names
 `sat out the overall ceiling 6 h` in the journal. While participants are alive
 or mail is unread, that ceiling does not fire. `WARDEN_ABSOLUTE_SEC` (72 h) is
-unconditional: it ends the process even with live work and names
+unconditional: it ends the task loop even with live work and names
 `hit the absolute limit 72 h` — a different line from the quiet idle exit
 (`no live participants remain`) and from the working ceiling.
 

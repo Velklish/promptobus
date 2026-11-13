@@ -720,7 +720,7 @@ remain intact.
 For the orchestrator, the recovery revision counts actionable unread IDs only;
 new progress cannot reset the pending message activation budget.
 
-The BB 0.48.1 / Plugin SDK 0.6.104 profile exposes the public
+The BB 0.49.0 / Plugin SDK 0.6.132 profile exposes the public
 `parentNotifications` lifecycle option on thread spawn. The public
 `bb guide threads` documents `auto` as reporting completed, failed, and interrupted
 turns and blockers; `stuck` skips completed turns while preserving failures,

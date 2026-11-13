@@ -161,7 +161,7 @@ records why that work rejects 6 without buying the independent defect discovery 
 
 `priority` is the resolver's last tie-break but one, and the catalog assigns it by a convention rather than by a schema rule:
 
-- tuples are grouped by harness, and the groups run in the order the driver registry lists them (`REGISTRY` in `lib/drivers.ts`: `claude`, `cursor`, `codex`). The groups do not interleave;
+- tuples are grouped by harness, and the groups run in the order the driver registry lists them (`REGISTRY` in `lib/drivers.ts`: `claude`, `cursor`, `codex`, `opencode`). The groups do not interleave;
 - inside a group the tuples run from the highest quality down;
 - initial numbers go in steps of ten; a rung added later takes an unused gap between two tens, preserving existing priorities and their relative order.
 
