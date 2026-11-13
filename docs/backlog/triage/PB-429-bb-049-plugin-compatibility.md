@@ -37,3 +37,52 @@ Record exact host/SDK/plugin revisions, plugin checks and exit codes, normal sou
 ## Next step
 
 Triage the minimal compatibility release separately from native shared-service recovery.
+
+## Incorporated finding PB-419.5
+
+Include the current provider-version documentation in this compatible BB release. The target versions are the selected and qualified manifest pins, not a preselected 0.48.1 value.
+
+### Additional acceptance criteria
+
+- Align current roadmap wording with the BB/SDK versions actually selected and qualified by this release, preserving earlier dated runtime observations as history.
+- Add a documentation regression that fails on the obsolete current-version wording; retain the original build/docs-link/task-independence checks below.
+- A wording update neither grants runtime compatibility nor replaces the original installed plugin/source resolution and native smoke acceptance.
+
+### Preserved original record
+
+The complete finding below was incorporated by the owner-approved backlog audit of 2026-11-13; its measurements keep their original dates, versions and limitations.
+
+> # PB-419.5 · Align current BB provider version documentation
+>
+> - **Scope:** [Drivers reference](../../reference/05-drivers.md)
+> - **Created:** 2026-11-05
+> - **Parent:** PB-419
+> - **Cost:** minor
+>
+> <!-- quality-audit-import:2026-11-05:PB/PQA-103 -->
+>
+> ## Evidence
+>
+> `integrations/bb/README.md:544` presents BB `>=0.45.0 <0.47.0` and SDK 0.6.15 as current; `docs/reference/05-drivers.md:2040-2045` says 0.47.1 and SDK 0.6.79 are the current package pair. `integrations/bb/package.json` pins BB 0.48.1 and SDK 0.6.104. Both locations share the same stale current-pin cause.
+>
+> ## Context
+>
+> Evidence: `integrations/bb/README.md:544` presents BB `>=0.45.0 <0.47.0` and SDK 0.6.15 as current; `docs/reference/05-drivers.md:2040-2045` says 0.47.1 and SDK 0.6.79 are the current package pair. `integrations/bb/package.json` pins BB 0.48.1 and SDK 0.6.104. Both locations share the same stale current-pin cause.
+>
+> ## Work to do
+>
+> Align both present-tense descriptions with the existing manifest while preserving dated historical observations and their live-proof limits.
+>
+> ## Acceptance criteria
+>
+> Current documentation agrees with the manifest; historical measurements are retained and no wider compatibility is claimed.
+>
+> ## Verification
+>
+> After implementation run `npm run build` and `npm --prefix integrations/bb test` from the repository root; **notRun**. For documentation changes also run `node test/docs-links.test.mjs` and `node test/docs-task-independence.test.mjs`; **notRun**.
+>
+> Additional audit-proposed checks, **notRun**: `npm test`.
+>
+> ## Dependencies and limits
+>
+> None. The audit did not run the proposed post-change checks, full gates, native or live workflows. Do not infer runtime proof from source inspection.
