@@ -38,6 +38,35 @@ Reuse requires the same Node version, executable path and hash; npm/Git versions
 
 ## Publication acceptance
 
-Retain the technical-writer pass and final full acceptance for the exact candidate, including required platform qualification, review and real installation evidence. The receipt records publication as `notRun`; preparation and local verification do not accept a release. An absent future tag never counts as a successful remote installation check. Linux CI qualification and publication policy remain with CI; this command does not change its triggers or waive checks.
+Retain the technical-writer pass, independent review and completed local verification receipt for the exact candidate. An absent future tag never counts as a successful remote installation check. Push the clean final candidate to `main` before creating its public tag:
 
-Only after acceptance, create an annotated tag `vX.Y.Z` on the verified candidate with message `promptobus X.Y.Z`, then push the release commit and tag together. A release still uses Git-tag distribution, not an npm registry. Production tagging and publication are separate work; the command and its fixture tests perform neither.
+```bash
+git push origin HEAD:main
+gh run list --repo github.com/Velklish/promptobus --workflow ci.yml --branch main --event push --commit "$(git rev-parse HEAD)"
+```
+
+Wait for this candidate's run to finish. Do not automatically rerun failed or cancelled checks: inspect their logs and coordinate the next attempt with the release owner. A source fix needs a new committed candidate, local verification and its own Linux run. Record the exact SHA and run URL. There is one full Linux qualification in the normal release path: `.github/workflows/ci.yml` runs for every main push and pull request, with no version-tag trigger or old-green-run shortcut. Publishing the tag does not trigger another identical suite.
+
+```bash
+npm run release -- publish --receipt /durable/releases/promptobus-0.33.0.json --run RUN_ID
+```
+
+`publish` requires every local verification command to have passed. It reads the live GitHub workflow/run and all jobs of that run attempt using `gh`, bound to `github.com/Velklish/promptobus`. The required workflow is `.github/workflows/ci.yml` (`ci`); it must be active and the run must be a completed successful `push` on `main` at the receipt's exact commit. Its required job is `Node 26 / ubuntu-latest`, on the `ubuntu-latest` runner label. The required steps are Install and check tmux, Install dependencies, Install ast-grep, Build, Test, Publicity audit, Pin gate, backslop init and backslop lint. Each must be present once and complete successfully. Missing, running, failed, cancelled, skipped, foreign-repository or foreign-SHA evidence refuses before tag push. Source changes, a changed CI attempt, missing logs or public main moving away from the candidate also refuse.
+
+The receipt retains the run URL, SHA, attempt, API evidence and full CI log beside the local logs. Explicit skip and `notRun:` diagnostics remain separate: a successful full-suite exit does not mean skipped integration bodies passed. The Linux workflow does not start live account-backed harness runs; the local `codex-schema` gate remains in local verification. Neither a local macOS pass nor a simulated workflow response is Linux qualification.
+
+Only after these checks, `publish` creates the annotated `vX.Y.Z` tag with message `promptobus X.Y.Z` and pushes that tag alone. The receipt records its annotated object and commit. The public tag is immutable: a conflicting object, lightweight tag or target refuses; the command never forces, deletes or replaces it. Distribution remains the public Git tag, not an npm registry.
+
+### Interrupted publication
+
+Repeat the same `publish` command with the same receipt and run id after an interrupted invocation. A local annotated tag left before push is reused only with the same message, object and candidate target. If push succeeded before the receipt was updated, the command checks the existing public annotated object and target, fetching that tag if it is absent locally. It does not push it again or rerun verification. Preserve the receipt and logs; after a killed process, confirm it is gone before removing its `.lock` directory. A CI refusal is not permission to dispatch or rerun a workflow.
+
+### Public installation smoke
+
+Run the separate check after publication:
+
+```bash
+npm run release -- smoke --receipt /durable/releases/promptobus-0.33.0.json
+```
+
+`smoke` installs `git+https://github.com/Velklish/promptobus.git#vX.Y.Z` with npm in a fresh temporary prefix. It verifies the installed package version, lockfile's resolved commit and installed CLI `--version`, and checks the public annotated object/target before and after installation. Each attempt retains its result and install stdout/stderr outside the temporary prefix. Failure is a release failure to report and investigate; it never retags or replaces the public ref. A repeat `smoke` adds another attempt. Publication recovery and smoke perform no full-suite rerun.

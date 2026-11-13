@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { run as launch, wouldResolve } from '../lib/exec.js';
@@ -28,6 +28,10 @@ function run(argv) {
 const git = (...args) => run(['git', ...args]);
 const source = () => ({ commit: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}') });
 const clean = () => requireThat(!git('status', '--porcelain', '--untracked-files=all'), 'Release requires a clean committed tree');
+const repository = 'Velklish/promptobus';
+const remote = `https://github.com/${repository}.git`;
+const requiredSteps = ['Install and check tmux', 'Install dependencies', 'Install ast-grep', 'Build', 'Test',
+  'Publicity audit', 'Pin gate', 'backslop init', 'backslop lint'];
 
 function checkMetadata(version, date) {
   const lock = json('package-lock.json');
@@ -133,7 +137,7 @@ function context() {
     dependenciesSha256: existsSync(path.join(root, 'node_modules/.package-lock.json')) ? hash(read('node_modules/.package-lock.json')) : null };
 }
 
-function verify(file) {
+function candidate(file) {
   clean();
   const receipt = JSON.parse(readFileSync(file, 'utf8'));
   requireThat(receipt.format === 1 && same(receipt.source, source()), 'Candidate source mismatch');
@@ -144,6 +148,11 @@ function verify(file) {
   requireThat(receipt.steps.every((step) => step.status !== 'passed'
     || (step.attempts.at(-1)?.exitCode === 0 && step.attempts.at(-1)?.signal === null
       && same(step.attempts.at(-1)?.argv, step.argv))), 'Invalid successful command receipt');
+  return receipt;
+}
+
+function verify(file) {
+  const receipt = candidate(file);
   const runtime = context();
   requireThat(receipt.context === null || same(receipt.context, runtime), 'Verification runtime/environment mismatch; retain this receipt and prepare a new receipt for a fresh verification');
   receipt.context = runtime;
@@ -193,14 +202,170 @@ function verify(file) {
   return 0;
 }
 
+function publicRefs(version) {
+  const tag = `refs/tags/v${version}`;
+  return Object.fromEntries(git('ls-remote', remote, 'refs/heads/main', tag, `${tag}^{}`)
+    .split('\n').filter(Boolean).map((line) => { const [sha, ref] = line.split('\t'); return [ref, sha]; }));
+}
+
+function localTag(receipt) {
+  const tag = `refs/tags/v${receipt.version}`;
+  requireThat(git('cat-file', '-t', tag) === 'tag'
+    && git('rev-parse', `${tag}^{commit}`) === receipt.source.commit
+    && git('for-each-ref', '--format=%(contents)', tag) === `promptobus ${receipt.version}`,
+  'Release tag must be the unchanged annotated candidate tag');
+  return git('rev-parse', tag);
+}
+
+function qualify(receipt, file, id) {
+  requireThat(/^[1-9]\d*$/.test(id ?? ''), 'Use --run with the candidate main CI run id');
+  const api = (endpoint, paginate = false) => JSON.parse(run(['gh', 'api', '--hostname', 'github.com',
+    ...(paginate ? ['--paginate', '--slurp'] : []), `repos/${repository}/${endpoint}`]));
+  const workflow = api('actions/workflows/ci.yml');
+  const current = () => api(`actions/runs/${id}`);
+  const ci = current();
+  const prefix = `${file}.linux.${id}.${randomUUID()}`;
+  save(`${prefix}.json`, { workflow, run: ci });
+  requireThat(workflow.path === '.github/workflows/ci.yml' && workflow.state === 'active'
+    && ci.id === Number(id) && ci.workflow_id === workflow.id && ci.path === workflow.path && ci.name === 'ci'
+    && ci.repository?.full_name === repository && ci.head_repository?.full_name === repository
+    && ci.event === 'push' && ci.head_branch === 'main' && ci.head_sha === receipt.source.commit,
+  'Linux CI repository/workflow/main candidate SHA mismatch');
+  requireThat(ci.status === 'completed' && ci.conclusion === 'success', 'Linux CI must be completed with success');
+  const pages = api(`actions/runs/${id}/attempts/${ci.run_attempt}/jobs?per_page=100`, true);
+  const jobs = pages.flatMap((page) => page.jobs);
+  save(`${prefix}.json`, { workflow, run: ci, jobs });
+  requireThat(jobs.length === 1 && jobs[0].name === 'Node 26 / ubuntu-latest'
+    && jobs[0].head_sha === receipt.source.commit && jobs[0].run_id === ci.id
+    && jobs[0].status === 'completed' && jobs[0].conclusion === 'success'
+    && jobs[0].labels?.includes('ubuntu-latest'), 'Missing successful required Linux job');
+  for (const name of requiredSteps) {
+    const steps = jobs[0].steps.filter((step) => step.name === name);
+    requireThat(steps.length === 1 && steps[0].status === 'completed' && steps[0].conclusion === 'success',
+      `Missing successful required Linux step: ${name}`);
+  }
+  const logs = run(['gh', 'run', 'view', id, '--repo', `github.com/${repository}`, '--attempt', String(ci.run_attempt), '--log']);
+  writeFileSync(`${prefix}.log`, `${logs}\n`, { mode: 0o600 });
+  requireThat(logs.length > 0, 'Linux CI logs are required for skip accounting');
+  const after = current();
+  requireThat(after.head_sha === ci.head_sha && after.run_attempt === ci.run_attempt
+    && after.status === 'completed' && after.conclusion === 'success', 'Linux CI changed during qualification');
+  return { runId: ci.id, attempt: ci.run_attempt, sha: ci.head_sha, url: ci.html_url,
+    evidence: `${prefix}.json`, log: `${prefix}.log`,
+    skips: logs.split('\n').filter((line) => /↷ SKIP |# SKIP\b|(?:# |ℹ )(?:skipped|todo) [1-9]/.test(line)),
+    notRun: logs.split('\n').filter((line) => /\bnotRun:/.test(line)) };
+}
+
+function publish(file, id) {
+  const receipt = candidate(file);
+  requireThat(receipt.context !== null && receipt.steps.every((step) => step.status === 'passed'),
+    'Complete local candidate verification before publication');
+  const qualification = qualify(receipt, file, id);
+  clean();
+  requireThat(same(receipt.source, source()), 'Candidate source changed after Linux qualification');
+  const tag = `refs/tags/v${receipt.version}`;
+  const refs = publicRefs(receipt.version);
+  requireThat(refs['refs/heads/main'] === receipt.source.commit, 'Public main must still name the qualified candidate');
+  if (receipt.publication.object && refs[tag]) requireThat(receipt.publication.object === refs[tag],
+    'Published tag is immutable: receipt object mismatch');
+  if (refs[tag]) {
+    requireThat(refs[`${tag}^{}`] === receipt.source.commit, 'Published tag is immutable: candidate target mismatch');
+    if (!spawnSync('git', ['show-ref', '--verify', '--quiet', tag], { cwd: root }).status) {
+      requireThat(localTag(receipt) === refs[tag], 'Published tag is immutable: annotated object mismatch');
+    } else {
+      git('fetch', '--no-tags', remote, `${tag}:${tag}`);
+      requireThat(localTag(receipt) === refs[tag], 'Published tag is immutable: annotated object mismatch');
+    }
+  } else {
+    tagCheck(receipt.version, receipt.source.commit);
+    if (spawnSync('git', ['show-ref', '--verify', '--quiet', tag], { cwd: root }).status === 1) {
+      git('-c', 'tag.gpgSign=false', 'tag', '-a', `v${receipt.version}`, receipt.source.commit, '-m', `promptobus ${receipt.version}`);
+    }
+    const object = localTag(receipt);
+    requireThat(!receipt.publication.object || receipt.publication.object === object,
+      'Published tag is immutable: receipt object mismatch');
+    receipt.qualification = qualification;
+    receipt.publication = { status: 'publishing', tag, object, commit: receipt.source.commit };
+    save(file, receipt);
+    clean();
+    requireThat(same(receipt.source, source()), 'Candidate source changed before tag push');
+    git('push', remote, `${tag}:${tag}`);
+    const published = publicRefs(receipt.version);
+    requireThat(published[tag] === object && published[`${tag}^{}`] === receipt.source.commit,
+      'Published tag is immutable: remote object or target mismatch');
+  }
+  receipt.qualification = qualification;
+  receipt.publication = { ...receipt.publication, status: 'published', tag, object: localTag(receipt), commit: receipt.source.commit };
+  delete receipt.publication.reason;
+  save(file, receipt);
+  console.log(`Published ${tag} at ${receipt.source.commit}; Linux ${qualification.url}; installation smoke ${receipt.publication.smoke?.at(-1)?.status ?? 'notRun'}`);
+  return 0;
+}
+
+function smoke(file) {
+  const receipt = candidate(file);
+  const publication = receipt.publication;
+  const tag = `refs/tags/v${receipt.version}`;
+  const checkRef = () => {
+    const refs = publicRefs(receipt.version);
+    requireThat(refs[tag] === publication.object && refs[`${tag}^{}`] === receipt.source.commit,
+      'Published tag is immutable: remote object or target mismatch');
+  };
+  requireThat(publication.status === 'published', 'Publish the candidate before installation smoke');
+  checkRef();
+  const temporary = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'promptobus-release-install-')));
+  const attempt = { status: 'running', started: new Date().toISOString(),
+    stdout: `${file}.smoke.${randomUUID()}.stdout`, stderr: `${file}.smoke.${randomUUID()}.stderr` };
+  publication.smoke ??= [];
+  publication.smoke.push(attempt);
+  save(file, receipt);
+  const out = openSync(attempt.stdout, 'wx', 0o600);
+  const err = openSync(attempt.stderr, 'wx', 0o600);
+  try {
+    const result = launch('npm', ['install', '--prefix', temporary, '--no-audit', '--no-fund',
+      `git+${remote}#v${receipt.version}`], { cwd: temporary, stdio: ['ignore', out, err], timeout: 0 });
+    attempt.exitCode = result.status;
+    attempt.signal = result.signal;
+    requireThat(result.status === 0, `Public Git installation failed: exit ${result.status}`);
+    const installed = JSON.parse(readFileSync(path.join(temporary, 'node_modules/promptobus/package.json'), 'utf8'));
+    const lock = JSON.parse(readFileSync(path.join(temporary, 'package-lock.json'), 'utf8'));
+    attempt.version = installed.version;
+    attempt.resolved = lock.packages?.['node_modules/promptobus']?.resolved;
+    const resolved = [`git+${remote}#${receipt.source.commit}`,
+      `git+ssh://git@github.com/${repository}.git#${receipt.source.commit}`];
+    requireThat(installed.version === receipt.version && resolved.includes(attempt.resolved),
+      'Installed public package version or resolved commit mismatch');
+    const cli = launch('node', [path.join(temporary, 'node_modules/promptobus/bin/promptobus.js'), '--version'],
+      { cwd: temporary, encoding: 'utf8' });
+    attempt.cliVersion = cli.stdout?.trim();
+    requireThat(cli.status === 0 && attempt.cliVersion === `promptobus ${receipt.version}`, 'Installed CLI version mismatch');
+    attempt.status = 'passed';
+  } catch (error) {
+    attempt.status = 'failed';
+    attempt.reason = error.message;
+    throw error;
+  } finally {
+    closeSync(out);
+    closeSync(err);
+    rmSync(temporary, { recursive: true, force: true });
+    try { checkRef(); } catch (error) {
+      attempt.status = 'failed';
+      attempt.reason = error.message;
+      throw error;
+    } finally { save(file, receipt); }
+  }
+  console.log(`Installed public v${receipt.version} at ${receipt.source.commit}; immutable tag preserved`);
+  return 0;
+}
+
 function main() {
   const [action, ...args] = process.argv.slice(2);
   const version = action === 'prepare' ? args.shift() : undefined;
-  requireThat(action === 'prepare' || action === 'verify', 'Use prepare X.Y.Z --date YYYY-MM-DD --receipt /durable/candidate.json, or verify --receipt /durable/candidate.json');
+  requireThat(['prepare', 'verify', 'publish', 'smoke'].includes(action), 'Use prepare X.Y.Z --date YYYY-MM-DD, verify, publish --run ID, or smoke, with --receipt /durable/candidate.json');
   const options = {};
   while (args.length) {
     const key = args.shift();
-    requireThat(['--receipt', ...(action === 'prepare' ? ['--date'] : [])].includes(key)
+    requireThat(['--receipt', ...(action === 'prepare' ? ['--date'] : []), ...(action === 'publish' ? ['--run'] : [])].includes(key)
       && !Object.hasOwn(options, key) && args.length, `Unknown, duplicate or incomplete option: ${key}`);
     options[key] = args.shift();
   }
@@ -221,6 +386,8 @@ function main() {
       console.log(`Prepared candidate ${receipt.source.commit}; receipt ${file}; prepare does not run verification`);
       return 0;
     }
+    if (action === 'publish') return publish(file, options['--run']);
+    if (action === 'smoke') return smoke(file);
     return verify(file);
   } finally {
     rmSync(lock, { recursive: true });

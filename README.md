@@ -392,7 +392,7 @@ CI runs the same steps on Node 26 on Ubuntu. For 0.32.3, macOS validation runs l
 
 A change is complete when the reference, the affected README and `CHANGELOG.md` move with it and every gate the contributing guide lists exits 0. Everything the repository tracks and ships is English — Cyrillic stays only in named snapshots and marked test inputs — and nothing names an internal product or links into another repository. Full procedure: [contributing guide](https://github.com/Velklish/promptobus/blob/v0.32.9/docs/guides/contributing.md).
 
-Contributors prepare and resume a committed release candidate with `npm run release -- prepare` and `npm run release -- verify`; the [release guide](https://github.com/Velklish/promptobus/blob/v0.32.9/docs/guides/releasing.md) separates verification from publication.
+Contributors prepare and resume a committed release candidate with `npm run release -- prepare` and `npm run release -- verify`. `npm run release -- publish` requires its successful Linux main CI run before publishing the immutable tag; `npm run release -- smoke` separately checks the installed public tag. See the [release guide](https://github.com/Velklish/promptobus/blob/v0.32.9/docs/guides/releasing.md).
 
 ## Documentation
 
