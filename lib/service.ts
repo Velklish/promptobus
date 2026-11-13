@@ -712,13 +712,15 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
           }
           requireNoLiveReservations(host, paths.home, task);
           requireNativeIdle(paths.home, meta, null, { taskLocked: true });
+          if (parent !== undefined) {
+            const route = meta.participants.find(participant => participant.role === 'root');
+            if (!route) throw new HttpFailure(409, 'Child task closure requires its canonical native root route');
+            requireNoLiveReservations(host, paths.home, parent);
+            requireNativeRootRoute(paths.home, meta, route, env);
+          }
           for (const participant of meta.participants) {
             if (participant.harness !== 'codex') {
-              if (participant.role === 'root' && parent !== undefined) {
-                requireNoLiveReservations(host, paths.home, parent);
-                requireNativeRootRoute(paths.home, meta, participant, env);
-                continue;
-              }
+              if (participant.role === 'root' && parent !== undefined) continue;
               if (participant.role !== 'user' || participant.sessionRef || sessionIdOf(participant) || participant.mode === 'managed') {
                 throw new HttpFailure(409, 'Service owner closure supports only confirmed native Codex participants');
               }

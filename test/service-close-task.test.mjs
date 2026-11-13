@@ -162,6 +162,36 @@ try {
   const routeTask = children[0], routeMeta = readTask(home, routeTask), parentMeta = readTask(home, parent);
   const routeFile = path.join(home, 'tasks', routeTask, 'task.json'), parentFile = path.join(home, 'tasks', parent, 'task.json');
   const routeBytes = readFileSync(routeFile), parentBytes = readFileSync(parentFile);
+  const missingRouteParents = [
+    ['terminal parent', () => {}],
+    ['live parent', () => writeSession({ ...rootRecord, holderPid: process.pid, appPid: process.pid, state: 'idle', stopConfirmed: false }, env)],
+    ['pending parent generation', root => { participantOf(root, 'orchestrator').metadata.nativePendingLaunchId = 'next-launch'; }],
+    ['changed parent generation', root => { participantOf(root, 'orchestrator').metadata.nativeLaunchId = 'next-launch'; }],
+    ['unresolved parent receipt', root => {
+      writeFileSync(rootReceipt, incomplete);
+      participantOf(root, 'orchestrator').metadata.nativeStop.sha256 = createHash('sha256').update(incomplete).digest('hex');
+    }],
+  ];
+  for (const [name, mutate] of missingRouteParents) {
+    const child = structuredClone(routeMeta), root = structuredClone(parentMeta);
+    child.participants = child.participants.filter(participant => participant.role !== 'root');
+    mutate(root);
+    writeFileSync(routeFile, JSON.stringify(child)); writeFileSync(parentFile, JSON.stringify(root));
+    try {
+      await rejected(`missing entire root route with ${name} refuses child closure and preserves metadata/watch`,
+        () => closeServiceTask(host, routeTask, options), /canonical native root route|native work is active or unresolved/, routeTask);
+    } finally {
+      writeFileSync(routeFile, routeBytes); writeFileSync(parentFile, parentBytes); writeFileSync(rootReceipt, rootBytes);
+      rmSync(sessionFile(rootRecord.ref, env), { force: true });
+      if (!(await workspaceServiceStatus(host, options)).warden.tasks.some(row => row.task === routeTask)) {
+        await ensureTaskWarden(host, home, routeTask, options);
+        if (!await waitFor(async () => (await workspaceServiceStatus(host, options)).warden.tasks
+          .some(row => row.task === routeTask && row.state === 'running'), { timeoutMs: 5000 })) {
+          throw new Error('Missing-root fixture watch did not become running');
+        }
+      }
+    }
+  }
   const malformedRoutes = [
     ['foreign parent target', (child, root, route) => { route.metadata.rootTask = unrelated; }],
     ['missing parent target', (child, root, route) => { delete route.metadata.rootTask; }],
