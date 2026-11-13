@@ -673,3 +673,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-417.1"></a>`PB-417.1-shared-service-fixture-housekeeping` · 2026-11-13 · completed · — · Make shared-service authority fixtures deterministic across housekeeping
 - <a id="pb-432"></a>`PB-432-focused-lifecycle-contracts` · 2026-11-13 · completed · — · Run focused lifecycle and adapter contracts before full acceptance
 - <a id="pb-418"></a>`PB-418-codex-fallback-socket-bound` · 2026-11-13 · completed · — · Keep Codex fallback sockets within the Unix path bound
+- <a id="pb-430.1"></a>`PB-430.1-owned-startup-release-watch` · 2026-11-13 · completed · — · Consume an owned startup release despite delayed watch notification

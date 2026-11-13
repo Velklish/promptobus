@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { check } from './check.mjs';
@@ -70,6 +70,8 @@ Server.prototype.listen = function (...args) {
     try { listen.apply(this, args); } finally { cleanup(); }
   };
   const timer = setTimeout(() => {
+    resume();
+    if (released) return;
     try { this.emit('error', new Error('owned listener barrier was not released')); } finally { cleanup(); }
   }, 10000);
   process.once('exit', cleanup);
@@ -99,6 +101,79 @@ cp.spawn = (...args) => {
 syncBuiltinESMExports();
 await import(${JSON.stringify(pathToFileURL(cli).href)});
 `);
+const controlled = path.join(root, 'delayed-watch.cjs');
+writeFileSync(controlled, `
+const fs = require('node:fs');
+const { Server } = require('node:net');
+const file = process.argv[2], present = process.argv[3] === 'present';
+const record = JSON.parse(fs.readFileSync(file, 'utf8'));
+const release = ${JSON.stringify(root)} + '/' + record.task + '.release';
+const events = [], held = [];
+const note = event => events.push({ event, ns: process.hrtime.bigint().toString(), release: fs.existsSync(release) });
+const watch = fs.watch, rename = fs.renameSync, listen = Server.prototype.listen, timeout = setTimeout;
+fs.watch = (dir, callback) => {
+  if (dir !== ${JSON.stringify(root)}) throw new Error('unowned watch control');
+  const watcher = watch(dir, () => note('watch-notified'));
+  note('watch-held');
+  held.push(callback);
+  const close = watcher.close;
+  watcher.close = function () { note('watch-closed'); return close.call(this); };
+  return watcher;
+};
+fs.renameSync = (...args) => { rename(...args); if (args[1].endsWith('.listening')) note('marker'); };
+Server.prototype.listen = function (...args) { note('actual-listen'); return listen.apply(this, args); };
+global.setTimeout = (callback, ms) => {
+  if (ms !== 10000) throw new Error('unexpected owned listener deadline');
+  note('timer-armed');
+  return timeout(() => {
+    note('timer');
+    try { callback(); } finally {
+      for (const deliver of held) { note('watch-delivered'); deliver(); }
+    }
+  }, ms);
+};
+process.argv = [process.execPath, ${JSON.stringify(path.resolve('lib/codex-hold.js'))}, file, record.launchId];
+require(${JSON.stringify(preload)});
+const server = new Server();
+server.on('error', error => { note('error:' + error.message); if (server.listening) server.close(); });
+server.on('listening', () => { note('listening'); server.close(() => note('server-closed')); });
+note('listen');
+server.listen(record.rpcSocket, '127.0.0.1');
+note('listen-return');
+if (present) { fs.writeFileSync(release, 'release\\n'); note('release'); }
+process.once('beforeExit', () => console.log(JSON.stringify(events)));
+`);
+for (const present of [true, false]) {
+  const record = { ref: 'controlled-listener-' + present, launchId: 'owned-listener-' + present,
+    task: 'controlled-listener-' + present, rpcSocket: 0 };
+  const file = sessionFile(record.ref, env);
+  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  writeFileSync(file, JSON.stringify(record), { mode: 0o600 });
+  let result;
+  try {
+    result = spawnSync(process.execPath, [controlled, file, present ? 'present' : 'absent'], {
+      cwd: root, env, encoding: 'utf8', timeout: 15000,
+    });
+  } finally { rmSync(file, { force: true }); }
+  const events = result.stdout.trim() ? JSON.parse(result.stdout.trim()) : [];
+  console.log('controlled owned listener schedule: ' + JSON.stringify({ present, status: result.status, events }));
+  const at = name => events.findIndex(value => value.event === name);
+  const ordered = names => names.every((name, i) => at(name) >= 0 && (i === 0 || at(names[i - 1]) < at(name)));
+  check('controlled listener holds watch delivery through the unchanged timer: release ' + present,
+    result.status === 0 && ordered(['listen', 'timer-armed', 'watch-held', 'marker', 'listen-return', 'timer', 'watch-delivered'])
+    && (!present || ordered(['listen-return', 'release', 'timer']))
+    && events[at('listen-return')]?.release === false && events[at('timer')]?.release === present,
+    result.stderr + JSON.stringify(events));
+  check(present ? 'owned listener timer consumes a durable release while its watch callback is held'
+    : 'owned listener timer refuses an absent release while its watch callback is held',
+    present ? ordered(['timer', 'actual-listen', 'listening', 'server-closed'])
+      && !events.some(value => value.event.startsWith('error:'))
+      : at('error:owned listener barrier was not released') > at('timer') && at('actual-listen') === -1,
+    JSON.stringify(events));
+  check('controlled listener closes its owned watcher at the timer: release ' + present,
+    ordered(['timer', 'watch-closed', 'watch-delivered'])
+    && events.filter(value => value.event === 'watch-closed').length === 1, JSON.stringify(events));
+}
 for (const [index, title] of ['Startup root', 'Different startup root', 'Unbound startup root'].entries()) {
   const task = `lead-startup-t20261001-00000${index + 1}`;
   const args = ['lead', '--permission-mode', 'full-access', '--brief', brief, '--task', task];

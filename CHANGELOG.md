@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Bound Codex fallback socket paths independently of `TMPDIR` and separate contacts by launch so hard-kill recovery can resume without removing the old path. Refuse occupied current contacts; cleanup retains paths replaced after the holder started.
+- The owned startup listener test consumes a durable release at its unchanged
+  timeout even when watch notification is delayed. Controlled checks retain the
+  absent-release refusal and the original publication and Stop assertions.
+
 - Shared-service authority fixtures isolate negative variants and control housekeeping ordering while retaining refusal, snapshot and cleanup checks.
 
 - The Codex consumed contract selects the installed 0.167.2 schema capture, with

@@ -35,6 +35,19 @@ The previous GitHub-form setup had the same blind spot across files. Since v0.8.
 
 Tests of instruction wording establish text contracts. Runtime claims require the production validator, engine or launcher; a second state machine in a test cannot establish them. Before removing a verdict, identify its surviving guarantee and use a semantic mutation to check the replacement. The package suite owns the token-aware source import scan and its trap fixtures. It builds its fresh source copy before reading inventory and installing from the same tarball; the separate typed role-instruction consumer keeps its own installation.
 
+`node test/lead-startup-ownership.test.mjs` checks the owned startup listener
+barrier with its real 10000 ms timer. The barrier consumes an existing durable
+release at expiry before reporting a timeout. A controlled child runs the same
+owned preload against a loopback listener, captures its watch callback at
+registration, and delivers it after the timer handler. It records monotonic
+listen, marker, release, watch and timer events; OS notifications are recorded
+separately and do not determine the controlled delivery.
+With a release it must listen without an error; without a release it must refuse.
+The child closes its own listener and watcher, and the parent removes only its
+created session file. The original publication and Stop assertions still run.
+These controlled schedules establish a sufficient condition for a false timeout;
+they do not reconstruct the event ordering of an untraced full-suite failure.
+
 Package operations used by verification must not rebuild the shared runtime while
 other tests import it. npm 10.8.2 runs `prepare` during `npm pack --ignore-scripts`,
 including `--dry-run`; the flag does not establish a read-only operation on that
