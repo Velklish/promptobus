@@ -8,7 +8,8 @@ import { acquireServiceLock, prepareServicePaths, processRecord, readDiscovery, 
 import type { ServiceDiscovery, ServicePaths } from './service-state.js';
 import type { WardenDiagnostics } from './service-warden.js';
 import { canonicalPath } from './store.js';
-import { actorIdentityVariables } from './drivers.js';
+import { actorIdentityVariables, REGISTRY } from './drivers.js';
+import { serviceHarnessContext } from './harness-home.js';
 
 /** pollEnv is the full owner bootstrap snapshot; cwd remains caller context, not the daemon cwd. */
 export interface ServiceCallOptions { cwd?: string; env?: NodeJS.ProcessEnv; pollEnv?: NodeJS.ProcessEnv }
@@ -143,7 +144,10 @@ export async function ensureWorkspaceService(host: PromptobusHost, { env = proce
 
 export async function registerServiceClient(host: PromptobusHost, client: ServiceClientInput, options: ServiceCallOptions = {}): Promise<ServiceClientCredential> {
   await ensureWorkspaceService(host, options);
-  const value = await serviceControl(servicePaths(host, options.env), { operation: 'register', runtime: runtimeIdentity(host), client });
+  const context = client.nativeBinding && !client.rootLaunch && !client.bbRootNonce
+    ? serviceHarnessContext(host, client.env, REGISTRY) : null;
+  const launcherHarness = context && { homes: context.homes, bins: context.bins, searchPath: context.searchPath };
+  const value = await serviceControl(servicePaths(host, options.env), { operation: 'register', runtime: runtimeIdentity(host), client, launcherHarness });
   if (!recordOf(value) || typeof value.clientId !== 'string' || typeof value.token !== 'string' || typeof value.credentialFile !== 'string'
     || typeof value.busUrl !== 'string' || (value.filesUrl !== null && typeof value.filesUrl !== 'string')) throw new Error('Shared service returned an invalid client credential');
   return { clientId: value.clientId, token: value.token, credentialFile: value.credentialFile, busUrl: value.busUrl, filesUrl: value.filesUrl };

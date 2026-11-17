@@ -726,8 +726,16 @@ one prepared plan after their final rebuild and before writing launch files.
 The private registry replaces the owned MCP entries on that same plan, preserving
 native launch identity, serialized files, external servers and tool denials.
 Planning and dry runs neither start the owner nor reserve credentials.
+Before granting a managed native client credential, the service compares the launcher's
+resolved harness binaries and state homes with its startup snapshot and checks
+the common poll environment. An incompatible launcher fails before starting a
+participant. The first tool call still validates its own actor Host.
 The managed owner snapshot drops `PROMPTOBUS_ROOT_*` and `PROMPTOBUS_CLIENT_*`
 capability references while retaining the trusted account environment.
+
+If owner realization races with `tools/list`, the unchanged pending client
+may refresh its authority once against the bound grant for the tool catalog.
+Tool calls still require the same realized grant throughout execution.
 
 Codex holder event and rate-limit publications may finish during a synchronous
 HTTP dispatch. After a stable full proof, the service permits changes limited
@@ -758,9 +766,14 @@ original record revision, ref, launch ID, executable and immutable native tuple
 under the existing task lock before publishing. If the transcript does not exist
 at startup, the hook retains a private startup candidate with the captured native
 process, executable, store, session ID and launch generation. It neither creates
-the transcript nor admits the native identity. The owned `UserPromptSubmit` hook
-completes that same producer after the transcript exists, rechecking the original
-tuple and actual native parent. Unknown resume IDs cannot supply this candidate.
+the transcript nor admits the native identity. Concurrent startup hooks can
+reuse the exact same staged record. Other record changes still refuse admission.
+The owned `UserPromptSubmit` hook rechecks the original tuple and actual native
+parent. If the transcript is still absent, it requires one working row from the
+approved Claude executable's `agents --json` using the captured native store
+as `CLAUDE_CONFIG_DIR`. The row must match the full session ID, exact launch
+name and canonical working directory. Tool hooks still require the
+actual owned transcript. Unknown resume IDs cannot supply the startup candidate.
 After successful deferred admission, the first prompt publishes the native hook's
 socket and token under the same launch-generation and participant checks as
 SessionStart. The contact is available before that prompt returns; this handoff

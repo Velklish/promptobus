@@ -1105,6 +1105,7 @@ claudeDriver.prepare = (context) => {
 };
 process.env.PATH = `${RETRY_BIN}${path.delimiter}${NODE_BIN}${path.delimiter}${priorPath ?? ''}`;
 process.env.PROMPTOBUS_WARDEN = 'off';
+const retryService = ownedServiceFixture();
 try {
   const liftOptions = { target: REPO, task: TASK, harness: 'claude', tool: { ok: true, bin: path.join(RETRY_BIN, 'claude'), version: '2.1.295' } };
   await capture(() => approverLift(WS, liftOptions));
@@ -1132,6 +1133,7 @@ try {
     && readFileSync(layerFile).equals(originalBytes),
     JSON.stringify(restored?.metadata));
 } finally {
+  retryService.restore();
   claudeDriver.prepare = originalPrepare;
   process.env.PATH = priorPath;
   if (priorWarden === undefined) delete process.env.PROMPTOBUS_WARDEN;
@@ -1284,6 +1286,7 @@ async function liftWithGenerator(name, generate, npmSource, { enclosing = false 
   const priorWarden = process.env.PROMPTOBUS_WARDEN;
   process.env.PATH = `${GEN_BIN}${path.delimiter}${NODE_BIN}${path.delimiter}${priorPath ?? ''}`;
   process.env.PROMPTOBUS_WARDEN = 'off';
+  const generatorService = ownedServiceFixture();
   let out = '';
   try {
     out = await capture(() => approverLift(WS, {
@@ -1291,6 +1294,7 @@ async function liftWithGenerator(name, generate, npmSource, { enclosing = false 
       tool: { ok: true, bin: path.join(GEN_BIN, 'claude'), version: '2.1.295' },
     }));
   } finally {
+    generatorService.restore();
     process.env.PATH = priorPath;
     if (priorWarden === undefined) delete process.env.PROMPTOBUS_WARDEN;
     else process.env.PROMPTOBUS_WARDEN = priorWarden;

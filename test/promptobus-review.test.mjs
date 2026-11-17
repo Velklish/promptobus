@@ -42,6 +42,7 @@ function rulesBlock(text, role, expectedFiles) {
 // realpath: the scheduler canonicalizes the root (macOS: /var → /private/var), and the
 // test's expectations must be compared against canonical paths.
 const SB = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'promptobus-promptobus-review-')));
+process.env.PROMPTOBUS_CODEX_HOME = path.join(SB, 'native-state');
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_PATH = path.join(here, '..', 'package.json');
 const PACKAGE_VERSION = JSON.parse(readFileSync(PACKAGE_PATH, 'utf8')).version;
@@ -54,7 +55,6 @@ const { EFFORT_LEVELS, REVIEWER_DENY, SESSION_ENV_DROP } = await import(path.joi
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
 function stoppedCodexFixture(home, task) {
   const p = store.participantOf(store.readTask(home, task), 'reviewer:orders-api');
-  process.env.PROMPTOBUS_CODEX_HOME = path.join(SB, 'native-state');
   const record = { home, task, address: 'reviewer:orders-api', ref: p.sessionRef,
     launchId: p.metadata.nativeLaunchId ?? 'fixture-' + task, threadId: p.metadata.sessionId,
     holderPid: 2147483646, appPid: 2147483645 };
@@ -2902,6 +2902,8 @@ if (args[0] === '--version') { process.stdout.write('2.0.0 (Claude Code)\\n'); p
 process.stdout.write('[]');
 process.exit(0);`);
 const ultraReviewTask = store.createTask(home, { id: 't20260828-170100', title: 'an ultracode review without a seam' });
+const ultraReviewEnv = { ...process.env, PATH: `${ULTRA_REVIEW_BIN}${path.delimiter}${PATH0}` };
+ownedServiceFixture(ultraReviewEnv);
 const ultraReview = spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(reviewUrl)});\n`
   + `await m.review(${JSON.stringify(WS)}, ${JSON.stringify({
@@ -2909,7 +2911,7 @@ const ultraReview = spawnSync(process.execPath, ['--input-type=module', '-e',
   })});`,
 ], {
   encoding: 'utf8', cwd: SB,
-  env: { ...process.env, PATH: `${ULTRA_REVIEW_BIN}${path.delimiter}${PATH0}` },
+  env: ultraReviewEnv,
 });
 const ultraReviewText = `${ultraReview.stdout}${ultraReview.stderr}`;
 check(': a review without a tool seam refuses unsupported managed hook capability',

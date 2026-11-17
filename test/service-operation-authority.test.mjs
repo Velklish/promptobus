@@ -6,7 +6,9 @@ import { ManagedNativeRevisionDrift } from '../lib/native-admission.js';
 
 const source = readFileSync(new URL('../lib/service.js', import.meta.url), 'utf8');
 const start = source.indexOf('    const authorizeCurrent =');
-const authorization = source.slice(start, source.indexOf('    const authenticateClient =', start));
+const end = source.indexOf('    const clientGrant =', start);
+if (start === -1 || end === -1) throw new Error('Service operation authorization fixture could not find its source boundaries');
+const authorization = source.slice(start, end);
 class HttpFailure extends Error { constructor(status, message) { super(message); this.status = status; } }
 for (const scenario of ['busy dead', 'cached alive but dead', 'unknown', 'revision drift', 'sustained revision drift',
   'native proof revision drift', 'sustained native proof revision drift', 'native proof unavailable', 'pending native publication',

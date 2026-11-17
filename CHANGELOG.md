@@ -17,6 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reject incompatible managed native clients during shared-service registration, before
+  launching a participant that cannot use the bus. Compare the launcher and
+  service harness state homes, resolved binaries and common poll environment.
+- Bind Claude Code teamlead startup and execution hooks to the child task and
+  orchestrator address of their native client grant.
+- Allow overlapping Claude Code startup hooks to stage the same native transcript
+  candidate once, while retaining refusal of changed launch records.
+- Verify the exact live Claude Code session in the launch's native store when the first
+  prompt precedes transcript creation. Tool hooks still require the owned transcript.
+- Keep an MCP `tools/list` request valid across owner realization of the same
+  pending native client. Tool calls still require their original authority.
 - The Cursor driver and wake integration files run again. The Cursor fixture
   client retries one unchanged handshake request after the exact managed record
   revision-drift refusal (`initialize` at the returned `authenticate` fence,

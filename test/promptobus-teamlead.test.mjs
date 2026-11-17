@@ -57,6 +57,10 @@ check('teamlead owned hooks use busArgv when the project guard has a distinct in
   splitRuntimePlan.launch.settings.hooks.Stop[0].hooks[0].command.includes(`"${host.busArgv([])[0]}"`)
   && !splitRuntimePlan.launch.settings.hooks.Stop[0].hooks[0].command.includes('/installed/layout-entry.mjs'),
   JSON.stringify(splitRuntimePlan.launch.settings.hooks));
+const claudeStartCommand = planned.launch.claudeStartHook.command;
+check('Claude teamlead startup guard uses the child task and orchestrator address of its grant',
+  claudeStartCommand.includes(`--role orchestrator --task ${planned.childTask}`)
+  && !claudeStartCommand.includes('--role teamlead:group-one'), claudeStartCommand);
 const dry = await captureSplit(() => spawnTeamlead(host, { ...opts, dryRun: true }));
 const dryChild = dry.out.match(/child task: ([a-z0-9-]+)/)?.[1];
 check('teamlead dry-run names the child, root, address and install cwd without starting',

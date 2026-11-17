@@ -678,3 +678,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-416.26"></a>`PB-416.26-stop-service-after-confirmed-root-self-stop` · 2026-11-13 · completed · — · Close stopped task lifetimes so the shared service can exit
 - <a id="pb-428.7"></a>`PB-428.7-cursor-http-handshake-retry` · 2026-11-14 · completed · — · Retry one unchanged Cursor fixture HTTP handshake after revision drift
 - <a id="pb-433"></a>`PB-433-reduce-release-scenario-waits` · 2026-11-14 · completed · — · Reduce real waits in the measured slow release scenarios
+- <a id="pb-450"></a>`PB-450-managed-claude-mixed-harness` · 2026-11-18 · completed · — · Make managed Claude launches reliable in mixed-harness dev runs

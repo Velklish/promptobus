@@ -981,13 +981,15 @@ if (args[0] === 'agents') { process.stdout.write(${JSON.stringify(JSON.stringify
 process.stdout.write('backgrounded · ' + nativeId + '\\n');`);
 const foundBin = path.join(offPathBin, process.platform === 'win32' ? 'claude.cmd' : 'claude');
 const foundNote = `claude not found in PATH — taken from ${offPathBin}`;
+const foundEnv = { ...process.env, PATH: GITONLY };
+ownedServiceFixture(foundEnv);
 const foundRun = spawnSync(process.execPath, ['--input-type=module', '-e',
   `const m = await import(${JSON.stringify(spawnUrl)});\n`
   + `await m.spawn(${JSON.stringify(WS)}, ${JSON.stringify({
     repo: 'orders-api', brief: BRIEF, task: FOUND_TASK, worker: 'naydennyy',
     tool: { ok: true, bin: foundBin, note: foundNote },
   })});`,
-], { encoding: 'utf8', env: { ...process.env, PATH: GITONLY } });
+], { encoding: 'utf8', env: foundEnv });
 const foundText = `${foundRun.stdout}${foundRun.stderr}`;
 check(`: the binary is not on PATH — spawn lifts the worker with the absolute bin from HostToolBin`,
   foundRun.status === 0 && store.readTask(HOME, FOUND_TASK).participants.some((p) => store.addressOf(p) === 'worker:naydennyy'),
@@ -1487,7 +1489,11 @@ store.createTask(HOME, {
   id: CONTRACT_TASK, title: 'host tool bin contract', slug: 'bin-only', stamp: 't20260904-000000',
 });
 const contractHost = hostOf(WS);
-contractHost.resolveToolBin = () => ({ ok: true, bin: stubClaude() });
+const resolveContractTool = contractHost.resolveToolBin;
+contractHost.resolveToolBin = name => {
+  const tool = resolveContractTool(name);
+  return tool.ok ? { ok: true, bin: tool.bin } : tool;
+};
 const contractOpts = { repo: 'orders-api', brief: BRIEF, task: CONTRACT_TASK, worker: 'binonly' };
 const contractPlan = await planSpawn(contractHost, contractOpts);
 claudeSays([{ id: 'sess-bin', name: contractPlan.name, state: 'working', pid: 4600 }]);

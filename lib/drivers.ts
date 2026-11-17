@@ -6,7 +6,7 @@ import { processState, readPrivate, recordOf, recordVersion, sameRecordVersion }
 import { isDeepStrictEqual } from 'node:util';
 import type { ProcessIdentity, RecordVersion } from './service-state.js';
 import { realpathSync } from 'node:fs';
-import { CLAUDE, CLAUDE_SKILLS_REL, REPORTER_DENY, SESSION_RECORD_VAR, claudeDriver } from './driver-claude.js';
+import { CLAUDE, CLAUDE_SKILLS_REL, REPORTER_DENY, SESSION_RECORD_VAR, claudeDriver, readClaudeStartupSession } from './driver-claude.js';
 import { CURSOR, CURSOR_SKILLS_REL, cursorDriver } from './driver-cursor.js';
 import { CODEX, CODEX_SKILLS_REL, codexDriver } from './driver-codex.js';
 import { OPENCODE, opencodeDriver } from './driver-opencode.js';
@@ -31,7 +31,7 @@ export const REGISTRY = createRegistry({
   },
   fallback: CLAUDE,
 });
-export { REPORTER_DENY };
+export { REPORTER_DENY, readClaudeStartupSession };
 
 export function replaceManagedMcpServers(driver: LibDriver, launch: LibLaunchPlan, servers: Record<string, LibMcpServer>): void {
   if (!driver.replaceMcpServers) throw new Error('Harness cannot replace its prepared MCP configuration');
@@ -47,7 +47,8 @@ export interface ManagedNativeStart {
   nativeProof?: { version: RecordVersion;
     binding: { harness: 'claude'; nativeStore: string; nativeId: string; process: ProcessIdentity };
     evidence: { kind: 'native-session-start'; source: 'startup'; nativeStore: string; nativeId: string;
-      process: ProcessIdentity; transcript: string; executable: RecordVersion } };
+      process: ProcessIdentity; transcript: string; executable: RecordVersion;
+      registry?: { sessionId: string; name: string; cwd: string } } };
 }
 
 export function bindManagedNativeStart(input: ManagedNativeStart): { published: boolean } {

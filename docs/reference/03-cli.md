@@ -158,6 +158,13 @@ An owner slug cannot start with the name of an active declared gate followed by 
 
 The worker gets an isolated git worktree. The main tree is not edited. Read the branch from `promptobus status` or `promptobus_task`, not from the worktree name.
 
+Claude Code requires workspace trust for `claude --bg`. On Claude Code 2.1.311,
+a linked worker worktree inherited trust from the original checkout after the
+checkout was approved once in Claude Code. If a new repository returns
+`Workspace not trusted`, review and trust the original checkout in Claude Code
+before retrying the lift. Promptobus leaves the harness's trust records to
+Claude Code.
+
 **A repeat spawn restarts a dead participant, and refuses at an address whose session is alive**: it would send a second session into the running one's worktree and branch. The refusal names the second-slice route (`--worker <name>`) and the restart route: `promptobus stop <address> --task <id>`, both filled in, for any harness whose driver declares `stop` — all four do — and the driver's stop phrase only for one that does not. That stop takes this one participant through its driver and leaves the task open ([Status, done, sweep](#status-done-sweep-dismiss-history-prune)). The route used to be the driver's phrase: Codex's named `done`, which closes the whole task and every managed session in it, and Claude's and Cursor's named a harness command with a literal `<id>` — by hand, Cursor's leaves the turn's tool processes and the session record behind.
 
 A lift that cannot confirm a session persists `metadata.session: null`; this says that the session reference was not recorded at write time, not that the journal proves whether a session existed briefly. `promptobus status` reports that diagnostic alongside the session-state line based on `metadata.name` and the supplied session snapshot. A legacy participant record with neither `session` nor `sessionId` gets the corresponding incomplete diagnostic alongside its session-state line.
@@ -1983,7 +1990,9 @@ mailbox stall inspection can still run synchronous driver calls and delay other
 requests up to the call's timeout; this is not a general HTTP latency guarantee.
 
 The service fixes the common poll environment, harness homes and actual driver
-binaries at startup; incompatible clients are refused. Internal owner registration
+binaries at startup. It checks these during native client registration, before a
+participant starts, without creating an actor Host for the pending grant.
+The first authenticated tool call still checks the actual actor Host. Internal owner registration
 uses `ServiceCallOptions.pollEnv` for cold startup as the full common owner
 environment, retaining root consumer/account settings and removing actor
 task/role, native identity, record and contact fields. The owner cwd is the

@@ -1,8 +1,8 @@
-import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { check } from './check.mjs';
-import { makeSandbox } from './sandbox.mjs';
+import { makeSandbox, stubCommand } from './sandbox.mjs';
 const runtime = process.argv[2] ? pathToFileURL(`${path.resolve(process.argv[2])}/`) : new URL('../', import.meta.url);
 const { bindManagedNativeStart } = await import(new URL('lib/drivers.js', runtime));
 import { closeTask, createTask, participantOf, participantRecord, readTask, taskExists, taskFile, upsertParticipant, readWake } from '../lib/store.js';
@@ -87,6 +87,7 @@ export const CLIENT_FILE = 'PROMPTOBUS_CLIENT_FILE';
 export const readManagedServiceHookContext = () => fixture.context;
 export const bindManagedNativeStart = input => { fixture.bindings.push(input); return { published: false }; };
 export const realizeManagedServiceClient = async () => { throw new Error('Unpublished fixture must not realize a client'); };
+export { readClaudeStartupSession } from ${JSON.stringify(new URL('lib/drivers.js', runtime).href)};
 export const observeRootProcess = async pid => pid === process.ppid ? fixture.shell : pid === fixture.native.pid ? fixture.native : null;
 export const isSupportedPosixShell = async identity => identity === fixture.shell && fixture.shellAllowed;
 export const processParent = async pid => pid === fixture.shell.pid ? fixture.parent : null;
@@ -97,18 +98,26 @@ let source = readFileSync(new URL('lib/native-start.js', runtime), 'utf8');
 for (const module of ['root-process', 'drivers', 'service-launch', 'service-state', 'store']) {
   const original = `from './${module}.js'`, replacement = ['service-state', 'store'].includes(module)
     ? new URL(`lib/${module}.js`, runtime).href : observationUrl;
-  if (module === 'store' && !source.includes(original)) continue;
   if (!source.includes(original)) throw new Error(`Native start fixture could not replace ${module} boundary`);
   source = source.replaceAll(original, `from ${JSON.stringify(replacement)}`);
 }
 const authorization = path.join(scratch, 'native-start-authorization.mjs'); writeFileSync(authorization, source);
 const { fixture } = await import(observationUrl);
 const { authorizeManagedNativeStart } = await import(pathToFileURL(authorization).href);
-const executable = recordVersion(realpathSync(process.execPath));
+const registryFile = path.join(scratch, 'registry.json');
+const otherStore = path.join(scratch, 'other-store');
+mkdirSync(otherStore, { mode: 0o700 });
+stubCommand(scratch, 'registry-claude', `import { readFileSync } from 'node:fs';
+if (process.argv.slice(2).join(' ') !== 'agents --json') process.exit(64);
+const file = process.env.CLAUDE_CONFIG_DIR === ${JSON.stringify(otherStore)}
+  ? ${JSON.stringify(path.join(otherStore, 'registry.json'))} : ${JSON.stringify(registryFile)};
+process.stdout.write(readFileSync(file));`);
+const registryExecutable = path.join(scratch, process.platform === 'win32' ? 'registry-claude.cmd' : 'registry-claude');
 const transcript = path.join(scratch, 'observed-native.jsonl'); writeFileSync(transcript, '{}\n');
 for (const harness of ['claude', 'cursor']) {
+  const executable = recordVersion(realpathSync(harness === 'claude' ? registryExecutable : process.execPath));
   const record = path.join(scratch, `${harness}-observed.json`);
-  const nativeCommand = { executable, launcher: executable, bundle: executable, argv: ['--bg', 'fixture'], nativeStore: scratch };
+  const nativeCommand = { executable, launcher: executable, bundle: executable, argv: ['--bg', 'fixture'], nativeStore: scratch, cwd: scratch };
   const reset = () => {
     writePrivate(record, { nativeCommand, nativeLaunchProvenance: { state: 'candidate', nativeStore: scratch } });
     Object.assign(fixture, { context: { harness, record }, bindings: [], shell: { pid: process.ppid, birth: 'simulated-shell-birth' },
@@ -135,5 +144,60 @@ for (const harness of ['claude', 'cursor']) {
     let error;
     try { await authorize(); } catch (caught) { error = caught; }
     check(`${harness} native start retains exact ancestry, image and generation refusal: ${name}`, Boolean(error) && !proof(), error?.message);
+  }
+  if (harness === 'claude') {
+    reset();
+    const missingTranscript = path.join(scratch, 'delayed', `${event.session_id}.jsonl`);
+    const current = readPrivate(record);
+    Object.assign(fixture.context, { home: scratch, task: 'future-native-t20261117-000000', ref: 'owned-launch', launchId: 'same-launch' });
+    const candidate = {
+      kind: 'native-session-start', source: 'startup', nativeStore: scratch, nativeId: event.session_id,
+      process: fixture.native, transcript: missingTranscript, executable, ref: 'owned-launch', launchId: 'same-launch',
+    };
+    fixture.onExecutable = () => writePrivate(record, { ...current, nativeStartupCandidate: candidate });
+    let duplicate, error;
+    try {
+      duplicate = await authorizeManagedNativeStart({}, { ...event, transcript_path: missingTranscript },
+        { PROMPTOBUS_CLIENT_FILE: record }, scratch);
+    } catch (caught) { error = caught; }
+    check('a concurrent Claude startup with the exact already staged candidate defers admission',
+      !error && duplicate === false && !proof() && readPrivate(record).nativeStartupCandidate.launchId === candidate.launchId,
+      error?.message);
+    const row = { sessionId: event.session_id, name: candidate.ref, cwd: scratch, state: 'working' };
+    for (const [name, sessions, accepted] of [
+      ['exact owned session', [row], true],
+      ['wrong name', [{ ...row, name: 'another launch' }], false],
+      ['wrong full ID', [{ ...row, sessionId: 'another-session' }], false],
+      ['wrong working directory', [{ ...row, cwd: path.dirname(scratch) }], false],
+      ['duplicate rows', [row, row], false],
+    ]) {
+      reset();
+      Object.assign(fixture.context, { home: scratch, task: 'future-native-t20261117-000000', ref: candidate.ref, launchId: candidate.launchId });
+      writeFileSync(registryFile, JSON.stringify(sessions));
+      let refusal;
+      try { await authorizeManagedNativeStart({}, { ...event, transcript_path: missingTranscript },
+        { PROMPTOBUS_CLIENT_FILE: record }, scratch, { verifyClaudeRegistry: true }); }
+      catch (caught) { refusal = caught; }
+      check(`Claude before the transcript recognizes only the exact native registry row: ${name}`,
+        accepted ? !refusal && proof()?.nativeProof.evidence.registry?.sessionId === event.session_id
+          : /native registry/.test(refusal?.message ?? '') && !proof(), refusal?.message);
+    }
+    reset();
+    Object.assign(fixture.context, { home: scratch, task: 'future-native-t20261117-000000', ref: candidate.ref, launchId: candidate.launchId });
+    writeFileSync(registryFile, '[]');
+    writeFileSync(path.join(otherStore, 'registry.json'), JSON.stringify([row]));
+    const previousStore = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = otherStore;
+    let refusal;
+    try {
+      await authorizeManagedNativeStart({}, { ...event, transcript_path: missingTranscript },
+        { PROMPTOBUS_CLIENT_FILE: record }, scratch, { verifyClaudeRegistry: true });
+    } catch (caught) { refusal = caught; }
+    finally {
+      if (previousStore === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+      else process.env.CLAUDE_CONFIG_DIR = previousStore;
+    }
+    check('Claude before the transcript refuses an exact row that exists only in another store',
+      /native registry/.test(refusal?.message ?? '') && !proof(), refusal?.message);
   }
 }

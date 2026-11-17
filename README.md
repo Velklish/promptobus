@@ -354,9 +354,10 @@ import { runPromptobus } from 'promptobus/cli';
 Managed participant HTTP tools require the owner-realized actual native ID; a planned UUID or session-record pointer alone grants no tool access.
 
 Managed Claude prompts and tools also require verified fresh startup and an
-initialized MCP connection owned by that launch. A transcript that appears after
-SessionStart completes admission at the first prompt with the same captured
-native process and store. Execution hooks block admission and MCP setup failures;
+initialized MCP connection owned by that launch. If the transcript is absent at
+the first prompt, admission uses the captured native process and the exact session
+in the launch's native store. Tool hooks require the owned transcript.
+Execution hooks block admission and MCP setup failures;
 their command-failure policy requires Claude Code 2.1.295 or later. See the
 [native binding contract](https://github.com/Velklish/promptobus/blob/v0.33.0/docs/reference/05-drivers.md#shared-http-native-binding)
 for fixture coverage and native verification limits.
@@ -390,6 +391,8 @@ coverage.
 
 The suite needs `git`, `tmux` and `ast-grep` (`npm install -g @ast-grep/cli@0.45.3`, the version CI pins). It runs files in a process pool with the wall-clock files in a serial group at the end, gives every file its own home and temp directory, seals `PATH` to a directory of stubs so no real harness binary is reached, and refuses a run that leaves a process behind. At the same boundary it removes every known harness identity before fixtures install their own, so running the suite from a participant of another harness does not create a second session identity. Live harness runs are never started in CI. Importing `scripts/live-*.mjs` starts nothing: `node --check` is the syntax check, and a stand sets `PROMPTOBUS_STUB_BIN` only after its stub binaries and state homes are proved, and then keeps `PATH` on that directory and clears `PROMPTOBUS_CURSOR_INSTALL_DIRS`. The live route remains `node scripts/live-*.mjs`. Deterministic fixtures execute the live Codex script with held stops to check cancellation ownership: normal cleanup cannot remove the sandbox while abort cleanup is awaiting its stop.
 The Cursor adapter's event-loop test uses a fixed 100 ms delay in each of its two stub replies, so its `ticks` check does not depend on process startup speed; this delay is test-only. Its bounded Stop fixture captures the command PID before Node startup and prepares static fallback observations before Stop, retaining the original budget and separate yield, termination and UNKNOWN checks. The pause between a mailbox fetch and the following send waits for the warden's `deliveredAt` mark instead of sleeping a fixed interval. A pause that holds the turn stays a sleep. A missing task journal fails its own verdict instead of aborting the file.
+
+Native client registration checks compatibility with the active shared service before starting a participant. A Claude Code teamlead's managed hooks use the same child task and orchestrator address as its native client grant.
 
 Standalone-root malformed-credential controls use a separate owned foreground service process and home. The fixture confirms its fail-closed termination while the healthy admission service retains its actual owner identity and endpoint.
 

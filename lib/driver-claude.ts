@@ -703,6 +703,13 @@ function shadowedUserServers(names: string[]) {
 
 // --- driver operations ----------------------------------------------------------
 
+export function readClaudeStartupSession(source: { executable: string; nativeStore: string }, sessionId: string, name: string, cwd: string) {
+  const { list } = readBgSessions({ fresh: true, source });
+  const matches = list?.filter(raw => recordOf(raw) && raw.sessionId === sessionId
+    && raw.name === name && raw.cwd === cwd && raw.state === 'working');
+  return matches?.length === 1 ? { sessionId, name, cwd } : null;
+}
+
 // State of one session for a snapshot, off the registry cache — without it each participant would
 // cost a `claude agents --json` run. An unreadable list is `null`: unknown is not death.
 function inspect(ref: string, sessions: unknown[] | null | undefined = undefined): SessionView | null {
@@ -767,7 +774,7 @@ async function spawn(plan: LibLaunchPlan, { tool, ref, role, cwd, env, home, tas
       const executable = realpathSync(selected), nativeStore = realpathSync(store);
       launchTool = { ...tool, bin: executable };
       writeJsonAtomic(pointer, { ...previous, ref, home, task, address, launchId: plan.service!.launchId,
-        sessionId: null, nativeCommand: { executable: recordVersion(executable), argv: [...plan.argv], nativeStore } }, { mode: 0o600 });
+        sessionId: null, nativeCommand: { executable: recordVersion(executable), argv: [...plan.argv], nativeStore, cwd: realpathSync(cwd) } }, { mode: 0o600 });
       plan.sessionRecord = pointer;
     }
     return await liftoffParticipant({

@@ -424,6 +424,8 @@ async function managedPublication(paths: ServicePaths, grant: Pick<ServiceClient
         || typeof evidence.transcript !== 'string'
         || !path.isAbsolute(evidence.transcript) || !contained(nativeStore, evidence.transcript)
         || path.basename(evidence.transcript) !== `${nativeId}.jsonl`
+        || (evidence.registry !== undefined && (!recordOf(evidence.registry) || evidence.registry.sessionId !== nativeId
+          || evidence.registry.name !== record.ref || typeof command.cwd !== 'string' || evidence.registry.cwd !== command.cwd))
         || (observeCurrentProcess && await processExecutable(process) !== command.executable.file)) {
         throw new Error('Managed Claude requires its actual startup/owned command/store/process publication');
       }

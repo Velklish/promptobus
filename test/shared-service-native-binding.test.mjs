@@ -96,8 +96,8 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   const owner = input => serviceControl(paths, { runtime, ...input });
   const realize = (credential, threadId) => owner({ operation: 'realize', clientId: credential.clientId, threadId })
     .then(value => ({ value }), error => ({ error: error.message }));
-  const register = async (extra = {}, filesRoot = readRoot, lifetime = { kind: 'process', process: requireProcess() }) => {
-    const credential = await registerServiceClient(host, { cwd: root,
+  const register = async (extra = {}, filesRoot = readRoot, lifetime = { kind: 'process', process: requireProcess() }, launchHost = host) => {
+    const credential = await registerServiceClient(launchHost, { cwd: root,
       env: { ...env, PROMPTOBUS_TASK: task, PROMPTOBUS_ROLE: 'orchestrator',
         CODEX_THREAD_ID: 'ancestor-codex', CLAUDE_CODE_SESSION_ID: 'ancestor-claude', CURSOR_CONVERSATION_ID: 'ancestor-cursor',
         PROMPTOBUS_CLAUDE_SESSION: '/ancestor/claude', PROMPTOBUS_CURSOR_SESSION: '/ancestor/cursor',
@@ -149,6 +149,24 @@ if (!['darwin', 'linux'].includes(process.platform)) {
     bus(home, { cli: version });
     createTask(home, { id: task, title: 'native binding fixture', owner: nativeId });
     upsertParticipant(home, task, participantRecord('user'));
+    const clientsBefore = snapshot(paths.clients);
+    let refusedPollContext = '';
+    try {
+      await register({ LANG: `${env.LANG ?? ''}-incompatible` });
+    } catch (error) {
+      refusedPollContext = error.message;
+    }
+    check('pending native registration refuses a different poll environment before writing a grant',
+      /different harness state homes, binaries or common poll environment/.test(refusedPollContext)
+      && JSON.stringify(snapshot(paths.clients)) === JSON.stringify(clientsBefore), refusedPollContext);
+    const otherLauncher = { ...host, resolveToolBin: tool => tool === 'codex'
+      ? { ok: true, bin: path.join(root, 'other-codex') } : host.resolveToolBin(tool) };
+    let refusedLauncher = '';
+    try { await register({}, undefined, undefined, otherLauncher); }
+    catch (error) { refusedLauncher = error.message; }
+    check('pending native registration refuses another launcher binary with the same poll environment',
+      /different harness state homes, binaries or common poll environment/.test(refusedLauncher)
+      && JSON.stringify(snapshot(paths.clients)) === JSON.stringify(clientsBefore), refusedLauncher);
     const pending = await register();
     const before = state();
     check('pending registration creates no actor Host', factories.length === 0, JSON.stringify(factories));
@@ -174,7 +192,25 @@ if (!['darwin', 'linux'].includes(process.platform)) {
       check('pending native tools/call refuses before actor creation or dispatch', denied.status === 403 && /pending/.test(denied.text), denied.text);
     }
     check('pending initialization and discovery leave journal, receipts, wake and actor factory untouched', state() === before && factories.length === 0);
+
     mkdirSync(readRoot); writeFileSync(path.join(readRoot, 'proof.txt'), 'owned reviewer text');
+    for (const scenario of ['tools/list', 'changed scope', 'tools/call']) {
+      const credential = await register();
+      const route = await initialize(credential);
+      const held = birthGate = { ...gate(`discovery-${scenario}`), pid: process.pid };
+      const inFlight = scenario === 'tools/call'
+        ? tool(credential, route, 'promptobus_task') : rpc(credential, route, 'tools/list');
+      await until(() => held.entered);
+      const grant = readPrivate(credential.credentialFile);
+      writePrivate(credential.credentialFile, { ...grant, nativeBinding: { kind: 'codex', state: 'bound', threadId: nativeId },
+        ...(scenario === 'changed scope' ? { env: { ...grant.env, PROMPTOBUS_TASK: 'other-task' } } : {}) });
+      held.release(); birthGate = null;
+      const response = await inFlight;
+      check(`pending native ${scenario} racing owner realization preserves the expected HTTP authority`,
+        scenario === 'tools/list' ? response.status === 200 && response.json.result?.tools.length === mcpTools(registryOf(host)).length
+          : response.status === 401, response.text);
+      check(`pending native ${scenario} racing owner realization creates no actor`, factories.length === 0);
+    }
     const badRealizations = [];
     for (const threadId of [null, '', ' ', 1, {}, ' native-thread-one', 'native-thread-one\n']) badRealizations.push(await realize(pending, threadId));
     check('owner realization refuses malformed native identities without realizing a grant', badRealizations.every(result => /native thread id/.test(result.error ?? ''))
