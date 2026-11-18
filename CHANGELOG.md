@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   copy with a shortened, load-scaled wait. The live-mixed stand polls its
   post-abort insurance view for up to 6 s instead of sleeping 6 s.
 
+- Reuse the verified release test setup across isolated cases. Each case keeps
+  its own Git refs and receipts. The smoke still installs the actual tag from
+  the fixture's Git remote.
+- Stabilize the warden, managed Stop and orchestration fixtures while keeping
+  the real subprocesses, the Stop deadline and the checks for durable delivery.
+
 ### Fixed
 
 - Reject incompatible managed native clients during shared-service registration, before
