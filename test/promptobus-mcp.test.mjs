@@ -5,7 +5,7 @@
 // including the minimal child environments measured for participant harnesses.
 // What's under test is the hand-rolled protocol implementation and message delivery between processes.
 import {
-  existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync,
+  mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync,
   symlinkSync, writeFileSync,
 } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';

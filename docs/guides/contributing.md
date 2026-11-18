@@ -217,7 +217,11 @@ Git input, the actual runner and a selected dependent assertion that fails.
 
 The release publication tests copy a verified candidate into a private directory per case. Each copy owns its source repository, bare remote, receipts and command stubs. The publication smoke still drives the npm entry point and installs the real tag from the local Git remote. The negative cases call the release script directly and inspect the same Git refs and refusal evidence.
 
+The review inventory fixture checks both the number of returned paths and a byte floor above Node's default process output buffer. POSIX uses longer basenames to reach that floor with fewer files; Windows keeps short paths.
+
 The full orchestration fixture consumes the first result through MCP before checking its durable receipt. It also checks the committed worker edit and waits for a real stall heartbeat. The abort fixture holds a postcard connection through native stop and checks for zero MCP dispatch.
+
+The native Teamlead Stop suite reuses one real workspace service. Each case creates a distinct parent and uses a distinct teamlead slug; relifts within a case reuse that case's slug. The service still goes through the owned fixture's shutdown check at exit.
 
 The Cursor fixture client (`openHttpBus` in
 [test/harness-cursor.mjs](../../test/harness-cursor.mjs)) retries one identical
@@ -236,6 +240,22 @@ The aliased-temp standalone Codex fixture uses `makeSockDir` on POSIX and
 checks its socket path against the portable 103-byte limit before launch.
 Its temporary alias still exercises canonical context paths; the shared
 fixture helper owns cleanup independently of the runner's temporary directory.
+
+The standalone owner recovery fixture reports separately whether owner discovery,
+native readiness, or a crash checkpoint was missing. If the owned process exits
+before its milestone, the test reports its exit and stderr instead of waiting for the deadline.
+Only the fixture's wait for the real native ready marker uses the measured load factor,
+at most four times its 5000 ms base. This does not change any product deadline.
+
+The managed Codex cleanup fixture tests a negative shutdown reply within the normal RPC budget. A socket timeout does not count as the expected refusal.
+
+The launch-failure fixture only sends shutdown to a responsive holder. If the holder died before publishing a socket, it confirms the recorded holder and app-server exit before removing the fixture files.
+
+The pipeline fixture sets `PROMPTOBUS_WARDEN=off` in its explicit MCP environment. Reading the step order does not need a background warden, which could otherwise write to the task journal during fixture teardown. The pipeline and model-routing tests compare durable journal files but exclude transient `.lock` directories directly under a task. The model-routing test still compares its repository snapshot without that exclusion.
+
+The BB owner, Codex mock and native-store fixtures wait for discovery, a reply or a hook receipt. These deadlines bound fixture orchestration, not product latency. The native-store fixture keeps its distinct seed-lock budget; a missing receipt still fails the test.
+
+The shared warden observation fixture replaces the record atomically, as the runtime does. It keeps a link to the original inode to prove that the restored record has identical bytes but a different revision, even if both writes share one filesystem timestamp.
 
 The E2E scenario waits for persisted notification health within its existing
 step deadline. A socket postcard receipt can precede the end of the warden
@@ -306,7 +326,7 @@ The suite runs on a machine that is not its own: a person's binaries and session
 
 One consequence to know rather than rediscover: refusal paths that used to reach a real binary now report "not found in `PATH`" under the suite. The Cursor driver's `tmux` resolve is the visible one — it refuses instead of talking to the machine's tmux, which is the intended reading of that branch.
 
-**A fixture that starts a copy of the Node executable copies it with `copyNodeExecutable` from [test/sandbox.mjs](../../test/sandbox.mjs).** A Node build linked against a shared libnode, such as the Homebrew build on macOS (`@rpath/libnode.147.dylib`), loads the library from beside the executable, so a bare copy does not start and the file fails on a `dyld` error or on an unrelated timeout. The helper lists the executable's `@rpath` libraries with `/usr/bin/otool` and puts a symlink beside the copy to each one it finds in the executable's own rpath directories. It names `otool` by its absolute path because the sealed `PATH` does not provide that tool. The lookup runs on macOS only and was tried only there; elsewhere the helper copies the file as before. [test/sandbox-node-copy.test.mjs](../../test/sandbox-node-copy.test.mjs) starts the copy and, on a build that links such a library, requires the symlink.
+**A fixture that starts a copy of the Node executable copies it with `copyNodeExecutable` from [test/sandbox.mjs](../../test/sandbox.mjs).** A Node build linked against a shared libnode, such as the Homebrew build on macOS (`@rpath/libnode.147.dylib`), loads the library from beside the executable, so a bare copy does not start and the file fails on a `dyld` error or on an unrelated timeout. On macOS, the helper asks `/bin/cp -c` to clone the executable into a new file. It falls back to an ordinary copy if the command fails. The helper lists the executable's `@rpath` libraries with `/usr/bin/otool` and puts a symlink beside the copy to each one it finds in the executable's own rpath directories. Both tools use absolute paths because the sealed `PATH` does not provide them. Outside macOS, the helper uses an ordinary copy with no library lookup. [test/sandbox-node-copy.test.mjs](../../test/sandbox-node-copy.test.mjs) starts the copy, checks that its file identity differs from the original and, on a build that links such a library, requires the symlink.
 
 Owned process fixtures publish JSON readiness with a same-directory atomic rename. The incomplete-write barrier in [root-process.test.mjs](../../test/root-process.test.mjs) checks that readiness stays hidden until the complete packet is published.
 
@@ -486,6 +506,10 @@ Codex cancellation is latched synchronously, including when a normal stop or nor
 `onAbort` reads and invokes a returned thenable under fault handling and adopts promises it resolves to. A throwing `then` getter or invocation is diagnosed, and a timeout or repeated settlement preserves the first signal code and one exit. `test/live-abort-thenable.test.mjs` covers these non-native thenables, including cleanup, getter and invocation exceptions that throw `null`, `0`, `false`, `undefined` or an empty string. The stop deadline bounds awaited command and polling work; synchronous `tmux`, process discovery and filesystem calls remain outside a hard wall-clock guarantee.
 
 `SIGKILL` cannot be handled. What it leaves is swept by the next run of the same script: Cursor, mixed and Codex sandboxes carry the owner marker the suite runner writes (`RUN_OWNER_FILE` in [canary-runs.mjs](../../scripts/canary-runs.mjs)), and at start a script sweeps the earlier sandboxes of its own prefix only. One whose owner pid is gone is removed at once. One whose owner is alive is held. An unmarked one is removed when it is older than an hour. A reused pid holds a dead run's sandbox until that pid is free, and never makes a live run's sandbox removable. E2E uses its recorded process births and groups instead: missing or uncertain ancestry evidence holds the stand even when the owner has died.
+
+The E2E sweep indexes both owned and watched process groups once per previous stand. It still compares individual process IDs with their recorded birth. Session cleanup checks registry shape at the read boundary and preserves the stand if a read is invalid.
+
+The detached-child fixture requires the stand to survive an incomplete ancestry read. The native Stop case requires a live detached descendant. The signal case also permits cleanup to reap the descendant if it recorded the exact child under the owned parent before the parent exited.
 
 **The person's `~/.codex/config.toml` is hashed before and after a Codex run, without the `last_updated` and `last_revision` lines of `[marketplaces.*]` tables** ([codex-config.mjs](../../scripts/codex-config.mjs)). The person's own Codex rewrites those two lines in the background. A consumer measured three hash changes on 2026-09-11 with no Codex command and no turn. A run has no writer on that file, because each participant runs under its own Codex home. Any other change reddens the verdict: an added trust entry, a changed MCP server, hook hash or marketplace source.
 

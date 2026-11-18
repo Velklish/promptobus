@@ -11,7 +11,7 @@ import { recordBbDirectCommand } from 'promptobus/bb-host';
 import { prepareCurrentReviewEvidence, currentEvidenceFiles } from '../.test-build/evidence-builder.js';
 import { evidenceMain } from '../.test-build/evidence-prepare.js';
 import { digest, evidenceManifestSchema, validateReviewEvidence } from '../.test-build/review-evidence.js';
-import { publishControl, commandDigest } from '../.test-build/control.js';
+import { publishControl } from '../.test-build/control.js';
 import { engineOperation } from '../.test-build/engine-host.js';
 import { launchFixture } from './evidence-fixture.mjs';
 

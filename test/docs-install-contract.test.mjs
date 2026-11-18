@@ -15,7 +15,6 @@ const section = (doc, start, end) => {
   return doc.slice(from, to < 0 ? undefined : to);
 };
 const lines = (doc) => doc.split('\n');
-const line = (doc, value) => lines(doc).includes(value);
 const starts = (doc, value) => lines(doc).find((entry) => entry.startsWith(value)) ?? '';
 const same = (actual, expected) => JSON.stringify(actual) === JSON.stringify(expected);
 const firstFencedCommandAfter = (doc, lead) => {

@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { run } from '../lib/exec.js';
+import { checkMetadata } from '../scripts/release.mjs';
 import { makeSandbox, stubCommand } from './sandbox.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -13,7 +14,7 @@ const metadata = ['package.json', 'package-lock.json', 'CHANGELOG.md', 'docs/ref
   'README.md', 'docs/guides/install.md', 'skills/orchestrate/SKILL.md'];
 const read = (file) => readFileSync(file, 'utf8');
 
-function fixture() {
+function fixture({ viaNpm = false } = {}) {
   const owner = makeSandbox('promptobus-release-fixture-');
   const root = path.join(owner, 'source');
   const file = path.join(owner, 'receipts', 'candidate.json');
@@ -66,7 +67,10 @@ assert.deepEqual(process.argv.slice(2), ['--no-install', 'backslop', 'lint']);
 appendFileSync('.fixture/trace', JSON.stringify({name:'lint'})+'\n');
 console.log('fixture lint');
 `);
-  const command = (args, env) => exec(['npm', 'run', 'release', '--', ...args], env);
+  const fixturePath = path.join(root, 'node_modules/.bin') + path.delimiter + process.env.PATH;
+  const command = (args, env) => viaNpm
+    ? exec(['npm', 'run', 'release', '--', ...args], env)
+    : exec(['node', 'scripts/release.mjs', ...args], { PATH: fixturePath, ...env });
   const prepare = (receipt = file, version = '1.1.0', date = '2026-11-13') => command(['prepare', version, '--date', date, '--receipt', receipt]);
   const verify = (env) => command(['verify', '--receipt', file], env);
   const receipt = () => JSON.parse(read(file));
@@ -80,7 +84,7 @@ const refused = (result, message) => {
 };
 
 test('guide commands repair stale metadata over an exact previous tag, commit first, and retry without commits or tags', () => {
-  const f = fixture();
+  const f = fixture({ viaNpm: true });
   const base = f.git('rev-parse', 'HEAD');
   passed(f.prepare());
   const candidate = f.git('rev-parse', 'HEAD');
@@ -163,18 +167,26 @@ test('receipt recovery refuses an amended candidate containing unrelated source'
   assert.deepEqual(f.trace(), []);
 });
 
-for (const [file, replacement, diagnostic] of [
-  ['docs/reference/01-overview.md', 'Version in `package.json` is `0.0.1`.', /Overview version disagrees/],
-  ['docs/guides/install.md', 'npm install github:Velklish/promptobus#v0.0.1', /Release-pinned links disagree/],
-  ['package-lock.json', '{"version":"1.1.0","packages":{"":{"version":"0.0.1"}}}', /Package and lock versions disagree/],
-  ['CHANGELOG.md', '## [1.0.0] — 2026-11-13\n', /First changelog release disagrees/],
-]) test(`inconsistent ${file} refuses before the sentinel suite`, () => {
+test('inconsistent release metadata is rejected before the sentinel suite', () => {
   const f = fixture();
   passed(f.prepare());
+  const receipt = f.receipt();
+  const readCandidate = (file) => read(path.join(f.root, file));
+  checkMetadata(receipt.version, receipt.date, readCandidate);
+  const cases = [
+    ['docs/reference/01-overview.md', 'Version in `package.json` is `0.0.1`.', /Overview version disagrees/],
+    ['docs/guides/install.md', 'npm install github:Velklish/promptobus#v0.0.1', /Release-pinned links disagree/],
+    ['package-lock.json', '{"version":"1.1.0","packages":{"":{"version":"0.0.1"}}}', /Package and lock versions disagree/],
+    ['CHANGELOG.md', '## [1.0.0] — 2026-11-13\n', /First changelog release disagrees/],
+  ];
+  for (const [file, replacement, diagnostic] of cases) {
+    assert.throws(() => checkMetadata(receipt.version, receipt.date,
+      (candidate) => candidate === file ? replacement : readCandidate(candidate)), diagnostic, file);
+  }
+  const [[file, replacement, diagnostic]] = cases;
   f.put(file, replacement);
   f.git('add', file);
   f.git('commit', '--amend', '--no-edit', '-q');
-  const receipt = f.receipt();
   receipt.source = { commit: f.git('rev-parse', 'HEAD'), tree: f.git('rev-parse', 'HEAD^{tree}') };
   writeFileSync(f.file, JSON.stringify(receipt));
   refused(f.verify(), diagnostic);

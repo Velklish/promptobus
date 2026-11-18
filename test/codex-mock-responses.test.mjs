@@ -12,6 +12,7 @@ import { HANG_AFTER_START_VAR, PROBE_VAR, installHarness, planParticipant, readT
 
 const root = makeSandbox('promptobus-codex-');
 const harness = await installHarness({ binDir: path.join(root, 'bin') });
+const fixtureReplyMs = 15_000;
 const schemas = [MIN_CODEX_VERSION, PROVEN_CODEX_VERSION].map(version => {
   const ajv = new Ajv({ strict: false, allErrors: true, formats: {
     int64: true, uint64: true, uint32: true, uint: true, double: true, int32: true, uint16: true,
@@ -30,11 +31,14 @@ async function run(probe, work) {
     env: { ...process.env, [PROBE_VAR]: probe, [HANG_AFTER_START_VAR]: '1', CODEX_HOME: root },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
+  const exited = new Promise(resolve => child.once('close', resolve));
+  let stderr = '';
+  child.stderr.on('data', bytes => { stderr = (stderr + bytes).slice(-2000); });
   const rpc = CodexRpc({ stdin: child.stdin, stdout: child.stdout });
   const events = [];
   rpc.onNotification(msg => events.push(msg));
   const request = async (label, method, params, name) => {
-    const answer = await rpc.request(method, params, 3000);
+    const answer = await rpc.request(method, params, fixtureReplyMs);
     for (const schema of schemas) {
       const result = schema.validate(name, answer.result);
       check(`Codex ${schema.version} actual mock ${label} response matches ${name}`,
@@ -43,10 +47,11 @@ async function run(probe, work) {
     count += 1;
     return answer.result;
   };
-  try { await work({ rpc, request, events }); } finally {
+  try { await work({ rpc, request, events }); }
+  catch (error) { throw new Error(`Codex mock ${probe || 'default'}: ${error.message}${stderr ? '\n' + stderr : ''}`, { cause: error }); }
+  finally {
     rpc.close();
-    const exited = new Promise(resolve => child.once('exit', resolve));
-    child.kill('SIGKILL');
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
     await exited;
   }
 }
@@ -72,7 +77,7 @@ await run('hidden', async ({ rpc, request, events }) => {
   const first = await request('turn/start idle', 'turn/start', {
     threadId, input: [{ type: 'text', text: 'Start' }],
   }, 'v2/TurnStartResponse');
-  await waitFor(() => events.some(msg => msg.method === 'turn/started' && msg.params.id === first.turn.id), { timeoutMs: 3000 });
+  await waitFor(() => events.some(msg => msg.method === 'turn/started' && msg.params.id === first.turn.id), { timeoutMs: fixtureReplyMs });
   await request('thread/inject_items', 'thread/inject_items', {
     threadId, items: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Assignment' }] }],
   }, 'v2/ThreadInjectItemsResponse');
@@ -114,7 +119,7 @@ for (const [probe, message] of [
   ['unauthenticated', 'codex account authentication required'],
 ]) {
   await run(probe, async ({ rpc }) => {
-    const answer = await rpc.request('account/rateLimits/read', {}, 3000);
+    const answer = await rpc.request('account/rateLimits/read', {}, fixtureReplyMs);
     check(`actual mock quota ${probe} branch retains its explicit error`,
       answer.error?.code === -32600 && answer.error.message.includes(message) && !answer.result,
       JSON.stringify(answer));
@@ -175,10 +180,10 @@ for (const [label, deleteStatus] of [['accepted', 200], ['refused', 409]]) {
   const events = [];
   rpc.onNotification(msg => events.push(msg));
   try {
-    await rpc.request('initialize', { clientInfo: { name: 'fixture', version: '1.0' } }, 3000);
-    const started = await rpc.request('thread/start', { cwd: root }, 3000);
-    const turn = await rpc.request('turn/start', { threadId: started.result.thread.id, input: [{ type: 'text', text: 'status' }] }, 3000);
-    await waitFor(() => events.some(msg => msg.method === 'turn/completed' && msg.params.id === turn.result.turn.id), { timeoutMs: 5000 });
+    await rpc.request('initialize', { clientInfo: { name: 'fixture', version: '1.0' } }, fixtureReplyMs);
+    const started = await rpc.request('thread/start', { cwd: root }, fixtureReplyMs);
+    const turn = await rpc.request('turn/start', { threadId: started.result.thread.id, input: [{ type: 'text', text: 'status' }] }, fixtureReplyMs);
+    await waitFor(() => events.some(msg => msg.method === 'turn/completed' && msg.params.id === turn.result.turn.id), { timeoutMs: fixtureReplyMs });
     child.stdin.end();
     const exit = await exited;
     const trace = readTrace(harness.home, address);

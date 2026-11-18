@@ -181,6 +181,17 @@ check(': the runner names the skipped file, verdict, and permission reason',
   /a-skip\.test\.mjs: ↷ SKIP socket-dependent group — listen EPERM: denied/.test(skippedRun.out)
   && /unskipped file ran/.test(skippedRun.out), skippedRun.out.slice(-500));
 
+const refusedCleanupSource = src.replace('rmSync(RUN_TMP, { recursive: true, force: true });',
+  "throw Object.assign(new Error('fixture directory not empty'), { code: 'ENOTEMPTY' });");
+const cleanupFixture = makeSandbox('promptobus-runner-skip-');
+plant(cleanupFixture, refusedCleanupSource);
+writeFileSync(path.join(cleanupFixture, 'a-live.test.mjs'), "console.log('fixture ran');\n");
+const refusedCleanup = await runCopy(cleanupFixture);
+check('a run-directory cleanup failure names the affected path and makes the runner fail',
+  refusedCleanupSource !== src && refusedCleanup.status === 1
+  && /✖ run sandbox cleanup failed for .*promptobus-test-run-.*: fixture directory not empty/.test(refusedCleanup.out)
+  && /1\/1 test files passed/.test(refusedCleanup.out), refusedCleanup.out.slice(-750));
+
 // A file held by a timer after its last verdict is named in the summary, and the run stays green.
 const SB_IDLE = makeSandbox('promptobus-runner-idle-');
 plant(SB_IDLE, src, { helper: checkCopy });
@@ -746,12 +757,17 @@ let kidPid = null;
 try { kidPid = Number(readFileSync(KID_PID_FILE, 'utf8').trim()); } catch { /* never started */ }
 check(': the marked child really did start — otherwise "nothing is left" checks nothing',
   Number.isInteger(kidPid) && kidPid > 0, `pid file: ${kidPid ?? '(absent)'}`);
-// The system needs a moment to reap the group before the process table is honest.
-await new Promise((r) => { setTimeout(r, 1500); });
-const kidRead = Number.isInteger(kidPid) && kidPid > 0
+const readKid = () => Number.isInteger(kidPid) && kidPid > 0
   ? spawnSync('ps', ['-p', String(kidPid), '-o', 'pid=,ppid=,args='], { encoding: 'utf8' }) : null;
-const kidLines = (kidRead?.stdout ?? '')
+const markedLines = (result) => (result?.stdout ?? '')
   .split('\n').filter((l) => l.includes(KID_MARK));
+const reapingDeadline = Date.now() + 1500;
+let kidRead = readKid();
+while (markedLines(kidRead).length && Date.now() < reapingDeadline) {
+  await new Promise((r) => { setTimeout(r, 25); });
+  kidRead = readKid();
+}
+const kidLines = markedLines(kidRead);
 check(': and its child goes with it — nothing is left at PPID 1',
   !!kidRead && !kidRead.error && !kidRead.stderr?.trim() && [0, 1].includes(kidRead.status) && kidLines.length === 0,
   kidLines.join(' · ') || `status=${kidRead?.status} error=${kidRead?.error?.message ?? kidRead?.stderr ?? '(none)'}`);

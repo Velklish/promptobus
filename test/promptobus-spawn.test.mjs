@@ -122,7 +122,6 @@ const spawnWorker = (root, opts = {}) => spawnRaw(root, {
 const { installWorktreeDeps, npmCiCommand } = await import(path.join(here, '..', 'lib', 'worktree.js'));
 const { IDENTITY_VARS } = await import(path.join(here, 'hygiene.mjs'));
 const { claudeDriver } = await import(path.join(here, '..', 'lib', 'driver-claude.js'));
-const CLAUDE_MIN = '2.1.295';
 const store = await import(path.join(here, '..', 'lib', 'store.js'));
 const { hostOf } = await import(path.join(here, '..', 'lib', 'host.js'));
 const { planApprover } = await import(path.join(here, '..', 'lib', 'approver.js'));

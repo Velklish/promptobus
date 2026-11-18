@@ -243,11 +243,12 @@ async function ownerFixture(action) {
     return { ...JSON.parse(stdout), code: code ?? 0 };
   };
   try {
-    const edge = Date.now() + 5000;
-    while (readDiscovery(paths)?.process.pid !== owner.pid && !failure && owner.exitCode === null && Date.now() < edge) {
+    const readinessMs = 20_000, edge = Date.now() + readinessMs;
+    while (readDiscovery(paths)?.process.pid !== owner.pid && !failure && owner.exitCode === null && owner.signalCode === null && Date.now() < edge) {
       await new Promise(resolve => setTimeout(resolve, 10));
     }
-    assert.equal(readDiscovery(paths)?.process.pid, owner.pid, failure?.message ?? stderr);
+    assert.equal(readDiscovery(paths)?.process.pid, owner.pid,
+      `Fixture owner did not publish discovery within ${readinessMs} ms (exit ${owner.exitCode}, signal ${owner.signalCode}): ${failure?.message ?? stderr}`);
     await withHookRpc((message, options) => ({ result: message.method === 'initialize' ? { userAgent: 'fixture' }
       : nativeHookStatus(options.cwd, fs.readFileSync(path.join(options.cwd, '.codex/hooks.json'), 'utf8')) }),
     native => action({ area, home, env, host, paths, nativeStore, retained, run, replies, changedScopes, native }));

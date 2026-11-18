@@ -1,6 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "allowUnreachableCode": false,
     "rootDir": ".",
     "outDir": "."
   },

@@ -46,10 +46,6 @@ export function versionLess(a: unknown, b: unknown) {
   return false;
 }
 
-export function versionParseRefusal(name: string, value: unknown) {
-  return `${name} binary version could not be parsed: ${String(value)}`;
-}
-
 export function sessionEnv(dropList: readonly string[] | null | undefined, base = process.env, extra: NodeJS.ProcessEnv = {}) {
   const env = { ...base };
   for (const name of dropList ?? []) delete env[name];

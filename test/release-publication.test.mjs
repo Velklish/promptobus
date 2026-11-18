@@ -1,4 +1,5 @@
 import './home.mjs';
+import { requireQualifiedLinuxJob, requireQualifiedRun, requireRuntimeIdentity, requireTestLog } from '../scripts/release.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -94,7 +95,6 @@ function prepare({ root, bare, put, git, command, state }) {
   stubCommand(path.join(root, 'node_modules/.bin'), 'gh', `
 import assert from 'node:assert/strict';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 const args = process.argv.slice(2);
 appendFileSync('.fixture/calls', JSON.stringify(args)+'\\n');
 const state = JSON.parse(readFileSync('.fixture/ci.json','utf8'));
@@ -105,21 +105,16 @@ const ci = { id:123,workflow_id:7,path:'.github/workflows/ci.yml',name:'ci',
   event:'push',head_branch:'main',head_sha:head,status:'completed',conclusion:'success',run_attempt:1,
   html_url:'https://github.com/Velklish/promptobus/actions/runs/123',...state.run };
 const steps = ['Install and check tmux','Install dependencies','Install ast-grep','Build','Test',
-  'Publicity audit','Pin gate','backslop init','backslop lint'].filter(name=>name!==state.missingStep)
+  'Publicity audit','Pin gate','backslop init','backslop lint']
   .map(name=>({name,status:'completed',conclusion:name===state.badStep ? state.stepConclusion : 'success'}));
 const job = {id:456,name:'Node 26 / ubuntu-latest',head_sha:head,run_id:123,status:'completed',conclusion:'success',
-  labels:['ubuntu-latest'],steps,...state.job};
+  labels:['ubuntu-latest'],steps};
 const rawLog = () => {
   if(state.changeSource) writeFileSync('README.md',readFileSync('README.md','utf8')+'dirty\\n');
   if(state.changeAttempt) writeFileSync('.fixture/ci.json',JSON.stringify({run:{run_attempt:2}}));
   let lines = state.otherStepLogs ? ['##[group]Run npm run build','build passed','Cleaning up orphan processes']
     : ['##[group]Run npm test','##[endgroup]','↷ SKIP optional integration — deliberate fixture',
       'installed check notRun: fixture','280/280 test files passed','Cleaning up orphan processes'];
-  if(state.missingTestGroup) lines=lines.filter(line=>line!=='##[group]Run npm test');
-  if(state.missingTestFooter) lines=lines.filter(line=>!line.includes('test files passed'));
-  if(state.missingCleanup) lines=lines.filter(line=>line!=='Cleaning up orphan processes');
-  if(state.unequalCount) lines=lines.map(line=>line.includes('test files passed')?'279/280 test files passed':line);
-  if(state.zeroCount) lines=lines.map(line=>line.includes('test files passed')?'0/0 test files passed':line);
   if(state.partialDownload) lines=lines.slice(0,3);
   if(state.longLog) lines.splice(2,0,'x'.repeat(80_000));
   return state.emptyLogs ? '' : lines.map(line=>'2026-11-13T00:00:00.0000000Z '+line).join('\\n')+'\\n';
@@ -142,11 +137,7 @@ if(args[0]==='api') {
     console.log(JSON.stringify([{jobs:state.missingJob?[]:[job]}]));
   }
 } else {
-  assert.deepEqual(args,['run','view','123','--repo','github.com/Velklish/promptobus','--attempt','1','--log']);
-  if(state.changeSource) writeFileSync('README.md',readFileSync('README.md','utf8')+'dirty\\n');
-  if(state.changeAttempt) writeFileSync('.fixture/ci.json',JSON.stringify({run:{run_attempt:2}}));
-  console.log(state.emptyLogs?'':state.otherStepLogs||state.longLog?'Build rendered fragment':
-    'Test 2026-11-13T00:00:00Z ↷ SKIP optional integration — deliberate fixture\\nTest installed check notRun: fixture');
+  assert.fail('Unexpected gh command: '+JSON.stringify(args));
 }
 `);
   passed(command(['prepare', '1.1.0', '--date', '2026-11-13']));
@@ -190,19 +181,29 @@ test('completed receipt requires full runtime identity before any GitHub call', 
     delete incomplete.tools[key];
     contexts.push(incomplete);
   }
-  for (const context of contexts) {
-    f.save({...original,context});
-    refused(f.publish(), /runtime identity/);
-    assert.equal(f.calls().length, 0);
-    assert.equal(f.refs(), '');
-    assert.equal(f.git('tag','--list'), '');
+  for (const context of contexts) assert.throws(() => requireRuntimeIdentity(context), /runtime identity/);
+  requireRuntimeIdentity(original.context);
+  f.save({...original,context:brokenTool});
+  refused(f.publish(), /runtime identity/);
+  assert.equal(f.calls().length, 0);
+  assert.equal(f.refs(), '');
+  assert.equal(f.git('tag','--list'), '');
+});
+
+test('raw Test proof requires a test group, a nonzero matching footer and later cleanup', () => {
+  const group = '##[group]Run npm test', footer = '280/280 test files passed', cleanup = 'Cleaning up orphan processes';
+  const log = lines => lines.map(line => `2026-11-13T00:00:00.0000000Z ${line}`).join('\r\n');
+  requireTestLog(log([group, footer, cleanup]));
+  for (const lines of [['##[group]Run npm run build', 'build passed', cleanup], [footer, cleanup], [group, cleanup],
+    [group, footer], [group, '279/280 test files passed', cleanup], [group, '0/0 test files passed', cleanup],
+    [footer, group, cleanup], [group, cleanup, footer]]) {
+    assert.throws(() => requireTestLog(log(lines)), /Incomplete required Linux job log/, lines.join(' | '));
   }
 });
 
 test('raw required job logs refuse missing Test proof or incomplete download before publication', () => {
   const f = fixture();
-  for (const state of [{otherStepLogs:true}, {missingTestGroup:true}, {missingTestFooter:true},
-    {missingCleanup:true}, {unequalCount:true}, {zeroCount:true}, {downloadFailure:true},
+  for (const state of [{otherStepLogs:true}, {downloadFailure:true},
     {partialDownload:true}, {signalDownload:true}]) {
     const directory = path.dirname(f.file);
     const previous = new Set(readdirSync(directory));
@@ -243,54 +244,61 @@ test('release guide distinguishes preparation from publication side effects', ()
   assert.doesNotMatch(intro, /The contributor command never pushes/);
 });
 
-test('every incomplete or non-success CI state refuses before public tag creation', () => {
+test('CI run and Linux job matrices reject invalid publication proof', () => {
+  const commit = '1'.repeat(40);
+  const workflow = { id: 7, path: '.github/workflows/ci.yml', state: 'active' };
+  const repository = { full_name: 'Velklish/promptobus' };
+  const ci = { id: 123, workflow_id: 7, path: workflow.path, name: 'ci', repository,
+    head_repository: repository, event: 'push', head_branch: 'main', head_sha: commit,
+    status: 'completed', conclusion: 'success', run_attempt: 1 };
+  const run = (patch = {}, workflowPatch = {}) => requireQualifiedRun({ ...workflow, ...workflowPatch }, { ...ci, ...patch }, '123', commit);
+  run();
+  for (const [status, conclusion] of [['queued',null],['in_progress',null],['waiting',null],
+    ...['failure','cancelled','timed_out','action_required','neutral','skipped','stale',null].map(c=>['completed',c])]) {
+    assert.throws(() => run({ status, conclusion }), /Linux CI must be completed with success/, `${status}/${conclusion}`);
+  }
+  for (const patch of [{head_sha:'0'.repeat(40)}, {repository:{full_name:'foreign/repo'}},
+    {head_repository:{full_name:'foreign/repo'}}, {head_branch:'old-candidate'}, {event:'pull_request'},
+    {workflow_id:8}, {path:'.github/workflows/old.yml'}, {name:'other'}, {id:124}]) {
+    assert.throws(() => run(patch), /Linux CI repository\/workflow\/main candidate SHA mismatch/, JSON.stringify(patch));
+  }
+  assert.throws(() => run({}, {state:'disabled_manually'}), /Linux CI repository\/workflow\/main candidate SHA mismatch/);
+  const steps = ['Install and check tmux','Install dependencies','Install ast-grep','Build','Test',
+    'Publicity audit','Pin gate','backslop init','backslop lint'].map(name => ({ name, status: 'completed', conclusion: 'success' }));
+  const job = { id: 456, name: 'Node 26 / ubuntu-latest', head_sha: commit, run_id: 123,
+    status: 'completed', conclusion: 'success', labels: ['ubuntu-latest'], steps };
+  const jobs = value => requireQualifiedLinuxJob(value, ci.id, commit);
+  jobs([job]);
+  assert.throws(() => jobs([]), /Missing successful required Linux job/);
+  for (const patch of [{name:'Node 26 / macos-latest'}, {labels:['macos-latest']},
+    {head_sha:'0'.repeat(40)}, {run_id:999}, {status:'in_progress'}, {conclusion:'failure'}]) {
+    assert.throws(() => jobs([{ ...job, ...patch }]), /Missing successful required Linux job/, JSON.stringify(patch));
+  }
+  for (const { name } of steps) {
+    assert.throws(() => jobs([{ ...job, steps: steps.filter(step => step.name !== name) }]),
+      { message: `Missing successful required Linux step: ${name}` });
+  }
+  for (const conclusion of ['skipped','failure','cancelled',null]) {
+    assert.throws(() => jobs([{ ...job, steps: steps.map(step => step.name === 'Test' ? { ...step, conclusion } : step) }]),
+      /Missing successful required Linux step: Test/, String(conclusion));
+  }
+});
+
+test('publish refuses invalid CI proof before creating local or public tags', () => {
   const f = fixture();
   refused(f.command(['publish']), /Use --run/);
   assert.equal(f.calls().length, 0);
-  for (const [status, conclusion] of [['queued',null],['in_progress',null],['waiting',null],
-    ...['failure','cancelled','timed_out','action_required','neutral','skipped','stale',null].map(c=>['completed',c])]) {
-    f.state({run:{status,conclusion}});
-    refused(f.publish(), /Linux CI must be completed with success/);
-    assert.equal(f.refs(), '', `${status}/${conclusion} pushed a public tag`);
-    assert.equal(f.git('tag', '--list'), '');
-  }
-  f.state({apiFailure:true});
-  refused(f.publish(), /fixture API unavailable/);
-  assert.equal(f.refs(), '');
-});
-
-test('foreign SHA, repository, branch, event or workflow cannot qualify a candidate', () => {
-  const f = fixture();
-  for (const run of [{head_sha:'0'.repeat(40)}, {repository:{full_name:'foreign/repo'}},
-    {head_repository:{full_name:'foreign/repo'}}, {head_branch:'old-candidate'}, {event:'pull_request'},
-    {workflow_id:8}, {path:'.github/workflows/old.yml'}, {name:'other'}, {id:124}]) {
-    f.state({run});
-    refused(f.publish(), /Linux CI repository\/workflow\/main candidate SHA mismatch/);
-    assert.equal(f.refs(), '');
-  }
-  f.state({workflow:{state:'disabled_manually'}});
-  refused(f.publish(), /Linux CI repository\/workflow\/main candidate SHA mismatch/);
-  assert.equal(f.refs(), '');
-});
-
-test('missing jobs, wrong Linux identity and skipped or failed required steps refuse', () => {
-  const f = fixture();
-  for (const state of [{missingJob:true}, ...[{name:'Node 26 / macos-latest'}, {labels:['macos-latest']},
-    {head_sha:'0'.repeat(40)}, {run_id:999}, {status:'in_progress'}, {conclusion:'failure'}].map(job=>({job}))]) {
+  for (const [state, message] of [
+    [{ run: { status: 'queued' } }, /Linux CI must be completed with success/],
+    [{ run: { head_sha: '0'.repeat(40) } }, /candidate SHA mismatch/],
+    [{ missingJob: true }, /Missing successful required Linux job/],
+    [{ badStep: 'Test', stepConclusion: 'skipped' }, /Missing successful required Linux step: Test/],
+    [{ apiFailure: true }, /fixture API unavailable/],
+  ]) {
     f.state(state);
-    refused(f.publish(), /Missing successful required Linux job/);
+    refused(f.publish(), message);
     assert.equal(f.refs(), '');
-  }
-  for (const name of ['Install and check tmux','Install dependencies','Install ast-grep','Build','Test',
-    'Publicity audit','Pin gate','backslop init','backslop lint']) {
-    f.state({missingStep:name});
-    refused(f.publish(), /Missing successful required Linux step/);
-    assert.equal(f.refs(), '');
-  }
-  for (const conclusion of ['skipped','failure','cancelled',null]) {
-    f.state({badStep:'Test',stepConclusion:conclusion});
-    refused(f.publish(), /Missing successful required Linux step: Test/);
-    assert.equal(f.refs(), '');
+    assert.equal(f.git('tag', '--list'), '');
   }
 });
 
@@ -382,7 +390,7 @@ writeFileSync(file,JSON.stringify(lock));
   assert.match(resumed.stdout, /installation smoke passed/);
   assert.equal(f.receipt().publication.smoke.length, 1);
   assert.equal(f.refs(), published);
-  assert.ok(f.calls().every(args=>args[0]==='api'||(args[0]==='run'&&args[1]==='view')));
+  assert.ok(f.calls().every(args=>args[0]==='api'));
 });
 
 test('interrupted tag push resumes without replacing local/remote objects or re-running verification', () => {

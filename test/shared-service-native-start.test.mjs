@@ -28,7 +28,7 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   for (const key of Object.keys(env)) if (/^PROMPTOBUS_(CLIENT_|OWNER_ENV_FILE$|ROLE$|TASK$|.*_SESSION$)/.test(key)) delete env[key];
   writeHostConfig(root, { tools: [] });
   const host = createStandaloneHost({ cwd: root, binPath, version }), paths = servicePaths(host, env);
-  const options = { env, cwd: root }, launches = [];
+  const launches = [];
   let failure;
   const running = runWorkspaceService({ host, env, createHost: context => createStandaloneHost({ cwd: context.cwd, binPath, version }) })
     .catch(error => { failure = error; });

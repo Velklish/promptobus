@@ -12,6 +12,9 @@ const started = spawnSync(copy, ['-p', '40 + 2'], { encoding: 'utf8', timeout: 1
 check('a copied Node executable starts and runs a script', started.status === 0 && started.stdout.trim() === '42',
   JSON.stringify({ status: started.status, signal: started.signal, stdout: started.stdout, stderr: started.stderr }));
 check('the copy keeps the owner-only executable mode', (statSync(copy).mode & 0o777) === 0o700);
+const source = statSync(process.execPath), target = statSync(copy);
+check('the executable copy has a distinct file identity and retains the original size',
+  (source.dev !== target.dev || source.ino !== target.ino) && source.size === target.size);
 
 const libraryCheck = 'a Node build linked against a shared library gets that library beside the copy';
 if (process.platform !== 'darwin') {

@@ -1,4 +1,4 @@
-import { realpathSync, readdirSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';

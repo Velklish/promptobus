@@ -69,7 +69,7 @@ async function taskReply(host, dir) {
   const call = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'promptobus_task', arguments: {} } };
   await serve({
     host,
-    env: { PROMPTOBUS_HOME: home, PROMPTOBUS_TASK: TASK },
+    env: { PROMPTOBUS_HOME: home, PROMPTOBUS_TASK: TASK, PROMPTOBUS_WARDEN: 'off' },
     cwd: dir,
     input: Readable.from([`${JSON.stringify(call)}\n`], { objectMode: false }),
     output: { write: (chunk) => written.push(chunk) },
@@ -212,17 +212,19 @@ process.exit(0);`);
   });
   const launches = () => existsSync(launched)
     ? readFileSync(launched, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)) : [];
-  const snapshotTree = (root) => {
+  const snapshotTree = (root, taskDirectory = null) => {
     if (!existsSync(root)) return null;
     const visit = (at) => {
       const stat = lstatSync(at);
       if (stat.isSymbolicLink()) return `link:${readlinkSync(at)}`;
       if (stat.isDirectory()) return Object.fromEntries(readdirSync(at).sort()
+        .filter((name) => name !== '.lock' || path.dirname(at) !== taskDirectory)
         .map((name) => [name, visit(path.join(at, name))]));
       return readFileSync(at).toString('hex');
     };
     return visit(root);
   };
+  const snapshotJournal = () => snapshotTree(home, path.join(home, 'tasks'));
   const withLivenessFlip = async (fn) => {
     const inspect = claudeDriver.inspect;
     let reads = 0;
@@ -317,7 +319,7 @@ process.exit(0);`);
     writeFileSync(cacheFile, 'cache sentinel\n');
     const worktrees = path.join(repo, '.claude', 'worktrees');
     const refusesWithoutWrites = async (stepName, taskId, file) => {
-      const before = { journal: snapshotTree(home), worktrees: snapshotTree(worktrees),
+      const before = { journal: snapshotJournal(), worktrees: snapshotTree(worktrees),
         cache: readFileSync(cacheFile), launches: launches().length };
       let probes = 0;
       await assert.rejects(() => captureSplit(() => lift(stepName, taskId, {
@@ -325,7 +327,7 @@ process.exit(0);`);
         adapterFor: () => ({ probe: () => { probes += 1; return { state: 'available' }; } }),
       })), (error) => error.message.includes(file) && /cannot be read/.test(error.message));
       assert.equal(probes, 0);
-      assert.deepEqual({ journal: snapshotTree(home), worktrees: snapshotTree(worktrees),
+      assert.deepEqual({ journal: snapshotJournal(), worktrees: snapshotTree(worktrees),
         cache: readFileSync(cacheFile), launches: launches().length }, before);
     };
     chmodSync(securityFile, 0);

@@ -594,11 +594,6 @@ export async function stopAll(home, { timeoutMs = 10_000 } = {}) {
   return left;
 }
 
-/** Whether the harness home exists — that is what distinguishes a laid-out stand from a missing one. */
-export function harnessReady(home) {
-  return existsSync(sessionsDir(home));
-}
-
 /**
  * Wait for a condition up to a ceiling. Returns the VALUE of the last probe, and does
  * not throw on timeout: the verdict on a step that did not arrive must be a red verdict,

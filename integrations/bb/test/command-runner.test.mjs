@@ -16,7 +16,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { newTaskIdentity, openEngine } from 'promptobus';
-import { publishControl, admitCommand, executionCommand, commandReference, commandTerminal } from '../.test-build/control.js';
+import { publishControl, commandReference, commandTerminal } from '../.test-build/control.js';
 import { engineOperation } from '../.test-build/engine-host.js';
 import { launchFixture } from './evidence-fixture.mjs';
 const runner = process.env.PB_COMMAND_RUNNER ?? fileURLToPath(new URL('../.test-build/command-runner.js', import.meta.url));

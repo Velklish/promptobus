@@ -252,7 +252,7 @@ const wrongReuse = thrown(() => planApprover(WS, { target: OTHER_REPO, task: WRO
 check(': an approver recorded at another repoAbs is not reused for a different subject',
   wrongReuse.threw && /another subject cannot be reused/.test(wrongReuse.msg),
   wrongReuse.msg);
-const { PromptobusError, ERROR_CODES } = await import(path.join(here, '..', 'dist', 'index.js'));
+const { ERROR_CODES } = await import(path.join(here, '..', 'dist', 'index.js'));
 check(': harness-refused is a declared PromptobusError code',
   ERROR_CODES.includes('harness-refused'),
   ERROR_CODES.join(','));

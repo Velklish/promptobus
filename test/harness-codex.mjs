@@ -1033,7 +1033,7 @@ async function playTurn(home, started, turnId, params, ask, notify, nativeClient
     const first = ask('mcpServer/elicitation/request', {
       serverName: 'probe-a', threadId: t.id, mode: 'form', message: 'SECRET-PROMPT-DO-NOT-LOG',
     });
-    const second = ask('mcpServer/elicitation/request', {
+    ask('mcpServer/elicitation/request', {
       serverName: 'probe-b', threadId: t.id, mode: 'form', message: 'SECRET-PROMPT-DO-NOT-LOG',
     });
     await first;

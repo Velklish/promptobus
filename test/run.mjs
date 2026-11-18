@@ -366,11 +366,13 @@ function killTree(child) {
   try { child.kill('SIGKILL'); } catch { /* already dead */ }
 }
 
-let cleaned = false;
 function cleanup() {
-  if (cleaned) return;
-  cleaned = true;
-  rmSync(RUN_TMP, { recursive: true, force: true });
+  try {
+    rmSync(RUN_TMP, { recursive: true, force: true });
+  } catch (error) {
+    console.error(`✖ run sandbox cleanup failed for ${RUN_TMP}: ${error.message}`);
+    if (!process.exitCode) process.exitCode = 1;
+  }
 }
 process.on('exit', cleanup);
 
@@ -608,7 +610,7 @@ if (heldOver.length) {
 if (interrupted) {
   const on = interruptedOn.length ? `on ${interruptedOn.join(', ')}` : 'between files';
   console.error(`\n✖ run interrupted (${interrupted}) ${on}`
-    + ' — sandboxes cleaned up, remaining files were not started');
+    + ' — remaining files were not started');
   process.exitCode = 130;
 } else {
   // Gate: a bus command must not start a process that outlives the

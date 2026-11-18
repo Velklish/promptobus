@@ -161,11 +161,10 @@ check('abort: the child sampled its own stream before teardown — matching sand
   && preExit.stream.alive.every((alive) => alive === false)
   && preExit.stream.stop?.ok === true && preExit.stream.stop?.stopped === true,
   JSON.stringify({ preExit, sandbox: cutBox, pids }));
-// Deliberately late: past the record watch, where a stop that never dispatched ends the
-// processes the same way — the child's pre-exit sample above is what tells them apart.
-await new Promise((r) => { setTimeout(r, 6000); });
+// The parent view is insurance; only the child's pre-exit sample proves Stop.
+await waitFor(() => !!cutBox && !existsSync(cutBox) && pids.length === 2 && pids.every((p) => !pidAlive(p)), { timeoutMs: 6000 });
 const gone = pids.length === 2 && pids.every((p) => !pidAlive(p));
-check('abort: after the holder\'s record watch the parent sees the same — insurance, the verdict was the child\'s pre-exit sample',
+check('abort: the parent observes the sandbox removed and both owned processes gone',
   !!cutBox && !existsSync(cutBox) && gone, `sandbox ${cutBox} · alive ${pids.filter(pidAlive).join(', ') || 'none'}`);
 check('abort: the live owner\'s sandbox beside it is untouched', existsSync(liveNeighbour), liveNeighbour);
 if (!exit) cut.child.kill('SIGKILL');

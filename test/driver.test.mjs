@@ -60,8 +60,6 @@ function rec(address, { harness = 'fake', mode, sessionRef = null, ...fields } =
 }
 
 const put = (task, address, fields) => engine.putParticipant(task, rec(address, fields));
-const participantAt = (task, address) => engine.readTask(task).participants
-  .find((x) => bus.addressOf(x) === address);
 const send = (task, to, type, body) => engine.sendSync(task, {
   from: bus.ORCHESTRATOR, to: [bus.addrDir(to)], type, body,
 });

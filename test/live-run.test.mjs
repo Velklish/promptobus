@@ -37,6 +37,23 @@ for (const value of ['{}', 'null', '{"agents":{}}', '[null]', '[{}]', '[{"sessio
 }
 check('an explicit empty native registry is readable', parseLiveSessions({ status: 0, stdout: '[]' }).length === 0);
 
+{
+  const dir = stand('sweep-groups');
+  const owned = processRow(31001), ownedGroup = 31002, watchedGroup = 31003;
+  writeFileSync(path.join(dir, LIVE_RECORD), JSON.stringify({ version: 1, deathVerified: true,
+    ancestryIncomplete: false, processes: [owned], groups: [ownedGroup], watchedGroups: [watchedGroup] }));
+  for (const [name, row, retained] of [
+    ['the same process', owned, true],
+    ['a reused PID outside recorded groups', { ...owned, birth: 'reused' }, false],
+    ['a member of an owned group', processRow(31004, 1, ownedGroup), true],
+    ['a member of a watched group', processRow(31004, 1, watchedGroup), true],
+    ['an unrelated group', processRow(31004), false],
+  ]) {
+    check(`previous-run sweep classifies ${name} by process birth or group`,
+      priorRunIsLive(dir, { readProcesses: () => [row] }) === retained);
+  }
+}
+
 const emitter = new EventEmitter();
 let release;
 let finished = false;
@@ -321,18 +338,22 @@ process.stdout.write('ready\\n');
     }, { timeoutMs: 10_000 });
     if (!spawned?.pid) throw new Error('stop descendant identity missing');
     descendant = processTable().find((p) => p.pid === spawned.pid);
-    let descendantAlive = null, standPresent = null;
-    const retained = !!descendant && (descendantAlive = samePid(descendant.pid)) && !result.safe && (standPresent = existsSync(dir))
+    const standPresent = existsSync(dir);
+    const record = standPresent ? JSON.parse(readFileSync(path.join(dir, LIVE_RECORD), 'utf8')) : null;
+    const recorded = record?.processes.find((row) => row.pid === spawned.pid);
+    const liveDetached = descendant?.group === spawned.pid;
+    const recordedAndReaped = mode === 'child-signal' && !descendant && recorded?.ownedChild === true
+      && recorded.parent === parent.pid && recorded.group === spawned.pid;
+    const retained = (liveDetached || recordedAndReaped) && !result.safe && standPresent
+      && record?.deathVerified === false && record.ancestryIncomplete === true
       && result.failures.some((reason) => reason.includes('ancestry'));
     let failure = '';
     if (!retained) {
-      const details = { result, spawned, descendant, descendantAlive, standPresent,
+      const details = { result, spawned, descendant, recorded, standPresent,
         parent: { pid: parent.pid, exitCode: parent.exitCode, signalCode: parent.signalCode } };
-      try { details.record = JSON.parse(readFileSync(path.join(dir, LIVE_RECORD), 'utf8')); }
-      catch (error) { details.recordReadError = error.code ?? error.message; }
       failure = JSON.stringify(details);
     }
-    check(`${mode} cannot grant deletion after a real detached descendant escapes`,
+    check(`${mode} cannot grant deletion when a real detached descendant makes ancestry incomplete`,
       retained, failure);
     check(`${mode} uncertainty remains held by the previous-run sweep`, priorRunIsLive(dir));
   } finally {

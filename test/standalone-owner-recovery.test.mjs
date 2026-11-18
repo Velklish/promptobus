@@ -8,7 +8,7 @@ import { createStandaloneHost } from '../dist/host-index.js';
 import { approveStandaloneRootProfile } from '../lib/integration.js';
 import { serviceControl } from '../lib/service-client.js';
 import { processState, readDiscovery, readPrivate, runtimeIdentity, servicePaths, writePrivate } from '../lib/service-state.js';
-import { copyNodeExecutable, makeSandbox, writeHostConfig } from './sandbox.mjs';
+import { copyNodeExecutable, loadScale, makeSandbox, writeHostConfig } from './sandbox.mjs';
 
 // Synthetic native image and owned service processes prove crash behavior, not Claude compatibility.
 const root = realpathSync(makeSandbox('promptobus-owner-recovery-'));
@@ -29,18 +29,27 @@ const gate = path.join(root, 'crash-phase.json'), entered = path.join(root, 'pha
 const nativeId = randomUUID(), owned = new Set();
 let owner = null, nativeChild = null;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-const until = async predicate => { const deadline = Date.now() + 5000; while (!await predicate()) {
-  if (Date.now() >= deadline) throw new Error('Owned recovery fixture did not reach its exact phase'); await pause(10);
-} };
+const until = async (phase, predicate, child, timeoutMs = 5000) => {
+  const started = Date.now(), deadline = started + timeoutMs;
+  for (;;) {
+    if (child.exitCode !== null || child.signalCode !== null || child.spawnError) {
+      await child.closed;
+      throw new Error(`Owned recovery fixture exited before ${phase}: ${child.spawnError?.message ?? child.signalCode ?? child.exitCode}\n${child.failure}`);
+    }
+    if (predicate()) return Date.now() - started;
+    if (Date.now() >= deadline) throw new Error(`Owned recovery fixture did not reach ${phase} within ${timeoutMs} ms (PID ${child.pid})\n${child.failure}`);
+    await pause(10);
+  }
+};
 const start = (file, args) => {
   const child = spawn(file, args, { cwd: root, env, stdio: ['ignore', 'ignore', 'pipe'] });
   child.failure = ''; child.stderr.on('data', bytes => { child.failure += bytes; });
+  child.once('error', error => { child.spawnError = error; });
   child.closed = new Promise(resolve => child.once('close', resolve)); owned.add(child); return child;
 };
 const startOwner = async () => {
   owner = start(process.execPath, [entry]);
-  await until(() => readDiscovery(paths)?.process.pid === owner.pid || owner.exitCode !== null);
-  if (owner.exitCode !== null) throw new Error(`Owned recovery service exited: ${owner.failure}`);
+  await until('owner discovery', () => readDiscovery(paths)?.process.pid === owner.pid, owner);
 };
 const crashOwner = async () => {
   const identity = readDiscovery(paths).process;
@@ -99,9 +108,10 @@ for (const file of [entry, native]) {
 try {
   await startOwner();
   await approveStandaloneRootProfile(host, { id: 'recovery', harness: 'claude', nativeStore, executable: nativeExecutable }, env);
+  const readinessMs = Math.ceil(5000 * await loadScale({ cap: 4 }));
   nativeChild = start('/bin/sh', [wrapper, '--profile', 'recovery', '--service-home', base, '--', nativeExecutable, native]);
-  await until(() => existsSync(ready) || nativeChild.exitCode !== null);
-  if (!existsSync(ready)) throw new Error(`Owned native fixture exited: ${nativeChild.failure}`);
+  const readyInMs = await until('native readiness', () => existsSync(ready), nativeChild, readinessMs);
+  process.stdout.write(`  · native fixture readiness: ${readyInMs} ms (budget ${readinessMs} ms)\n`);
   const original = currentLaunch(), processIdentity = original.process;
   let grant = readPrivate(path.join(paths.clients, `${original.clientId}.json`));
   check('fixture-seeded known binding and actual hook complete a small HTTP workflow', (await tool(grant)).status === 200);
@@ -113,7 +123,7 @@ try {
     await control({ operation: 'revoke', clientId: grant.id });
     rmSync(entered, { force: true }); writeFileSync(gate, JSON.stringify({ phase }), { mode: 0o600 });
     const interrupted = control({ operation: 'standalone-preflight', profile: 'recovery', nativeId }).then(() => null, error => error);
-    await until(() => existsSync(entered));
+    await until(`the ${phase} checkpoint`, () => existsSync(entered), owner);
     await crashOwner(); await interrupted; rmSync(gate);
     await startOwner();
     const completed = await cli(['service', 'preflight', '--standalone', '--profile', 'recovery', '--native-id', nativeId, '--service-home', base]);

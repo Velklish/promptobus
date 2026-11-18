@@ -212,9 +212,12 @@ export async function loadScale({ cpuMs = 40, cap = 10, command = process.execPa
 // A Node build linked against a shared libnode (Homebrew on macOS) loads it from beside the executable,
 // so the copy gets a symlink to each `@rpath` library the original links directly; `otool` lists them.
 export function copyNodeExecutable(destination) {
-  copyFileSync(process.execPath, destination);
+  const executable = realpathSync(process.execPath);
+  const cloned = process.platform === 'darwin' && !existsSync(destination)
+    && spawnSync('/bin/cp', ['-c', executable, destination], { stdio: 'ignore' }).status === 0;
+  if (!cloned) copyFileSync(executable, destination);
   chmodSync(destination, 0o700);
-  for (const { name, file } of sharedNodeLibraries(realpathSync(process.execPath))) {
+  for (const { name, file } of sharedNodeLibraries(executable)) {
     const link = path.join(path.dirname(destination), name);
     try { lstatSync(link); } catch { symlinkSync(file, link); }
   }

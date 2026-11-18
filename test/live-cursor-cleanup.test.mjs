@@ -1,8 +1,8 @@
 // Exercise the actual script across shared-owner teardown, delayed identity and retained UNKNOWN.
 import { spawn } from 'node:child_process';
-import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync, writeSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { makeSandbox, stubCommand } from './sandbox.mjs';
 import { readCompleteJson, waitFor } from './harness.mjs';

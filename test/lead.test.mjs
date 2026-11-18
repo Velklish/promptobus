@@ -238,9 +238,8 @@ const workerPlan = codexDriver.prepare({ ref: 'index-worker', role: 'worker', ro
 });
 check('a Codex worker does not receive the reviewer file server', !workerPlan.mcpConfig.mcpServers.reviewer_files);
 
-let incompatibleCode;
 const incompatibleOutput = await expectFail(async () => {
-  incompatibleCode = await runPromptobus(['report', '--task', opts.task, '--question', 'What changed?', '--model', 'other'], { host, cwd: root, env: {} });
+  await runPromptobus(['report', '--task', opts.task, '--question', 'What changed?', '--model', 'other'], { host, cwd: root, env: {} });
 });
 check('report question CLI rejects launch flags before looking for a reporter',
   incompatibleOutput.failed && /report --question cannot use launch options: --model/.test(incompatibleOutput.out));

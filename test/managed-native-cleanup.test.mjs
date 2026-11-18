@@ -96,9 +96,9 @@ async function driverAndCaller(driver, plan, runtime) {
       shutdownRequest?.launchId === launchId && !readCodex(ref, runtime.env).stopConfirmed);
     acceptShutdown = false;
     let declined;
-    try { await reapCodex(ref, runtime.env, 5); } catch (error) { declined = error; }
+    try { await reapCodex(ref, runtime.env); } catch (error) { declined = error; }
     check('Codex reap rejects a resolved but declined native shutdown and retains the owned record',
-      declined?.message.includes('fixture native shutdown declined') && existsSync(file));
+      declined?.message.includes('fixture native shutdown declined') && existsSync(file), declined?.message);
   } finally {
     if (nativeRecord) { writeCodex(nativeRecord, runtime.env); await reapCodex(ref, runtime.env); }
     await new Promise(resolve => server.close(resolve));

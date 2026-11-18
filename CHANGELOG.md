@@ -5,6 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Check release receipt, CI metadata and raw log variants without launching the release CLI for each input. Retain end-to-end checks for refusal before tag creation and for download evidence.
+- Check release metadata variants on one prepared candidate and retain a CLI refusal before the gates run.
+- Reuse one workspace service across the native Teamlead Stop cases instead of starting and stopping one per case.
+- Build the recorded process-group lookup once per E2E sweep and drop duplicate session-registry checks.
+- Remove the unused internal single-line diagnostic helper; callers still use the multi-line tail where needed.
+- Clone large Node executables for macOS test fixtures when possible, keeping a distinct file for executable identity checks.
+- Scale the standalone recovery fixture's initial ready wait under load and distinguish early process exits from missing milestones.
+- Use fewer untracked files in the POSIX review stress fixture while retaining the Git output above the default process buffer.
+- Keep the E2E cleanup verdict independent of whether the observer sees a real detached child before its parent exits.
+- Use the normal RPC budget for the managed Codex cleanup fixture's declined shutdown reply.
+- Prevent the read-only pipeline fixture from starting a warden that can outlive it.
+- Make the shared warden fixture's record replacement independent of filesystem timestamp resolution.
+- Confirm exit without a socket for a failed Codex launch in the cleanup fixture.
+- Exclude transient task locks from routing dry-run snapshots while checking durable journal and repository state.
+- Give the BB owner, Codex mock and native-store fixtures time for process startup without changing product deadlines.
+
 ## [0.33.1] — 2026-11-18
 
 ### Changed

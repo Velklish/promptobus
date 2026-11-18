@@ -52,7 +52,8 @@ export function priorRunIsLive(dir, { readProcesses = processTable } = {}) {
       || ![record.groups, record.watchedGroups].every((groups) => Array.isArray(groups)
         && groups.every((group) => Number.isInteger(group) && group > 0))) return true;
     const table = readProcesses();
-    return table.some((p) => record.processes.some((own) => same(own, p)) || [...record.groups, ...record.watchedGroups].includes(p.group));
+    const groups = new Set([...record.groups, ...record.watchedGroups]);
+    return table.some((p) => record.processes.some((own) => same(own, p)) || groups.has(p.group));
   } catch { return true; }
 }
 
@@ -136,7 +137,6 @@ export function liveRun({ sandbox, socketDir = null, readSessions, stopSession,
     const participants = context.participants();
     if (!Array.isArray(participants)) throw new Error('task participants unreadable');
     const list = sessions();
-    if (!Array.isArray(list)) throw new Error('session registry unreadable');
     for (const participant of participants) {
       const meta = participant?.metadata;
       if (!text(meta?.sessionId)) {
@@ -187,7 +187,6 @@ export function liveRun({ sandbox, socketDir = null, readSessions, stopSession,
       for (const own of record.sessions) {
         try {
           const list = sessions();
-          if (!Array.isArray(list)) throw new Error('session registry unreadable');
           const hits = list.filter((s) => s?.sessionId === own.sessionId);
           if (hits.length > 1 || (hits[0] && (hits[0].cwd !== own.cwd || hits[0].id !== own.id
               || list.filter((s) => s.id === own.id).length !== 1))) {
@@ -240,7 +239,6 @@ export function liveRun({ sandbox, socketDir = null, readSessions, stopSession,
         const table = observe();
         livePids = table.filter((p) => record.processes.some((own) => same(own, p)) || [...record.groups, ...record.watchedGroups].includes(p.group)).map((p) => p.pid);
         const list = sessions();
-        if (!Array.isArray(list)) throw new Error('post-stop registry unreadable');
         if (record.sessions.some((own) => list.some((s) => s?.sessionId === own.sessionId))) failures.push('owned sessions remain');
         if (livePids.length) failures.push('owned processes remain');
         if (record.ancestryIncomplete) failures.push('process ancestry became unobservable');

@@ -41,10 +41,11 @@ let error='';hook.stderr.on('data',bytes=>{error+=bytes});hook.stdin.end(JSON.st
 const code=await new Promise(resolve=>hook.once('close',resolve));writeFileSync(output,JSON.stringify({code,error}),{mode:0o600});setInterval(()=>{},1000);
 `);
 const until = async (test, ceilingMs) => { const deadline = Date.now() + ceilingMs; while (!test()) { if (Date.now() >= deadline) return false; await new Promise(resolve => setTimeout(resolve, 10)); } return true; };
-const ceilingNow = async () => 5000 * await loadScale({ cap: 4 });
+const seedBudgetNow = async () => 5000 * await loadScale({ cap: 4 });
 const launch = async (profile, id, transcriptStore) => {
-  const output = path.join(root, `result-${randomUUID()}.json`), ceiling = await ceilingNow();
-  writeFileSync(`${output}.wait`, String(ceiling));
+  const output = path.join(root, `result-${randomUUID()}.json`), seedBudget = await seedBudgetNow();
+  const ceiling = Math.max(15_000, seedBudget);
+  writeFileSync(`${output}.wait`, String(seedBudget));
   const child = spawn('/bin/sh', [wrapper, '--profile', profile, '--service-home', base, '--', nativeExecutable, native, output, bin, profile, id, ...(transcriptStore ? [transcriptStore] : [])],
     { cwd: root, env, stdio: ['ignore', 'ignore', 'pipe'] });
   child.failure = ''; child.stderr.on('data', bytes => { child.failure += bytes; }); child.closed = new Promise(resolve => child.once('close', resolve)); children.push(child);
@@ -62,7 +63,7 @@ const credential = launched => readPrivate(path.join(paths.clients, `${launched.
 let ownerError;
 const running = runWorkspaceService({ host, env, createHost: context => createStandaloneHost({ cwd: context.cwd, binPath: bin, version }) }).catch(error => { ownerError = error; });
 try {
-  if (!await until(() => readDiscovery(paths) || ownerError, await ceilingNow())) throw new Error('Owned native-store service did not publish its discovery record in time');
+  if (!await until(() => readDiscovery(paths) || ownerError, Math.max(15_000, await seedBudgetNow()))) throw new Error('Owned native-store service did not publish its discovery record in time');
   if (ownerError) throw ownerError;
   for (const profile of ['store-a', 'store-b', 'store-c']) {
     const store = path.join(root, profile); mkdirSync(store);

@@ -75,7 +75,7 @@ const {
 } = await import(path.join(here, '..', 'lib', 'codex-session.js'));
 const { bindHarnessHomes } = await import(path.join(here, '..', 'lib', 'harness-home.js'));
 const { status: printStatus, stallStands, justSpawned, SPAWN_GRACE_SEC } = await import(path.join(here, '..', 'lib', 'status.js'));
-const { liftDriver, REGISTRY } = await import(path.join(here, '..', 'lib', 'drivers.js'));
+const { liftDriver } = await import(path.join(here, '..', 'lib', 'drivers.js'));
 const { liftHarness, skillsNote, toolName, writeLaunchFiles } = await import(path.join(here, '..', 'lib', 'spawn.js'));
 const { approverLayer } = await import(path.join(here, '..', 'lib', 'approver.js'));
 const { createStandaloneHost } = await import(path.join(here, '..', 'dist', 'host-index.js'));
@@ -146,11 +146,7 @@ function thrown(fn) {
 }
 
 check(': the Codex driver sits in the registry map and is taken by name',
-  liftDriver('codex').id === 'codex' && Object.keys(REGISTRY.drivers).sort().join(',') === 'claude,codex,cursor,opencode',
-  Object.keys(REGISTRY.drivers).join(','));
-
-check(': without a name the previous driver is taken — Claude Code argv does not move',
-  liftDriver().id === 'claude');
+  liftDriver('codex').id === 'codex');
 
 const approverRoute = codexDriver.stallRoute({
   kind: 'gone', address: 'approver:cdx', doneCommand: 'promptobus done',

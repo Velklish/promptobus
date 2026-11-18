@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import fs, { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import fs, { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { makeSandbox, ownedServiceFixture, writeHostConfig } from './sandbox.mjs';
 import { expectFail, quiet } from './console.mjs';
@@ -17,19 +17,20 @@ import { done } from '../lib/done.js';
 import { sweep } from '../lib/sweep.js';
 import { requireNativeTerminal } from '../lib/native-lifecycle.js';
 
-ownedServiceFixture();
+const service = ownedServiceFixture();
 process.env.PROMPTOBUS_WARDEN = 'off';
+const root = makeSandbox('promptobus-lifecycle-');
+writeHostConfig(root, { tools: ['codex'] });
+const host = hostOf(root), home = host.promptobusHome();
+process.env.PROMPTOBUS_CODEX_HOME = path.join(root, 'native');
+const brief = path.join(root, 'brief.md');
+writeFileSync(brief, '# Native group\n\nOwned fixture without a model.\n');
 let sequence = 0;
 async function fixture() {
-  const root = makeSandbox('promptobus-lifecycle-');
-  writeHostConfig(root, { tools: ['codex'] });
-  const host = hostOf(root), home = host.promptobusHome();
-  process.env.PROMPTOBUS_CODEX_HOME = path.join(root, 'native');
   process.env.CLAUDE_CODE_SESSION_ID = 'root-owner';
   const parent = `native-parent-t20261026-${String(++sequence).padStart(6, '0')}`;
+  const slug = `owned-${sequence}`;
   store.createTask(home, { id: parent, title: 'Native parent', owner: 'root-owner' });
-  const brief = path.join(root, 'brief.md');
-  writeFileSync(brief, '# Native group\n\nOwned fixture without a model.\n');
   const original = codexDriver.spawn;
   let calls = 0, launchId;
   codexDriver.spawn = async (plan, ctx) => {
@@ -40,7 +41,7 @@ async function fixture() {
   };
   let plan;
   try {
-    await quiet(async () => { plan = await spawnTeamlead(host, { task: parent, brief, slug: 'owned',
+    await quiet(async () => { plan = await spawnTeamlead(host, { task: parent, brief, slug,
       harness: 'codex', tool: { ok: true, bin: 'fixture-codex', version: '0.163.0' } }); });
   } finally { codexDriver.spawn = original; }
   assert.equal(calls, 1, 'production teamlead persistence must establish both actual seats');
@@ -55,7 +56,7 @@ async function fixture() {
   ledger.append('stop/confirmed', { ...record, commands: [], appClose: { code: 0, signal: null },
     deadlineAt, originalToolReceipt: 'not synthesized' });
   writeSession({ ...record, commandReceiptFile: file });
-  return { root, host, home, parent, child: plan.childTask, address: plan.address, record, file, brief };
+  return { host, home, parent, slug, child: plan.childTask, address: plan.address, record, file, brief };
 }
 const close = (f, task) => done(f.host, { task, 'keep-sessions': true, snapshot: () => ({}),
   adapterFor: () => ({ probe: () => ({ available: 'unknown' }) }) });
@@ -150,7 +151,7 @@ async function relift(f, options = {}) {
     return { output: 'fixture', session: 'native-thread-2', seen: {} };
   };
   try {
-    await quiet(() => spawnTeamlead(f.host, { task: f.parent, brief: f.brief, slug: 'owned',
+    await quiet(() => spawnTeamlead(f.host, { task: f.parent, brief: f.brief, slug: f.slug,
       harness: 'codex', sessions: {}, tool: { ok: true, bin: 'fixture-codex', version: '0.163.0' }, ...options }));
   } finally { codexDriver.spawn = original; }
   return actual;
@@ -213,7 +214,7 @@ test('native teamlead known pre-driver config failure releases only its reserved
   const f = await fixture();
   assert.equal((await codexDriver.stop(f.record.ref)).stopped, true);
   const prior = [seat(f, f.parent, f.address), seat(f, f.child, 'orchestrator')].map(p => p.metadata.nativeStop);
-  const prepare = codexDriver.prepare, blocked = path.join(f.root, 'blocked');
+  const prepare = codexDriver.prepare, blocked = path.join(root, `blocked-${f.parent}`);
   mkdirSync(blocked);
   codexDriver.prepare = ctx => ({ ...prepare(ctx), files: [{ path: blocked, text: 'cannot replace directory' }] });
   let invoked = false;
@@ -233,7 +234,7 @@ for (const stale of [false, true]) test(`native teamlead partial rebind ${stale 
   await assert.rejects(() => relift(f, { fault: step => {
     if (step === 'teamlead-rebind-after-child') throw new Error('fixture partial rebind');
   } }), /partial rebind/);
-  const intent = path.join(path.dirname(store.taskFile(f.home, f.parent)), 'rebinds', 'owned.json');
+  const intent = path.join(path.dirname(store.taskFile(f.home, f.parent)), 'rebinds', `${f.slug}.json`);
   assert.equal(existsSync(intent), true);
   const child = seat(f, f.child, 'orchestrator');
   assert.equal(child.metadata.nativeStop, undefined);
@@ -261,7 +262,7 @@ for (const stale of [false, true]) test(`native teamlead partial rebind ${stale 
 test('native teamlead rebind recovery preserves a completed Stop of the new generation', async () => {
   const f = await fixture();
   assert.equal((await codexDriver.stop(f.record.ref)).stopped, true);
-  const intent = path.join(path.dirname(store.taskFile(f.home, f.parent)), 'rebinds', 'owned.json');
+  const intent = path.join(path.dirname(store.taskFile(f.home, f.parent)), 'rebinds', `${f.slug}.json`);
   const unlink = fs.unlinkSync;
   fs.unlinkSync = file => {
     if (file === intent) throw Object.assign(new Error('fixture intent deletion refused'), { code: 'EIO' });
@@ -395,3 +396,9 @@ for (const damage of ['copied-proof', 'alias-address', 'alias-task', 'source-add
     assert.deepEqual(bytes(f), before);
   });
 }
+
+test('Teamlead Stop cases share one real workspace service', () => {
+  assert.ok(sequence > 0, 'At least one lifecycle case must have run');
+  const owners = readdirSync(service.directory).filter(name => existsSync(path.join(service.directory, name, 'service.json')));
+  assert.equal(owners.length, 1, 'Teamlead Stop cases must share one real workspace service');
+});

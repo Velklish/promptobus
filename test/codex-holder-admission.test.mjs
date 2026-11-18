@@ -20,8 +20,9 @@ test(change === 'enqueue-lock' ? 'holder releases launch lock before awaiting th
     access_token: 'e30.' + Buffer.from(JSON.stringify({ exp: Math.floor(Date.now()/1000) + 3600, label })).toString('base64url') + '.fixture',
     refresh_token: '', account_id: 'fixture',
   } });
-  writeFileSync(path.join(owner, 'auth.json'), auth('initial'));
-  writeFileSync(path.join(privateHome, 'auth.json'), auth('initial'));
+  const initialAuth = auth('initial');
+  writeFileSync(path.join(owner, 'auth.json'), initialAuth);
+  writeFileSync(path.join(privateHome, 'auth.json'), initialAuth);
   const bin = path.join(root, 'bin'), trace = path.join(root, 'trace.jsonl');
   const release = path.join(root, 'release'), waiting = path.join(root, 'waiting');
   stubCommand(bin, 'codex', `

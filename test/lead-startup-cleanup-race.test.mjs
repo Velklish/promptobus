@@ -7,7 +7,7 @@ import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { installHarness, THREAD_DELAY_VAR } from './harness-codex.mjs';
 import { waitFor } from './harness.mjs';
 import { codexDriver } from '../lib/driver-codex.js';
-import { dropSession, holderLogFile, pidAlive, registrySessions, sessionFile, sessionKey, sessionsDir, writeSession } from '../lib/codex-session.js';
+import { dropSession, pidAlive, registrySessions, sessionFile, sessionKey, sessionsDir, writeSession } from '../lib/codex-session.js';
 
 const root = makeSandbox('promptobus-lead-startup-');
 writeHostConfig(root, { tools: ['codex'] });

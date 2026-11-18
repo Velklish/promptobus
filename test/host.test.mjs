@@ -124,7 +124,7 @@ test('every HostToolBin field a driver or an adapter reads is declared', () => {
     // HANDED its bin as `request.toolBin`: the identifier it binds that field to, or
     // the field itself where it is read in place, is the holder there.
     for (const m of src.matchAll(/\b([A-Za-z_$][\w$]*)\s*=\s*[^;\n]*\btoolBin\b/g)) holders.add(m[1]);
-    for (const m of src.matchAll(/\{[^}]*\btoolBin\b[^}]*\}\s*=/g)) holders.add('toolBin');
+    if (/\{[^}]*\btoolBin\b[^}]*\}\s*=/.test(src)) holders.add('toolBin');
     if (/\btoolBin\s*\./.test(src)) holders.add('toolBin');
     // The four adapters destructure it with a rename in the parameter list:
     // `{ toolBin: tool, timeoutMs }`.

@@ -10,7 +10,7 @@
 // Session identity is a SEAM here, not an environment: the suite strips harness variables,
 // and a file that could not name its caller would only ever see the refusal.
 import { createHash } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';

@@ -182,13 +182,13 @@ const probeSet = (probes) => adapterMap({
 });
 
 /**
- * The whole store, as bytes. A refusal that wrote one file into a directory this
- * comparison did not name would pass a spot check; this one names every file.
+ * Compare durable files byte for byte. Only the store's transient task locks are outside the snapshot.
  */
 function treeOf(dir) {
   const rows = [];
   const walk = (d, rel) => {
     for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      if (dir === HOME && e.name === '.lock' && e.isDirectory() && /^tasks\/[^/]+$/.test(rel)) continue;
       const abs = path.join(d, e.name);
       const at = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {

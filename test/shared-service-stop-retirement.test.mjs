@@ -10,7 +10,6 @@ import { commandReceipts } from '../lib/codex-command-receipts.js';
 import { codexStateHome, sessionFile, sessionKey, writeSession } from '../lib/codex-session.js';
 import { retainNativeStop } from '../lib/native-lifecycle.js';
 import { ensureWorkspaceService, registerServiceClient, revokeServiceClient, stopWorkspaceService, workspaceServiceStatus } from '../lib/service-client.js';
-import { servicePaths } from '../lib/service-state.js';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 
 test('confirmed managed Stop retires only its own service client', async () => {
@@ -22,7 +21,7 @@ test('confirmed managed Stop retires only its own service client', async () => {
   const host = createStandaloneHost({ cwd: root, binPath: fileURLToPath(new URL('../bin/promptobus.js', import.meta.url)), version: JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version });
   const previousNativeHome = process.env.PROMPTOBUS_CODEX_HOME;
   process.env.PROMPTOBUS_CODEX_HOME = nativeHome;
-  const paths = servicePaths(host, env), options = { cwd: root, env }, clients = [];
+  const options = { cwd: root, env }, clients = [];
   writeHostConfig(root, { tools: [] });
   let serviceStopped = false;
   try {

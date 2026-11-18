@@ -790,5 +790,4 @@ export async function runPromptobus(argv: readonly string[] | null | undefined, 
     if (!expected && (e as Error | null | undefined)?.stack) console.error((e as Error).stack);
     fail((e as Error).message ?? String(e));
   }
-  return 0;
 }

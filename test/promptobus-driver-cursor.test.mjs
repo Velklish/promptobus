@@ -28,7 +28,7 @@ import { processProbe } from './process-probe.mjs';
 import { makeSandbox, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { buildWorkspace, cli, store } from './scenario.mjs';
 import {
-  CURSOR_HOME_VAR, HANG_CHILD_VAR, HANG_VAR, HANG_WRITE_VAR, diagnoseTrace, installHarness, planParticipant,
+  HANG_CHILD_VAR, HANG_VAR, HANG_WRITE_VAR, diagnoseTrace, installHarness, planParticipant,
   readTrace, traceFile,
 } from './harness-cursor.mjs';
 import { waitFor } from './harness.mjs';

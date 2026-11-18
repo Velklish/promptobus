@@ -36,7 +36,7 @@
 // **The file runs in a serial runner group** — for the same reason as its stub-Claude
 // twin: the knock loop runs between processes over real sockets and tmux panes, and under
 // pool load those thresholds either go red on working code or go green on nothing.
-import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { check, skip } from './check.mjs';
 import { listenTestSocket, makeSandbox, makeSockPath, writeHostConfig } from './sandbox.mjs';

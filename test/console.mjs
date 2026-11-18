@@ -153,14 +153,6 @@ export function expectFail(fn) {
     (r) => ({ failed: r.failed, out, value: r.value }));
 }
 
-// The same with split streams — for commands whose stdout goes into
-// a substitution.
-export function expectFailSplit(fn) {
-  let out = '', err = '';
-  const ran = withConsole(() => withExit(fn), (m) => { out += `${m}\n`; }, (m) => { err += `${m}\n`; });
-  return after(ran, (r) => ({ failed: r.failed, out, err, value: r.value }));
-}
-
 // A throw with no console at all: `planSpawn`/`planReview` refusals
 // come as an exception, not through `fail()`. There were two copies,
 // word for word.

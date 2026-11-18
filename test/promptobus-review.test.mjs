@@ -2936,17 +2936,8 @@ check(': on a re-review the line about the MCP set is not printed',
   reuseRun.split('\n').filter((l) => /MCP|on the bus/.test(l)).join(' | '));
 claudeSays('[]');
 
-// --- : the ceiling on git's output ------------------------------------------------
-//
-// The git() wrapper went with `spawnSync`'s default ceiling — a megabyte. A real
-// clone's list of untracked files (a build, an export, a directory with no .gitignore)
-// blows past it easily: the process is killed by a signal, it has no status, stderr is
-// empty — and the command used to crash with "git ls-files:" and an empty tail, i.e.
-// with no reason at all. Here the list is deliberately bigger than a megabyte: long
-// names are cheaper than a large file count.
-// The paths are short on purpose (review note): a full path longer than MAX_PATH (260)
-// wouldn't survive Windows, and the suite would fail red there on correct code — a
-// class bug. The same overflow is reached by file count instead of path length.
+// Exceed the default spawn buffer with real untracked files. Windows keeps short paths;
+// POSIX uses longer basenames to reach the same payload with fewer filesystem entries.
 const FLOOD = path.join(WS, 'repos', 'demo_team', 'flood-api');
 const FLOOD_DIR = path.join(FLOOD, 'd'.repeat(30));
 mkdirSync(FLOOD_DIR, { recursive: true });
@@ -2955,15 +2946,12 @@ writeFileSync(path.join(FLOOD, 'AGENTS.md'), 'Repository rules.\n');
 g(FLOOD, 'add', 'AGENTS.md');
 g(FLOOD, 'commit', '-m', 'init', '-q');
 g(FLOOD, 'update-ref', 'refs/remotes/origin/master', gOut(FLOOD, 'rev-parse', 'HEAD'));
-// The number was picked by measurement: 14000 paths at 91 bytes each is 1.29 MB, and
-// the git process gets killed by a signal before it finishes writing the output
-// (`status` is then `null`, `stderr` is empty, and the old wrapper used to crash with
-// an empty reason). A smaller overflow is harmful in a different way: `spawnSync`
-// silently hands back truncated output, and the reviewer would get an incomplete list
-// without a single word about it.
-const FLOOD_N = 14000;
+const floodPrefix = 'f'.repeat(process.platform === 'win32' ? 50 : 210);
+const floodBytes = 1_274_000;
+const rowBytes = Buffer.byteLength(`${path.basename(FLOOD_DIR)}/${floodPrefix}000000.txt\n`);
+const FLOOD_N = Math.ceil(floodBytes / rowBytes);
 for (let i = 0; i < FLOOD_N; i += 1) {
-  writeFileSync(path.join(FLOOD_DIR, `${'f'.repeat(50)}${String(i).padStart(6, '0')}.txt`), '');
+  writeFileSync(path.join(FLOOD_DIR, `${floodPrefix}${String(i).padStart(6, '0')}.txt`), '');
 }
 // : the diff's name is chosen by the record, and the prompt is assembled by the plan
 // before it — meaning the plan must be reassembled against the path that actually
@@ -2984,8 +2972,10 @@ store.closeTask(home, writtenTask.id);
 
 const floodTask = store.createTask(home, { id: 't20260829-120000', title: 'a review of a clone with a long listing' });
 const flood = planReview(WS, { target: FLOOD, task: floodTask.id });
+const untrackedBytes = flood.untracked.reduce((size, file) => size + Buffer.byteLength(file) + 1, 0);
 check(': an untracked-file list longer than a megabyte does not crash the command',
-  flood.untracked.length === FLOOD_N, `${flood.untracked.length} of ${FLOOD_N}`);
+  flood.untracked.length === FLOOD_N && untrackedBytes >= floodBytes,
+  `${flood.untracked.length} of ${FLOOD_N}, ${untrackedBytes} bytes`);
 store.closeTask(home, floodTask.id);
 
 // A failed git spawn must stay a legal no-base outcome. In particular, the

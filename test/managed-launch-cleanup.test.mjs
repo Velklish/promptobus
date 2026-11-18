@@ -7,7 +7,7 @@ import { createStandaloneHost } from '../dist/host-index.js';
 import { cursorDriver } from '../lib/driver-cursor.js';
 import { codexDriver, participantCodexHome } from '../lib/driver-codex.js';
 import { lockFile as cursorLockFile, sessionFile as cursorFile } from '../lib/cursor-persist.js';
-import { holderAsk, readSession, reapHolder, sessionFile as codexFile, STOP_TIMEOUT_MS, writeSession } from '../lib/codex-session.js';
+import { holderAsk, pidAlive, readSession, reapHolder, sessionFile as codexFile, STOP_TIMEOUT_MS, writeSession } from '../lib/codex-session.js';
 import { lead } from '../lib/lead.js';
 import { report } from '../lib/report.js';
 import { finalizeManagedServiceLaunch, revokeFailedManagedLaunch } from '../lib/service-launch.js';
@@ -83,17 +83,32 @@ async function failedLaunch(driver, stage) {
           const current = readSession(ref, env);
           if (current?.launchId !== held.launchId || current.holderPid !== held.holderPid
             || current.holderProcess?.birth !== held.holderProcess.birth) throw new Error('Fixture holder generation changed during cleanup');
-          if (await processStateAsync(held.holderProcess) === 'dead') { settled = true; break; }
+          if (await processStateAsync(held.holderProcess) === 'dead') {
+            settled = true;
+            break;
+          }
           if (current.rpcSocket) {
+            let ready = false;
             try {
               await holderAsk(ref, 'status', {}, env, Math.max(1, Math.min(200, deadline - Date.now())));
-              settled = true; break;
+              ready = true;
             } catch { /* A published socket may not yet be listening. */ }
+            if (ready) {
+              await reapHolder(ref, env, Math.max(1, deadline - Date.now()));
+              settled = true; break;
+            }
           }
           await new Promise(resolve => setTimeout(resolve, 25));
         }
         if (!settled || Date.now() >= deadline) throw new Error('Fixture holder neither exited nor published a ready RPC within cleanup allowance');
-        await reapHolder(ref, env, Math.max(1, deadline - Date.now()));
+        const final = readSession(ref, env);
+        if (final?.launchId !== held.launchId || final.holderPid !== held.holderPid
+          || final.holderProcess?.birth !== held.holderProcess.birth) throw new Error('Fixture holder generation changed before removal');
+        if (await processStateAsync(held.holderProcess) !== 'dead') throw new Error('Fixture holder exit is unconfirmed');
+        if (final.appProcess ? final.appProcess.pid !== final.appPid || await processStateAsync(final.appProcess) !== 'dead'
+          : pidAlive(final.appPid)) {
+          throw new Error('Fixture app-server exit is unconfirmed');
+        }
       } catch (error) { cleanupFailure = error; }
       check(`codex ${stage} cleanup confirms the owned holder exit before removing retained resources`, !cleanupFailure, cleanupFailure?.stack);
     }
