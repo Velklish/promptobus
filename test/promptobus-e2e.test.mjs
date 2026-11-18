@@ -42,6 +42,7 @@ const harness = {
   // an exhausted limit
   //, and the loop guard the stub participant calls itself.
   scripted: true,
+  consumeFirstResult: true,
   sock,
   // The stub binary does not read the model or the effort at all: it has no model. The
   // live run puts its own flags here — that is the whole difference between the two

@@ -151,7 +151,7 @@ clearInterval(tick);
 check('exec.runAsync cuts off a hung command without blocking the caller loop',
   asyncTimed.error?.code === 'ETIMEDOUT' && asyncTimed.signal === 'SIGKILL'
   && ticks > 0 && Date.now() - asyncStarted < 5000, JSON.stringify({ asyncTimed, ticks }));
-const asyncBuffered = await asyncExec.runAsync('node', ['-e', "process.stdout.write('x'.repeat(10000))"], { encoding: 'utf8' });
+const asyncBuffered = await asyncExec.runAsync('node', ['-e', "process.stdout.write('x'.repeat(10000))"], { timeoutMs: exec.PROC_TIMEOUT_MS, encoding: 'utf8' });
 check('exec.runAsync refuses output beyond the byte ceiling',
   asyncBuffered.error?.code === 'ENOBUFS' && Buffer.byteLength(asyncBuffered.stdout) === 64, JSON.stringify(asyncBuffered));
 const asyncOk = await exec.runAsync('node', ['-e', "process.stdout.write('ok'); process.stderr.write('detail')"], { encoding: 'utf8' });

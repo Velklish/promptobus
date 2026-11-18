@@ -10,22 +10,22 @@ import { cursorDriver } from '../lib/driver-cursor.js';
 const SB = makeSandbox('promptobus-cursor-stop-preflight-');
 const bin = path.join(SB, 'bin');
 const started = path.join(SB, 'ps-started'), release = path.join(SB, 'ps-release');
-const timedOut = path.join(SB, 'ps-timed-out'), gone = path.join(SB, 'pane-gone');
+const acknowledged = path.join(SB, 'ps-acknowledged');
 stubCommand(bin, 'tmux', `
-import { existsSync, writeFileSync } from 'node:fs';
-if (process.argv.includes('kill-session')) writeFileSync(${JSON.stringify(gone)}, 'gone');
-else if (process.argv.includes('list-sessions') && !existsSync(${JSON.stringify(gone)})) {
-  process.stdout.write('owned|0|0|0|1|hash|chat||\\n');
+import { existsSync } from 'node:fs';
+if (process.argv.includes('kill-session')) throw new Error('cannot kill the replacement pane');
+if (process.argv.includes('list-sessions')) {
+  const chat = existsSync(${JSON.stringify(release)}) ? 'replacement' : 'chat';
+  process.stdout.write('owned|0|0|0|1|hash|' + chat + '||\\n');
 }
 `);
 stubCommand(bin, 'ps', `
 import { existsSync, writeFileSync } from 'node:fs';
 writeFileSync(${JSON.stringify(started)}, 'started');
-const deadline = Date.now() + 1000;
-while (!existsSync(${JSON.stringify(release)}) && Date.now() < deadline) {
+while (!existsSync(${JSON.stringify(release)})) {
   await new Promise(resolve => setTimeout(resolve, 10));
 }
-if (!existsSync(${JSON.stringify(release)})) writeFileSync(${JSON.stringify(timedOut)}, 'caller blocked');
+writeFileSync(${JSON.stringify(acknowledged)}, 'caller released the running child');
 `);
 const restore = withStubPath(bin);
 try {
@@ -34,9 +34,7 @@ try {
   writeFileSync(release, 'released by caller');
   const stopped = await stopping;
   check('Cursor Stop: the caller can release its actual process-tree preflight subprocess',
-    waiting && !existsSync(timedOut), JSON.stringify({ waiting, callerBlocked: existsSync(timedOut), stopped }));
-  check('Cursor Stop: named fallback still removes its owned pane after asynchronous preflight',
-    stopped.stopped && existsSync(gone), JSON.stringify(stopped));
+    waiting && existsSync(acknowledged), JSON.stringify({ waiting, acknowledged: existsSync(acknowledged), stopped }));
 } finally {
   restore();
 }

@@ -1,7 +1,7 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +17,8 @@ const refused = (r, message) => {
   assert.match(r.stderr, message);
 };
 
-function fixture() {
+let prepared;
+function fixture({ viaNpm = false } = {}) {
   const owner = makeSandbox('promptobus-release-fixture-publication-');
   const root = path.join(owner, 'source');
   const bare = path.join(owner, 'public.git');
@@ -26,6 +27,49 @@ function fixture() {
     mkdirSync(path.dirname(path.join(root, name)), { recursive: true });
     writeFileSync(path.join(root, name), text);
   };
+  if (prepared) {
+    const sourceBins = path.join(prepared, 'source/node_modules');
+    cpSync(prepared, owner, { recursive: true, filter: source => source !== sourceBins });
+    for (const name of ['npx', 'gh']) {
+      stubCommand(path.join(root, 'node_modules/.bin'), name, read(path.join(sourceBins, '.bin', name + '.stub.mjs')));
+    }
+  }
+  const config = path.join(owner, 'gitconfig');
+  writeFileSync(config, `[url "file://${bare}"]\n\tinsteadOf = ${remote}\n`);
+  const exec = (argv, cwd = root, env = {}) => run(argv[0], argv.slice(1), { cwd, encoding: 'utf8',
+    timeout: 60_000, env: { ...process.env, GIT_CONFIG_GLOBAL: config,
+      GIT_CONFIG_SYSTEM: path.join(owner, 'no-system'), GIT_ALLOW_PROTOCOL: 'file',
+      GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.invalid',
+      GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.invalid', ...env } });
+  const git = (...args) => {
+    const r = exec(['git', ...args]);
+    passed(r);
+    return r.stdout.trim();
+  };
+  const fixturePath = path.join(root, 'node_modules/.bin') + path.delimiter + process.env.PATH;
+  const command = (args) => {
+    const options = [...args, '--receipt', file];
+    return viaNpm
+      ? exec(['npm', 'run', 'release', '--', ...options])
+      : exec(['node', 'scripts/release.mjs', ...options], root, { PATH: fixturePath });
+  };
+  const state = (value = {}) => put('.fixture/ci.json', JSON.stringify(value));
+  if (!prepared) {
+    prepare({ root, bare, put, git, command, state });
+    prepared = owner;
+    return fixture({ viaNpm });
+  }
+  const head = git('rev-parse', 'HEAD');
+  const receipt = () => JSON.parse(read(file));
+  const save = (value) => writeFileSync(file, JSON.stringify(value));
+  const refs = () => git('ls-remote', remote, 'refs/tags/v1.1.0', 'refs/tags/v1.1.0^{}');
+  const publish = () => command(['publish', '--run', '123']);
+  const smoke = () => command(['smoke']);
+  const calls = () => existsSync(path.join(root, '.fixture/calls')) ? read(path.join(root, '.fixture/calls')).trim().split('\n').map(JSON.parse) : [];
+  return { root, bare, file, head, put, exec, git, state, receipt, save, refs, publish, smoke, command, calls };
+}
+
+function prepare({ root, bare, put, git, command, state }) {
   put('package.json', JSON.stringify({ name: 'promptobus', type: 'module', version: '1.0.0',
     scripts: { release: 'node scripts/release.mjs', prepare: 'node build.cjs', build: 'node build.cjs',
       test: 'node build.cjs', audit: 'node build.cjs', pins: 'node build.cjs', 'codex-schema': 'node build.cjs' },
@@ -42,18 +86,6 @@ function fixture() {
   put('build.cjs', `console.log('↷ SKIP fixture optional body — deliberate fixture');\n`);
   put('bin/promptobus.js', `import { readFileSync } from 'node:fs';\nconsole.log('promptobus '+JSON.parse(readFileSync(new URL('../package.json',import.meta.url))).version);\n`);
   for (const name of ['scripts/release.mjs', 'lib/exec.js']) put(name, read(path.join(repo, name)));
-  const config = path.join(owner, 'gitconfig');
-  writeFileSync(config, `[url "file://${bare}"]\n\tinsteadOf = ${remote}\n`);
-  const exec = (argv, cwd = root, env = {}) => run(argv[0], argv.slice(1), { cwd, encoding: 'utf8',
-    timeout: 60_000, env: { ...process.env, GIT_CONFIG_GLOBAL: config,
-      GIT_CONFIG_SYSTEM: path.join(owner, 'no-system'), GIT_ALLOW_PROTOCOL: 'file',
-      GIT_AUTHOR_NAME: 'Fixture', GIT_AUTHOR_EMAIL: 'fixture@example.invalid',
-      GIT_COMMITTER_NAME: 'Fixture', GIT_COMMITTER_EMAIL: 'fixture@example.invalid', ...env } });
-  const git = (...args) => {
-    const r = exec(['git', ...args]);
-    passed(r);
-    return r.stdout.trim();
-  };
   git('init', '-q', '-b', 'main');
   git('add', '.');
   git('commit', '-qm', 'fixture base');
@@ -117,22 +149,27 @@ if(args[0]==='api') {
     'Test 2026-11-13T00:00:00Z ↷ SKIP optional integration — deliberate fixture\\nTest installed check notRun: fixture');
 }
 `);
-  const command = (args) => exec(['npm', 'run', 'release', '--', ...args, '--receipt', file]);
   passed(command(['prepare', '1.1.0', '--date', '2026-11-13']));
-  const head = git('rev-parse', 'HEAD');
-  put('.fixture/head', head);
-  const state = (value = {}) => put('.fixture/ci.json', JSON.stringify(value));
+  put('.fixture/head', git('rev-parse', 'HEAD'));
   state();
-  const receipt = () => JSON.parse(read(file));
-  const save = (value) => writeFileSync(file, JSON.stringify(value));
   passed(command(['verify']));
   git('clone', '--bare', '-q', root, bare);
-  const refs = () => git('ls-remote', remote, 'refs/tags/v1.1.0', 'refs/tags/v1.1.0^{}');
-  const publish = () => command(['publish', '--run', '123']);
-  const smoke = () => command(['smoke']);
-  const calls = () => existsSync(path.join(root, '.fixture/calls')) ? read(path.join(root, '.fixture/calls')).trim().split('\n').map(JSON.parse) : [];
-  return { root, bare, file, head, put, exec, git, state, receipt, save, refs, publish, smoke, command, calls };
 }
+
+test('prepared release copies keep independent refs, worktrees and receipts', () => {
+  const first = fixture();
+  first.git('tag', 'fixture-local');
+  first.git('--git-dir', first.bare, 'tag', 'fixture-remote');
+  first.put('README.md', 'changed fixture source');
+  first.save({ modified: true });
+
+  const second = fixture();
+  assert.equal(second.git('tag', '--list'), '');
+  assert.equal(second.git('--git-dir', second.bare, 'tag', '--list'), '');
+  assert.equal(second.git('status', '--porcelain'), '');
+  assert.equal(second.receipt().source.commit, second.head);
+  assert.ok(second.receipt().steps.every(step => step.status === 'passed'));
+});
 
 test('completed receipt requires full runtime identity before any GitHub call', () => {
   const f = fixture();
@@ -288,7 +325,7 @@ test('local success is required, and source, public main or CI attempt changes r
 });
 
 test('successful exact-SHA proof publishes an annotated immutable tag, keeps skips, and installs actual public ref locally', () => {
-  const f = fixture();
+  const f = fixture({ viaNpm: true });
   passed(f.publish());
   const published = f.refs();
   const receipt = f.receipt();

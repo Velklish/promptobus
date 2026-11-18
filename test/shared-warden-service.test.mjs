@@ -331,10 +331,16 @@ if(code) process.exitCode=code;
     const holderDone = new Promise(resolve => holder.once('close', resolve)); holder.stdin.end(); await holderDone; holder = null;
     await Promise.all([...TASKS, EMPTY].map(task => abortTaskWarden(host, task, options)));
     check('no clients and no task work permit physical service idle exit', await until(() => processState(current.process) === 'dead'));
-    current = await ensureWorkspaceService(host, options); owned.set(current.process.pid, current.process);
-    const recovered = await workspaceServiceStatus(host, options);
+    const previous = current.process;
+    const restart = { ...options, env: { ...env, PROMPTOBUS_SERVICE_IDLE_MS: '60000' } };
+    current = await ensureWorkspaceService(host, restart); owned.set(current.process.pid, current.process);
+    const recovered = await workspaceServiceStatus(host, restart);
+    check('after idle exit a separate physical owner answers readiness with its own PID/birth',
+      recovered.running && recovered.process.pid === current.process.pid && recovered.process.birth === current.process.birth
+      && (current.process.pid !== previous.pid || current.process.birth !== previous.birth)
+      && processState(previous) === 'dead', JSON.stringify({ previous, current, recovered }));
     check('preflight does not restart completed empty task demands merely because their journals are still active', recovered.warden.tasks.length === 0 && recovered.clients === 0);
-    await stopWorkspaceService(host, options);
+    await stopWorkspaceService(host, restart);
     check('all owned physical service generations exited', [...owned.values()].every(identity => processState(identity) === 'dead'));
 
     coordinator = new ServiceWarden(paths, host, serviceHarnessContext(host, env, REGISTRY), env, error => { workerFailure = error; });

@@ -30,7 +30,7 @@ async function runCase(failure, order = 'AB') {
   const GATE = path.join(ROOT, 'event-gate'), HELD = path.join(ROOT, 'event-held.json'), RELEASE = path.join(ROOT, 'event-release');
   const FAULT = path.join(ROOT, 'owner-control-fault.json'), TRACE = path.join(ROOT, 'owner-control.commands.jsonl');
   const CLAIM_GATE = path.join(ROOT, 'claim-gate.json'), CLAIM_HELD = path.join(ROOT, 'claim-held.json');
-  const CLAIM_RELEASE = path.join(ROOT, 'claim-release'), CLAIM_TRACE = path.join(ROOT, 'claim-observation.commands.jsonl');
+  const CLAIM_FORWARD = path.join(ROOT, 'claim-forward'), CLAIM_RELEASE = path.join(ROOT, 'claim-release'), CLAIM_TRACE = path.join(ROOT, 'claim-observation.commands.jsonl');
   const TASKS = ['failed-a-t20261101-010000', 'independent-b-t20261101-010000'];
   const requestOrder = order === 'AB' ? TASKS : [...TASKS].reverse();
   const claimOrder = failure === 'departure note' ? [...requestOrder].reverse() : null;
@@ -48,14 +48,15 @@ async function runCase(failure, order = 'AB') {
             const marks = gate.tasks.map(task => ({task,mark:readWardenMark(home,task),claim:fixtureClaims.get(task)}));
             if (marks.every(row => row.mark?.pid === process.pid && row.claim?.owner.birth === gate.owner.birth
                 && row.mark.started === row.claim.mark.started && row.claim.demand === gate.demands[row.task])) {
-                fixtureClaimWrite(${JSON.stringify(CLAIM_HELD)}, JSON.stringify({pid:process.pid,birth:gate.owner.birth,task:id,phase:gate.phase,
+                fixtureClaimWrite(${JSON.stringify(CLAIM_HELD + '.tmp')}, JSON.stringify({pid:process.pid,birth:gate.owner.birth,task:id,phase:gate.phase,
                     ordinal:readWardenGeneration(home,id),demands:gate.demands,marks,claimOrder:[...fixtureClaims.keys()]}));
+                fixtureClaimRename(${JSON.stringify(CLAIM_HELD + '.tmp')}, ${JSON.stringify(CLAIM_HELD)});
                 const held = new Int32Array(new SharedArrayBuffer(4));
                 while (!fixtureClaimExists(${JSON.stringify(CLAIM_RELEASE)})) Atomics.wait(held, 0, 0, 10);
             }
         }
 `;
-    writeFileSync(file, "import { existsSync as fixtureClaimExists, readFileSync as fixtureClaimRead, writeFileSync as fixtureClaimWrite } from 'node:fs';\n"
+    writeFileSync(file, "import { existsSync as fixtureClaimExists, readFileSync as fixtureClaimRead, renameSync as fixtureClaimRename, writeFileSync as fixtureClaimWrite } from 'node:fs';\n"
       + 'const fixtureClaims = new Map();\n'
       + original.replace(needle, '        writeWardenMark(home, id, mark);' + claimHook + '        bumpWardenGeneration(home, id);'));
   }
@@ -98,8 +99,17 @@ Worker.prototype.postMessage = function(message,...args) {
       if (gate.tasks.every(task=>queuedStarts.has(task))) {
         for (const task of gate.claimOrder) {
           const next=queuedStarts.get(task);
-          trace({kind:'worker/start-forwarded',phase:gate.phase,task,generation:next.generation});
-          originalPost.call(this,next,...args);
+          const forward = () => {
+            trace({kind:'worker/start-forwarded',phase:gate.phase,task,generation:next.generation});
+            originalPost.call(this,next,...args);
+          };
+          if (task === gate.claimOrder.at(-1)) {
+            const held = setInterval(() => {
+              if (!existsSync(${JSON.stringify(CLAIM_FORWARD)})) return;
+              clearInterval(held);
+              forward();
+            }, 5);
+          } else forward();
         }
         queuedStarts.clear();
       }
@@ -115,7 +125,8 @@ Worker.prototype.emit = function(event, ...args) {
   if (event==='message' && message?.kind==='started') trace({kind:'worker/started',task:message.task,generation:message.generation});
   if (event === 'message' && ['settled', 'failed'].includes(message?.kind) && message.task === ${JSON.stringify(TASKS[0])}
     && existsSync(${JSON.stringify(GATE)})) {
-    writeFileSync(${JSON.stringify(HELD)}, JSON.stringify(message));
+    writeFileSync(${JSON.stringify(HELD + '.tmp')}, JSON.stringify(message));
+    rename(${JSON.stringify(HELD + '.tmp')}, ${JSON.stringify(HELD)});
     const timer = setInterval(() => {
       if (existsSync(${JSON.stringify(RELEASE)})) {
         clearInterval(timer); trace({kind:'worker/released',task:message.task,generation:message.generation,outcome:message.kind});
@@ -145,20 +156,34 @@ if (code) process.exitCode = code;
   const claimReceipt = value => appendFileSync(CLAIM_TRACE, JSON.stringify({ sequence: ++claimSequence, at: Date.now(), ...value }) + '\n');
   const armClaimBarrier = phase => {
     if (failure !== 'departure note') return;
-    rmSync(CLAIM_HELD, { force: true }); rmSync(CLAIM_RELEASE, { force: true });
+    for (const file of [CLAIM_FORWARD, CLAIM_HELD, CLAIM_RELEASE]) rmSync(file, { force: true });
     writeFileSync(CLAIM_GATE, JSON.stringify({ phase, tasks: TASKS, requestOrder, claimOrder, owner: null, demands: {} }));
   };
   const waitClaims = async (phase, tasks, identity) => {
     const expected = JSON.parse(readFileSync(path.join(paths.directory, 'warden-demand.json'), 'utf8')).tasks;
-    let sample = null, observedBarrier = false;
+    let sample = null, observedBarrier = false, held = null;
+    const readTasks = () => tasks.map(task => ({ task, mark: readWardenMark(HOME, task), ordinal: store.readWardenGeneration(HOME, task) }));
+    if (failure === 'departure note') {
+      const [first, last] = claimOrder;
+      if (!await until(() => readWardenMark(HOME, first)?.pid === identity.pid))
+        throw new Error(`claim ${phase}: first owned mark was not written`);
+      const beforeBarrier = readTasks();
+      check(`warden claim ${label} ${phase}: the pre-barrier sample cannot see the held task mark`,
+        beforeBarrier.find(row => row.task === last)?.mark === null, JSON.stringify({ last, beforeBarrier }));
+      claimReceipt({ kind: 'claim/pre-barrier', phase, beforeBarrier });
+      writeFileSync(CLAIM_FORWARD, phase);
+      if (!await until(() => existsSync(CLAIM_HELD)))
+        throw new Error(`claim ${phase}: the mark-before-ordinal barrier was not entered`);
+      held = JSON.parse(readFileSync(CLAIM_HELD, 'utf8'));
+    }
     const ready = await until(async () => {
       const status = await client.workspaceServiceStatus(host, options);
       const acknowledgments = existsSync(TRACE) ? readFileSync(TRACE, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
         .filter(row => row.kind === 'worker/started' && row.owner === identity.pid && row.birth === identity.birth) : [];
-      sample = { kind: 'claim/observed', phase, sourceOrder: ['owner status response', 'actual started ledger', 'owner PID/birth observation', 'task mark/ordinal reads', 'durable demand read'],
+      sample = { kind: 'claim/observed', phase, sourceOrder: [...(held ? ['exact phase barrier'] : []), 'owner status response', 'actual started ledger', 'owner PID/birth observation', 'task mark/ordinal reads', 'durable demand read'],
         expectedOwner: identity, observedOwner: status.process, ownerState: state.processState(identity), coordinator: status.warden,
         expected, acknowledgments,
-        tasks: tasks.map(task => ({ task, mark: readWardenMark(HOME, task), ordinal: store.readWardenGeneration(HOME, task) })),
+        tasks: readTasks(),
         durable: JSON.parse(readFileSync(path.join(paths.directory, 'warden-demand.json'), 'utf8')) };
       claimReceipt(sample);
       const acknowledged = status.running && status.process.pid === identity.pid && status.process.birth === identity.birth
@@ -168,17 +193,17 @@ if (code) process.exitCode = code;
           && acknowledgments.some(ack => ack.task === row.task && ack.generation === expected[row.task]?.demand));
       // Keep the independent Worker ACK calibration beside done-user's baseline fence.
       const published = acknowledged && sample.tasks.every(row => initialTaskClaimStarted({ status, owner: identity, task: row.task,
-        initialDemand: expected[row.task], durableDemand: sample.durable.tasks[row.task], mark: row.mark, ownerState: sample.ownerState }));
-      if (failure === 'departure note' && existsSync(CLAIM_HELD) && !existsSync(CLAIM_RELEASE)) {
+        initialDemand: expected[row.task], durableDemand: sample.durable.tasks[row.task], mark: row.mark, ownerState: sample.ownerState }))
+        && (!held || sample.tasks.find(row => row.task === held.task)?.ordinal === held.ordinal + 1);
+      if (held && !observedBarrier) {
         observedBarrier = true;
-        const held = JSON.parse(readFileSync(CLAIM_HELD, 'utf8'));
         const row = sample.tasks.find(task => task.task === held.task);
         const oldMarkOnlyReady = sample.tasks.every(task => task.mark?.pid === identity.pid);
         const baselineReady = initialTaskClaimStarted({ status, owner: identity, task: held.task,
           initialDemand: expected[held.task], durableDemand: sample.durable.tasks[held.task], mark: row?.mark, ownerState: sample.ownerState });
         check(`warden claim ${label} ${phase}: published mark precedes its ordinal and actual started acknowledgment`,
           held.pid === identity.pid && held.birth === identity.birth && held.phase === phase && sample.ownerState === 'alive' && row?.mark?.pid === identity.pid
-          && row.ordinal === held.ordinal && oldMarkOnlyReady && !published && !baselineReady
+          && row.ordinal === held.ordinal && held.demands[held.task] === expected[held.task]?.demand && oldMarkOnlyReady && !published && !baselineReady
           && JSON.stringify(held.claimOrder) === JSON.stringify(claimOrder) && held.task === claimOrder.at(-1)
           && held.marks.every(mark => mark.claim?.owner.pid === identity.pid && mark.claim.owner.birth === identity.birth
             && mark.claim.demand === expected[mark.task]?.demand && mark.mark?.started === mark.claim.mark.started)
@@ -189,8 +214,6 @@ if (code) process.exitCode = code;
       }
       return published;
     });
-    if (failure === 'departure note' && !observedBarrier) check(`warden claim ${label} ${phase}: published mark precedes its ordinal and actual started acknowledgment`,
-      false, JSON.stringify({ reason: 'expected owned claim barrier was not observed', sample }));
     claimReceipt({ kind: 'claim/wait-result', phase, ready, sample, observedBarrier, missingAcknowledgment: !ready });
     return { ready, sample };
   };
@@ -352,6 +375,7 @@ if (code) process.exitCode = code;
       !!recovered && recovered.process.pid !== original.pid && exact && delivered,
       JSON.stringify({ recovered: recovered?.process, exact, delivered, recoveryProof, generations: TASKS.map(task => store.readWardenGeneration(HOME, task)) }));
   } finally {
+    if (failure === 'departure note') writeFileSync(CLAIM_FORWARD, 'owned start barrier insurance after verdict');
     writeFileSync(CLAIM_RELEASE, 'owned claim barrier insurance after verdict');
     unlock(); await lockPromise.catch(() => {}); writeFileSync(RELEASE, 'fixture insurance release');
     if (obstruction) { rmSync(obstruction, { recursive: true, force: true }); if (backup) renameSync(backup, obstruction); }

@@ -313,8 +313,8 @@ check('guide: the abort stop budget is one shared deadline over command and poll
   && !guide.includes('both are gone at the run\'s exit'));
 
 // Hold an actual scenario postcard until awaited native-stop cleanup has begun.
-async function scenarioPostcardCase(abort) {
-  const dir = path.join(SB, abort ? 'scenario-abort' : 'scenario-normal');
+async function scenarioPostcardAbort() {
+  const dir = path.join(SB, 'scenario-abort');
   mkdirSync(dir);
   const sock = makeSockPath('a2e-');
   const installed = await installHarness({ binDir: path.join(dir, 'bin'), sock });
@@ -340,11 +340,12 @@ async function scenarioPostcardCase(abort) {
   const resources = [];
   const held = [];
   const calls = [];
+  let initialized = false;
   let firstStatus = false;
+  const ready = Promise.withResolvers();
+  const readyToAbort = () => { if (firstStatus && held.length > 0) ready.resolve(true); };
   let context;
   let releaseCards = false;
-  let scenarioFailure;
-  const complete = new Error('scenario fixture complete');
   const harness = {
     scripted: true, sock, spawnFlags: [], reviewFlags: [],
     plan: (address, script) => planParticipant(installed.home, address, script),
@@ -359,6 +360,7 @@ async function scenarioPostcardCase(abort) {
       const write = child.stdin.write.bind(child.stdin);
       child.stdin.write = (chunk, ...args) => {
         const message = JSON.parse(String(chunk));
+        if (message.method === 'initialize') initialized = true;
         if (message.method === 'tools/call') calls.push({ name: message.params.name, aborted, cleanupHeld });
         return write(chunk, ...args);
       };
@@ -367,32 +369,27 @@ async function scenarioPostcardCase(abort) {
   const scenario = runScenario({ harness, sandbox: dir, timeouts: { step: 30_000, stall: 30_000 },
     listenSocket: (server, file) => {
       server.on('connection', (connection) => {
-        if (!releaseCards) { connection.pause(); held.push(connection); }
+        if (!releaseCards) { connection.pause(); held.push(connection); readyToAbort(); }
       });
       return listenTestSocket(server, file);
     },
     check: (name, condition, detail) => {
       if (!condition) throw new Error(`${name}: ${detail ?? ''}`);
-      if (name.startsWith('step 3: the first worker status')) firstStatus = true;
-      if (name.startsWith('step 5: the worker fetched the mailbox')) throw complete;
+      if (name.startsWith('step 3: the first worker status')) { firstStatus = true; readyToAbort(); }
     },
-  }).then((report) => ({ report }), (error) => { scenarioFailure = error; return { error }; });
+  }).then((report) => ({ report }), (error) => ({ error }));
   try {
-    const ready = await waitFor(() => firstStatus && held.length > 0, { timeoutMs: 30_000 });
-    if (!ready) throw scenarioFailure ?? new Error('scenario never held its step 3 postcard');
+    const delivery = await Promise.race([ready.promise, scenario]);
+    if (delivery !== true) throw delivery.error ?? new Error('scenario never held its step 3 postcard');
     const worktree = context.participants().find((p) => store.addressOf(p) === 'worker:e2e')?.metadata.worktree;
     const note = path.join(worktree, 'e2e/note.md');
     const before = existsSync(note);
-    if (abort) {
-      emitter.emit('SIGTERM');
-      if (!cleanupHeld || !releaseStop) throw new Error('native-stop barrier was not entered');
-    }
+    emitter.emit('SIGTERM');
+    if (!cleanupHeld || !releaseStop) throw new Error('native-stop barrier was not entered');
     releaseCards = true;
     for (const connection of held) connection.resume();
     const ended = await scenario;
-    const answered = calls.some((call) => call.name === 'promptobus_send');
-    if (answered) await waitFor(() => existsSync(note), { timeoutMs: 30_000 });
-    return { before, after: existsSync(note), calls, cleanupHeld,
+    return { before, after: existsSync(note), calls, cleanupHeld, initialized,
       ended: ended.error?.message ?? ended.report?.skipped ?? 'scenario completed' };
   } finally {
     releaseStop?.();
@@ -406,15 +403,9 @@ async function scenarioPostcardCase(abort) {
   }
 }
 
-const normalScenario = await scenarioPostcardCase(false);
-check('scenario abort: normal queued postcard dispatches the mailbox/body/answer flow and edits the worker note',
-  normalScenario.before === false && normalScenario.after === true && normalScenario.ended === 'scenario fixture complete'
-  && normalScenario.calls.map((call) => call.name).join(',') === 'promptobus_mailbox,promptobus_mailbox,promptobus_send'
-  && normalScenario.calls.every((call) => !call.aborted), JSON.stringify(normalScenario));
-
-const abortedScenario = await scenarioPostcardCase(true);
+const abortedScenario = await scenarioPostcardAbort();
 check('scenario abort: queued postcard cannot dispatch MCP while native stop is held',
-  abortedScenario.cleanupHeld && abortedScenario.ended === 'live run aborted'
+  abortedScenario.initialized && abortedScenario.cleanupHeld && abortedScenario.ended === 'live run aborted'
   && abortedScenario.calls.length === 0, JSON.stringify(abortedScenario));
 check('scenario abort: queued postcard cannot mutate the worker note while native stop is held',
   abortedScenario.before === false && abortedScenario.after === false

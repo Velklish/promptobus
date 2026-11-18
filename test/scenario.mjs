@@ -765,7 +765,20 @@ export async function runScenario({
     check('step 5: the warden reached the worker for the exact answer',
       knocked === true,
       JSON.stringify(healthOf(WORKER)));
-    const result1 = await waitFor(() => msgOf(store.ORCHESTRATOR, MARK.result1), { timeoutMs: step });
+    if (harness.consumeFirstResult) {
+      const queued = await waitFor(() => msgOf(store.ORCHESTRATOR, MARK.result1), { timeoutMs: step });
+      const consumed = await mcp.tool('promptobus_mailbox');
+      check('step 5: a mailbox read moves the first worker result into durable history before observation',
+        !!queued && !consumed.isError && consumed.text.includes(`message ${queued.id}`)
+        && existsSync(path.join(store.historyDir(home, TASK, store.ORCHESTRATOR), `${queued.id}.json`))
+        && !existsSync(path.join(store.inboxDir(home, TASK, store.ORCHESTRATOR), `${queued.id}.json`)), tail(consumed.text));
+    }
+    const result1 = await waitFor(() => {
+      const result = store.taskMessageHeaders(home, TASK).find(message => sentBy(message, WORKER)
+        && message.type === 'result' && message.recipients.includes(store.addrDir(store.ORCHESTRATOR))
+        && String(store.journalMessageBody(home, TASK, message.id, 'scenario result')).includes(MARK.result1));
+      return result && linkedNames(home, TASK, store.ORCHESTRATOR).includes(`${result.id}.json`) ? result : null;
+    }, { timeoutMs: step });
     check('step 5: the worker fetched the mailbox on the knock and sent the first result',
       sentBy(result1, WORKER) && result1?.type === 'result'
       && inboxOf(WORKER).length === 0, `${JSON.stringify(result1)} · ${wh.diagnose()}`);

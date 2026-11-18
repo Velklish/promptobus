@@ -215,6 +215,10 @@ Git input, the actual runner and a selected dependent assertion that fails.
 
 ## Suite isolation
 
+The release publication tests copy a verified candidate into a private directory per case. Each copy owns its source repository, bare remote, receipts and command stubs. The publication smoke still drives the npm entry point and installs the real tag from the local Git remote. The negative cases call the release script directly and inspect the same Git refs and refusal evidence.
+
+The full orchestration fixture consumes the first result through MCP before checking its durable receipt. It also checks the committed worker edit and waits for a real stall heartbeat. The abort fixture holds a postcard connection through native stop and checks for zero MCP dispatch.
+
 The Cursor fixture client (`openHttpBus` in
 [test/harness-cursor.mjs](../../test/harness-cursor.mjs)) retries one identical
 `initialize` request after an exact revision-drift 409 at the returned

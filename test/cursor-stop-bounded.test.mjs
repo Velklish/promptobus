@@ -35,13 +35,10 @@ if (!['darwin', 'linux'].includes(process.platform)) {
       workspaceHash: `hash-${name}`, launchId: `launch-${name}`, cwd: root, bin: path.join(bins, 'agent') };
     writeFileSync(native, JSON.stringify({ ...record, mode, ...extra })); writeSession(record);
     writeFileSync(path.join(root, `${name}.session`), [name, 0, 1, child.pid, 1, record.workspaceHash, record.chatId, '', ''].join('|') + '\n');
+    if (mode === 'fallback-positive') writeFileSync(path.join(root, `${name}.pane-pid`), `${identity.pid}\n`);
     const current = { name, mode, child, identity, native, record, release: path.join(root, `${name}.release`) };
     actors.push(current); note('fixture/owned-pane', { name, identity, mode }); return current;
   };
-  stubCommand(bins, 'ps', `
-import {spawnSync} from 'node:child_process';
-if(process.argv.includes('-p')) {const r=spawnSync('/bin/ps',process.argv.slice(2),{stdio:'inherit'});process.exitCode=r.status??1;}
-`);
   stubCommand(bins, 'agent', `
 import {appendFileSync,existsSync,readFileSync,rmSync} from 'node:fs';
 const name=process.argv.at(-1),file=${JSON.stringify(root)}+'/'+name+'.json';
@@ -72,6 +69,9 @@ if(process.argv.includes('kill-session')) {
   if(record) process.stdout.write([server,0,1,record.panePid,1,record.workspaceHash,record.chatId,'',''].join('|')+'\\n');
 }
 `);
+  writeFileSync(path.join(bins, 'ps'), `#!/bin/sh
+if [ "$1" = "-p" ]; then exec /bin/ps "$@"; fi
+`, { mode: 0o755 });
   const tmuxLauncher = path.join(bins, 'tmux');
   const readiness = `server=
 previous=
@@ -80,7 +80,15 @@ for argument do
   previous="$argument"
 done
 case "$*" in
-  *kill-session*) printf '%s\\n' "$$" > ${shellQuote(root)}/"$server.command-pid" ;;
+  *kill-session*)
+    printf '%s\\n' "$$" > ${shellQuote(root)}/"$server.command-pid"
+    if [ "$server" = "fallback-positive" ]; then
+      IFS= read -r pane_pid < ${shellQuote(root)}/"$server.pane-pid" || exit 1
+      case "$pane_pid" in ''|*[!0-9]*) exit 1 ;; esac
+      kill -TERM "$pane_pid" && /bin/rm ${shellQuote(root)}/"$server.json" || exit 1
+      printf '{"kind":"fallback/mutated","name":"%s","pid":%s}\\n' "$server" "$$" >> ${shellQuote(ledger)}
+      exit 0
+    fi ;;
   *list-sessions*)
     case "$server" in
       fallback-*)
@@ -127,7 +135,7 @@ esac
     }
     for (const mode of ['observation-exhausted', 'observation-replaced']) {
       const scale = await loadScale(), first = await actor(mode, mode, { holdMs: stretch(3500, scale) });
-      const second = await actor(`${mode}-second`, 'native-positive');
+      const second = mode === 'observation-replaced' ? await actor(`${mode}-second`, 'native-positive') : null;
       const edge = Date.now() + stretch(mode === 'observation-exhausted' ? 1800 : 5000, scale);
       let firstSettled = false, firstSettledAt = null;
       const pending = cursorDriver.stop(first.name, { timeoutMs: Math.max(0, edge - Date.now()) }).then(value => { firstSettled = true; firstSettledAt = Date.now(); return value; });
@@ -135,15 +143,17 @@ esac
       const held = rows().find(row => row.name === first.name && row.kind === 'observation/held');
       let observerIdentity = null;
       try { if (held) observerIdentity = requireProcess(held.pid); } catch {}
-      const otherBegan = Date.now(), otherTimeoutMs = Math.max(0, edge - Date.now());
-      const otherResult = await cursorDriver.stop(second.name, { timeoutMs: otherTimeoutMs });
-      const otherSettledAt = Date.now();
-      const otherConfirmedBeforeRelease = !existsSync(first.release) && !firstSettled && otherResult.ok === true && otherResult.stopped === true
-        && processState(second.identity) === 'dead' && rows().some(row => row.name === second.name && row.kind === 'native/confirmed')
-        && !rows().some(row => row.name === first.name && row.kind === 'observation/expired');
-      check('another owned participant initiates and confirms native Stop while post-native observation remains held', otherConfirmedBeforeRelease,
-        JSON.stringify({ mode, otherResult, firstSettled, firstSettledAt, observerIdentity, held, otherPaneState: processState(second.identity), edge, otherBegan, otherTimeoutMs, otherSettledAt }));
-      if (mode === 'observation-replaced') {
+      let concurrent = null;
+      if (second) {
+        const otherBegan = Date.now(), otherTimeoutMs = Math.max(0, edge - otherBegan);
+        const otherResult = await cursorDriver.stop(second.name, { timeoutMs: otherTimeoutMs });
+        const otherSettledAt = Date.now(), otherPaneState = processState(second.identity);
+        const confirmedBeforeRelease = !existsSync(first.release) && !firstSettled && otherResult.ok === true && otherResult.stopped === true
+          && otherPaneState === 'dead' && rows().some(row => row.name === second.name && row.kind === 'native/confirmed')
+          && !rows().some(row => row.name === first.name && row.kind === 'observation/expired');
+        concurrent = { otherBegan, otherTimeoutMs, otherSettledAt, otherResult, otherPaneState, confirmedBeforeRelease };
+        check('another owned participant initiates and confirms native Stop while post-native observation remains held',
+          confirmedBeforeRelease, JSON.stringify({ mode, ...concurrent, firstSettled, firstSettledAt, observerIdentity, held, edge }));
         const file = sessionFile(first.name);
         if (existsSync(file)) writeFileSync(file, readFileSync(file));
         else note('fixture/registry-already-retired', { name: first.name });
@@ -151,14 +161,16 @@ esac
       }
       const result = await pending;
       if (mode === 'observation-exhausted' && held) await wait(Math.max(0, held.at + stretch(3700, scale) - Date.now()));
-      const trace = { mode, scale, edge, firstSettledAt, otherBegan, otherTimeoutMs, otherSettledAt, result, firstPane: first.identity, firstPaneState: processState(first.identity), observerIdentity,
-        observerState: observerIdentity ? processState(observerIdentity) : 'not observed alive', otherConfirmedBeforeRelease,
+      const trace = { mode, scale, edge, firstSettledAt, concurrent, result, firstPane: first.identity, firstPaneState: processState(first.identity), observerIdentity,
+        observerState: observerIdentity ? processState(observerIdentity) : 'not observed alive',
         recordPresent: !!readSession(first.name), nativePresent: existsSync(first.native), rows: rows().filter(row => row.name === first.name) };
       writeSync(1, `  · bounded-observation-receipt: ${JSON.stringify(trace)}\n`);
       check('expired or replaced post-native observation grants no fallback authority and retains UNKNOWN',
         result.ok === false && result.stopped === false && trace.firstPaneState === 'alive' && trace.recordPresent && trace.nativePresent
         && trace.observerState === 'dead' && !trace.rows.some(row => row.kind === 'fallback/requested')
-        && (mode !== 'observation-exhausted' || !trace.rows.some(row => row.kind === 'observation/expired')), JSON.stringify(trace));
+        && (mode === 'observation-exhausted'
+          ? /deadline/i.test(result.note) && !trace.rows.some(row => row.kind === 'observation/expired')
+          : /registry revision changed/i.test(result.note)), JSON.stringify(trace));
     }
   } finally {
     note('fixture/insurance-after-verdict', { identities });

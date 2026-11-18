@@ -54,8 +54,8 @@ for (const [index, title] of ['Original root', 'Different root'].entries()) {
     && registrySessions(env).filter(record => record.task === task).length === 1,
     `${retry.status} ${retry.stdout}${retry.stderr}`);
   if (pidAlive(retained.appPid)) process.kill(retained.appPid, 'SIGKILL');
-  if (pidAlive(retained.holderPid)) process.kill(retained.holderPid, 'SIGKILL');
-  await waitFor(() => !pidAlive(retained.appPid) && !pidAlive(retained.holderPid), { timeoutMs: 10000 });
+  const retired = await waitFor(() => !pidAlive(retained.appPid) && !pidAlive(retained.holderPid), { timeoutMs: 10000 });
+  if (!retired) throw new Error(`Owned unbound holder ${retained.ref} did not finish app-server exit cleanup`);
   const replacement = spawnSync(process.execPath, [cli, ...args, '--title', title], {
     cwd: root, env, encoding: 'utf8', timeout: 30000,
   });
