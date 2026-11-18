@@ -60,3 +60,9 @@ Execute this bounded batch in queue order, preserving the separate decision or e
 ## Triage disposition, 2026-11-13
 
 The owner requested completion of the remaining triage. This is a scoped queued task with work and verification defined above. Decision/investigation steps precede any dependent implementation; unmeasured claims and explicit authority boundaries remain unchanged.
+
+## Additional batch member
+
+- [PB-315.1 · Qualify historical Codex bus-call cost in launch output](../minor/PB-315.1-codex-historical-bus-cost.md).
+
+Label historical Codex cost as historical; no new live measurement.

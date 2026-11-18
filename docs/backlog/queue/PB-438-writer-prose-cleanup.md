@@ -62,3 +62,9 @@ Execute this bounded batch in queue order, preserving the separate decision or e
 ## Triage disposition, 2026-11-13
 
 The owner requested completion of the remaining triage. This is a scoped queued task with work and verification defined above. Decision/investigation steps precede any dependent implementation; unmeasured claims and explicit authority boundaries remain unchanged.
+
+## Additional batch member
+
+- [PB-330 · The release writer pass does not say whether its documentation fixes carry a check that fails on the old text](../minor/PB-330-release-writer-fix-check.md).
+
+Clarify which release-writer corrections need a regression check and verify the two historical examples.

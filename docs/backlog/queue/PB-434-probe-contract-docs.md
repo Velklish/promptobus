@@ -60,3 +60,9 @@ Execute this bounded batch in queue order, preserving the separate decision or e
 ## Triage disposition, 2026-11-13
 
 The owner requested completion of the remaining triage. This is a scoped queued task with work and verification defined above. Decision/investigation steps precede any dependent implementation; unmeasured claims and explicit authority boundaries remain unchanged.
+
+## Additional batch member
+
+- [PB-328 · The handover record holds one mutation probe](../minor/PB-328-handover-one-probe-slot.md).
+
+Separately evaluate multiple probe records; keep single-record compatibility and reject malformed entries by name. This is a schema change, not a wording fix.

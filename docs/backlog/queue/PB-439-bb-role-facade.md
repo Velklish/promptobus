@@ -87,3 +87,9 @@ The owner requested completion of the remaining triage. This is a scoped queued 
 ## Ordinary member records
 
 PB-419.20, PB-419.21, PB-419.22 remain open in deferred while this batch owns their execution. After their criteria are accepted, close each ordinary record with its own preserved task/result; `archive --into` is reserved for minor entries. Do not close any member merely because the batch was scheduled.
+
+## Additional batch member
+
+- [PB-419.35 · Correct unsupported reporter harness diagnostics](../minor/PB-419.35-correct-unsupported-reporter-harness-diagnostics.md).
+
+Check unsupported reporter diagnostics against the same harness inventory as admission.
