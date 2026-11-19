@@ -16,11 +16,11 @@ The standalone CLI still has to run without any embedding product. It needs a ho
 
 1. **Bake a workspace layout into the bus.** Cheapest for one product. The bus then cannot ship as its own package: every path and tool name becomes part of its public surface.
 2. **Process-wide singleton host.** One assignment at startup. Two hosts in one process stop being independent, and tests have to mutate global state.
-3. **`PromptobusHost` passed on every call.** The caller names the workspace for that call. Two hosts in one process stay independent. The standalone CLI builds one host and passes it in.
+3. **`PromptobusHost` passed on every call.** The caller names the workspace for that call. The standalone CLI builds one host and passes it in. The native helpers' shared process bindings are the exception below.
 
 ## Decision
 
-The bus does not know the workspace. Knowledge of the workspace lives behind `PromptobusHost` (`src/host.ts`). The caller passes a host into every CLI entry, library helper, and hook planner that needs one. There is no process-wide singleton.
+The bus does not know the workspace. Knowledge of the workspace lives behind `PromptobusHost` (`src/host.ts`). The caller passes a host into every CLI entry, library helper, and hook planner that needs one. There is no singleton Host for workspace callbacks. For native helpers with no Host argument, the first process-wide harness-home and post-lift tool-binary bindings win. Shared-service clients supply explicit client context for identity and wake operations; admission checks the common native bindings instead of switching them. See the [Host binding details](../reference/02-host.md#the-harness-session-registry-and-the-refusal-when-nobody-says).
 
 `PromptobusHost` answers workspace questions: command name and version, workspace root and store home, tool list, skill and plugin paths, MCP servers for a participant, repository resolve, freshness, extra environment, and how to format commands. Field names describe a workspace in general, not one product's directories.
 
@@ -36,7 +36,7 @@ creation; it does not infer product paths or mutate them. See
 ## Consequences
 
 - A second product hosts the bus by implementing `PromptobusHost`. It does not fork the bus to change paths.
-- Tests and adapters may construct two hosts in one process. Nothing hidden in module scope joins them.
+- Tests and adapters may construct two hosts in one process. This does not give them independent native registry or post-lift tool-binary bindings.
 - The standalone CLI is one host among others; no host provides a migration implementation.
 - Upgrade diagnostics name paths the embedding product owns. The package never guesses a product's former directory.
 - New workspace facts go on the host, not into core or driver files.

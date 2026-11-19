@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Document the Host's shared native bindings, observer output shapes and the source of teamlead and reporter working directories.
 - Clarify when a release-writer correction needs a regression check while retaining the CLI help and shipped-skill ledger requirements.
 - Remove the unmeasured Codex bus-call cost from lift output and point historical captures to the current contract guide.
 - Clarify which owner mail wakes a participant and how native Stop precedes task closure and service shutdown.

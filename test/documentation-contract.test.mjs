@@ -41,6 +41,46 @@ check('docs: participant file-stem list includes the child root prefix',
 check('docs: orchestration send routes admit the child-side root address',
   has(read('skills/orchestrate/SKILL.md'), "governance routes also admit registered teamleads, a child task's `root:<root slug>`, linked peers and `user` under their message-type rules"));
 
+const hostReference = read('docs/reference/02-host.md');
+const readerAssertion = read('test/host.test.mjs').match(/const expectedToolBinReaders = (\d+);/)?.[1];
+const toolBinDocs = section(hostReference, '## Tool binaries');
+check('docs: HostToolBin reader count describes the dynamic source scan',
+  readerAssertion !== undefined
+  && has(toolBinDocs, 'dynamically discovers driver and availability adapter source files, adds `lib/harness-home.ts`, deduplicates source paths')
+  && has(toolBinDocs, `asserts ${readerAssertion} source readers, not a fixed number of drivers or adapters`)
+  && has(toolBinDocs, 'investigating which reader was added, removed or missed by the scan')
+  && !has(toolBinDocs, 'finds seven readers'));
+
+const standaloneDecision = adr('002', 'standalone-host-contract');
+const shortHost = section(hostReference, '### The host contract, in one sentence per member');
+check('docs: passed Hosts do not bypass first native bindings or explicit service client context',
+  [standaloneDecision, shortHost].every(text => has(text, 'first process-wide harness-home and post-lift tool-binary bindings win')
+    && has(text, 'explicit client context') && has(text, 'admission checks the common native bindings'))
+  && !/Nothing hidden in module scope joins them|Two hosts in one process stay independent|one process are lawful and independent/.test(compact(standaloneDecision + shortHost)));
+
+const observerRoot = 'integrations/bb-native-observer';
+const observerDocs = section(read(`${observerRoot}/README.md`), '## Observer boundary');
+const observerContract = read(`${observerRoot}/contract.ts`);
+check('docs: observer catalogue and bounded owner feed follow their separate outputs',
+  has(observerContract, 'tasks: { input: rootsSchema, output: catalogueSchema }, ownerFeed: { input: selectionSchema, output: ownerFeedSchema }')
+  && has(observerDocs, '`tasks` returns the catalogue `{tasks, truncated, scanned}`: at most 256 valid tasks from at most 4096 scanned directory entries')
+  && has(observerDocs, '`ownerFeed` returns `taskId`, `state`, `ownerParticipantId`, `ownerSessionRef` and up to 4096 owner message headers in `messages`: `id`, `sender`, `recipients` and `type`, without bodies')
+  && has(observerDocs, 'A missing task or store returns `not prepared`, an empty owner participant id, a null session reference and no messages'));
+
+const launchDocs = ['docs/guides/hooks-and-trust.md', 'docs/reference/05-drivers.md'];
+for (const [role, file, planner, oldCitation] of [
+  ['teamlead', 'spawn', 'planTeamlead', 'lib/spawn.js:726'],
+  ['reporter', 'report', 'planReport', 'lib/report.js:180'],
+]) {
+  const body = read(`lib/${file}.ts`).split(`export async function ${planner}(`)[1]?.split('\nexport ', 1)[0] ?? '';
+  check(`docs: ${role} install-root citation identifies the planner that supplies launch cwd`,
+    /const root = canonicalPath\(host\.workspaceRoot\(\)\)/.test(body)
+    && /driver\.prepare!\(\{[\s\S]*?cwd: root, root,/.test(body)
+    && launchDocs.every(doc => has(read(doc), `[\`${planner}\`](../../lib/${file}.ts)`)
+      && has(read(doc), 'both pass the canonical `host.workspaceRoot()` as the launch `cwd`')
+      && !has(read(doc), oldCitation)));
+}
+
 check('docs: readable owner progress neither wakes nor escalates; blocking HOLD needs a question',
   has(read('docs/reference/04-protocol.md'), 'the warden neither knocks nor escalates to `SILENT`')
   && has(read('docs/reference/04-protocol.md'), 'an unreadable inbox remains conservatively actionable')

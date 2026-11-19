@@ -114,8 +114,10 @@ See [ADR-033](../adr/adr-033-bb-provider-routing.md).
 
 The current project hook is a loop guard: Claude Code and Codex install Stop and SessionStart,
 while Cursor installs stop only (`src/hooks.ts`, `lib/install.js`). A former PostToolUse feed
-hook and its runner are recognised for removal during install or uninstall. Teamlead and reporter sessions work at the install root (`lib/spawn.js:726`, `lib/report.js:180`);
-workers and approvers use worktrees, and diff reviewers use separate directories. The
+hook and its runner are recognised for removal during install or uninstall.
+Teamleads and reporters work at the install root: [`planTeamlead`](../../lib/spawn.ts)
+and [`planReport`](../../lib/report.ts) both pass the canonical `host.workspaceRoot()` as the launch `cwd`.
+Workers and approvers use worktrees, and diff reviewers use separate directories. The
 participant launch supplies its own identity to the guard.
 
 ## Participant binding before launch
