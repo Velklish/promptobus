@@ -65,9 +65,13 @@ for (const [script, fileVar] of [['live-codex.mjs', 'CONFIG'], ['live-mixed.mjs'
     const existing = run(foreign, foreign);
     const gone = run(foreign, {});
     const added = run(foreign, { pgrep: { [pattern]: match(101, 202) } });
+    const replaced = run(foreign, { pgrep: { [pattern]: match(202) } });
+    const failsOn202 = (result) => result.code === 1
+      && result.verdicts.filter(v => !v.ok).some(v => v.name.includes(pattern) && v.detail === '202');
     check(`${script}: ${pattern} subtracts foreign PIDs, but fails for a new PID`,
-      existing.code === 0 && gone.code === 0 && added.code === 1
-      && added.verdicts.filter(v => !v.ok).some(v => v.name.includes(pattern) && v.detail === '202'), JSON.stringify(added));
+      existing.code === 0 && gone.code === 0 && failsOn202(added), JSON.stringify(added));
+    check(`${script}: ${pattern} fails when a new PID replaces a foreign one at the same count`,
+      failsOn202(replaced), JSON.stringify(replaced));
   }
 
   const failures = [
