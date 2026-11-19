@@ -274,10 +274,11 @@ for (const [name, argv] of [
 {
   const help = await capture(() => runPromptobusHelp());
   const unknown = await refuse(['nonsense']);
+  const commands = unknown.out.match(/unknown command "nonsense" — ([^\r\n]+)/)?.[1].split(', ') ?? [];
   check(': `send` is named where a person would find it — help and the subcommand list',
     /promptobus send <address> \(--body <text> \| --file <path>\)/.test(help)
-      && /status, digest, send, ask, link, unlink, message-order, done/.test(unknown.out),
-    `${help.slice(0, 200)} · ${unknown.out}`);
+      && unknown.failed && commands.includes('send'),
+    `${help.split('\n').find((line) => line.includes(' send '))} · ${unknown.out}`);
 }
 
 const lastIn = (task, addr) => {

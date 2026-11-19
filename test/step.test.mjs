@@ -258,7 +258,9 @@ test('the one direct route joins the declared owner and writes-main-tree step on
   assert.throws(() => send('builder:piece', 'security:piece'), /through the orchestrator/);
   const attachment = path.join(box, 'security-attachment.txt');
   writeFileSync(attachment, 'not sent');
-  assert.throws(() => send('security:piece', 'builder:piece', 'artifact', attachment), /through the orchestrator/);
+  assert.throws(() => send('security:piece', 'builder:piece', 'artifact', attachment), {
+    message: 'reviewer checkpoint: reviewers cannot attach filesystem paths',
+  });
   store.sendMessage(home, routedTask, { from: 'builder:piece', to: store.ORCHESTRATOR, type: 'result', body: 'reported' });
   store.sendMessage(home, routedTask, { from: 'security:piece', to: store.ORCHESTRATOR, type: 'result', body: 'reported' });
   const keyedHost = {

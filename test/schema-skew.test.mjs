@@ -235,11 +235,12 @@ try {
   delete handover.$defs.mutationProbe.properties.expected;
   writeFileSync(handoverFile, JSON.stringify(handover));
   const dropped = run(['--checkout', repo, '--resolve-from', realFrom]);
-  check('schema-skew: a field added under mutationProbe on the real handover schema exits red',
+  check('schema-skew: a field added on a single probe and on list items in the real handover schema exits red',
     dropped.code === 1
       && dropped.out.includes('schemas/v1/handover-record.schema.json: /checks/mutationProbe/expected — property the installed schema does not define')
+      && dropped.out.includes('schemas/v1/handover-record.schema.json: /checks/mutationProbe/0/expected — property the installed schema does not define')
       && dropped.out.includes(RELEASE)
-      && dropped.out.includes('2 record schema(s) compared, 1 the running bus would refuse'),
+      && dropped.out.includes('2 record schema(s) compared, 2 the running bus would refuse'),
     dropped.out);
 
   const checkout = path.join(realRoot, 'checkout');

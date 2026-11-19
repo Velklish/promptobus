@@ -10,7 +10,7 @@ import * as store from '../lib/store.js';
 
 const stand = makeSandbox('promptobus-contact-list-');
 const home = path.join(stand, '.promptobus');
-store.bus(home, { cli: 'suite' });
+const bus = store.bus(home, { cli: 'suite' });
 const artifactPath = path.join(stand, 'contact.txt');
 writeFileSync(artifactPath, 'contact evidence\n');
 const HINTS = { status: 'promptobus status' };
@@ -34,7 +34,9 @@ store.upsertParticipant(home, ROOT, store.participantRecord('reporter'));
 for (const task of [ROOT, CHILD]) {
   store.upsertParticipant(home, task, store.participantRecord('user'));
   for (const step of ['worker', 'reviewer', 'approver']) {
-    store.upsertParticipant(home, task, store.participantRecord(`${step}:w`, { sessionId: `${step}-${task}` }));
+    const participant = store.participantRecord(`${step}:w`, { sessionId: `${step}-${task}` });
+    if (step === 'reviewer') bus.assignParticipant(task, participant);
+    else store.upsertParticipant(home, task, participant);
   }
 }
 
@@ -97,9 +99,20 @@ function expectedLine(task, sender) {
 }
 
 function send(task, from, to, type) {
+  const body = `${from} to ${to}: ${type}`;
+  const message = { from, to, type, body, session: sessionOf(task, from) };
+  if (type === 'artifact' && from === 'reviewer:w') {
+    const snapshot = { head: '1'.repeat(40), base: '2'.repeat(40), diffSha256: '3'.repeat(64) };
+    store.stampSnapshot(home, task, from, {
+      ...snapshot, at: new Date().toISOString(), clean: true, modifiedTracked: [],
+    });
+    const { assignmentAfterId } = store.participantOf(store.readTask(home, task), from).metadata;
+    return store.sendMessage(home, task, {
+      ...message, artifact: { content: body, subject: { ...snapshot, assignmentAfterId } },
+    }, HINTS);
+  }
   return store.sendMessage(home, task, {
-    from, to, type, body: `${from} to ${to}: ${type}`, session: sessionOf(task, from),
-    ...(type === 'artifact' ? { artifactPath } : {}),
+    ...message, ...(type === 'artifact' ? { artifactPath } : {}),
   }, HINTS);
 }
 
@@ -111,10 +124,18 @@ for (const task of [ROOT, CHILD]) {
       const allowed = TABLE[task][sender][i];
       test(`${sender} → ${recipient} in the ${task === ROOT ? 'root' : 'child'} task: ${allowed.length ? allowed.join(', ') : 'nothing'}`, () => {
         for (const type of ALL) {
+          const checkpoint = type === 'artifact' && sender === 'reviewer:w';
           if (allowed.includes(type)) {
             const sent = send(task, sender, recipient, type);
             assert.equal(sent.message.type, type);
             if (!sent.deliveredTask) assert.deepEqual(sent.message.recipients, [store.addrDir(recipient)]);
+            if (checkpoint) assert.equal(sent.checkpoint, true);
+            continue;
+          }
+          if (checkpoint) {
+            assert.throws(() => send(task, sender, recipient, type), {
+              message: 'reviewer checkpoint: inline artifact to orchestrator required',
+            });
             continue;
           }
           assert.throws(() => send(task, sender, recipient, type), (e) => {

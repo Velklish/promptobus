@@ -384,7 +384,7 @@ test('send checks both record by fields against the declared registry after gene
   const task = store.createTask(home, {
     id: 'registry-records-t20260926-120000', title: 'record addresses', owner: null,
   });
-  store.upsertParticipant(home, task.id, store.participantRecord('security:x', {}, FOUR_REG));
+  store.upsertParticipant(home, task.id, store.participantRecord('worker:x', { sessionId: 'evidence-writer' }, FOUR_REG));
   const at = '2026-09-26T12:00:00.000Z';
   const sha = 'a'.repeat(40);
   const gate = (by) => ({ schemaVersion: 1, records: [
@@ -398,7 +398,7 @@ test('send checks both record by fields against the declared registry after gene
     const file = path.join(SB, 'records', name);
     writeFileSync(file, JSON.stringify(document));
     return store.sendMessage(home, task.id, {
-      from: 'security:x', to: 'orchestrator', type: 'artifact', body: name, artifactPath: file,
+      from: 'worker:x', to: 'orchestrator', type: 'artifact', body: name, artifactPath: file, session: 'evidence-writer',
     }, { status: 'status', registry });
   };
   assert.ok(send('gates-security.json', gate('security:x')).artifact);
@@ -419,12 +419,12 @@ test('send checks both record by fields against the declared registry after gene
   const builderTask = store.createTask(home, {
     id: 'registry-builder-t20260926-120000', title: 'renamed owner records', owner: null,
   });
-  store.upsertParticipant(home, builderTask.id, store.participantRecord('builder:x', {}, builderRegistry));
+  store.upsertParticipant(home, builderTask.id, store.participantRecord('merge:x', { sessionId: 'evidence-writer' }, builderRegistry));
   const sendBuilder = (name, document, registry) => {
     const file = path.join(SB, 'records', name);
     writeFileSync(file, JSON.stringify(document));
     return store.sendMessage(home, builderTask.id, {
-      from: 'builder:x', to: 'orchestrator', type: 'artifact', body: name, artifactPath: file,
+      from: 'merge:x', to: 'orchestrator', type: 'artifact', body: name, artifactPath: file, session: 'evidence-writer',
     }, { status: 'status', registry });
   };
   assert.ok(sendBuilder('gates-builder.json', gate('builder:x'), builderRegistry).artifact);
@@ -461,7 +461,7 @@ test('dismiss, stop and sweep accept a declared gate and sweep keeps its owner t
     worktree: ownerTree, repoAbs: repo,
   }, registry));
   store.upsertParticipant(home, task.id, store.participantRecord('security:x', {
-    harness: 'claude', mode: 'managed', sessionRef: 'security-session',
+    harness: 'claude', mode: 'managed', sessionRef: 'security-session', sessionId: 'security-session',
     worktree: ownerTree, repoAbs: repo,
   }, registry));
   let alive = true;
@@ -476,11 +476,18 @@ test('dismiss, stop and sweep accept a declared gate and sweep keeps its owner t
     stop: (ref) => { calls.push(ref); alive = false; return { ok: true, stopped: true, note: 'closed' }; },
   };
   const drivers = bus.createRegistry({ drivers: { claude: driver }, fallback: 'claude' });
-  const proof = path.join(root, 'security-proof.txt');
-  writeFileSync(proof, 'security proof');
-  const artifact = store.sendMessage(home, task.id, {
-    from: 'security:x', to: 'orchestrator', type: 'artifact', body: 'proof', artifactPath: proof,
+  const assignment = store.sendMessage(home, task.id, {
+    from: 'orchestrator', to: 'security:x', type: 'task', body: 'Review the owner tree', session: ownerSession,
   }, { status: 'status', registry });
+  const snapshot = { head: git('rev-parse', 'HEAD').stdout.trim(), base: '2'.repeat(40), diffSha256: '3'.repeat(64) };
+  store.stampSnapshot(home, task.id, 'security:x', {
+    ...snapshot, at: assignment.message.ts, clean: true, modifiedTracked: [],
+  });
+  const artifact = store.sendMessage(home, task.id, {
+    from: 'security:x', to: 'orchestrator', type: 'artifact', body: 'proof', session: 'security-session',
+    artifact: { content: 'security proof', subject: { ...snapshot, assignmentAfterId: assignment.message.id } },
+  }, { status: 'status', registry });
+  assert.equal(artifact.checkpoint, true);
   const mcp = store.participantMcpPath(home, task.id, 'security:x');
   const settings = store.participantSettingsPath(home, task.id, 'security:x');
   mkdirSync(path.dirname(mcp), { recursive: true });

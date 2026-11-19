@@ -1019,7 +1019,7 @@ const earlierFindings = 'Earlier finding: obsolete detail';
 const priorFindings = '\nmajor — Проверить закрытие α\n  keep  two spaces\n\n```text\nsecond finding → β\n```\n' + checkpointReports[0] + '\r\n\u0000end of terminal result\n';
 // english-authoring: end
 let findingsClock = Date.now();
-const { openEngine } = await import('../dist/index.js');
+const { boundSessionOf, openEngine } = await import('../dist/index.js');
 const findingsEngine = openEngine({ home, now: () => new Date(findingsClock), recover: false,
   policy: () => ({ allow: true }) });
 const findingsMessages = [];
@@ -1438,17 +1438,14 @@ check(`: the reviewer's session isn't in claude agents — a refusal, not a repo
 check(`: the refusal for a session that didn't happen names the route to re-raise the reviewer`,
   /Start the reviewer again: promptobus review/.test(silent.text)
   && silent.text.includes(`--task ${silentTask.id}`), silent.text);
-const silentPart = store.participantOf(store.readTask(home, silentTask.id), 'reviewer:orders-api')?.metadata;
+const silentReviewer = store.participantOf(store.readTask(home, silentTask.id), 'reviewer:orders-api');
+const silentPart = silentReviewer?.metadata;
 check(`: the reviewer's record is in place even after the refusal — a repeat will raise it under the same address`,
   !!silentPart, JSON.stringify(store.readTask(home, silentTask.id).participants));
-check(`: the silent reviewer record writes an explicit missing session reference`,
-  !!silentPart
-  && Object.hasOwn(silentPart, 'session') && silentPart.session === null
+check(`: the silent reviewer record has no sender binding after rollback`,
+  !!silentReviewer && boundSessionOf(silentReviewer) === null
   && !Object.hasOwn(silentPart, 'sessionId'), JSON.stringify(silentPart));
-// Review note: only a successful raise clears the `pending` mark. A second upsert also
-// happens on refusal (the session id is appended in every outcome), and applyParticipant
-// replaces the record wholesale — without this branch the record would become
-// indistinguishable from a live reviewer's record.
+// A failed raise keeps the pending mark after rolling back the session binding.
 check('review note: a refusal for a session that didn\'t happen does not clear the pending mark',
   silentPart?.pending === true, JSON.stringify(silentPart));
 // What it's all for: on an unparsed `claude agents --json`, a repeat without the mark
@@ -2829,14 +2826,15 @@ const failed = spawnSync(process.execPath, ['--input-type=module', '-e',
 ], { encoding: 'utf8', env: { ...process.env, PATH: `${BIN}${path.delimiter}${PATH0}` } });
 const failText = `${failed.stdout}${failed.stderr}`;
 const orphanTask = store.activeTasks(home).find((t) => t.title === FAIL_TITLE);
-const failedReviewer = store.participantOf(orphanTask, 'reviewer:fresh-api')?.metadata;
+const orphanReviewer = store.participantOf(orphanTask, 'reviewer:fresh-api');
+const failedReviewer = orphanReviewer?.metadata;
 check(': a failed launch refuses instead of staying silent',
   failed.status === 1 && /claude --bg exited with code 1/.test(failText),
   `status=${failed.status} ${failText}`);
 check(': the participant is recorded before launch and the session is not fabricated',
   !!failedReviewer && failedReviewer.repo === 'repos/demo_team/fresh-api'
   && failedReviewer.repoAbs === realpathSync(FRESH) && failedReviewer.name?.startsWith('Review: ')
-  && Object.hasOwn(failedReviewer, 'session') && failedReviewer.session === null
+  && boundSessionOf(orphanReviewer) === null
   && !Object.hasOwn(failedReviewer, 'sessionId'), JSON.stringify(failedReviewer));
 // review() itself sets the mark, not the test: without it a repeat of the command would
 // take this record for a live reviewer and send the diff into a mailbox behind which
