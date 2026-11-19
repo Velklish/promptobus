@@ -689,6 +689,14 @@ check('docs: a window fixed in milliseconds is stretched by the load of the mach
   has(suiteIsolation, '`loadScale()` in [test/sandbox.mjs](../../test/sandbox.mjs) starts a child that burns 40 ms of CPU time and reports how long that took on the clock')
   && has(section(read('CHANGELOG.md'), '## [0.32.5] — 2026-11-09'), 'stretch their fixed deadlines and waits by the measured load of the machine'),
   'suite isolation no longer says how fixed windows are stretched on a loaded machine');
+const observerReadme = read(`${observerRoot}/README.md`);
+check('docs: the observer board has a Done column only for an inferred pipeline',
+  has(observerReadme, 'Only a run without a recorded pipeline, where the order is inferred, has a **Done** column')
+  && has(observerReadme, 'go under **Next step unconfirmed**, not Done.')
+  && !has(observerReadme, 'A piece every step has reported on is in **Done**.')
+  && has(read(`${observerRoot}/dashboard.ts`), "label: run.startSteps ? 'Next step unconfirmed' : 'Done'"),
+  'the observer README presents Done as universal, or the dashboard no longer limits Done to an inferred pipeline');
+
 check('docs: models probes by default in the orchestrate skill, abandon refuses a BB task, and the sweep ADR keeps artifacts',
   has(orchestrateSkill, '[--refresh | --no-probe] [--json]')
   && has(orchestrateSkill, 'It probes the harnesses by default and updates the availability cache; `--no-probe` reads the cached readings only.')
