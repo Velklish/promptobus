@@ -476,9 +476,10 @@ consecutive `status` bodies starting with `Review <grant-token> part i/N` and a
 newline, followed by the exact payload. One terminal `result` retains the four-line
 hand-off header, severity totals, `Review <grant-token> complete N/N` and the sole
 all-calls release. A report wholly in the result uses `complete 0/0`. The
-orchestrator retains the full bodies on mailbox read, including status parts received before the result,
+orchestrator retains each full body and canonical message id on the first mailbox read, including status parts received before the result,
 checks sender, grant token, totals, order and release, and rejects incomplete,
-duplicated or reordered reports before relying on them. This is a procedural
+duplicated or reordered reports before relying on them. Slot reuse also requires confirmed
+retirement of the exact grant against the observed control revision. This is a procedural
 check; the bus does not assemble or validate parts. Reviewers need no artifact,
 shell or filesystem write. See [bounded reviewer reports](../../docs/reference/04-protocol.md#bb-bounded-reviewer-reports).
 

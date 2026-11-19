@@ -956,7 +956,9 @@ No native warden or Stop-hook veto is added to this path.
 An all-calls release identifies the authenticated actor, authorization token and
 exact completed command scope. It confirms zero pending and running calls and no
 further calls from that grant. The orchestrator compares the release with current
-control and acknowledges it before reallocating the slot. A runner-only release
+control and publishes removal of that exact grant against the observed revision.
+Only confirmed retirement permits slot reuse. A stale revision requires a new
+control read; a delayed release never retires the successor. A runner-only release
 does not authorize closure lint; remaining work requires a fresh complete grant
 prebound before delivery, with scope, preconditions and owner confirmation in the
 same canonical task.
@@ -1054,10 +1056,12 @@ A failed or uncertain send leaves the report incomplete; the reviewer reports th
 gap without claiming completion, silently resending an uncertain part or releasing
 the grant as completed.
 
-The orchestrator retains every full canonical body at mailbox read, including status
-parts received on earlier turns. It checks the authenticated sender, current grant token,
+On the first mailbox read the orchestrator retains each full body with its canonical
+message id, including parts received before the terminal result, across turns.
+It checks the authenticated sender, current grant token,
 fixed total, consecutive order, severity totals and single terminal result/release
-before relying on the review or reusing the slot. Missing, duplicated, reordered
+before relying on the review. Before reusing the slot it confirms revision-checked
+retirement of that exact grant. Missing, duplicated, reordered
 or mixed-token parts, inconsistent totals, and an absent or early release are
 rejected. This is a procedural check in the selected role instructions; the bus
 does not assemble or validate report parts. A gap needs repair under the current
