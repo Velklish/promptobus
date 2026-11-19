@@ -1,14 +1,34 @@
 // Execute the production scenario and abort block with a held hello and stop, without binaries.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { check } from './check.mjs';
 import { makeSandbox } from './sandbox.mjs';
 import * as cursorPersist from '../lib/cursor-persist.js';
 import { recordVersion, sameRecordVersion } from '../lib/service-state.js';
+import { wardenMarkFile } from '../dist/sidecar.js';
 
 const source = readFileSync(new URL('../scripts/live-mixed.mjs', import.meta.url), 'utf8');
 const block = source.slice(source.indexOf('const ABORT_STOP_MS ='), source.indexOf('if (!aborted) {\n  // --- hygiene:'));
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+const seatStart = source.indexOf('function observeWardenSeat() {');
+const seatEnd = source.indexOf('\nconst wardenEnv =', seatStart);
+if (seatStart < 0 || seatEnd <= seatStart) throw new Error('Mixed warden seat observation boundary is missing');
+const seatObserver = source.slice(seatStart, seatEnd);
+const seatRoot = makeSandbox('promptobus-promptobus-live-mixed-stand-');
+const seatTask = 'fixture-t20261120-000000';
+const seatHomes = Object.fromEntries(['absent', 'present', 'unknown'].map(state => [state, path.join(seatRoot, state)]));
+const retainedMark = wardenMarkFile(seatHomes.present, seatTask);
+mkdirSync(path.dirname(retainedMark), { recursive: true });
+writeFileSync(retainedMark, '{malformed warden mark');
+const blockedParent = path.dirname(wardenMarkFile(seatHomes.unknown, seatTask));
+mkdirSync(path.dirname(blockedParent), { recursive: true });
+writeFileSync(blockedParent, 'not a directory');
+
+function executeMixed(context, body, seatState = 'absent') {
+  const execute = new AsyncFunction('lstatSync', 'wardenMarkFile', 'home', 'TASK', ...Object.keys(context), seatObserver + '\n' + body);
+  return execute(lstatSync, wardenMarkFile, seatHomes[seatState], seatTask, ...Object.values(context));
+}
+
 const transcriptStart = source.indexOf('function rememberTranscript() {');
 const transcriptEnd = source.indexOf('\n}', transcriptStart) + 2;
 if (transcriptStart < 0 || transcriptEnd <= transcriptStart) throw new Error('Mixed transcript bookkeeping boundary is missing');
@@ -85,12 +105,11 @@ async function runCase(boundary) {
   };
   const prelude = `let workerRef = '', reviewerRef = '', codexStateBeforeCleanup = [];
     const SB = '/sandbox', KEPT_LOGS = '/logs', WORKER = 'worker:live', REVIEWER = 'reviewer:live';
-    const home = '/home', TASK = 'fixture', repo = 'repo', repoAbs = '/fixture', ws = '/fixture', ORCH_SESSION = 'orch-fixture';
+    const repo = 'repo', repoAbs = '/fixture', ws = '/fixture', ORCH_SESSION = 'orch-fixture';
     const env = {}, wardenEnv = {}, workerBrief = '/brief', identity = { title: 'fixture' }, CURSOR_MODEL = 'stub', CODEX_MODEL = 'stub';
     const CODEX_STATE = '/codex', MARK = { hello: 'hello', reviewA: 'a', fix: 'fix', reviewB: 'b' };
   `;
-  const execute = new AsyncFunction(...Object.keys(context), prelude + block);
-  const main = execute(...Object.values(context));
+  const main = executeMixed(context, prelude + block);
   await waiting.promise;
   const cleanup = abort('SIGTERM');
   aborted = true;
@@ -139,8 +158,8 @@ for (const unavailable of ['status', 'close']) {
     rmSync: () => actions.push('remove sandbox'),
   };
   const prelude = `const workerRef = 'owned-worker', reviewerRef = 'owned-reviewer';
-    const SB = '/sandbox', KEPT_LOGS = '/logs', home = '/home', TASK = 'fixture';`;
-  await new AsyncFunction(...Object.keys(context), prelude + abortBlock)(...Object.values(context));
+    const SB = '/sandbox', KEPT_LOGS = '/logs';`;
+  await executeMixed(context, prelude + abortBlock);
   let error = null;
   await abort('SIGTERM').catch((failure) => { error = failure.message; });
   check(`mixed abort: unavailable service ${unavailable} still attempts both native stops and service close`,
@@ -150,7 +169,9 @@ for (const unavailable of ['status', 'close']) {
     JSON.stringify({ error, actions, lines }));
 }
 
-for (const [abortDuringClose, failClose] of [[true, false], [true, true], [false, true], [false, false]]) {
+const cleanupCases = [[true, false], [true, true], [false, true], [false, false],
+  ...['present', 'unknown'].flatMap(state => [[true, false, state], [false, false, state]])];
+for (const [abortDuringClose, failClose, seatState = 'absent'] of cleanupCases) {
   const closing = deferred(), closed = deferred();
   const actions = [], lines = [];
   let abort, workerStops = 0, serviceCloses = 0;
@@ -174,11 +195,11 @@ for (const [abortDuringClose, failClose] of [[true, false], [true, true], [false
   const cleanupBlock = source.slice(source.lastIndexOf('} finally {', hygiene) + 2, hygiene);
   const closeBlock = source.slice(source.indexOf('let serviceClosed ='), source.indexOf("process.once('exit'"));
   const prelude = `const workerRef = 'owned-worker', reviewerRef = 'owned-reviewer';
-    const SB = '/sandbox', KEPT_LOGS = '/logs', home = '/home', TASK = 'fixture', CODEX_STATE = '/codex';
+    const SB = '/sandbox', KEPT_LOGS = '/logs', CODEX_STATE = '/codex';
     let codexStateBeforeCleanup = [], runFailed = false, runFailure;`;
-  const cleanup = await new AsyncFunction(...Object.keys(context),
-    prelude + closeBlock + abortBlock + `return async () => { try {} ${cleanupBlock} };`)(...Object.values(context));
-  const normal = cleanup().then(() => ({ ok: true }), (error) => ({ ok: false, error: error.message }));
+  const cleanup = await executeMixed(context, prelude + closeBlock + abortBlock + `return async () => { try {} ${cleanupBlock} };`, seatState);
+  const normal = cleanup().then(() => ({ ok: true }),
+    error => ({ ok: false, error: error.message, causes: error.errors?.map(cause => cause.message) }));
   await closing.promise;
   let cancelling;
   if (abortDuringClose) cancelling = abort('SIGTERM');
@@ -188,14 +209,28 @@ for (const [abortDuringClose, failClose] of [[true, false], [true, true], [false
   const normalResult = await normal;
   if (cancelling) await cancelling;
   const sandboxKept = !actions.includes('remove sandbox');
-  const name = abortDuringClose
-    ? (failClose ? 'mixed abort: rejected shared service close cannot escape normal teardown or claim a physical stop'
-      : 'mixed abort: a signal during normal service close keeps the sandbox until abort stops complete')
-    : (failClose ? 'mixed normal cleanup: rejected service close still fails the run and preserves the sandbox'
-      : 'mixed normal cleanup: successful service close removes the sandbox without an abort');
+  const retainedSeat = seatState !== 'absent';
+  const name = retainedSeat
+    ? `mixed ${abortDuringClose ? 'abort' : 'normal cleanup'}: ${seatState} warden seat retains the sandbox after physical service stop`
+    : abortDuringClose
+      ? (failClose ? 'mixed abort: rejected shared service close cannot escape normal teardown or claim a physical stop'
+        : 'mixed abort: a signal during normal service close keeps the sandbox until abort stops complete')
+      : (failClose ? 'mixed normal cleanup: rejected service close still fails the run and preserves the sandbox'
+        : 'mixed normal cleanup: successful service close removes the sandbox without an abort');
+  const receipt = lines.find(line => line.startsWith('  · pre-exit: '));
+  const warden = receipt ? JSON.parse(receipt.slice('  · pre-exit: '.length)).warden : null;
+  const seatErrorPrefix = 'Task warden seat cleanup unconfirmed: ';
+  const seatError = normalResult.causes?.find(cause => cause.startsWith(seatErrorPrefix));
+  const seat = abortDuringClose ? warden?.seat : seatError ? JSON.parse(seatError.slice(seatErrorPrefix.length)) : null;
   check(name,
     serviceCloses === 1 && workerStops === 1
-    && normalResult.ok === (!failClose || abortDuringClose) && heldBeforeClose && sandboxKept === failClose
+    && normalResult.ok === (abortDuringClose || !(failClose || retainedSeat))
+    && heldBeforeClose && sandboxKept === (failClose || retainedSeat)
+    && (!(abortDuringClose || retainedSeat) || (seat?.state === seatState && seat.file === wardenMarkFile(seatHomes[seatState], seatTask)))
+    && (seatState !== 'unknown' || seat?.code === 'ENOTDIR')
+    && (!abortDuringClose || failClose || (warden?.stopped === true && warden.process?.pid === 42 && warden.process?.birth === 'owned-fixture'
+      && lines.some(line => line.includes(retainedSeat
+        ? 'owned service physically stopped. Task seat cleanup unconfirmed' : 'task warden and owned service physically stopped'))))
     && (!failClose || !abortDuringClose || (lines.some((line) => line.includes('owned service stop unconfirmed: held service close failed'))
       && !lines.some((line) => line.includes('physically stopped')))), JSON.stringify({ actions, workerStops, serviceCloses, normalResult, lines }));
 }
@@ -222,10 +257,9 @@ for (const [abortDuringClose, failClose] of [[true, false], [true, true], [false
   const hygiene = source.indexOf('if (!aborted) {\n  // --- hygiene:');
   const cleanupBlock = source.slice(source.lastIndexOf('} finally {', hygiene) + 2, hygiene);
   const prelude = `const workerRef = 'owned-worker', reviewerRef = 'owned-reviewer';
-    const SB = '/sandbox', KEPT_LOGS = '/logs', home = '/home', TASK = 'fixture', CODEX_STATE = '/codex';
+    const SB = '/sandbox', KEPT_LOGS = '/logs', CODEX_STATE = '/codex';
     let codexStateBeforeCleanup = [], runFailed = false, runFailure;`;
-  const cleanup = await new AsyncFunction(...Object.keys(context),
-    prelude + abortBlock + `return async () => { try {} ${cleanupBlock} };`)(...Object.values(context));
+  const cleanup = await executeMixed(context, prelude + abortBlock + `return async () => { try {} ${cleanupBlock} };`);
   const normal = cleanup();
   await Promise.all([workerStarted.promise, reviewerStarted.promise]);
   check('mixed normal cleanup: both native Stops start within one 5s allowance while Cursor remains held',
