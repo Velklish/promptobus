@@ -1,13 +1,12 @@
-import type { HostPipelineStep, MessageV1, ParticipantV1, TaskV1 } from '../dist/index.js';
+import type { MessageV1, TaskV1 } from '../dist/index.js';
 
 type MessageHeader = Omit<MessageV1, 'body' | 'protocolVersion'> & { firstLine?: string };
-interface Piece { slug: string; step: string | null }
 import { pipelineOf } from '../dist/pipeline.js';
-import { readStalls } from '../dist/index.js';
+import { piecesOf, readStalls } from '../dist/index.js';
 import { hostOf } from './host.js';
 import { answerOwedSince, unansweredSince } from './answers.js';
 import {
-  addrDir, addressOf, countInbox, countMailbox, currentResult, journalMessageBody, listTasks, mailboxOf, ORCHESTRATOR,
+  addrDir, addressOf, countInbox, countMailbox, journalMessageBody, listTasks, mailboxOf, ORCHESTRATOR,
   readHealth, readTask, strictTaskFacts,
 } from './store.js';
 import { fail, info, ok } from './util.js';
@@ -97,36 +96,6 @@ function questionsOf(home: string, meta: TaskV1, messages: MessageHeader[], now:
     || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
-function piecesOf(meta: TaskV1, messages: MessageHeader[], pipeline: readonly HostPipelineStep[]) {
-  const bySlug = new Map<string, Map<string, ParticipantV1>>();
-  for (const participant of meta.participants) {
-    const address = addressOf(participant)!;
-    const colon = address.indexOf(':');
-    if (colon < 0 || !pipeline.some((step) => step.name === address.slice(0, colon))) continue;
-    const slug = address.slice(colon + 1);
-    if (!bySlug.has(slug)) bySlug.set(slug, new Map());
-    bySlug.get(slug)!.set(address.slice(0, colon), participant);
-  }
-  const pieces: Piece[] = [];
-  for (const [slug, participants] of bySlug) {
-    let holder: string | null = null;
-    const firstStep = pipeline.findIndex((step) => participants.has(step.name));
-    for (const step of pipeline.slice(firstStep)) {
-      holder = step.name;
-      const participant = participants.get(step.name);
-      if (!participant) break;
-      if (!currentResult(participant, messages)) break;
-      holder = null;
-    }
-    pieces.push({ slug, step: holder });
-  }
-  return pieces.sort((a, b) => {
-    const order = (piece: Piece) => piece.step === null ? pipeline.length
-      : pipeline.findIndex((step) => step.name === piece.step);
-    return order(a) - order(b) || a.slug.localeCompare(b.slug);
-  });
-}
-
 export function buildDigest(rootOrHost: unknown, { task, now = Date.now() }: { task?: string; now?: number } = {}) {
   const host = hostOf(rootOrHost);
   const home = host.promptobusHome();
@@ -164,7 +133,7 @@ export function buildDigest(rootOrHost: unknown, { task, now = Date.now() }: { t
       ...(meta.parent ? { parent: meta.parent } : {}),
       pipeline: pipeline.map((step) => step.name), participants,
       questions: questionsOf(home, meta, messages, now, allTasks),
-      pieces: piecesOf(meta, messages, pipeline),
+      pieces: piecesOf(meta.participants, messages, pipeline.map((step) => step.name)).map(({ slug, step }) => ({ slug, step })),
     };
   });
   return { schemaVersion: 1, generatedAt: new Date(now).toISOString(), tasks };

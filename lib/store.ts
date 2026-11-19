@@ -1460,15 +1460,7 @@ export function strictTaskFacts(home: string, id: string, options: HeaderOptions
   };
 }
 
-export function currentResult<T extends MessageHeader>(participant: ParticipantV1 | null | undefined, messages: readonly T[]): T | null {
-  const boundary = participant?.metadata?.assignmentAfterId;
-  if (typeof boundary !== 'string' || !RECORD_ID_RE.test(boundary)) return null;
-  const assignments = messages.filter((message) => message.recipients.includes(participant!.id)
-    && (message.type === 'task' || message.type === 'review'));
-  const afterId = assignments.reduce((latest, message) => message.id > latest ? message.id : latest, boundary);
-  return messages.filter((message) => message.sender === participant!.id && message.type === 'result'
-    && message.id > afterId).sort(bySendOrder).at(-1) ?? null;
-}
+export { currentResult } from '../dist/index.js';
 
 export function historyHeaders(home: string, id: string, addr: string) {
   const dir = historyDir(home, id, addr);

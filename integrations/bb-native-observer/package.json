@@ -9,7 +9,7 @@
   },
   "bb": {
     "name": "Promptobus Native Panel [Experimental]",
-    "description": "Observe native Promptobus tasks, participants and canonical messages in a read-only dashboard.",
+    "description": "Observe native Promptobus runs on a read-only board of pipeline steps, with each piece's history and BB thread.",
     "branding": {
       "icon": "Activity"
     },

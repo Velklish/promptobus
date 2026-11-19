@@ -1,6 +1,6 @@
 import type { BbPluginApi } from '@get-bb/plugin-sdk';
 import { z } from 'zod';
-import { configurationSchema, hostContract, rpcContract, rootsSchema, settingsSchema } from './contract.js';
+import { configurationSchema, hostContract, rpcContract, rootsSchema, settingsSchema, type Source } from './contract.js';
 import { createOwnerWake, matchesOwnerWake, type OwnerWakeBinding, type OwnerWakeSource } from './owner-wake.js';
 export { rpcContract } from './contract.js';
 
@@ -39,6 +39,18 @@ export default function plugin(bb: BbPluginApi) {
     { storeRoot: values.storeRoot, nativeRoot: values.nativeRoot }, { hostId: values.hostId, timeoutMs: 5000 });
   const unchanged = (started: number) => {
     if (started !== revision) throw new Error('Selected configuration changed while reading; refresh the observer');
+  };
+  const board = async () => {
+    const started = revision, { hostId, storeRoot, nativeRoot } = await configuration();
+    const value = await host.call('board', { storeRoot, nativeRoot }, { hostId, timeoutMs: 5000 });
+    unchanged(started); return { ...value, source: { hostId, storeRoot, nativeRoot } };
+  };
+  const pieceHistory = async ({ taskId, slug, source }: { taskId: string; slug: string; source: Source }) => {
+    const started = revision, { hostId, storeRoot, nativeRoot } = await configuration();
+    if (source.hostId !== hostId || source.storeRoot !== storeRoot || source.nativeRoot !== nativeRoot) throw new Error('The board this piece came from no longer matches the configured source');
+    const value = await host.call('pieceHistory', { storeRoot, nativeRoot, taskId, slug }, { hostId, timeoutMs: 5000 });
+    if (value.taskId !== taskId || value.slug !== slug) throw new Error('Piece history differs from the selected piece');
+    unchanged(started); return { ...value, source: { hostId, storeRoot, nativeRoot } };
   };
   const snapshot = async () => {
     const started = revision, values = await configuration(), value = await snapshotFor(values);
@@ -119,7 +131,7 @@ export default function plugin(bb: BbPluginApi) {
     }
   };
   bb.rpc.register(rpcContract, {
-    snapshot,
+    snapshot, board, pieceHistory,
     async view() {
       const started = revision, values = await configuration();
       const [catalogue, selected, notifications] = await Promise.allSettled([tasksFor(values),

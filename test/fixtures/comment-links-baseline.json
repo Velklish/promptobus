@@ -1,7 +1,7 @@
 {
   "classes": {
     "fileOnly": 34,
-    "citation": 48,
+    "citation": 49,
     "crossFile": 6,
     "fileLevel": 54,
     "bound": 53,
@@ -234,6 +234,9 @@
     "lib/worktree.ts": [
       "../docs/reference/03-cli.md#squashedinto--was-the-branchs-work-taken-into-the-base-as-one-commit",
       "../docs/reference/03-cli.md#namedbysquash--did-an-acceptance-commit-name-the-branch-head"
+    ],
+    "src/pieces.ts": [
+      "../docs/reference/03-cli.md#digest"
     ],
     "src/driver.ts": [
       "../docs/reference/05-drivers.md#the-driver-contract",

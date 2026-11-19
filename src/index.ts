@@ -40,6 +40,10 @@ export {
 } from './pipeline.js';
 export type { Pipeline, PipelineFinding, PipelineStep } from './pipeline.js';
 
+// Where each piece of a task's work is: the digest and the BB native panel board read the same rule.
+export { currentResult, piecesOf } from './pieces.js';
+export type { Piece } from './pieces.js';
+
 // Protocol and store v1 — flat, not a namespace: the `v1` namespace existed because the flat names
 // were taken by the compatibility layer, and with that gone there is no second set here.
 export * from './v1/index.js';

@@ -9,7 +9,7 @@ function parseRecord(text: string) {
   try { return JSON.parse(text); }
   catch { throw new Error('Selected native JSON is malformed'); }
 }
-function ownedDirectory(directory: string): void {
+export function ownedDirectory(directory: string): void {
   if (!path.isAbsolute(directory) || path.resolve(directory) !== directory || realpathSync(directory) !== directory)
     throw new Error('Selected directory must be a canonical absolute path without symlinks');
   const stat = lstatSync(directory);
@@ -43,7 +43,7 @@ export function sessionFileName(ref: string): string {
   const hash = createHash('sha1').update(ref).digest('hex').slice(0, 12);
   return `${head ? head + '-' : ''}${hash}.json`;
 }
-function selectedTask(root: string, taskId: string): TaskV1 | null {
+export function selectedTask(root: string, taskId: string): TaskV1 | null {
   try {
     const text = ownedText(root, path.join(root, 'tasks', taskId, 'task.json'));
     if (text === null) return null;
@@ -54,7 +54,7 @@ function selectedTask(root: string, taskId: string): TaskV1 | null {
     return task;
   } catch { throw new Error('Selected canonical task is unavailable, malformed or outside the owned boundary'); }
 }
-function historyNames(directory: string, limit: number): string[] {
+export function historyNames(directory: string, limit: number): string[] {
   try { ownedDirectory(directory); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error; }
   const handle = opendirSync(directory), names: string[] = [];
@@ -66,7 +66,7 @@ function historyNames(directory: string, limit: number): string[] {
   } finally { handle.closeSync(); }
   return names;
 }
-function taskMessages(root: string, taskId: string, onlyParticipant?: string): MessageV1[] {
+export function taskMessages(root: string, taskId: string, onlyParticipant?: string): MessageV1[] {
   try {
     const refs: { id: string; participant: string; file: string }[] = [];
     for (const area of ['history', 'inbox']) {
@@ -96,6 +96,11 @@ function taskMessages(root: string, taskId: string, onlyParticipant?: string): M
     return [...messages.values()].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   } catch { throw new Error('Selected canonical history is unavailable, malformed or outside the owned boundary'); }
 }
+export function toMessage(message: MessageV1) {
+  return { id: message.id, sender: message.sender, recipients: message.recipients, type: message.type,
+    body: message.body.slice(0, 16000), bodyTruncated: message.body.length > 16000,
+    created: message.ts, artifact: clipped(message.artifact) };
+}
 function taskOwner(task: TaskV1) {
   const participant = task.participants.find(value => value.id === task.owner);
   if (!participant || participant.role !== 'orchestrator') throw new Error('Selected task owner is unavailable');
@@ -113,7 +118,7 @@ export function readTasks(input: { storeRoot: string; nativeRoot: string }) {
   const handle = opendirSync(directory);
   try {
     for (let entry = handle.readSync(); entry; entry = handle.readSync()) {
-      if (result.scanned >= 4096 || result.tasks.length >= 256) { result.truncated = true; break; }
+      if (result.scanned >= 4096) { result.truncated = true; break; }
       result.scanned++;
       if (!selectionSchema.shape.taskId.safeParse(entry.name).success) continue;
       try {
@@ -122,7 +127,9 @@ export function readTasks(input: { storeRoot: string; nativeRoot: string }) {
       } catch { continue; }
     }
   } finally { handle.closeSync(); }
-  result.tasks.sort((a, b) => b.updated.localeCompare(a.updated));
+  // Active runs first, so finished ones never crowd an active run out of the 256 kept.
+  result.tasks.sort((a, b) => Number(a.state === 'done') - Number(b.state === 'done') || b.updated.localeCompare(a.updated));
+  if (result.tasks.length > 256) { result.tasks.length = 256; result.truncated = true; }
   return catalogueSchema.parse(result);
 }
 export function readOwnerFeed(input: Selection) {
@@ -189,10 +196,6 @@ export function readProjection(input: Selection, instance: string, pid: number):
     actor.commands = commandCounts(nativeRoot, record.commandReceiptFile,
       { ref: record.ref, launchId: record.launchId, task: taskId, address });
   }
-  snapshot.messages = taskMessages(storeRoot, taskId).slice(-32).map(message => ({
-    id: message.id, sender: message.sender, recipients: message.recipients, type: message.type,
-    body: message.body.slice(0, 16000), bodyTruncated: message.body.length > 16000,
-    created: message.ts, artifact: clipped(message.artifact),
-  }));
+  snapshot.messages = taskMessages(storeRoot, taskId).slice(-32).map(toMessage);
   return snapshotSchema.parse(snapshot);
 }

@@ -2,18 +2,21 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import plugin from '../server.js';
 import { readProjection, readTasks } from '../projection.js';
-import type { Selection, Snapshot, View } from '../contract.js';
+import { readBoard, readPieceHistory } from '../board.js';
+import type { PieceHistory, Selection, Snapshot, Source, SourcedBoard as Board, View } from '../contract.js';
 import { retainSample } from '../dashboard.js';
 import { fixture, treeDigest } from './fixture.js';
 
 type Values = Selection & { hostId: string };
 type Handlers = { snapshot(): Promise<Snapshot>; view(): Promise<View>; tasks(): Promise<unknown>;
-  selectTask(input: { taskId: string }): Promise<Snapshot> };
+  selectTask(input: { taskId: string }): Promise<Snapshot>; board(): Promise<Board>;
+  pieceHistory(input: { taskId: string; slug: string; source: Source }): Promise<PieceHistory> };
 function harness(values: Values) {
   const calls: string[] = [], listeners: (() => void)[] = [];
   let rpc!: Handlers, cli!: { run(argv: string[]): Promise<{ exitCode: number; stdout?: string }> };
-  let reader = async (method: string, selected: Selection): Promise<unknown> => method === 'snapshot'
-    ? readProjection(selected, 'test', 1) : readTasks(selected);
+  let reader = async (method: string, selected: Selection & { slug?: string }): Promise<unknown> => method === 'snapshot'
+    ? readProjection(selected, 'test', 1) : method === 'board' ? readBoard(selected, 'test', 1)
+      : method === 'pieceHistory' ? readPieceHistory({ ...selected, slug: selected.slug! }) : readTasks(selected);
   const change = (patch: Partial<Values>) => { Object.assign(values, patch); listeners.forEach(listener => listener()); };
   Object.assign(values, { ownerThreadId: '', wakeEnabled: false });
   plugin({
@@ -44,7 +47,31 @@ test('task discovery works before selection and selection survives server reload
     assert.equal(view.snapshot?.task.id, 'second-task'); assert.equal(view.configuration.storeRoot, f.selection.storeRoot);
     assert.deepEqual(view.snapshot?.selection, { ...f.selection, taskId: 'second-task' });
     assert.equal(treeDigest(f.root), before);
-    assert.deepEqual(Object.keys(remounted.rpc), ['snapshot', 'view', 'tasks', 'selectTask', 'wakeStatus', 'bindOwner']);
+    assert.deepEqual(Object.keys(remounted.rpc), ['snapshot', 'board', 'pieceHistory', 'view', 'tasks', 'selectTask', 'wakeStatus', 'bindOwner']);
+  } finally { f.cleanup(); }
+});
+
+test('the board names its source and piece history refuses another piece or source than the one asked for', async () => {
+  const f = fixture('board-server');
+  try {
+    const server = harness({ ...f.selection, hostId: 'host_example', taskId: '' }), before = treeDigest(f.root);
+    const board = await server.rpc.board(), source = board.source;
+    assert.deepEqual(source, { hostId: 'host_example', storeRoot: f.selection.storeRoot, nativeRoot: f.selection.nativeRoot });
+    assert.deepEqual(board.runs.map(run => [run.id, run.pieces.map(piece => piece.slug).sort()]), [['board-server', ['alpha', 'beta', 'gamma']]]);
+    const history = await server.rpc.pieceHistory({ taskId: 'board-server', slug: 'alpha', source });
+    assert.deepEqual(history.source, source);
+    assert.deepEqual(history.messages.map(message => message.type), ['task', 'task']);
+    assert.deepEqual(server.calls, ['board', 'pieceHistory']); assert.equal(treeDigest(f.root), before);
+    server.readHost(async () => ({ ...history, slug: 'gamma' }));
+    await assert.rejects(server.rpc.pieceHistory({ taskId: 'board-server', slug: 'alpha', source }), /differs from the selected piece/);
+    for (const other of [{ hostId: 'host_other' }, { storeRoot: f.root }, { nativeRoot: f.root }])
+      await assert.rejects(server.rpc.pieceHistory({ taskId: 'board-server', slug: 'alpha', source: { ...source, ...other } }), /no longer matches the configured source/);
+    assert.deepEqual(server.calls, ['board', 'pieceHistory', 'pieceHistory']);
+    const entered = deferred(), release = deferred();
+    server.readHost(async (_method, selected) => { entered.resolve(); await release.promise; return readBoard(selected, 'test', 1); });
+    const reading = server.rpc.board();
+    await entered.promise; server.change({ storeRoot: f.root }); release.resolve();
+    await assert.rejects(reading, /configuration changed/);
   } finally { f.cleanup(); }
 });
 

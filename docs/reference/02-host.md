@@ -1421,17 +1421,21 @@ Every bound participant dispatch rechecks owner-published current control before
 
 The optional [native observer](../../integrations/bb-native-observer/README.md) is a
 BB navigation page for Promptobus sessions. Configure an enrolled host and owned
-canonical store/native roots, then discover and select a task on the page. The
+canonical store/native roots. The page is a board of active runs: a lane per run,
+a column per pipeline step plus Done and a card per piece; a card opens the piece's
+history and, for a BB participant, its thread. Owner notifications watch one run
+selected on the page. The
 selection persists in plugin Settings. Each view names its host, roots and task;
 configuration changes invalidate pending views before they can combine identities.
 Catalogue and selected-snapshot errors remain separate, so a broken selection
 leaves the configured identity and healthy sibling choices available after remount.
 Discovery returns at most 256 valid tasks from at most 4096 scanned directory
-entries, with an explicit truncation flag. Discovery limits or errors do not block
+entries, active tasks first, with an explicit truncation flag. Discovery limits or errors do not block
 the independently read selected task.
 
-The host exposes read-only `snapshot`, `tasks` and `ownerFeed` calls. The server
-exposes `snapshot`, `view`, `tasks`, `selectTask`, `wakeStatus` and `bindOwner`.
+The host exposes read-only `snapshot`, `tasks`, `ownerFeed`, `board` and
+`pieceHistory` calls. The server exposes `snapshot`, `view`, `tasks`, `board`,
+`pieceHistory`, `selectTask`, `wakeStatus` and `bindOwner`.
 Both `selectTask` and `bindOwner` persist plugin configuration.
 Observation reads validated selected-task inbox/history and matching native
 registry/receipt records without consuming mail or opening a writable engine.
@@ -1444,7 +1448,8 @@ review outcomes retain their canonical types and sender roles; owner acceptance
 is not inferred. Native registry activity does not prove process liveness, and
 full native transcripts and command output are unavailable.
 
-The page refreshes one second after the preceding read finishes, discards late
+The selected-run view refreshes one second after the preceding read finishes; the
+board and an open piece history refresh two seconds after theirs. The page discards late
 responses after disconnect or task changes, and retains the last successful
 sample with its identity when a read fails. Errors, disconnection and snapshots
 older than ten seconds are labelled paused or stale. Remount and plugin reload

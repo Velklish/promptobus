@@ -1,51 +1,132 @@
-import { useEffect, useRef, useState } from 'react';
-import { definePluginApp, useBbContext, useRealtimeConnectionState, useRpc } from '@get-bb/plugin-sdk/app';
-import type { rpcContract, View } from './contract.js';
-import { actorActivity, displayTime, messageLabel, retainSample, sampleStale, visibleMessages, type MessageFilter } from './dashboard.js';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { definePluginApp, useBbContext, useBbNavigate, useRealtimeConnectionState, useRpc } from '@get-bb/plugin-sdk/app';
+import type { Board, PieceHistory, rpcContract, Source, SourcedBoard, View } from './contract.js';
+import { columnsOf, displayTime, historyMessages, messageLabel, pieceSignals, relativeAge, retainSample, sameSource, samePiece, sampleStale, showsPiece, threadNote, type HistoryFilter } from './dashboard.js';
 import { poll } from './poll.js';
 
-const styles = `
-.pb-dashboard{--pb-bg:var(--background,#171717);--pb-card:var(--card,#202020);--pb-line:var(--border,#363636);--pb-text:var(--foreground,#eee);--pb-muted:var(--muted-foreground,#aaa);height:100%;overflow:auto;background:var(--pb-bg);color:var(--pb-text);font:14px/1.5 system-ui,sans-serif}
-.pb-wrap{max-width:1180px;margin:auto;padding:24px;display:grid;gap:20px}
-.pb-toolbar,.pb-heading,.pb-meta,.pb-tabs{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-.pb-toolbar{justify-content:space-between}.pb-heading{align-items:flex-start;justify-content:space-between}
-.pb-heading h1{font-size:25px;letter-spacing:-.04em;margin:2px 0 4px;font-weight:650}
+type Run = Board['runs'][number];
+type Opened = { taskId: string; slug: string; source: Source };
 
+const styles = `
+.pb-dashboard{--pb-bg:var(--background,#171717);--pb-card:var(--card,#202020);--pb-track:#ffffff06;--pb-line:var(--border,#363636);--pb-text:var(--foreground,#eee);--pb-muted:var(--muted-foreground,#aaa);--pb-accent:#8cadff;--pb-warn:#d2ab66;height:100%;overflow:auto;background:var(--pb-bg);color:var(--pb-text);font:14px/1.5 system-ui,sans-serif}
+.pb-wrap{padding:24px;display:grid;gap:22px}
+.pb-toolbar,.pb-heading,.pb-meta,.pb-tabs,.pb-signals{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.pb-heading{align-items:flex-start;justify-content:space-between}
+.pb-heading h1{font-size:25px;letter-spacing:-.03em;margin:0 0 4px;font-weight:650}
 .pb-muted,.pb-caption{color:var(--pb-muted)}.pb-caption{font-size:12px}.pb-dashboard p{margin:4px 0}
 .pb-dashboard button,.pb-dashboard select,.pb-dashboard input{font:inherit;color:inherit;background:var(--pb-card);border:1px solid var(--pb-line);border-radius:7px;padding:7px 10px}
-.pb-dashboard button{cursor:pointer}.pb-dashboard button:hover{border-color:#888}.pb-dashboard button:disabled{cursor:default;opacity:.5}
-.pb-dashboard button:focus-visible,.pb-dashboard select:focus-visible,.pb-dashboard input:focus-visible{outline:2px solid #8cadff;outline-offset:2px}
-.pb-dashboard ::selection{background:#8cadff;color:#171717}.pb-dashboard{scrollbar-color:var(--pb-muted) var(--pb-bg)}.pb-stat strong{font-variant-numeric:tabular-nums}.pb-dashboard select{max-width:min(420px,100%)}
-.pb-pill{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:99px;font-size:12px;background:#ffffff09;border:1px solid var(--pb-line);white-space:nowrap}
+.pb-dashboard button{cursor:pointer;transition:border-color .15s ease-out,background-color .15s ease-out}.pb-dashboard button:hover{border-color:#888}.pb-dashboard button:disabled{cursor:default;opacity:.5}
+.pb-dashboard button:focus-visible,.pb-dashboard select:focus-visible,.pb-dashboard input:focus-visible,.pb-dashboard summary:focus-visible{outline:2px solid var(--pb-accent);outline-offset:2px}
+.pb-dashboard ::selection{background:var(--pb-accent);color:#171717}.pb-dashboard{scrollbar-color:var(--pb-muted) var(--pb-bg)}.pb-dashboard select{max-width:min(420px,100%)}
+.pb-primary{background:var(--pb-accent)!important;border-color:var(--pb-accent)!important;color:#141821!important;font-weight:600}.pb-primary:hover{filter:brightness(1.08)}
+.pb-pill{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:99px;font-size:12px;background:#ffffff09;border:1px solid var(--pb-line);white-space:nowrap;font-variant-numeric:tabular-nums}
 .pb-pill::before{content:'';width:6px;height:6px;border-radius:50%;background:#8d8d8d}
-.pb-pill.active::before{background:#8cabf8}.pb-pill.done::before{background:#7ab899}.pb-pill.unknown::before{background:#d2ab66}
-.pb-grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(250px,1fr);gap:18px}.pb-stack{display:grid;gap:12px;align-content:start}
-.pb-card{background:var(--pb-card);border:1px solid var(--pb-line);border-radius:12px;padding:18px;min-width:0}
-.pb-card h2{font-size:15px;margin:0 0 12px;font-weight:650}.pb-card h3{font-size:14px;margin:0}
-.pb-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.pb-stat{border-left:1px solid var(--pb-line);padding-left:12px}
-.pb-stat strong{display:block;font-size:25px;line-height:1.2;font-weight:600}.pb-stat span{font-size:12px;color:var(--pb-muted)}
-.pb-section-title{display:flex;justify-content:space-between;align-items:center;gap:10px}.pb-actors{display:grid;gap:10px}
-.pb-actor{padding:12px 0;border-bottom:1px solid var(--pb-line)}.pb-actor-head{display:flex;justify-content:space-between;gap:10px;align-items:start;flex-wrap:wrap}
-.pb-actor details{margin-top:8px}.pb-dashboard summary{cursor:pointer;color:var(--pb-muted);font-size:12px}
+.pb-pill.active::before{background:#8cabf8}.pb-pill.done::before{background:#7ab899}.pb-pill.unknown::before,.pb-pill.warning::before{background:var(--pb-warn)}.pb-pill.warning{border-color:#8d733d;color:#e9cf9e}
+.pb-lane{display:grid;gap:12px;padding-bottom:22px;border-bottom:1px solid var(--pb-line)}.pb-lane:last-of-type{border-bottom:0}
+.pb-lane-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}.pb-lane-head h2{font-size:17px;letter-spacing:-.02em;margin:0;font-weight:650}
+.pb-columns{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(210px,1fr);gap:10px;overflow-x:auto;padding-bottom:4px}
+.pb-column{background:var(--pb-track);border-radius:10px;padding:10px;display:grid;gap:8px;align-content:start;min-height:96px}
+.pb-column-head{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--pb-muted);padding:0 2px 2px;text-transform:capitalize}
+.pb-column-head strong{font-weight:600;color:var(--pb-text)}
+.pb-piece{display:grid!important;gap:6px;text-align:left;width:100%;padding:11px 12px!important;border-radius:10px!important;background:var(--pb-card)!important;box-shadow:0 1px 2px #0000004d}
+.pb-piece[aria-pressed=true]{border-color:var(--pb-accent)!important;box-shadow:0 0 0 1px var(--pb-accent) inset,0 1px 2px #0000004d}
+.pb-piece-slug{font-weight:600;overflow-wrap:anywhere}.pb-piece-status{font-size:13px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.pb-piece-foot{display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}.pb-signals{gap:4px}
+.pb-column-empty{font-size:12px;color:var(--pb-muted);padding:8px 2px}
+.pb-section{background:var(--pb-card);border:1px solid var(--pb-line);border-radius:12px;padding:16px 18px}
+.pb-section>summary{cursor:pointer;font-weight:600}.pb-section[open]>summary{margin-bottom:12px}.pb-dashboard summary{color:var(--pb-text)}
+.pb-finished{display:grid;gap:2px;margin:0;padding:0;list-style:none}.pb-finished li{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--pb-line);font-size:13px}.pb-finished li:last-child{border-bottom:0}
 .pb-definition{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;font-size:12px;margin:8px 0 0}.pb-definition dt{color:var(--pb-muted)}.pb-definition dd{margin:0;overflow-wrap:anywhere}
-.pb-tabs{gap:4px;border-bottom:1px solid var(--pb-line);margin-bottom:14px;padding-bottom:10px}
+.pb-tabs{gap:4px;border-bottom:1px solid var(--pb-line);padding-bottom:10px}
 .pb-tabs button{border-color:transparent;background:transparent;padding:5px 9px;font-size:12px}.pb-tabs button[aria-pressed=true]{background:#ffffff0d;border-color:var(--pb-line)}
-.pb-message{padding:14px 0;border-bottom:1px solid var(--pb-line)}.pb-message:first-child{padding-top:0}.pb-message:last-child{border-bottom:0;padding-bottom:0}
+.pb-message{padding:14px 0;border-bottom:1px solid var(--pb-line)}.pb-message:last-child{border-bottom:0}
 .pb-message-header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px}
-.pb-message-body{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:0;max-height:360px;overflow:auto}
+.pb-message-body{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:0;max-height:320px;overflow:auto}
 .pb-type{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--pb-muted)}.pb-empty{padding:24px 6px;text-align:center;color:var(--pb-muted)}
 .pb-notice{border:1px solid #8d733d;background:#a8811910;border-radius:9px;padding:12px 14px;font-size:13px}
+.pb-drawer{position:fixed;top:0;right:0;bottom:0;width:min(480px,100%);background:var(--pb-bg);border-left:1px solid var(--pb-line);box-shadow:-12px 0 32px #00000059;display:grid;grid-template-rows:auto auto minmax(0,1fr);z-index:10;animation:pb-in .2s cubic-bezier(.16,1,.3,1)}
+@keyframes pb-in{from{transform:translateX(24px);opacity:.4}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.pb-drawer{animation:none}.pb-dashboard button{transition:none}}
+.pb-drawer-head{padding:18px 20px 14px;border-bottom:1px solid var(--pb-line);display:grid;gap:10px}
+.pb-drawer-title{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.pb-drawer-title h2{font-size:19px;letter-spacing:-.02em;margin:0;overflow-wrap:anywhere}
+.pb-drawer-tabs{padding:10px 20px 0}.pb-drawer-body{overflow:auto;padding:0 20px 20px}
 .pb-diagnostics pre{font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto}.pb-limits{margin:8px 0 0;padding-left:18px;font-size:12px;color:var(--pb-muted)}
-@media(max-width:760px){.pb-wrap{padding:16px;gap:14px}.pb-grid{grid-template-columns:minmax(0,1fr)}.pb-toolbar{align-items:stretch}.pb-toolbar label,.pb-toolbar select{width:100%;max-width:100%}.pb-heading h1{font-size:22px}.pb-card{padding:14px}.pb-stats{gap:8px}.pb-stat strong{font-size:22px}}
+.pb-settings{display:grid;gap:14px}.pb-settings label{display:grid;gap:4px}
+@media(max-width:760px){.pb-wrap{padding:16px;gap:16px}.pb-heading h1{font-size:22px}.pb-columns{grid-auto-columns:minmax(78%,1fr)}.pb-toolbar select{width:100%;max-width:100%}}
 `;
+
+function PieceCard({ run, piece, selected, now, open }: { run: Run; piece: Run['pieces'][number]; selected: boolean; now: number; open: () => void }) {
+  const holder = piece.holder, signals = pieceSignals(piece);
+  return <button className="pb-piece" data-piece={`${run.id}/${piece.slug}`} aria-pressed={selected} aria-label={`${piece.slug} in ${run.title || run.id}`} onClick={open}>
+    <span className="pb-piece-slug">{piece.slug}</span>
+    <span className="pb-caption">{holder ? `${holder.role} · ${holder.model ?? holder.harness}` : piece.step === null ? 'Finished' : 'Waiting for a participant'}</span>
+    {holder?.status && <span className="pb-piece-status">{holder.status.line || 'Empty status'}</span>}
+    <span className="pb-piece-foot">
+      <span className="pb-caption">{holder?.status ? relativeAge(holder.status.at, now) : 'No status yet'}</span>
+      {signals.length > 0 && <span className="pb-signals">{signals.map(signal => <span key={signal.label} className={`pb-pill ${signal.tone}`}>{signal.label}</span>)}</span>}
+    </span>
+  </button>;
+}
+
+function PieceDrawer({ run, piece, history, error, now, close }: { run: Run; piece: Run['pieces'][number]; history: PieceHistory | null; error: string | null; now: number; close: () => void }) {
+  const navigate = useBbNavigate(), [filter, setFilter] = useState<HistoryFilter>('all'), closeButton = useRef<HTMLButtonElement>(null);
+  const holder = piece.holder, messages = history ? historyMessages(history.messages, filter) : [];
+  const roles = piece.participants.map(entry => ({ participantId: entry.participantId, role: entry.step }));
+  useEffect(() => { closeButton.current?.focus(); }, [run.id, piece.slug]);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [close]);
+  return <aside className="pb-drawer" aria-label={`Piece ${piece.slug}`}>
+    <div className="pb-drawer-head">
+      <div className="pb-drawer-title"><div><h2>{piece.slug}</h2><p className="pb-caption">{run.title || run.id}</p></div>
+        <button ref={closeButton} onClick={close} aria-label="Close piece details">Close</button></div>
+      <div className="pb-meta"><span className={`pb-pill ${piece.step === null ? 'done' : 'active'}`}>{piece.step ?? 'Done'}</span>
+        {pieceSignals(piece).map(signal => <span key={signal.label} className={`pb-pill ${signal.tone}`}>{signal.label}</span>)}</div>
+      {holder ? <>
+        <dl className="pb-definition"><dt>Participant</dt><dd>{holder.address}</dd><dt>Harness</dt><dd>{holder.harness}{holder.model ? ` · ${holder.model}` : ''}</dd>
+          <dt>Last status</dt><dd>{holder.status ? `${relativeAge(holder.status.at, now)} · ${holder.status.line}` : 'None yet'}</dd>
+          {holder.stall && <><dt>Stall</dt><dd>{holder.stall}</dd></>}
+          {!holder.bbThreadId && <><dt>Session</dt><dd>{holder.sessionRef ?? 'Not recorded'}</dd></>}</dl>
+        {holder.bbThreadId
+          ? <div><button className="pb-primary" onClick={() => navigate.toThread(holder.bbThreadId!)}>Open thread</button></div>
+          : <p className="pb-caption">{threadNote(holder)}</p>}
+      </> : <p className="pb-caption">No participant holds the {piece.step} step of this piece yet.</p>}
+      <dl className="pb-definition" aria-label="Participants by step">{piece.participants.map(entry => <Fragment key={entry.step}><dt>{entry.step}</dt><dd>{entry.participantId}</dd></Fragment>)}</dl>
+    </div>
+    <div className="pb-drawer-tabs"><div className="pb-tabs" aria-label="History filters">{(['all', 'work', 'status', 'questions'] as const).map(value =>
+      <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === 'all' ? 'All' : value === 'work' ? 'Briefs & results' : value === 'status' ? 'Status' : 'Questions'}</button>)}</div></div>
+    <div className="pb-drawer-body" aria-live="polite">
+      {error && <p className="pb-notice" role="alert">History unavailable: {error}</p>}
+      {!history && !error && <p className="pb-empty">Reading the piece history…</p>}
+      {history && messages.length === 0 && <p className="pb-empty">No {filter === 'all' ? '' : 'matching '}messages for this piece yet.</p>}
+      {messages.slice().reverse().map(message => <article className="pb-message" key={message.id}>
+        <div className="pb-message-header"><div><strong>{message.sender}</strong><span className="pb-caption"> → {message.recipients.join(', ')}</span></div><span className="pb-type">{messageLabel(message, roles)}</span></div>
+        <pre className="pb-message-body">{message.body}</pre>
+        {message.artifact && <p className="pb-caption">Artifact: {message.artifact}</p>}
+        {message.bodyTruncated && <p className="pb-caption">Preview shortened. The canonical message keeps the full body.</p>}
+        <p className="pb-caption">{displayTime(message.created)} · {message.id}</p>
+      </article>)}
+      {history && <p className="pb-caption">The newest 64 messages to or from this piece's participants, newest first.</p>}
+    </div>
+  </aside>;
+}
 
 function NativePanel() {
   const rpc = useRpc<typeof rpcContract>(), connection = useRealtimeConnectionState(), context = useBbContext();
   const [ownerThreadId, setOwnerThreadId] = useState(context.threadId ?? ''), [bindingOwner, setBindingOwner] = useState(false);
-  const [connected, setConnected] = useState(true), [view, setView] = useState<View | null>(null);
+  const [connected, setConnected] = useState(true), [view, setView] = useState<View | null>(null), [board, setBoard] = useState<SourcedBoard | null>(null);
   const [selectedId, setSelectedId] = useState(''), [selecting, setSelecting] = useState(false);
-  const [error, setError] = useState<string | null>(null), [actionError, setActionError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<MessageFilter>('all'), [now, setNow] = useState(Date.now());
+  const [error, setError] = useState<string | null>(null), [boardError, setBoardError] = useState<string | null>(null), [actionError, setActionError] = useState<string | null>(null);
+  const [opened, setOpened] = useState<Opened | null>(null);
+  const [history, setHistory] = useState<PieceHistory | null>(null), [historyError, setHistoryError] = useState<{ piece: Opened; text: string } | null>(null);
+  const [now, setNow] = useState(Date.now());
+  const closePiece = useCallback(() => setOpened(previous => {
+    // The card may have moved column and remounted, so it is found again by its run and slug.
+    if (previous) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-piece="${CSS.escape(`${previous.taskId}/${previous.slug}`)}"]`)?.focus());
+    return null;
+  }), []);
   const generation = useRef(0);
   const snapshot = view?.snapshot, tasks = view?.catalogue?.tasks ?? [];
   useEffect(() => {
@@ -57,12 +138,26 @@ function NativePanel() {
     const current = generation.current;
     return poll(() => rpc.call('view', null), value => {
       if (current !== generation.current) return;
-      setView(previous => retainSample(previous, value)); setSelectedId(value.configuration.taskId); setError(null); setNow(Date.now());
+      setView(previous => retainSample(previous, value)); setSelectedId(value.configuration.taskId); setError(null);
     }, cause => { if (current === generation.current) setError(String(cause)); });
   }, [rpc, connected, connection, selecting]);
+  useEffect(() => {
+    if (!connected) return;
+    return poll(() => rpc.call('board', null), value => {
+      // A piece this board no longer shows, from another source or a run that left, closes its panel and history poll.
+      setBoard(value); setBoardError(null); setOpened(previous => previous && !showsPiece(value, previous) ? null : previous);
+    }, cause => setBoardError(String(cause)), 2000);
+  }, [rpc, connected, connection]);
+  useEffect(() => {
+    setHistory(null); setHistoryError(null);
+    if (!opened || !connected) return;
+    return poll(() => rpc.call('pieceHistory', opened), value => {
+      if (samePiece(value, opened)) { setHistory(value); setHistoryError(null); }
+    }, cause => setHistoryError({ piece: opened, text: String(cause) }), 2000);
+  }, [rpc, connected, opened]);
   async function selectTask(taskId: string) {
     generation.current++;
-    setSelecting(true); setSelectedId(taskId); setView(null); setFilter('all'); setActionError(null); setError(null);
+    setSelecting(true); setSelectedId(taskId); setView(null); setActionError(null); setError(null);
     try { await rpc.call('selectTask', { taskId }); }
     catch (cause) { setActionError(String(cause)); }
     finally { setSelecting(false); }
@@ -81,86 +176,64 @@ function NativePanel() {
     generation.current++;
     setConnected(!connected);
   }
-  const messages = snapshot ? visibleMessages(snapshot.messages, filter) : [];
-  const questions = snapshot?.messages.filter(message => message.type === 'question').length ?? 0;
-  const results = snapshot ? visibleMessages(snapshot.messages, 'results').length : 0;
-  const snapshotError = error || view?.snapshotError;
-  const stale = !connected || Boolean(snapshotError) || connection !== 'connected' || Boolean(snapshot && sampleStale(snapshot.sampledAt, now));
+  const active = board?.runs.filter(run => run.state === 'active') ?? [], finished = board?.runs.filter(run => run.state === 'done') ?? [];
+  const openRun = opened && board && sameSource(board.source, opened.source) && board.runs.find(run => run.id === opened.taskId), openPiece = openRun && openRun.pieces.find(piece => piece.slug === opened.slug);
+  const stale = !connected || Boolean(boardError) || connection !== 'connected' || Boolean(board && sampleStale(board.sampledAt, now));
   return <main className="pb-dashboard">
     <style>{styles}</style>
     <div className="pb-wrap">
-      <div className="pb-toolbar">
-        <label className="pb-caption">Task <select aria-label="Selected task" value={selectedId} disabled={selecting || !connected} onChange={event => void selectTask(event.target.value)}>
-          {!tasks.some(task => task.id === selectedId) && <option value={selectedId}>{selectedId || 'Select a task'}</option>}
-          {tasks.map(task => <option key={task.id} value={task.id}>{task.title || task.id} · {task.state}</option>)}
-        </select></label>
-        <button onClick={toggleObserver}>{connected ? 'Disconnect observer' : 'Reconnect observer'}</button>
-      </div>
       <header className="pb-heading">
-        <div><h1>{snapshot?.task.title || selectedId || 'Your development workspace'}</h1>
-          <p className="pb-caption">{snapshot?.task.id || 'Choose a task to see its work'}{snapshot && ` · Updated ${displayTime(snapshot.task.updated)}`}</p></div>
-        <span className={`pb-pill ${snapshot?.task.state === 'done' ? 'done' : 'active'}`}>{snapshot?.task.state ?? (selecting ? 'Switching task' : view?.snapshotError ? 'Snapshot unavailable' : view ? 'No task selected' : 'Loading')}</span>
+        <div><h1>Promptobus runs</h1>
+          <p className="pb-caption">{board ? `${active.length} active · ${finished.length} finished · sampled ${displayTime(board.sampledAt)}` : 'Reading the configured store…'}</p></div>
+        <div className="pb-toolbar"><span className={`pb-pill ${stale ? 'unknown' : 'active'}`}>{stale ? 'View paused or stale' : `Observer · ${connection}`}</span>
+          <button onClick={toggleObserver}>{connected ? 'Pause observer' : 'Resume observer'}</button></div>
       </header>
-      {view && <dl className="pb-definition" aria-label="Selected store identity"><dt>Host</dt><dd>{view.configuration.hostId}</dd><dt>Store</dt><dd>{view.configuration.storeRoot}</dd><dt>Native registry</dt><dd>{view.configuration.nativeRoot}</dd></dl>}
-      {(snapshotError || actionError) && <div className="pb-notice" role="alert">{actionError || snapshotError}{snapshotError && snapshot && <p>The view below is the last successful sample.</p>}</div>}
-      {view?.catalogueError && <div className="pb-notice" role="alert">Task discovery failed: {view.catalogueError}. The selected snapshot is read independently.</div>}
-      {view?.catalogue?.truncated && <p className="pb-notice">Task discovery stopped at 256 valid tasks or 4096 scanned entries. More tasks may exist; the selected task is still read independently.</p>}
-      {!connected && <div className="pb-notice">Observer disconnected. Native work continues independently; the view is paused.</div>}
-      <div className="pb-meta pb-caption"><span className={`pb-pill ${stale ? 'unknown' : 'active'}`}>{stale ? 'View paused or stale' : view ? `Observer · ${connection}` : 'Connecting observer'}</span><span>Last successful sample: {displayTime(snapshot?.sampledAt)}</span></div>
-      <section className="pb-card pb-stats" aria-label="Task summary">
-        <div className="pb-stat"><strong>{snapshot?.actors.length ?? '—'}</strong><span>Managed participants</span></div>
-        <div className="pb-stat"><strong>{questions}</strong><span>Questions in recent messages</span></div>
-        <div className="pb-stat"><strong>{results}</strong><span>Results & reviews in recent messages</span></div>
-      </section>
-      <div className="pb-grid">
-        <section className="pb-card">
-          <h2>Messages & outcomes</h2>
-          <div className="pb-tabs" aria-label="Message filters">{(['all', 'questions', 'results'] as const).map(value => <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === 'all' ? 'All messages' : value === 'questions' ? 'Questions' : 'Results & reviews'}</button>)}</div>
-          {!snapshot && <p className="pb-empty">{selecting ? 'Switching task…' : view?.snapshotError ? 'Selected snapshot unavailable. Choose another task above, or reconnect after fixing its records.' : view && !view.configuration.taskId ? (tasks.length ? 'Select a task above to see its work.' : 'No tasks found in the configured store.') : 'Waiting for a task snapshot…'}</p>}
-          {snapshot && messages.length === 0 && <p className="pb-empty">No {filter === 'all' ? 'messages' : filter} in the recent task journal.</p>}
-          {messages.map(message => <article className="pb-message" key={message.id}>
-            <div className="pb-message-header"><div><strong>{message.sender}</strong><span className="pb-caption"> → {message.recipients.join(', ')}</span></div><span className="pb-type">{messageLabel(message, snapshot?.actors ?? [])}</span></div>
-            <pre className="pb-message-body">{message.body}</pre>
-            {message.artifact && <p className="pb-caption">Artifact: {message.artifact}</p>}
-            {message.bodyTruncated && <p className="pb-caption">Preview shortened. The canonical message retains the full body.</p>}
-            <p className="pb-caption">{displayTime(message.created)} · {message.id}</p>
-          </article>)}
-          <p className="pb-caption" style={{ marginTop: 16 }}>Canonical messages are shown as recorded, with their participant IDs. A participant result is not owner acceptance.</p>
-        </section>
-        <aside className="pb-stack">
-          <section className="pb-card">
-            <div className="pb-section-title"><h2>Managed participants</h2><span className="pb-caption">Promptobus sessions</span></div>
-            <div className="pb-actors">{snapshot?.actors.map(actor => {
-              const activity = actorActivity(actor);
-              return <article className="pb-actor" key={actor.address}>
-                <div className="pb-actor-head"><div><h3>{actor.address}</h3><p className="pb-caption">{actor.role} · {actor.harness}</p></div><span className={`pb-pill ${activity.tone}`}>{activity.label}</span></div>
-                <p className="pb-caption">{actor.model || 'Model not recorded'}{actor.effort ? ` · ${actor.effort}` : ''}</p>
-                <details><summary>Session details</summary><dl className="pb-definition"><dt>Canonical ID</dt><dd>{actor.participantId}</dd><dt>Session reference</dt><dd>{actor.sessionRef || 'Unavailable'}</dd><dt>Native thread</dt><dd>{actor.threadId || 'Unavailable'}</dd><dt>Launch</dt><dd>{actor.launchId || (actor.state === 'native launch binding unavailable' ? 'Canonical launch binding unavailable' : 'Unavailable')}</dd><dt>Profile</dt><dd>{actor.sandbox || 'Unavailable'}</dd><dt>Registry state</dt><dd>{actor.state}</dd>{actor.commands && <><dt>Selected commands</dt><dd>{actor.commands.terminals} terminal events / {actor.commands.starts} starts{actor.commands.incompleteTail ? ' · incomplete receipt tail' : ''}</dd></>}</dl></details>
-              </article>;
-            })}</div>
-            {snapshot?.actors.length === 0 && <p className="pb-empty">No managed native participants in this task.</p>}
-            <p className="pb-caption" style={{ marginTop: 12 }}>These are native sessions, not BB threads. Recorded activity does not prove OS process liveness. Full native transcripts and command output are unavailable.</p>
-          </section>
-          <section className="pb-card">
-            <h2>Task owner</h2>
-            <label className="pb-caption">BB owner thread<input aria-label="BB owner thread" placeholder="thr_…" value={ownerThreadId} onChange={event => setOwnerThreadId(event.target.value)} /></label>
-            <p><button disabled={bindingOwner || !view?.configuration.taskId || !ownerThreadId} onClick={() => void bindOwner(true)}>Connect owner notifications</button></p>
-            {view?.wake.enabled && <p><button disabled={bindingOwner} onClick={() => void bindOwner(false)}>Disable owner notifications</button></p>}
-            <p className="pb-caption">Notifications: {view?.wake.state ?? 'Unknown'}{view?.wake.ownerThreadId ? ` · ${view.wake.ownerThreadId}` : ''}</p>
-            {view?.wake.error && <p className="pb-notice" role="alert">{view.wake.error}</p>}
-            <p className="pb-caption">New questions, results and reviews can wake the bound BB owner even while this panel is closed. Existing messages are not replayed.</p>
-            <p>{snapshot?.task.owner?.id ?? 'Owner unavailable'}</p>
-            <p className="pb-caption">{snapshot?.task.owner?.harness}</p>
-            <dl className="pb-definition"><dt>Session</dt><dd>{snapshot?.task.owner?.sessionRef ?? 'Unavailable'}</dd></dl>
-            <p className="pb-caption">Results and reviews are recorded messages. Owner acceptance is not inferred from them.</p>
-          </section>
-        </aside>
-      </div>
-      <details className="pb-card pb-diagnostics"><summary>Diagnostics & evidence limits</summary>
-        <ul className="pb-limits">{snapshot?.limits.map(limit => <li key={limit}>{limit}</li>)}</ul>
-        <pre data-testid="snapshot">{snapshot ? JSON.stringify(snapshot, null, 2) : 'No successful sample'}</pre>
+      {(boardError || actionError) && <div className="pb-notice" role="alert">{actionError || boardError}{boardError && board && <p>The board below is the last successful sample.</p>}</div>}
+      {board?.truncated && <p className="pb-notice">Run discovery stopped at 256 runs or 4096 scanned entries. More runs may exist.</p>}
+      {!connected && <div className="pb-notice">Observer paused. Runs continue on their own; the board is not refreshing.</div>}
+      {board && active.length === 0 && <p className="pb-empty">{board.truncated ? 'No active runs among the runs discovery reached.' : 'No active runs in the configured store. A run appears here as soon as Promptobus starts one.'}</p>}
+      {active.map(run => <section className="pb-lane" key={run.id} aria-label={run.title || run.id}>
+        <div className="pb-lane-head"><h2>{run.title || run.id}</h2>
+          <span className="pb-caption">{run.id}{run.owner ? ` · owner on ${run.owner}` : ''} · updated {relativeAge(run.updated, now)}</span></div>
+        {run.inferred && <p className="pb-caption">Step order inferred: the board cannot read this run's declared pipeline, so its other steps follow the shipped ones in the order their participants appear.</p>}
+        {run.error && <p className="pb-notice" role="alert">{run.error}</p>}
+        {!run.error && run.pieces.length === 0 && <p className="pb-caption">No pieces yet: the orchestrator has not handed work to a step.</p>}
+        {run.pieces.length > 0 && <div className="pb-columns">{columnsOf(run).map(column => <div className="pb-column" key={column.label}>
+          <div className="pb-column-head"><strong>{column.label}</strong><span>{column.pieces.length}</span></div>
+          {column.pieces.map(piece => <PieceCard key={piece.slug} run={run} piece={piece} now={now}
+            selected={opened?.taskId === run.id && opened.slug === piece.slug} open={() => board && setOpened({ taskId: run.id, slug: piece.slug, source: board.source })} />)}
+          {column.pieces.length === 0 && <p className="pb-column-empty">Nothing here</p>}
+        </div>)}</div>}
+      </section>)}
+      {finished.length > 0 && <details className="pb-section"><summary>Finished runs ({finished.length})</summary>
+        <ul className="pb-finished">{finished.map(run => <li key={run.id}><span>{run.title || run.id}</span><span className="pb-caption">{displayTime(run.updated)}</span></li>)}</ul>
+      </details>}
+      <details className="pb-section"><summary>Owner notifications</summary>
+        <div className="pb-settings">
+          <label className="pb-caption">Run to watch<select aria-label="Run to watch" value={selectedId} disabled={selecting || !connected} onChange={event => void selectTask(event.target.value)}>
+            {!tasks.some(task => task.id === selectedId) && <option value={selectedId}>{selectedId || 'Select a run'}</option>}
+            {tasks.map(task => <option key={task.id} value={task.id}>{task.title || task.id} · {task.state}</option>)}
+          </select></label>
+          {(error || view?.snapshotError) && <p className="pb-notice" role="alert">{error || view?.snapshotError}</p>}
+          {view?.catalogueError && <p className="pb-notice" role="alert">Run discovery failed: {view.catalogueError}</p>}
+          <label className="pb-caption">BB owner thread<input aria-label="BB owner thread" placeholder="thr_…" value={ownerThreadId} onChange={event => setOwnerThreadId(event.target.value)} /></label>
+          <div className="pb-toolbar"><button disabled={bindingOwner || !view?.configuration.taskId || !ownerThreadId} onClick={() => void bindOwner(true)}>Connect owner notifications</button>
+            {view?.wake.enabled && <button disabled={bindingOwner} onClick={() => void bindOwner(false)}>Disable owner notifications</button>}</div>
+          <p className="pb-caption">Notifications: {view?.wake.state ?? 'Unknown'}{view?.wake.ownerThreadId ? ` · ${view.wake.ownerThreadId}` : ''}</p>
+          {view?.wake.error && <p className="pb-notice" role="alert">{view.wake.error}</p>}
+          <p className="pb-caption">New questions, results and reviews of the watched run can wake the bound BB owner even while this panel is closed. Existing messages are not replayed.</p>
+          <dl className="pb-definition"><dt>Owner</dt><dd>{snapshot?.task.owner?.id ?? 'Unavailable'}{snapshot?.task.owner?.harness ? ` · ${snapshot.task.owner.harness}` : ''}</dd><dt>Session</dt><dd>{snapshot?.task.owner?.sessionRef ?? 'Unavailable'}</dd>
+            {view && <><dt>Host</dt><dd>{view.configuration.hostId}</dd><dt>Store</dt><dd>{view.configuration.storeRoot}</dd><dt>Native registry</dt><dd>{view.configuration.nativeRoot}</dd></>}</dl>
+        </div>
+      </details>
+      <details className="pb-section pb-diagnostics"><summary>Diagnostics & evidence limits</summary>
+        <ul className="pb-limits">{[...(board?.limits ?? []), ...(snapshot?.limits ?? [])].map(limit => <li key={limit}>{limit}</li>)}</ul>
+        <pre data-testid="board">{board ? JSON.stringify(board, null, 2) : 'No successful board sample'}</pre>
+        <pre data-testid="snapshot">{snapshot ? JSON.stringify(snapshot, null, 2) : 'No watched-run sample'}</pre>
       </details>
     </div>
+    {openRun && openPiece && <PieceDrawer run={openRun} piece={openPiece} history={samePiece(history, opened) ? history : null}
+      error={samePiece(historyError?.piece, opened) ? historyError!.text : null} now={now} close={closePiece} />}
   </main>;
 }
 export default definePluginApp(app => {

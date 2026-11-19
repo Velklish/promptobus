@@ -101,7 +101,7 @@ test('real typed host boundary admits snapshot only and preserves the fixture', 
     assert.equal(snapshot.actors.length, 3); assert.equal(treeDigest(f.root), before);
     await assert.rejects(() => harness.experimental_call('snapshot', { ...f.selection, command: 'send' } as never));
     await assert.rejects(() => harness.experimental_call('stop' as never, f.selection as never));
-    assert.deepEqual(Object.keys(hostEntry.contract), ['snapshot', 'tasks', 'ownerFeed']);
+    assert.deepEqual(Object.keys(hostEntry.contract), ['snapshot', 'tasks', 'ownerFeed', 'board', 'pieceHistory']);
   } finally { await harness.experimental_dispose(); f.cleanup(); }
 });
 test('task discovery and projection include unread mail without consuming or duplicating it', () => {
@@ -233,6 +233,20 @@ test('discovery counts valid tasks after more than 256 raw legacy entries', () =
     assert.equal(catalogue.scanned, 257); assert.equal(catalogue.truncated, false);
     assert.equal(readProjection(f.selection, 'test', 1).task.id, 'valid-first');
     assert.equal(treeDigest(f.root), before);
+  } finally { f.cleanup(); }
+});
+
+test('discovery keeps an older active task ahead of newer finished ones when it drops tasks past 256', () => {
+  const f = fixture('older-active-task');
+  try {
+    const task = f.engine.readTask(f.selection.taskId), owner = task.participants.find(p => p.id === task.owner)!;
+    for (let index = 0; index < 260; index++) {
+      const id = `finished-${index}`, directory = path.join(f.selection.storeRoot, 'tasks', id); mkdirSync(directory);
+      writeFileSync(path.join(directory, 'task.json'), JSON.stringify({ ...task, id, status: 'done', updated: '2999-01-01T00:00:00.000Z', participants: [owner] }));
+    }
+    const catalogue = readTasks({ storeRoot: f.selection.storeRoot, nativeRoot: f.selection.nativeRoot });
+    assert.equal(catalogue.truncated, true); assert.equal(catalogue.tasks.length, 256);
+    assert.deepEqual(catalogue.tasks[0], { id: 'older-active-task', title: 'SECRET-TITLE', state: 'active', updated: task.updated });
   } finally { f.cleanup(); }
 });
 
