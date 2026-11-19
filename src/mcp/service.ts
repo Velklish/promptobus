@@ -10,6 +10,8 @@ export interface OutgoingMessage {
   type: string;
   body: string;
   artifactPath?: string | null;
+  /** A file-free reviewer finding checkpoint; the adapter validates its complete shape. */
+  artifact?: unknown;
   /** Calling harness session; direct participant traffic must prove the sender holds its task address. */
   session?: string | null;
 }
@@ -38,6 +40,8 @@ export interface SentMessage {
   deliveredFrom?: string;
   /** The file these bytes already landed under; `null` or absent — they are new here. */
   sameContent?: SameContent | null;
+  /** Distinguishes the inline checkpoint response from legacy file attachments. */
+  checkpoint?: boolean;
   /** The primary task of the recipient's mailbox, when it is not the task the message landed in. */
   mailboxTask?: string;
 }

@@ -52,7 +52,27 @@ export function mcpTools(registry: RoleRegistry): McpTool[] {
           artifactPath: {
             type: 'string',
             description: 'absolute file path; copied into the task artifacts/, the message gets the name. '
-              + 'Required when type is artifact: an artifact message always carries a file',
+              + 'Ordinary artifact messages require this; native reviewers use the inline artifact field instead',
+          },
+          artifact: {
+            type: 'object',
+            description: 'Reviewer only: complete inline finding checkpoint, not a terminal result. Mutually exclusive with artifactPath.',
+            properties: {
+              content: { type: 'string', description: 'Complete UTF-8 report, at most 1000000 bytes; never truncated' },
+              subject: {
+                type: 'object',
+                properties: {
+                  assignmentAfterId: { type: 'string' },
+                  head: { type: 'string' },
+                  base: { type: 'string' },
+                  diffSha256: { type: 'string' },
+                },
+                required: ['assignmentAfterId', 'head', 'base', 'diffSha256'],
+                additionalProperties: false,
+              },
+            },
+            required: ['content', 'subject'],
+            additionalProperties: false,
           },
           ...TASK_ARG,
         },

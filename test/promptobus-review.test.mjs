@@ -425,8 +425,9 @@ check('PB-204: the reviewer preamble carries the same header and the same bound 
   reviewHandoff.slice(0, 800));
 // The overflow path a worker has does not exist here: file writes are denied to this
 // session, so a rule that sent findings into an attached file could never be obeyed.
-check('PB-204: the reviewer preamble says it produces no artifact and must not attach one',
-  /produce no artifact of your own/.test(reviewHandoff)
+check('reviewer checkpoint: the preamble permits inline reports and still forbids filesystem artifacts',
+  /produce no filesystem artifact of your own/.test(reviewHandoff)
+  && /artifact:\{content:/.test(reviewHandoff) && /not a terminal result/.test(reviewHandoff)
   && !/attached with artifactPath/.test(reviewHandoff)
   && plan.settings.permissions.deny.includes('Write'),
   reviewHandoff.slice(0, 900));
@@ -982,6 +983,31 @@ check('dead session without a result: the full prompt is unchanged by other mess
   promptSnapshot(withoutResult) === promptSnapshot(statusOnly)
   && !statusOnly.prompt.includes('## Prior reviewer findings'), statusOnly.prompt);
 
+const checkpointParticipant = store.participantOf(store.readTask(home, pendingTask.id), 'reviewer:orders-api');
+store.stampSnapshot(home, pendingTask.id, 'reviewer:orders-api', withoutResult.snapshot);
+const checkpointSubject = {
+  assignmentAfterId: checkpointParticipant.metadata.assignmentAfterId,
+  head: withoutResult.snapshot.head, base: withoutResult.snapshot.base, diffSha256: withoutResult.snapshot.diffSha256,
+};
+const checkpointReports = ['Independent full checkpoint 😀\n'.repeat(150), 'Second finding with details\n'.repeat(180)];
+const checkpoints = checkpointReports.map((content) => store.sendMessage(home, pendingTask.id, {
+  from: 'reviewer:orders-api', to: 'orchestrator', type: 'artifact', body: 'Finding checkpoint',
+  session: store.sessionIdOf(checkpointParticipant), artifact: { content, subject: checkpointSubject },
+}));
+const checkpointPlan = planReview(WS, { target: REPO, task: pendingTask.id });
+check('preterminal checkpoints: replacement automatically retains every full original report before launch',
+  checkpoints.every((sent, i) => checkpointPlan.prompt.includes(sent.artifact.id)
+    && checkpointPlan.prompt.includes(sent.message.id)
+    && checkpointPlan.prompt.includes(checkpointReports[i]))
+  && checkpointPlan.checkpointRefs.length === 2 && checkpointPlan.priorFindings === null, checkpointPlan.prompt);
+const beforeCorruption = store.participantOf(store.readTask(home, pendingTask.id), 'reviewer:orders-api');
+store.upsertParticipant(home, pendingTask.id, { ...beforeCorruption, metadata: { ...beforeCorruption.metadata,
+  findingCheckpoints: beforeCorruption.metadata.findingCheckpoints.slice(1) } });
+const missingCheckpoint = expectThrow(() => planReview(WS, { target: REPO, task: pendingTask.id }));
+check('preterminal checkpoints: an omitted committed checkpoint refuses replacement before model launch',
+  missingCheckpoint.threw && /checkpoint/.test(missingCheckpoint.msg), missingCheckpoint.msg);
+store.upsertParticipant(home, pendingTask.id, beforeCorruption);
+
 const earlierFindings = 'Earlier finding: obsolete detail';
 // english-authoring: input — preserve the complete Unicode findings body in a replacement prompt.
 const priorFindings = '\nmajor — Проверить закрытие α\n  keep  two spaces\n\n```text\nsecond finding → β\n```\n' + 'full finding '.repeat(400) + '\n';
@@ -1018,6 +1044,13 @@ check('dead session: prior findings select the last result of this reviewer, not
   && !withResult.prompt.includes('Later status, not findings'), withResult.prompt);
 let replacement;
 await capture(async () => { replacement = await review(WS, { tool: TOOL, target: REPO, task: pendingTask.id }); });
+check('replacement first turn receives both complete checkpoint reports beside the prior result',
+  checkpointReports.every(report => bgArgv().includes(report)) && bgArgv().includes(findingsSection), bgArgv());
+const successor = store.participantOf(store.readTask(home, pendingTask.id), 'reviewer:orders-api');
+const inherited = store.retainedReviewerCheckpoints(home, pendingTask.id, successor);
+check('replacement retains each original message and report for subsequent recovery',
+  inherited.length === checkpoints.length && inherited.every((ref, i) => ref.messageId === checkpoints[i].message.id
+    && ref.report === checkpointReports[i]), inherited.map(ref => ref.messageId).join(', '));
 check('dead session: the launched replacement receives prior findings before its first turn',
   replacement.prompt.includes(findingsSection) && bgArgv().includes(findingsSection), bgArgv());
 check('dead session: prior findings need no asynchronous mailbox delivery after launch',

@@ -78,19 +78,16 @@ export interface SendInput {
   artifact?: ArtifactSource;
 }
 
-/**
- * The same, synchronously. The artifact source here is a file only, and the
- * adapter names it — the callback is called AFTER the blob is on disk and
- * receives its digest: the adapter lays its human names next to it, and name
- * dedup without a digest is impossible.
- */
+/** Synchronous send from a file or owned bytes.
+ * The adapter's naming callback receives the persisted blob's digest and size. */
 export interface SendSyncInput {
   from: string;
   to: string[];
   type: string;
   body: string;
   originTask?: string;
-  artifact?: { path: string; name?: (sha256: string, size: number) => string };
+  artifact?: ({ path: string } | { content: Uint8Array; filename: string })
+    & { name?: (sha256: string, size: number) => string };
   /** Metadata id of a prior artifact message; sets `message.artifact` without a new attachment. */
   linkArtifact?: string;
 }
@@ -391,16 +388,18 @@ export function openEngine({
         // The source name is checked BEFORE the blob is written — the same as
         // the streaming branch: a bad one, caught only after, would leave
         // payload in the task with no metadata, an orphan blob on a flat path.
-        nameOf({ path: source.path });
+        if (!('path' in source) && !(source.content instanceof Uint8Array)) fail('artifact-source', 'inline artifact requires bytes');
+        const file = 'path' in source ? { path: source.path } : { path: source.filename, filename: source.filename };
+        const originalName = nameOf(file);
         // Payload, name and record under one short lock, for the reason the streaming
         // branch gives: the `files/` link and the record both land inside it.
         artifact = withBlobLock(home, task, () => {
-          const { sha256, size } = stashBlobSync(home, task, source.path);
+          const { sha256, size } = stashBlobSync(home, task, 'path' in source ? source.path : source.content);
           faults('blob', { task, sha256 });
           // The name a person will see the record under is given by the adapter
           // and AFTER the blob: name dedup without a digest is impossible. It
           // is checked by the same `nameOf`.
-          const filename = nameOf({ path: source.path, filename: source.name?.(sha256, size) });
+          const filename = nameOf({ path: originalName, filename: source.name?.(sha256, size) });
           return writeArtifact(home, task, newArtifact(newRecordId(now()), sha256, filename, size));
         });
         faults('artifact', { task, artifact: artifact.id });

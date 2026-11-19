@@ -36,6 +36,8 @@ coverage/
 /lib/provenance.d.ts
 /lib/reviewer-files.js
 /lib/reviewer-files.d.ts
+/lib/reviewer-checkpoint.js
+/lib/reviewer-checkpoint.d.ts
 /lib/schema.js
 /lib/schema.d.ts
 /lib/session-env.js

@@ -2,14 +2,14 @@
 // [reference/01-overview.md#rendering-a-reply-for-a-participant](../../docs/reference/01-overview.md#rendering-a-reply-for-a-participant)
 import path from 'node:path';
 import {
-  addressOf, dismissedOf, FOREIGN_MARK, FOREIGN_ROUTE, MAILBOX_COPY, nameOf, ORCHESTRATOR, ownerOf,
+  addressOf, dismissedOf, FOREIGN_MARK, FOREIGN_ROUTE, GateError, holdsSession, MAILBOX_COPY, nameOf, ORCHESTRATOR, ownerOf,
 } from '../protocol.js';
 import type { Ownership } from '../protocol.js';
 import { pipelineText } from '../pipeline.js';
 import { SHIPPED_REGISTRY, withoutStep } from '../registry.js';
 import type { DeclaredStep } from '../registry.js';
 import type { MessageV1, ParticipantV1, TaskV1 } from '../v1/model.js';
-import type { PromptobusService } from './service.js';
+import type { PromptobusService, SenderCaller } from './service.js';
 
 /** Participant lines only the adapter knows: repository, worktree, background session. */
 export type DecorateParticipant = (participant: ParticipantV1) => string[];
@@ -171,10 +171,11 @@ export function renderTask(
   home: string,
   id: string,
   addr: string,
-  session: string | null,
+  caller: SenderCaller,
   decorate: DecorateParticipant,
   steps: readonly DeclaredStep[],
 ): string {
+  const { session } = caller;
   const meta = service.readTask(home, id);
   const children = service.listTasks(home).filter((child) => child.parent === id);
   // Own mailbox — in the heading, before the participant list: the list
@@ -182,6 +183,18 @@ export function renderTask(
   // that is sure right now that it is waiting.
   const mine = service.unreadNote(home, id, addr, session);
   const contacts = service.contactsLine?.(home, id, service.mailboxAddress?.(home, id, addr, session) ?? addr) ?? null;
+  const candidates = meta.status === 'active' && !meta.adapter.bb ? meta.participants.filter(p =>
+    steps.some(s => s.name === p.role && s.kind === 'reads-diff') && !p.metadata.nativeStop && !p.metadata.nativeUnlaunched
+    && holdsSession(p, session)) : [];
+  let sender: string | null = null;
+  if (candidates.length) {
+    try { sender = service.senderFor(home, id, caller); } catch (error) {
+      if (!(error instanceof GateError)) throw error;
+    }
+  }
+  const m = candidates.find(p => addressOf(p) === sender)?.metadata;
+  const checkpoint = m && ['assignmentAfterId', 'diffHead', 'diffBase', 'diffSha256'].every((key) => typeof m[key] === 'string')
+    ? JSON.stringify({ assignmentAfterId: m.assignmentAfterId, head: m.diffHead, base: m.diffBase, diffSha256: m.diffSha256 }) : null;
   const lines = [
     `task ${meta.id} · ${meta.title}`,
     `status: ${meta.status} · created: ${meta.created}`,
@@ -189,6 +202,7 @@ export function renderTask(
     `children: ${children.length ? children.map((child) => `${child.id} (${child.status})`).join(', ') : 'none'}`,
     `pipeline: ${pipelineText(steps)}`,
     `artifacts: ${service.artifactsDir(home, id)}`,
+    ...(checkpoint ? [`reviewer checkpoint subject: ${checkpoint}`] : []),
     ...(mine ? [mine] : []),
     ...(contacts ? [`you may write: ${contacts}`] : []),
     'participants:',

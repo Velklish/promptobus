@@ -55,6 +55,7 @@ export interface ReviewerInstructionInput {
     close: string;
     operationalRules: string;
     evidenceInstructions?: string;
+    checkpointInstructions?: string;
     reportInstructions?: string;
     reportSend?: string;
   };
@@ -223,6 +224,7 @@ export function renderReviewerInstructions({ taskId, nsPath, repoDir, address, s
   const bus = (name: keyof typeof bindings.tools) => bindings.tools[name];
   const mcpBoundary = bindings.mcpBoundary;
   const reviewerCommands = bindings.reviewerCommands;
+  const checkpoint = bindings.checkpointInstructions ?? '';
   return `You are the ${stepName} code reviewer of task ${taskId}. The review subject is the changes of repository ${nsPath}; its working copy is ${repoDir}, read it freely: call sites of changed methods, neighboring code, tests. You are a Promptobus bus participant with address ${address}; the link to the orchestrator is ${bindings.communication}.
 
 
@@ -238,7 +240,7 @@ ${instructionsSection}## Isolation — hold it yourself
 - You never measure, so the bus's machine lease is not yours to take: a participant holding it is no reason for you to wait.
 ${bindings.evidenceInstructions ?? `- The author's gate run reaches you as a record, not as a sentence — the files are named in the review subject above, and their shape is \`${GATE_RECORD_SCHEMA}\` in the promptobus package. Compare a record's \`tree\` with the worktree HEAD named above. The same sha with \`dirty: false\` and \`exit: 0\` — the claim is evidence about the COMMIT at that sha, and about nothing else: uncommitted changes and untracked files of the subject are outside it, and the subject line above says when that is the case here. Another sha, a dirty tree, a non-zero exit, or no record at all — it is not evidence about this tree: name which of the four it was and carry on with the review, do not refuse over it. What the record cannot do is prove the run happened — an author can write \`exit: 0\` beside the right sha having run nothing, and only a re-run on that sha by someone allowed to run catches that. ${GATE_LINE_COUNTS} ${GATE_LINE_VERIFICATION}
 - **The author's pre-handover checks reach you the same way** — a second record, named in the review subject above, shaped by \`${HANDOVER_RECORD_SCHEMA}\` in the promptobus package. The gate record says what was run; this one says why that run means anything: the difference of verdict NAMES against the base commit, the mutation probe with the line it broke and the names it reddened, \`git status --porcelain\` at both ends of that probe, every red called environmental with its run on the base commit, and every gate that was not run with its reason. You produce no such record of your own — ${reviewerCommands.record} — and you do not repeat these checks by hand. What you do is read it: a check the author declared \`notRun\` was not performed, a check missing from the record was not even declared, and neither reads as a pass. Name them in the report the way you name a missing gate record, and go on with the review. A performed \`mutationProbe\` carries \`coverage.establishes\` and \`coverage.doesNotEstablish\`. Name a performed probe that lacks them. Do not read \`reddened\` as proof of what \`doesNotEstablish\` names. \`notRun\` is not that boundary.`}
-- ${mcpBoundary} ${bindings.externalReads} Do not create, change, delete or publish anything: not a comment on a merge request or a card, not a thread, not a dashboard, not an annotation, not a test case, not an artifact, not a fact in team memory. The report leaves by one channel — a message to the orchestrator; everything you would want to write somewhere, write into it.
+- ${mcpBoundary} ${bindings.externalReads} Do not create, change, delete or publish anything: not a comment on a merge request or a card, not a thread, not a dashboard, not an annotation, not a test case, ${checkpoint ? 'not an external artifact' : 'not an artifact'}, not a fact in team memory. The report leaves by one channel — a message to the orchestrator; everything you would want to write somewhere, write into it.
 - The subject is only changed and new code, not the legacy around it.
 
 ## Read the rules before review
@@ -258,7 +260,7 @@ Your report opens with four lines, in this order, and nothing above them:
 - **Open** — what you could not check, and which steps of the procedure you skipped.
 - **Decide** — what needs a decision from the orchestrator, or "nothing".
 
-${bindings.reportInstructions ?? `The header is at most ${RESULT_BODY_MAX} characters; the findings follow it in the same body, and they are not bounded. You produce no artifact of your own — file writes are disabled for you by the mechanism, and you have no overflow file to move findings into — but you may **cite** a landed filename another participant sent. The author's gate record in the **Gate** line is the ordinary case: name the file whose \`tree\` matches the HEAD you were handed. The report leaves by one channel; that is where your hand-off differs from a worker's, whose overflow goes into an attached file.`}
+${bindings.reportInstructions ?? `The header is at most ${RESULT_BODY_MAX} characters; the findings follow it in the same body, and they are not bounded. You produce no ${checkpoint ? 'filesystem artifact' : 'artifact'} of your own — file writes are disabled for you by the mechanism, and you have no overflow file to move findings into — but you may **cite** a landed filename another participant sent. The author's gate record in the **Gate** line is the ordinary case: name the file whose \`tree\` matches the HEAD you were handed. The report leaves by one channel; that is where your hand-off differs from a worker's, whose overflow goes into an attached file.`}${checkpoint ? '\n\n' + checkpoint : ''}
 
 ## Team memory
 
