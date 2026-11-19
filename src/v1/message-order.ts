@@ -1,8 +1,9 @@
-import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync } from 'node:fs';
+import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { writeJsonAtomic } from '../fs/atomic.js';
 import { withDirLock } from '../fs/lock.js';
+import { OwnedReadChanged, type OwnedReader } from '../fs/owned-reader.js';
 import { fail } from './errors.js';
 import { brokenMessagesDir, intentsDir, messagesDir, taskFile, tasksDir } from './layout.js';
 import { compactStamp, RECORD_ID_RE, TASK_ID_RE } from './model.js';
@@ -19,14 +20,14 @@ export function withMessageCommit<T>(home: string, fn: () => T): T {
     onBusy: () => new Error('message order commit is busy; retry after the current writer finishes'),
   });
 }
-export function readMessageFence(home: string): { head: string | null; busy: boolean } {
-  const state = readHead(home);
+export function readMessageFence(home: string, reader: OwnedReader): { head: string | null; busy: boolean } {
+  let content;
+  try { content = reader.text(messageOrderFile(home), HEAD_LIMIT); }
+  catch (error) { if (error instanceof OwnedReadChanged) return { head: null, busy: true }; throw error; }
+  const state = content === null ? { kind: 'missing' as const } : parseHead(content);
   if (state.kind === 'malformed') return refusal('malformed high-water state');
   // The head may be published before its intent. A held commit lock makes that fence unusable.
-  let busy = false;
-  try { lstatSync(messageOrderLock(home)); busy = true; }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-  return { head: state.kind === 'valid' ? state.head : null, busy };
+  return { head: state.kind === 'valid' ? state.head : null, busy: reader.hasDirectory(messageOrderLock(home)) };
 }
 function refusal(note: string): never {
   return fail('schema-invalid', `message order: ${note}; stop other writers and run message-order rebuild`, {});
@@ -39,7 +40,7 @@ export function validOrderId(id: unknown): id is string {
   const stamp = id.slice(0, 18), at = stampDate(stamp);
   return Number.isFinite(at.getTime()) && compactStamp(at) === stamp;
 }
-function readHead(home: string): { kind: 'valid'; head: string | null } | { kind: 'missing' | 'malformed' } {
+function readHead(home: string): ReturnType<typeof parseHead> | { kind: 'missing' } {
   let fd: number;
   try { fd = openSync(messageOrderFile(home), constants.O_RDONLY | constants.O_NOFOLLOW); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'missing' }; throw error; }
@@ -56,8 +57,11 @@ function readHead(home: string): { kind: 'valid'; head: string | null } | { kind
     }
     if (read !== content.length || fstatSync(fd).size !== before.size) return { kind: 'malformed' };
   } finally { closeSync(fd); }
+  return parseHead(content.toString('utf8'));
+}
+function parseHead(content: string): { kind: 'valid'; head: string | null } | { kind: 'malformed' } {
   let value: unknown;
-  try { value = JSON.parse(content.toString('utf8')); } catch { return { kind: 'malformed' }; }
+  try { value = JSON.parse(content); } catch { return { kind: 'malformed' }; }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return { kind: 'malformed' };
   const head = value as { format?: unknown; head?: unknown };
   if (head.format !== undefined && head.format !== 1) return fail('schema-version-unsupported', 'message order head format is unsupported', {});
@@ -68,20 +72,31 @@ function names(directory: string): string[] {
   try { return readdirSync(directory).sort(); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error; }
 }
-function readMessage(file: string, task: string, id: string): MessageV1 {
-  const value: unknown = JSON.parse(readFileSync(file, 'utf8'));
+function readMessage(file: string, task: string, id: string, reader?: OwnedReader): MessageV1 {
+  const text = reader ? reader.text(file) : readFileSync(file, 'utf8');
+  if (text === null) throw new Error('canonical message disappeared during observation');
+  let value: unknown;
+  try { value = JSON.parse(text); }
+  catch (error) { if (!reader) throw error; throw new Error('malformed canonical JSON'); }
   requireValid('message', value, { task, message: id });
   const message = value as MessageV1;
   if (message.task !== task || message.id !== id || !validOrderId(id)) refusal('canonical or intent identity mismatch');
   return message;
 }
-export function strictCommittedMessages(home: string, task: string): MessageV1[] {
-  if (names(brokenMessagesDir(home, task)).length) refusal('unresolved broken message records prevent complete committed facts');
-  if (names(intentsDir(home, task)).some(name => !name.endsWith('.owner'))) fail('schema-invalid', 'committed facts temporarily unavailable: unresolved task intent; wait for its writer or recover its fan-out', { task });
-  return names(messagesDir(home, task)).map(name => {
+export function strictCommittedMessages(home: string, task: string, reader?: OwnedReader): MessageV1[] {
+  const list = reader?.names ?? names;
+  const checkBroken = () => {
+    if (list(brokenMessagesDir(home, task)).length) refusal('unresolved broken message records prevent complete committed facts');
+  };
+  checkBroken();
+  if (list(intentsDir(home, task)).some(name => !name.endsWith('.owner'))) fail('schema-invalid', 'committed facts temporarily unavailable: unresolved task intent; wait for its writer or recover its fan-out', { task, pending: 'fan-out' });
+  const records = list(messagesDir(home, task)).map(name => {
     if (!name.endsWith('.json') || !validOrderId(name.slice(0, -5))) return refusal('unknown canonical message name');
-    return readMessage(path.join(messagesDir(home, task), name), task, name.slice(0, -5));
+    return readMessage(path.join(messagesDir(home, task), name), task, name.slice(0, -5), reader);
   });
+  // An unlocked reader must check again: an intent can move into quarantine between the listings.
+  if (reader) checkBroken();
+  return records;
 }
 function retainedHead(home: string): { head: string | null; messages: number; intents: number; fences: number } {
   let head: string | null = null, messages = 0, intents = 0, fences = 0;

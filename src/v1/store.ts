@@ -56,7 +56,7 @@ function linkIntentFile(home: string, parent: string, child: string): string {
   return path.join(linksDir(home, parent), `${child}.json`);
 }
 
-export function pendingLinks(home: string, parent: string): string[] {
+function pendingLinks(home: string, parent: string): string[] {
   try {
     return readdirSync(linksDir(home, parent)).filter((name) => name.endsWith('.json')).sort();
   } catch (e) {

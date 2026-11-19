@@ -149,9 +149,9 @@ Participant launch options: --context-purpose technical|user-facing|author-voice
                               active tasks: participants, unread mail, session state
   ${cmd} digest [--task <id>] [--json]
                               task trees: last status lines, open questions, debts and pieces
-  ${cmd} observe --task <root> [--after <cursor>] [--wait <seconds>]
-                              read a JSON activity page without opening a mailbox or harness;
-                              wait at most 20 seconds and resume with nextCursor
+  ${cmd} observe --task <id> [--after <cursor>] [--wait <seconds>]
+                              bound orchestrator only: read activity for this task without taking mail;
+                              retry for up to 20 seconds plus read time; resume with nextCursor
   ${cmd} stats [--task <id>]
                               recorded participant generations: wall time, token kinds,
                               bus counts and reasons for unavailable measurements
@@ -733,7 +733,7 @@ export async function runPromptobus(argv: readonly string[] | null | undefined, 
         const { values } = parse(at('observe'), rest, {
           options: { task: { type: 'string' }, after: { type: 'string' }, wait: { type: 'string' } },
         });
-        const result = await (await import('./observe.js')).observe(host, values);
+        const result = await (await import('./observe.js')).observe(host, values, env);
         writeLine(output, JSON.stringify(result));
         return 0;
       }
