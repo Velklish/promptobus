@@ -376,11 +376,13 @@ check('docs: ordinary claim checks resolved authority and host exit before trans
   && has(handoff, 'verify the workspace and store, recorded owner, incoming harness identity and effective mailbox for this call')
   && has(handoff, 'neither an idle turn nor a missing or refused wake proves exit')
   && has(handoff, 'Only where the installed dispatcher supports the registered-peer exception')
-  && has(handoff, 'an explicitly declared `orchestrator` select the named root for claim from its own exact-session linked peer'));
+  && has(handoff, 'an explicitly declared `orchestrator` select the named root for claim from its own exact-session linked peer')
+  && has(handoff, 'The exception applies only to explicit claim. Ordinary reads follow current bindings: while the session holds only the peer they select the peer; after a successful claim they may select the orchestrator'));
 check('docs: an uncertain claim result requires reconciliation, not replay',
   has(handoff, 'changes ownership and binding and takes unread mail into history before replying')
   && has(handoff, 'Preserve returned headers and IDs')
-  && has(handoff, 'On a lost or mismatched reply, do not retry: reconcile ownership, binding and mail history through an authorized route'));
+  && has(handoff, 'On a lost or mismatched reply, do not retry or probe with an ordinary mailbox read: it could consume new root mail')
+  && has(handoff, "Reconcile ownership and binding through authorized non-consuming inspection; compare saved IDs with the named task's `history`, which does not mark mail read"));
 const wholeRunPause = section(orchestrateSkill, '## Planned whole-run pause');
 const pauseAtLimit = section(wholeRunPause, "### Pause at the owner's limit threshold");
 const continueAfterReset = section(wholeRunPause, '### Continue after the reset');
