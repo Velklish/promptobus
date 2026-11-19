@@ -1,17 +1,5 @@
 #!/usr/bin/env node
-// Live check of the Codex driver on a real `codex app-server`. Run:
-//
-//   node scripts/live-codex.mjs [--model <id>]
-//
-// Not in `npm test` and not in the release gate: it spends a Codex account limit
-// (the same as the owner's ChatGPT.app) and talks to a live binary. The workspace
-// is temporary, `{claude, codex}` only inside it. The script does not read the
-// person's `~/.codex` for content and does not write it; a sha of `config.toml`
-// before and after is required.
-//
-// **This run does not take filesystem write rights.** Spawn goes
-// `--permission-mode read-only`. Whether `app-server` with `workspace-write`
-// writes a `[projects."…"]` section is not checked here.
+// Live read-only Codex check; see docs/guides/contributing.md#live-harness-scenarios.
 import { existsSync, writeFileSync, rmSync, writeSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';

@@ -320,8 +320,12 @@ check('prompt: the repository is named, there is no foreign module layout',
   plan.prompt.includes(path.join(REPO, 'AGENTS.md')));
 check('prompt: a reviewer is told the machine lease is not its own and is not taught the command',
   plan.prompt.includes('machine lease is not yours to take') && !plan.prompt.includes(' lease --as '));
-check('prompt: the standalone host does not add team-memory tools',
-  !plan.prompt.includes('search_facts'));
+const unavailableTools = [['search', 'facts'], ['save', 'fact']].map((parts) => parts.join('_'));
+for (const [kind, prompt] of [['review', plan.prompt], ['re-review', plan.reReview]]) {
+  const leaked = unavailableTools.filter((name) => prompt.includes(name));
+  check(`prompt: standalone ${kind} does not name unavailable memory tools`,
+    leaked.length === 0, leaked.join(', '));
+}
 // The reviewer gets the whole canon, and every name is pre-approved: there will be no
 // permission request, there's no human behind the session, and the deny list does not
 // cover writing MCP tools — it's about Edit/Write/NotebookEdit/Bash/WebFetch/WebSearch.
@@ -331,8 +335,6 @@ check('prompt: external-system MCP is read-only only — the boundary is held by
   plan.prompt.includes('read-only')
   && /Do not create, change, delete or publish/.test(plan.prompt)
   && plan.prompt.includes('pre-approved'));
-check('prompt: standalone host — there is no team-memory section',
-  !plan.prompt.includes('`search_facts`') && !plan.prompt.includes('`save_fact`'));
 // : the reviewer has nothing to wait with and doesn't need to — the warden wakes it.
 // A gate paired with the worker's own prompt check elsewhere in this suite:
 // the participant's prompt sits in its context always, so a surviving
@@ -629,9 +631,8 @@ check(`reviewer's settings: personal skill duplicates are suppressed by name`,
 // The reviewer's MCP set equals the worker's set (owner decision 2026-08-28).
 // Read-only is held by a deny list on editing the working copy, not by a poor toolset.
 const rsrv = plan.mcpConfig.mcpServers;
-check(`mcp-config reviewer's: the bus is there, the externally-authorized consumer canon isn't`,
-  rsrv['promptobus'] !== undefined && rsrv['wiki-mcp'] === undefined
-  && rsrv['memory-hooks'] === undefined,
+check('mcp-config: the standalone reviewer receives only the bus server',
+  Object.keys(rsrv).join(',') === 'promptobus',
   JSON.stringify(Object.keys(rsrv)));
 const rallowed = plan.argv.slice(plan.argv.indexOf('--allowedTools') + 1, plan.argv.indexOf('--add-dir'));
 check('argv: every delivered server is pre-approved — the reviewer is raised without --permission-mode',

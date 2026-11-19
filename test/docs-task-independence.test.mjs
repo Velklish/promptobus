@@ -41,11 +41,20 @@ function linesOf(file) {
 const body = consumerDocs.flatMap(linesOf);
 const taskId = /\bPB-\d+(?:\.\d+)?\b/;
 const reportSection = /REPORT §/;
-const productJson = new Set([
-  'promptobus.json', 'hooks.json', 'auth.json', 'state.json', 'holder.json', 'stalls.json',
-  'migrating.json', 'migrated.json', 'manifest.json', 'model-routing.json', 'cache.json',
-  'package.json', 'tsconfig.json', 'backslop.json', 'task.json', 'health.json',
-]);
+const productNames = new Map(Object.entries({
+  'README.md': ['.mcp.json', 'task.json'],
+  'docs/GLOSSARY.md': ['telemetry.jsonl'],
+  'docs/guides/contributing.md': ['health.json'],
+  'docs/guides/hooks-and-trust.md': ['hooks.json', 'state.json'],
+  'docs/guides/install.md': ['.mcp.json'],
+  'docs/guides/model-routing.md': ['auth.json', 'task.json'],
+  'docs/reference/01-overview.md': ['holder.json', 'migrated.json', 'migrating.json', 'model-routing.json'],
+  'docs/reference/02-host.md': ['auth.json', 'telemetry.jsonl'],
+  'docs/reference/03-cli.md': ['.mcp.json', 'auth.json', 'health.json', 'holder.json', 'hooks.json', 'stalls.json', 'task.json', 'telemetry.jsonl'],
+  'docs/reference/04-protocol.md': ['health.json', 'stalls.json', 'task.json'],
+  'docs/reference/05-drivers.md': ['auth.json', 'hooks.json'],
+  'test/fixtures/codex-app-server/0.164.0/README.md': ['hooks.json'],
+}));
 
 /** Destinations come from the documentation-link parser, including titles and reference links. */
 function destinations(text) {
@@ -79,7 +88,7 @@ function isTracker(dest) {
   return /(?:^|\/)(?:backlog|archive)\//i.test(file) || /(?:^|\/)TRACKS\.md$/i.test(file);
 }
 
-function candidates(fromRel, raw) {
+function candidates(fromRel, raw, inline) {
   const clean = localFile(raw);
   if (clean == null || clean === '') return [];
   if (clean.startsWith('./') || clean.startsWith('../')) {
@@ -92,18 +101,12 @@ function candidates(fromRel, raw) {
       path.posix.normalize(path.posix.join(path.posix.dirname(fromRel), clean)),
     ];
   }
-  return [clean];
+  const besideDoc = path.posix.join(path.posix.dirname(fromRel), clean);
+  return inline ? [clean, besideDoc] : [besideDoc];
 }
 
 function isTrackedPath(cands) {
-  return cands.some((cand) => {
-    if (!cand || cand === '..' || cand.startsWith('../')) return false;
-    if (trackedSet.has(cand)) return true;
-    if (!cand.includes('/')) {
-      for (const file of trackedSet) if (file === cand || file.endsWith(`/${cand}`)) return true;
-    }
-    return false;
-  });
+  return cands.some((cand) => trackedSet.has(cand));
 }
 
 // Templates (`<…>`, `*`) are skipped in isPrivateEvidence; an untracked concrete name passes only
@@ -130,26 +133,26 @@ function isPlaceholder(clean, fromRel) {
   if (clean.includes('/')) return false;
   if (/^\.(?:json|jsonl|txt)$/.test(clean)) return true;
   if (namingExamples.get(fromRel)?.has(clean)) return true;
-  return productJson.has(clean) || clean === '.mcp.json';
+  return productNames.get(fromRel)?.includes(clean) ?? false;
 }
 
 function isDocumentedProductLocation(clean) {
   return productLocations.has(clean);
 }
 
-function isPrivateEvidence(raw, fromRel) {
+function isPrivateEvidence(raw, fromRel, inline = false) {
   const clean = localFile(raw);
   if (clean == null || /[\s*<>{}]/.test(clean)) return false;
   if (!/\.(?:json|jsonl|txt)$/i.test(clean)) return false;
-  if (isTrackedPath(candidates(fromRel, clean))) return false;
-  if (isPlaceholder(clean, fromRel) || isDocumentedProductLocation(clean)) return false;
+  if (isTrackedPath(candidates(fromRel, clean, inline))) return false;
+  if ((inline && isPlaceholder(clean, fromRel)) || isDocumentedProductLocation(clean)) return false;
   return true;
 }
 
 function evidenceIn(text, fromRel) {
   const hits = [];
   for (const match of text.matchAll(/`([^`\n]+)`/g)) {
-    if (isPrivateEvidence(match[1].trim(), fromRel)) hits.push(match[1].trim());
+    if (isPrivateEvidence(match[1].trim(), fromRel, true)) hits.push(match[1].trim());
   }
   for (const link of destinations(text)) {
     if (isPrivateEvidence(link.dest, fromRel)) hits.push(link.dest);
@@ -224,7 +227,17 @@ check('docs: a text transcript is refused',
 check('docs: a stand locator is refused',
   evidenceIn('shown in `live.ej1Piv`', fromGuide).includes('live.ej1Piv'));
 check('docs: a tracked fixture file is not a missing artifact',
-  evidenceIn('`TokenUsage-0.146.0-2026-09-12.json`', fromGuide).length === 0);
+  evidenceIn('`test/fixtures/codex-app-server/0.146.0/TokenUsage-0.146.0-2026-09-12.json`', fromGuide).length === 0
+  && evidenceIn('`TokenUsage-0.146.0-2026-09-12.json`', 'test/fixtures/codex-app-server/0.146.0/README.md').length === 0);
+check('docs: a bare evidence name is refused even when a tracked file shares its basename',
+  trackedSet.has('schemas/v1/handover-record.schema.json')
+  && evidenceIn('`handover-record.schema.json`', fromGuide).includes('handover-record.schema.json')
+  && evidenceIn('[record](handover-record.schema.json)', fromGuide).includes('handover-record.schema.json')
+  && evidenceIn('[schema](../../schemas/v1/handover-record.schema.json)', fromGuide).length === 0);
+check('docs: the contributor example uses this repository’s runner without a consumer path',
+  trackedSet.has('test/run.mjs')
+  && texts.get('docs/guides/contributing.md').includes('`pgrep -f "test/run.mjs"` matches a command-line substring')
+  && !texts.get('docs/guides/contributing.md').includes(['cli', 'test', 'run.mjs'].join('/')));
 check('docs: a product placeholder is not a missing artifact',
   evidenceIn('`promptobus.json`', fromGuide).length === 0
   && evidenceIn('`~/.promptobus/model-routing.json`', fromGuide).length === 0
@@ -237,6 +250,10 @@ check('docs: only the canonical BB build manifest location is a product artifact
 check('docs: a relative product-named capture is refused',
   evidenceIn('`../runs/proof/state.json`', fromGuide).includes('../runs/proof/state.json')
   && evidenceIn('`../runs/.mcp.json`', fromGuide).includes('../runs/.mcp.json'));
+check('docs: bare product names are local prose exceptions, not capture names or links',
+  ['state.json', 'cache.json', 'hooks.json'].every((name) => evidenceIn(`\`${name}\``, fromGuide).includes(name))
+  && evidenceIn('`hooks.json`', 'docs/guides/hooks-and-trust.md').length === 0
+  && evidenceIn('[capture](hooks.json)', 'docs/guides/hooks-and-trust.md').includes('hooks.json'));
 check('docs: only the native store message-order head location is a product artifact',
   evidenceIn('`.promptobus/message-order.json`', fromGuide).length === 0
   && ['message-order.json', 'runs/proof/message-order.json', 'other/.promptobus/message-order.json']
@@ -254,7 +271,7 @@ check('docs: a concrete capture under a product root is refused',
     .includes('~/.promptobus/tasks/run-20260927/files/gates-w.json'));
 check('docs: a record template and a documented product location are not captures',
   evidenceIn('`gates-<slug>.json` `handover-*.json` `.promptobus/manifest.json`', fromGuide).length === 0
-  && evidenceIn('`~/.claude/jobs/<id>/state.json` `$CODEX_HOME/hooks.json` `.mcp.json`', fromGuide).length === 0);
+  && evidenceIn('`~/.claude/jobs/<id>/state.json` `$CODEX_HOME/hooks.json`', fromGuide).length === 0);
 check('docs: the gate-record naming examples are legal in 04-protocol only',
   evidenceIn('`.gates-t2.json` `gates-t2.json` `gates-x-2.json`', 'docs/reference/04-protocol.md').length === 0
   && ['.gates-t2.json', 'gates-t2.json', 'gates-x-2.json']

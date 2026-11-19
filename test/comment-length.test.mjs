@@ -12,7 +12,7 @@ import { sourceFile } from './source-files.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LIMIT = 2;
-const TREES = ['lib', 'src', 'bin'];
+const TREES = ['lib', 'src', 'bin', 'scripts'];
 
 // Files the sweep has not reached, each listing the IDENTITY of every long run it still
 // has, once per run: a run listed twice is owed twice.
@@ -64,6 +64,11 @@ const { files: tracked, empty: emptyTrees } = trackedCode(ROOT, TREES);
 test('every tree the gate names carries code it can judge', () => {
   assert.deepEqual(emptyTrees, [], 'a tree named in TREES holds no tracked code file — drop it or fix the name');
   assert.ok(tracked.length > 0, 'no files were read — the walk found nothing to judge');
+});
+
+test('the walk includes the authored scripts', () => {
+  assert.ok(tracked.includes('scripts/audit-public.mjs'));
+  assert.ok(tracked.includes('scripts/mutation-probe.mjs'));
 });
 
 test('the pending list only ever shrinks', () => {
@@ -181,6 +186,7 @@ test('a comment marker inside a string, a template or a regex is not a comment',
   assert.deepEqual(one('const s = "/*";\nconst t = "*/";\nconst u = 1;\n'), [], 'a block marker inside a string');
   assert.deepEqual(one('const s = `// not a comment\n// still not`;\nconst y = 1;\n'), [],
     'inside a template literal, which spans lines');
+  assert.deepEqual(one('const r = /[/*]/;\n// one\n// two\n'), [], 'a comment marker in a regex is not a third line');
 });
 
 test('the lexer keeps its state across lines: a regex and a nested template close where they should', () => {

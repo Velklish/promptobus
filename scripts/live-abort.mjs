@@ -16,10 +16,7 @@ export function exitCodeOf(signal, signals = os.constants.signals) {
 /** How long an awaited cleanup may run before the exit goes without it. */
 export const ABORT_WAIT_MS = 15_000;
 
-// Prepended: the sandbox helper's own handler exits 130 and would otherwise run first. An
-// AWAITED cleanup needs the run's sandbox outside that handler (`signalCleanup: false`).
-/** Run `cleanup(signal)` once on the first abort signal, then exit with its code. A cleanup that
- *  returns a thenable is awaited up to `waitMs`; the exit keeps its code either way. */
+// Awaited cleanup needs a sandbox outside the helper's own signal handler (`signalCleanup: false`).
 export function onAbort(cleanup, {
   signals = ABORT_SIGNALS,
   on = (sig, fn) => process.prependListener(sig, fn),

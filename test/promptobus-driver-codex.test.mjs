@@ -929,7 +929,7 @@ check(': override keys carry the prefix — canonical names do not go into the c
 check(': toolName and phrases.tool call the override key, not the canonical name',
   toolName(codexDriver, 'promptobus', 'promptobus_send', HOST) === codexSees(`${PREFIX}promptobus`, 'promptobus_send')
   && toolName(codexDriver, 'promptobus', 'promptobus_mailbox', HOST) === PHRASES.tool('promptobus', 'promptobus_mailbox', HOST)
-  && toolName(codexDriver, 'memory-hooks', 'search_facts', HOST) === codexSees(`${PREFIX}memory-hooks`, 'search_facts'),
+  && toolName(codexDriver, 'demo-catalog', 'find_entry', HOST) === codexSees(`${PREFIX}demo-catalog`, 'find_entry'),
   toolName(codexDriver, 'promptobus', 'promptobus_send', HOST));
 
 // The prefix is the consumer's identity, and two consumers in one process are lawful:

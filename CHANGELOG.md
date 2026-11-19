@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Include authored scripts in the comment length check without adding pending exceptions. Use public, repository-local examples in the contributor guide and fixtures.
 - Check the consumed Codex app-server protocol against 0.170.0; the minimum remains 0.158.0.
 
 - Declare BB `>=0.50.1 <0.51` and Plugin SDK `>=0.6.157` for both BB plugins instead of one exact pair, so a BB patch release no longer disables them; a new BB minor line still needs a release. The build pins SDK 0.6.157. Source checks do not establish an installed live workflow.
@@ -35,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Refuse bare evidence names that only match a tracked basename elsewhere. Test the publicity audit's exit status and reported findings on synthetic leaks in both tracked and packed files.
 - Keep an OpenCode stdio server whose first argument repeats its command: only the bus entry drops the duplicated binary.
 - Let hosts keep private environment variables out of managed participants and owner snapshots. Refuse old snapshots that still contain those variables.
 
