@@ -246,6 +246,7 @@ test('missing installed binary never hides invalid committed provenance', () => 
 test('current documentation states protocol admission static inventory and requested effort', () => {
   const read = name => readFileSync(path.join(root, name), 'utf8').replace(/\s+/g, ' ');
   assert.match(read('docs/reference/05-drivers.md'), /Native harness version labels are telemetry/);
+  assert.match(read('docs/reference/05-drivers.md'), /Schema parity checks the envelope, not its keys/);
   assert.match(read('docs/reference/04-protocol.md'), /finite protocol consumed by the holder/);
   assert.match(read('docs/guides/contributing.md'), /missing binary skips the installed comparison, explicitly as `notRun`/);
   assert.match(read('docs/guides/contributing.md'), /To raise `PROVEN_CODEX_VERSION`, run/);
