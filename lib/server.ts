@@ -65,18 +65,17 @@ export function stallNote(home: string, task: string, addr: string, host: Prompt
 
 // A participant hands over their contact point and starts a listener if there is none.
 // Only a proven right may: a foreign or no-identity socket would land in another run's wake file.
-function joinBus({ home, task, address, mayRegister, host, env }: McpJoin & { host: PromptobusHost; env: NodeJS.ProcessEnv }) {
+function joinBus({ home, task, address, mayRegister, session, host, env }: McpJoin & { host: PromptobusHost; env: NodeJS.ProcessEnv }) {
   if (host == null) throw new Error('joinBus: host is required');
-  // The contact point is handed over by this participant's own driver; the fallback to the
-  // lift driver is deliberate — a refusal here would leave the session without the bus.
-  const driver = driverOrLift(participantOf(readTask(home, task), address));
-  // `false` is a gate refusal, which `join` retries; `null` is nothing to hand over.
-  let handed: unknown = null;
-  if (mayRegister) {
-    driver.bindHandshake?.(home, task, address, env);
-    handed = driver.registerWake!(home, task, address, env);
-  }
-  ensureWarden(home, task, { host, env });
+  if (!mayRegister || !session) return false;
+  const participant = participantOf(readTask(home, task), address);
+  if (!participant) return false;
+  const driver = driverOrLift(participant);
+  const identityVar = driver.options.identityVar;
+  if (identityVar && env[identityVar]?.trim() === session
+    && driver.bindHandshake?.(home, task, address, env, session, 'join') === 'refused') return false;
+  const handed = driver.registerWake!(home, task, address, env, session, 'join');
+  if (handed !== false) ensureWarden(home, task, { host, env });
   return handed;
 }
 

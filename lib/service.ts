@@ -1,35 +1,40 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { chmodSync, lstatSync, readFileSync, readdirSync, realpathSync, rmSync } from 'node:fs';
-import path from 'node:path';
+import { chmodSync, lstatSync, readdirSync, realpathSync, rmSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
-import type { ParticipantV1, PromptobusHost, SessionSnapshot } from '../dist/index.js';
-import { admitsAddress, registryOf, sessionIdOf, sessionRefOf, TICK_MS } from '../dist/index.js';
-import { withSynchronousAuthority } from '../dist/fs/lock.js';
-import type { JsonRpcMessage } from '../dist/mcp/server.js';
-import { mcpTools } from '../dist/mcp/tools.js';
-import { busConnection } from './server.js';
+import path from 'node:path';
+import type { PromptobusHost } from '../dist/index.js';
+import { sessionIdOf, TICK_MS } from '../dist/index.js';
 import { canonicalPath, closeTask, ORCHESTRATOR, participantOf, readTask, withTaskLock } from './store.js';
 import { participantSession } from './status.js';
 import { requireNativeIdle, requireNativeRootRoute, requireNativeTerminal, withVerifiedManagedNativeStop } from './native-lifecycle.js';
 import { requireNoLiveReservations } from './live-reservation.js';
-import { actorIdentityVariables, REGISTRY } from './drivers.js';
+import { REGISTRY } from './drivers.js';
 import { bindServiceHarnessContext, requireServiceHarnessContext } from './harness-home.js';
 import { ServiceWarden } from './service-warden.js';
 import type { WardenDiagnostics } from './service-warden.js';
 import { bindSharedWarden } from './warden.js';
-import { REVIEW_FILE_TOOLS, reviewerFiles } from './reviewer-files.js';
-import { PROMPTOBUS_SERVER, PROTOCOL_VERSIONS } from './contract.js';
+import { reviewerFiles } from './reviewer-files.js';
 import {
-  acquireServiceLock, contained, prepareControlSocket, prepareServicePaths, privateDirectory, processRecord, readDiscovery, readPrivate,
-  recordOf, recordVersion, requireProcess, runtimeIdentity, processStateAsync, sameRecordVersion, servicePaths, writePrivate,
+  acquireServiceLock, prepareControlSocket, prepareServicePaths, readDiscovery, readPrivate, recordOf, recordVersion, requireProcess,
+  runtimeIdentity, processStateAsync, sameRecordVersion, servicePaths, writePrivate,
 } from './service-state.js';
-import type { ProcessIdentity, RecordVersion, ServiceDiscovery, ServicePaths } from './service-state.js';
-import { claimStandaloneIdentity, claudeStartupTranscript, prepareStandaloneResume, requireStartupCandidateFence, publishStandaloneClient, requireStandaloneRoot, revokeStandaloneRoot,
-  readStandaloneLaunch, readStandaloneProfile, standaloneClientRevoked, standaloneExpired, standaloneReference } from './standalone-root-state.js';
+import type { ProcessIdentity, ServiceDiscovery } from './service-state.js';
+import {
+  claimStandaloneIdentity, claudeStartupTranscript, prepareStandaloneResume, requireStartupCandidateFence, publishStandaloneClient,
+  requireStandaloneRoot, revokeStandaloneRoot, readStandaloneLaunch, readStandaloneProfile, standaloneClientRevoked, standaloneExpired,
+  standaloneReference,
+} from './standalone-root-state.js';
 import type { StandaloneRootReference } from './standalone-root-state.js';
-import { ManagedNativeRevisionDrift, nativeStoreForServiceClient, requireKnownNativeOutcomes, requireManagedNativeBinding, reserveManagedNativeIdentity, standaloneBindingForRecovery } from './native-admission.js';
+import { nativeStoreForServiceClient, requireManagedNativeBinding, reserveManagedNativeIdentity, standaloneBindingForRecovery } from './native-admission.js';
+import {
+  HttpFailure, CLIENT_ID, tokenEquals, clientFile, lifetimeOf, environmentOf, nativeThreadId, nativeBindingOf, filesOf, grantOf,
+  managedParticipant, unavailableObservations, lifetimeState, requireManagedNativeIdentity, requireLifetime, privateReadGrants,
+} from './service-grant.js';
+import type { Liveness, LifetimeObservations } from './service-grant.js';
+import { createMcpRequests } from './service-mcp-request.js';
+import { requireKnownRootOutcomes } from './service-request-receipts.js';
 
 export type ServiceHostFactory = (context: { cwd: string; env: Readonly<NodeJS.ProcessEnv> }) => PromptobusHost | Promise<PromptobusHost>;
 export type ServiceClientLifetime =
@@ -63,274 +68,7 @@ export interface RunServiceOptions {
   host: PromptobusHost; createHost: ServiceHostFactory; env?: NodeJS.ProcessEnv;
   activeWork?: () => boolean;
 }
-interface ConnectionRecord { id: string; client: string; endpoint: Endpoint; protocol: string; initialized: boolean }
-type Endpoint = 'bus' | 'reviewer_files';
-interface Connection { handle: (message: JsonRpcMessage) => object | null }
-interface ClientContext { grant: ServiceClientGrant; host: PromptobusHost; env: Readonly<NodeJS.ProcessEnv> }
-interface RequestReceipt { digest: string; state: 'started' | 'completed'; readOnly: boolean; response?: object | null }
-interface ManagedAuthorization { revision: RecordVersion; participant: ParticipantV1; record: Record<string, unknown> | null }
-class HttpFailure extends Error {
-  constructor(readonly status: number, message: string) { super(message); }
-}
-const HTTP_PROTOCOLS = PROTOCOL_VERSIONS.filter(version => version !== '2024-11-05');
-const CLIENT_ID = /^[a-f0-9-]{36}$/;
 const MAX_BODY = 16 * 1024 * 1024;
-const REPLAYABLE_READS = new Set(['read_file', 'read_files', 'list_files', 'search_text']);
-function codexAuthorityRecord(record: Record<string, unknown>) {
-  const authority = { ...record };
-  delete authority.lastEvent; delete authority.lastEventAt; delete authority.rateLimits;
-  return authority;
-}
-function refreshCodexTelemetry(proof: ManagedAuthorization) {
-  if (!proof.record) return false;
-  try {
-    const revision = recordVersion(proof.revision.file), record = readPrivate(revision.file);
-    if (!recordOf(record) || !sameRecordVersion(revision) || isDeepStrictEqual(record, proof.record)
-      || !isDeepStrictEqual(codexAuthorityRecord(record), codexAuthorityRecord(proof.record))) return false;
-    proof.revision = revision; proof.record = record;
-    return true;
-  } catch { return false; }
-}
-const field = (value: unknown) => typeof value === 'string' && value.length > 0 ? value : null;
-const tokenEquals = (a: string, b: string) => {
-  const first = Buffer.from(a), second = Buffer.from(b);
-  return first.length === second.length && timingSafeEqual(first, second);
-};
-const clientFile = (paths: ServicePaths, id: string) => path.join(paths.clients, `${id}.json`);
-const sessionFile = (paths: ServicePaths, id: string) => path.join(paths.sessions, `${id}.json`);
-
-function lifetimeOf(value: unknown): ServiceClientLifetime | null {
-  if (!recordOf(value)) return null;
-  if (value.kind === 'reservation' && typeof value.expiresAt === 'number' && Number.isFinite(value.expiresAt)) {
-    return { kind: 'reservation', expiresAt: value.expiresAt };
-  }
-  const process = processRecord(value.process);
-  if (value.kind === 'process' && process) return { kind: 'process', process };
-  if (value.kind === 'managed' && field(value.task) && field(value.address) && field(value.ref)
-    && field(value.launchId) && field(value.record) && path.isAbsolute(String(value.record))) {
-    return { kind: 'managed', task: String(value.task), address: String(value.address), ref: String(value.ref),
-      launchId: String(value.launchId), record: String(value.record) };
-  }
-  return null;
-}
-
-function environmentOf(value: unknown): NodeJS.ProcessEnv {
-  if (!recordOf(value) || Object.values(value).some(item => item !== undefined && typeof item !== 'string')) throw new Error('Client env must contain string values');
-  const env: NodeJS.ProcessEnv = {};
-  for (const [key, item] of Object.entries(value)) {
-    if (key.startsWith('PROMPTOBUS_SERVICE_') || key.startsWith('PROMPTOBUS_CLIENT_')) continue;
-    if (typeof item === 'string') env[key] = item;
-  }
-  return env;
-}
-
-const nativeThreadId = (value: unknown): value is string => typeof value === 'string' && /^\S+$/u.test(value);
-
-function nativeBindingOf(value: unknown): ServiceNativeBinding | undefined {
-  if (value === undefined) return undefined;
-  if (recordOf(value) && (value.kind === 'claude' || value.kind === 'cursor' || value.kind === 'codex' || value.kind === 'opencode')) {
-    if (value.state === 'pending' && value.threadId === undefined && value.sessionId === undefined) return { kind: value.kind, state: 'pending' };
-    if (value.state === 'bound' && value.kind === 'codex' && nativeThreadId(value.threadId)) return { kind: 'codex', state: 'bound', threadId: value.threadId };
-    if (value.state === 'bound' && value.kind !== 'codex' && nativeThreadId(value.sessionId)) return { kind: value.kind, state: 'bound', sessionId: value.sessionId };
-  }
-  throw new HttpFailure(400, 'Invalid native binding');
-}
-
-function clientEnvironment(grant: ServiceClientGrant): Readonly<NodeJS.ProcessEnv> {
-  const env = { ...grant.env };
-  if (grant.nativeBinding) {
-    if (grant.nativeBinding.state !== 'bound') throw new HttpFailure(403, 'Native binding is pending owner realization');
-    for (const name of [...actorIdentityVariables(), 'OPENCODE_SESSION_ID']) delete env[name];
-    const driver = REGISTRY.drivers[grant.nativeBinding.kind]!;
-    const recordVar = driver.options.mcpIdentity?.recordVar ?? (driver.id === 'claude' ? 'PROMPTOBUS_CLAUDE_SESSION' : null);
-    if (grant.lifetime.kind === 'managed' && recordVar) env[recordVar] = grant.lifetime.record;
-    if (driver.options.identityVar) env[driver.options.identityVar] = grant.nativeBinding.kind === 'codex'
-      ? grant.nativeBinding.threadId : grant.nativeBinding.sessionId;
-  }
-  return Object.freeze(env);
-}
-
-function requireNativeCall(grant: ServiceClientGrant, message: JsonRpcMessage) {
-  if (!grant.nativeBinding || message.method !== 'tools/call') return;
-  if (grant.nativeBinding.state !== 'bound') throw new HttpFailure(403, 'Native binding is pending owner realization');
-  if (grant.nativeBinding.kind !== 'codex') return;
-  const meta = message.params?._meta;
-  if (!recordOf(meta) || !nativeThreadId(meta.threadId) || meta.threadId !== grant.nativeBinding.threadId) {
-    throw new HttpFailure(403, 'Codex tool call requires the bound native thread id in params._meta.threadId');
-  }
-}
-
-function filesOf(value: unknown): ServiceClientGrant['files'] {
-  if (value === undefined || value === null) return null;
-  if (!recordOf(value) || !Array.isArray(value.roots) || value.roots.length === 0
-    || value.roots.some(root => typeof root !== 'string' || !path.isAbsolute(root))
-    || (value.canonicalFiles !== undefined && (!Array.isArray(value.canonicalFiles)
-      || value.canonicalFiles.some(file => typeof file !== 'string' || !path.isAbsolute(file))))) throw new Error('Invalid reviewer file grants');
-  const roots: string[] = [], canonicalFiles: string[] = [];
-  for (const root of value.roots) if (typeof root === 'string') roots.push(root);
-  if (Array.isArray(value.canonicalFiles)) for (const file of value.canonicalFiles) if (typeof file === 'string') canonicalFiles.push(file);
-  return { roots, canonicalFiles };
-}
-
-function grantOf(value: unknown): ServiceClientGrant {
-  if (!recordOf(value) || value.schemaVersion !== 1 || typeof value.id !== 'string' || !CLIENT_ID.test(value.id)
-    || !field(value.token) || !field(value.runtime) || !field(value.cwd)) throw new Error('Invalid shared service client grant');
-  const lifetime = lifetimeOf(value.lifetime);
-  if (!lifetime) throw new Error('Invalid shared service client lifetime');
-  if (value.bbRootNonce !== undefined && (typeof value.bbRootNonce !== 'string' || !CLIENT_ID.test(value.bbRootNonce))) throw new Error('Invalid BB root request generation');
-  return { schemaVersion: 1, id: value.id, token: String(value.token), runtime: String(value.runtime), cwd: String(value.cwd),
-    env: environmentOf(value.env), pollEnv: environmentOf(value.pollEnv ?? value.env), lifetime, files: filesOf(value.files),
-    ...(value.nativeBinding === undefined ? {} : { nativeBinding: nativeBindingOf(value.nativeBinding) }),
-    ...(value.rootLaunch === undefined ? {} : { rootLaunch: standaloneReference(value.rootLaunch) }),
-    ...(value.bbRootNonce === undefined ? {} : { bbRootNonce: value.bbRootNonce }) };
-}
-
-function connectionOf(value: unknown): ConnectionRecord | null {
-  if (!recordOf(value) || typeof value.id !== 'string' || !CLIENT_ID.test(value.id) || typeof value.client !== 'string'
-    || !CLIENT_ID.test(value.client) || (value.endpoint !== 'bus' && value.endpoint !== 'reviewer_files')
-    || typeof value.protocol !== 'string' || !HTTP_PROTOCOLS.includes(value.protocol) || typeof value.initialized !== 'boolean') return null;
-  return { id: value.id, client: value.client, endpoint: value.endpoint, protocol: value.protocol, initialized: value.initialized };
-}
-
-function jsonRpc(value: unknown): JsonRpcMessage & { jsonrpc: '2.0' } {
-  if (!recordOf(value) || value.jsonrpc !== '2.0' || (value.id !== undefined && typeof value.id !== 'string' && typeof value.id !== 'number')
-    || (typeof value.id === 'number' && !Number.isFinite(value.id)) || (value.method !== undefined && typeof value.method !== 'string')
-    || (value.params !== undefined && !recordOf(value.params))
-    || (value.method === undefined && !Object.hasOwn(value, 'result') && !Object.hasOwn(value, 'error'))) throw new HttpFailure(400, 'Expected one JSON-RPC message');
-  return { jsonrpc: '2.0', ...(value.id === undefined ? {} : { id: value.id }),
-    ...(typeof value.method === 'string' ? { method: value.method } : {}), ...(recordOf(value.params) ? { params: value.params } : {}) };
-}
-
-function managedParticipant(proof: Extract<ServiceClientLifetime, { kind: 'managed' }>, home: string) {
-  const task = readTask(home, proof.task), participant = participantOf(task, proof.address);
-  if (task.status !== 'active' || !participant || sessionRefOf(participant) !== proof.ref) return null;
-  if (typeof participant.metadata?.sessionRecord !== 'string'
-    || canonicalPath(participant.metadata.sessionRecord) !== canonicalPath(proof.record)) return null;
-  const record: unknown = JSON.parse(readFileSync(proof.record, 'utf8'));
-  if (!recordOf(record)) throw new Error('Managed launch record is invalid or incomplete');
-  const recordHome = field(record.home), recordTask = field(record.task), recordAddress = field(record.address), launchId = field(record.launchId);
-  if (!recordHome || !path.isAbsolute(recordHome) || !recordTask?.trim() || !recordAddress?.trim() || !launchId?.trim()) {
-    throw new Error('Managed launch record is invalid or incomplete');
-  }
-  if (canonicalPath(recordHome) !== home || recordTask !== proof.task || recordAddress !== proof.address || launchId !== proof.launchId) return null;
-  return participant;
-}
-
-type Liveness = 'alive' | 'dead' | 'unknown';
-interface LifetimeObservations {
-  process(grant: ServiceClientGrant): Liveness;
-  managed(grant: ServiceClientGrant, participant: ParticipantV1): Liveness;
-}
-const unavailableObservations: LifetimeObservations = { process: () => 'unknown', managed: () => 'unknown' };
-function lifetimeState(grant: ServiceClientGrant, home: string, observe: LifetimeObservations): Liveness {
-  const proof = grant.lifetime;
-  if (proof.kind === 'reservation') return Date.now() < proof.expiresAt ? 'alive' : 'dead';
-  if (proof.kind === 'process') {
-    return observe.process(grant);
-  }
-  try {
-    const participant = managedParticipant(proof, home);
-    if (!participant) return 'dead';
-    if (grant.nativeBinding?.state === 'pending') return 'unknown';
-    return observe.managed(grant, participant);
-  } catch { return 'unknown'; }
-}
-
-function requireManagedNativeIdentity(grant: ServiceClientGrant, nativeId: string, status: number) {
-  if (grant.lifetime.kind !== 'managed' || !grant.nativeBinding) return;
-  const record: unknown = JSON.parse(readFileSync(grant.lifetime.record, 'utf8'));
-  const driver = REGISTRY.drivers[grant.nativeBinding.kind]!;
-  const idField = driver.options.mcpIdentity?.idField ?? 'sessionId';
-  if (!recordOf(record) || record[idField] !== nativeId) throw new HttpFailure(status, 'Native identity does not match the owned launch record');
-}
-
-function requireLifetime(grant: ServiceClientGrant, home: string, observe: LifetimeObservations, status = 409) {
-  if (grant.lifetime.kind === 'managed') {
-    try {
-      if (!managedParticipant(grant.lifetime, home)) throw new Error('mismatched participant');
-    } catch { throw new HttpFailure(status, 'Managed lifetime has no matching task, participant and launch record'); }
-    if (grant.nativeBinding?.state === 'bound') requireManagedNativeIdentity(grant, grant.nativeBinding.kind === 'codex'
-      ? grant.nativeBinding.threadId : grant.nativeBinding.sessionId, status);
-  }
-  if (lifetimeState(grant, home, observe) === 'dead') throw new HttpFailure(status, 'Client lifetime is already expired or replaced');
-}
-
-function privateReadGrants(paths: ServicePaths, files: NonNullable<ServiceClientGrant['files']>) {
-  for (const root of [...files.roots, ...files.canonicalFiles]) {
-    const canonical = canonicalPath(root);
-    if (contained(canonical, paths.base) || contained(paths.base, canonical)) {
-      throw new Error('Reviewer grants overlap private shared-service credentials; narrow the read roots');
-    }
-    if (realpathSync(root) !== root) throw new Error('Canonical reviewer grant changed; prepare a new client');
-  }
-  return reviewerFiles(files.roots, files.canonicalFiles);
-}
-
-function fileConnection(read: ReturnType<typeof reviewerFiles>, version: string): Connection {
-  return { handle(message) {
-    if (message.id === undefined || message.id === null) return null;
-    const response = { jsonrpc: '2.0', id: message.id };
-    if (message.method === 'initialize') return { ...response, result: { protocolVersion: message.params?.protocolVersion,
-      capabilities: { tools: {} }, serverInfo: { name: 'promptobus-reviewer-files', version } } };
-    if (message.method === 'ping') return { ...response, result: {} };
-    if (message.method === 'tools/list') return { ...response, result: { tools: REVIEW_FILE_TOOLS } };
-    if (message.method === 'tools/call') {
-      try {
-        if (typeof message.params?.name !== 'string' || (message.params.arguments !== undefined && !recordOf(message.params.arguments))) throw new Error('Invalid file tool call');
-        return { ...response, result: { content: [{ type: 'text', text: JSON.stringify(read(message.params.name, message.params.arguments ?? {})) }] } };
-      } catch (error) { return { ...response, result: { isError: true, content: [{ type: 'text', text: error instanceof Error ? error.message : 'File tool failed' }] } }; }
-    }
-    return { ...response, error: { code: -32601, message: 'Method not found' } };
-  } };
-}
-
-function nativeDiscovery(host: PromptobusHost, endpoint: Endpoint): Connection {
-  return { handle(message) {
-    if (message.id === undefined || message.id === null) return null;
-    const response = { jsonrpc: '2.0', id: message.id };
-    if (message.method === 'initialize') return { ...response, result: { protocolVersion: message.params?.protocolVersion,
-      capabilities: { tools: {} }, serverInfo: endpoint === 'bus' ? { name: PROMPTOBUS_SERVER, version: host.version }
-        : { name: 'promptobus-reviewer-files', version: '1.0.0' } } };
-    if (message.method === 'ping') return { ...response, result: {} };
-    if (message.method === 'tools/list') return { ...response, result: { tools: endpoint === 'bus' ? mcpTools(registryOf(host)) : REVIEW_FILE_TOOLS } };
-    return { ...response, error: { code: -32601, message: 'Method not found' } };
-  } };
-}
-
-function receiptOf(value: unknown): RequestReceipt | null {
-  if (!recordOf(value) || typeof value.digest !== 'string' || (value.state !== 'started' && value.state !== 'completed')
-    || typeof value.readOnly !== 'boolean' || (value.response !== undefined && value.response !== null && !recordOf(value.response))) return null;
-  return { digest: value.digest, state: value.state, readOnly: value.readOnly, ...(value.response === undefined ? {} : { response: value.response }) };
-}
-
-function dispatch(paths: ServicePaths, session: ConnectionRecord, message: JsonRpcMessage, connection: Connection, rootNonce?: string) {
-  if (message.method !== 'tools/call' || message.id === undefined || message.id === null) return connection.handle(message);
-  const key = createHash('sha256').update(JSON.stringify(message.id)).digest('hex');
-  const digest = createHash('sha256').update(JSON.stringify(message)).digest('hex');
-  const readOnly = session.endpoint === 'reviewer_files'
-    && typeof message.params?.name === 'string' && REPLAYABLE_READS.has(message.params.name)
-    && REVIEW_FILE_TOOLS.some(tool => tool.name === message.params?.name && tool.annotations.readOnlyHint === true);
-  const directory = rootNonce ? path.join(paths.requests, `root-${rootNonce}`, session.id) : path.join(paths.requests, session.id);
-  privateDirectory(directory);
-  const file = path.join(directory, `${key}.json`), previous = readPrivate(file);
-  if (previous !== null) {
-    const receipt = receiptOf(previous);
-    if (!receipt) throw new HttpFailure(409, 'The saved request receipt is invalid; inspect the journal before retrying');
-    if (receipt.digest !== digest) throw new HttpFailure(409, 'This request id was already used for different arguments');
-    if (receipt.readOnly && readOnly) return connection.handle(message);
-    if (receipt.state === 'started') throw new HttpFailure(409, 'The earlier request outcome is uncertain; inspect the journal instead of repeating it');
-    return receipt.response ?? null;
-  }
-  writePrivate(file, { digest, state: 'started', readOnly });
-  const response = connection.handle(message);
-  writePrivate(file, { digest, state: 'completed', readOnly, ...(readOnly ? {} : { response }) });
-  return response;
-}
-
-function requireKnownRootOutcomes(paths: ServicePaths, nonce: string) {
-  try { requireKnownNativeOutcomes(paths, nonce); }
-  catch (error) { throw new HttpFailure(409, error instanceof Error ? error.message : 'Native request outcomes are unavailable'); }
-}
 
 async function bodyOf(request: IncomingMessage): Promise<unknown> {
   let size = 0;
@@ -421,36 +159,22 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
       if (state === 'dead') throw new HttpFailure(status, 'Client lifetime is already expired or replaced');
       if (state === 'unknown') throw new HttpFailure(status, 'Client process birth identity is unavailable or incomparable; retained owner state requires diagnostics');
     };
-    const contexts = new Map<string, ClientContext>();
-    const connections = new Map<string, { context: ClientContext; connection: Connection }>();
-    const rootMutations = new Map<string, number>();
     let discovery: ServiceDiscovery;
     let closing = false, requests = 0, idleSince = Date.now();
     const idleMs = Number(env.PROMPTOBUS_SERVICE_IDLE_MS ?? 30_000);
     const reservationMs = Number(env.PROMPTOBUS_SERVICE_RESERVATION_MS ?? 120_000);
     if (!Number.isSafeInteger(idleMs) || idleMs < 1 || !Number.isSafeInteger(reservationMs) || reservationMs < 1) throw new Error('Invalid shared service lifetime duration');
 
-    const grants = () => readdirSync(paths.clients).filter(name => CLIENT_ID.test(name.slice(0, -5)) && name.endsWith('.json'))
-      .map(name => {
-        const grant = grantOf(readPrivate(path.join(paths.clients, name)));
-        if (`${grant.id}.json` !== name) throw new Error('Client grant identity does not match its file');
-        return grant;
-      });
-    const removeSession = (id: string) => {
-      rmSync(sessionFile(paths, id), { force: true });
-      rmSync(path.join(paths.requests, id), { recursive: true, force: true });
-      connections.delete(id);
-    };
+    const mcp = createMcpRequests({ host, env, paths, runtime, createHost, expectedHarness, warden, requireProcessLifetime,
+      proveNativeBinding: grant => requireManagedNativeBinding(paths, grant, { host, env: grant.pollEnv }),
+      isClosing: () => closing, finalizeStandaloneStartup: grant => finalizeStandaloneStartup(grant) });
+    const { grants, currentGrant, contextFor } = mcp;
     const removeClient = (id: string) => {
       const value = readPrivate(clientFile(paths, id));
       if (value !== null) revokeStandaloneRoot(grantOf(value), paths);
       rmSync(clientFile(paths, id), { force: true });
       observed.delete(id);
-      contexts.delete(id);
-      for (const file of readdirSync(paths.sessions)) {
-        const record = connectionOf(readPrivate(path.join(paths.sessions, file)));
-        if (record?.client === id) removeSession(record.id);
-      }
+      mcp.forgetClient(id);
     };
     const retireConfirmedManaged = (grant: ServiceClientGrant) => {
       const proof = grant.lifetime;
@@ -493,153 +217,6 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
     };
     state();
     await warden.recover();
-
-    const contextFor = async (grant: ServiceClientGrant, revalidate: () => Promise<unknown>): Promise<ClientContext> => {
-      const cached = contexts.get(grant.id);
-      if (cached && isDeepStrictEqual(cached.grant, grant)) return cached;
-      const clientEnv = clientEnvironment(grant);
-      const clientHost = await createHost({ cwd: grant.cwd, env: clientEnv });
-      await revalidate();
-      const clientPaths = servicePaths(clientHost, env);
-      if (clientPaths.root !== paths.root || clientPaths.home !== paths.home) throw new Error('Client Host belongs to a different canonical workspace/store');
-      if (runtimeIdentity(clientHost) !== runtime) throw new Error('Client Host belongs to a different shared-service runtime');
-      requireServiceHarnessContext(expectedHarness, clientHost, clientEnv, REGISTRY, grant.pollEnv);
-      if (!admitsAddress(registryOf(clientHost), clientEnv.PROMPTOBUS_ROLE || 'orchestrator')) throw new Error('Unknown client bus address');
-      if (grant.files) privateReadGrants(paths, grant.files);
-      const context = { grant, env: clientEnv, host: clientHost };
-      return context;
-    };
-    class ClientBindingChanged extends HttpFailure {
-      constructor() { super(401, 'Client binding is absent or expired'); }
-    }
-    const currentGrant = (grant: ServiceClientGrant) => {
-      const value = readPrivate(clientFile(paths, grant.id));
-      const current = value === null ? null : grantOf(value);
-      if (!current || !tokenEquals(current.token, grant.token) || current.runtime !== runtime || !isDeepStrictEqual(current, grant)
-        || (current.rootLaunch && standaloneClientRevoked(paths, current.id))) {
-        throw new ClientBindingChanged();
-      }
-      return current;
-    };
-    const authorizeCurrent = (grant: ServiceClientGrant, proof: ManagedAuthorization | null = null, returned = false) => {
-      const current = currentGrant(grant);
-      if (standaloneExpired(current, paths)) throw new HttpFailure(401, 'Standalone root admission expired or was revoked');
-      if (current.lifetime.kind !== 'managed') {
-        requireLifetime(current, paths.home, unavailableObservations, 401); return;
-      }
-      const participant = managedParticipant(current.lifetime, paths.home);
-      if (!proof || !participant || !isDeepStrictEqual(managedIdentity(participant), managedIdentity(proof.participant))) {
-        throw new ManagedIdentityDrift('within-attempt participant identity');
-      }
-      if (!sameRecordVersion(proof.revision) && !(returned && participant.harness === 'codex'
-        && current.nativeBinding?.kind === 'codex' && refreshCodexTelemetry(proof))) throw new ManagedRevisionDrift('within attempt');
-    };
-    const MANAGED_DRIFT = 'Managed lifetime changed after observation; retry with current owner proof';
-    class ManagedRevisionDrift extends HttpFailure {
-      constructor(stage: string) { super(409, `${MANAGED_DRIFT} [stage: ${stage}]`); }
-    }
-    class ManagedIdentityDrift extends HttpFailure {
-      constructor(stage: string) { super(409, `${MANAGED_DRIFT} [stage: ${stage}]`); }
-    }
-    const MANAGED_PROOF_ATTEMPTS = 3;
-    const managedIdentity = (participant: ParticipantV1) => [participant.harness, sessionIdOf(participant), participant.metadata?.nativeLaunchId];
-    // Only same-identity record drift gets a fresh full proof; any other refusal ends authorization.
-    const authorizeGrant = async (grant: ServiceClientGrant, label: string) => {
-      const pin: { identity: unknown[] | null } = { identity: null };
-      for (let attempt = 1; ; attempt += 1) {
-        try { return await authorizeAttempt(grant, pin, label); }
-        catch (error) {
-          if (!(error instanceof ManagedRevisionDrift)) throw error;
-          if (attempt >= MANAGED_PROOF_ATTEMPTS) throw new ManagedRevisionDrift(`exhausted ${MANAGED_PROOF_ATTEMPTS}`);
-          await new Promise(resolve => setTimeout(resolve, 25));
-        }
-      }
-    };
-    const authorizeAttempt = async (grant: ServiceClientGrant, pin: { identity: unknown[] | null }, label: string) => {
-      const current = currentGrant(grant);
-      await requireProcessLifetime(current, 401);
-      let proof: ManagedAuthorization | null = null;
-      if (current.lifetime.kind === 'managed') {
-        let revision: RecordVersion, participant: ParticipantV1 | null;
-        try {
-          revision = recordVersion(current.lifetime.record);
-          participant = managedParticipant(current.lifetime, paths.home);
-        } catch { throw new HttpFailure(401, 'Managed lifetime has no matching task, participant and launch record'); }
-        if (!participant) throw new HttpFailure(401, 'Managed lifetime has no matching task, participant and launch record');
-        if (pin.identity && !isDeepStrictEqual(pin.identity, managedIdentity(participant))) {
-          throw new HttpFailure(409, 'Managed participant identity changed during authorization');
-        }
-        pin.identity ??= managedIdentity(participant);
-        let record: Record<string, unknown> | null = null;
-        if (participant.harness === 'codex' && current.nativeBinding?.kind === 'codex') {
-          const value = readPrivate(revision.file);
-          if (!recordOf(value)) throw new HttpFailure(401, 'Managed lifetime has no matching task, participant and launch record');
-          record = value;
-        }
-        proof = { revision, participant, record };
-      }
-      try { await requireManagedNativeBinding(paths, current, { host, env: current.pollEnv }); }
-      catch (error) {
-        if (error instanceof ManagedNativeRevisionDrift) throw new ManagedRevisionDrift('native proof');
-        throw error;
-      }
-      authorizeCurrent(grant, proof);
-      if (proof) {
-        let snapshot: SessionSnapshot = null;
-        try { snapshot = await warden.observe([proof.participant], [proof.revision]); } catch { /* no observation is no authority */ }
-        authorizeCurrent(grant, proof);
-        const state = participantSession(proof.participant, snapshot);
-        if (state === 'dead') throw new HttpFailure(401, 'Client lifetime is already expired or replaced');
-        if (state !== 'alive') throw new HttpFailure(503, 'Managed lifetime observation is unavailable; retry after owner diagnostics');
-      }
-      authorizeCurrent(grant, proof);
-      return () => {
-        try { authorizeCurrent(grant, proof, true); }
-        catch (error) {
-          if (error instanceof ManagedRevisionDrift) throw new ManagedRevisionDrift(`returned fence: ${label}`);
-          if (error instanceof ManagedIdentityDrift) throw new ManagedIdentityDrift(`returned fence: ${label}: participant identity`);
-          throw error;
-        }
-      };
-    };
-    const clientGrant = (authorization: string | undefined) => {
-      if (!authorization?.startsWith('Bearer ')) throw new HttpFailure(401, 'Client authentication required');
-      const bearer = authorization.slice(7);
-      const grant = grants().find(candidate => tokenEquals(candidate.token, bearer));
-      if (!grant || grant.runtime !== runtime) throw new HttpFailure(401, 'Client binding is absent or expired');
-      return grant;
-    };
-    const authorizeCatalog = async (grant: ServiceClientGrant, authorization: string | undefined) => {
-      try {
-        (await authorizeGrant(grant, 'body'))();
-        return grant;
-      } catch (error) {
-        if (!(error instanceof ClientBindingChanged)) throw error;
-        const next = clientGrant(authorization);
-        if (next.nativeBinding?.state !== 'bound' || next.nativeBinding.kind !== grant.nativeBinding?.kind
-          || !isDeepStrictEqual(next, { ...grant, nativeBinding: next.nativeBinding })) throw error;
-        // A realized client has the same static catalog. Recheck its full current lifetime and proof.
-        (await authorizeGrant(next, 'catalog realization'))();
-        return next;
-      }
-    };
-    const readConnection = (id: string, grant: ServiceClientGrant, endpoint: Endpoint) => {
-      if (!CLIENT_ID.test(id)) throw new HttpFailure(404, 'MCP session not found');
-      const record = connectionOf(readPrivate(sessionFile(paths, id)));
-      if (!record || record.client !== grant.id || record.endpoint !== endpoint) throw new HttpFailure(404, 'MCP session not found');
-      return record;
-    };
-    const connectionFor = (record: ConnectionRecord, context: ClientContext) => {
-      const cached = connections.get(record.id);
-      if (cached?.context === context) return cached.connection;
-      let connection: Connection;
-      if (record.endpoint === 'reviewer_files') {
-        if (!context.grant.files) throw new HttpFailure(403, 'This client has no reviewer file grant');
-        connection = fileConnection(privateReadGrants(paths, context.grant.files), '1.0.0');
-      } else connection = busConnection(context.host, context.env, context.grant.cwd);
-      connections.set(record.id, { context, connection });
-      return connection;
-    };
 
     const realizeClient = async (grant: ServiceClientGrant, nativeId: unknown) => {
       const id = grant.id;
@@ -793,7 +370,7 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
             || template.lifetime.kind !== 'process' || !isDeepStrictEqual(template.lifetime.process, launch.process)
             || template.nativeBinding?.kind !== profile.harness) throw new HttpFailure(409, 'Owner hook receipt belongs to another native process');
           const knownOutcomes = () => {
-            if (rootMutations.get(launch.nonce)) throw new HttpFailure(409, 'Standalone mutation is still in flight; wait for its original outcome');
+            if (mcp.mutationPending(launch.nonce)) throw new HttpFailure(409, 'Standalone mutation is still in flight; wait for its original outcome');
             requireKnownRootOutcomes(paths, launch.nonce);
           };
           recoveryFile = path.join(paths.directory, `standalone-recovery-${launch.nonce}.json`);
@@ -918,7 +495,7 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
           if (closing) throw new HttpFailure(503, 'Shared service is stopping');
         }
         writePrivate(clientFile(paths, grant.id), grant);
-        if (context) contexts.set(grant.id, context);
+        if (context) mcp.rememberContext(context);
         return { clientId: grant.id, token: grant.token, credentialFile: clientFile(paths, grant.id),
           busUrl: `${discovery.url}mcp/bus`, filesUrl: grant.files ? `${discovery.url}mcp/reviewer_files` : null } satisfies ServiceClientCredential;
       }
@@ -959,117 +536,20 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
     const server = http = createServer(async (request, response) => {
       requests += 1;
       idleSince = Date.now();
-      let mutationNonce: string | null = null;
       try {
         if (closing) throw new HttpFailure(503, 'Shared service is stopping');
         const expected = new URL(discovery.url);
         if (request.headers.host !== expected.host || (request.headers.origin !== undefined && request.headers.origin !== expected.origin)) throw new HttpFailure(403, 'Foreign HTTP authority or Origin');
         const url = new URL(request.url ?? '/', discovery.url);
         if (url.origin !== expected.origin) throw new HttpFailure(403, 'Foreign HTTP request target');
-        const endpoint: Endpoint | null = url.pathname === '/mcp/bus' ? 'bus' : url.pathname === '/mcp/reviewer_files' ? 'reviewer_files' : null;
+        const endpoint = url.pathname === '/mcp/bus' ? 'bus' : url.pathname === '/mcp/reviewer_files' ? 'reviewer_files' : null;
         if (!endpoint) throw new HttpFailure(404, 'Endpoint not found');
-        const authorization = request.headers.authorization;
-        let grant = clientGrant(authorization);
-        const pendingNativePost = request.method === 'POST' && grant.nativeBinding?.state === 'pending' && !grant.rootLaunch && !grant.bbRootNonce;
-        if (!pendingNativePost) (await authorizeGrant(grant, 'authenticate'))();
-        if (endpoint === 'reviewer_files' && !grant.files) throw new HttpFailure(403, 'This client has no reviewer file grant');
-        const header = request.headers['mcp-session-id'];
-        if (Array.isArray(header)) throw new HttpFailure(400, 'Invalid MCP session header');
-        const protocolHeader = request.headers['mcp-protocol-version'];
-        if (protocolHeader !== undefined && (Array.isArray(protocolHeader) || !HTTP_PROTOCOLS.includes(protocolHeader))) throw new HttpFailure(400, 'Unsupported MCP protocol version');
-        if (header) {
-          const record = readConnection(header, grant, endpoint);
-          const asked = request.headers['mcp-protocol-version'];
-          if (asked !== undefined && asked !== record.protocol) throw new HttpFailure(400, 'Unsupported or mismatched MCP protocol version');
-        }
-        if (request.method === 'GET') {
-          if (!header) throw new HttpFailure(400, 'MCP session header required');
-          reply(response, 405, { error: 'SSE is not offered' }, { allow: 'POST, DELETE' }); return;
-        }
-        if (request.method === 'DELETE') {
-          if (!header) throw new HttpFailure(400, 'MCP session header required');
-          const record = readConnection(header, grant, endpoint);
-          removeSession(record.id);
-          reply(response, 204); return;
-        }
-        if (request.method !== 'POST') throw new HttpFailure(405, 'MCP requires POST');
-        if (request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() !== 'application/json') throw new HttpFailure(415, 'MCP requires application/json');
-        const accepts = (request.headers.accept ?? '').split(',').map(type => type.split(';')[0]?.trim().toLowerCase());
-        if (!accepts.includes('application/json') || !accepts.includes('text/event-stream')) throw new HttpFailure(406, 'MCP client must accept JSON and event streams');
-        const message = jsonRpc(await bodyOf(request));
-        if (message.method === 'tools/call' && grant.rootLaunch && grant.nativeBinding?.state === 'pending') {
-          await finalizeStandaloneStartup(grant);
-          grant = clientGrant(authorization);
-          (await authorizeGrant(grant, 'finalize'))();
-        }
-        if ((grant.rootLaunch || grant.bbRootNonce) && message.method === 'tools/call') {
-          mutationNonce = grant.rootLaunch?.nonce ?? grant.bbRootNonce!;
-          rootMutations.set(mutationNonce, (rootMutations.get(mutationNonce) ?? 0) + 1);
-        }
-        if (pendingNativePost && message.method === 'tools/list') grant = await authorizeCatalog(grant, authorization);
-        else (await authorizeGrant(grant, 'body'))();
-        requireNativeCall(grant, message);
-        let record: ConnectionRecord;
-        if (message.method === 'initialize') {
-          if (header || message.id === undefined) throw new HttpFailure(400, 'Initialize requires an id and no session header');
-          const protocol = typeof message.params?.protocolVersion === 'string' && HTTP_PROTOCOLS.includes(message.params.protocolVersion)
-            ? message.params.protocolVersion : HTTP_PROTOCOLS[0]!;
-          record = { id: randomUUID(), client: grant.id, endpoint, protocol, initialized: false };
-          writePrivate(sessionFile(paths, record.id), record);
-          message.params = { ...message.params, protocolVersion: protocol };
-        } else {
-          if (!header) throw new HttpFailure(400, 'MCP session header required');
-          record = readConnection(header, grant, endpoint);
-          const asked = request.headers['mcp-protocol-version'];
-          if (asked !== undefined && asked !== record.protocol) throw new HttpFailure(400, 'Unsupported or mismatched MCP protocol version');
-        }
-        if (message.method === 'notifications/initialized') {
-          if (message.id !== undefined) throw new HttpFailure(400, 'Initialized must be a notification');
-          writePrivate(sessionFile(paths, record.id), { ...record, initialized: true });
-          reply(response, 202); return;
-        }
-        if (!record.initialized && message.method !== 'initialize' && message.method !== 'ping') throw new HttpFailure(400, 'MCP session has not completed initialization');
-        let result: object | null;
-        try {
-          if (message.method === undefined) result = null;
-          else if (grant.nativeBinding && message.method !== 'tools/call') result = nativeDiscovery(host, endpoint).handle(message);
-          else {
-            const context = await contextFor(grant, () => authorizeGrant(grant, 'factory'));
-            const authorizeDispatch = await authorizeGrant(grant, 'dispatch');
-            authorizeDispatch();
-            if (closing) throw new HttpFailure(503, 'Shared service is stopping');
-            contexts.set(grant.id, context);
-            const receiptNonce = grant.rootLaunch?.nonce ?? grant.bbRootNonce;
-            if (receiptNonce) requireKnownRootOutcomes(paths, receiptNonce);
-            const invoke = () => dispatch(paths, record, message, connectionFor(record, context), receiptNonce);
-            if (grant.lifetime.kind !== 'managed') result = invoke();
-            else {
-              const task = grant.lifetime.task;
-              let entered = false;
-              try {
-                result = withSynchronousAuthority(authorizeDispatch, () => withTaskLock(paths.home, task, () => {
-                  entered = true;
-                  return invoke();
-                }, { waitMs: 0 }));
-              } catch (error) {
-                if (!entered && !(error instanceof HttpFailure)) throw new HttpFailure(503,
-                  `Managed operation did not enter its journal: ${error instanceof Error ? error.message : String(error)}`);
-                throw error;
-              }
-            }
-          }
-        }
-        catch (error) { if (message.method === 'initialize') removeSession(record.id); throw error; }
-        reply(response, result === null ? 202 : 200, result === null ? undefined : result,
-          message.method === 'initialize' ? { 'mcp-session-id': record.id } : {});
+        const result = await mcp.handle({ endpoint, method: request.method, headers: request.headers, readBody: () => bodyOf(request) });
+        reply(response, result.status, result.body, result.headers);
       } catch (error) {
         const status = error instanceof HttpFailure ? error.status : 500;
         reply(response, status, { error: error instanceof Error ? error.message : 'Shared service request failed' });
       } finally {
-        if (mutationNonce) {
-          const count = (rootMutations.get(mutationNonce) ?? 1) - 1;
-          if (count) rootMutations.set(mutationNonce, count); else rootMutations.delete(mutationNonce);
-        }
         requests -= 1;
       }
     });

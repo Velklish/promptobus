@@ -476,12 +476,12 @@ connection this is done ONCE per task — `joined` is that mark. A repeat
 is not an error, but it is not work either: `onJoin` writes to the store
 and lifts a process, and a session enters a task once per connection. The
 key is the task id, not the address: an explicit `task` tool argument may
-name another, and entering that one is lawful.
+name another. Resolving a task for a tool does not by itself authorize a contact-point handoff there.
 
 **The mark is set AFTER a successful enter and only for whoever handed
-over a contact point.** The order is not cosmetic: `ownership` is the
-first real read of the task journal (`resolveTaskId` only checks that it
-exists), and on a wiped or unreadable journal it refuses. Marking enter
+over a contact point.** `join` reads the task journal before calling the
+adapter (`resolveTaskId` only checks that the task exists), and on an
+unreadable journal it refuses. Marking enter
 early, the server would remember as entered a session that did not enter
 — and the next `tools/call` would skip enter, so the contact point would
 never be handed over in the life of the session (review remark). The
@@ -490,18 +490,23 @@ get a socket written (`joinBus`), but it may become the owner on the same
 connection — `mailbox {claim: true}` — and the mark would keep
 `wake/<address>.json` on the previous owner's socket until the end of the turn.
 
-**A no-identity call is judged the same way, not by `gated` alone.** Its
-`right` proves nothing either way (03-cli § The owner gate), so `join` reads
-`right` — the owner, a session that names itself on a task with no recorded
-owner, or a participant address may hand over the contact point; a
-`no-identity` or `foreign` call may not, and neither is marked entered: the
-next call on this connection is asked again.
+**A handoff needs a listed address and a proven session.** For an ordinary
+participant, `other-address` says only that the orchestrator gate did not
+judge that address. The session must hold the declared participant record in
+the target task. For `orchestrator`, the owner gate still allows the owner or
+a session that names itself on a task with no recorded owner. Refusing the
+handoff does not request a listener and does not change the tool's own rules
+for resolving a task, reading a mailbox or sending a message.
 
 **A handover the binding gate refused is not an entry either.** `onJoin`
-returns what the driver's `registerWake` answered: the written contact point,
-`null` when there was nothing to hand over, and `false` when the gate refused
-because the participant record names another session — or, for Claude Code, when
-the handover threw. `join` marks the task entered on anything but `false`, so
+passes the proven session to the driver. Claude Code checks the socket's
+declared session; Codex and OpenCode match the session and scope of their
+contact record before writing, without trimming the recorded session ID.
+The driver returns the written point, `null`
+when there was nothing to hand over, or `false` when it refused. An authorized
+join without a contact point still requests a listener. Cursor only updates
+its contact point at turn end, not at join. `join` marks the task entered on
+anything but `false` when it authorized the handoff, so
 the next tool call asks again — once the record names this session, by the
 post-launch persist or a rebind, or once the write goes through, that call hands
 the point over instead of leaving it to the Stop guard at turn end.

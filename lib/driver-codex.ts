@@ -34,7 +34,7 @@ import { GUARD_HOOK_EVENT, GUARD_START_EVENT } from '../dist/hooks.js';
 import { harnessStateHome } from './harness-home.js';
 import { PARENT_SESSION_ENV, WARDEN_ENV_VARS } from './session-env.js';
 import { orderBody as commonOrderBody } from './notification.js';
-import { readRecordAt, revokeFailedManagedLaunch, sayForeignWrite as commonSayForeignWrite, sessionEnvFor } from './driver-common.js';
+import { joinWakeSession, readRecordAt, revokeFailedManagedLaunch, sayForeignWrite as commonSayForeignWrite, sessionEnvFor } from './driver-common.js';
 import { bindBeforeLaunch } from './liftoff.js';
 import { participantAuthSnapshot } from './codex-participant-auth.js';
 import { judgeHookRecords, trustRule } from './project-hooks.js';
@@ -996,13 +996,20 @@ function shadowedUserServers() {
 const sayForeignWrite = commonSayForeignWrite;
 export { sayForeignWrite };
 
-export function registerWake(home: string, task: string, addr: string, env = process.env, session: string | null = null) {
+export function registerWake(home: string, task: string, addr: string, env = process.env, session: string | null = null, origin?: 'join') {
   try {
     const file = String(env?.[SESSION_ENV_VAR] ?? '').trim();
-    const record = (file ? readRecordAt<CodexSessionRecord>(file) : null)
-      ?? findSessionByAddress(home, task, addr, env);
-    if (!record?.rpcSocket) return null;
-    const id = session ?? record.threadId;
+    if (origin === 'join' && file && !path.isAbsolute(file)) return false;
+    const selected = file ? readRecordAt<CodexSessionRecord>(file) : null;
+    if (origin === 'join' && file && !selected) return false;
+    const record = selected ?? findSessionByAddress(home, task, addr, env);
+    if (!record) return null;
+    const at = wakeAddressOf(home, task, addr);
+    const id = origin === 'join' ? joinWakeSession(home, { task, address: addr }, at, session, record, record.threadId, file)
+      : session ?? record.threadId;
+    if (origin === 'join' && !id) return false;
+    if (!record.rpcSocket) return null;
+    if (origin === 'join' && typeof record.rpcSocket !== 'string') return false;
     if (id) {
       const held = foreignSession(home, task, addr, id);
       if (held) {
@@ -1010,14 +1017,13 @@ export function registerWake(home: string, task: string, addr: string, env = pro
         return false;
       }
     }
-    const at = wakeAddressOf(home, task, addr);
     return writeWake(home, at.task, at.address, {
       socket: `${record.rpcSocket}#${Number(record.turns) || 0}`,
       token: null,
       session: id,
     });
   } catch {
-    return null;
+    return origin === 'join' ? false : null;
   }
 }
 

@@ -88,8 +88,8 @@ export interface LibDriver extends Omit<Driver,
   checkWake?: (env?: NodeJS.ProcessEnv) => WakeProbe | Promise<WakeProbe>;
   sessionEnv: (base?: NodeJS.ProcessEnv, extra?: NodeJS.ProcessEnv) => NodeJS.ProcessEnv;
   stallRoute?(stall: LibStall, id: string | null, ref: string | null): string;
-  registerWake?(home: string, task: string, address: string, env?: NodeJS.ProcessEnv, session?: string | null): unknown;
-  bindHandshake?(home: string, task: string, address: string, env?: NodeJS.ProcessEnv, session?: string | null): unknown;
+  registerWake?(home: string, task: string, address: string, env?: NodeJS.ProcessEnv, session?: string | null, origin?: 'join'): unknown;
+  bindHandshake?(home: string, task: string, address: string, env?: NodeJS.ProcessEnv, session?: string | null, origin?: 'join'): unknown;
   optionRefusal: (options: { effort?: string | null; statusCommand?: string | null }, tool: LibToolBin) => string | null;
   shadowedUserServers: (names: string[]) => string[];
   sweepParticipant?(participant: ParticipantV1, taskId: string, env?: NodeJS.ProcessEnv,

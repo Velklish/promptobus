@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
-import { dropStaleWake, logWarden, participantOf, readTask, upsertParticipant, withTaskLock } from './store.js';
+import { dropStaleWake, logWarden, participantOf, readTask, sameStoreHome, upsertParticipant, withTaskLock } from './store.js';
 import { requireCurrentNativeLaunch } from './native-lifecycle.js';
 import { fail } from './util.js';
 import type { LibLaunchPlan } from './driver-runtime.js';
@@ -65,6 +65,18 @@ export function readRecordAt<T = Record<string, unknown>>(file: string): T | nul
   } catch {
     return null;
   }
+}
+
+type WakeSlot = { task: string; address: string };
+
+export function joinWakeSession(home: string, declared: WakeSlot, primary: WakeSlot, session: string | null,
+  record: { home?: unknown; task?: unknown; address?: unknown }, nativeId: unknown, file: string) {
+  if (!session || typeof nativeId !== 'string' || !nativeId || nativeId !== nativeId.trim()
+    || !sameStoreHome(record.home, home)
+    || ![declared, primary].some(slot => slot.task === record.task && slot.address === record.address)) return null;
+  if (session === nativeId) return nativeId;
+  const participant = participantOf(readTask(home, declared.task), declared.address);
+  return file && session === file && participant?.metadata?.sessionRecord === file ? nativeId : null;
 }
 
 const foreignWrites = new Set<string>();

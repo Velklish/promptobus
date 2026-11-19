@@ -414,11 +414,11 @@ function shadowedUserServers(names: string[]) {
 
 /** Contact point of a Cursor participant: not a socket but "the session is alive and took a turn",
  * handed off by the HOOK at turn end. `socket` carries the ended-turn count, and this call owns it. */
-export function registerWake(home: string, task: string, addr: string, env = process.env, session: string | null = null) {
+export function registerWake(home: string, task: string, addr: string, env = process.env, session: string | null = null, origin?: 'join') {
   try {
     // The caller names the session: without it this is not the end of a turn. The participant bus
     // server calls the same operation at the START of a turn and has nothing to hand off.
-    if (!session) return null;
+    if (origin === 'join' || !session) return null;
     const file = String(env?.[SESSION_ENV_VAR] ?? '').trim();
     if (!file) return null;
     return withTaskLock(home, task, () => {

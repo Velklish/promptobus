@@ -1960,6 +1960,16 @@ An unavailable observation returns HTTP 503 while retaining the credential, sess
 and prior receipts. Grant, participant and record revision are checked again after
 asynchronous preparation and at synchronous lock acquisition.
 
+Each service owner constructs one internal request handler for `/mcp/bus` and
+`/mcp/reviewer_files`. HTTP checks the origin and target and supplies headers,
+method and a lazy JSON body reader. The request handler authenticates the bearer,
+validates the session, prepares the client Host and enters managed dispatch. GET
+and DELETE do not read a body. For an ordinary pending native POST the handler
+recognizes the bearer before reading the body. If the lifetime is a reservation,
+expiry returns 401 before MCP header validation or body reading. Full proof follows body reading:
+catalog discovery can follow owner realization, but a pending binding cannot
+call tools. Neither the transport nor the client receives a reusable grant fence.
+
 If a session record changes during native process proof or the later managed
 observation, admission makes at most three complete attempts for the same grant,
 participant and native launch. Each attempt obtains fresh process and session

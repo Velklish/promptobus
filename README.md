@@ -292,6 +292,8 @@ replacement.
 
 The full names a session sees are `mcp__promptobus__promptobus_send` and the same prefix for the other tools. Without `task` the server uses `PROMPTOBUS_TASK`, then the session's binding, then the only active task.
 
+Naming a task does not register a contact point there unless the declared address is listed and the session can prove it holds that address. The driver also checks that the contact point belongs to that session. A refused handoff does not start a listener and can be retried on the same connection; an authorized join without a contact point can still start a listener. The orchestrator owner gate, including its ownerless-task rule, still applies.
+
 A worker sends an artifact named by its result before sending that result, reads the landed filename from the immediate reply to its own `promptobus_send` call, and uses it in the header without ending the turn. The bus may number a colliding filename; reviewers cannot attach files.
 
 ### Model routing
@@ -358,6 +360,7 @@ import { runPromptobus } from 'promptobus/cli';
 `openEngine` takes a store location (`root` or `home`) and a routing policy; it never searches the disk for a workspace. Package sources import only Node built-ins and never read `process.env` or write to stdout — diagnostics, session identity and the harness name arrive as arguments, so the environment and the output stay with the consumer. Details: [reference/01-overview.md](https://github.com/Velklish/promptobus/blob/v0.33.1/docs/reference/01-overview.md), [reference/02-host.md](https://github.com/Velklish/promptobus/blob/v0.33.1/docs/reference/02-host.md), [reference/04-protocol.md](https://github.com/Velklish/promptobus/blob/v0.33.1/docs/reference/04-protocol.md).
 
 Managed participant HTTP tools require the owner-realized actual native ID; a planned UUID or session-record pointer alone grants no tool access.
+The shared service checks both MCP endpoints against the current client grant. A reviewer file session also needs its own read grant; a bus session ID does not open the file endpoint.
 
 Native client registration checks compatibility with the active shared service
 before starting a participant. A Claude Code teamlead's managed hooks use the

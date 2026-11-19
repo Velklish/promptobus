@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Encapsulate bus and reviewer-file MCP request admission per shared-service owner. An expired pending native reservation now returns 401 before MCP header validation or body reading. Valid pending catalog discovery, managed task locking and receipt replay rules are unchanged.
 - Check the consumed Codex app-server protocol against 0.170.0; the minimum remains 0.158.0.
 
 - Declare BB `>=0.50.1 <0.51` and Plugin SDK `>=0.6.157` for both BB plugins instead of one exact pair, so a BB patch release no longer disables them; a new BB minor line still needs a release. The build pins SDK 0.6.157. Source checks do not establish an installed live workflow.
@@ -50,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep keyed publication test failures diagnostic when a publisher did not produce a result. Cover lease refusal and child launch failure without changing lease behavior.
 - Check the history timestamp without assuming the current year, and run the reviewer stdio test from paths containing spaces or Unicode.
 - Run the offline BB reviewer permission-proof cleanup test from paths containing spaces or Unicode, and keep keyed publication fixture artifacts out of the CLI reference.
+- Require a listed participant and matching session proof through MCP contact handoff. A refused handoff, including an invalid OpenCode contact session ID, does not start a listener or prevent a later retry; explicit task arguments still follow the ordinary rules of each tool.
 - Keep an OpenCode stdio server whose first argument repeats its command: only the bus entry drops the duplicated binary.
 - Let hosts keep private environment variables out of managed participants and owner snapshots. Refuse old snapshots that still contain those variables.
 
