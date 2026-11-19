@@ -4,6 +4,21 @@ Parser: `lib/cli.js`. Commands: `lead`, `spawn`, `step`, `review`, `report`, `mo
 
 Help and `--version` do not load the standalone host. Every other command does.
 
+## Live Codex and mixed verification
+
+The source checkout's `scripts/live-codex.mjs` and `scripts/live-mixed.mjs`
+require observations before launch and after cleanup. Only a normal `pgrep` exit 1 means no matches.
+A spawn error, signal or failed exit makes the snapshot unavailable. A successful
+comparison subtracts PIDs already present in the baseline for each of the two
+patterns, `Caskroom/codex` and `app-server --stdio`; any newly observed PID fails it.
+
+Only `ENOENT` counts as a missing config file. The scripts compare the normalized
+hash of `~/.codex/config.toml`, ignoring only marketplace refresh timestamps.
+An absent file at both snapshots is unchanged; appearance or disappearance fails
+the comparison. Other read errors make the snapshot unavailable. An unavailable
+baseline exits 1 before launch; an unavailable final snapshot fails the run after
+cleanup. Neither proves that the system was clean or the config unchanged.
+
 ## Portable role instructions
 
 `promptobus/instructions` exports pure worker, reviewer, approver, teamlead,

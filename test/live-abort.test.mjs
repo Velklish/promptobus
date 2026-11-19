@@ -295,7 +295,6 @@ const PORTED = {
     'fail-closed tmux lists': /requiredTmuxSessions\(cursorPersist\.readTmuxSessions\)[\s\S]*tmuxAbsenceVerdict\(cursorPersist\.readTmuxSessions, panesBefore\)/,
     'an unread tmux list refused by name before the run': /try \{\s*panesBefore = new Set\(requiredTmuxSessions\(cursorPersist\.readTmuxSessions\)[^\n]*\n\} catch \(error\) \{\s*console\.error\([^\n]*\$\{error\.message\}[^\n]*\n\s*process\.exit\(1\);/,
     'a ps listing that must show this process': /maxBuffer: 32 \* 1024 \* 1024[\s\S]*ps\.status === 0 && seesSelf/,
-    'the config hash without refresh timestamps': /codexConfigSha\(CODEX_CONFIG\)/,
     'the reviewer model verified against the binary catalog before the first raise': /pickCodexModel\(codexCatalogEntries\(tools\.codex\.path\), LIVE_ARGS\.codexModel, CODEX_DEFAULT\)/,
     'the memoized worker cleanup forwards the original remaining deadline to its native Stop': /const stopWorker = \(deadline\) => workerStopping \?\?= Promise\.resolve\(\)\.then\(\(\) =>\s*cursorDriver\.stop\(workerRef, \{ timeoutMs: Math\.max\(0, deadline - Date\.now\(\)\) \}\)\)/,
     'the memoized reviewer cleanup forwards its supplied allowance to its native Stop': /const stopReviewer = \(allowance\) => reviewerStopping \?\?= Promise\.resolve\(\)\.then\(\(\) =>\s*codexDriver\.stop\(reviewerRef, \{ timeoutMs: allowance\(\) \}\)\)/,
@@ -303,7 +302,6 @@ const PORTED = {
     'the pre-exit sample includes the sandbox and each participant identity and stop result': /sandboxPresent: existsSync\(SB\)[\s\S]*worker: \{ ref: workerRef,[\s\S]*stop: workerStopped[\s\S]*reviewer: \{ ref: reviewerRef,[\s\S]*stop: reviewerStopped/,
   },
   'live-codex.mjs': {
-    'the config hash without refresh timestamps': /codexConfigSha\(CONFIG\)/,
     'the model verified against the binary catalog before the raise': /pickCodexModel\(codexCatalogEntries\(tool\.path\), LIVE_ARGS\.model, DEFAULT_MODEL\)/,
     'a cut-off run stops its stream by the driver, awaited with a bounded timeout': /stopped = await codexDriver\.stop\(ref, \{ timeoutMs: ABORT_STOP_MS \}\);/,
     'the pre-exit sample includes the sandbox and stream identity': /sandboxPresent: existsSync\(SB\)[\s\S]*stream: \{ ref, pids, alive: pids\.map/,

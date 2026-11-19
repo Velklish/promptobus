@@ -67,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Forward interruptions of the release canary's live loop to its owned child and retain the installed workspace when cleanup cannot be verified. Abort fixtures now capture early exits and release their detached child even if discovery throws during setup.
 - Retain the canary workspace after an ordinary exit with unconfirmed cleanup. Age-based pruning now removes only explicitly completed, owned report directories.
 - Queue canonical unread-mail hints for active BB participants. A stale queue snapshot cannot overwrite a recorded turn request. Recovery and dispatch retire obsolete hints after a mailbox read without discarding other queued input. Result reminders still wait for idle.
+- Fail Codex and mixed live verification when the Codex process list or config cannot be observed, instead of treating an observation error as no change.
 - Keep an OpenCode stdio server whose first argument repeats its command: only the bus entry drops the duplicated binary.
 - Let hosts keep private environment variables out of managed participants and owner snapshots. Refuse old snapshots that still contain those variables.
 
