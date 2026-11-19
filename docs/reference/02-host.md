@@ -1174,11 +1174,14 @@ historical call overlap.
 
 ## Explicit participant context
 
-`promptobus/participant-context` exports `normalizeContextDeclaration(value)` and
-`selectParticipantContext(host, { root, role, task, preparedSelection? })`.
+`promptobus/participant-context` exports `normalizeContextDeclaration(value)`,
+`selectParticipantContext(host, { root, role, task, preparedSelection? })` and
+`participantAudience(host, role)`.
 Normalization validates a detached, frozen declaration without filesystem work.
 Selection admits Host metadata, validates the complete declared closure and
-prepared ceiling, and reads no payload bodies.
+prepared ceiling, and reads no payload bodies. `participantAudience` needs only
+the Host's `pipeline` field: a step of kind `edits-tree` gets the `worker` MCP
+audience, every other role `control`.
 
 `HostParticipantContextTask` contains `id`, `purpose` and optional `context`:
 
@@ -1268,8 +1271,8 @@ not measured input, cache, output or tool tokens.
 and the additive `createBbManagedAdmission`, with [public types](../../lib/bb-host.ts). The consumer
 supplies `resolveHost(root)` returning a `BbContextHost`, optional
 `prepareEnvironment({root, role, signal})`, and `listTools` / `invokeTool` when
-canonical servers are declared. Registry and pipeline lookup use only the
-context Host's `pipeline` field; they do not require a full `PromptobusHost`.
+canonical servers are declared. Registry, pipeline and MCP audience lookup use
+only the context Host's `pipeline` field; they do not require a full `PromptobusHost`.
 The default plugin resolves the standalone Host and refuses declared servers
 without those adapters. Hosts without a selector retain existing unselected
 delivery.

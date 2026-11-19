@@ -62,6 +62,11 @@ const renamed = { ...createStandaloneHost({ cwd: root }), pipeline: () => [
 check('The MCP audience follows the step kind, not the step name',
   participantAudience(renamed, 'builder') === 'worker' && participantAudience(renamed, 'reviewer') === 'control'
   && participantAudience(host, 'worker') === 'worker' && participantAudience(host, 'reviewer') === 'control');
+const hostReference = readFileSync(new URL('../docs/reference/02-host.md', import.meta.url), 'utf8').replace(/\s+/g, ' ');
+check('The MCP audience needs only the Host pipeline, as the reference states',
+  participantAudience({ pipeline: renamed.pipeline }, 'builder') === 'worker'
+  && participantAudience({ pipeline: renamed.pipeline }, 'reviewer') === 'control'
+  && hostReference.includes("`participantAudience` needs only the Host's `pipeline` field"));
 
 const repeated = planFor(opencodeDriver, { servers: { repeated: { type: 'stdio', command: 'node', args: ['node', 'x.js'] } } });
 check('OpenCode keeps a personal command whose first argument repeats it',

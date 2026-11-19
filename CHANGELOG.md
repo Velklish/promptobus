@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - When startup refuses a retained client from another shared-service runtime, report its runtime fingerprint and direct the operator to the matching launcher owner. A missing launch record is not proof that the native session stopped.
 - Gate instructions must resolve to a file inside the install root. Internal symlinks still work; installations using external file or directory links must place the instructions under the root.
-- Use the BB context Host directly for pipeline lookups and align typed catch bindings in the Codex session and OpenCode driver. Runtime behavior is unchanged.
+- Use the BB context Host directly for pipeline and MCP audience lookups; `participantAudience` accepts any Host with a `pipeline` field. Align typed catch bindings in the Codex session and OpenCode driver. Runtime behavior is unchanged.
 - Include authored scripts in the comment length check without adding pending exceptions. Use public, repository-local examples in the contributor guide and fixtures.
 - On POSIX, the BB direct recorder forwards catchable Stop signals to its child and records its actual exit after draining both streams. A child that handles Stop and exits zero still cannot supply passing gate evidence.
 

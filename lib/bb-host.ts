@@ -142,7 +142,7 @@ export function createBbHostIntegration({ resolveHost, listTools, invokeTool, pr
         skills.push({ name: reviewSkill, ...readText(path.join(directory, 'SKILL.md')), root: realpathSync(directory) });
       }
     }
-    const { servers, external } = host.participantServers(root, { audience: participantAudience(host as PromptobusHost, role) });
+    const { servers, external } = host.participantServers(root, { audience: participantAudience(host, role) });
     if (external.length) throw new Error('Host canonical server delivery is incomplete');
     const names = Object.keys(servers);
     if (names.length && (typeof listTools !== 'function' || typeof invokeTool !== 'function')) throw new Error('A consumer-owned canonical tool adapter is required');
