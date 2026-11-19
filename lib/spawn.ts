@@ -1413,6 +1413,25 @@ export function repoGenerator(repoAbs: string): { argv: string[] | null; why: st
   return { argv: declared as string[], why: null };
 }
 
+function terminalNodeException(output: string): string | undefined {
+  const lines = output.trimEnd().split(/\r?\n/);
+  if (!/^Node\.js v\S+$/.test(lines.pop() ?? '')) return undefined;
+
+  let at = lines.length - 1;
+  let frame = false;
+  for (; at >= 0 && /^(?:[ \t]|}$|$)/.test(lines[at]); at--) {
+    if (/^[ \t]+at\s+\S/.test(lines[at])) frame = true;
+  }
+  if (!frame) return undefined;
+
+  let requireStack = at;
+  while (requireStack >= 0 && lines[requireStack].startsWith('- ')) requireStack--;
+  if (requireStack < at && lines[requireStack] === 'Require stack:') at = requireStack - 1;
+  const exception = lines[at] ?? '';
+  return /^(?:[\w$]*Error|Error \[\w+\]):[ \t]+\S/.test(exception)
+    ? exception.slice(0, 400) : undefined;
+}
+
 /**
  * Run the repository's generator in the fresh worktree.
  *
@@ -1443,6 +1462,7 @@ export function runRepoGenerator({ worktreePath }: { worktreePath: string }, { f
   const before = new Set(worktreeDirt(worktreePath) ?? []);
   const result = runLogged(declared.argv, {
     cwd: worktreePath, timeout: PROC_INSTALL_TIMEOUT_MS, logPath, exec,
+    summarize: terminalNodeException,
   });
   // What the generator leaves is checked only after a successful run, net of what the install left.
   if (result.status === 0) {
@@ -1531,7 +1551,8 @@ export function worktreeDepsLine(state: WorktreeDepsState | null | undefined) {
   const command = state.command ?? npmCiCommand();
   if (state.ok) {
     return `Worktree dependencies were installed in this worktree: ${command} already ran; `
-      + 'you do not need to run it again before you work.';
+      + 'you do not need to run it again at the root before you work. '
+      + 'Separately locked packages may need their own setup; follow the repository instructions.';
   }
   return `Worktree dependencies were NOT installed: ${state.why ?? 'the install was refused'}; run ${command} by hand `
     + 'before you work, and say so in your first status.';

@@ -18,6 +18,7 @@ export interface ProcessResult {
 interface LoggedRunOptions {
   cwd?: string; timeout?: number; logPath?: string; env?: NodeJS.ProcessEnv;
   exec?: (cmd: string, args: readonly string[], options: SpawnSyncOptions) => ProcessResult;
+  summarize?: (output: string) => string | undefined;
 }
 
 const paintOn = (stream: { isTTY?: boolean }, code: number, s: string) => (stream.isTTY ? `\x1b[${code}m${s}\x1b[0m` : s);
@@ -74,7 +75,7 @@ export function lastLines(text: unknown, n = 2) {
   return String(text ?? '').trim().split(/\r?\n/).slice(-n).join(' ');
 }
 
-export function runLogged(argv: readonly string[], { cwd, timeout = PROC_TIMEOUT_MS, logPath, exec = runProc, env }: LoggedRunOptions = {}) {
+export function runLogged(argv: readonly string[], { cwd, timeout = PROC_TIMEOUT_MS, logPath, exec = runProc, env, summarize }: LoggedRunOptions = {}) {
   const started = Date.now();
   const r = exec(argv[0], argv.slice(1), { cwd, timeout, ...(env ? { env } : {}) });
   const ms = Date.now() - started;
@@ -86,7 +87,8 @@ export function runLogged(argv: readonly string[], { cwd, timeout = PROC_TIMEOUT
   if (r.error?.code === 'ENOENT') why = `was not found in PATH (${argv[0]})`;
   else if (procTimedOut(r)) why = `did not respond in ${timeout / 1000} s`;
   else {
-    const tail = lastLines(r.stderr || r.stdout || r.error?.message || '');
+    const output = String(r.stderr || r.stdout || r.error?.message || '');
+    const tail = summarize?.(output) ?? lastLines(output);
     const code = r.status ?? r.error?.code ?? '?';
     why = tail ? `exited with code ${code}: ${tail}` : `exited with code ${code}`;
   }

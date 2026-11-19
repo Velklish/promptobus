@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Encapsulate bus and reviewer-file MCP request admission per shared-service owner. An expired pending native reservation now returns 401 before MCP header validation or body reading. Valid pending catalog discovery, managed task locking and receipt replay rules are unchanged.
 - The BB native board shows the pipeline declared at run start, distinguishes predicted steps from observed participants, and includes steps added during the run. Runs without a recorded order keep their previous columns.
+- An approver refusal for a subject without a current reviewer result now lists reviewed subjects in the same task and their exact lift commands. The approver's recorded harness remains immutable.
+- Participant setup now reports the exception behind a crashed repository generator and distinguishes the root dependency install from separately locked packages. CLI help lists the ordinary Codex worker permission modes.
 
 - Check the consumed Codex app-server protocol against 0.170.0; the minimum remains 0.158.0.
 

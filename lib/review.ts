@@ -5,7 +5,7 @@ import { renderReviewerInstructions, renderReviewProcedure } from './prompts/rol
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { ok, info, warn, fail, gitIn, PROC_MAX_OUTPUT, GIT_NET_TIMEOUT_MS } from './util.js';
+import { ok, info, warn, fail, gitIn, shellQuote, PROC_MAX_OUTPUT, GIT_NET_TIMEOUT_MS } from './util.js';
 import { normalize } from './fuzzy.js';
 import { hostOf, pipelineSnapshot } from './host.js';
 import { guardHookCommand, managedGuardHookCommand } from '../dist/hooks.js';
@@ -56,6 +56,8 @@ type GitRead = { refusal: string; out?: never } | { refusal?: never; out: string
 type TaskIdentity = ReturnType<typeof newTaskIdentity>;
 type PlannedTask = Pick<TaskV1, 'id' | 'title' | 'status' | 'adapter' | 'participants'>;
 type TaskParticipants = Pick<TaskV1, 'participants'>;
+type ReviewCommandHost = Pick<PromptobusHost, 'busCommand' | 'inWorkspace' | 'cloneOf'>;
+type TaskFacts = ReturnType<typeof strictTaskFacts>;
 type Contacts = ReturnType<typeof contactsOf>;
 type RoutingContext = Awaited<ReturnType<typeof routingContext>>;
 type RoutedLift = NonNullable<ReturnType<typeof decideLift>>;
@@ -186,8 +188,27 @@ export function reviewerFor(ownerStep: DeclaredStep, taskMeta: TaskParticipants,
   return { owner, slug, address: `${stepName}:${slug}` };
 }
 
+function reviewedSubjectCommands(host: ReviewCommandHost, facts: TaskFacts, owner: DeclaredStep, reviewer: DeclaredStep, alias: boolean, stepName: string) {
+  const subjects = new Set<string>();
+  for (const participant of facts.task.participants) {
+    if (participant.role !== reviewer.name || !currentResult(participant, facts.messages)) continue;
+    const subject = participant.metadata?.reviewSubject ?? participant.metadata?.repoAbs;
+    if (typeof subject !== 'string' || !path.isAbsolute(subject)) continue;
+    const resolved = resolveRepoDir(subject);
+    if (!resolved.repoDir || resolved.repoDir !== resolved.targetDir || !host.inWorkspace(resolved.repoDir)) continue;
+    const clone = host.cloneOf(resolved.repoDir);
+    if (!clone || reviewerFor(owner, facts.task, resolved.repoDir, clone, reviewer.name).address !== addressOf(participant)) continue;
+    subjects.add(resolved.repoDir);
+  }
+  const commands = [...subjects].sort().map((subject) => {
+    const args = alias ? ['review', shellQuote(subject), '--approver'] : ['step', stepName, shellQuote(subject)];
+    return `  ${subject}: ${host.busCommand([...args, '--task', shellQuote(facts.task.id)])}`;
+  });
+  return commands.length ? `\nSubjects with a current reviewer result in this task:\n${commands.join('\n')}` : '';
+}
+
 /** The bus checks only journal facts: the current assignment, the subject and a result after it. */
-export function requireStepResults(host: Pick<PromptobusHost, 'pipeline'>, { home, taskId, taskMeta, stepName, slug, repoDir, facts = null }: { home: string; taskId: string; taskMeta: TaskParticipants; stepName: string; slug: string; repoDir: string; facts?: ReturnType<typeof strictTaskFacts> | null; signal?: AbortSignal }) {
+export function requireStepResults(host: Pick<PromptobusHost, 'pipeline'>, { home, taskId, taskMeta, stepName, slug, repoDir, facts = null, reviewCommands }: { home: string; taskId: string; taskMeta: TaskParticipants; stepName: string; slug: string; repoDir: string; facts?: TaskFacts | null; signal?: AbortSignal; reviewCommands?: ReviewCommandHost }) {
   const steps = pipelineOf(host);
   const index = steps.findIndex((step) => step.name === stepName);
   if (index < 1) throw new GateError(`step ${stepName} is not a gate in the declared pipeline: ${steps.map((s) => s.name).join(' → ')}`);
@@ -211,7 +232,11 @@ export function requireStepResults(host: Pick<PromptobusHost, 'pipeline'>, { hom
           : currentParticipant?.metadata?.assignmentAfterId === null ? 'its current assignment is pending publication'
             : !currentParticipant?.metadata?.assignmentAfterId ? 'its causal assignment boundary is absent; this participant requires explicit fresh assignment'
               : `no result is recorded after its current assignment ${currentParticipant.metadata.assignmentAfterId}`;
-      throw new GateError(`step ${stepName} requires a type=result message from ${address} for subject ${repoDir} in task ${taskId}'s journal — ${detail}.`);
+      const hint = reviewCommands && steps[index].kind === WRITES_MAIN_TREE && predecessor.kind === READS_DIFF
+        && !ownership(home, taskId, ORCHESTRATOR, sessionIdentity()).gated
+        ? reviewedSubjectCommands(reviewCommands, snapshot, steps[0], predecessor, steps.findIndex((step) => step.kind === WRITES_MAIN_TREE) === index, stepName)
+        : '';
+      throw new GateError(`step ${stepName} requires a type=result message from ${address} for subject ${repoDir} in task ${taskId}'s journal — ${detail}.${hint}`);
     }
   }
 }

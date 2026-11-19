@@ -157,6 +157,10 @@ alive or unknown session the way a reviewer reuses one. Other harnesses can rest
 a pending unlaunched record or a dead session. Codex requires retained terminal
 proof for a previous launch; a pending flag alone does not authorize replacement.
 
+A stopped approver still keeps its harness. A different explicit harness is
+refused before the native driver starts, independently of model availability.
+The reviewer rebind exception does not apply; see [Approver harness recovery](03-cli.md#approver-harness-recovery).
+
 A fresh Codex approver reserves its native launch identity before worktree creation
 and preparation. It records the worktree base before dependency or generator setup,
 so a refused preparation retains that base for retry. The driver receives the exact identity and binds the actual

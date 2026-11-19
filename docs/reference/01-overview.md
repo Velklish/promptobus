@@ -27,6 +27,8 @@ That number is maintained by the contributor release command, and the suite comp
 
 The package test installs the packed artifact and resolves each public specifier through Node's exports map, including one concrete schema, so a key-only mapping cannot pass. Its list of specifiers is the `exports` map itself, and it holds the arrow rows of the table above and the README's Library table equal to the map's keys.
 
+The repeat-reviewer rebind is role-specific. An approver retains its original harness; see [Approver harness recovery](03-cli.md#approver-harness-recovery).
+
 ### Documentation in the package
 
 `package.json` ships the README and the two process skills, but not `docs/`, `CHANGELOG.md`, `backslop.json` or `.github/`. Links from shipped Markdown to those source-only files use `https://github.com/Velklish/promptobus/blob/v<package version>/…` so an installed package keeps the documentation of its own release. The installer copies skill text without rewriting it (`lib/install.js`); links between the two installed skills remain relative, and the instructions needed to run the workflow are in the skill text. None of the shipped files names the repository's development tracker, except for one manifest field ([contributing § Public surface](../guides/contributing.md#public-surface)).

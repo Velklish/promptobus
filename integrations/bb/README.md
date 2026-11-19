@@ -283,6 +283,10 @@ dependency contains its current public exports. After source changes, run
 Reload alone keeps the generation already registered with BB.
 `bb promptobus --help` describes the operator CLI.
 
+A lifted Promptobus worktree installs root dependencies, not this separately
+locked package. After the root build, run `npm --prefix integrations/bb ci --no-audit --no-fund`
+from that worktree's root before running `check`, `skills:check`, `test` or `build` here.
+
 From the repository root, install and build the source package:
 
 ```sh
