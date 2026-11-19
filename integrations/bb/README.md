@@ -218,7 +218,8 @@ Prompt context tool names do not perform that selection. Each participant has on
 `{"mode":"peek"}` returns unread bodies; `{"mode":"read"}` returns and acknowledges
 them. Keep their ids: the bound task owner can reread one acknowledged numbered
 BB reviewer status by id using `{"mode":"review-part","id":"MESSAGE_ID"}`.
-This returns the full message; it grants no filesystem read root. Use `promptobus_artifact`
+This returns the full message or refuses: the Host caps the serialized record at
+16 KiB before reading its bytes. It grants no filesystem read root. Use `promptobus_artifact`
 with the artifact id for attachment content. A reporter uses these three tools
 and answers in its BB conversation; it cannot send or query a root-tree journal.
 Teamleads work only in the bound task. They and approvers send through its

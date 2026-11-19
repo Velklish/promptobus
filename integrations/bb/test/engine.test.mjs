@@ -2270,6 +2270,37 @@ test('constrained reviewer delivers a long lossless report through bounded statu
     'pb_review_read_file', 'pb_review_read_files', 'pb_review_list_files', 'pb_review_search_text']);
 });
 
+test('owner replay admits a maximum escaped Unicode part but reads zero payload bytes above the file limit', async t => {
+  const s = await stand(t); await s.create(); await s.add('reviewer-one', 'reviewer');
+  const token = bindingStore(s.host.bb).thread('thr-2').launchContext.grant.token;
+  const body = `Review ${token} part 1/1\n🧪界"\\\n`.padEnd(2400, '\u0001');
+  const send = JSON.parse(await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'status', body }));
+  const id = send.message.id, replay = () => s.call('thr-1', 'promptobus_mailbox', { mode: 'review-part', id });
+  await assert.rejects(replay(), /ENOENT/);
+  const firstRead = JSON.parse(await s.call('thr-1', 'promptobus_mailbox', { mode: 'read' })).messages.find(m => m.id === id);
+  assert.equal(firstRead.body, body); assert.deepEqual(JSON.parse(await replay()), firstRead);
+  const ref = path.join(s.root, '.promptobus/tasks', s.task, 'history/orchestrator', `${id}.json`);
+  const raw = readFileSync(ref); assert.ok(raw.length > 13_000 && raw.length < 16_384);
+  const padded = Buffer.concat([raw, Buffer.alloc(16_384 - raw.length, 32)]);
+  writeFileSync(ref, padded); assert.deepEqual(JSON.parse(await replay()), firstRead);
+  fs.appendFileSync(ref, ' ');
+  const open = fs.openSync, read = fs.readSync; let watched = -1, reads = 0;
+  fs.openSync = (file, ...args) => { const fd = open(file, ...args); if (String(file) === ref) watched = fd; return fd; };
+  fs.readSync = (fd, ...args) => { if (fd === watched) reads++; return read(fd, ...args); };
+  syncBuiltinESMExports();
+  try { await assert.rejects(replay(), /exceeds bounded/); assert.notEqual(watched, -1); assert.equal(reads, 0); }
+  finally { fs.openSync = open; fs.readSync = read; syncBuiltinESMExports(); }
+  writeFileSync(ref, raw.subarray(0, raw.lastIndexOf(125)));
+  await assert.rejects(replay(), /JSON/);
+  for (const patch of [{ protocolVersion: 2 }, { recipients: ['reviewer-one'] }]) {
+    writeFileSync(ref, JSON.stringify({ ...firstRead, ...patch })); await assert.rejects(replay(), /mismatched/);
+  }
+  for (const patch of [{ sender: 'orchestrator' }, { body: `Review ${token} part 2/1\ninvalid` }]) {
+    writeFileSync(ref, JSON.stringify({ ...firstRead, ...patch })); await assert.rejects(replay(), /Not an acknowledged BB review part/);
+  }
+  writeFileSync(ref, raw); await s.publish(null, { STOP: true }); await assert.rejects(replay(), /Current control blocked/);
+});
+
 test('unrelated dispatches proceed while metadata cannot release a pending plugin thread', async t => {
   const s = await stand(t);
   const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
