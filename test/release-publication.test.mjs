@@ -115,7 +115,8 @@ const rawLog = () => {
   let lines = state.otherStepLogs ? ['##[group]Run npm run build','build passed','Cleaning up orphan processes']
     : ['##[group]Run npm test','##[endgroup]','↷ SKIP optional integration — deliberate fixture',
       'installed check notRun: fixture','280/280 test files passed','Cleaning up orphan processes'];
-  if(state.partialDownload) lines=lines.slice(0,3);
+   if(state.footerInAudit) lines.splice(4,0,'##[group]Run npm run audit');
+   if(state.partialDownload) lines=lines.slice(0,3);
   if(state.longLog) lines.splice(2,0,'x'.repeat(80_000));
   return state.emptyLogs ? '' : lines.map(line=>'2026-11-13T00:00:00.0000000Z '+line).join('\\n')+'\\n';
 };
@@ -190,20 +191,22 @@ test('completed receipt requires full runtime identity before any GitHub call', 
   assert.equal(f.git('tag','--list'), '');
 });
 
-test('raw Test proof requires a test group, a nonzero matching footer and later cleanup', () => {
+test('raw Test proof requires a nonzero matching footer in the Test step before cleanup', () => {
   const group = '##[group]Run npm test', footer = '280/280 test files passed', cleanup = 'Cleaning up orphan processes';
+  const audit = '##[group]Run npm run audit';
   const log = lines => lines.map(line => `2026-11-13T00:00:00.0000000Z ${line}`).join('\r\n');
-  requireTestLog(log([group, footer, cleanup]));
+  requireTestLog(log([group, '##[endgroup]', `${footer}; 3 checks skipped in 3 files`, audit, cleanup]));
   for (const lines of [['##[group]Run npm run build', 'build passed', cleanup], [footer, cleanup], [group, cleanup],
     [group, footer], [group, '279/280 test files passed', cleanup], [group, '0/0 test files passed', cleanup],
-    [footer, group, cleanup], [group, cleanup, footer]]) {
+    [footer, group, cleanup], [group, cleanup, footer], [group, audit, footer, cleanup],
+    [group, 'Post job cleanup.', footer, cleanup]]) {
     assert.throws(() => requireTestLog(log(lines)), /Incomplete required Linux job log/, lines.join(' | '));
   }
 });
 
 test('raw required job logs refuse missing Test proof or incomplete download before publication', () => {
   const f = fixture();
-  for (const state of [{otherStepLogs:true}, {downloadFailure:true},
+  for (const state of [{otherStepLogs:true}, {footerInAudit:true}, {downloadFailure:true},
     {partialDownload:true}, {signalDownload:true}]) {
     const directory = path.dirname(f.file);
     const previous = new Set(readdirSync(directory));
@@ -404,6 +407,11 @@ test('interrupted tag push resumes without replacing local/remote objects or re-
   assert.equal(receipt.publication.status, 'publishing');
   assert.equal(receipt.publication.object, object);
   rmSync(hook);
+  const parent = f.git('rev-parse', 'HEAD^');
+  f.git('--git-dir', f.bare, 'update-ref', 'refs/heads/main', parent);
+  refused(f.publish(), /Public main must still name the qualified candidate/);
+  assert.equal(f.refs(), '');
+  f.git('--git-dir', f.bare, 'update-ref', 'refs/heads/main', f.head);
   passed(f.publish());
   assert.equal(f.git('rev-parse', 'v1.1.0'), object);
   const published = f.refs();
@@ -411,6 +419,15 @@ test('interrupted tag push resumes without replacing local/remote objects or re-
   interrupted.publication.status = 'publishing';
   f.save(interrupted);
   f.git('tag', '-d', 'v1.1.0');
+  f.put('README.md', 'main advanced after publication\n');
+  f.git('commit', '-qam', 'follow-up on main');
+  f.git('push', f.bare, 'HEAD:refs/heads/main');
+  f.git('switch', '--detach', f.head);
+  writeFileSync(hook, '#!/bin/sh\nexit 7\n', {mode:0o755});
+  f.save({ ...interrupted, publication: { status: 'notRun' } });
+  refused(f.publish(), /Public main must still name the qualified candidate/);
+  assert.equal(f.git('tag', '--list'), '');
+  f.save(interrupted);
   passed(f.publish());
   assert.equal(f.git('rev-parse', 'v1.1.0'), object);
   assert.equal(f.refs(), published);
@@ -482,6 +499,9 @@ test('release guide and workflow retain main/PR coverage and qualify once before
   const guide = read(path.join(repo,'docs/guides/releasing.md'));
   for(const text of ['git push origin HEAD:main','npm run release -- publish --receipt', '--run',
     'npm run release -- smoke --receipt','immutable','interrupted','skipped integration bodies',
-    'one full Linux qualification','Node 26 / ubuntu-latest']) assert.ok(guide.includes(text), `guide missing ${text}`);
+    'one full Linux qualification','Node 26 / ubuntu-latest', 'before the next workflow step',
+    'even if `main` has advanced']) assert.ok(guide.includes(text), `guide missing ${text}`);
+  assert.match(guide.split('### Public installation smoke')[1],
+    /^gh run list --repo \S+ --workflow ci\.yml --commit "\$\(git rev-parse HEAD\)" --json [^\n]+$/m);
   assert.doesNotMatch(guide, /push the release commit and tag together/);
 });

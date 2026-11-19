@@ -245,10 +245,12 @@ export function requireTestLog(logs) {
   requireThat(logs.length > 0, 'Linux CI logs are required for skip accounting');
   const lines = logs.split(/\r?\n/).map((line) => line.replace(/^\uFEFF?\d{4}-\d\d-\d\dT[\d:.]+Z /, ''));
   const testStart = lines.indexOf('##[group]Run npm test');
-  const testEnd = lines.findIndex((line, index) => index > testStart && /^([1-9]\d*)\/\1 test files passed(?:;.*)?$/.test(line));
-  const cleanup = lines.indexOf('Cleaning up orphan processes', testEnd + 1);
-  requireThat(testStart >= 0 && testEnd > testStart && cleanup > testEnd,
-    'Incomplete required Linux job log: require Test group, successful file-count footer and job cleanup');
+  const cleanup = lines.indexOf('Cleaning up orphan processes', testStart + 1);
+  const testStop = lines.findIndex((line, index) => index > testStart
+    && (line.startsWith('##[group]Run ') || line === 'Post job cleanup.' || index === cleanup));
+  requireThat(testStart >= 0 && cleanup >= testStop && testStop > testStart
+    && lines.slice(testStart + 1, testStop).some((line) => /^([1-9]\d*)\/\1 test files passed(?:;.*)?$/.test(line)),
+  'Incomplete required Linux job log: require successful file-count footer in the Test step before job cleanup');
 }
 
 function qualify(receipt, file, id) {
@@ -309,7 +311,8 @@ function publish(file, id) {
   requireThat(same(receipt.source, source()), 'Candidate source changed after Linux qualification');
   const tag = `refs/tags/v${receipt.version}`;
   const refs = publicRefs(receipt.version);
-  requireThat(refs['refs/heads/main'] === receipt.source.commit, 'Public main must still name the qualified candidate');
+  if (!refs[tag] || !receipt.publication.object) requireThat(refs['refs/heads/main'] === receipt.source.commit,
+    'Public main must still name the qualified candidate');
   if (receipt.publication.object && refs[tag]) requireThat(receipt.publication.object === refs[tag],
     'Published tag is immutable: receipt object mismatch');
   if (refs[tag]) {
