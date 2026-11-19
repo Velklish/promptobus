@@ -358,6 +358,16 @@ check('docs: the generate dry-run rule does not read as the trustedHooks rule',
 
 const installGuide = read('docs/guides/install.md');
 const orchestrateSkill = read('skills/orchestrate/SKILL.md');
+const handoff = section(orchestrateSkill, '## Root thread handoff');
+check('docs: root rotation checkpoints the run before a fresh conversation',
+  has(handoff, "after the agreed batch of tasks or when the owner's context threshold is reached")
+  && has(handoff, "Write a new handoff file in the root task's `files/`")
+  && has(handoff, 'opens a new conversation with the handoff, not the old transcript'));
+check('docs: fresh root succession requires exact consent and cannot transfer a managed launch',
+  has(handoff, 'explicit owner approval for the exact active root task and the full outgoing and incoming session IDs')
+  && has(handoff, 'Verify the old session has ended')
+  && has(handoff, '`lead --resume --task <id>` recovers the same native thread and history')
+  && has(handoff, 'Mail, participants and Stop receipts stay on the original task'));
 const wholeRunPause = section(orchestrateSkill, '## Planned whole-run pause');
 const pauseAtLimit = section(wholeRunPause, "### Pause at the owner's limit threshold");
 const continueAfterReset = section(wholeRunPause, '### Continue after the reset');

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Bound the orchestrator's root thread by batch or owner-set context threshold. The handoff preserves task records and distinguishes an approved mailbox succession from managed Codex same-thread recovery.
+
 - Document owner-approved whole-run pauses at harness limit windows, checkpointing in task files and same-slug teamlead relift with a continuation brief. The procedure preserves existing ownership and Stop requirements.
 - Add controlled checks for managed Claude reconnects across a generation change.
 - Show a board of active runs in the BB native panel: lanes per run, columns per pipeline step plus Done, a card per piece with its holder, latest status, stall, open question and unread mail, and a side panel with the piece's history and an Open thread button for a BB participant. The digest and the board place pieces by one rule, now exported as `piecesOf` and `currentResult`.

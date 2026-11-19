@@ -77,6 +77,8 @@ history and replay an undelivered assignment, retaining any new continuation.
 A supplied brief is a continuation,
 not a new task. The task creation time, mailbox owner and native thread identity stay the same.
 
+For a [root thread handoff](../../skills/orchestrate/SKILL.md#root-thread-handoff), write the checkpoint before ending the outgoing session. An ordinary root mailbox can pass to an explicitly approved successor after the old owner has ended. This does not transfer a managed Codex launch. A fresh managed `lead` needs a new task; its new thread does not inherit participants, mail or Stop evidence from the previous task.
+
 A root bound before a failed first model turn retains its record and private rollout for
 recovery. `stop` and `done` retire the home, so they do not leave a resumable root. An interrupted
 holder that has exited with its app-server leaves history available; verify both processes

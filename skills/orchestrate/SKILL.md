@@ -29,6 +29,25 @@ A message to the person — your question, your status report, or the reporter's
 | Reviewer | `promptobus review` | Read every diff of a piece, send findings, confirm their closure on its next pass; a replacement receives the last result in its initial prompt and checks those findings for closure first | Fix the findings |
 | Reporter | optional read-only session on a root task | Answer the person from the task journals | Send as `reporter` or treat a result as accepted |
 
+## Root thread handoff
+
+End the root thread's assignment after the agreed batch of tasks or when the owner's context threshold is reached. Stop dispatching. For large logs, histories or another repository, use a read-only subagent only with the owner's approval; request conclusions, evidence locations and unknowns, not raw text. Without approval, narrow the read or ask.
+
+Write a new handoff file in the root task's `files/` directory reported by `promptobus_task`. Give the owner its exact path. Record:
+
+- Workspace, root task ID, full outgoing owner session ID, child task IDs, assignments, states and next actions.
+- Owner decisions and their scope, including the approved split, strategy envelope, pending interactions, pauses and intentional Stops.
+- Worktrees, open branches with heads, backup locations or missing backups. Link original briefs, checkpoints and relevant mail by task and message ID; distinguish acknowledged, outstanding and unverified work.
+
+This file carries context, not consent. Give it to the owner before ending the old session through its authorized host route; an idle turn is not evidence it ended. The boundary does not authorize `stop`, `done`, `abandon` or a whole-run pause. For a fresh root thread the owner opens a new conversation with the handoff, not the old transcript. Choose the route before doing any work:
+
+- **Ordinary session-owned root:** require explicit owner approval for the exact active root task and the full outgoing and incoming session IDs. Verify the old session has ended, the recorded owner still matches, the caller has the incoming harness identity at the root `orchestrator` address, and there is no competing takeover. If any check is missing, stop. Only then use `promptobus_mailbox { task: <root>, claim: true }`. Claim does not check liveness or compare an expected previous owner. Verify `MAILBOX CLAIMED` names both approved IDs and the correct task; retain the headers returned by the claim itself. On mismatch report it without dispatch or another claim.
+- **Managed Codex root:** `lead --resume --task <id>` recovers the same native thread and history; it does not start a fresh root. `lead` starts a fresh managed thread only on a new task. Ask whether the owner wants same-thread recovery if eligible, or a separately approved new task from the handoff. A mailbox claim cannot transfer the managed launch. Mail, participants and Stop receipts stay on the original task; do not re-create them or close it to force rotation.
+
+A claim refusal (including a held peer address) is final for that attempt. Never change the caller's identity or role to bypass it. Verify the task's full recorded owner after the claim; a successful tool transport alone proves nothing.
+
+Before dispatch, reconcile the file against current task status, checkpoints and authorized root mail (including arrivals since the file was written). Leave child mail to its teamlead. Report gaps and the next approved action; a handoff neither resumes paused participants nor proves Stop or drain. Follow [Planned whole-run pause](#planned-whole-run-pause) for a paused run. If the host cannot establish successor authority, leave the run at the checkpoint and identify the missing grant or evidence.
+
 ## Choosing a flat task or a tree
 
 The owner measured 33 task journals on this machine on 2026-09-26. The median task had 3 pieces, 3 concurrent workers, 69 messages to the orchestrator and took 1.1 hours. The five largest had 5 to 33 pieces, peak concurrency of 3 to 7 workers, 400 to 832 messages to the orchestrator, 344 to 877 thousand characters of inbound mail and lasted up to 16.8 hours. Use the owner's thresholds from that measurement:
@@ -72,7 +91,7 @@ Types: `task`, `status`, `question`, `answer`, `artifact`, `result`, `review`.
 
 Without `task`, the server uses `PROMPTOBUS_TASK`, else this session's binding, else the only active task. If the reply names another title, you joined the wrong task. Pass `task`.
 
-A foreign-mailbox header names both session ids and means the originals stay with the owner. If the mail is yours and this session is new, `promptobus_mailbox { claim: true }`; the reply `MAILBOX CLAIMED` names the previous owner. Then read again without `claim`. A task an earlier CLI created has no owner and nothing to claim (`src/mcp/server.ts`).
+A foreign-mailbox header names both session IDs; the originals stay with the owner. For root takeover follow [Root thread handoff](#root-thread-handoff). An ownerless legacy task has nothing to claim.
 
 A session has one live binding: the active task its calls use without `task`. `spawn` and `review --approver` write it for the task's owner, `review` only when it joins an existing task, and `claim` rewrites it (`lib/store.js`).
 
@@ -206,50 +225,37 @@ Unnamed routing offers only tuples rated for the requested role. An explicit `--
 
 Role quality floors are soft; on the ten-point scale they default to worker 5, approver 7, reviewer 9; a pick below one carries `<role>-floor-not-met` (`src/registry.ts`). The shipped catalog rates no Anthropic model on Cursor (`models/catalog.json`).
 
-`balance` is not a row of the quality ladder and does not move with the price of a mistake: it answers which ACCOUNT to spend from, and orders tuples inside a harness by `balanced`. It is the strategy for a person paying several subscriptions who wants the work spread over all of them instead of exhausting one — reach for it when `models` says an account is running short, or when the run is long enough that the spend matters, not as a general default. The reviewer is inside it like a worker: **nothing in this package pins the reviewer to a harness** ([solo-review](../solo-review/SKILL.md) § Reviewer strategy).
+`balance` spreads work across subscriptions, ranking tuples within a harness by `balanced`. It is outside the quality ladder. Reviewers have no pinned harness ([solo-review](../solo-review/SKILL.md) § Reviewer strategy).
 
 Each live participant of the task on a harness costs its tuples 5 score points by default (`penalties.liveParticipantPerHarness`), at most 20 (`penalties.liveParticipantCap`), under every strategy. `balance` chooses the harness by pace, so the penalty only orders the tied band. The `balance` projection uses `caps.liveParticipants.<harness>` as a ceiling; live-cap admission enforces it for every strategy and explicit model choice (03-cli § Live-cap admission).
 
 ### When `models` says an account is running short
 
-A `near-limit` line in `promptobus models` names a harness whose limit window is at or past its level threshold, or which is spending faster than the window refills past its rate threshold, and it names the strategy it would switch to — `economy` when every paced harness is short by either test, `balance` when at least one paced harness is not short.
+A `near-limit` line names the harness and proposed switch: `economy` if every paced harness is short on level or rate, otherwise `balance`.
 
 A `window-nearly-spent` row means that harness left automatic selection at 90 % or more of its binding window used; it returns once a `--refresh` shows the window refilled, or when the person names it with `--harness` or `--model`. A `candidates-empty` refusal carrying that detail means every account is past the threshold, and whether to name one and spend it is the person's decision, not yours.
 
-**Propose that switch to the person. Never make it.** The strategy envelope is what they approved, and a mechanism that quietly left it would make the envelope unauditable. Show them the line and the tuple it would change, and when they agree:
+Show the person the warning and affected tuple. Only with their agreement run:
 
 ```text
 promptobus models strategy --set <name>
 ```
 
-That records `defaults.strategy` in the host's writable overlay, and every following `spawn` and `review` without `--strategy` routes with it — the proposal holds without repeating a flag. `promptobus models strategy` alone prints the effective default and the layer it came from; `--clear` removes it. A `--strategy` on the command line always wins over the recorded default, so a track whose envelope names its own strategy is unaffected.
-
-This is the only thing that changes a strategy between spawns, and a person is on both ends of it.
+This sets the host's `defaults.strategy` for subsequent lifts without `--strategy`. `promptobus models strategy` shows the default and source; `--clear` removes it.
 
 ### When the local runs disagree with the catalog
 
-The catalog's ratings come from published benchmarks. `promptobus models calibrate` reads this machine's own telemetry back against them and prints, per harness/model/effort, how many runs it has, completion-duration evidence, usable throughput, the median movement of the account's limit windows, and — where evidence reaches the threshold — proposed `speed` and `quotaCost` lines for the user overlay with the catalog band beside them and the numbers behind them. Speed observations pool across every effort rung of a `(harness, model)` and produce one speed band for that ladder; completion duration is never a speed input.
-
-**Read it as evidence, not as a verdict.** The key with the most runs is the anchor and keeps its catalog band; every other key is proposed a step away from ITS OWN band, at most two, and only when the measurement differs materially from what the bands already imply. A line reading `insufficient data: N of 5` is the command declining to guess, and `quality` is never proposed at all — review rounds measure how work was received, not how good a model is.
-
-Run it when a person asks why a model was picked and their experience disagrees, or after a long series on one harness. Then show them the proposal and let them decide:
-
-```text
-promptobus models calibrate
-promptobus models calibrate --write
-```
-
-`--write` merges only the proposed `ratings` into the person's `user` overlay, keeps every other key of that file, and **asks on the terminal first**. Do not pass `--yes` on their behalf: it exists to record an agreement the person already gave, and using it to skip the question is the one thing the flag is not for. As with a strategy switch, a person is on both ends of this.
+Run `promptobus models calibrate` to compare local telemetry with catalog ratings. It proposes `speed` and `quotaCost`, never `quality`; insufficient data yields no proposal. Show the evidence before `promptobus models calibrate --write` merges proposed ratings into the user overlay. Leave its confirmation to the person.
 
 ### The one question the tool cannot answer
 
-`models` prints the key and the file when nothing has recorded Cursor's plan name, because no Cursor method returns it. **Ask the person once, and only once**, and only when a run will actually use Cursor. The line goes in the `user` overlay, `~/.promptobus/model-routing.json`:
+If the run uses Cursor and `models` reports its plan missing, ask once. The user overlay at `~/.promptobus/model-routing.json` takes:
 
 ```json
 "account": { "cursor": { "plan": "<the plan name>" } }
 ```
 
-No command writes it: the writable layer is per-workspace, so a tool-written answer would be asked again in the next workspace. The value is display only and enters no score, so a run is not blocked while it is missing — do not stall a spawn on it, and do not ask a second time in the same run.
+The plan is display-only; its absence never blocks a lift.
 
 ### The strategy envelope
 
@@ -269,7 +275,7 @@ A fallback **inside** the envelope needs no second approval: a preflight that ex
 
 `promptobus done` writes one local telemetry record per recorded harness generation of a participant with a model, plus teamleads and the root orchestrator with a recorded session identity or model.
 
-It automatically refreshes the availability of exactly the window-bearing harnesses represented by those records. It uses the existing 15 s preflight budget for that probe set, so there is no separate `promptobus models --refresh` step to remember. A window entry still lives sixty seconds, and a probe refusal or timeout leaves that harness's end reading `null`; `done` warns with `telemetry: <harness> window <id> not re-read (<reason>) — end reading absent` for a missing window (or the harness-level form when the whole harness is unavailable) and still closes the task. The record is local, holds no prompt, path, session id or token contents, and may carry numeric token-usage counts separately from throughput evidence; nothing sends it anywhere.
+`done` refreshes the represented harness windows automatically. On refusal or timeout it warns, leaves the end reading absent and still closes. Local records may contain usage counts, not prompt or token contents.
 
 ### Constraints the user named
 
