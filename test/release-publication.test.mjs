@@ -87,6 +87,7 @@ function prepare({ root, bare, put, git, command, state }) {
   put('build.cjs', `console.log('↷ SKIP fixture optional body — deliberate fixture');\n`);
   put('bin/promptobus.js', `import { readFileSync } from 'node:fs';\nconsole.log('promptobus '+JSON.parse(readFileSync(new URL('../package.json',import.meta.url))).version);\n`);
   for (const name of ['scripts/release.mjs', 'lib/exec.js']) put(name, read(path.join(repo, name)));
+  put('scripts/integration-preflight.mjs', `console.log(JSON.stringify({ status: 'passed' }));\n`);
   git('init', '-q', '-b', 'main');
   git('add', '.');
   git('commit', '-qm', 'fixture base');
@@ -160,6 +161,15 @@ test('prepared release copies keep independent refs, worktrees and receipts', ()
   assert.equal(second.git('status', '--porcelain'), '');
   assert.equal(second.receipt().source.commit, second.head);
   assert.ok(second.receipt().steps.every(step => step.status === 'passed'));
+});
+
+test('publication refuses if the suite has no passing preflight evidence', () => {
+  const f = fixture();
+  const receipt = f.receipt();
+  delete receipt.steps[1].attempts[0].preflight;
+  f.save(receipt);
+  refused(f.publish(), /Complete integration preflight/);
+  assert.equal(f.calls().length, 0);
 });
 
 test('completed receipt requires full runtime identity before any GitHub call', () => {
