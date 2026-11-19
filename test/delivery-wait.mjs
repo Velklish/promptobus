@@ -22,19 +22,19 @@ function newer(next, prev) {
 }
 
 /** Poll `health.json` until `address` has a delivery mark newer than the one at entry. */
-export async function waitDelivered(home, task, address, timeoutMs) {
+export async function waitDelivered(home, task, address, timeoutMs, { clock = Date.now, poll = () => new Promise(r => setTimeout(r, 20)) } = {}) {
   const file = home && task ? path.join(home, 'tasks', task, 'health.json') : null;
   const bound = Number(timeoutMs);
   if (!file || !address || !(bound > 0)) {
     return { ok: false, file, deliveredAt: null, note: 'no health file to wait on' };
   }
   const before = deliveredAt(file, address);
-  const deadline = Date.now() + bound;
+  const deadline = clock() + bound;
   let now = before;
-  while (Date.now() < deadline) {
+  while (clock() < deadline) {
     now = deliveredAt(file, address);
     if (newer(now, before)) return { ok: true, file, deliveredAt: now, note: null };
-    await new Promise((r) => { setTimeout(r, 20); });
+    await poll();
   }
   now = deliveredAt(file, address);
   if (newer(now, before)) return { ok: true, file, deliveredAt: now, note: null };

@@ -1,4 +1,5 @@
 import { check } from './check.mjs';
+import { scheduled, receipt } from './fixture-order.mjs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { makeSandbox, makeSockDir } from './sandbox.mjs';
@@ -35,7 +36,9 @@ function confirmed(ref, holderPid, fields = {}) {
   writeSession(record);
   return record;
 }
-const holder = runChild(500);
+const held = scheduled('held-holder');
+const holder = held ? spawn(process.execPath, ['-e', 'process.stdin.resume()'], { stdio: ['pipe', 'ignore', 'ignore'] }) : runChild(500);
+if (held) holder.done = new Promise(resolve => holder.once('exit', resolve));
 const late = confirmed('late-confirmation', holder.pid);
 const socket = makeSockDir('pb-stop-recovery-').sock('holder');
 writeSession({ ...late, rpcSocket: socket });
@@ -44,12 +47,18 @@ const server = net.createServer(conn => conn.once('data', data => {
   conn.end(JSON.stringify({ id: request.id, result: { ok: true, stopped: true, launchId: late.launchId,
     receiptFile: late.commandReceiptFile } }) + '\n');
 }));
-await new Promise(resolve => server.listen(socket, resolve));
 try {
+  await new Promise((resolve, reject) => server.once('error', reject).listen(socket, resolve));
+  if (scheduled('exited-holder')) await holder.done;
+  if (held) await new Promise(resolve => setTimeout(resolve, 510));
+  if (held || scheduled('exited-holder')) receipt('before first Stop', { holder: holder.pid, exit: holder.exitCode });
   const first = await codexDriver.stop(late.ref, { timeoutMs: 60 });
+  if (held) check('original child is still alive at the first Stop verdict', holder.exitCode === null && holder.signalCode === null);
   check('Stop recovery: confirmation before deadline with a still-live holder remains unresolved',
     !first.ok && first.attempted && !first.stopped && !!readSession(late.ref), JSON.stringify(first));
+  if (held) holder.stdin.end();
   await holder.done;
+  if (held || scheduled('exited-holder')) receipt('before recovery', { first, exit: holder.exitCode });
   await new Promise(resolve => server.close(resolve));
   const second = await codexDriver.stop(late.ref, { timeoutMs: 200 });
   check('Stop recovery: validated same-launch confirmation retires after original holder exit without a socket',

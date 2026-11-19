@@ -24,6 +24,7 @@ import { existsSync, linkSync, mkdirSync, statSync, readFileSync, utimesSync, wr
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check, skip } from './check.mjs';
+import { scheduled, receipt } from './fixture-order.mjs';
 import { listenTestSocket, makeSandbox, makeSockPath, snapshotOfList, stubCommand, withStubPath } from './sandbox.mjs';
 import { capture, quiet } from './console.mjs';
 
@@ -745,11 +746,30 @@ check(': an auto-raise turned off by the switch leaves no trace',
 // of mistake.
 const LIVE_SOCK = sockPath('live');
 const seen = [];
+const delayEnd = scheduled('late-end') || ['auth', 'tokenless', 'probe'].some(key => scheduled(`missing-${key}`));
+let acceptedSocket;
 const server = createServer((c) => {
   let buf = '';
   c.on('data', (d) => { buf += d; });
   c.on('end', () => { seen.push(buf); c.destroy(); });
+  if (delayEnd) { acceptedSocket = c; c.pause(); }
 });
+async function releaseEnd(label, originalVerdict) {
+  receipt(`${label}: original observation`, { seen: [...seen], originalVerdict });
+  check(`${label}: original observer ran before server end`, seen.length === 0, JSON.stringify(seen));
+  const edge = performance.now() + 2000;
+  while (!acceptedSocket && performance.now() < edge) await new Promise(resolve => setTimeout(resolve, 5));
+  const socket = acceptedSocket;
+  if (!scheduled(`missing-${label}`)) socket?.resume();
+  while (!seen.length && performance.now() < edge) await new Promise(resolve => setTimeout(resolve, 5));
+  acceptedSocket = undefined;
+  if (!seen.length) {
+    socket?.destroy();
+    server.close();
+    throw new Error(`${label}: no server end within 2000 ms (accepted=${!!socket})`);
+  }
+  receipt(`${label}: server end`, { payload: seen[0] });
+}
 const liveListening = await listenTestSocket(server, LIVE_SOCK);
 if (!liveListening.ok) {
   skip(': real wire checks require a local Unix socket', liveListening.reason);
@@ -758,6 +778,12 @@ if (!liveListening.ok) {
 
 const knocked = await knockSocket({ socket: LIVE_SOCK, token: 'tok123' }, 'a wire check');
 await new Promise((res) => setTimeout(res, 50));
+if (delayEnd) {
+  let verdict;
+  try { (seen[0] ?? '').trim().split('\n').map(l => JSON.parse(l)); verdict = 'parsed'; }
+  catch (error) { verdict = error.name; }
+  await releaseEnd('auth', verdict);
+}
 const lines = (seen[0] ?? '').trim().split('\n').map((l) => JSON.parse(l));
 check('the knock arrived and landed as two lines of JSON', knocked.ok === true && lines.length === 2, JSON.stringify(seen));
 check('the first line is auth with the token',
@@ -772,12 +798,15 @@ check('the second is an injection-protocol message with the order body',
 seen.length = 0;
 await knockSocket({ socket: LIVE_SOCK }, 'without a token');
 await new Promise((res) => setTimeout(res, 50));
+if (delayEnd) await releaseEnd('tokenless', JSON.parse((seen[0] ?? '{}').split('\n')[0]).type === 'auth');
 check('with no token the auth line still goes out',
   JSON.parse((seen[0] ?? '{}').split('\n')[0]).type === 'auth', JSON.stringify(seen));
 
 seen.length = 0;
 const probed = await probeWake(LIVE_SOCK, 'tok123');
 await new Promise((res) => setTimeout(res, 50));
+if (delayEnd) await releaseEnd('probe', probed.ok === true && (seen[0] ?? '').trim().split('\n').length === 1);
+if (delayEnd) check('the probe sent one auth object', JSON.parse(seen[0].trim()).type === 'auth', seen[0]);
 check('the doctor smoke test connects and sends ONLY auth — it does not touch someone else\'s turn',
   probed.ok === true && (seen[0] ?? '').trim().split('\n').length === 1, JSON.stringify(seen));
 

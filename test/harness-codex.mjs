@@ -874,6 +874,13 @@ async function playTurn(home, started, turnId, params, ask, notify, nativeClient
     await new Promise(() => {});
     return;
   }
+  const gate = process.env.CODEX_STUB_RESERVATION_GATE;
+  if (gate && params.input?.[0]?.text === 'Continue in the same thread.') {
+    note(home, addressOf(started), { kind: 'reservation-gate', turnId });
+    const end = Date.now() + 10000;
+    while (!existsSync(gate) && Date.now() < end) await new Promise(r => setTimeout(r, 10));
+    if (!existsSync(gate)) throw new Error('reservation fixture never released B');
+  }
   const t = readThread(home, started.id) ?? started;
   t.turnStarted = true;
   t.turnId = turnId;

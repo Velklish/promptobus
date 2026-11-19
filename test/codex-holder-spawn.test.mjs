@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
+import { scheduled, observe, receipt } from './fixture-order.mjs';
 import {
   dropSession, holderLogFile, readSession, sessionFile, startHolder, waitReady, writeSession,
 } from '../lib/codex-session.js';
@@ -115,6 +116,8 @@ function runHold(file) {
   // holder's next RPC write (thread/start) is then EPIPE.
   const dying = path.join(HOME, 'closed-stdio.sh');
   const initCapture = path.join(HOME, 'closed-stdio-initialize.json');
+  const release = path.join(HOME, 'release-notification');
+  const splitNotices = scheduled('late-notice') || scheduled('missing-notice');
   writeFileSync(dying, [
     '#!/bin/sh',
     'IFS= read -r line',
@@ -122,6 +125,8 @@ function runHold(file) {
     'exec 0<&-',
     'printf \'{"jsonrpc":"2.0","id":1,"result":{}}\\n\'',
     'printf \'{"jsonrpc":"2.0","method":"account/rateLimits/updated","params":{"primary":{"usedPercent":0}}}\\n\'',
+    ...(splitNotices ? [`while [ ! -f "${release}" ]; do sleep 0.02; done`] : []),
+    ...(scheduled('missing-notice') ? ['exec /bin/sleep 3600'] : []),
     'printf \'{"jsonrpc":"2.0","method":"item/completed","params":{"item":{"type":"mcpToolCall","server":"acme_tools_promptobus","tool":"promptobus_send","status":"failed","error":{"message":"stub: tool not found"}}}}\\n\'',
     'exec /bin/sleep 3600',
     '',
@@ -163,6 +168,19 @@ function runHold(file) {
   let log = '';
   try { log = readFileSync(logFile, 'utf8'); } catch { /* none */ }
   const firstLine = log.split('\n')[0];
+  if (splitNotices) {
+    receipt('original log snapshot', { log, outcome });
+    check('only the first notification is visible at the original snapshot',
+      /debug event account\/rateLimits\/updated payload=/.test(log) && !/event item\/completed mcp/.test(log), log);
+    writeFileSync(release, 'release');
+    let latest = log;
+    const logged = await observe('post-release holder log', () => {
+      try { latest = readFileSync(logFile, 'utf8'); } catch { return false; }
+      return /debug event account\/rateLimits\/updated payload=\{"primary":\{"usedPercent":0\}\}/.test(latest)
+        && /event item\/completed mcp acme_tools_promptobus\/promptobus_send failed .*stub: tool not found/.test(latest) && latest;
+    }, 4000);
+    check('the released notification actually reached the log', !!logged, latest);
+  }
   check(': holder journal starts with the lift provenance',
     firstLine.includes('promptobus copy: cli=/stand/promptobus.js package='
       + PACKAGE_PATH + '@' + PACKAGE_VERSION + ' host=unknown'
