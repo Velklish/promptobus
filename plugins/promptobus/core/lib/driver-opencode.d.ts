@@ -85,7 +85,6 @@ export declare const PERMISSION_MODES: string[];
 export declare const DEFAULT_PERMISSION_MODE = "auto";
 export declare const EFFORT_LEVELS: never[];
 export declare const DEFAULT_MODEL = "opencode-go/muse-spark-1.3-contributor";
-export declare const OPENCODE_MIN_VERSION = "2.0.0";
 export declare const PERMISSION_POLL_MS = 4000;
 export declare const REVIEWER_DENY: string[];
 export declare function permissionDeny(denyTools: readonly unknown[] | null | undefined): Record<string, "deny" | Record<string, "allow">>;

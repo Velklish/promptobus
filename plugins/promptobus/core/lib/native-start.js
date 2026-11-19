@@ -3,7 +3,7 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { isSupportedPosixShell, observeRootProcess, processExecutable, processParent } from './root-process.js';
 import { contained, readPrivate, recordOf, recordVersion, sameRecordVersion } from './service-state.js';
-import { bindManagedNativeStart } from './drivers.js';
+import { bindManagedNativeStart, readClaudeStartupSession } from './drivers.js';
 import { CLIENT_FILE, readManagedServiceHookContext, realizeManagedServiceClient } from './service-launch.js';
 import { withTaskLock, writeJsonAtomic, taskExists } from './store.js';
 async function hookParent() {
@@ -32,11 +32,11 @@ export async function authorizeManagedClaudeExecution(host, event, env, cwd) {
         throw new Error('Claude execution requires the same verified fresh startup and native process');
     }
     const published = await authorizeManagedNativeStart(host, { hook_event_name: 'SessionStart', source: 'startup',
-        session_id: event.session_id, transcript_path: evidence.transcript }, env, cwd);
+        session_id: event.session_id, transcript_path: evidence.transcript }, env, cwd, { verifyClaudeRegistry: event.hook_event_name === 'UserPromptSubmit' });
     if (!published)
         throw new Error('Claude execution has no complete native startup admission');
 }
-export async function authorizeManagedNativeStart(host, event, env, cwd) {
+export async function authorizeManagedNativeStart(host, event, env, cwd, { verifyClaudeRegistry = false } = {}) {
     const file = env[CLIENT_FILE];
     if (!file || (event.hook_event_name !== 'SessionStart' && event.hook_event_name !== 'sessionStart'))
         return false;
@@ -66,7 +66,7 @@ export async function authorizeManagedNativeStart(host, event, env, cwd) {
             throw new Error('Claude startup lacks its exact owned command and same-ID native transcript/store');
         }
         const nativeProcess = await hookParent();
-        if (!nativeProcess || await processExecutable(nativeProcess) !== command.executable.file || !sameRecordVersion(version)) {
+        if (!nativeProcess || await processExecutable(nativeProcess) !== command.executable.file) {
             throw new Error('Claude startup has no exact owned native process/image generation');
         }
         const executable = { file: command.executable.file, version: command.executable.version };
@@ -75,6 +75,13 @@ export async function authorizeManagedNativeStart(host, event, env, cwd) {
         const candidate = { ...evidence, launchId: context.launchId, ref: context.ref };
         if (recordOf(record) && record.nativeStartupCandidate !== undefined && !isDeepStrictEqual(record.nativeStartupCandidate, candidate)) {
             throw new Error('Claude startup candidate changed its exact launch, native process or store');
+        }
+        const staged = { ...record, nativeStartupCandidate: candidate };
+        const sameStagedCandidate = () => isDeepStrictEqual(readPrivate(context.record), staged);
+        if (!sameRecordVersion(version)) {
+            if (sameStagedCandidate())
+                return false;
+            throw new Error('Claude startup record changed during native observation');
         }
         let transcript = command.nativeStore;
         let missing = false;
@@ -93,11 +100,13 @@ export async function authorizeManagedNativeStart(host, event, env, cwd) {
             if (entry.isSymbolicLink() || (process.getuid && entry.uid !== process.getuid()) || (entry.mode & 0o022) !== 0)
                 throw new Error('Claude native transcript path is not owned');
         }
-        if (missing) {
+        if (missing && !verifyClaudeRegistry) {
             const stage = () => {
+                if (sameStagedCandidate())
+                    return;
                 if (!sameRecordVersion(version))
                     throw new Error('Claude startup record changed before candidate publication');
-                writeJsonAtomic(context.record, { ...record, nativeStartupCandidate: candidate }, { mode: 0o600 });
+                writeJsonAtomic(context.record, staged, { mode: 0o600 });
             };
             if (taskExists(context.home, context.task))
                 withTaskLock(context.home, context.task, stage);
@@ -105,12 +114,20 @@ export async function authorizeManagedNativeStart(host, event, env, cwd) {
                 stage();
             return false;
         }
-        if (!lstatSync(transcript).isFile() || realpathSync(transcript) !== transcript)
+        let registry;
+        if (missing) {
+            const nativeCwd = realpathSync(cwd);
+            registry = readClaudeStartupSession({ executable: command.executable.file, nativeStore: command.nativeStore }, nativeId, context.ref, nativeCwd);
+            if (command.cwd !== nativeCwd || !registry)
+                throw new Error('Claude startup has no exact owned native registry session');
+        }
+        else if (!lstatSync(transcript).isFile() || realpathSync(transcript) !== transcript) {
             throw new Error('Claude native transcript is not a regular file');
+        }
         if (!sameRecordVersion(version))
             throw new Error('Claude startup record changed during native observation');
         nativeProof = { version, binding: { harness: 'claude', nativeStore: command.nativeStore, nativeId, process: nativeProcess },
-            evidence };
+            evidence: { ...evidence, ...(registry ? { registry } : {}) } };
     }
     if (nativeProof)
         ({ published } = bindManagedNativeStart({ ...context, nativeId, transcript: event.transcript_path, nativeProof }));

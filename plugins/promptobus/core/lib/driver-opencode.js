@@ -37,8 +37,6 @@ export const EFFORT_LEVELS = [];
 // Participant model in `-m provider/model` form, measured off a live session's export. It travels
 // as the config `model` default: the holder API names no model on prompt.
 export const DEFAULT_MODEL = 'opencode-go/muse-spark-1.3-contributor';
-// Floor for the holder API below: the shape v1 stands on, measured on 2.0.20.
-export const OPENCODE_MIN_VERSION = '2.0.0';
 // After the prompt returns, an external_directory ask can appear a few seconds later.
 // One immediate read misses it; inspect still answers a later one. Contract: 05-drivers.
 export const PERMISSION_POLL_MS = 4_000;

@@ -388,6 +388,7 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
         const ownerToken = recordOf(ownerValue) && typeof ownerValue.token === 'string' ? ownerValue.token : randomBytes(32).toString('hex');
         writePrivate(paths.owner, { token: ownerToken });
         const expectedHarness = bindServiceHarnessContext(host, env, REGISTRY);
+        const expectedLauncher = { homes: expectedHarness.homes, bins: expectedHarness.bins, searchPath: expectedHarness.searchPath };
         const warden = sharedWarden = new ServiceWarden(paths, host, expectedHarness, env, error => {
             wardenFailure = error;
             lifecycle.fail?.(error);
@@ -565,12 +566,15 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
             const context = { grant, env: clientEnv, host: clientHost };
             return context;
         };
+        class ClientBindingChanged extends HttpFailure {
+            constructor() { super(401, 'Client binding is absent or expired'); }
+        }
         const currentGrant = (grant) => {
             const value = readPrivate(clientFile(paths, grant.id));
             const current = value === null ? null : grantOf(value);
             if (!current || !tokenEquals(current.token, grant.token) || current.runtime !== runtime || !isDeepStrictEqual(current, grant)
                 || (current.rootLaunch && standaloneClientRevoked(paths, current.id))) {
-                throw new HttpFailure(401, 'Client binding is absent or expired');
+                throw new ClientBindingChanged();
             }
             return current;
         };
@@ -679,14 +683,31 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
                 }
             };
         };
-        const authenticateClient = async (authorization, label) => {
+        const clientGrant = (authorization) => {
             if (!authorization?.startsWith('Bearer '))
                 throw new HttpFailure(401, 'Client authentication required');
             const bearer = authorization.slice(7);
             const grant = grants().find(candidate => tokenEquals(candidate.token, bearer));
             if (!grant || grant.runtime !== runtime)
                 throw new HttpFailure(401, 'Client binding is absent or expired');
-            return { grant, authorize: await authorizeGrant(grant, label) };
+            return grant;
+        };
+        const authorizeCatalog = async (grant, authorization) => {
+            try {
+                (await authorizeGrant(grant, 'body'))();
+                return grant;
+            }
+            catch (error) {
+                if (!(error instanceof ClientBindingChanged))
+                    throw error;
+                const next = clientGrant(authorization);
+                if (next.nativeBinding?.state !== 'bound' || next.nativeBinding.kind !== grant.nativeBinding?.kind
+                    || !isDeepStrictEqual(next, { ...grant, nativeBinding: next.nativeBinding }))
+                    throw error;
+                // A realized client has the same static catalog. Recheck its full current lifetime and proof.
+                (await authorizeGrant(next, 'catalog realization'))();
+                return next;
+            }
         };
         const readConnection = (id, grant, endpoint) => {
             if (!CLIENT_ID.test(id))
@@ -1028,6 +1049,11 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
                     requireLifetime(grant, paths.home, managedState);
                 };
                 await validateRegistration();
+                if (nativeBinding && !grant.rootLaunch && !grant.bbRootNonce) {
+                    requireServiceHarnessContext(expectedHarness, host, requestedEnv, REGISTRY, pollEnv);
+                    if (!isDeepStrictEqual(input.launcherHarness, expectedLauncher))
+                        throw new HttpFailure(409, 'Native launcher has different harness state homes, binaries or common poll environment; reconnect through the same workspace runtime');
+                }
                 if (files)
                     privateReadGrants(paths, files);
                 const context = nativeBinding ? null : await contextFor(grant, validateRegistration);
@@ -1107,8 +1133,11 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
                 const endpoint = url.pathname === '/mcp/bus' ? 'bus' : url.pathname === '/mcp/reviewer_files' ? 'reviewer_files' : null;
                 if (!endpoint)
                     throw new HttpFailure(404, 'Endpoint not found');
-                let { grant, authorize } = await authenticateClient(request.headers.authorization, 'authenticate');
-                authorize();
+                const authorization = request.headers.authorization;
+                let grant = clientGrant(authorization);
+                const pendingNativePost = request.method === 'POST' && grant.nativeBinding?.state === 'pending' && !grant.rootLaunch && !grant.bbRootNonce;
+                if (!pendingNativePost)
+                    (await authorizeGrant(grant, 'authenticate'))();
                 if (endpoint === 'reviewer_files' && !grant.files)
                     throw new HttpFailure(403, 'This client has no reviewer file grant');
                 const header = request.headers['mcp-session-id'];
@@ -1147,15 +1176,17 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
                 const message = jsonRpc(await bodyOf(request));
                 if (message.method === 'tools/call' && grant.rootLaunch && grant.nativeBinding?.state === 'pending') {
                     await finalizeStandaloneStartup(grant);
-                    ({ grant, authorize } = await authenticateClient(request.headers.authorization, 'finalize'));
-                    authorize();
+                    grant = clientGrant(authorization);
+                    (await authorizeGrant(grant, 'finalize'))();
                 }
                 if ((grant.rootLaunch || grant.bbRootNonce) && message.method === 'tools/call') {
                     mutationNonce = grant.rootLaunch?.nonce ?? grant.bbRootNonce;
                     rootMutations.set(mutationNonce, (rootMutations.get(mutationNonce) ?? 0) + 1);
                 }
-                const authorizeBody = await authorizeGrant(grant, 'body');
-                authorizeBody();
+                if (pendingNativePost && message.method === 'tools/list')
+                    grant = await authorizeCatalog(grant, authorization);
+                else
+                    (await authorizeGrant(grant, 'body'))();
                 requireNativeCall(grant, message);
                 let record;
                 if (message.method === 'initialize') {

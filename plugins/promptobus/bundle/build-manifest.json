@@ -1,9 +1,9 @@
 {
   "identity": {
     "format": 1,
-    "buildId": "407f0257-76f2-452e-8d8d-edfd87ded431",
-    "pluginVersion": "0.2.1",
-    "inputSha256": "e427f39d01e5f98156a2cb5229c2cb51e90a1e656a8406e18ab8dbf240fc5847",
+    "buildId": "1b943450-d176-4675-9d2c-12b11f1f936d",
+    "pluginVersion": "0.2.2",
+    "inputSha256": "7b38f5bda894f0987bc6a37bbb398c050287b7e14337c122cfbe5f87666cb53f",
     "inputs": {
       "commandCompiler": [
         {
@@ -27,16 +27,16 @@
           "sha256": "4fb1814c23602191fc5e48f576555e9978e554a2053708368bc632bcb1402f34"
         }
       ],
-      "sourceSha256": "e597eab0425934f58248248942188fc8838a25003896dd41282abd9962be397e",
-      "sourceRevision": "614317505608c22aa50ed1ab416485f856315d7e",
+      "sourceSha256": "16c4d6ff0d3a0e5f79a5714306c91b1670529cb28bf755881ff7ca7048feceb4",
+      "sourceRevision": "97e06b4224197e60696d91ddf965ac9f7296dbc6",
       "sourceDirty": false,
-      "lockSha256": "0210004744645a4dd9ead445d7e4455aabc63b109d6cc79a41639856d11590c2",
-      "builderVersion": "0.49.0",
+      "lockSha256": "db31babd3e974008b23fba1f46d27a86fa883831a13c5ec3009a58049f2deebf",
+      "builderVersion": "0.50.1",
       "dependencies": [
         {
           "name": "@get-bb/plugin-sdk",
-          "version": "0.6.132",
-          "sha256": "15faaccae094247d5a4b62bd53a9861b3efe6c55cd16058ea151455ab8f146a7"
+          "version": "0.6.157",
+          "sha256": "3a12f61605e81c283d60cf78f921b7625e1ed1fbf9668d2cbe1d4d8c860cc107"
         },
         {
           "name": "@tanstack/query-core",
@@ -65,8 +65,8 @@
         },
         {
           "name": "promptobus",
-          "version": "0.33.0",
-          "sha256": "3127941ff24c2227b90a11b562005ebb0d3eec65b62ee12b6aae9cc3ebdc568b"
+          "version": "0.33.1",
+          "sha256": "e53990535f3855009fbaadf21e92418db45d68712086ed3ae07f1eab1c5444b6"
         },
         {
           "name": "shebang-command",
@@ -93,9 +93,9 @@
       "consumerBundleSha256": null
     }
   },
-  "installationDirectory": ".runtime/407f0257-76f2-452e-8d8d-edfd87ded431",
+  "installationDirectory": ".runtime/1b943450-d176-4675-9d2c-12b11f1f936d",
   "snapshot": {
-    "sha256": "a8ac49b7fa3d02e8a44b4305d9131fa2598be9308e2e44a36cd2b7e2d98097a2",
+    "sha256": "c7516705b0516b5f35a1025c16e0a9eb7aebe82d1e39c1dd97785d948175e476",
     "entries": [
       "inputs",
       "source",
@@ -137,22 +137,22 @@
   "commandRecorder": "commands/record-command.js",
   "evidencePreparer": "commands/evidence-prepare.js",
   "artifacts": {
-    "commands/build-identity.js": "def46ed8020fa1cd5a92d1f287133387308327337902691ac4b526f2bf08074f",
+    "commands/build-identity.js": "bad3ed8028a97ff2a6d6c7736bfd73e53baeb34685630b1ee96c986360624c66",
     "commands/command-admission.js": "8bb0f5cbf10a76768041b83e82050eda79781fec1b4a9b358ad7f49da8cfdc8f",
     "commands/command-runner.js": "7a4d0d611331b7804cdeece93059557c573807b6d2882aa21c6cc188a5960aa6",
     "commands/control-schema.js": "335633b40962d965f3d4ad6eaf3ce616bf193a16409782dac39cd73a86216d2b",
-    "commands/control.js": "68ff1ffdcb8bfd052b2827f9f3962d0467560e82810f47256af51f8b4019e990",
+    "commands/control.js": "c6443e07e8af653ea515bcadd24f77a6688dc4f2ecaf6200fc371730e283f55c",
     "commands/evidence-builder.js": "7e358c838694b34640e0bd8e550d1610928313ced1df291fbdc06846d1e91bec",
     "commands/evidence-prepare.js": "b4c03b57bcaf9d4ff493e927c420e20974139d3af02694d92e263a0ab6ebae6f",
     "commands/launch-context.js": "4456b253706e867f947c696e5f9c7aab698df05b3ad063164b3c708b462a8318",
     "commands/protocol.js": "1207963d1d945cb29be1611339f25c251792767fa26f6a87b8a4640e6c933d56",
     "commands/record-command.js": "67f05958d5d8f2badb99a987946ae37411298acfd96f89ac1213a11ff81b0b21",
     "commands/review-evidence.js": "c13e6884bb2e18fa0b04127e4dde9d60b6a5291265053d9e8e6c48eda4745c97",
-    "server.js": "ed9149d1946f34404c37da8111df0cdab958e8245a000a725c86c23a2debc33f",
-    "host.js": "92d4cd78c474f4bf19ecd002883cd91be2a6533bb471c1d31e1c71b7fdabfe42"
+    "server.js": "f9f025c8a6744abe817fc55d6cf5c3491c196f05f62e3e3dd58cd7260c5b68b3",
+    "host.js": "0da1f6d51f19bb9dc9516bb41abcec3f6a15bcf043275bede83e9cfd12abc76a"
   },
   "builtWith": {
-    "bbVersion": "0.49.0",
-    "pluginSdkVersion": "0.6.132"
+    "bbVersion": "0.50.1",
+    "pluginSdkVersion": "0.6.157"
   }
 }

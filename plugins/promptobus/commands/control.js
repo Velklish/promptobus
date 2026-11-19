@@ -92,12 +92,12 @@ const readCurrent = (r) => {
         blocked('reference-mismatch', 'current source does not match the canonical owner declaration');
     return current;
 };
-function recordFor(reference, grant, state) {
+function recordFor(grant, state) {
     return tokenRecordSchema.parse({ format: 'promptobus-bb-token-v1', task: grant.task, actor: grant.actor, token: grant.token, grantSha256: grantDigest(grant), state });
 }
 function verifyRecord(reference, grant, state) {
     const record = readJson(reference, tokenPath(reference, grant.token), TOKEN_LIMIT, tokenRecordSchema, 'token');
-    if (!isDeepStrictEqual(record, recordFor(reference, grant, record.state)))
+    if (!isDeepStrictEqual(record, recordFor(grant, record.state)))
         blocked('token-mismatch', 'token task, actor or immutable grant digest differs');
     if (record.state !== state)
         blocked(record.state === 'ended' ? 'ended-token' : 'predecessor-active', 'a fresh phase needs an exact ended predecessor and a different active token');
@@ -337,14 +337,14 @@ export function publishControl(input, options, fault = () => { }) {
             const tokenFile = tokenPath(reference, grant.token);
             if (existsSync(tokenFile))
                 verifyRecord(reference, grant, 'active');
-            writes.set(tokenFile, serialized(recordFor(reference, grant, 'active'), TOKEN_LIMIT));
+            writes.set(tokenFile, serialized(recordFor(grant, 'active'), TOKEN_LIMIT));
         }
         for (const grant of Object.values(previous?.grants ?? {})) {
             if (!isDeepStrictEqual(publication.grants[grant.actor], grant)) {
                 const record = readJson(reference, tokenPath(reference, grant.token), TOKEN_LIMIT, tokenRecordSchema, 'token');
-                if (!isDeepStrictEqual(record, recordFor(reference, grant, record.state)))
+                if (!isDeepStrictEqual(record, recordFor(grant, record.state)))
                     blocked('token-mismatch', 'cannot end a mutated token assignment');
-                writes.set(tokenPath(reference, grant.token), serialized(recordFor(reference, grant, 'ended'), TOKEN_LIMIT));
+                writes.set(tokenPath(reference, grant.token), serialized(recordFor(grant, 'ended'), TOKEN_LIMIT));
             }
         }
         for (const [target, bytes] of writes)

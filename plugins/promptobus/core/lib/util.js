@@ -29,9 +29,6 @@ export const gitIn = (dir, args, input) => spawnSync('git', [
     timeout: GIT_NET_TIMEOUT_MS,
     ...(input === undefined ? {} : { input }),
 });
-// Cloning is timed separately: 30 s is a query budget and a clone carries repositories.
-// A ceiling is required — without one `spawnSync` waits forever, silently.
-export const GIT_CLONE_TIMEOUT_MS = 5 * 60 * 1000;
 // Package install gets its own timeout, ten times larger than the shared process
 // ceiling.
 export const PROC_INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -50,10 +47,6 @@ export function runProc(cmd, args = [], options = {}) {
 // ETIMEDOUT in `error`, the signal in `signal`. Without this fork a person gets "exited null".
 export function procTimedOut(r) {
     return r?.error?.code === 'ETIMEDOUT' || (!!r?.signal && r?.status === null);
-}
-// Last non-empty line: git and npm write the diagnosis in the tail, progress before it.
-export function lastLine(text) {
-    return String(text ?? '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).pop() ?? '';
 }
 // Output tail as the last `n` lines: npm and claude put the diagnosis second-to-last and
 // advice last. The separator includes `\r\n`, or a Windows tail glues `\r` into a line.
@@ -81,13 +74,6 @@ export function runLogged(argv, { cwd, timeout = PROC_TIMEOUT_MS, logPath, exec 
         why = tail ? `exited with code ${code}: ${tail}` : `exited with code ${code}`;
     }
     return { status: r.status ?? null, ms, logPath, why };
-}
-// Refusal reason in one phrase, precise to coarse: what the process said, what Node said
-// (ENOENT, ETIMEDOUT — stderr is empty there), the exit code. `full`: all of stderr.
-export function procError(r, { label = 'process', full = false } = {}) {
-    const err = (r?.stderr ?? '').toString().trim();
-    const text = full ? err : lastLine(err);
-    return text || r?.error?.message || `${label} exited ${r?.status}`;
 }
 // Kept as a compatibility export for existing adapter callers; the implementation
 // belongs to the package source.

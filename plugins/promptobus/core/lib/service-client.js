@@ -4,7 +4,8 @@ import { request } from 'node:http';
 import path from 'node:path';
 import { acquireServiceLock, prepareServicePaths, processRecord, readDiscovery, readPrivate, recordOf, runtimeIdentity, sameProcess, servicePaths } from './service-state.js';
 import { canonicalPath } from './store.js';
-import { actorIdentityVariables } from './drivers.js';
+import { actorIdentityVariables, REGISTRY } from './drivers.js';
+import { serviceHarnessContext } from './harness-home.js';
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const OWNER_RECORD_ENV = ['PROMPTOBUS_CLAUDE_SESSION', 'PROMPTOBUS_CODEX_SESSION', 'PROMPTOBUS_CURSOR_SESSION', 'PROMPTOBUS_OPENCODE_SESSION'];
 const OWNER_ACTOR_ENV = ['PROMPTOBUS_ROLE', 'PROMPTOBUS_TASK', 'PROMPTOBUS_ROOT_TASK',
@@ -166,7 +167,10 @@ export async function ensureWorkspaceService(host, { env = process.env, pollEnv 
 }
 export async function registerServiceClient(host, client, options = {}) {
     await ensureWorkspaceService(host, options);
-    const value = await serviceControl(servicePaths(host, options.env), { operation: 'register', runtime: runtimeIdentity(host), client });
+    const context = client.nativeBinding && !client.rootLaunch && !client.bbRootNonce
+        ? serviceHarnessContext(host, client.env, REGISTRY) : null;
+    const launcherHarness = context && { homes: context.homes, bins: context.bins, searchPath: context.searchPath };
+    const value = await serviceControl(servicePaths(host, options.env), { operation: 'register', runtime: runtimeIdentity(host), client, launcherHarness });
     if (!recordOf(value) || typeof value.clientId !== 'string' || typeof value.token !== 'string' || typeof value.credentialFile !== 'string'
         || typeof value.busUrl !== 'string' || (value.filesUrl !== null && typeof value.filesUrl !== 'string'))
         throw new Error('Shared service returned an invalid client credential');

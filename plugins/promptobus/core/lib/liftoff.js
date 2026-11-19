@@ -216,11 +216,11 @@ export function bgSessions({ fresh = false } = {}) {
 }
 // The same read, saying WHY there is no list: `missing` — the harness binary was not found or does
 // not start, in words that name it; `null` beside a `null` list — it ran and did not parse.
-export function readBgSessions({ fresh = false } = {}) {
-    const key = JSON.stringify({ tool: harnessBin('claude'), env: commonPollEnvironment() });
+export function readBgSessions({ fresh = false, source } = {}) {
+    const key = JSON.stringify({ tool: source ?? harnessBin('claude'), env: commonPollEnvironment() });
     if (!fresh && bgSessionsCache !== undefined && bgSessionsCacheKey === key)
         return { list: bgSessionsCache, missing: null };
-    const { r, missing } = runClaude(['agents', '--json']);
+    const { r, missing } = runClaude(['agents', '--json'], source);
     if (missing)
         return { list: null, missing };
     if (r.error || r.status !== 0)
@@ -241,11 +241,12 @@ export function readBgSessions({ fresh = false } = {}) {
 }
 // `claude <args>` through the binary the host names — the lift's door, not this process's PATH:
 // [05-drivers.md § The harness binary after a lift](../docs/reference/05-drivers.md#the-harness-binary-after-a-lift-the-lifts-door-not-path).
-export function runClaude(args) {
-    const tool = harnessBin('claude');
+export function runClaude(args, source) {
+    const tool = source ? { bin: source.executable, reason: null } : harnessBin('claude');
     if (!tool.bin)
         return { r: null, missing: `the harness binary was not found: ${tool.reason}` };
-    const r = run(tool.bin, args, { encoding: 'utf8', env: commonPollEnvironment() });
+    const env = source ? { ...commonPollEnvironment(), CLAUDE_CONFIG_DIR: source.nativeStore } : commonPollEnvironment();
+    const r = run(tool.bin, args, { encoding: 'utf8', env });
     const code = r.error?.code;
     if (code === 'EACCES' || code === 'ENOEXEC') {
         return { r: null, missing: `the harness binary does not start: ${tool.bin} (${code})` };

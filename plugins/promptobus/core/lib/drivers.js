@@ -5,7 +5,7 @@ import { readRecordAt } from './driver-common.js';
 import { processState, readPrivate, recordOf, recordVersion, sameRecordVersion } from './service-state.js';
 import { isDeepStrictEqual } from 'node:util';
 import { realpathSync } from 'node:fs';
-import { CLAUDE, CLAUDE_SKILLS_REL, REPORTER_DENY, SESSION_RECORD_VAR, claudeDriver } from './driver-claude.js';
+import { CLAUDE, CLAUDE_SKILLS_REL, REPORTER_DENY, SESSION_RECORD_VAR, claudeDriver, readClaudeStartupSession } from './driver-claude.js';
 import { CURSOR, CURSOR_SKILLS_REL, cursorDriver } from './driver-cursor.js';
 import { CODEX, CODEX_SKILLS_REL, codexDriver } from './driver-codex.js';
 import { OPENCODE, opencodeDriver } from './driver-opencode.js';
@@ -21,7 +21,7 @@ export const REGISTRY = createRegistry({
     },
     fallback: CLAUDE,
 });
-export { REPORTER_DENY };
+export { REPORTER_DENY, readClaudeStartupSession };
 export function replaceManagedMcpServers(driver, launch, servers) {
     if (!driver.replaceMcpServers)
         throw new Error('Harness cannot replace its prepared MCP configuration');

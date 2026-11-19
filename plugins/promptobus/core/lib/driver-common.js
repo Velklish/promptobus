@@ -43,9 +43,6 @@ export function versionLess(a, b) {
     }
     return false;
 }
-export function versionParseRefusal(name, value) {
-    return `${name} binary version could not be parsed: ${String(value)}`;
-}
 export function sessionEnv(dropList, base = process.env, extra = {}) {
     const env = { ...base };
     for (const name of dropList ?? [])

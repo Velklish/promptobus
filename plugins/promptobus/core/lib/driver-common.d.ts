@@ -3,7 +3,6 @@ import type { LibLaunchPlan } from './driver-runtime.js';
 export declare function revokeFailedManagedLaunch(launch: LibLaunchPlan, error: unknown, afterRevoke?: () => void | Promise<void>, revokeRegistered?: () => Promise<void>): Promise<never>;
 export declare function parseVersion(value: unknown): number[] | null;
 export declare function versionLess(a: unknown, b: unknown): boolean;
-export declare function versionParseRefusal(name: string, value: unknown): string;
 export declare function sessionEnv(dropList: readonly string[] | null | undefined, base?: NodeJS.ProcessEnv, extra?: NodeJS.ProcessEnv): {
     [x: string]: string | undefined;
 };

@@ -790,5 +790,4 @@ export async function runPromptobus(argv, { host: suppliedHost, cwd, env, input,
             console.error(e.stack);
         fail(e.message ?? String(e));
     }
-    return 0;
 }

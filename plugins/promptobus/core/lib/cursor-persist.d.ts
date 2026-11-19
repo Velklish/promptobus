@@ -59,8 +59,6 @@ export declare const LAUNCH_TMUX_SERVER = "promptobus-launch";
 /** `persist` lifts its server with `TMUX_TMPDIR=/tmp`, and talk with it must come from there: the
  * socket is looked up by that variable, whose default differs across systems. */
 export declare const TMUX_TMPDIR = "/tmp";
-/** Options `persist` stamps on its session. They are how it is recognised among others. */
-export declare const CURSOR_SESSION_OPTS: string[];
 /** Options the mechanism stamps on ITS sessions. The server is shared, so "stop everything found"
  * would take a person's own work: `inspect` and cleanup tell ours apart by these. */
 export declare const TASK_OPT = "@promptobus_task";

@@ -22,11 +22,9 @@ export declare function fail(msg: unknown): never;
 export declare function bad(msg: unknown): void;
 export declare const GIT_NET_TIMEOUT_MS = 30000;
 export declare const gitIn: (dir: string, args: readonly string[], input?: string | Buffer) => import("child_process").SpawnSyncReturns<string>;
-export declare const GIT_CLONE_TIMEOUT_MS: number;
 export declare const PROC_INSTALL_TIMEOUT_MS: number;
 export declare function runProc(cmd: string, args?: readonly string[], options?: SpawnSyncOptions): import("./exec.js").AsyncRunResult<string> | import("child_process").SpawnSyncReturns<string | Buffer<ArrayBufferLike>>;
 export declare function procTimedOut(r: ProcessResult | null | undefined): boolean;
-export declare function lastLine(text: unknown): string;
 export declare function lastLines(text: unknown, n?: number): string;
 export declare function runLogged(argv: readonly string[], { cwd, timeout, logPath, exec, env }?: LoggedRunOptions): {
     status: number;
@@ -39,10 +37,6 @@ export declare function runLogged(argv: readonly string[], { cwd, timeout, logPa
     logPath: string | undefined;
     why: string;
 };
-export declare function procError(r: ProcessResult | null | undefined, { label, full }?: {
-    label?: string;
-    full?: boolean;
-}): string;
 export { shellQuote } from '../dist/fs/shell.js';
 export declare function toPosix(p: string): string;
 export declare function envPlaceholderRe(): RegExp;

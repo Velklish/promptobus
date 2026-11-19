@@ -774,7 +774,10 @@ export async function planTeamlead(rootOrHost, opts) {
     const ruleDirs = [...new Set(rules.filter((file) => !file.startsWith(root + path.sep)).map(path.dirname))];
     const mcpConfigPath = participantMcpPath(home, rootTask, address);
     const settingsPath = participantSettingsPath(home, rootTask, address);
-    const guardCommand = managedGuardHookCommand(host, { address, taskId: rootTask, home }, process.platform);
+    const guardIdentity = driver.id === 'claude'
+        ? { address: ORCHESTRATOR, taskId: childTask, home }
+        : { address, taskId: rootTask, home };
+    const guardCommand = managedGuardHookCommand(host, guardIdentity, process.platform);
     const projectGuardCommand = guardHookCommand(host, { address, taskId: rootTask, home }, process.platform);
     const pluginDir = selectedContext ? null : participantPluginDir(host);
     const commonEnv = { ...process.env, ...host.extraEnv() };

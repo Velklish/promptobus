@@ -1,16 +1,16 @@
 {
   "name": "bb-plugin-promptobus-native-panel",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "license": "MIT",
   "engines": {
-    "bb": "0.49.0",
-    "bbPluginSdk": "0.6.132",
+    "bb": ">=0.50.1 <0.51",
+    "bbPluginSdk": ">=0.6.157",
     "node": ">=26"
   },
   "bb": {
     "name": "Promptobus Native Panel [Experimental]",
-    "description": "Observe native Promptobus tasks, participants and canonical messages in a read-only dashboard.",
+    "description": "Observe native Promptobus runs on a read-only board of pipeline steps, with each piece's history and BB thread.",
     "branding": {
       "icon": "Activity"
     },
@@ -25,6 +25,6 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.6.132"
+    "@get-bb/plugin-sdk": "0.6.157"
   }
 }

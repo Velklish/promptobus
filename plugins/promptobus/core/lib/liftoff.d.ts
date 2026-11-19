@@ -70,13 +70,18 @@ export declare function resetBgSessionsCache(): void;
 export declare function bgSessions({ fresh }?: {
     fresh?: boolean | undefined;
 }): unknown[] | null;
-export declare function readBgSessions({ fresh }?: {
-    fresh?: boolean | undefined;
+interface ClaudeRegistrySource {
+    executable: string;
+    nativeStore: string;
+}
+export declare function readBgSessions({ fresh, source }?: {
+    fresh?: boolean;
+    source?: ClaudeRegistrySource;
 }): {
     list: unknown[] | null;
     missing: string | null;
 };
-export declare function runClaude(args: readonly string[]): {
+export declare function runClaude(args: readonly string[], source?: ClaudeRegistrySource): {
     r: null;
     missing: string;
 } | {

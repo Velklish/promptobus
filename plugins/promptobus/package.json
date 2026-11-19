@@ -1,11 +1,11 @@
 {
   "name": "bb-plugin-promptobus",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "license": "MIT",
   "engines": {
-    "bb": "0.49.0",
-    "bbPluginSdk": "0.6.132",
+    "bb": ">=0.50.1 <0.51",
+    "bbPluginSdk": ">=0.6.157",
     "node": ">=26"
   },
   "bb": {
@@ -25,6 +25,6 @@
     "promptobus": "file:./core"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.6.132"
+    "@get-bb/plugin-sdk": "0.6.157"
   }
 }

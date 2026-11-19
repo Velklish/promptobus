@@ -97,6 +97,14 @@ declare function prepare({ ref, role, mcp, prompt, model, effort, permissionMode
 declare function replaceMcpServers(plan: LibLaunchPlan, servers: Record<string, LibMcpServer>): void;
 declare function optionRefusal(): null;
 declare function shadowedUserServers(names: string[]): string[];
+export declare function readClaudeStartupSession(source: {
+    executable: string;
+    nativeStore: string;
+}, sessionId: string, name: string, cwd: string): {
+    sessionId: string;
+    name: string;
+    cwd: string;
+} | null;
 declare function inspect(ref: string, sessions?: unknown[] | null | undefined): SessionView | null;
 declare function spawn(plan: LibLaunchPlan, { tool, ref, role, cwd, env, home, task, address, launchFailNote, deadNote, unboundNote, persist, awaitOptions, host, noun, requireFullSession, requireLaunchMatch }: LibSpawnContext): Promise<import("./liftoff.js").LaunchResult>;
 declare function stop(ref: string, waitOptions?: {

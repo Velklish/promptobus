@@ -1,5 +1,5 @@
 import type { ProcessIdentity, RecordVersion } from './service-state.js';
-import { CLAUDE_SKILLS_REL, REPORTER_DENY } from './driver-claude.js';
+import { CLAUDE_SKILLS_REL, REPORTER_DENY, readClaudeStartupSession } from './driver-claude.js';
 import { CURSOR_SKILLS_REL } from './driver-cursor.js';
 import { CODEX, CODEX_SKILLS_REL, codexDriver } from './driver-codex.js';
 import type { LibDriver, LibLaunchPlan, LibMcpServer } from './driver-runtime.js';
@@ -19,7 +19,7 @@ interface IdentityCandidate {
 /** `fallback` is the harness for a record that names none at all — a pre-task participant
  * or the task owner. A non-empty unknown name is not saved by it: it refuses. */
 export declare const REGISTRY: import("./driver-runtime.js").LibRegistry;
-export { REPORTER_DENY };
+export { REPORTER_DENY, readClaudeStartupSession };
 export declare function replaceManagedMcpServers(driver: LibDriver, launch: LibLaunchPlan, servers: Record<string, LibMcpServer>): void;
 export interface ManagedNativeStart {
     harness: 'claude' | 'cursor' | 'codex' | 'opencode';
@@ -53,6 +53,11 @@ export interface ManagedNativeStart {
             process: ProcessIdentity;
             transcript: string;
             executable: RecordVersion;
+            registry?: {
+                sessionId: string;
+                name: string;
+                cwd: string;
+            };
         };
     };
 }
