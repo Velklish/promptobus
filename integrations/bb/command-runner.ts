@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
@@ -85,6 +85,22 @@ function preflightCommand(input: unknown, invocation: Invocation) {
     substantiveCommandStarted: false, declaredTools, createdDirectories,
     notChecked: ['dynamic-current-control', 'evidence-artifact-bytes', 'installed-tool-eligibility', 'execution-permissions'] };
 }
+export function claimPresent(file: string) {
+  let entry;
+  try { entry = lstatSync(file); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+  if (!entry.isFile() || realpathSync(file) !== file) throw new Error('resource claim is not a canonical regular file');
+  return true;
+}
+
+export async function afterLeaseRelease<T>(leased: Promise<T>, acknowledge: () => void) {
+  const result = await leased;
+  acknowledge();
+  return result;
+}
+
 export async function runBoundedCommand(input: unknown, invocation: Invocation) {
   const { binding, commandId, command } = parseInvocation(input, invocation);
   validateCommandPaths(binding, command);
@@ -109,11 +125,14 @@ export async function runBoundedCommand(input: unknown, invocation: Invocation) 
     };
     verifyResources();
     const resources = keys.map(key => ({ key, file: path.join(resourceDirectory, `${createHash('sha256').update(key).digest('hex')}.json`) }));
-    for (const { key, file } of resources) {
-      if (!existsSync(file)) continue;
-      const state = resourceClaimSchema(key, namespace).safeParse(JSON.parse(readDeclaredFile(file, [resourceDirectory], 256 * 1024).toString('utf8')));
-      if (!state.success || !commandTerminal(state.data.reference, state.data.call.command, { key, namespace })) throw new Error('resource has an unresolved admitted command; exact terminal receipt is required');
-    }
+    const verifyClaims = () => {
+      for (const { key, file } of resources) {
+        if (!claimPresent(file)) continue;
+        const state = resourceClaimSchema(key, namespace).safeParse(JSON.parse(readDeclaredFile(file, [resourceDirectory], 256 * 1024).toString('utf8')));
+        if (!state.success || !commandTerminal(state.data.reference, state.data.call.command, { key, namespace })) throw new Error('resource has an unresolved admitted command; exact terminal receipt is required');
+      }
+    };
+    verifyClaims();
     const launcherSha256 = createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex');
     try {
     const result = await recordBbDirectCommand({ command: command.argv, stem: command.output, by: invocation.by, cwd: command.cwd, env,
@@ -122,6 +141,7 @@ export async function runBoundedCommand(input: unknown, invocation: Invocation) 
         const launch = binding.launchContext!;
         if (launch.control.mode !== 'current') throw new Error('current control is required');
         verifyResources();
+        verifyClaims();
         for (const { key, file } of resources) writeFileAtomic(file, `${JSON.stringify({ key, namespace, reference: launch.control.reference,
           call: { format: 'promptobus-bb-call-v1', command: commandReference(binding, command), state: 'admitted' } })}\n`, { mode: 0o600 });
         return start();
@@ -140,9 +160,7 @@ export async function runBoundedCommand(input: unknown, invocation: Invocation) 
     }
   };
   try {
-    const result = await enter(0);
-    finalization.acknowledge?.();
-    return result;
+    return await afterLeaseRelease(enter(0), () => finalization.acknowledge?.());
   } catch (error) {
     if (observedReceipt) (error as { receipt?: typeof observedReceipt }).receipt ??= { ...observedReceipt,
       notRun: observedReceipt.notRun === true, finalizationComplete: false, finalizationError: String(error) };

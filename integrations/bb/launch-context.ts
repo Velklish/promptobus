@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { createHash } from 'node:crypto';
+import { digestRegularEvidence } from 'promptobus/bb-host';
 import { isDeepStrictEqual } from 'node:util';
 import { closeSync, constants, fstatSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
 import { z } from 'zod';
@@ -47,7 +47,7 @@ function withDeclaredFile<T>(file: string, roots: readonly string[], maximum: nu
   const resolved = realpathSync(file), allowed = roots.map(root => realpathSync(root));
   if (!underRoots(resolved, allowed)) throw new Error('launch context: file outside declared roots');
   const before = statSync(resolved);
-  const fd = openSync(resolved, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const fd = openSync(resolved, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const opened = fstatSync(fd), current = statSync(realpathSync(file));
     if (!opened.isFile()) throw new Error('launch context: bounded file is not a regular file');
@@ -78,17 +78,10 @@ export function readDeclaredFile(file: string, roots: readonly string[], maximum
 }
 
 export function matchesDeclaredStream(file: string, roots: readonly string[], stream: { file: string; bytes: number; sha256: string }) {
-  if (stream.file !== file || !Number.isSafeInteger(stream.bytes) || stream.bytes < 0) return false;
-  return withDeclaredFile(file, roots, stream.bytes, (fd, size) => {
-    if (size !== stream.bytes) return false;
-    const hash = createHash('sha256'), chunk = Buffer.allocUnsafe(Math.min(size, 65536));
-    for (let offset = 0; offset < size;) {
-      const n = readSync(fd, chunk, 0, Math.min(size - offset, chunk.length), offset);
-      if (!n) return false;
-      hash.update(chunk.subarray(0, n)); offset += n;
-    }
-    return hash.digest('hex') === stream.sha256;
-  });
+  const allowed = roots.map(root => realpathSync(root));
+  if (stream.file !== file || realpathSync(file) !== file || !underRoots(file, allowed)) return false;
+  const stored = digestRegularEvidence(file, stream.bytes);
+  return realpathSync(file) === file && stored.bytes === stream.bytes && stored.sha256 === stream.sha256;
 }
 
 export function validateControl(context: LaunchContext, input: unknown) {

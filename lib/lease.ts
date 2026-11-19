@@ -1,6 +1,7 @@
 // Opt-in machine measurement lease and keyed clone publication leases.
 // [reference/01-overview.md#machine-lease](../docs/reference/01-overview.md#machine-lease)
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import type { BigIntStats } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
@@ -190,6 +191,33 @@ function ownRoot(root: string, create = true) {
   return true;
 }
 
+const sameEntry = (a: BigIntStats, b: BigIntStats) => a.dev === b.dev && a.ino === b.ino;
+
+export function rollbackKeyedAcquisition(lock: string, directory: BigIntStats, owner?: BigIntStats) {
+  if (!directory.isDirectory() || !sameEntry(directory, lstatSync(lock, { bigint: true }))) return;
+  const file = path.join(lock, 'owner');
+  if (owner) {
+    if (!sameEntry(owner, lstatSync(file, { bigint: true }))) return;
+    unlinkSync(file);
+  }
+  if (sameEntry(directory, lstatSync(lock, { bigint: true }))) rmdirSync(lock);
+}
+
+export function initializeKeyedOwner(lock: string, nonce: string) {
+  const directory = lstatSync(lock, { bigint: true });
+  let owner: BigIntStats | undefined, fd: number | undefined;
+  try {
+    fd = openSync(path.join(lock, 'owner'), 'wx', 0o600);
+    owner = fstatSync(fd, { bigint: true });
+    writeFileSync(fd, `${JSON.stringify({ pid: process.pid, session: null, since: new Date().toISOString(), nonce })}\n`);
+    const opened = fd; fd = undefined; closeSync(opened);
+  } catch (error) {
+    try { rollbackKeyedAcquisition(lock, directory, owner); } catch { /* retain unverifiable entries */ }
+    try { if (fd !== undefined) closeSync(fd); } catch { /* retain the acquisition failure */ }
+    throw error;
+  }
+}
+
 /** Hold the selected lease around `fn`. A live holder is waited out up to `waitMs`, with one
  * line each time the holder changes; past the bound the refusal carries that same line. */
 export async function underLease<T>(root: string, me: LeaseParty, fn: (lock?: string) => T | Promise<T>, { key = null, waitMs = LEASE_WAIT_SEC * 1000, retryMs = RETRY_MS, log = () => {} }: LeaseOptions = {}): Promise<T> {
@@ -201,7 +229,7 @@ export async function underLease<T>(root: string, me: LeaseParty, fn: (lock?: st
   mkdirSync(waitersOf(root, scope), { recursive: true, mode: 0o700 });
   const waiterFile = path.join(waitersOf(root, scope), `${me.pid}.json`);
   const started = Date.now();
-  let shown: number | null | undefined = null;
+  let shown: number | null | undefined = null, failed = false;
   const takeTurn = () => {
     if (readWaiters(root, scope)[0]?.pid !== me.pid) throw new LeaseBusy();
   };
@@ -210,16 +238,14 @@ export async function underLease<T>(root: string, me: LeaseParty, fn: (lock?: st
     for (;;) {
       try {
         if (scope) {
+          const nonce = randomUUID();
           try { mkdirSync(lock); } catch (e) {
             if ((e as NodeJS.ErrnoException).code === 'EEXIST') throw new LeaseBusy();
             if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw new GateError(`lease: the lease directory ${root} vanished`);
             throw e;
           }
-          const nonce = randomUUID();
+          initializeKeyedOwner(lock, nonce);
           try {
-            writeFileSync(path.join(lock, 'owner'), `${JSON.stringify({
-              pid: process.pid, session: null, since: new Date().toISOString(), nonce,
-            })}\n`);
             takeTurn();
             rmSync(waiterFile, { force: true });
             writeFileSync(path.join(lock, HOLDER_FILE), `${JSON.stringify(me)}\n`);
@@ -270,8 +296,8 @@ export async function underLease<T>(root: string, me: LeaseParty, fn: (lock?: st
       }
       await new Promise((resolve) => { setTimeout(resolve, retryMs); });
     }
-  } finally {
-    rmSync(waiterFile, { force: true });
+  } catch (error) { failed = true; throw error; } finally {
+    try { rmSync(waiterFile, { force: true }); } catch (error) { if (!failed) throw error; }
   }
 }
 

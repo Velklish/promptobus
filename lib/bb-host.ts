@@ -35,7 +35,7 @@ import { underLease as runUnderLease, keyedCommandPlan as coreCommandPlan } from
 export { leaseRoot } from './lease.js';
 export { assertBbDirectCommand } from './bb-direct-command.js';
 import { recordBbDirectCommand as recordDirectCommand } from './bb-direct-command.js';
-export { publishCommandEvidence } from './bb-direct-command.js';
+export { digestRegularEvidence, publishCommandEvidence } from './bb-direct-command.js';
 import path from 'node:path';
 import { reviewerFiles } from './reviewer-files.js';
 import { participantAudience, selectParticipantContext } from './participant-context.js';

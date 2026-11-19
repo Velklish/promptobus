@@ -1,17 +1,37 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from 'node:fs';
+import { cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { capturedStreamMatches } from '../lib/bb-direct-command.js';
+import { capturedStreamMatches, digestRegularEvidence } from '../lib/bb-direct-command.js';
+import { initializeKeyedOwner, rollbackKeyedAcquisition } from '../lib/lease.js';
 import { releaseDirLock } from '../dist/fs/lock.js';
 
 const script = fileURLToPath(new URL('../scripts/bb-record-command.mjs', import.meta.url));
+test('raw digest refuses non-regular evidence, oversize content and an exhausted read budget', t => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'pb-digest-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, 'raw'), bytes = Buffer.alloc(131073, 37); writeFileSync(file, bytes);
+  assert.deepEqual(digestRegularEvidence(file, bytes.length), { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
+  assert.throws(() => digestRegularEvidence(root, bytes.length));
+  assert.throws(() => digestRegularEvidence(file, bytes.length - 1), /size-bounded/);
+  assert.throws(() => digestRegularEvidence(file, bytes.length, 0), /deadline/);
+});
+
+test('unfinished keyed acquisition rolls back only its own directory and partial owner', t => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'pb-acquisition-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const dir = path.join(root, 'acquisition'), other = path.join(root, 'other-generation'); mkdirSync(dir); mkdirSync(other);
+  const stat = file => lstatSync(file, { bigint: true }), owner = path.join(dir, 'owner'); writeFileSync(owner, '{');
+  assert.throws(() => initializeKeyedOwner(dir, 'unused'), { code: 'EEXIST' }); assert.equal(readFileSync(owner, 'utf8'), '{');
+  rollbackKeyedAcquisition(dir, stat(other), stat(owner)); assert.equal(readFileSync(owner, 'utf8'), '{');
+  rollbackKeyedAcquisition(dir, stat(dir), stat(other)); assert.equal(readFileSync(owner, 'utf8'), '{');
+  rollbackKeyedAcquisition(dir, stat(dir), stat(owner)); assert.equal(existsSync(dir), false);
+  rollbackKeyedAcquisition(other, stat(other)); assert.equal(existsSync(other), false);
+});
 test('verified release preserves a directory without matching owner evidence', t => {
   const lock = mkdtempSync(path.join(os.tmpdir(), 'pb-owner-proof-')); t.after(() => rmSync(lock, { recursive: true, force: true }));
   assert.throws(() => releaseDirLock(lock, 'expected', true), /verify ownership/);
@@ -21,8 +41,8 @@ test('verified release preserves a directory without matching owner evidence', t
 });
 test('stored stream must match captured bytes, not only their length', () => {
   const bytes = Buffer.from([0, 255, 1]), captured = { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
-  assert.ok(capturedStreamMatches(captured, bytes));
-  assert.equal(capturedStreamMatches(captured, Buffer.from([0, 254, 1])), false);
+  assert.ok(capturedStreamMatches(captured, { ...captured }));
+  assert.equal(capturedStreamMatches(captured, { bytes: bytes.length, sha256: createHash('sha256').update(Buffer.from([0, 254, 1])).digest('hex') }), false);
 });
 
 for (const [signal, nested, cooperative] of [['SIGINT', false, false], ['SIGTERM', true, true], ['SIGHUP', false, true]]) {
@@ -192,8 +212,8 @@ const original={spawn:cp.spawn,open:fs.openSync,read:fs.readFileSync,write:fs.wr
 let owned,closed,receiptFd,settled=false,witnessOut='',witnessErr='',triggered=false;
 cp.spawn=(...args)=>{owned=original.spawn(...args);owned.stdout.on('data',b=>witnessOut+=b);owned.stderr.on('data',b=>witnessErr+=b);
 closed=new Promise(resolve=>owned.on('close',(exit,signal)=>resolve({exit,signal})));return owned};
-fs.openSync=(file,...args)=>{const fd=original.open(file,...args);if(String(file).startsWith(stem+'.receipt.txt.')&&String(file).endsWith('.tmp'))receiptFd=fd;return fd};
-fs.readFileSync=(file,...args)=>{if(fault==='raw-read'&&String(file)===stem+'.stdout.txt'&&!triggered){triggered=true;throw new Error('fixture raw-read failure')}return original.read(file,...args)};
+fs.openSync=(file,...args)=>{if(fault==='raw-read'&&String(file)===stem+'.stdout.txt'&&typeof args[0]==='number'&&!triggered){triggered=true;throw new Error('fixture raw-read failure')}
+const fd=original.open(file,...args);if(String(file).startsWith(stem+'.receipt.txt.')&&String(file).endsWith('.tmp'))receiptFd=fd;return fd};
 fs.writeFileSync=(file,...args)=>{if(fault==='receipt-write'&&file===receiptFd&&!triggered){triggered=true;throw new Error('fixture receipt-write failure')}return original.write(file,...args)};
 fs.closeSync=fd=>{if(fault==='receipt-close'&&fd===receiptFd&&!triggered){triggered=true;original.close(fd);throw new Error('fixture receipt-close failure')}return original.close(fd)};
 fs.rmSync=(file,...args)=>{if(fault==='lock-release'&&String(file)===lock&&!triggered){triggered=true;throw new Error('fixture lock-release failure')}return original.rm(file,...args)};syncBuiltinESMExports();

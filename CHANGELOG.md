@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- BB command evidence reads check regular-file identity, captured size, and a per-stream deadline. Unreadable resource claims block reuse; a failed keyed lease setup preserves its original error.
+
 - BB checked commands verify captured output and the exact serialized receipt before reusing a resource in its lease namespace. The acknowledgment follows control and keyed lock release. V1 readers reject v2 terminal records; calls without an acknowledgment remain unresolved. An observed signal exit can end the call without yielding complete gate evidence.
 
 - Check the consumed Codex app-server protocol against 0.170.0; the minimum remains 0.158.0.

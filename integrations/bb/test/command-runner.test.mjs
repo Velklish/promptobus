@@ -16,7 +16,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { newTaskIdentity, openEngine } from 'promptobus';
-import { publishControl, commandReference, commandTerminal, matchesPublication } from '../.test-build/control.js';
+import { admitCommand, completeCommand, publishControl, commandReference, commandTerminal, matchesPublication } from '../.test-build/control.js';
+import { afterLeaseRelease, claimPresent } from '../.test-build/command-runner.js';
 import { engineOperation } from '../.test-build/engine-host.js';
 import { launchFixture } from './evidence-fixture.mjs';
 const runner = process.env.PB_COMMAND_RUNNER ?? fileURLToPath(new URL('../.test-build/command-runner.js', import.meta.url));
@@ -26,6 +27,31 @@ test('finalization requires the serializer bytes even when two receipts decode i
   assert.equal(matchesPublication(bytes, observed, digest), true);
   assert.equal(matchesPublication(Buffer.from('{"exit": 0}\n'), observed, digest), false);
   assert.equal(matchesPublication(bytes, { exit: 1 }, digest), false);
+});
+
+test('absence is distinct from an unverifiable claim entry', t => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pb-claim-'))); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, 'claim'); assert.equal(claimPresent(file), false);
+  fs.symlinkSync(path.join(root, 'absent'), file); assert.throws(() => claimPresent(file), /regular file/); assert.ok(fs.lstatSync(file).isSymbolicLink());
+});
+
+test('a released lease is not terminal evidence until its exact acknowledgment is published', async t => {
+  const f = await fixture(t), m = f.member('worker'), ref = commandReference(m.binding, m.command);
+  const raw = stream => { const file = `${m.output}.${stream}.txt`; fs.writeFileSync(file, ''); return { file, bytes: 0, sha256: createHash('sha256').digest('hex') }; };
+  admitCommand(m.binding, 'run', () => {});
+  const receipt = { format: 'bb-direct-command-v1', command: m.command.argv, by: ref.actor, cwd: m.command.cwd,
+    admission: { task: m.binding.task, token: ref.token, phase: ref.phase, commandId: ref.commandId, commandSha256: ref.commandSha256 },
+    resourceKeys: m.command.exclusiveKeys, resourceNamespace: f.leases, stdout: raw('stdout'), stderr: raw('stderr'),
+    exit: 0, signal: null, error: null, complete: true, direct: true, terminationObserved: true };
+  const content = JSON.stringify(receipt); fs.writeFileSync(`${m.output}.receipt.txt`, content);
+  const ack = completeCommand(m.binding, 'run', receipt, createHash('sha256').update(content).digest('hex'));
+  const reusable = () => commandTerminal(f.reference, ref, { key: m.command.buildRoot, namespace: f.leases });
+  await assert.rejects(afterLeaseRelease(Promise.reject(new Error('release refused')), ack), /release refused/);
+  assert.equal(reusable(), false);
+  const release = Promise.withResolvers(); let reached = false;
+  const done = afterLeaseRelease(release.promise, () => { reached = true; assert.equal(reusable(), false); ack(); });
+  assert.equal(reached, false); release.resolve(); await done;
+  assert.equal(reached, true); assert.equal(reusable(), true);
 });
 async function until(fn, label) {
   for (let i = 0; i < 800; i++) { if (fn()) return; await pause(10); }
@@ -88,8 +114,8 @@ async function fixture(t, shared = null) {
     const member = { binding: b, command, input, marker, release, output, directory }; members.push(member); return member;
   }
   function run(member, args = [], outer = false) {
-    const prefix = outer ? [fileURLToPath(new URL('../../../scripts/bb-record-command.mjs', import.meta.url)), '--output', member.output + '-outer', '--by', 'fixture-recorder', '--', process.execPath] : [];
-    const child = spawn(process.execPath, [...prefix, ...args, runner, '--admission', member.input, '--output', member.output, '--by', member.binding.participant, '--', ...member.command.argv], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const prefix = outer ? [fileURLToPath(new URL('../../../scripts/bb-record-command.mjs', import.meta.url)), '--output', member.output + '-outer', '--by', member.binding.participant, '--', process.execPath] : [];
+    const child = spawn(process.execPath, [...prefix, ...args, runner, '--admission', member.input, '--output', member.output, '--by', member.binding.participant, '--', ...member.command.argv], { cwd: outer ? member.command.cwd : undefined, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '', stderr = ''; child.stdout.on('data', b => stdout += b); child.stderr.on('data', b => stderr += b);
     child.done = new Promise(resolve => child.on('close', (exit, signal) => resolve({ exit, signal, stdout, stderr })));
     children.push(child); return child;
@@ -532,8 +558,8 @@ for (const fault of ['control-release', 'raw-read', 'receipt-write', 'receipt-cl
     const a = f.member('worker-a', { key, exit: 7 }), b = f.member('worker-b', { key }), c = f.member('worker-c');
     const hook = path.join(f.root, 'fail-finalization.mjs');
     fs.writeFileSync(hook, `import fs from 'node:fs';import {syncBuiltinESMExports} from 'node:module';const fault=${JSON.stringify(fault)},stem=${JSON.stringify(a.output)},control=${JSON.stringify(path.join(f.reference.directory, '.lock'))};const original={open:fs.openSync,read:fs.readFileSync,write:fs.writeFileSync,close:fs.closeSync,rm:fs.rmSync};let receiptFd,failed=false;
-fs.openSync=(file,...args)=>{const fd=original.open(file,...args);if(String(file).startsWith(stem+'.receipt.txt.')&&String(file).endsWith('.tmp'))receiptFd=fd;return fd};
-fs.readFileSync=(file,...args)=>{if(fault==='raw-read'&&String(file)===stem+'.stdout.txt'&&!failed){failed=true;throw new Error('fixture '+fault+' failure')}return original.read(file,...args)};
+fs.openSync=(file,...args)=>{if(fault==='raw-read'&&String(file)===stem+'.stdout.txt'&&typeof args[0]==='number'&&!failed){failed=true;throw new Error('fixture '+fault+' failure')}
+const fd=original.open(file,...args);if(String(file).startsWith(stem+'.receipt.txt.')&&String(file).endsWith('.tmp'))receiptFd=fd;return fd};
 fs.writeFileSync=(file,...args)=>{if(fault==='receipt-write'&&file===receiptFd&&!failed){failed=true;throw new Error('fixture '+fault+' failure')}return original.write(file,...args)};
 fs.closeSync=fd=>{if(fault==='receipt-close'&&fd===receiptFd&&!failed){failed=true;original.close(fd);throw new Error('fixture '+fault+' failure')}return original.close(fd)};
 fs.rmSync=(file,...args)=>{if(fault==='control-release'&&String(file)===control&&!failed){failed=true;throw new Error('fixture '+fault+' failure')}return original.rm(file,...args)};syncBuiltinESMExports();`);

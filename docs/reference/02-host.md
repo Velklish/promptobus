@@ -1110,6 +1110,10 @@ serialized; the stream hashes cover the bytes the child emitted. The receipt bin
 the canonical resource keys and lease namespace. The intermediate terminal record
 uses format v2 so a v1 reader cannot release a resource on its strength. A terminal call on disk without that
 acknowledgment remains unresolved, including calls recorded by older launchers.
+Stream verification opens a nonblocking descriptor and hashes only a regular file,
+in chunks up to 64 KiB. The verifier checks the captured size and a five-second
+monotonic deadline per stream; the deadline does not preempt a stalled kernel call.
+An unreadable resource claim, including a dangling link, blocks admission.
 The direct recorder does not currently forward a Stop delivered only to the
 recorder. Its death does not establish whether the child received a signal.
 

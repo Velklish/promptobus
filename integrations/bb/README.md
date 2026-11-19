@@ -1411,6 +1411,10 @@ and every keyed lease release successfully. A resource claim names its canonical
 key and namespace; both must match the location being checked and the receipt.
 Before the acknowledgment, contenders must retry rather than enter. V1 readers
 reject the v2 call record even after finalization; use matching launcher generations.
+Only a missing claim permits first use. An existing claim that cannot be verified
+stays in place. If keyed lease setup fails before the owner record is complete,
+rollback removes only the recorded owner inode and its empty directory generation;
+uncertain identity leaves the entry for inspection and preserves the setup error.
 A child's observed signal can end the call without passing a gate. Missing,
 partial or unreadable evidence, failed finalization and
 UNKNOWN remain blockers; idle, ended grants, administrative parking or dead

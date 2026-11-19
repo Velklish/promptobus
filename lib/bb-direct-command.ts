@@ -1,7 +1,7 @@
 import { spawn, execFileSync } from 'node:child_process';
 import type { ChildProcessByStdio } from 'node:child_process';
 import type { Readable } from 'node:stream';
-import { createWriteStream, existsSync, readFileSync, writeFileSync, openSync, closeSync, renameSync, rmSync } from 'node:fs';
+import { constants, createWriteStream, existsSync, fstatSync, lstatSync, readSync, writeFileSync, openSync, closeSync, renameSync, rmSync } from 'node:fs';
 import { finished } from 'node:stream/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -21,21 +21,53 @@ export interface DirectCommandInput {
   spawnPlan?: { file: string; args: readonly string[]; verbatim?: boolean };
 }
 
+function readEvidence(file: string, maximum: number, budgetMs: number, expected?: Buffer) {
+  if (!Number.isFinite(budgetMs) || budgetMs < 0) throw new Error('Invalid evidence read budget');
+  const deadline = performance.now() + Math.min(budgetMs, 5000);
+  if (!Number.isSafeInteger(maximum) || maximum < 0) throw new Error('Invalid evidence size limit');
+  const before = lstatSync(file);
+  if (!before.isFile()) throw new Error('Evidence must be a regular file');
+  const fd = openSync(file, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW);
+  try {
+    const opened = fstatSync(fd);
+    if (!opened.isFile() || opened.size > maximum || opened.dev !== before.dev || opened.ino !== before.ino) throw new Error('Evidence must be the same size-bounded regular file');
+    const hash = createHash('sha256'), chunk = Buffer.allocUnsafe(Math.min(opened.size, 65536));
+    const checkTime = () => { if (performance.now() >= deadline) throw new Error('Evidence read deadline exceeded'); };
+    for (let offset = 0; offset < opened.size;) {
+      checkTime();
+      const n = readSync(fd, chunk, 0, Math.min(chunk.length, opened.size - offset), offset);
+      if (!n) throw new Error('Evidence truncated during read');
+      const part = chunk.subarray(0, n);
+      if (expected && !part.equals(expected.subarray(offset, offset + n))) throw new Error('Evidence readback mismatch');
+      hash.update(part); offset += n;
+    }
+    const after = lstatSync(file);
+    if (!after.isFile() || opened.dev !== after.dev || opened.ino !== after.ino || opened.size !== after.size || opened.ctimeMs !== after.ctimeMs) throw new Error('Evidence changed during read');
+    checkTime();
+    return { bytes: opened.size, sha256: hash.digest('hex') };
+  } finally { closeSync(fd); }
+}
+
+export function digestRegularEvidence(file: string, maximum: number, budgetMs = 5000) {
+  return readEvidence(file, maximum, budgetMs);
+}
+
 export function publishCommandEvidence(file: string, content: string) {
   const stage = `${file}.${randomUUID()}.tmp`, fd = openSync(stage, 'wx', 0o600);
   try {
     try { writeFileSync(fd, content); } finally { closeSync(fd); }
     try { renameSync(stage, file); } catch (failure) {
       let committed = false;
-      try { committed = !existsSync(stage) && readFileSync(file).equals(Buffer.from(content)); } catch { /* destination unavailable */ }
+      const expected = Buffer.from(content);
+      try { committed = !existsSync(stage) && readEvidence(file, expected.length, 5000, expected).bytes === expected.length; } catch { /* destination unavailable */ }
       if (!committed) throw failure;
       process.stderr.write(`Command evidence committed with warning: ${String(failure)}\n`);
     }
   } catch (failure) { rmSync(stage, { force: true }); throw failure; }
 }
 
-export function capturedStreamMatches(captured: { bytes: number; sha256: string }, stored: Buffer) {
-  return captured.bytes === stored.length && captured.sha256 === createHash('sha256').update(stored).digest('hex');
+export function capturedStreamMatches(captured: { bytes: number; sha256: string }, stored: ReturnType<typeof digestRegularEvidence>) {
+  return captured.bytes === stored.bytes && captured.sha256 === stored.sha256;
 }
 
 export function assertBbDirectCommand(command: readonly string[]) {
@@ -113,10 +145,9 @@ export async function recordBbDirectCommand({ command, stem, by, cwd = process.c
   await Promise.all(sinks);
   Object.assign(execution, { exit, signal, error, terminationObserved: error === null && (exit !== null || signal !== null), ended: new Date().toISOString() });
   const raw = (stream: keyof typeof captured) => {
-    const file = `${stem}.${stream}.txt`, bytes = readFileSync(file);
-    const observed = captured[stream]();
-    if (error) return { file, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
-    if (!capturedStreamMatches(observed, bytes)) throw new Error(`Captured ${stream} differs from the published stream`);
+    const file = `${stem}.${stream}.txt`, observed = captured[stream](), stored = digestRegularEvidence(file, observed.bytes);
+    if (error) return { file, ...stored };
+    if (!capturedStreamMatches(observed, stored)) throw new Error(`Captured ${stream} differs from the published stream`);
     return { file, ...observed };
   };
   closeSync(outputs.get('receipt')!);
