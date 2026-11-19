@@ -1781,6 +1781,8 @@ That last case is the one this exists for. A cleanup hook reaps a holder only wh
 
 ## Shared service
 
+For installed workflow, recovery and process measurements, use the [qualification worksheet](../guides/shared-service-qualification.md).
+
 | Command | Behavior |
 | --- | --- |
 | `service ensure [--json]` | Reuse the compatible workspace owner or start it through the consumer entry point and wait for readiness. |
