@@ -1435,7 +1435,7 @@ With `--key <clone-root>`, the same wait bound applies to a separate named-direc
 - **What it does not cover.** A wrapper killed with SIGKILL leaves its command running, and the lease is dropped by liveness while that command may still load the machine. A `lease` nested inside a leased command waits for the outer one until its bound.
 - **Keyed recovery.** A keyed command starts through a POSIX shell that writes its own pid into `child.pid` before replacing itself with the command; the command arguments remain literal. A keyed lock is reclaimed only after both the wrapper and command pids are dead. A killed wrapper with a live command keeps the next publisher waiting. If the wrapper is dead and the child pid was never recorded, the next publisher refuses with the lock path and an explicit recovery instruction: verify that both processes are dead before removing the lock directory. The machine lease retains its wrapper-pid recovery rule.
 
-The lease bound refuses before the command runs. This differs from a failed command launch, and from a `git merge --ff-only` refusal after the publisher has started. None implies that a publisher result file will appear later.
+The lease bound refuses before the command runs. This differs from a failed command launch, and from a `git merge --ff-only` refusal after the publisher has started.
 
 ## Link
 

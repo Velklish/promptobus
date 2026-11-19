@@ -7,6 +7,7 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { verifyToolInventory, verifyPatchDenial, permissionExecSource, finalizeCanaries, main } from '../scripts/prove-bb-reviewer-permissions.mjs';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/bb-reviewer/tool-inventory-array.json', import.meta.url)));
@@ -64,7 +65,7 @@ test('permission proof failure cleanup records real hashes and preserves the ori
   const control = process.env.PB_TEST_CONTROL;
   let evidence;
   childProcess.spawn = (_, args, options) => spawn(process.execPath,
-    [new URL('./fixtures/bb-reviewer/app-server.mjs', import.meta.url).pathname, ...args], options);
+    [fileURLToPath(new URL('./fixtures/bb-reviewer/app-server.mjs', import.meta.url)), ...args], options);
   syncBuiltinESMExports();
   console.log = text => { evidence = JSON.parse(text); };
   process.argv = [process.execPath, 'proof-test', '--before'];
