@@ -358,7 +358,10 @@ before starting a participant. A Claude Code teamlead's managed hooks use the
 same child task and orchestrator address as its native client grant.
 
 If an upgrade refuses a retained client, give the reported runtime fingerprint to
-the original launcher owner. A new service cannot apply its Stop-receipt check
+the original launcher owner. Matching the launcher does not authorize Stop:
+the task mailbox owner or its registered approver can stop a managed participant;
+an attached session's owner closes it through the harness.
+A new service cannot apply its Stop-receipt check
 to a client registered by a different runtime.
 
 Managed Claude prompts and tools also require verified fresh startup and an

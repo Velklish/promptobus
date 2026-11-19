@@ -1808,8 +1808,12 @@ A startup with a different fingerprint checks the grant lifetime first. If it
 cannot establish expiry, it refuses **before** checking retained Stop receipts.
 With the matching runtime, a managed Codex grant with an absent launch record
 is eligible for the exact receipt-backed check described below. A receipt from
-another thread or launch is not a substitute. If the native client is live,
-its owner must close it normally through the original launcher. If the harness
+another thread or launch is not a substitute. A matching launcher identifies
+the runtime; it grants no authority to stop a participant. For a live managed
+participant, the task mailbox owner or an approver of that task calls
+`promptobus stop <address> --task <id>` from their own registered session.
+For an attached session, its actual owner closes it through the harness;
+the participant Stop command refuses it. If the harness
 independently confirms death without a Stop receipt, the mailbox owner's targeted
 `abandon <address>` route concerns **task closure**; it neither creates a receipt
 nor revokes a historical service grant.
@@ -1838,10 +1842,20 @@ report a fingerprint. Do not infer one from the Host version.
    Prefer the owner's retained outputs: status on a *running* owner can perform
    normal lifetime maintenance. `promptobus status --task <id>` reports task
    state, not authority. If identity, proof or authority is unavailable, leave
-   the case unresolved. Any later `promptobus service ensure --json` through the
-   matching launcher requires specific approval for that home and its affected
-   clients; startup performs maintenance across the namespace. Do not use it as
-   a read-only probe. Retry the upgrade only after owned closure is established.
+   the case unresolved. For the receipt-backed route, keep two distinct proofs:
+
+   - **Native Stop confirmed.** Match the retained Stop receipt to that task,
+     address, reference, thread and launch, and confirm holder and app absence.
+     A request or acknowledgement alone does not establish Stop.
+   - **Exact service grant retired.** Before any approved `promptobus service
+     ensure --json`, match the launcher and runtime fingerprint, canonical
+     workspace root, canonical Promptobus store, service home and effective Codex
+     state home to the original client. Startup performs namespace-wide maintenance;
+     approval must cover that home and its affected clients. Compare owner-provided
+     before/after evidence for the exact grant's nonsecret client ID. A successful
+     `ensure` or a lower aggregate count does not identify the grant removed.
+     Retry the upgrade only after both proofs are recorded. If grant-specific
+     evidence is unavailable, retirement remains unverified.
 
 For each record keep the source revision, Host and Node versions, launcher argv,
 service-home selection, command exits, and before/after counts tied to the same
