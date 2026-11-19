@@ -122,7 +122,13 @@ const worker = {
   stalls: false,
   files: false,
   spawnFlags: ['--harness', 'cursor'],
-  plan: (address, script) => cursorStub.planParticipant(cursorHarness.home, address, script),
+  plan: (address, script) => cursorStub.planParticipant(cursorHarness.home, address, {
+    ...script,
+    turns: script.turns.map(turn => turn.do?.some(action => action.tool === 'promptobus_send'
+      && action.args.body.startsWith(`${MARK.result2}:`))
+      ? { ...turn, do: turn.do.map(action => action.untilDelivered ? { ...action, proveReviewDelivery: true } : action) }
+      : turn),
+  }),
   liveSessions: (refs) => alive(cursorDriver, refs),
   pidsOf: (refs) => refs.map(cursorPid).filter((pid) => Number.isInteger(pid)),
   pidAlive: cursorSession.pidAlive,
@@ -204,18 +210,9 @@ process.stdout.write(`  ⏱ ${report.timings.map((t) => `${t.name} ${(t.ms / 100
 // "the lineup came together" from "we got lucky".
 const workerTrace = cursorStub.readTrace(cursorHarness.home, WORKER);
 const reviewerTrace = codexStub.readTrace(codexHarness.home, REVIEWER);
-const tookAt = workerTrace.findIndex(entry => entry.kind === 'tool'
-  && entry.tool === 'promptobus_mailbox' && !entry.isError && entry.text?.includes(MARK.order));
-const actions = [];
-if (tookAt >= 0) for (const entry of workerTrace.slice(tookAt + 1)) {
-  if (entry.kind === 'turn-end') break;
-  actions.push(entry);
-}
-const resultAt = actions.findIndex(entry => entry.kind === 'tool' && entry.tool === 'promptobus_send' && !entry.isError);
-const delivery = resultAt < 0 ? null : actions.slice(0, resultAt).find(entry => entry.kind === 'untilDelivered');
-const evidence = { mailbox: workerTrace[tookAt]?.at, deliveredAt: delivery?.deliveredAt, reply: actions[resultAt]?.at };
+const evidence = cursorStub.reviewDelivery(workerTrace, report.step7);
 check('step 7: the Cursor stand took the review note and observed delivery before sending its reply',
-  !!delivery?.deliveredAt && !delivery.timeout && Date.parse(delivery.deliveredAt) <= Date.parse(evidence.reply), JSON.stringify(evidence));
+  !!evidence, JSON.stringify({ expected: report.step7, observed: evidence }));
 console.log(`  Cursor delivery trace: ${JSON.stringify(evidence)}`);
 const served = (trace) => trace.some((e) => e.kind === 'turn-end') && trace.some((e) => e.kind === 'tool');
 check('both stub stands played turns of one loop — worker with the agent binary, reviewer with the codex binary',

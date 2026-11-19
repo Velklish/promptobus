@@ -45,9 +45,11 @@ import { fileURLToPath } from 'node:url';
 import { deliveryBarrier } from './delivery-wait.mjs';
 import { waitFor } from './harness.mjs';
 import { diagnoseTrace as formatTraceDiagnosis } from './harness-shared.mjs';
+import { addrDir, FOREIGN_MARK, MAILBOX_COPY, ORCHESTRATOR, readHealth } from '../dist/index.js';
 import { KNOWN_HOOK_EVENTS, PROVEN_CURSOR_VERSION } from '../lib/driver-cursor.js';
 import { LIFT_TRIES, LIFT_STEP_MS, SESSION_ENV_VAR } from '../lib/cursor-persist.js';
 import { readPrivate } from '../lib/service-state.js';
+import { glanceInbox, historyHeaders } from '../lib/store.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -232,6 +234,66 @@ export function readTrace(home, address) {
   } catch {
     return [];
   }
+}
+
+export function cursorToolTrace(tool, args, result) {
+  const text = result?.content?.map(c => c.text).join('\n') ?? '';
+  const entry = { kind: 'tool', tool, isError: !!result?.isError };
+  if (!entry.isError && tool === 'promptobus_mailbox' && args?.message === undefined && !args?.claim
+    && !text.split('\n').some(line => line === MAILBOX_COPY || line.startsWith(`${FOREIGN_MARK}: `))) {
+    entry.takenReviewIds = [...text.matchAll(/^### review from [^\n]+ · address orchestrator · [^\n]+\nmessage (\S+) · \d+ characters(?:: [^\n]*)?$/gm)]
+      .map(match => match[1]);
+  }
+  if (!entry.isError && tool === 'promptobus_send') {
+    entry.sentResultId = /^sent result → [^\n]+? · address orchestrator · id (\S+)(?: · |$)/.exec(text)?.[1];
+  }
+  return { ...entry, text: text.slice(0, 400) };
+}
+
+export function reviewDelivery(trace, { reviewId, resultId } = {}) {
+  if (!reviewId || !resultId) return null;
+  const tookAt = trace.findIndex(entry => entry.kind === 'tool' && entry.tool === 'promptobus_mailbox'
+    && !entry.isError && entry.takenReviewIds?.includes(reviewId));
+  if (tookAt < 0) return null;
+  let delivery;
+  for (const entry of trace.slice(tookAt + 1)) {
+    if (entry.kind === 'turn-end' || entry.kind === 'turn-start' || entry.tool === 'promptobus_mailbox') break;
+    if (entry.kind === 'untilDelivered') delivery = entry;
+    if (entry.kind === 'tool' && entry.tool === 'promptobus_send' && !entry.isError && entry.sentResultId === resultId) {
+      const proof = delivery?.review;
+      const at = Date.parse(delivery?.deliveredAt);
+      return !delivery?.timeout && proof?.knockedFirst === reviewId
+        && proof.takenIds.length === 1 && proof.takenIds[0] === reviewId && proof.drainedAt === delivery.deliveredAt
+        && (proof.previousDeliveryAt === null || at > Date.parse(proof.previousDeliveryAt))
+        && Date.parse(proof.readStartedAt) <= at && at <= Date.parse(entry.at)
+        ? { reviewId, resultId, readStartedAt: proof.readStartedAt, mailbox: trace[tookAt].at,
+          deliveredAt: delivery.deliveredAt, reply: entry.at }
+        : null;
+    }
+  }
+  return null;
+}
+
+function pendingReviewKnock(home, task, address) {
+  const mark = readHealth(home, task)[address];
+  if (mark?.unread !== 1 || !mark.knockedFirst || mark.coveredUnread?.length !== 1) return null;
+  const [coveredTask, coveredAddress, coveredId] = mark.coveredUnread[0];
+  if (coveredTask !== task || coveredAddress !== addrDir(address) || coveredId !== mark.knockedFirst) return null;
+  const unread = glanceInbox(home, task, address);
+  if (unread.length !== 1 || unread[0].id !== coveredId || unread[0].type !== 'review'
+    || unread[0].sender !== addrDir(ORCHESTRATOR)) return null;
+  const previousIds = historyHeaders(home, task, address).map(message => message.id);
+  if (previousIds.includes(coveredId)) return null;
+  return { knockedFirst: coveredId, previousIds, previousDeliveryAt: mark.deliveredAt ?? null };
+}
+
+function observedReviewTake(home, task, address, knock, readStartedAt) {
+  const mark = readHealth(home, task)[address];
+  const takenIds = historyHeaders(home, task, address).map(message => message.id).filter(id => !knock.previousIds.includes(id));
+  const drained = mark?.unread === 0 && mark.knockedFirst === null && mark.coveredUnread?.length === 0
+    && glanceInbox(home, task, address).length === 0;
+  return { knockedFirst: knock.knockedFirst, previousDeliveryAt: knock.previousDeliveryAt, readStartedAt,
+    takenIds, drainedAt: drained ? mark.deliveredAt : null };
 }
 
 export function planParticipant(home, address, script) {
@@ -1078,16 +1140,32 @@ async function runScript({ home, address, cfg, turn, chatId, workspace, env, bus
   }
   const actions = plan.do ?? [];
   const gate = actions.find(action => action.untilDelivered);
-  const delivery = gate && await deliveryBarrier(cfg.env?.PROMPTOBUS_HOME ?? env.PROMPTOBUS_HOME,
-    cfg.env?.PROMPTOBUS_TASK ?? env.PROMPTOBUS_TASK, address, gate.untilDelivered);
+  const busHome = cfg.env?.PROMPTOBUS_HOME ?? env.PROMPTOBUS_HOME;
+  const task = cfg.env?.PROMPTOBUS_TASK ?? env.PROMPTOBUS_TASK;
+  let delivery, reviewKnock, readStartedAt;
+  if (gate) {
+    const deadline = Date.now() + gate.untilDelivered;
+    if (gate.proveReviewDelivery) {
+      reviewKnock = await waitFor(() => pendingReviewKnock(busHome, task, address),
+        { timeoutMs: gate.untilDelivered, stepMs: 20 });
+    }
+    delivery = gate.proveReviewDelivery && !reviewKnock
+      ? { ok: false, note: 'No outstanding knock covering exactly one unread review' }
+      : await deliveryBarrier(busHome, task, address, gate.proveReviewDelivery ? deadline - Date.now() : gate.untilDelivered);
+  }
   let outcome = delivery?.ok === false ? 'error' : 'done';
   if (outcome === 'error') note(home, address, { kind: 'action-failed', action: gate, error: delivery.note });
   for (const action of outcome === 'done' ? actions : []) {
     if (action.untilDelivered) {
       const marked = await delivery.wait();
-      note(home, address, { kind: 'untilDelivered', ms: action.untilDelivered, deliveredAt: marked.deliveredAt, timeout: marked.note });
+      const review = reviewKnock && marked.ok && observedReviewTake(busHome, task, address, reviewKnock, readStartedAt);
+      note(home, address, { kind: 'untilDelivered', ms: action.untilDelivered, deliveredAt: marked.deliveredAt,
+        timeout: marked.note, ...(review ? { review } : {}) });
       if (!marked.ok) { outcome = 'error'; break; }
-    } else await act({ home, address, bus, action, workspace });
+    } else {
+      if (reviewKnock && action.tool === 'promptobus_mailbox') readStartedAt = new Date().toISOString();
+      await act({ home, address, bus, action, workspace });
+    }
   }
   if (!busState) await bus.close();
   return outcome;
@@ -1172,8 +1250,7 @@ async function act({
       note(home, address, { kind: 'action-failed', tool: action.tool, error: e.message });
       return;
     }
-    const text = answer?.result?.content?.map((c) => c.text).join('\n') ?? '';
-    note(home, address, { kind: 'tool', tool: action.tool, isError: !!answer?.result?.isError, text: text.slice(0, 400) });
+    note(home, address, cursorToolTrace(action.tool, action.args, answer?.result));
     return;
   }
   note(home, address, { kind: 'unknown-action', action });
