@@ -9,7 +9,7 @@ import { Readable } from 'node:stream';
 import test from 'node:test';
 import { boundSessionOf, createMcpServer, openEngine } from '../dist/index.js';
 import { persistReviewerSession } from '../lib/native-lifecycle.js';
-import { bindBeforeLaunch } from '../lib/driver-common.js';
+import { bindBeforeLaunch, revokeFailedPointerLaunch } from '../lib/driver-common.js';
 import * as store from '../lib/store.js';
 
 const hash = (text) => createHash('sha256').update(text).digest('hex');
@@ -174,6 +174,27 @@ for (const [harness, sessionId, session] of [
     const undo = bindBeforeLaunch(f.home, f.task, f.address, { sessionRecord: pointer });
     return { f, reserved, pointer, undo };
   }
+  test(`${harness}: failed HTTP revocation after persist cannot keep the journal sender or imply native Stop`, async t => {
+    const { f, reserved, pointer, undo } = pointerLift(t);
+    const primary = new Error('realize refused'), revoke = new Error('HTTP revoke refused');
+    writeFileSync(pointer, 'owned native record');
+    let stopAttempted = false;
+    const launch = { sessionRecord: pointer, service: {
+      realize: async () => { throw primary; }, revoke: async () => { throw revoke; },
+    } };
+    persistReviewerSession(f.home, f.task, reserved, session, false, sessionId);
+    f.send({ session: sessionId });
+    await assert.rejects(async () => {
+      try { await launch.service.realize(sessionId); } catch (error) {
+        await revokeFailedPointerLaunch(launch, error, { session, sessionId }, undo, async () => { stopAttempted = true; });
+      }
+    }, error => error.cause === primary && error.errors[1] === revoke);
+    assert.equal(stopAttempted, false);
+    assert.equal(readFileSync(pointer, 'utf8'), 'owned native record');
+    assert.equal(boundSessionOf(f.participant()), null);
+    assert.throws(() => persistReviewerSession(f.home, f.task, reserved, session, false, sessionId));
+    assert.equal(store.retainedReviewerCheckpoints(f.home, f.task, f.participant())[0].report, report);
+  });
   for (const phase of ['pointer only', 'ID published', 'persist returned']) test(`${harness}: rollback at ${phase} retires only historical checkpoint proof`, async t => {
     const { f, reserved, pointer, undo } = pointerLift(t);
     const first = f.send({ session: pointer });

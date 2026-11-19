@@ -6,21 +6,31 @@ import { fail } from './util.js';
 import type { LibLaunchPlan } from './driver-runtime.js';
 
 const managedCleanupFailures = new WeakMap<LibLaunchPlan, AggregateError>();
+type ObservedSession = { sessionId: string | null | undefined; session: string | null | undefined };
+type BindingAction = 'check' | 'revoke' | 'revoke-reviewer';
+
+export function revokeFailedPointerLaunch(plan: LibLaunchPlan, error: unknown, owned: ObservedSession,
+  undo: ReturnType<typeof bindBeforeLaunch>, retireNative: () => Promise<void>) {
+  return revokeFailedManagedLaunch(plan, error, retireNative, undefined, () => { undo(owned, 'revoke-reviewer'); });
+}
 
 export async function revokeFailedManagedLaunch(launch: LibLaunchPlan, error: unknown, afterRevoke?: () => void | Promise<void>,
-  revokeRegistered?: () => Promise<void>): Promise<never> {
+  revokeRegistered?: () => Promise<void>, revokeReviewer?: () => void): Promise<never> {
   const handled = managedCleanupFailures.get(launch);
   if (handled && error === handled) throw error;
-  let stage = 'credential revocation';
-  try {
-    await (revokeRegistered ? revokeRegistered() : launch.service?.revoke());
-    stage = 'native launch cleanup';
-    await afterRevoke?.();
-  } catch (cleanupError) {
+  const failures: { stage: string; cause: unknown }[] = [];
+  try { revokeReviewer?.(); } catch (cause) { failures.push({ stage: 'reviewer binding revocation', cause }); }
+  try { await (revokeRegistered ? revokeRegistered() : launch.service?.revoke()); }
+  catch (cause) { failures.push({ stage: 'credential revocation', cause }); }
+  if (!failures.length) {
+    try { await afterRevoke?.(); } catch (cause) { failures.push({ stage: 'native launch cleanup', cause }); }
+  }
+  if (failures.length) {
     const first = error instanceof Error ? error.message : String(error);
-    const second = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+    const details = failures.map(({ stage, cause }) => `${stage} failed: ${cause instanceof Error ? cause.message : String(cause)}`).join('; ');
+    const causes = failures.flatMap(({ cause }) => cause instanceof AggregateError ? cause.errors : [cause]);
     const record = launch.sessionRecord ?? launch.prelaunchBinding?.sessionRecord;
-    const failure = new AggregateError([error, ...(cleanupError instanceof AggregateError ? cleanupError.errors : [cleanupError])], `${first}; ${stage} failed: ${second}. Native launch state is unknown; `
+    const failure = new AggregateError([error, ...causes], `${first}; ${details}. Native launch state is unknown; `
       + `inspect ${record ?? 'the retained native launch record'} before retrying`, { cause: error });
     managedCleanupFailures.set(launch, failure);
     throw failure;
@@ -92,16 +102,20 @@ export function bindBeforeLaunch(home: string | null, task: string | null, addre
   if (!record) fail(`participant ${address} of task ${task} disappeared before its session launch`);
   const pointerReviewer = !!record.metadata.reviewLaunchId && (record.harness === 'cursor' || record.harness === 'opencode')
     && typeof binding.sessionRecord === 'string' && !binding.sessionId;
-  return (owned?: { sessionId: string | null | undefined; session: string | null | undefined }, action: 'check' | 'revoke' = 'revoke') => withTaskLock(home, task, () => {
+  let revokedHere = false;
+  const rollback = (owned: ObservedSession | undefined, action: BindingAction) => {
     const current = participantOf(readTask(home, task), address);
     if (pointerReviewer) {
       const m = current?.metadata;
+      const retired = revokedHere && m?.revokedReviewLaunchId === record.metadata.reviewLaunchId
+        && m?.sessionRecord == null && m?.sessionId == null && m?.session == null;
       if (!owned || !current || !m || current.harness !== record.harness || current.sessionRef !== record.sessionRef
         || m.reviewLaunchId !== record.metadata.reviewLaunchId || m.assignmentAfterId !== record.metadata.assignmentAfterId
-        || m.sessionRecord !== binding.sessionRecord || (m.sessionId != null && m.sessionId !== owned.sessionId)
+        || (!retired && m.sessionRecord !== binding.sessionRecord) || (m.sessionId != null && m.sessionId !== owned.sessionId)
         || (m.session != null && (!owned.sessionId || m.session !== owned.session)))
         throw new GateError(`reviewer ${address}: assignment or native session changed before binding rollback`);
       requireCurrentNativeLaunch(current, record);
+      if (retired) return true;
     }
     if (action === 'check' || !current) return;
     if (!pointerReviewer) {
@@ -125,5 +139,8 @@ export function bindBeforeLaunch(home: string | null, task: string | null, addre
       if (metadata[key] === value || metadata[key] === record!.metadata?.[key]) delete metadata[key];
     }
     upsertParticipant(home!, task!, { ...current, metadata });
-  });
+    revokedHere = pointerReviewer;
+  };
+  return (owned?: ObservedSession, action: BindingAction = 'revoke') => action === 'revoke-reviewer' && !pointerReviewer
+    ? undefined : withTaskLock(home, task, () => rollback(owned, action));
 }

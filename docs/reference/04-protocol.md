@@ -1054,6 +1054,11 @@ session name. Rollback compares the launch, assignment, path and published
 identity with the driver's owned record under the task lock. A match clears
 the path, native ID and session name together and refuses late publication
 from that launch. A changed assignment or holder keeps its binding.
+If `realize` fails after session publication, or the credential never confirms
+the expected native ID, both drivers revoke their own journal binding independently
+of HTTP credential revocation. An unconfirmed admission or Stop leaves the native
+record for inspection. Losing sender authority does not prove that the pane or
+holder exited.
 
 The send reply distinguishes the canonical message ID from the actual artifact
 ID and reports the landed filename, SHA-256 and artifact bytes. Read the artifact

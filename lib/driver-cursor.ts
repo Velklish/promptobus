@@ -21,7 +21,7 @@ import { APPROVER, GateError, liftWords, registryOf, REVIEWER, WORKER } from '..
 import { PARENT_SESSION_ENV, WARDEN_ENV_VARS } from './session-env.js';
 import { launchProvenance, provenanceLine } from './provenance.js';
 import { orderBody as commonOrderBody } from './notification.js';
-import { readRecordAt, revokeFailedManagedLaunch, sayForeignWrite as commonSayForeignWrite, sessionEnvFor, versionLess } from './driver-common.js';
+import { readRecordAt, revokeFailedPointerLaunch, sayForeignWrite as commonSayForeignWrite, sessionEnvFor, versionLess } from './driver-common.js';
 import { bindBeforeLaunch } from './liftoff.js';
 import { judgeHookRecords, TRUST_CONFIG, trustRule } from './project-hooks.js';
 import { processIdentity, processState, readPrivate, recordOf, recordVersion, sameRecordVersion } from './service-state.js';
@@ -882,21 +882,21 @@ async function spawn(plan: LibLaunchPlan, {
     }
     return { output: `persist session ${name} · chat ${chatId}`, session: name, seen: lifted };
   } catch (error) {
-    return revokeFailedManagedLaunch(plan, error, async () => {
+    const owned = { sessionId: nativeId ?? lifted?.session?.chatId ?? null, session: lifted?.session?.name ?? null };
+    return revokeFailedPointerLaunch(plan, error, owned, undo, async () => {
       if (plan.service && creationIssued && !admitted) throw new GateError(`Cursor native creation/admission is unresolved; retained primary record and owned pane: ${recordFile}`);
       const participantState = () => {
         const p = taskExists(runtimeHome, runtimeTask) ? participantOf(readTask(runtimeHome, runtimeTask), runtimeAddress) : null;
         return [p?.harness, p?.sessionRef, p?.metadata.sessionRecord, p?.metadata.nativeLaunchId, p?.metadata.sessionId];
       };
-      const owned = { sessionId: nativeId ?? lifted?.session?.chatId ?? null, session: lifted?.session?.name ?? null };
       const { current, version, participant } = locked(() => {
         const version = recordVersion(sessionFile(ref, env)), current = readSession(ref, env);
         const participant = participantState();
+        const retired = undo(owned, 'check');
         if (current?.ref !== ref || current.home !== runtimeHome || current.task !== runtimeTask || current.address !== runtimeAddress
           || current.launchId !== launchId || !sameRecordVersion(version)
           || (plan.service && taskExists(runtimeHome, runtimeTask) && (participant[0] !== CURSOR || participant[1] !== ref
-            || participant[2] !== sessionFile(ref, env)))) throw new GateError(`Cursor launch ${ref} changed ownership before cleanup`);
-        undo(owned, 'check');
+            || (!retired && participant[2] !== sessionFile(ref, env))))) throw new GateError(`Cursor launch ${ref} changed ownership before cleanup`);
         return { current, version, participant };
       });
       if (lifted?.paneStarted) {

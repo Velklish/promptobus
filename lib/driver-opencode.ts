@@ -21,7 +21,7 @@ import type { ProcessIdentity, RecordVersion } from './service-state.js';
 import {
   foreignSession, wakeAddressOf, writeWake,
 } from './store.js';
-import { bindBeforeLaunch, readRecordAt, revokeFailedManagedLaunch, sayForeignWrite as commonSayForeignWrite, sessionEnvFor } from './driver-common.js';
+import { bindBeforeLaunch, readRecordAt, revokeFailedPointerLaunch, sayForeignWrite as commonSayForeignWrite, sessionEnvFor } from './driver-common.js';
 import {
   createSession, deleteSession, holderPassword, holderRequestSync, holderUrl, idleOutcome,
   listPermissions, parsePermissionList, pidAlive, portOfLog, readMessages, reapHolder,
@@ -607,13 +607,13 @@ async function spawn(rawPlan: LibLaunchPlan, {
     return { output: '', session: sessionId, seen: { state: 'alive', session: { id: sessionId, sessionId }, ghost: null } };
   } catch (caught) {
     const error = caught as Error;
-    return revokeFailedManagedLaunch(plan, error, async () => {
+    const owned = { sessionId: record.sessionId, session: record.sessionId };
+    return revokeFailedPointerLaunch(plan, error, owned, undo, async () => {
       if (record.nativeCreationPending || (plan.service && record.sessionId && !admitted)) {
         throw new GateError(`OpenCode native creation/admission is unresolved; retained its primary record and owned holder: ${file}`);
       }
       if (!ownsRecord()) throw new GateError(`OpenCode launch ${ref} changed ownership before cleanup`);
       const retire = file ? captureRetirement(ref, file, record, env) : (cleanup: () => void) => cleanup();
-      const owned = { sessionId: record.sessionId, session: record.sessionId };
       undo(owned, 'check');
       if (child?.pid) await reapHolder(child.pid, { identity: record.holderProcess });
       retire(() => {
