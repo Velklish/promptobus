@@ -255,13 +255,13 @@ A value parsed out of the output binds a participant only in the shape of a sess
 
 ## Review
 
-When a reviewer session is dead, `review` starts a replacement with the previous reviewer's last result unchanged in its initial prompt. The replacement checks those findings for closure first, then reviews the rest of the diff. The result is selected from that reviewer's messages in send order, before launch; no follow-up message is needed. Without a prior result, the initial prompt is unchanged. Live or unknown sessions keep the existing re-review route.
+When a reviewer session is dead, `review` starts a replacement with a pointer to the previous reviewer's last terminal result beside the new diff. The replacement checks those findings for closure first, then reviews the rest of the diff. The result is selected from that reviewer's messages in send order, before launch; no follow-up message is needed. Committed native finding checkpoints also reach the replacement in full with their verified artifact references, even before a terminal result. Without a prior result or checkpoint, the initial prompt is unchanged. Live or unknown sessions keep the existing re-review route.
 
 The orchestration guidance assigns this responsibility to the reviewer:
 
 <!-- quote:../../skills/orchestrate/SKILL.md -->
 ```markdown
-| Reviewer | `promptobus review` | Read every diff of a piece, send findings, confirm their closure on its next pass; a replacement receives the last result in its initial prompt and checks those findings for closure first | Fix the findings |
+| Reviewer | `promptobus review` | Read every diff of a piece, send findings, confirm their closure on its next pass; a replacement reads the last terminal result beside the new diff and checks those findings for closure first | Fix the findings |
 ```
 <!-- /quote -->
 

@@ -269,12 +269,13 @@ export function createMcpServer(options: McpOptions): {
       case 'promptobus_send': {
         const to = args?.to as string;
         const from = service.senderFor(home, task, identity);
-        const { message, artifact, sameContent, deliveredTask, deliveredFrom } = service.send(home, task, {
+        const { message, artifact, sameContent, deliveredTask, deliveredFrom, checkpoint } = service.send(home, task, {
           from,
           to,
           type: args?.type as string,
           body: args?.body as string,
           artifactPath: args?.artifactPath as string,
+          ...(Object.hasOwn(args, 'artifact') ? { artifact: args.artifact } : {}),
           session,
         });
         // The sender may also have attached to a foreign task. Send is a turn
@@ -287,6 +288,7 @@ export function createMcpServer(options: McpOptions): {
         return `${SENT_PREFIX}${message.type} → ${readableName(service.readTask(home, landedTask), landedTo)}`
           + `${ADDR_MARK}${landedTo}`
           + ` · id ${message.id}${artifact ? ` · artifact ${artifact.filename}` : ''}`
+          + (checkpoint && artifact ? ` · artifact id ${artifact.id} · sha256 ${artifact.sha256} · bytes ${artifact.size}` : '')
           // Said plainly, not as a warning: a repeat send is lawful, and the sender is the
           // one who cannot otherwise tell this reply from the reply to a new version.
           + (sameContent ? ` · the same content as ${sameContent.filename}`
@@ -296,7 +298,7 @@ export function createMcpServer(options: McpOptions): {
           + (unread ? `\n${unread}` : '');
       }
       case 'promptobus_task':
-        return renderTask(service, home, task, role, session, decorateParticipant, pipeline?.() ?? pipelineOf(null));
+        return renderTask(service, home, task, role, identity, decorateParticipant, pipeline?.() ?? pipelineOf(null), args.checkpointDiff);
       default:
         throw new UnknownToolError(name);
     }

@@ -1,10 +1,12 @@
 import { finalizeManagedServiceLaunch, revokeFailedManagedLaunch } from './service-launch.js';
 import { LiveAdmissionError, liveCapNote, reservedSpawn, withReservationIdle } from './live-reservation.js';
-import { persistLegacyParticipant, persistNativeParticipant, releaseNativeReservation, requireCurrentNativeLaunch, reserveNativeParticipant } from './native-lifecycle.js';
+import { persistReviewerSession, releaseNativeReservation, requireCurrentNativeLaunch, reserveNativeParticipant } from './native-lifecycle.js';
+import { writeRecoveryReports } from './reviewer-checkpoint.js';
 import { renderReviewerInstructions, renderReviewProcedure } from './prompts/roles.js';
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
 import { ok, info, warn, fail, gitIn, shellQuote, PROC_MAX_OUTPUT, GIT_NET_TIMEOUT_MS } from './util.js';
 import { normalize } from './fuzzy.js';
 import { hostOf, pipelineSnapshot } from './host.js';
@@ -12,7 +14,7 @@ import { guardHookCommand, managedGuardHookCommand } from '../dist/hooks.js';
 import {
   activeTasks, addressOf, attachmentsOf, bindIfOwner, canonicalPath, claimRoute, contactsOf, createTask, currentResult, filesDir,
   foreignTaskLine, GateError, journalMessageBody, newTaskIdentity, numberedName, occupyTaskFile, ownership,
-  participantMcpPath, participantOf,
+  participantMcpPath, participantOf, retainedReviewerCheckpoints,
   participantRecord, participantSettingsPath, readTask, sendMessage,
   sessionIdentity, slugify, stampReviewAssignment, stampSnapshot, strictTaskFacts, taskExists, unreadNote, upsertParticipant,
   watchParticipant, withTaskLock,
@@ -38,7 +40,7 @@ import {
   decideLift, effectiveStrategy, routingContext, routingLine, sayDecision,
 } from './models.js';
 import {
-  APPROVER, hasFeature, packageDenyTools, registryOf, REVIEWER, roleEntry, routingOf, ROUTING_FIELD,
+  APPROVER, boundSessionOf, hasFeature, packageDenyTools, registryOf, REVIEWER, roleEntry, routingOf, ROUTING_FIELD,
 } from '../dist/index.js';
 import { pipelineOf, resolveInstructionFile } from '../dist/pipeline.js';
 import { EDITS_TREE, READS_DIFF, WRITES_MAIN_TREE } from '../dist/registry.js';
@@ -80,7 +82,7 @@ interface ReviewRefusal {
   refusal: string; routingSkipped?: undefined; routing?: undefined; reuse?: undefined;
   taskIdentity?: undefined; selectedContext?: undefined;
 }
-interface ReviewSnapshot { at: string; head: string | null; clean: boolean; modifiedTracked: string[]; line: string }
+interface ReviewSnapshot { base: string | null; diffSha256: string; at: string; head: string | null; clean: boolean; modifiedTracked: string[]; line: string }
 interface ReviewSkill { name: string; module: string; dir: string; shared: string | null }
 type Attachments = ReturnType<typeof attachedFiles>;
 type Seat = { kind: 'several'; detail: string; owner?: undefined } | { kind: 'one'; owner: ParticipantV1; detail: string }
@@ -93,7 +95,7 @@ interface SubjectInput {
 }
 interface ReviewPromptInput extends SubjectInput {
   taskId: string; nsPath: string; address: string; stepName: string; instructions: GateInstructions | null;
-  rules: string[]; skill: ReviewSkill | null; driver: LibDriver; host: PromptobusHost; contacts: Contacts; priorFindings: string | null;
+  rules: string[]; skill: ReviewSkill | null; driver: LibDriver; host: PromptobusHost; contacts: Contacts; checkpointRefs: ReturnType<typeof retainedReviewerCheckpoints>; priorFindings: string | null;
 }
 export interface ReviewPlan extends ReviewPromptInput {
   home: string; createNew: PlannedTask | null; taskIdentity: TaskIdentity | null; selectedContext: NativeSelection;
@@ -333,6 +335,14 @@ function harnessChangeRefusal(host: PromptobusHost, { address, taskId, from, to,
     + `This call saw unknown. Check ${driver!.phrases.sessions}.`;
 }
 
+function requireReviewerBinding(host: PromptobusHost, task: string, address: string, participant: ParticipantV1) {
+  const { reviewLaunchId, revokedReviewLaunchId } = participant.metadata;
+  if (reviewLaunchId && (revokedReviewLaunchId === reviewLaunchId || !boundSessionOf(participant))) {
+    throw new GateError(`${address} has no active sender binding for this launch; no re-review sent. `
+      + `Confirm Stop with ${host.busCommand(['stop', address, '--task', task])}, then repeat review for a replacement.`);
+  }
+}
+
 // Review plan: everything computed, nothing written. Gates of the REQUEST throw; a refusal from what
 // was READ leaves as a `{ refusal }` field, because `fail()` here would take a unit test past the summary.
 export function planReview(rootOrHost: unknown, options: ReviewPlanningOptions & { contextPreflightOnly: true }): ReviewPreflight | ReviewRefusal;
@@ -521,6 +531,8 @@ export function planReview(rootOrHost: unknown, { target, base, task, title, mod
   // The diff file is a ONE-TIME snapshot: the worker goes on committing while the reviewer reads.
   // What the reviewer needs is its age and whether the tracked tree matched HEAD, so all three travel.
   const snapshot = {
+    base: diffFrom === 'HEAD' ? head : diffFrom,
+    diffSha256: createHash('sha256').update(diff).digest('hex'),
     at: new Date().toISOString(),
     head: head ?? null,
     clean: modifiedTracked.length === 0,
@@ -551,15 +563,18 @@ export function planReview(rootOrHost: unknown, { target, base, task, title, mod
   // would sit in the mailbox forever. Unknown — the diff goes to the former address.
   const sessions = participant ? snapshotOf([participant]) : null;
   const sessionState = participant ? participantSession(participant, sessions) : null;
-  const lastResultId = sessionState === 'dead'
-    ? strictTaskFacts(home, taskId).messages.filter((m) => m.sender === participant!.id && m.type === 'result')
-      .map((m) => m.id).sort().at(-1)
-    : null;
-  const priorFindings = lastResultId ? journalMessageBody(home, taskId, lastResultId, 'review') : null;
   // A record BEFORE start makes "the reviewer is in the journal" true even for one that never
   // lifted. `pending` is what is read, not `participant.session`: a live one may have no field either.
   const unlaunched = !!was.pending && sessionState !== 'alive';
   const reuse = !!participant && sessionState !== 'dead' && !unlaunched;
+  if (participant && (reuse || (sessionState !== 'dead' && was.reviewLaunchId && was.revokedReviewLaunchId === was.reviewLaunchId)))
+    requireReviewerBinding(host, taskId, address, participant);
+  const lastResultId = participant && !reuse
+    ? strictTaskFacts(home, taskId).messages.filter((m) => m.sender === participant.id && m.type === 'result')
+      .map((m) => m.id).sort().at(-1)
+    : null;
+  const priorFindings = lastResultId ? journalMessageBody(home, taskId, lastResultId, 'review') : null;
+  const checkpointRefs = participant && !reuse ? retainedReviewerCheckpoints(home, taskId, participant) : [];
   const instructions = suppliedInstructions === undefined || (instructionsReuse !== undefined && instructionsReuse !== reuse)
     ? readGateInstructions(host, stepName, reuse ? was.gateInstructions : null) : suppliedInstructions;
   // --effort applies to session lift, not to re-review: recreating loses finding context.
@@ -640,7 +655,7 @@ export function planReview(rootOrHost: unknown, { target, base, task, title, mod
   // asked about: without `--add-dir` the reviewer stalls on its own first instruction. No write rights.
   const ruleDirs = [...new Set(rules.map((f) => path.dirname(f)))];
   const addDirs = [...new Set([...ruleDirs, path.dirname(diffPath)])];
-  const prompt = buildPrompt({ taskId, nsPath, repoDir, address, stepName, instructions, diffPath, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles, rules, skill, driver, host, contacts, priorFindings }) + nativeContextPrompt(selectedContext);
+  const prompt = buildPrompt({ taskId, nsPath, repoDir, address, stepName, instructions, diffPath, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles, rules, skill, driver, host, contacts, checkpointRefs, priorFindings }) + nativeContextPrompt(selectedContext);
   const reReview = buildReReview({ diffPath, repoDir, stepName, instructions, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles });
 
   const settingsPath = participantSettingsPath(home, taskId, address);
@@ -691,7 +706,7 @@ export function planReview(rootOrHost: unknown, { target, base, task, title, mod
     home, taskId, createNew, taskIdentity: identity, selectedContext, otherActive, slug, stepName, address, name, nsPath, repoDir, baseRef, baseLine, snapshot, gateRecords, handoverRecords, attachments, ownerAddress, reviewedAddress, attachmentSeat, approverBeside, approverFiles, owner, warnings,
     diff, untracked, stat,
     participant, sessionState, reuse, unlaunched, titleIgnored, rebind: rebind ? { from: recordedDriver!.id, to: harness } : null,
-    skill, rules, ruleDirs, addDirs, diffPath, prompt, reReview, instructions, contacts, priorFindings,
+    skill, rules, ruleDirs, addDirs, diffPath, prompt, reReview, instructions, contacts, checkpointRefs, priorFindings,
     module: host.moduleNote(repoDir), pluginDir,
     settingsPath, guardCommand, mcpConfigPath, mcpNote: mcpNote(mcp, 'the reviewer'),
     launch, argv: launch.argv, mcpConfig: launch.mcpConfig, settings: launch.settings,
@@ -920,6 +935,7 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
   }
   const reserve = () => withReservationIdle(plan.home, plan.taskId, plan.address, () => {
     const assignedAt = new Date().toISOString();
+    if (plan.participant) retainedReviewerCheckpoints(plan.home, plan.taskId, plan.participant);
     const harnessHistory = harnessHistoryForLift(plan.participant, plan.rebind, assignedAt, plan);
     return reserveNativeParticipant(plan.home, plan.taskId, participantRecord(plan.address, {
       ...nativeContextMetadata(plan.selectedContext),
@@ -936,6 +952,7 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
       sessionRef: plan.name,
       session: null,
       started: assignedAt,
+      reviewLaunchId: randomUUID(),
       reviewAssignedAt: assignedAt,
       ...(plan.instructions ? { gateInstructions: plan.instructions } : {}),
       ...(harnessHistory.length ? { harnessHistory } : {}),
@@ -943,6 +960,8 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
       // Which snapshot this reviewer holds — the same state `stampSnapshot` patches on
       // a re-review.
       diffAt: plan.snapshot.at,
+      diffBase: plan.snapshot.base, diffSha256: plan.snapshot.diffSha256,
+      findingCheckpoints: plan.checkpointRefs.map(({ report: _report, ...ref }) => ref),
       ...(plan.snapshot.head ? { diffHead: plan.snapshot.head } : {}),
       diffClean: plan.snapshot.clean,
       diffModifiedTracked: plan.snapshot.modifiedTracked,
@@ -968,6 +987,8 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
         const meta = readTask(plan.home, plan.taskId), current = participantOf(meta, plan.address);
         if (meta.status !== 'active' || !current) throw new GateError('review participant is no longer active');
         requireCurrentNativeLaunch(current, plan.participant);
+        if (current.metadata.reviewLaunchId !== plan.participant?.metadata.reviewLaunchId) throw new GateError('reviewer was replaced before re-review');
+        requireReviewerBinding(plan.host, plan.taskId, plan.address, current);
         if (!plan.createNew) bindIfOwner(plan.home, plan.taskId);
         handOverContactPoints(plan.home, { env: process.env });
         retargetDiff(plan, writeDiff(path.dirname(plan.diffPath), plan.slug, plan.diff, plan.stepName));
@@ -989,7 +1010,7 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
         stampReviewAssignment(plan.home, plan.taskId, plan.address, sent.message.id, sent.message.ts);
         // The record now holds THIS snapshot: a re-review does not rewrite the participant, and without
         // the patch `status` would show the first snapshot for the whole review.
-        stampSnapshot(plan.home, plan.taskId, plan.address, plan.snapshot);
+        stampSnapshot(plan.home, plan.taskId, plan.address, { ...plan.snapshot, diffPath: plan.diffPath });
         ok(`reviewer ${plan.address} is already on the bus — new diff sent ${plan.diffPath}`);
         // A new assignment puts the participant back under watch: this branch does not rewrite the
         // record, and a dismissed one would sit silently.
@@ -1005,16 +1026,23 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
     // The owner bind and contact handoff precede launch files so the first reply has a route.
     if (!plan.createNew) bindIfOwner(plan.home, plan.taskId);
     handOverContactPoints(plan.home, { env: process.env });
-    retargetDiff(plan, writeDiff(path.dirname(plan.diffPath), plan.slug, plan.diff, plan.stepName));
+    withTaskLock(plan.home, plan.taskId, () => {
+      const current = participantOf(readTask(plan.home, plan.taskId), plan.address);
+      if (!current || current.metadata.reviewLaunchId !== reserved!.record.metadata.reviewLaunchId
+        || current.metadata.assignmentAfterId !== reserved!.record.metadata.assignmentAfterId) throw new GateError('review assignment changed before launch');
+      retargetDiff(plan, writeDiff(path.dirname(plan.diffPath), plan.slug, plan.diff, plan.stepName));
+      stampSnapshot(plan.home, plan.taskId, plan.address, { ...plan.snapshot, diffPath: plan.diffPath });
+      writeRecoveryReports(plan.diffPath, plan.checkpointRefs, plan.priorFindings);
+    });
 
-    // A dead session cannot receive a re-review. Its last result travels in the initial prompt.
     if (plan.unlaunched) {
       // Not a single word about a dead session is true here: this reviewer was never started.
       warn(`record of the reviewer ${plan.address} is left from a failed start (pending), liveness cannot be confirmed — nobody to send a re-review to`);
-      warn(`starting the reviewer again with the full prompt: it has no prior context, it looks at the diff from a clean slate`);
+      if (plan.priorFindings !== null || plan.checkpointRefs.length) warn('the replacement reads retained findings beside the new diff');
+      else warn(`starting the reviewer again with the full prompt: it has no prior context, it looks at the diff from a clean slate`);
     } else if (plan.participant) {
       warn(`session of the reviewer ${plan.address} is dead (it is not among the live ones in ${plan.driver.phrases.sessions}) — nobody to send a re-review to`);
-      if (plan.priorFindings !== null) {
+      if (plan.priorFindings !== null || plan.checkpointRefs.length) {
         warn(`starting a new reviewer with the full prompt: prior findings are included for closure checks first`);
       } else {
         warn(`starting a new reviewer with the full prompt: prior findings left with the session, it looks at the diff from a clean slate`);
@@ -1064,26 +1092,7 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
     unboundNote: unboundSessionNote(plan),
     // The `pending` mark is cleared only by a successful lift: otherwise a repeat would take the
     // record for a live reviewer and send a re-review into an empty mailbox.
-    persist: (id, state, sessionId) => {
-      // Cleared EXPLICITLY: it entered with the first upsert, and `applyParticipant` replaces the
-      // participant whole, so a surviving mark would pass a started reviewer off as unstarted.
-      const { pending, ...rest } = record.metadata;
-      const sessionRecord = participantOf(readTask(plan.home, plan.taskId), plan.address)?.metadata?.sessionRecord;
-      if (plan.driver.id === 'codex') {
-        return persistNativeParticipant(plan.home, plan.taskId, record, { session: id ?? null,
-          ...(sessionId ? { sessionId } : {}), pending: state === 'dead' });
-      }
-      return persistLegacyParticipant(plan.home, plan.taskId, {
-        ...record,
-        metadata: {
-          ...rest,
-          session: id ?? null,
-          ...(sessionId ? { sessionId } : {}),
-          ...(sessionRecord ? { sessionRecord } : {}),
-          ...(state === 'dead' ? { pending: true } : {}),
-        },
-      });
-    },
+    persist: (id, state, sessionId) => persistReviewerSession(plan.home, plan.taskId, record, id, state === 'dead', sessionId),
     awaitOptions: opts.awaitOptions,
   }).catch(error => revokeFailedManagedLaunch(plan.launch, error, () => {
     if (error instanceof LiveAdmissionError && reserved) releaseNativeReservation(plan.home, plan.taskId, reserved.record);
@@ -1433,10 +1442,15 @@ export function writeDiff(dir: string, slug: string, content: string, stepName: 
 // The diff path sits in three places of the plan, rebuilt from the path that landed. Called
 // UNCONDITIONALLY: the "name moved forward" branch happens only in a race.
 function retargetDiff(plan: ReviewPlan, diffPath: string) {
-  const { taskId, nsPath, repoDir, address, stepName, instructions, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles, rules, skill, driver, host, contacts, priorFindings } = plan;
+  if (diffPath === plan.diffPath) return;
+  const predictedPrompt = plan.prompt;
   plan.diffPath = diffPath;
-  plan.prompt = buildPrompt({ taskId, nsPath, repoDir, address, stepName, instructions, diffPath, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles, rules, skill, driver, host, contacts, priorFindings });
-  plan.reReview = buildReReview({ diffPath, repoDir, stepName, instructions, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles });
+  plan.prompt = buildPrompt(plan) + nativeContextPrompt(plan.selectedContext);
+  plan.reReview = buildReReview(plan);
+  if (plan.launch.prompt === predictedPrompt) plan.launch.prompt = plan.prompt;
+  const arg = plan.launch.argv.indexOf(predictedPrompt);
+  if (arg !== -1) plan.launch.argv[arg] = plan.prompt;
+  for (const file of plan.launch.files) if (file.text === predictedPrompt) file.text = plan.prompt;
 }
 
 // The contract the worker and approver preambles quote, and the list it promises. Built from the
@@ -1586,17 +1600,19 @@ function procedure(skill: ReviewSkill | null, reviewerCommands: ReviewerCommandP
   return renderReviewProcedure(skill, reviewerCommands);
 }
 
-function buildPrompt({ taskId, nsPath, repoDir, address, stepName, instructions, diffPath, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles, rules, skill, driver, host, contacts, priorFindings }: ReviewPromptInput) {
+function buildPrompt({ taskId, nsPath, repoDir, address, stepName, instructions, diffPath, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles, rules, skill, driver, host, contacts, checkpointRefs, priorFindings }: ReviewPromptInput) {
   const bus = (name: string) => toolName(driver, PROMPTOBUS_SERVER, name, host);
   const findings = priorFindings === null ? '' : '\n\n## Prior reviewer findings\n\n'
     + 'Check these findings for closure first, then review the rest of the diff. '
-    + 'The previous reviewer\'s last result follows unchanged:\n\n' + priorFindings;
+    + `Read the previous terminal result starting at ${diffPath}.result-1.jsonl. Read every JSON string after the header in order; continue with the numbered nextPage until it is null.`;
   return renderReviewerInstructions({ taskId, nsPath, repoDir, address, stepName, rules,
-    reviewSubject: subject({ diffPath, repoDir, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles }) + findings,
+    reviewSubject: subject({ diffPath, repoDir, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles }) + findings
+      + (checkpointRefs.length ? `\n\n## Retained reviewer finding checkpoints\n\nBefore reviewing the new diff, read files 1.jsonl through ${checkpointRefs.length}.jsonl in ${diffPath}.checkpoints. Each first line identifies the original subject and artifact. Read every following JSON string in line ranges, in order, as consecutive chunks of the original report. Check these findings for closure; they are not terminal verdicts.` : ''),
     instructionsSection: gateInstructionsSection(instructions), procedureText: procedure(skill, driver.phrases.reviewerCommands),
     bindings: { tools: Object.fromEntries(['promptobus_send', 'promptobus_mailbox', 'promptobus_task'].map(name => [name, bus(name)])) as Record<keyof ParticipantTools, string>, mcpBoundary: driver.phrases.mcpBoundary, reviewerCommands: driver.phrases.reviewerCommands,
       externalReads: `You have the whole canonical workspace set, and every name is pre-approved: nobody will ask you for permission, and there is no person behind the session who would refuse. Read as much as you need — an event contract, a task card, a merge request diff, a metric, a fact from team memory.`,
       communication: `the MCP server tools ${PROMPTOBUS_SERVER} (it is already attached to this session): ${bus('promptobus_send')}, ${bus('promptobus_mailbox')}, ${bus('promptobus_task')}`,
+      checkpointInstructions: `Before terminal handover, you may durably checkpoint a complete finding report through ${bus('promptobus_send')} {to:"orchestrator",type:"artifact",body:"Finding checkpoint",artifact:{content:"full original report",subject:<the reviewer checkpoint subject from ${bus('promptobus_task')}>}}. When opening the assigned diff, request the subject with checkpointDiff set to that exact diff path. Keep that subject with your findings. If it expires, open the new assignment before reporting on it; never relabel old findings. The server writes the canonical artifact, capped at 1000000 UTF-8 bytes; you create no file. This is not a terminal result: send the full result separately when review is complete. To wait before handover, send a question referencing the checkpoint and end the turn awaiting an answer.`,
       memory: memoryRule(driver, host), contacts: contactsSection(contacts, bus('promptobus_task')),
       wait: "You have nothing to wait with and no need to: the task mailboxes are listened to by the bus warden, and it wakes you with a postcard when you are written to.", close: 'A person closes the session.',
       operationalRules: driver.phrases.promptRulesFor?.(REVIEWER) ?? driver.phrases.promptRules,
@@ -1611,6 +1627,8 @@ function buildReReview({ diffPath, repoDir, stepName, instructions, stat, untrac
 Step ${stepName}.
 
 ${gateInstructionsSection(instructions)}${subject({ diffPath, repoDir, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles })}
+
+When opening this diff, use promptobus_task with checkpointDiff set to its path. Keep the returned subject for findings on this assignment only.
 
 First check your prior findings against the new diff — which are closed, which are not, then look at what else changed. The report is promptobus_send {to:"orchestrator", type:"result", body:"..."} as before.`;
 }

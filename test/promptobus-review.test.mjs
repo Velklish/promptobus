@@ -10,6 +10,7 @@
 // rename didn't break what was already established.
 import { mkdirSync, readdirSync, writeFileSync, existsSync, readFileSync, utimesSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import os from 'node:os';
@@ -17,6 +18,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { check } from './check.mjs';
 import { commandReceipts, readStopConfirmation } from '../lib/codex-command-receipts.js';
 import { codexStateHome, sessionKey } from '../lib/codex-session.js';
+import { reviewerFiles } from '../lib/reviewer-files.js';
 import { retainNativeStop } from '../lib/native-lifecycle.js';
 import { ownedServiceFixture, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture, expectThrow } from './console.mjs';
@@ -427,8 +429,9 @@ check('PB-204: the reviewer preamble carries the same header and the same bound 
   reviewHandoff.slice(0, 800));
 // The overflow path a worker has does not exist here: file writes are denied to this
 // session, so a rule that sent findings into an attached file could never be obeyed.
-check('PB-204: the reviewer preamble says it produces no artifact and must not attach one',
-  /produce no artifact of your own/.test(reviewHandoff)
+check('reviewer checkpoint: the preamble permits inline reports and still forbids filesystem artifacts',
+  /produce no filesystem artifact of your own/.test(reviewHandoff)
+  && /artifact:\{content:/.test(reviewHandoff) && /not a terminal result/.test(reviewHandoff)
   && !/attached with artifactPath/.test(reviewHandoff)
   && plan.settings.permissions.deny.includes('Write'),
   reviewHandoff.slice(0, 900));
@@ -983,9 +986,37 @@ check('dead session without a result: the full prompt is unchanged by other mess
   promptSnapshot(withoutResult) === promptSnapshot(statusOnly)
   && !statusOnly.prompt.includes('## Prior reviewer findings'), statusOnly.prompt);
 
+const checkpointParticipant = store.participantOf(store.readTask(home, pendingTask.id), 'reviewer:orders-api');
+check('initial lift publishes the exact landed snapshot for checkpoint lookup', checkpointParticipant.metadata.diffPath === relaunchedPlan.diffPath);
+const checkpointSubject = {
+  assignmentAfterId: checkpointParticipant.metadata.assignmentAfterId,
+  head: relaunchedPlan.snapshot.head, base: relaunchedPlan.snapshot.base, diffSha256: relaunchedPlan.snapshot.diffSha256,
+};
+const checkpointReports = ['😀'.repeat(250000), '\r\n\u0000second finding\n'.repeat(50000)];
+const checkpoints = checkpointReports.map((content) => store.sendMessage(home, pendingTask.id, {
+  from: 'reviewer:orders-api', to: 'orchestrator', type: 'artifact', body: 'Finding checkpoint',
+  session: store.sessionIdOf(checkpointParticipant), artifact: { content, subject: checkpointSubject },
+}));
+const checkpointPlan = planReview(WS, { target: REPO, task: pendingTask.id });
+for (const harness of ['claude', 'cursor']) {
+  const recovery = harness === 'claude' ? checkpointPlan : planReview(WS, { target: REPO, task: pendingTask.id, harness });
+  check(`${harness} replacement without selected context: aggregate report size stays out of argv`,
+    !recovery.selectedContext && recovery.checkpointRefs.length === 2 && recovery.priorFindings === null
+    && Buffer.byteLength(checkpointReports[0]) === 1000000 && recovery.argv.includes(recovery.prompt)
+    && Buffer.byteLength(recovery.argv.join(' ')) < 100000 && recovery.prompt.includes(`${recovery.diffPath}.checkpoints`)
+    && recovery.addDirs.includes(path.dirname(recovery.diffPath)) && !recovery.addDirs.includes(`${recovery.diffPath}.checkpoints`));
+}
+const beforeCorruption = store.participantOf(store.readTask(home, pendingTask.id), 'reviewer:orders-api');
+store.upsertParticipant(home, pendingTask.id, { ...beforeCorruption, metadata: { ...beforeCorruption.metadata,
+  findingCheckpoints: beforeCorruption.metadata.findingCheckpoints.slice(1) } });
+const missingCheckpoint = expectThrow(() => planReview(WS, { target: REPO, task: pendingTask.id }));
+check('preterminal checkpoints: an omitted committed checkpoint refuses replacement before model launch',
+  missingCheckpoint.threw && /checkpoint/.test(missingCheckpoint.msg), missingCheckpoint.msg);
+store.upsertParticipant(home, pendingTask.id, beforeCorruption);
+
 const earlierFindings = 'Earlier finding: obsolete detail';
-// english-authoring: input — preserve the complete Unicode findings body in a replacement prompt.
-const priorFindings = '\nmajor — Проверить закрытие α\n  keep  two spaces\n\n```text\nsecond finding → β\n```\n' + 'full finding '.repeat(400) + '\n';
+// english-authoring: input — preserve the complete Unicode findings body during replacement.
+const priorFindings = '\nmajor — Проверить закрытие α\n  keep  two spaces\n\n```text\nsecond finding → β\n```\n' + checkpointReports[0] + '\r\n\u0000end of terminal result\n';
 // english-authoring: end
 let findingsClock = Date.now();
 const { openEngine } = await import('../dist/index.js');
@@ -1009,16 +1040,47 @@ store.sendMessage(home, pendingTask.id, {
   from: 'reviewer:orders-api', to: store.ORCHESTRATOR, type: 'status', body: 'Later status, not findings',
 });
 const withResult = planReview(WS, { target: REPO, task: pendingTask.id });
-const findingsSection = '## Prior reviewer findings\n\nCheck these findings for closure first, then review the rest of the diff. '
-  + 'The previous reviewer\'s last result follows unchanged:\n\n' + priorFindings;
-check('dead session: the replacement initial prompt carries the last result in full for closure first',
-  withResult.prompt.includes(findingsSection), withResult.prompt);
-check('dead session: prior findings select the last result of this reviewer, not other messages',
-  !withResult.prompt.includes(earlierFindings)
-  && !withResult.prompt.includes('Another reviewer result')
-  && !withResult.prompt.includes('Later status, not findings'), withResult.prompt);
+const findingsSection = '## Prior reviewer findings';
+for (const harness of ['claude', 'cursor']) {
+  const recovery = harness === 'claude' ? withResult : planReview(WS, { target: REPO, task: pendingTask.id, harness });
+  check(`${harness}: a large terminal result beside large checkpoints stays outside every process argument`,
+    !recovery.selectedContext && recovery.priorFindings === priorFindings && recovery.checkpointRefs.length === 2
+    && recovery.prompt.includes(`${recovery.diffPath}.result-1.jsonl`) && recovery.prompt.includes(`${recovery.diffPath}.checkpoints`)
+    && recovery.argv.includes(recovery.prompt) && Buffer.byteLength(recovery.argv.join(' ')) < 100000
+    && !recovery.prompt.includes(priorFindings.slice(0, 64)) && !recovery.prompt.includes('end of terminal result'));
+}
 let replacement;
 await capture(async () => { replacement = await review(WS, { tool: TOOL, target: REPO, task: pendingTask.id }); });
+const readReport = reviewerFiles([path.dirname(replacement.diffPath)]);
+function readPage(file) {
+  const lines = [];
+  for (let start = 1; ; start += 200) {
+    const part = readReport('read_file', { path: file, start_line: start, line_count: 200 });
+    lines.push(...part.lines.map(line => line.text));
+    if (start + 200 > part.total_lines) break;
+  }
+  return { header: JSON.parse(lines.shift()), text: lines.filter(Boolean).map(line => JSON.parse(line)).join('') };
+}
+for (const [index, expected] of checkpointReports.entries()) {
+  const { header: ref, text } = readPage(path.join(`${replacement.diffPath}.checkpoints`, `${index + 1}.jsonl`));
+  check(`replacement first turn can read complete checkpoint ${index + 1} through its existing root`,
+    bgArgv().includes(`${replacement.diffPath}.checkpoints`) && ref.messageId === checkpoints[index].message.id
+    && ref.artifactId === checkpoints[index].artifact.id && text === expected);
+}
+let terminal = '', page = 1;
+while (page !== null) {
+  const { header, text } = readPage(`${replacement.diffPath}.result-${page}.jsonl`);
+  if (header.type !== 'result' || (header.nextPage !== null && header.nextPage !== page + 1)) throw Error('invalid terminal result page');
+  terminal += text;
+  page = header.nextPage;
+}
+check('replacement restores only the latest terminal result byte for byte, separately from both checkpoints',
+  terminal === priorFindings && bgArgv().includes(`${replacement.diffPath}.result-1.jsonl`) && !bgArgv().includes('end of terminal result'));
+const successor = store.participantOf(store.readTask(home, pendingTask.id), 'reviewer:orders-api');
+const inherited = store.retainedReviewerCheckpoints(home, pendingTask.id, successor);
+check('replacement retains each original message and report for subsequent recovery',
+  inherited.length === checkpoints.length && inherited.every((ref, i) => ref.messageId === checkpoints[i].message.id
+    && ref.report === checkpointReports[i]), inherited.map(ref => ref.messageId).join(', '));
 check('dead session: the launched replacement receives prior findings before its first turn',
   replacement.prompt.includes(findingsSection) && bgArgv().includes(findingsSection), bgArgv());
 check('dead session: prior findings need no asynchronous mailbox delivery after launch',
@@ -1030,8 +1092,7 @@ check('live reviewer: prior findings stay in its session rather than being added
 check('replacement reviewer guidance carries the prior-result closure contract',
   ['../docs/reference/03-cli.md', '../skills/solo-review/SKILL.md', '../README.md', '../CHANGELOG.md']
     .map((file) => readFileSync(new URL(file, import.meta.url), 'utf8'))
-    .every((text) => text.includes('last result unchanged in') && text.includes('initial prompt')
-      && text.includes('for closure first') && !text.includes('Nothing then confirms')));
+    .every((text) => text.includes('terminal result') && text.includes('beside the new diff') && !text.includes('Nothing then confirms')));
 
 const unknownTask = store.createTask(home, { id: 't20260925-154800', title: 'reviewer liveness unknown' });
 store.upsertParticipant(home, unknownTask.id, store.participantRecord('reviewer:orders-api', {
@@ -1856,6 +1917,7 @@ await capture(() => review(WS, { tool: TOOL, target: W2, task: owned.id }));
 const reStamped = store.participantOf(store.readTask(home, owned.id), 'reviewer:vtoroy')?.metadata;
 check('PB-157 record: a re-review moves the snapshot and replaces its tracked-tree state',
   reStamped?.diffHead === afterHead && afterHead !== liftHead
+  && existsSync(reStamped.diffPath) && reStamped.diffPath !== revPart.diffPath
   && reStamped?.diffAt !== revPart?.diffAt
   && reStamped?.diffClean === false
   && JSON.stringify(reStamped?.diffModifiedTracked) === JSON.stringify(['vtoroy.txt'])
@@ -3174,6 +3236,26 @@ const liftStatus = await capture(() => status(WS, { task: LIFT_B, sessions: {} }
 const liftOrchLine = liftStatus.split('\n').find((l) => /^\s*orchestrator · /.test(l)) ?? '';
 check('PB-233: status of the lifted task no longer calls its orchestrator self-wake',
   !!liftOrchLine && !/self-wake/.test(liftOrchLine) && /unread 1/.test(liftOrchLine), liftStatus);
+
+const lateTask = store.createTask(home, { id: 't20261024-193000', title: 'late reviewer publication' });
+const lateSeat = liftPlan.address;
+let reassigned, lateCheckpoint;
+claudeSays('[]');
+await capture(() => review(WS, { tool: TOOL, target: LIFT_REPO, task: lateTask.id, awaitOptions: { tries: 1, sessions: () => {
+  const reviewer = store.participantOf(store.readTask(home, lateTask.id), lateSeat);
+  const m = reviewer.metadata;
+  const nextDiff = writeDiff(path.dirname(m.diffPath), 'lifted-api', 'new diff\n');
+  reassigned = store.sendMessage(home, lateTask.id, { from: 'orchestrator', to: lateSeat, type: 'task', body: nextDiff }).message.id;
+  const next = { head: m.diffHead, base: m.diffBase, diffSha256: createHash('sha256').update('new diff\n').digest('hex') };
+  store.stampSnapshot(home, lateTask.id, lateSeat, { ...next, diffPath: nextDiff, at: new Date().toISOString(), clean: false, modifiedTracked: ['a.txt'] });
+  lateCheckpoint = store.sendMessage(home, lateTask.id, { from: lateSeat, to: 'orchestrator', type: 'artifact', body: 'New finding',
+    session: m.sessionId, artifact: { content: 'finding on the new assignment', subject: { ...next, assignmentAfterId: reassigned } } });
+  return [{ name: m.name, id: 'sess-live', sessionId: m.sessionId, status: 'running' }];
+} } }));
+const afterLateLift = store.participantOf(store.readTask(home, lateTask.id), lateSeat);
+check('original lift returning after a new checkpoint preserves the newer assignment and recoverable evidence',
+  afterLateLift.metadata.assignmentAfterId === reassigned && !afterLateLift.metadata.pending
+  && store.retainedReviewerCheckpoints(home, lateTask.id, afterLateLift)[0]?.messageId === lateCheckpoint.message.id);
 
 // PATH stayed swapped until the end: the scheduler checks liveness on every call
 // against an already-opened participant, and the test shouldn't call a live claude for that.

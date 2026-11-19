@@ -95,13 +95,13 @@ export async function stashBlob(home: string, task: string, source: ArtifactSour
   }
 }
 
-/** Putting a file into the task store as an artifact.
+/** Putting a file or owned bytes into the task store as an artifact.
  * [reference/04-protocol.md#stashblobsync--the-same-synchronously-from-a-file](../../docs/reference/04-protocol.md#stashblobsync--the-same-synchronously-from-a-file) */
-export function stashBlobSync(home: string, task: string, file: string): { sha256: string; size: number } {
-  if (typeof file !== 'string' || !file) fail('artifact-source', 'artifact path is not named');
+export function stashBlobSync(home: string, task: string, file: string | Uint8Array): { sha256: string; size: number } {
+  if (!(file instanceof Uint8Array) && (typeof file !== 'string' || !file)) fail('artifact-source', 'artifact path is not named');
   let content: Buffer;
   try {
-    content = readFileSync(file);
+    content = file instanceof Uint8Array ? Buffer.from(file) : readFileSync(file);
   } catch {
     fail('artifact-source', `artifact is missing: ${file}`, { path: file });
   }

@@ -1,5 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
+import { CHECKPOINT_MARK, CHECKPOINT_NAME, prepareCheckpoint, readReviewerCheckpoints } from './reviewer-checkpoint.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { artifactClaimsInResult, recordRefusal } from './handoff.js';
@@ -15,7 +17,7 @@ import {
   roleOf, ROOT_DIR, sessionFile, sessionIdOf, sessionOf, slugify, stampOfId, TASK_TITLE_SEP,
   tasksDir, validate,
   withTaskLock as lockTask, withTaskLockAsync as lockTaskAsync, workersDir, writeBinding, readWake, wakeFile,
-  addressList, admitsAddress, APPROVER, EDITS_TREE, registryOf, roleEntry, SHIPPED_REGISTRY, WRITES_MAIN_TREE,
+  addressList, admitsAddress, APPROVER, EDITS_TREE, READS_DIFF, registryOf, roleEntry, SHIPPED_REGISTRY, WRITES_MAIN_TREE,
 } from '../dist/index.js';
 import { writeJsonAtomic } from '../dist/fs/atomic.js';
 import { requireSynchronousAuthority } from '../dist/fs/lock.js';
@@ -874,7 +876,7 @@ export function watchParticipant(home: string, id: string, address: string) {
  * this diff was never taken from. The path list is always replaced too: otherwise a
  * clean re-review would keep reporting the prior dirty paths.
  */
-export function stampSnapshot(home: string, id: string, address: string, { at, head = null, clean, modifiedTracked }: { at: string; head?: string | null; clean: boolean; modifiedTracked: string[] }) {
+export function stampSnapshot(home: string, id: string, address: string, { at, head = null, base = null, diffSha256 = null, diffPath = null, clean, modifiedTracked }: { at: string; head?: string | null; base?: string | null; diffSha256?: string | null; diffPath?: string | null; clean: boolean; modifiedTracked: string[] }) {
   return withTaskLock(home, id, () => {
     const meta = readTask(home, id);
     const p = participantOf(meta, address);
@@ -884,6 +886,7 @@ export function stampSnapshot(home: string, id: string, address: string, { at, h
       metadata: {
         ...rest,
         diffAt: at,
+        diffBase: base, diffSha256, diffPath,
         ...(head ? { diffHead: head } : {}),
         diffClean: clean,
         diffModifiedTracked: modifiedTracked,
@@ -907,6 +910,7 @@ function stampAssignment(home: string, id: string, address: string, afterId: str
     if (afterId !== null && p.metadata.assignmentAfterId !== afterId) return { found: true };
     gate(() => engine(home).patchParticipant(id, p.id, {
       metadata: { ...p.metadata, assignmentAfterId: afterId ?? null,
+        ...(afterId === null && p.metadata.diffSha256 ? { diffSha256: null } : {}),
         ...(at === undefined ? {} : { reviewAssignedAt: at }) },
     }));
     taskCache?.clear();
@@ -1620,7 +1624,7 @@ function requireDirectSender(home: string, meta: TaskV1, sender: ParticipantV1, 
  * and the artifact metadata, if there was one.
  */
 export function sendMessage(home: string, id: string, {
-  from, to, type, body, artifactPath, session = null,
+  from, to, type, body, artifactPath, artifact, session = null,
 }: OutgoingMessage, hints: SendHints): SentMessage {
   if (!isAddress(from)) throw new Error(`unknown sender address "${from}"`);
   if (!isAddress(to)) throw new Error(`unknown recipient address "${to}" — ${addressList(hints?.registry ?? SHIPPED_REGISTRY)}`);
@@ -1628,6 +1632,25 @@ export function sendMessage(home: string, id: string, {
     throw new Error(`type "${type}" is not from protocol v1: ${MESSAGE_TYPES.join(', ')}`);
   }
   if (typeof body !== 'string' || !body.trim()) throw new Error('body is empty — a message with no text is not sent');
+  const routeRegistry = hints?.registry ?? SHIPPED_REGISTRY;
+  if (artifact !== undefined) return withTaskLock(home, id, () => {
+    const meta = readTask(home, id), sender = participantOf(meta, from);
+    if (meta.status !== 'active' || meta.adapter.bb || !sender || roleEntry(routeRegistry, sender.role)?.kind !== READS_DIFF)
+      throw new GateError('reviewer checkpoint: active native reviewer required');
+    if (artifactPath !== undefined || type !== 'artifact' || to !== ORCHESTRATOR)
+      throw new GateError('reviewer checkpoint: inline artifact to orchestrator required');
+    const envelope = prepareCheckpoint(id, sender, session, artifact);
+    const refs = readReviewerCheckpoints(engine(home), id, sender).map(({ report: _report, ...ref }) => ref);
+    routeRegistries.set(home, routeRegistry);
+    const sent = gate(() => engine(home).sendSync(id, { from: sender.id, to: [addrDir(to)], type, body: CHECKPOINT_MARK + body,
+      artifact: { content: Buffer.from(JSON.stringify(envelope)), filename: CHECKPOINT_NAME,
+        name: sha => placeFile(home, id, CHECKPOINT_NAME, sha) } }));
+    const { id: artifactId, filename, sha256, size } = sent.artifact!;
+    const ref = { messageId: sent.message.id, artifactId, filename, sha256, size, session, subject: envelope.subject };
+    gate(() => engine(home).patchParticipant(id, sender.id, { metadata: { ...sender.metadata, findingCheckpoints: [...refs, ref] } }));
+    taskCache?.clear();
+    return { message: sent.message, artifact: sent.artifact, checkpoint: true };
+  });
   // A GateError, not a bare one: it is addressed to the caller, and both callers are — the
   // `promptobus_send` tool and the `send` command (03-cli.md § Send).
   if (type === 'artifact' && !artifactPath) {
@@ -1679,7 +1702,8 @@ export function sendMessage(home: string, id: string, {
     return { ...sent, deliveredTask: root!.id, deliveredFrom: addressOf(lead)! };
   }
   const linkArtifact = type === 'result' ? validateResultHandoff(home, id, from, body) : null;
-  const routeRegistry = hints?.registry ?? SHIPPED_REGISTRY;
+  if (artifactPath && roleEntry(routeRegistry, sender.role)?.kind === READS_DIFF)
+    throw new GateError('reviewer checkpoint: reviewers cannot attach filesystem paths');
   if (directParticipantRoute(sender, recipient, routeRegistry)) {
     requireDirectSender(home, meta, sender, session);
   }
@@ -1722,6 +1746,14 @@ export function sendMessage(home: string, id: string, {
     message: sent.message, artifact: sent.artifact, sameContent: sameContentAs(home, id, sent.artifact),
     ...(knocker !== id ? { mailboxTask: knocker } : {}),
   };
+}
+
+export function retainedReviewerCheckpoints(home: string, id: string, participant: ParticipantV1) {
+  return withTaskLock(home, id, () => {
+    const current = participantOf(readTask(home, id), addressOf(participant));
+    if (!current || !isDeepStrictEqual(current, participant)) throw new GateError('reviewer checkpoint: participant changed during recovery');
+    return readReviewerCheckpoints(engine(home), id, current);
+  });
 }
 
 /** The file that already holds these bytes and how many names the payload has, or `null`.

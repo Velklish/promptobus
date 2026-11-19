@@ -287,6 +287,23 @@ export function persistLegacyParticipant(home: string, task: string, participant
   });
 }
 
+export function persistReviewerSession(home: string, task: string, reserved: ParticipantV1, session: string | null | undefined,
+  dead: boolean, sessionId?: string | null) {
+  return withTaskLock(home, task, () => {
+    const current = participantOf(readTask(home, task), addressOf(reserved));
+    if (!current || !reserved.metadata.reviewLaunchId || current.metadata.reviewLaunchId !== reserved.metadata.reviewLaunchId
+      || current.metadata.revokedReviewLaunchId === reserved.metadata.reviewLaunchId
+      || current.harness !== reserved.harness || current.sessionRef !== reserved.sessionRef
+      || (sessionId && current.metadata.sessionId && current.metadata.sessionId !== sessionId)
+      || (dead && current.metadata.assignmentAfterId !== reserved.metadata.assignmentAfterId))
+      throw new GateError(`reviewer ${reserved.id}: launch completion no longer matches the current session or assignment`);
+    const fields = { session: session ?? current.metadata.session ?? null, ...(sessionId ? { sessionId } : {}) };
+    if (native(reserved)) return persistNativeParticipant(home, task, reserved, { ...fields, pending: dead });
+    const { pending: _pending, ...metadata } = current.metadata;
+    return persistLegacyParticipant(home, task, { ...current, metadata: { ...metadata, ...fields, ...(dead ? { pending: true } : {}) } });
+  });
+}
+
 export function releaseNativeReservation(home: string, task: string, reserved: ParticipantV1) {
   if (!native(reserved)) return;
   return withTaskLock(home, task, () => {

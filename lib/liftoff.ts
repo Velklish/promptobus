@@ -50,8 +50,11 @@ export async function liftoffParticipant({
     ? bindBeforeLaunch(home, task, address, {
       sessionId: preboundSessionId, ...(pointer ? { sessionRecord: pointer } : {}),
     }) : () => {};
-  const undoOwned = () => {
-    if (!expectedBinding || !home || !task || !address) return undo();
+  const undoOwned = (): void => {
+    if (!expectedBinding || !home || !task || !address) {
+      undo();
+      return;
+    }
     if (!taskExists(home, task)) return;
     return withTaskLock(home, task, () => {
       if (ownsLegacyLaunch(home, task, address, expectedBinding)) undo();

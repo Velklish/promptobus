@@ -28,11 +28,50 @@
         },
         "artifactPath": {
           "type": "string",
-          "description": "absolute file path; copied into the task artifacts/, the message gets the name. Required when type is artifact: an artifact message always carries a file"
+          "description": "absolute file path; copied into the task artifacts/, the message gets the name. Ordinary artifact messages require this; native reviewers use the inline artifact field instead"
         },
         "task": {
           "type": "string",
           "description": "task id — needed when several tasks are active and this session has no binding; without it the session PROMPTOBUS_TASK is used, otherwise this session's declared binding (written by spawn, review, report, and claim), otherwise the only active task"
+        },
+        "artifact": {
+          "type": "object",
+          "description": "Reviewer only: complete inline finding checkpoint, not a terminal result. Mutually exclusive with artifactPath.",
+          "properties": {
+            "content": {
+              "type": "string",
+              "description": "Complete UTF-8 report, at most 1000000 bytes; never truncated"
+            },
+            "subject": {
+              "type": "object",
+              "properties": {
+                "assignmentAfterId": {
+                  "type": "string"
+                },
+                "head": {
+                  "type": "string"
+                },
+                "base": {
+                  "type": "string"
+                },
+                "diffSha256": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "assignmentAfterId",
+                "head",
+                "base",
+                "diffSha256"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "content",
+            "subject"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
@@ -74,6 +113,10 @@
         "task": {
           "type": "string",
           "description": "task id — needed when several tasks are active and this session has no binding; without it the session PROMPTOBUS_TASK is used, otherwise this session's declared binding (written by spawn, review, report, and claim), otherwise the only active task"
+        },
+        "checkpointDiff": {
+          "type": "string",
+          "description": "Exact diff path from the assignment opened by the reviewer"
         }
       },
       "additionalProperties": false

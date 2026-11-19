@@ -172,7 +172,7 @@ Stored v1 messages carry `sender` and `recipients` as normalized participant IDs
 
 A `result` body opens with a fixed four-line header — what was done, the gate command with its exit code, what is left open, what needs a decision — inside a bound of 2400 characters, and everything past it is attached as an artifact the header names; the shape, the numbers and the gate record that goes with it are in § Artifacts, and the rule itself is stated in the participant preambles rather than in a consumer's rules.
 
-`artifactPath` on send is an absolute file path. The file is copied into the task store. The message stores the artifact name.
+`artifactPath` on send is an absolute file path for ordinary file attachments. The file is copied into the task store. The message links its artifact metadata ID; the reply names the landed file. Native reviewers instead use the inline checkpoint below and cannot export a file path.
 
 During a consuming mailbox read, a filesystem refusal while reading or moving one record is reported with the errno in `BrokenNote.code` and leaves its ref in place for a later consuming read. The same pass still returns every message it already moved to history. The unread ref keeps the mailbox unread, so the warden repeats its knock until the filesystem condition is lifted. `recover()` applies the same per-record rule to an unreadable intent: it reports the errno, leaves the intent in place, and continues through the other intents and tasks. Only a record that was read and found malformed is moved to `broken/`.
 
@@ -327,7 +327,7 @@ The v1 record's own fields are `id`, `role`, `harness`, `mode`, `sessionRef`, `c
 
 ## Artifacts
 
-An artifact is attached to a send. There is no separate upload command. **A message of type `artifact` always carries a file**: `send` refuses `type: "artifact"` with no `artifactPath`, and the refusal names that parameter. The refusal stands in `sendMessage` (`lib/store.js`), where both callers meet — the `promptobus_send` tool and the `send` command ([03-cli](03-cli.md) § Send) — so both are refused in the same words. The engine holds the same rule one layer down, so a message built past the adapter — through the public `send`/`sendSync` — cannot claim an attachment it does not carry: `prepare` refuses `type: "artifact"` that names no file at all, before the first side effect, and the refusal names both fields that can name one — `artifact` for a new attachment and `linkArtifact` for one already in the task. Linking satisfies the invariant, and the id is checked rather than trusted: `prepare` asks whether that artifact record is in this task and refuses `artifact-not-found` naming the id when it is not, so an id of the right shape pointing at nothing cannot write the very message this refusal exists against. Presence is asked without reading the record — `readArtifact` sets a corrupt one aside, and prevalidation leaves the task exactly as it found it; a broken record is classified by whoever reads it next, not by a send that may yet be refused by the routing policy. `finish` then writes that id into the record, and no second blob is stashed for bytes the task already holds. **The invariant is held at the WRITE and only there.** Record validation is deliberately unchanged: a reader isolates a schema-invalid record into `broken/inbox`, so binding the two fields in `validate` would reach backwards and stop delivering `type=artifact` records that earlier releases wrote without a file — records that exist in live journals. A record of that shape reads exactly as it was written, and no send can produce another. What the file holds is not judged here; the gate record and the handover record are checked against their own schemas, below. Blobs are content-addressed (`blobs/<sha256>`) and immutable inside one task. Missing metadata or a missing blob is `artifact-not-found`; metadata or a blob that exists but cannot be read with an errno other than `ENOENT` is `artifact-broken`, with the errno in `context`. The same `artifact-read` hook runs immediately before each metadata or blob read, and its `file` context distinguishes the two. Unparseable metadata and parsed metadata that violates the current schema are `schema-invalid` and are set aside in `broken/artifacts` when the move succeeds; metadata from a newer schema is `schema-version-unsupported` and stays in place. A blob whose digest or size differs from its metadata is `artifact-integrity`.
+An artifact is attached to a send. There is no separate upload command. **A message of type `artifact` always carries a file**: `send` refuses `type: "artifact"` with neither `artifactPath` nor the native reviewer inline checkpoint below, and the refusal names the missing source. The refusal stands in `sendMessage` (`lib/store.js`), where both callers meet — the `promptobus_send` tool and the `send` command ([03-cli](03-cli.md) § Send) — so both are refused in the same words. The engine holds the same rule one layer down, so a message built past the adapter — through the public `send`/`sendSync` — cannot claim an attachment it does not carry: `prepare` refuses `type: "artifact"` that names no file at all, before the first side effect, and the refusal names both fields that can name one — `artifact` for a new attachment and `linkArtifact` for one already in the task. Linking satisfies the invariant, and the id is checked rather than trusted: `prepare` asks whether that artifact record is in this task and refuses `artifact-not-found` naming the id when it is not, so an id of the right shape pointing at nothing cannot write the very message this refusal exists against. Presence is asked without reading the record — `readArtifact` sets a corrupt one aside, and prevalidation leaves the task exactly as it found it; a broken record is classified by whoever reads it next, not by a send that may yet be refused by the routing policy. `finish` then writes that id into the record, and no second blob is stashed for bytes the task already holds. **The invariant is held at the WRITE and only there.** Record validation is deliberately unchanged: a reader isolates a schema-invalid record into `broken/inbox`, so binding the two fields in `validate` would reach backwards and stop delivering `type=artifact` records that earlier releases wrote without a file — records that exist in live journals. A record of that shape reads exactly as it was written, and no send can produce another. What the file holds is not judged here; the gate record and the handover record are checked against their own schemas, below. Blobs are content-addressed (`blobs/<sha256>`) and immutable inside one task. Missing metadata or a missing blob is `artifact-not-found`; metadata or a blob that exists but cannot be read with an errno other than `ENOENT` is `artifact-broken`, with the errno in `context`. The same `artifact-read` hook runs immediately before each metadata or blob read, and its `file` context distinguishes the two. Unparseable metadata and parsed metadata that violates the current schema are `schema-invalid` and are set aside in `broken/artifacts` when the move succeeds; metadata from a newer schema is `schema-version-unsupported` and stays in place. A blob whose digest or size differs from its metadata is `artifact-integrity`.
 
 The name a sender passes is not always the name the artifact gets. Leading dots are dropped (`.gates-t2.json` lands as `gates-t2.json`): a hidden file is missed by an ordinary listing and by a `*.json` glob, and a reviewer handed that folder as its source of evidence reported a record that was there as absent — measured live, one name. A name of nothing but dots has no visible form left and is refused to the sender rather than landed hidden. Then `placeFile` takes the next free number on a taken stem (`report.md`, then `report-2.md`), and the numbering runs on the name that LANDS, so two sources differing only by a leading dot take two names instead of one silently shadowing the other; a name a mechanism file of the folder already holds is a collision like any other and is numbered the same way. The send reply prints the name that landed. A worker or approver that will name an artifact in its result sends that artifact first as its own message, reads the landed name from the immediate bus reply to its own `promptobus_send` call for that artifact — not from the path passed and not from the orchestrator — and, without ending the turn, puts that name in the result header. A reviewer cannot attach a file: file writes are disabled for it, so it cannot produce an artifact of its own — but it may cite a landed filename another participant sent, for example the author's gate record in its **Gate** line.
 
@@ -875,7 +875,7 @@ in vain. That names may repeat is something the code already counts on:
 
 Source: `src/v1/artifacts.ts`, `stashBlobSync`.
 
-The same, synchronously, from a file. Made for an adapter whose send path
+The synchronous store reads a file once or copies caller-owned bytes. Made for an adapter whose send path
 is synchronous whole (`sendSync` below): the bus MCP server answers
 `tools/call` in one synchronous pass, and a promise in the middle of it
 would rewrite the tool dispatcher for one artifact.
@@ -1037,6 +1037,77 @@ output and failed or skipped formats are unsupported and must remain incomplete.
 The helper delegates to the same extractor exported by `promptobus/bb-host`.
 It does not certify gates or arbitrary runner output. Retaining raw output and recording a manual lossless opaque UTF-8
 inventory remains valid; no native-schema validation follows from extraction.
+
+### Native reviewer finding checkpoints
+
+A native reviewer may send `type:artifact` to the orchestrator with
+`artifact:{content,subject}` instead of `artifactPath`. The complete report is
+limited to 1000000 UTF-8 bytes; overflow is refused rather than truncated.
+No filename, producer identity or extra nested key is accepted. The server
+uses `review-findings.txt` with existing collision numbering. Only the current
+authenticated reviewer session may publish it; workers, reporters and other
+recipients cannot use this inline route. Reviewer filesystem, command and
+external-write restrictions remain unchanged.
+
+When opening the assignment, pass its exact diff file path as `checkpointDiff` to
+`promptobus_task`. Keep the returned `reviewer checkpoint subject` with those findings.
+An ordinary task read returns no subject. A lookup for a superseded path is refused,
+even when the new diff has identical bytes. Lookup uses the same authenticated sender selection as `promptobus_send`,
+including the declared role hint when a session holds several reviewer seats;
+an ambiguous or unheld sender exposes no checkpoint subject.
+It contains `assignmentAfterId`, `head`, resolved `base` and
+`diffSha256`. The server compares every field with the current participant
+under the task lock before any payload write. It stamps task, participant and
+actual session into the artifact envelope beside the complete report, its byte
+count and digest. No native launch or turn identity is inferred from those fields.
+An inline source and `artifactPath` together are refused.
+A re-review holds the task lock through assignment publication and snapshot
+stamping. A stale send is refused before writing any report or reference. If the
+original launch finishes later, it updates only session fields on the current
+record under the task lock. A callback from a replaced launch is refused. If
+failed launch cleanup removes the binding on the initial or a later assignment, its retired
+identity can verify already committed evidence but cannot authorize a send.
+Cursor and OpenCode bind a record path before they publish the native ID or
+session name. Rollback compares the launch, assignment, path and published
+identity with the driver's owned record under the task lock. A match clears
+the path, native ID and session name together and refuses late publication
+from that launch. A changed assignment or holder keeps its binding.
+If `realize` fails after session publication, or the credential never confirms
+the expected native ID, both drivers revoke their own journal binding independently
+of HTTP credential revocation. An unconfirmed admission or Stop leaves the native
+record for inspection. Losing sender authority does not prove that the pane or
+holder exited.
+A live holder whose launch lost its sender binding cannot receive a re-review.
+`review` checks that binding during planning and again under the task lock before
+publishing the assignment. Confirm Stop, then repeat `review` to start a replacement.
+
+The send reply distinguishes the canonical message ID from the actual artifact
+ID and reports the landed filename, SHA-256 and artifact bytes. Read the artifact
+by its artifact ID, or read its linked task file through the reviewer's existing
+bounded file reader. A checkpoint is not a terminal `result` or an acceptance.
+
+Replacement planning verifies all current-generation checkpoints and inherited
+replacement references against canonical message linkage, producer, original
+subject and stored report bytes. It retains every full original report before
+the replacement's first turn and adds the exact new diff separately. The first
+prompt names a directory beside the new diff and a count. Each numbered JSONL
+file contains the verified reference followed by consecutive JSON strings of
+the report. Bounded line reads preserve whitespace and Unicode, even for a
+single-line report at the byte limit. Neither the reports nor a growing list of
+paths enters the process arguments. The existing diff read root covers these
+files. A missing,
+corrupt, stale, foreign or unregistered checkpoint refuses replacement; it does
+not silently start a reviewer without the retained findings. A failed send after
+canonical commit but before reference publication requires explicit repair.
+The last terminal result is separate, including when no checkpoint exists.
+Its first page is `<diffPath>.result-1.jsonl`; the header gives `nextPage`, or
+`null` at the end. Concatenating the JSON strings after the header across pages
+recovers the original body. The initial prompt carries the first path, never the body.
+
+To pause before terminal handover, the reviewer may send a normal question with
+the checkpoint reference and end its turn awaiting the orchestrator's answer.
+This is an idle conversation barrier, not proof of interrupting an active call.
+The orchestrator must establish Stop/drain before starting a replacement.
 
 ### BB bounded reviewer reports
 
