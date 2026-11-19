@@ -150,6 +150,7 @@ const callPath = (r: ControlReference, command: CommandRef) => path.join(r.direc
 const acknowledgment = (command: CommandRef, receiptSha256: string) => serialized({ format: 'promptobus-bb-finalized-v1', command, receiptSha256 }, TOKEN_LIMIT);
 const observedClose = (receipt: Record<string, unknown>) => receipt.format === 'bb-direct-command-v1' && receipt.direct === true
   && receipt.terminationObserved === true && receipt.error === null && receipt.finalizationComplete !== false
+  && (receipt.stop === undefined || receipt.complete === false)
   && ((receipt.signal === null && Number.isInteger(receipt.exit)) || (receipt.exit === null && typeof receipt.signal === 'string' && receipt.complete === false));
 export function commandTerminal(reference: ControlReference, command: CommandRef, resource?: { key: string; namespace: string }) {
   try {

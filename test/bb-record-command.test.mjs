@@ -70,6 +70,9 @@ for (const [signal, nested, cooperative] of [['SIGINT', false, false], ['SIGTERM
       const result = await done; assert.equal(result.signal, null); assert.notEqual(result.code, 0);
       for (const output of nested ? [inner, stem] : [stem]) {
         const receipt = JSON.parse(readFileSync(`${output}.receipt.txt`, 'utf8'));
+        t.diagnostic(JSON.stringify({ layer: output === stem ? 'outer' : 'inner', recorder: result, exit: receipt.exit,
+          signal: receipt.signal, stop: receipt.stop, terminationObserved: receipt.terminationObserved, complete: receipt.complete }));
+        assert.deepEqual(receipt.stop, { firstSignal: signal, received: cooperative ? 2 : 1, forwarded: cooperative ? 2 : 1 });
         assert.equal(receipt.terminationObserved, true); assert.equal(receipt.complete, false); assert.equal(receipt.error, null);
         if (output === (nested ? inner : stem)) {
           assert.equal(receipt.exit, cooperative ? 0 : null); assert.equal(receipt.signal, cooperative ? null : signal);

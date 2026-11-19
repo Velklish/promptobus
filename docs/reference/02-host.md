@@ -1114,8 +1114,12 @@ Stream verification opens a nonblocking descriptor and hashes only a regular fil
 in chunks up to 64 KiB. The verifier checks the captured size and a five-second
 monotonic deadline per stream; the deadline does not preempt a stalled kernel call.
 An unreadable resource claim, including a dangling link, blocks admission.
-The direct recorder does not currently forward a Stop delivered only to the
-recorder. Its death does not establish whether the child received a signal.
+On POSIX the direct recorder forwards each observed `SIGINT`, `SIGTERM` or `SIGHUP`
+to its own running child. `stop.received` counts notifications; `stop.forwarded`
+counts successful signal sends, not child acknowledgments. The recorder waits for
+close and output finalization. A child can handle Stop and exit zero: its receipt
+keeps `exit: 0` and `complete: false`, and the recorder returns 1. Recorder death
+without verified termination still leaves the call unresolved.
 
 The [release contract](04-protocol.md#bb-command-grant-release) defines the receipt
 and terminal authorization boundary. Control revocation refuses later Promptobus

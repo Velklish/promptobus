@@ -79,7 +79,7 @@ export async function validateReviewEvidence(input: unknown, expected: { source:
     receiptIds.add(ref.id);
     const receipt = JSON.parse(records.get(ref.id)!.content);
     if (receipt.format !== 'bb-direct-command-v1' || receipt.direct !== true || receipt.complete !== true
-      || receipt.signal !== null || receipt.error !== null || receipt.notRun === true
+      || receipt.stop !== undefined || receipt.signal !== null || receipt.error !== null || receipt.notRun === true
       || receipt.finalizationComplete === false || receipt.finalizationError) throw new Error('review evidence manifest: incomplete or pipe-masked collector receipt');
     receipts.set(ref.id, receipt);
     for (const field of ['command', 'exit', 'tree', 'dirty', 'by', 'timestamp'] as const) {

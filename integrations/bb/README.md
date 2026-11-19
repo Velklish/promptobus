@@ -1415,7 +1415,9 @@ Only a missing claim permits first use. An existing claim that cannot be verifie
 stays in place. If keyed lease setup fails before the owner record is complete,
 rollback removes only the recorded owner inode and its empty directory generation;
 uncertain identity leaves the entry for inspection and preserves the setup error.
-A child's observed signal can end the call without passing a gate. Missing,
+A POSIX Stop sent to the recorder is forwarded to its direct child, including a
+nested checked launcher. An observed close can end the call without passing a gate:
+even a cooperative exit zero leaves an interrupted receipt incomplete. Missing,
 partial or unreadable evidence, failed finalization and
 UNKNOWN remain blockers; idle, ended grants, administrative parking or dead
 wrapper metadata alone cannot release them. Complete direct nonzero exits retain

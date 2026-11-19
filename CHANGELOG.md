@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- On POSIX, the BB direct recorder forwards catchable Stop signals to its child and records its actual exit after draining both streams. A child that handles Stop and exits zero still cannot supply passing gate evidence.
+
 - BB command evidence reads check regular-file identity, captured size, and a per-stream deadline. Unreadable resource claims block reuse; a failed keyed lease setup preserves its original error.
 
 - BB checked commands verify captured output and the exact serialized receipt before reusing a resource in its lease namespace. The acknowledgment follows control and keyed lock release. V1 readers reject v2 terminal records; calls without an acknowledgment remain unresolved. An observed signal exit can end the call without yielding complete gate evidence.

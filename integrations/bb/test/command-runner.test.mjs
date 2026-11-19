@@ -89,7 +89,7 @@ async function fixture(t, shared = null) {
       fs.cpSync(path.join(root, 'control'), path.join(destination, 'control'), { recursive: true });
       for (const member of members) {
         const directory = path.join(destination, member.binding.participant); fs.mkdirSync(directory);
-        for (const file of ['input.json', 'entered', 'run.stdout.txt', 'run.stderr.txt', 'run.receipt.txt']) {
+        for (const file of ['input.json', 'entered', 'seen', 'run.stdout.txt', 'run.stderr.txt', 'run.receipt.txt', 'run-outer.receipt.txt', 'run-outer.stdout.txt', 'run-outer.stderr.txt']) {
           if (fs.existsSync(path.join(member.directory, file))) fs.copyFileSync(path.join(member.directory, file), path.join(directory, file));
         }
       }
@@ -412,6 +412,7 @@ for (const outer of [false, true]) test(`Stop reproduction: checked resource out
   assert.equal(fs.existsSync(b.marker), false); assert.equal(commandTerminal(f.reference, ref), false);
   f.release(a); const stopped = await first.done; assert.equal(stopped.signal, null); assert.notEqual(stopped.exit, 0);
   assert.equal(f.receipt(a).exit, 0); assert.equal(f.receipt(a).complete, false);
+  assert.deepEqual(f.receipt(a).stop, { firstSignal: 'SIGTERM', received: 1, forwarded: 1 });
   for (const stream of ['stdout', 'stderr']) assert.equal(fs.readFileSync(`${a.output}.${stream}.txt`, 'utf8'), `${stream} tail`);
   if (outer) {
     const wrapped = JSON.parse(fs.readFileSync(`${a.output}-outer.receipt.txt`));

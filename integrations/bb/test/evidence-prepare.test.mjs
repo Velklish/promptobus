@@ -162,6 +162,8 @@ test('real checked launcher original terminal JSON links gate, admission and out
   assert.equal(original.complete, true); assert.equal(original.exit, 0); assert.equal(original.signal, null);
   f.change(interrupted, outer.receipt, () => JSON.stringify({ ...original, complete: false }));
   await assert.rejects(f.validate(interrupted), /incomplete or pipe-masked collector receipt/);
+  f.change(interrupted, outer.receipt, () => JSON.stringify({ ...original, stop: { firstSignal: 'SIGTERM', received: 1, forwarded: 1 } }));
+  await assert.rejects(f.validate(interrupted), /incomplete or pipe-masked collector receipt/);
 });
 
 test('public command admission survives original upload and independent review evidence validation', async t => {
