@@ -13,6 +13,9 @@ How promptobus works today — from the code, not intention. Intent and rational
 
 The [shared MCP request matrix](../evidence/shared-mcp-request.md) maps the bus and reviewer-file session responses, proof checkpoints and receipt lifetimes to their witnesses.
 
+The [handover record reference](04-protocol.md#the-handover-record) distinguishes the probe wrapper's pass, failure and refusal statuses from the mutated command's `mutatedRunExit`.
+It also describes the single-object and list forms of `checks.mutationProbe`, and how `send` and `review` handle each list entry.
+
 A performed probe's boundary is the sentence [The handover record](04-protocol.md#the-handover-record) states:
 
 <!-- quote:04-protocol.md -->

@@ -9,13 +9,13 @@ import type { RoleRegistry } from '../dist/index.js';
 import type { SchemaNode } from './schema.js';
 
 interface ProbeRecord {
-  expected?: string[]; reddened: string[]; tree?: string; treeLag?: string;
+  expected?: string[]; reddened: string[]; tree: string; treeLag?: string; mutated: string;
   verdicts?: { baseTotal: number; passed: number; unaccounted: number };
   coverage?: { establishes?: string; doesNotEstablish?: string };
 }
 interface EvidenceRecord {
   by: string; records: { by: string }[]; tree?: string;
-  checks?: { mutationProbe?: ProbeRecord };
+  checks?: { mutationProbe?: ProbeRecord | ProbeRecord[] | { notRun: string } };
 }
 
 const SCHEMA_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -95,9 +95,8 @@ const say = (names: readonly string[]) => names.map((n) => `«${n}»`).join(', '
 
 /** Why the declared target is not among the names the probe reddened, or `null` — two fields of
  * one document, which no schema keyword compares. [reference/04-protocol.md#the-handover-record](../docs/reference/04-protocol.md#the-handover-record) */
-function probeIntentRefusal(document: EvidenceRecord | null | undefined) {
-  const probe = document?.checks?.mutationProbe;
-  if (!Array.isArray(probe?.expected)) return null;
+function probeIntentRefusal(probe: ProbeRecord) {
+  if (!Array.isArray(probe.expected)) return null;
   const reddened = new Set(probe.reddened);
   const absent = probe.expected.filter((name) => !reddened.has(name));
   if (!absent.length) return null;
@@ -115,9 +114,8 @@ function probeIntentRefusal(document: EvidenceRecord | null | undefined) {
 
 /** Why the stated remainder is not the counts' subtraction, or `null` — two sides,
  * which no schema keyword compares. [reference/04-protocol.md#the-handover-record](../docs/reference/04-protocol.md#the-handover-record) */
-function probeCountsRefusal(document: EvidenceRecord | null | undefined) {
-  const probe = document?.checks?.mutationProbe;
-  const verdicts = probe?.verdicts;
+function probeCountsRefusal(probe: ProbeRecord) {
+  const verdicts = probe.verdicts;
   if (!verdicts) return null;
   const { baseTotal, passed, unaccounted } = verdicts;
   // Length, not a set: two checks may share a name, and a repeated listing is two verdicts.
@@ -134,21 +132,19 @@ function probeCountsRefusal(document: EvidenceRecord | null | undefined) {
 }
 
 /** Why the two coverage claims are one claim, or `null` — they differ, or this is not a performed probe. */
-function probeCoverageRefusal(document: EvidenceRecord | null | undefined) {
-  const coverage = document?.checks?.mutationProbe?.coverage;
+function probeCoverageRefusal({ coverage }: ProbeRecord) {
   if (typeof coverage?.establishes !== 'string' || typeof coverage?.doesNotEstablish !== 'string') return null;
   if (coverage.establishes.trim() !== coverage.doesNotEstablish.trim()) return null;
   return '`coverage.establishes` and `coverage.doesNotEstablish` are the same claim — a boundary that names no exclusion';
 }
 
 /** Why the probe sha is not the tree being handed over, or `null` — they agree, or `treeLag` says why. */
-function probeTreeRefusal(document: EvidenceRecord | null | undefined) {
-  const probe = document?.checks?.mutationProbe;
-  if (typeof probe?.tree !== 'string' || typeof document?.tree !== 'string') return null;
+function probeTreeRefusal(probe: ProbeRecord, document: EvidenceRecord, field: string) {
+  if (!document.tree) return null;
   if (probe.tree === document.tree || typeof probe.treeLag === 'string') return null;
   return `the handover \`tree\` is \`${document.tree}\` and the probe ran on \`${probe.tree}\`, `
     + 'with no `treeLag` to say why — re-run the probe on `tree`, or state in '
-    + `\`checks.mutationProbe.treeLag\` why the commits since \`${probe.tree}\` reach neither `
+    + `\`${field}.treeLag\` why the commits since \`${probe.tree}\` reach neither `
     + 'the mutated line nor its verdicts';
 }
 
@@ -168,24 +164,37 @@ export function recordRefusal(filename: string, file: string, registry: RoleRegi
     return `«${filename}» is named as a record of ${schemaPath} and did not parse as JSON: ${e.message}`;
   }
   const schema: unknown = JSON.parse(readFileSync(path.join(SCHEMA_ROOT, schemaPath), 'utf8'));
+  const document = parsed as EvidenceRecord | null;
   const errors = schemaErrors(schema as SchemaNode, parsed);
   if (errors.length) {
-    return `«${filename}» does not match ${schemaPath}, so it is not the evidence its name claims: ${sayErrors(errors)}`;
+    const entries = document?.checks?.mutationProbe;
+    const faults = Array.isArray(entries) ? errors.map((fault) => {
+      const index = /^\/checks\/mutationProbe\/(\d+)(?:\/|$)/.exec(fault.at)?.[1];
+      const name = index === undefined ? undefined : entries[Number(index)]?.mutated;
+      return typeof name === 'string' && name.length <= 512
+        ? { ...fault, note: `${fault.note} (probe ${JSON.stringify(name)})` } : fault;
+    }) : errors;
+    return `«${filename}» does not match ${schemaPath}, so it is not the evidence its name claims: ${sayErrors(faults)}`;
   }
-  const document = parsed as EvidenceRecord;
+  const record = parsed as EvidenceRecord;
   const addresses = schemaPath === GATE_RECORD_SCHEMA
-    ? document.records.map((record) => record.by) : [document.by];
+    ? record.records.map((gate) => gate.by) : [record.by];
   const unknown = addresses.find((address) => !admitsAddress(registry, address));
   if (unknown) return `«${filename}» names by address «${unknown}», which this task's registry does not admit`;
   // After the shape and only then: the fields must exist before they can be compared.
-  const intent = probeIntentRefusal(document);
-  if (intent) return `«${filename}» contradicts itself: ${intent}`;
-  const counts = probeCountsRefusal(document);
-  if (counts) return `«${filename}» contradicts itself: ${counts}`;
-  const trees = probeTreeRefusal(document);
-  if (trees) return `«${filename}» contradicts itself: ${trees}`;
-  const coverage = probeCoverageRefusal(document);
-  return coverage ? `«${filename}» contradicts itself: ${coverage}` : null;
+  const entry = record.checks?.mutationProbe;
+  if (!entry || 'notRun' in entry) return null;
+  const isList = Array.isArray(entry);
+  for (const [index, probe] of (isList ? entry : [entry]).entries()) {
+    const field = isList ? `checks.mutationProbe[${index}]` : 'checks.mutationProbe';
+    const refusal = probeIntentRefusal(probe) ?? probeCountsRefusal(probe)
+      ?? probeTreeRefusal(probe, record, field) ?? probeCoverageRefusal(probe);
+    if (refusal) {
+      const label = isList ? `\`${field}\` (${JSON.stringify(probe.mutated)}): ` : '';
+      return `«${filename}» contradicts itself: ${label}${refusal}`;
+    }
+  }
+  return null;
 }
 
 function headerLine(body: unknown, patterns: { bold: RegExp; plain: RegExp }) {

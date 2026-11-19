@@ -30,7 +30,7 @@
       "pattern": "^(orchestrator|[a-z][a-z0-9-]*:[a-z0-9][a-z0-9-]*)$"
     },
     "checks": {
-      "description": "The five checks. Each is either performed — and then the fields that prove it are required and bounded to their passing values — or declared `notRun` with a reason. There is no third branch: a check that was performed and failed is not handed over, it is fixed.",
+      "description": "The five checks. Each is either performed — and then the fields that prove it are required and bounded to their passing values — or declared `notRun` with a reason. A check that was performed and failed is not handed over, it is fixed.",
       "type": "object",
       "additionalProperties": false,
       "required": ["verdictNames", "mutationProbe", "treeState", "environmentalRed", "gatesNotRun"],
@@ -40,8 +40,12 @@
           "oneOf": [{ "$ref": "#/$defs/verdictNames" }, { "$ref": "#/$defs/notRun" }]
         },
         "mutationProbe": {
-          "description": "The mutation probe made after the commit: break the code, watch a verdict turn red, restore. A probe that turns nothing red is a hole in the tests, not caution, and a probe that turned the WRONG thing red is the same hole with a green look — which is what `expected` is here to tell apart. A performed probe also carries `coverage`: what those verdicts establish and what they do not.",
-          "oneOf": [{ "$ref": "#/$defs/mutationProbe" }, { "$ref": "#/$defs/notRun" }]
+          "description": "A performed probe, a nonempty list of performed probes, or a `notRun` reason for the whole check. Each performed probe carries its own result and `coverage`.",
+          "oneOf": [
+            { "$ref": "#/$defs/mutationProbe" },
+            { "$ref": "#/$defs/notRun" },
+            { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/mutationProbe" } }
+          ]
         },
         "treeState": {
           "description": "`git status --porcelain` at both ends of the probe. A probe that started dirty proves nothing about the commit, and one that ended dirty left the mutation in the tree.",
@@ -111,7 +115,7 @@
       "required": ["tree", "mutated", "mutatedRunExit", "applied", "verdicts", "reddened", "coverage"],
       "properties": {
         "tree": {
-          "description": "The sha the probe ran on. The probe comes after the commit: on an uncommitted tree the restore would take the fix with the mutation.",
+          "description": "The sha of the clean, committed baseline the probe ran on. Restoration uses the pre-mutation UTF-8 text snapshot, not Git.",
           "$ref": "#/$defs/sha"
         },
         "treeLag": {

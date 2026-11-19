@@ -108,16 +108,17 @@ function checkNode(node: SchemaNode, value: unknown, at: string, root: SchemaNod
     return;
   }
   if (Array.isArray(node.oneOf)) {
-    // The branch that came closest is the diagnosis: "matches none of two shapes" alone
-    // leaves the author guessing which one they were aiming at.
+    // Prefer faults from a branch of the right type, then the branch with the fewest faults.
     const tried = node.oneOf.map((branch) => {
       const own: SchemaError[] = [];
       checkNode(branch, value, at, root, own);
-      return own;
+      const type = (branch.$ref ? resolve(branch.$ref, root) : branch).type;
+      return { errors: own, wrongType: typeof type === 'string' && !typeOk(type, value) };
     });
-    const matched = tried.filter((own) => !own.length).length;
+    const matched = tried.filter(({ errors }) => !errors.length).length;
     if (matched !== 1) {
-      const closest = tried.slice().sort((a, b) => a.length - b.length)[0] ?? [];
+      const closest = tried.sort((a, b) => Number(a.wrongType) - Number(b.wrongType)
+        || a.errors.length - b.errors.length)[0]?.errors ?? [];
       errors.push({ at, note: `matches ${matched} of ${node.oneOf.length} allowed shapes, expected exactly one` });
       errors.push(...closest);
     }

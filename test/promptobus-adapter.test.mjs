@@ -564,6 +564,49 @@ const handoverDoc = (probeOver = {}) => ({
   },
 });
 
+const firstProbe = handoverDoc().checks.mutationProbe;
+const secondProbe = { ...firstProbe, mutated: 'lib/review.ts:21' };
+function sendProbeList(name, second) {
+  const filename = `handover-${name}.json`;
+  const artifactPath = path.join(SB, filename);
+  const record = handoverDoc();
+  record.checks.mutationProbe = [firstProbe, second];
+  const text = JSON.stringify(record);
+  writeFileSync(artifactPath, text);
+  return { filename, text, send: () => store.sendMessage(home, task.id, {
+    from: 'worker:a', to: store.ORCHESTRATOR, type: 'artifact', body: 'handover record', artifactPath,
+  }) };
+}
+
+const probeList = sendProbeList('probe-list', secondProbe);
+const listSend = probeList.send();
+check('handover record: two valid probes land unchanged',
+  listSend.artifact.filename === probeList.filename
+    && readFileSync(path.join(store.filesDir(home, task.id), probeList.filename), 'utf8') === probeList.text,
+  listSend.artifact?.filename);
+
+const malformedList = sendProbeList('probe-list-malformed', { ...secondProbe, coverage: undefined, applied: false });
+const malformedRefusal = thrown(malformedList.send);
+check('handover record: a malformed second probe reports the indexed fields and the mutation by name',
+  malformedRefusal.threw
+    && malformedRefusal.msg.includes('/checks/mutationProbe/1/coverage: required field is missing (probe "lib/review.ts:21")')
+    && malformedRefusal.msg.includes('/checks/mutationProbe/1/applied: expected true')
+    && !existsSync(path.join(store.filesDir(home, task.id), malformedList.filename)), malformedRefusal.msg);
+
+for (const [name, over, why] of [
+  ['intent', { expected: ['a verdict that never ran'] }, 'never turned red'],
+  ['counts', { verdicts: { baseTotal: 26, passed: 26, unaccounted: 0 } }, '`unaccounted` states 0'],
+  ['tree', { tree: 'c'.repeat(40) }, '`checks.mutationProbe[1].treeLag`'],
+  ['coverage', { coverage: { establishes: 'One coverage claim.', doesNotEstablish: ' One coverage claim. ' } }, 'names no exclusion'],
+]) {
+  const invalid = sendProbeList(`probe-list-${name}`, { ...secondProbe, ...over });
+  const refusal = thrown(invalid.send);
+  check(`handover record: the ${name} check refuses the second probe by index and file:line`,
+    refusal.threw && refusal.msg.includes('`checks.mutationProbe[1]` ("lib/review.ts:21")')
+      && refusal.msg.includes(why) && !existsSync(path.join(store.filesDir(home, task.id), invalid.filename)),
+    refusal.msg);
+}
+
 const wrongTarget = path.join(SB, 'handover-wrong-target.json');
 writeFileSync(wrongTarget, JSON.stringify(handoverDoc({ expected: ['the parity block'] })));
 const targetRefusal = thrown(() => store.sendMessage(home, task.id, {
