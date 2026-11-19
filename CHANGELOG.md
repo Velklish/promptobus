@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Document a proposal for owner-delegated review dispatch, with a bounded replay and live verification plan. Runtime behavior is unchanged.
+
 - Show a board of active runs in the BB native panel: lanes per run, columns per pipeline step plus Done, a card per piece with its holder, latest status, stall, open question and unread mail, and a side panel with the piece's history and an Open thread button for a BB participant. The digest and the board place pieces by one rule, now exported as `piecesOf` and `currentResult`.
 - Hosts can select different MCP sets for background workers and control roles. An opt-in project-discovery boundary restricts access to MCP servers from ancestor workspace configs. The worker set goes to the step of kind `edits-tree`, whatever its name.
 

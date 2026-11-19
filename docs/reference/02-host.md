@@ -1267,6 +1267,12 @@ keeps its existing semantics. It is an operator/runtime host call, not a model t
 content nor grants participant identity. [Currency](04-protocol.md#bb-workflow-result-currency)
 records the BB projection and unchanged native semantics.
 
+For the proposed owner-delegated review start, see the [dispatch design and replay plan](../guides/review-dispatch-proposal.md). Its boundary is explicit:
+
+<!-- quote:../guides/review-dispatch-proposal.md -->
+Native review remains owner-invoked.
+<!-- /quote -->
+
 
 ## BB reviewer compatibility proof
 
