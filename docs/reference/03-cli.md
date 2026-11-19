@@ -1450,9 +1450,9 @@ make. These instructions are the lift's copy of the reporter rules in
 [`skills/orchestrate/SKILL.md` § Reporter for the person](../../skills/orchestrate/SKILL.md#reporter-for-the-person).
 The same prompt carries the wording rule, because a Claude reporter is denied the shell and cannot open the skill (`lib/prompts/roles.js`):
 
-<!-- quote:../../lib/prompts/roles.js -->
-```text
-Word that answer so the person can read it with the queue closed. Name a task by its number and its title, never by the number alone: the title goes with the first mention in a message, in every heading and in every table row; later mentions in the same paragraph may use the number alone. Use no term or abbreviation you introduced yourself (a worker slug, "piece", a review code). A participant address and a review code never reach the person without a plain description of the work. A definition new to the person is used only after they confirm it.
+<!-- quote:../../lib/prompts/roles.ts -->
+```typescript
+export const reporterAnswerStyle = `Word that answer so the person can read it with the queue closed. Name a task by its number and its title, never by the number alone: the title goes with the first mention in a message, in every heading and in every table row; later mentions in the same paragraph may use the number alone. Use no term or abbreviation you introduced yourself (a worker slug, "piece", a review code). A participant address and a review code never reach the person without a plain description of the work. A definition new to the person is used only after they confirm it.`;
 ```
 <!-- /quote -->
 

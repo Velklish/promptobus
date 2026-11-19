@@ -10,11 +10,12 @@ The owner must authorize the tasks, roles, subscriptions, resource budget, liste
 
 ## Run order and expected evidence
 
-Installed launcher help must include:
+Compare the installed launcher help with the usage printed by this branch:
 
 <!-- quote:../../bin/promptobus-root -->
-```text
-Usage: promptobus-root --profile <approved-profile> [--service-home <path>] [--dry-run] -- <approved-native-command> [args...]
+```sh
+    printf '%s\n' 'Usage: promptobus-root --profile <approved-profile> [--service-home <path>] [--dry-run] -- <approved-native-command> [args...]' \
+      'Preflight and POSIX exec only; native root authorization still requires the approved headers helper and ordered hook.'
 ```
 <!-- /quote -->
 
