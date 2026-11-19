@@ -33,7 +33,7 @@ const cli = (cwd, args, env) => spawnSync(process.execPath, [bin, 'observe', ...
   env: { ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !inherited.has(name))), ...env } });
 
 function fixture() {
-  const cwd = makeSandbox('promptobus-observe-');
+  const cwd = makeSandbox('promptobus-test-observe-');
   writeHostConfig(cwd);
   const host = hostOf(cwd);
   const home = host.promptobusHome();

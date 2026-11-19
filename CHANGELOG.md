@@ -78,6 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clarify which owner mail wakes a participant and how native Stop precedes task closure and service shutdown.
 - Align routing documentation with the shipped harness and catalog inventories, supported validation entry points, retained cache readings, and telemetry reports versus confirmed calibration writes.
 - Keep keyed publication test failures diagnostic when a publisher did not produce a result. Cover lease refusal and child launch failure without changing lease behavior.
+- Keep Codex replay paths scoped to their fixtures, supply the isolated routing environment in the cancellation test, and include `mkfifo` in the sealed POSIX fixture path. Use the existing `promptobus-test-` prefix for temporary fixtures and apply home isolation before loading the delivery fixture.
 - Check the history timestamp without assuming the current year, and run the reviewer stdio test from paths containing spaces or Unicode.
 - Run the offline BB reviewer permission-proof cleanup test from paths containing spaces or Unicode, and keep keyed publication fixture artifacts out of the CLI reference.
 - Require a listed participant and matching session proof through MCP contact handoff. A refused handoff, including an invalid OpenCode contact session ID, does not start a listener or prevent a later retry; explicit task arguments still follow the ordinary rules of each tool.

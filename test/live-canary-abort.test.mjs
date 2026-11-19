@@ -7,8 +7,8 @@ import { readCompleteJson, waitFor } from './harness.mjs';
 import { processTable } from '../scripts/live-run.mjs';
 import { CANARY_PREFIX, MIN_AGE_MS, RUN_OWNER_FILE, runOwnerIsLive } from '../scripts/canary-runs.mjs';
 
-const root = makeSandbox('canary-abort-fixture-'), scripts = path.join(root, 'scripts'), bins = path.join(root, 'bin');
-const runs = makeSandbox('canary-abort-runs-');
+const root = makeSandbox('promptobus-test-canary-abort-fixture-'), scripts = path.join(root, 'scripts'), bins = path.join(root, 'bin');
+const runs = makeSandbox('promptobus-test-canary-abort-runs-');
 mkdirSync(scripts);
 for (const dir of ['test', 'lib']) symlinkSync(path.resolve(dir), path.join(root, dir));
 for (const file of ['live-canary.mjs', 'live-entry.mjs', 'live-abort.mjs', 'live-run.mjs', 'canary-runs.mjs']) {

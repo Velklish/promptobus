@@ -12,7 +12,7 @@ const listed = { data: [{ skills: [
   { name: 'same', path: '/fixture/system/same/SKILL.md', scope: 'system' },
 ] }] };
 const disabled = canonicalSkillOverrides(listed, root);
-const box = realpathSync(makeSandbox('promptobus-canonical-skills-'));
+const box = realpathSync(makeSandbox('promptobus-test-codex-canonical-skills-'));
 mkdirSync(path.join(box, 'physical'));
 symlinkSync(path.join(box, 'physical'), path.join(box, 'alias'), 'junction');
 const collision = listed.data[0].skills[1];

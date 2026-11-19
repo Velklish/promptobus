@@ -16,7 +16,7 @@ const hash = (text) => createHash('sha256').update(text).digest('hex');
 const subject = { head: '1'.repeat(40), base: '2'.repeat(40), diffSha256: '3'.repeat(64) };
 const report = '\nFinding alpha → beta\n  preserve spaces\n\n' + 'finding 😀\n'.repeat(450);
 function fixture(t, fields = {}) {
-  const home = mkdtempSync(path.join(os.tmpdir(), 'pb-checkpoint-'));
+  const home = mkdtempSync(path.join(os.tmpdir(), 'promptobus-test-native-reviewer-checkpoint-'));
   store.bus(home, { cli: JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version });
   t.after(() => rmSync(home, { recursive: true, force: true }));
   const task = store.createTask(home, { id: 't20261024-100000', title: 'checkpoint', owner: 'owner' }).id;

@@ -32,7 +32,7 @@ test('0.165.0 documents the local inventory and the historical 52-schema compari
 });
 
 test('capture accepts JSON schemas, ignores non-JSON and provenance, and refuses invalid inputs', () => {
-  const dir = makeSandbox('codex-capture-contract-');
+  const dir = makeSandbox('promptobus-test-codex-schema-capture-');
   const write = (name, text) => writeFileSync(path.join(dir, name), text);
   const marker = 'http://json-schema.org/draft-07/schema#';
   const schema = (body) => JSON.stringify({ $schema: marker, ...body });

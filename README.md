@@ -419,6 +419,8 @@ inspect the selection without building or running. Unknown or shared inputs requ
 the full suite; `npm test`, acceptance gates and CI always retain full acceptance
 coverage.
 
+The POSIX native launch fixture needs `mkfifo` on `PATH`.
+
 The suite needs `git`, `tmux` and `ast-grep` (`npm install -g @ast-grep/cli@0.45.3`, the version CI pins). It runs files in a process pool with the wall-clock files in a serial group at the end, gives every file its own home and temp directory, seals `PATH` to a directory of stubs so no real harness binary is reached, and refuses a run that leaves a process behind. At the same boundary it removes every known harness identity before fixtures install their own, so running the suite from a participant of another harness does not create a second session identity. Live harness runs are never started in CI. Importing `scripts/live-*.mjs` starts nothing: `node --check` is the syntax check, and a stand sets `PROMPTOBUS_STUB_BIN` only after its stub binaries and state homes are proved, and then keeps `PATH` on that directory and clears `PROMPTOBUS_CURSOR_INSTALL_DIRS`. The live route remains `node scripts/live-*.mjs`. Deterministic fixtures execute the live Codex script with held stops to check cancellation ownership: normal cleanup cannot remove the sandbox while abort cleanup is awaiting its stop.
 The Codex and mixed live scripts refuse to start if they cannot observe the Codex config or process baseline. A failed observation after cleanup fails the run rather than certifying an unchanged config or no new processes.
 

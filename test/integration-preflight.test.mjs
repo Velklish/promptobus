@@ -13,7 +13,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const preflight = path.join(root, 'scripts/integration-preflight.mjs');
 
 function run({ preload = '', missing, denied, adapterDiagnostics, exit = 0 } = {}) {
-  const directory = makeSandbox('promptobus-integration-preflight-');
+  const directory = makeSandbox('promptobus-test-integration-preflight-');
   const bin = path.join(directory, 'bin');
   mkdirSync(bin);
   for (const name of REACHABLE_BINARIES) {
@@ -83,6 +83,7 @@ net.Server.prototype.listen = function () {
   return this;
 };`;
 
+const missingAdapter = 'generated/adapter/tasks/SKILL.md: generated output is missing';
 const cases = [
   ['socket listen refusal', { preload: refuseListen }, /Unix socket/, 'listen EPERM: fixture refusal'],
   ['socket connect refusal after listen', {
@@ -94,11 +95,11 @@ net.createConnection = () => {
 };`,
   }, /Unix socket/, 'connect EACCES: fixture refusal'],
   ['missing fixture binary', { missing: 'ast-grep' }, /resolve ast-grep/, 'ast-grep: not found or not executable on PATH'],
+  ['missing FIFO utility', { missing: 'mkfifo' }, /resolve mkfifo/, 'mkfifo: not found or not executable on PATH'],
   ['different real and effective IDs', { preload: 'process.geteuid = () => process.getuid() + 1;' },
     /verify executor IDs/, 'Cannot verify execution access with different real and effective user or group IDs'],
   ['missing Node executable', { missing: 'node' }, /resolve node/, 'node: not found or not executable on PATH'],
-  ['missing generated adapter output', { adapterDiagnostics: '.agents/skills/backslop-task/SKILL.md: generated output is missing' },
-    /lint --require-adapters/, '.agents/skills/backslop-task/SKILL.md: generated output is missing'],
+  ['missing generated adapter output', { adapterDiagnostics: missingAdapter }, /lint --require-adapters/, missingAdapter],
 ];
 
 for (const [name, options, operation, error] of cases) test(`${name} refuses before the sentinel suite`, () => {

@@ -50,6 +50,14 @@ including unreferenced modules. See
 [Suite isolation](../guides/contributing.md#suite-isolation) for the separate
 delivery-order and Cursor session-identity checks.
 
+The POSIX native launch fixture creates its FIFO with `mkfifo` through the
+sealed test `PATH`. Integration preflight checks access to that utility before
+starting the suite.
+
+Use the existing `promptobus-test-` prefix for new suite fixture directories in
+the system temporary directory. The suite sweep uses that prefix to recognize
+stale test directories and checks for an active owner before removal.
+
 [test/docs-links.test.mjs](../../test/docs-links.test.mjs) resolves every tracked Markdown link in the checkout, in the files `npm pack` ships and at the skill paths `install` writes. Package inventory and the role-instruction consumer use owned snapshots so npm preparation cannot rewrite the runtime used by parallel tests; original bytes and timestamps are checked. `npm run docs-links:external` classifies an auth, rate-limit or transport failure as unverified and is not a gate. Task links and delivery misses are held by [the baseline](../../test/fixtures/docs-links-baseline.json), which can only shrink.
 
 The publicity audit checks tracked text and packed-tarball text for absolute owner-home paths. Five named synthetic literals in four fixtures are removed before matching; other paths in those files remain findings. Live cards and cleaned archive records use workspace-relative wording. The organization's identity — the `ORGANIZATION` list in `scripts/audit-public.mjs` — is a finding in every tracked text file and packed entry, with no directory exempt. Cyrillic is read the same way: it is a finding in any tracked text file or packed entry unless a snapshot named in `AUTHORING_SNAPSHOTS` or a reasoned `english-authoring` region outside the runtime paths excuses it.

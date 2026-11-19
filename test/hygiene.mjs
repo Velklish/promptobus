@@ -165,6 +165,7 @@ export const INHERITED_VARS = [
  * - `npm` — `promptobus-package.test.mjs` runs the nested package suite as a child
  *   `npm test --prefix …`, and `installWorktreeDeps` runs `npm ci`;
  * - `git` — clones, worktrees and diffs, in a dozen files;
+ * - `mkfifo` — creates the owned POSIX FIFO for the native launch fixture;
  * - `sh` — the POSIX stub launcher is `#!/bin/sh`, and `spawnSync('sh', …)` is used
  *   directly; `env` — the Cursor launch script is `exec env -u … <bin>`;
  * - `ps`, `pgrep` — the process reads the suite makes about ITSELF (the register of
@@ -185,7 +186,7 @@ export const INHERITED_VARS = [
  * install directories, so `applyHygiene` narrows those to the sandbox `~/.local/bin`.
  */
 export const REACHABLE_BINARIES = [
-  'ast-grep', 'env', 'git', 'node', 'npm', 'pgrep', 'ps', 'sh', 'sleep', 'tar',
+  'ast-grep', 'env', 'git', 'mkfifo', 'node', 'npm', 'pgrep', 'ps', 'sh', 'sleep', 'tar',
 ];
 
 /** Set once the seal is built, so a nested apply keeps the directory instead of rebuilding it. */
