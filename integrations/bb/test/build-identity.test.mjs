@@ -72,6 +72,20 @@ test('input identity changes for source, lock, resolved core and SDK content', t
   assert.equal(JSON.stringify(baseline).includes(root), false);
 });
 
+test('dependency capture accepts shared inputs but refuses a cycle by resolved package', t => {
+  const root = fixture(t);
+  const depend = (name, dependency) => {
+    const file = path.join(root, 'node_modules', name, 'package.json');
+    const manifest = JSON.parse(readFileSync(file));
+    manifest.dependencies = { [dependency]: '*' };
+    writeFileSync(file, JSON.stringify(manifest));
+  };
+  depend('@get-bb/plugin-sdk', 'promptobus');
+  assert.equal(computeBuildIdentity(root).inputs.dependencies.length, 2);
+  depend('promptobus', '@get-bb/plugin-sdk');
+  assert.throws(() => computeBuildIdentity(root), /Cannot freeze cyclic BB dependencies: @get-bb\/plugin-sdk -> promptobus -> @get-bb\/plugin-sdk/);
+});
+
 test('an untracked consumer under an unrelated Git parent does not claim the parent revision', t => {
   const original = fixture(t), parent = mkdtempSync(path.join(os.tmpdir(), 'pb-bb-unrelated-git-'));
   t.after(() => rmSync(parent, { recursive: true, force: true }));

@@ -52,6 +52,13 @@ export async function recordBbDirectCommand({ command, stem, by, cwd = process.c
     failure.receipt = { command, by, tree, dirty: status !== '', notRun: true, complete: false, error: failure.message };
     throw failure;
   }
+  const receiptFd = outputs.get('receipt')!;
+  let receiptOpen = true;
+  const closeReceipt = () => {
+    if (!receiptOpen) return;
+    receiptOpen = false;
+    closeSync(receiptFd);
+  };
   const stdout = createWriteStream(`${stem}.stdout.txt`, { fd: outputs.get('stdout') });
   const stderr = createWriteStream(`${stem}.stderr.txt`, { fd: outputs.get('stderr') });
   let error: string | null = null, child: DirectChild | undefined, startFailure: ReceiptFailure | undefined;
@@ -74,34 +81,38 @@ export async function recordBbDirectCommand({ command, stem, by, cwd = process.c
     const failure = caught as ReceiptFailure;
     if (child) startFailure = failure;
     else {
-    stdout.end(); stderr.end(); await Promise.all(sinks);
-    const receipt = { command, by, cwd, tree, dirty: status !== '', notRun: true, complete: false, error: failure.message };
-    try { writeFileSync(outputs.get('receipt')!, `${JSON.stringify(receipt)}\n`); } finally { closeSync(outputs.get('receipt')!); }
-    failure.receipt = receipt; throw failure;
+      stdout.end(); stderr.end(); await Promise.all(sinks);
+      const receipt = { command, by, cwd, tree, dirty: status !== '', notRun: true, complete: false, error: failure.message };
+      try { writeFileSync(receiptFd, `${JSON.stringify(receipt)}\n`); } finally { closeReceipt(); }
+      failure.receipt = receipt; throw failure;
     }
   }
   const execution: DirectCommandReceipt = { format: 'bb-direct-command-v1', command, exit: null, signal: null, error: null, direct: true, complete: false,
     ...receiptFields, tree, dirty: status !== '', status, by, cwd, timestamp: started };
   try {
-  const runningChild = child!;
-  runningChild.on('error', failure => { error ??= failure.message; });
-  runningChild.stdout.pipe(stdout); runningChild.stderr.pipe(stderr);
-  const [exit, signal] = await new Promise<[number | null, NodeJS.Signals | null]>(resolve => runningChild.on('close', (exit, signal) => resolve([exit, signal])));
-  await Promise.all(sinks);
-  Object.assign(execution, { exit, signal, error, ended: new Date().toISOString() });
-  const raw = (stream: string) => {
-    const file = `${stem}.${stream}.txt`, bytes = readFileSync(file);
-    return { file, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
-  };
-  const receipt = { ...execution, complete: exit !== null && signal === null && error === null,
-    ...(startFailure ? { finalizationComplete: false, finalizationError: startFailure.message } : {}), stdout: raw('stdout'), stderr: raw('stderr') };
-  try { writeFileSync(outputs.get('receipt')!, `${JSON.stringify(receipt, null, 2)}\n`); }
-  finally { closeSync(outputs.get('receipt')!); }
-  if (startFailure) { startFailure.receipt = { ...receipt, notRun: false }; throw startFailure; }
-  try { onReceipt?.(receipt); } catch (caught) {
-    const failure = caught as ReceiptFailure; failure.receipt = { ...receipt, notRun: false, finalizationComplete: false, finalizationError: failure.message }; throw failure; }
-  return { receipt, exitCode: error ? 1 : exit ?? 1 };
+    const runningChild = child!;
+    runningChild.on('error', failure => { error ??= failure.message; });
+    runningChild.stdout.pipe(stdout); runningChild.stderr.pipe(stderr);
+    const [exit, signal] = await new Promise<[number | null, NodeJS.Signals | null]>(resolve => runningChild.on('close', (exit, signal) => resolve([exit, signal])));
+    await Promise.all(sinks);
+    Object.assign(execution, { exit, signal, error, ended: new Date().toISOString() });
+    const raw = (stream: string) => {
+      const file = `${stem}.${stream}.txt`, bytes = readFileSync(file);
+      return { file, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
+    };
+    const receipt = { ...execution, complete: exit !== null && signal === null && error === null,
+      ...(startFailure ? { finalizationComplete: false, finalizationError: startFailure.message } : {}), stdout: raw('stdout'), stderr: raw('stderr') };
+    writeFileSync(receiptFd, `${JSON.stringify(receipt, null, 2)}\n`);
+    closeReceipt();
+    if (startFailure) { startFailure.receipt = { ...receipt, notRun: false }; throw startFailure; }
+    try { onReceipt?.(receipt); } catch (caught) {
+      const failure = caught as ReceiptFailure;
+      failure.receipt = { ...receipt, notRun: false, finalizationComplete: false, finalizationError: failure.message };
+      throw failure;
+    }
+    return { receipt, exitCode: error ? 1 : exit ?? 1 };
   } catch (caught) {
+    try { closeReceipt(); } catch { /* Preserve the primary finalization error. */ }
     const failure = caught as ReceiptFailure;
     failure.receipt ??= { ...execution, notRun: false, complete: false, finalizationComplete: false, finalizationError: failure.message };
     throw failure;

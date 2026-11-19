@@ -57,6 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Check the history timestamp without assuming the current year, and run the reviewer stdio test from paths containing spaces or Unicode.
 - Run the offline BB reviewer permission-proof cleanup test from paths containing spaces or Unicode, and keep keyed publication fixture artifacts out of the CLI reference.
 - Require a listed participant and matching session proof through MCP contact handoff. A refused handoff, including an invalid OpenCode contact session ID, does not start a listener or prevent a later retry; explicit task arguments still follow the ordinary rules of each tool.
+- Refuse cyclic BB dependency capture with the package chain and reject whitespace-only review evidence `notRun` reasons.
+- Close the BB command receipt descriptor on raw-read failure without masking the error or losing the executed outcome.
+- Keep the wrong-repository diagnostic ahead of native worker context mismatches and refuse non-regular selected sources without a blocking open.
 - Keep an OpenCode stdio server whose first argument repeats its command: only the bus entry drops the duplicated binary.
 - Let hosts keep private environment variables out of managed participants and owner snapshots. Refuse old snapshots that still contain those variables.
 

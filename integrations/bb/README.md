@@ -71,8 +71,10 @@ engine operation or task-state write.
 Install the exact generation recorded by the successful receipt to activate it.
 Building B preserves loaded A; reloading registered A stays on A. Only explicitly
 installing B switches it. Builds perform no install, reload or old-generation
-deletion. The id names captured inputs, not BB loader cache bytes or external
-SDK/Node APIs. Local development generations and the managed Git release collection are supported.
+deletion. A dependency cycle stops capture with the package chain; shared
+acyclic dependencies still resolve inside the generation. The id names captured
+inputs, not BB loader cache bytes or external SDK/Node APIs. Local development
+generations and the managed Git release collection are supported.
 See [release delivery](../../docs/guides/bb-plugins.md) for install, update and diagnosis. Local fixtures do not certify a particular BB
 installation; verify the executing identities after install/reload.
 See the [Host reference](../../docs/reference/02-host.md#bb-executing-runtime-identity)
@@ -1214,6 +1216,7 @@ The public typed contracts are in `launch-context.ts` and `review-evidence.ts`.
 The manifest holds source/base, original producer and relayer, clean state,
 original direct receipts, gate/handover/inventory IDs, ordered full raw parts with
 UTF-8 bytes/hashes and all five check details or concrete `notRun` reasons.
+Whitespace alone is not a reason; explicit reason text is kept unchanged.
 Only actual artifacts are admitted; normal message IDs, wrong tree/producer,
 cropped raw, broken hashes and pipeline-masked receipts refuse before spawn.
 All original IDs enter the immutable first assignment and remain readable through
@@ -1229,7 +1232,9 @@ direct command with `node scripts/bb-record-command.mjs --output /absolute/owned
 Its complete stdout/stderr and `bb-direct-command-v1` receipt retain the runner's
 own return code. It reserves all three files before spawning; a refusal reports
 `notRun: true`, and a sink failure stops and reaps the runner with incomplete
-evidence. Attachment sender lookup includes `task` and `result` messages before
+evidence. A raw read failure during finalization closes the reserved receipt
+descriptor and preserves the original runner outcome, raw files and primary error.
+Attachment sender lookup includes `task` and `result` messages before
 and after acknowledgement or reload. This recorder is not an authorization or actor-authentication
 tool. Shell pipeline executables are unsupported.
 

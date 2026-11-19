@@ -43,12 +43,13 @@ function packageInput(from, name) {
 
 function dependencyInputs(root, names) {
   const visited = new Set(), inputs = [];
-  const visit = (from, name) => {
+  const visit = (from, name, ancestors = []) => {
     const { directory, manifest, files } = packageInput(from, name);
+    const next = dependencyPath(ancestors, directory, name);
     if (visited.has(directory)) return;
     visited.add(directory);
     inputs.push({ name: manifest.name, version: manifest.version, sha256: contentDigest(directory, files) });
-    for (const child of Object.keys(manifest.dependencies ?? {}).sort()) visit(directory, child);
+    for (const child of Object.keys(manifest.dependencies ?? {}).sort()) visit(directory, child, next);
   };
   for (const name of names.sort()) visit(root, name);
   return [...new Map(inputs.map(input => [JSON.stringify(input), input])).values()].sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version) || a.sha256.localeCompare(b.sha256));
@@ -61,12 +62,20 @@ function copyFiles(from, to, files) {
   }
 }
 
-function freezeDependencies(from, to, names) {
+function dependencyPath(ancestors, directory, name) {
+  if (ancestors.some(ancestor => ancestor.directory === directory)) {
+    throw new Error(`Cannot freeze cyclic BB dependencies: ${[...ancestors.map(ancestor => ancestor.name), name].join(' -> ')}`);
+  }
+  return [...ancestors, { directory, name }];
+}
+
+function freezeDependencies(from, to, names, ancestors = []) {
   for (const name of names) {
     const { directory, manifest, files } = packageInput(from, name);
+    const next = dependencyPath(ancestors, directory, name);
     const destination = path.join(to, 'node_modules', name);
     copyFiles(directory, destination, files);
-    freezeDependencies(directory, destination, Object.keys(manifest.dependencies ?? {}));
+    freezeDependencies(directory, destination, Object.keys(manifest.dependencies ?? {}), next);
   }
 }
 

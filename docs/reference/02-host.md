@@ -981,6 +981,9 @@ before identity stamping. The supported static fixture audits emitted imports.
 
 All measured raw files/configuration/skills are copied into generation inputs
 before identity is computed from those captured bytes and frozen dependencies.
+Dependency capture refuses cycles by resolved package directory and names the
+dependency chain. Shared dependencies on separate branches are allowed; the
+snapshot keeps each dependency's generation-local resolution.
 The wrapper compares original source/dependency fingerprints and Git revision/state
 before and after the consumer subprocess and final official build. A detected
 change refuses promotion and preserves the previous latest receipt; post-copy
@@ -1155,6 +1158,9 @@ reasons and edges. Logical provenance supports native relative-resource mapping;
 it does not authorize additional reads. Exact resources authorize neither their
 parent directory nor siblings. Preparation and reuse compare the full declaration
 and canonical selection; a changed declaration requires new preparation.
+When an explicit worker name already belongs to a different repository in the
+task, `spawn` names that repository and the requested one before checking for a
+context mismatch. Neither refusal changes the worker's binding or worktree.
 
 Native `lead`, `spawn` (including teamleads), `review` (including approvers) and
 `report` accept `--context-purpose technical|user-facing|author-voice` and
@@ -1180,7 +1186,10 @@ exact selected resource's UTF-8 body with its canonical path and reason. This
 supports standalone resources outside the working directory without a parent
 read grant. Bodies are bounded to 256 KiB per file and 1 MiB in total; binary,
 invalid UTF-8, changed canonical paths and oversized bodies refuse before
-provider files or launch. Long selected Claude/Cursor prompts are delivered in a
+provider files or launch. Selected source opens require a regular file before
+and after a nonblocking, no-follow open and check the descriptor against the
+canonical source before reading. Skill copies still stream binary files and
+preserve permission bits. Long selected Claude/Cursor prompts are delivered in a
 task-owned bootstrap file with a short CLI pointer; only its owned directory joins
 `--add-dir`, without admitting the resource's parent. Ownership and symlinks are
 rechecked before writes. Declared skill-internal or sibling `_shared` files also

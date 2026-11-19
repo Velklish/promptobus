@@ -28,7 +28,7 @@ export const evidenceCommandSchema = z.object({
 export const handoverChecks = ['verdictNames', 'mutationProbe', 'treeState', 'environmentalRed', 'gatesNotRun'] as const;
 const check = z.discriminatedUnion('status', [
   z.object({ status: z.literal('complete'), detail: z.record(z.string(), z.unknown()) }).strict(),
-  z.object({ status: z.literal('notRun'), reason: text }).strict(),
+  z.object({ status: z.literal('notRun'), reason: text.refine(value => Boolean(value.trim()), 'notRun needs an explicit reason') }).strict(),
 ]);
 export const evidenceManifestSchema = z.object({
   version: z.literal(1), source: sha, base: sha, producer: text, relayer: text, dirty: z.literal(false),
