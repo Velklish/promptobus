@@ -364,19 +364,32 @@ const continueAfterReset = section(wholeRunPause, '### Continue after the reset'
 check('docs: a planned whole-run pause checkpoints each task before the limit reset',
   has(pauseAtLimit, 'The owner sets the threshold')
   && has(pauseAtLimit, 'is one input, not a trigger')
-  && has(pauseAtLimit, 'Send a `pause` request as ordinary `question` mail with `promptobus_send`, one per teamlead and directly managed participant in the root task.')
-  && has(pauseAtLimit, 'Before ending the turn, each participant saves a state file in `files/` of its own task.')
+  && has(pauseAtLimit, 'Send `pause` as `status` mail with `promptobus_send`, one per teamlead')
+  && has(pauseAtLimit, 'Before ending the turn, each participating address saves a state file in `files/` of its own task.')
   && has(pauseAtLimit, 'Set a one-shot timer for the reset')
   && has(pauseAtLimit, 'A checkpoint, an idle turn and a timer are not Stop or drain evidence.'));
+check('docs: pause and continue correlate status without waking an orchestrator or requiring reporter mail',
+  has(pauseAtLimit, 'Use `status` both ways for `pause` and `continue`. Do not use `question` or `answer` for this exchange: it must not create a new question or close an unrelated one.')
+  && has(pauseAtLimit, 'Acknowledge with `status` citing the original message ID')
+  && has(continueAfterReset, 'send `continue` as `status` and check for a `status` acknowledgment citing that `continue` message ID')
+  && has(pauseAtLimit, 'Status-only mail does not wake the root or a teamlead\'s child `orchestrator` mailbox.')
+  && has(pauseAtLimit, 'reads `promptobus_mailbox` in its own task and matches acknowledgments by sender and the outbound message ID.')
+  && has(pauseAtLimit, 'leave that participant unconfirmed')
+  && has(pauseAtLimit, 'The reporter cannot send mail: do not ask it to acknowledge either `pause` or `continue`.')
+  && has(pauseAtLimit, 'The root records the reporter\'s observed status separately, with any unknowns, not as an acknowledgment.')
+  && has(pauseAtLimit, 'A read-only reviewer sends its state as `status` for its coordinator to save in that task, without gaining write access.')
+  && has(spawn, 'Pause and continue use `status` mail both ways with acknowledgments matched by message ID.'));
 check('docs: continuation uses the same teamlead address and all three inputs without bypassing authority',
-  has(continueAfterReset, 'send a `continue` request by the same `question` route')
-  && has(continueAfterReset, 'promptobus spawn --teamlead --brief <continuation-file> --task <root> --slug <existing-slug>')
+  has(continueAfterReset, 'promptobus spawn --teamlead --brief <continuation-file> --task <root> --slug <existing-slug>')
   && has(continueAfterReset, '- the original brief')
   && has(continueAfterReset, "- the previous teamlead's state file in that child's `files/`")
   && has(continueAfterReset, '- the unread mail for that teamlead in the linked root and child mailbox slots')
   && has(continueAfterReset, 'Codex relift still requires the previous retained terminal proof.')
   && has(continueAfterReset, 'public relift under that condition and real Claude reconnect behavior are unverified.')
   && has(continueAfterReset, 'A relift starts a new session, not the old conversation.')
+  && has(continueAfterReset, 'The child health line is scoped to the accepted generation, not inherited from its predecessor.')
+  && has(continueAfterReset, 'A startup health line does not prove binding, delivery or Stop.')
+  && has(continueAfterReset, 'Synthetic reconnect checks exercise generation and identity fences; they do not establish a live Claude reconnect or public relift with an unreadable registry.')
   && has(spawn, 'Top-level `promptobus --help` lists this syntax')
   && has(read('README.md'), 'skills/orchestrate/SKILL.md#planned-whole-run-pause'));
 check('docs: managed root self-Stop acknowledgement is pending until retained proof',
