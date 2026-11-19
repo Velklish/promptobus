@@ -89,8 +89,7 @@ export const LOCK_SUFFIX = '.lock';
 /** How long a writer waits for somebody else's lock before writing anyway. */
 export const LOCK_WAIT_MS = 2_000;
 
-/** When a lock stops being somebody's and becomes litter: a holder keeps it for microseconds,
- * and waiting the full window on every later command would tax one crash forever. */
+/** Age after which a writer refuses instead of falling through. Age does not prove abandonment. */
 export const LOCK_STALE_MS = 15_000;
 
 /** Sleep without yielding to callers: the write is synchronous and there is nothing to await it. */
@@ -98,41 +97,39 @@ function sleepSync(ms: number) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-/** Run `body` under the cache lock, always releasing it. A lock that cannot be taken is not
- * a refusal: refusing to write would lose the very entries the lock exists to keep. */
-function withCacheLock<T>(file: string, body: (held: boolean) => T): T {
-  const lock = `${file}${LOCK_SUFFIX}`;
-  let held = false;
-  // `body` is told whether the lock was taken: a write that fell through it may lose a
-  // neighbour's entry, and the loss is silent otherwise. See 05-drivers, the cache lock.
+function takeCacheLock(file: string, lock: string): boolean {
   try {
     mkdirSync(path.dirname(file), { recursive: true });
-    const deadline = Date.now() + LOCK_WAIT_MS;
-    for (;;) {
-      try {
-        closeSync(openSync(lock, 'wx'));
-        held = true;
-        break;
-      } catch (e) {
-        if ((e as NodeJS.ErrnoException | null | undefined)?.code !== 'EEXIST') break;
-        let age = Infinity;
-        try { age = Date.now() - statSync(lock).mtimeMs; } catch { age = Infinity; }
-        if (age > LOCK_STALE_MS) {
-          rmSync(lock, { force: true });
-          continue;
-        }
-        if (Date.now() >= deadline) break;
-        sleepSync(20);
-      }
+  } catch { return false; }
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      closeSync(openSync(lock, 'wx'));
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') return false;
     }
-  } catch {
-    held = false;
+    let age: number;
+    try { age = Date.now() - statSync(lock).mtimeMs; } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT' && Date.now() < deadline) continue;
+      return false;
+    }
+    if (age > LOCK_STALE_MS) {
+      throw new Error(`Stale cache lock ${lock}; stop all cache writers before removing it, then retry`);
+    }
+    if (Date.now() >= deadline) return false;
+    sleepSync(20);
   }
+}
+
+function withCacheLock<T>(file: string, body: (held: boolean) => T): T {
+  const lock = `${file}${LOCK_SUFFIX}`;
+  const held = takeCacheLock(file, lock);
   try {
     return body(held);
   } finally {
     if (held) {
-      try { rmSync(lock, { force: true }); } catch { /* somebody broke it as stale */ }
+      try { rmSync(lock, { force: true }); } catch { /* a later writer reports a stale lock */ }
     }
   }
 }

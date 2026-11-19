@@ -36,6 +36,7 @@ async function loadHost(cwd = process.cwd()) {
     version: pkg.version,
     binPath,
     nodePath: process.execPath,
+    routingStateDir: process.env.PROMPTOBUS_ROUTING_STATE_DIR,
   });
 }
 

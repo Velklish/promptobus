@@ -113,7 +113,9 @@ export function pathOutsideRoot(root: string, candidate: string): boolean {
 ```
 <!-- /quote -->
 
-`routingPaths()` answers `cacheFile` `~/.promptobus/model-routing/cache.json` and two overlays, `user` at `~/.promptobus/model-routing.json` and `workspace` at `<promptobusHome>/model-routing.json` — the writable one. Standalone declares no product-policy layer; a consumer inserts its own between those two, read-only.
+`routingPaths()` defaults to `cacheFile` `~/.promptobus/model-routing/cache.json` and two overlays, `user` at `~/.promptobus/model-routing.json` and `workspace` at `<promptobusHome>/model-routing.json` — the writable one. Standalone declares no product-policy layer; a consumer inserts its own between those two, read-only.
+
+`createStandaloneHost({ routingStateDir })` accepts an absolute directory for `cache.json` and its sibling `telemetry.jsonl`. The standalone `promptobus` executable takes this option from `PROMPTOBUS_ROUTING_STATE_DIR`. A relative or empty value is refused rather than falling back to the user cache. This changes neither overlay path or precedence, nor harness authentication and session-registry paths. Use a directory owned by the run; this is not an account sandbox.
 
 `harnessStateHome(harness)` answers `~/.promptobus/<harness>` — the path the package used to guess — so a single-user checkout sets no variable and notices no change.
 
@@ -213,7 +215,7 @@ A consumer host that answers `pipeline()` from a source of its own is checked by
 
 ## Model-routing paths
 
-`routingPaths()` is the only source of routing paths. The cache and the `user` overlay are account-scoped — auth, model inventory and the remaining subscription limit belong to the account the harness binary is logged into, not to one workspace — so they do not hang off `promptobusHome()`, which stays the per-workspace task store. `overlays` is a list, ordered lowest precedence first, because a consumer's shipped policy is a layer between the person's two and a list lets the host place it without another change to the interface. `id` names a layer in diagnostics. A path the host names need not exist: a missing overlay is normal.
+`routingPaths()` is the only source of routing paths. By default the cache and the `user` overlay are account-scoped — auth, model inventory and the remaining subscription limit belong to the account the harness binary is logged into, not to one workspace — so they do not hang off `promptobusHome()`, which stays the per-workspace task store. `overlays` is a list, ordered lowest precedence first, because a consumer's shipped policy is a layer between the person's two and a list lets the host place it without another change to the interface. `id` names a layer in diagnostics. A path the host names need not exist: a missing overlay is normal.
 
 **One more file lives in that directory, and the host does not name it.** `promptobus done` appends a participant telemetry record to `telemetry.jsonl` beside `cacheFile` — same directory, same mode `0600`, same account scope ([03-cli](03-cli.md) § Participant telemetry). It is deliberately not a method: it is one leaf inside a directory the host already owns, and a second path to declare would let a consumer put the telemetry of one account beside the availability of another. The consequence for a consumer is that moving the cache moves the telemetry with it — the two are read together by the calibration pass, and a `cacheFile` that changes between releases leaves the old records behind rather than migrating them. The file is the ACCOUNT's, not one workspace's, for the reason the cache is: every checkout on the machine reaches the same logged-in account, and `promptobusHome()` — the per-workspace task store — is not used for it at all.
 

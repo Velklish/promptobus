@@ -25,9 +25,9 @@ import './home.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import {
-  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, utimesSync, writeFileSync,
+  chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { loadavg, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
@@ -737,7 +737,7 @@ test('preflight warns once when invalid harness names are dropped from the cache
 
 // --- two commands writing at once --------------------------------------------
 
-test('a writer waits for a lock somebody else holds, and takes it back when that lock is litter', () => {
+test('a writer waits for a fresh lock and leaves it in place even when it writes without it', (t) => {
   // The write is already a temp-file-plus-rename, so nobody ever reads half a
   // document. What the rename cannot do is make the READ-merge-write one step: two
   // commands probing at once both read the same document and the second rename
@@ -746,6 +746,7 @@ test('a writer waits for a lock somebody else holds, and takes it back when that
   //
   // Mutation probe: take `withCacheLock` out of `writeEntries` and the wait is 0 ms.
   const host = sandboxHost();
+  t.after(() => rmSync(host.dir, { recursive: true, force: true }));
   const lock = `${host.cacheFile}${LOCK_SUFFIX}`;
   mkdirSync(path.dirname(host.cacheFile), { recursive: true });
   writeFileSync(lock, '');
@@ -759,19 +760,33 @@ test('a writer waits for a lock somebody else holds, and takes it back when that
   assert.equal(readSnapshot(host).harnesses.held.state, 'available');
   // The lock it did not take is not removed by it either.
   assert.equal(existsSync(lock), true, 'a lock the writer never took must not be cleared by it');
-
-  // A lock older than the ceiling is a process that died between its read and its
-  // rename. Waiting the full ceiling for it on every command afterwards would be a
-  // permanent tax for a crash that happened once.
-  utimesSync(lock, new Date(Date.now() - LOCK_STALE_MS - 1000), new Date(Date.now() - LOCK_STALE_MS - 1000));
-  const again = Date.now();
-  writeEntries(host, { fresh: entry() });
-  assert.ok(Date.now() - again < LOCK_WAIT_MS / 2, 'a stale lock was waited out instead of broken');
-  assert.equal(readSnapshot(host).harnesses.fresh.state, 'available');
-  assert.equal(existsSync(lock), false, 'the lock it broke and took is released again');
 });
 
-test('four preflights writing at once all land, each with its own harness', async () => {
+function collectWriter(name, child) {
+  const started = performance.now();
+  const chunks = [];
+  let error = null;
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk) => chunks.push(chunk));
+  child.on('error', (err) => { error = err.message; });
+  return new Promise((resolve) => child.once('close', (code, signal) => {
+    resolve({ name, code, signal, error, stderr: chunks.join(''), ms: Math.round(performance.now() - started) });
+  }));
+}
+
+test('the concurrent writer collector includes stderr still unread at exit', async () => {
+  const warning = 'writing WITHOUT the lock\n';
+  const child = spawn(process.execPath, ['-e', `process.stderr.write(${JSON.stringify(warning)})`], {
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  const run = collectWriter('late', child);
+  child.stderr.pause();
+  child.once('exit', () => setImmediate(() => child.stderr.resume()));
+  const { code, signal, error, stderr } = await run;
+  assert.deepEqual({ code, signal, error, stderr }, { code: 0, signal: null, error: null, stderr: warning });
+});
+
+test('four preflights writing at once all land, each with its own harness', async (t) => {
   // The failure this closes: `spawn` and `models --refresh` in another terminal
   // both read the same document, both merge their own harness into it, and the
   // second rename wins. One process cannot reproduce it — the race is between
@@ -781,6 +796,7 @@ test('four preflights writing at once all land, each with its own harness', asyn
   // harness is missing from the file. That probe is a race and not a certainty,
   // which is why four writers are used rather than two.
   const host = sandboxHost();
+  t.after(() => rmSync(host.dir, { recursive: true, force: true }));
   const script = path.join(host.dir, 'writer.mjs');
   writeFileSync(script, `
 import { preflight } from ${JSON.stringify(path.join(ROOT, 'lib', 'model-routing', 'preflight.js'))};
@@ -800,18 +816,19 @@ await preflight({ host, harnesses: [harness], adapterFor: () => ({ probe }), bud
   const names = ['alpha', 'beta', 'gamma', 'delta'];
   // Far enough ahead that every child is up and spinning before any of them writes.
   const startAt = Date.now() + 1500;
-  const said = [];
-  const runs = names.map((name) => new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [script, host.cacheFile, name, String(startAt)], {
+  const loadBefore = loadavg()[0];
+  const runs = await Promise.all(names.map((name) => collectWriter(name,
+    spawn(process.execPath, [script, host.cacheFile, name, String(startAt)], {
       stdio: ['ignore', 'ignore', 'pipe'],
-    });
-    child.stderr.on('data', (chunk) => said.push(String(chunk)));
-    child.on('error', reject);
-    child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`${name} exited ${code}`))));
-  }));
-  await Promise.all(runs);
+    }))));
 
   const stored = readSnapshot(host);
+  const entries = Object.keys(stored.harnesses).sort();
+  const fellThrough = runs.filter(({ stderr }) => /WITHOUT the lock/.test(stderr));
+  t.diagnostic(JSON.stringify({ loadBefore, loadAfter: loadavg()[0], entries, runs,
+    warnedWriters: fellThrough.map(({ name }) => name) }));
+  assert.ok(runs.every(({ code, signal, error }) => code === 0 && signal === null && error === null),
+    'each writer must exit successfully');
   assert.equal(validates(stored), true);
   assert.equal(existsSync(`${host.cacheFile}${LOCK_SUFFIX}`), false, 'the last writer left its lock behind');
 
@@ -819,17 +836,67 @@ await preflight({ host, harnesses: [harness], adapterFor: () => ({ probe }), bud
   // writer takes the lock, and a writer that waits past LOCK_WAIT_MS writes without it on
   // purpose. Asserting the unconditional form made this file's verdict depend on the machine
   // (PB-186), so the precondition is read off the run rather than assumed.
-  const fellThrough = said.filter((line) => /WITHOUT the lock/.test(line));
   if (!fellThrough.length) {
-    assert.deepEqual(Object.keys(stored.harnesses).sort(), names.slice().sort(),
+    assert.deepEqual(entries, names.slice().sort(),
       'every writer took the lock and one still lost its entry to a neighbour that renamed second');
   } else {
     // Under contention the loss is allowed and must be SAID. Silence is the defect, not the race.
-    assert.ok(fellThrough.every((line) => line.includes(host.cacheFile)),
-      `the fallthrough warning does not name the cache file: ${fellThrough.join(' | ')}`);
-    assert.ok(Object.keys(stored.harnesses).length >= 1,
+    assert.ok(fellThrough.every(({ stderr }) => stderr.split('\n').filter((line) => /WITHOUT the lock/.test(line))
+      .every((line) => line.includes(host.cacheFile))), 'each fallthrough warning must name the cache file');
+    assert.ok(entries.length >= 1,
       'a contended write still leaves a readable document');
   }
+});
+
+test('a lock that disappears during the age check cannot evict its new owner', async (t) => {
+  const host = sandboxHost();
+  t.after(() => rmSync(host.dir, { recursive: true, force: true }));
+  seed(host, { alpha: entry() });
+  const lock = `${host.cacheFile}${LOCK_SUFFIX}`;
+  writeFileSync(lock, '');
+  const script = path.join(here, 'fixtures', 'model-routing-lock-handoff.mjs');
+  const runs = await Promise.all(['beta', 'gamma'].map((name) => collectWriter(name,
+    spawn(process.execPath, [script, host.cacheFile, lock, name], { stdio: ['ignore', 'ignore', 'pipe'] }))));
+  const entries = Object.keys(readSnapshot(host).harnesses).sort();
+  t.diagnostic(JSON.stringify({ entries, runs }));
+  assert.ok(runs.every(({ code, signal, error, stderr }) =>
+    code === 0 && signal === null && error === null && stderr === ''), 'both writers must finish without warnings');
+  assert.equal(existsSync(lock), false);
+  assert.deepEqual(entries, ['alpha', 'beta', 'gamma']);
+});
+
+test('two waiters observing one stale lock refuse to write and leave the cache intact', async (t) => {
+  const host = sandboxHost();
+  t.after(() => rmSync(host.dir, { recursive: true, force: true }));
+  seed(host, { alpha: entry() });
+  const before = readFileSync(host.cacheFile, 'utf8');
+  const lock = `${host.cacheFile}${LOCK_SUFFIX}`;
+  writeFileSync(lock, 'fixture lock');
+  const old = new Date(Date.now() - LOCK_STALE_MS - 1000);
+  utimesSync(lock, old, old);
+  const script = path.join(here, 'fixtures', 'model-routing-lock-handoff.mjs');
+  const runs = await Promise.all(['beta', 'gamma'].map((name) => collectWriter(name,
+    spawn(process.execPath, [script, host.cacheFile, lock, name, 'stale'], { stdio: ['ignore', 'ignore', 'pipe'] }))));
+  const stored = readSnapshot(host);
+  t.diagnostic(JSON.stringify({ entries: Object.keys(stored.harnesses).sort(), runs }));
+  assert.equal(validates(stored), true);
+  assert.equal(readFileSync(host.cacheFile, 'utf8'), before, 'two stale observations must not change the cache');
+  assert.equal(readFileSync(lock, 'utf8'), 'fixture lock');
+  for (const { name, code, signal, error, stderr } of runs) {
+    assert.equal(existsSync(path.join(path.dirname(lock), `${name}-saw-stale`)), true);
+    assert.deepEqual({ code, signal, error }, { code: 0, signal: null, error: null }, stderr);
+    assert.match(stderr, /availability cache was not written .*stale cache lock/i);
+    assert.ok(stderr.includes(lock));
+    assert.match(stderr, /stop all cache writers before removing it/i);
+    assert.doesNotMatch(stderr, /WITHOUT the lock/);
+  }
+  assert.throws(() => clearExhausted(host, 'alpha'), /stale cache lock/i);
+  assert.throws(() => markExhausted(host, 'alpha'), /stale cache lock/i);
+  assert.equal(readFileSync(host.cacheFile, 'utf8'), before);
+  rmSync(lock);
+  writeEntries(host, { recovered: entry() });
+  assert.deepEqual(Object.keys(readSnapshot(host).harnesses).sort(), ['alpha', 'recovered']);
+  assert.equal(existsSync(lock), false);
 });
 
 test('a writer that cannot take the lock says so, and the loss stops being silent', async () => {

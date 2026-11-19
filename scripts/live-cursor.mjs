@@ -38,7 +38,7 @@ import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { finishLiveArgs, parseLiveArgs } from './live-args.mjs';
-import { guardStubLaunch, refuseImportedEntry } from './live-entry.mjs';
+import { guardStubLaunch, liveRoutingEnv, refuseImportedEntry } from './live-entry.mjs';
 import { makeSandbox, retainSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { freshScenarioIdentity, buildWorkspace, cli, MECHANISM_ROOT, sentBy, store } from '../test/scenario.mjs';
@@ -208,7 +208,7 @@ One message — one result. Do nothing else.
 
 const serviceDirectory = mkdtempSync(path.join(realpathSync(process.platform === 'win32' ? tmpdir() : '/tmp'), 'pbcur-'));
 const taskService = await taskServiceFixture({ workspace: ws, home, task: TASK, socketDirectory: serviceDirectory,
-  mechanismRoot: MECHANISM_ROOT, env: { ...process.env, PROMPTOBUS_HOME: home, CLAUDE_CODE_SESSION_ID: ORCH_SESSION } });
+  mechanismRoot: MECHANISM_ROOT, env: { ...liveRoutingEnv(SB), CLAUDE_CODE_SESSION_ID: ORCH_SESSION } });
 const env = taskService.env;
 let serviceClosed = false, taskCreated = false;
 process.once('exit', () => { if (serviceClosed) rmSync(serviceDirectory, { recursive: true, force: true }); });

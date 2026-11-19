@@ -16,7 +16,7 @@ import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { finishLiveArgs, parseLiveArgs } from './live-args.mjs';
-import { guardStubLaunch, refuseImportedEntry } from './live-entry.mjs';
+import { guardStubLaunch, liveRoutingEnv, refuseImportedEntry } from './live-entry.mjs';
 import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { freshScenarioIdentity, buildWorkspace, cli, MECHANISM_ROOT, store } from '../test/scenario.mjs';
@@ -129,7 +129,7 @@ You are a Promptobus bus participant. Do exactly this and nothing more:
 `);
 
 const env = {
-  ...process.env,
+  ...liveRoutingEnv(SB),
   PROMPTOBUS_HOME: home,
   CLAUDE_CODE_SESSION_ID: ORCH_SESSION,
   PROMPTOBUS_WARDEN: 'off',
