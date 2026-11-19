@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -30,12 +30,13 @@ function fixture(t) {
   return root;
 }
 
-function withFakeBuilder(t, root, exit = 0, mutation = null) {
+function withFakeBuilder(t, root, exit = 0, mutation = null, calls = null) {
   const executable = path.join(root, 'fake-bb');
   writeFileSync(executable, `#!${process.execPath}\nimport {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
-import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
+import {appendFileSync,mkdirSync,readFileSync,writeFileSync} from 'node:fs';
 if(process.argv.includes('--version')) {console.log('0.46.1');process.exit(0)}
+if(${JSON.stringify(calls)}) appendFileSync(${JSON.stringify(calls)},process.cwd()+'\\n');
 if(${JSON.stringify(mutation)} && process.cwd().includes('.runtime-stage-')) {
  if(${JSON.stringify(mutation)}==='git-head') execFileSync('git',['-C',${JSON.stringify(root)},'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','--quiet','--allow-empty','-m','Changed during capture']);
  else { const file=${JSON.stringify(root)}+'/'+${JSON.stringify(mutation)};
@@ -87,7 +88,9 @@ test('dependency capture accepts shared inputs but refuses a cycle by resolved p
 });
 
 test('build resolves a shared acyclic dependency from the frozen graph and refuses a cycle before the builder', async t => {
-  const root = fixture(t); withFakeBuilder(t, root);
+  const root = fixture(t), outside = mkdtempSync(path.join(os.tmpdir(), 'pb-bb-builder-calls-'));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  const calls = path.join(outside, 'calls.log'); withFakeBuilder(t, root, 0, null, calls);
   const sdk = path.join(root, 'node_modules/@get-bb/plugin-sdk/package.json');
   const depend = (file, dependency) => writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file)), dependencies: { [dependency]: '*' } }));
   depend(sdk, 'promptobus');
@@ -97,8 +100,11 @@ test('build resolves a shared acyclic dependency from the frozen graph and refus
     readFileSync(path.join(root, 'node_modules/promptobus/index.js')), 'the shared dependency is frozen beside its dependent');
   assert.deepEqual(manifest.identity.inputs.dependencies, computeBuildIdentity(root, '0.46.1').inputs.dependencies);
   assert.equal(manifest.identity.inputs.dependencies.length, 2);
+  assert.equal(readFileSync(calls, 'utf8').trim().split('\n').length, 1, 'the acyclic build reaches the builder once');
+  rmSync(calls);
   depend(path.join(root, 'node_modules/promptobus/package.json'), '@get-bb/plugin-sdk');
   await assert.rejects(build(root), /Cannot freeze cyclic BB dependencies: @get-bb\/plugin-sdk -> promptobus -> @get-bb\/plugin-sdk/);
+  assert.equal(existsSync(calls), false, 'the cyclic build is refused before the builder runs');
   assert.deepEqual(readdirSync(root).filter(name => name.startsWith('.runtime-stage-')), []);
 });
 
