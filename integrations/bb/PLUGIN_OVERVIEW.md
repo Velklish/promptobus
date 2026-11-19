@@ -6,8 +6,8 @@ tools and refuses shell execution, source edits and unclassified external tools.
 
 ## Requirements
 
-BB 0.49.0, Plugin SDK 0.6.132 and a signed-in Codex account are required.
-The current package declares this exact app/SDK pair; historical profiles do not
+BB 0.50 from 0.50.1, Plugin SDK 0.6.157 or newer and a signed-in Codex account
+are required. A new BB minor line needs a new plugin release; historical profiles do not
 admit other versions through its manifest.
 The reviewer admits Codex by its effective restrictions and supported protocol capabilities, without a numeric version bound. Execution and file reads use one local host. Each reviewer receives a
 private Codex home and an empty project sandbox. Existing native providers keep

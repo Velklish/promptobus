@@ -681,3 +681,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-450"></a>`PB-450-managed-claude-mixed-harness` · 2026-11-18 · completed · — · Make managed Claude launches reliable in mixed-harness dev runs
 - <a id="pb-451"></a>`PB-451-stabilize-speed-test-gates` · 2026-11-18 · completed · — · Stabilize and speed up Promptobus test gates
 - <a id="pb-458"></a>`PB-458-suite-dead-code-audit` · 2026-11-18 · completed · — · Audit dead code and reduce redundant test execution
+- <a id="pb-429"></a>`PB-429-bb-049-plugin-compatibility` · 2026-11-19 · completed · — · Ship Promptobus BB plugins compatible with BB 0.50

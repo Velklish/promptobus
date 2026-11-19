@@ -6,9 +6,11 @@ The native Promptobus CLI and harness registry keep their existing entry points.
 
 ## Setup
 
-Use BB 0.49.0 and Plugin SDK 0.6.132 on one local host. The manifest admits
-that exact app/SDK pair; adjacent and future versions require a separate
-compatibility check. Older live profiles below remain historical observations.
+Use BB 0.50.1 or a later 0.50 patch with Plugin SDK 0.6.157 or newer on one
+local host. The manifest declares `bb: ">=0.50.1 <0.51"` and
+`bbPluginSdk: ">=0.6.157"`: a BB patch release keeps the plugin running, while
+a new minor line requires a separate compatibility check and release. The build
+pins SDK 0.6.157 exactly. Older live profiles below remain historical observations.
 The runtime schema dependency is pinned to patched Zod 4.6.7; the SDK's declared
 range uses that same resolved version. Security auditing remains a separate
 `npm audit` check from source compatibility and the package publicity audit.
@@ -541,7 +543,7 @@ account caches and defaults are unchanged.
 | `acp-cursor` | worker, approver | SDK host/provider account windows, or unknown |
 | `acp-opencode` | worker | SDK host/provider account windows, or unknown |
 
-The source package admits BB 0.49.0 with SDK 0.6.132. The historical native
+The source package admits BB 0.50 from 0.50.1 with SDK 0.6.157 or newer. The historical native
 permission proof measured Codex CLI 0.162.0-alpha.17.2. BB 0.46.0
 loads; its full workflow is not a separate measurement. Cursor/OpenCode selection,
 worker provisioning, authenticated tools and recovery, and Cursor acceptance
