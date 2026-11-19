@@ -112,6 +112,8 @@ coverage/
 /lib/codex-retire.d.ts
 /lib/digest.js
 /lib/digest.d.ts
+/lib/observe.js
+/lib/observe.d.ts
 /lib/driver-opencode.js
 /lib/driver-opencode.d.ts
 /lib/instructions.js

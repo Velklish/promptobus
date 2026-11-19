@@ -701,6 +701,12 @@ Everything the mechanism knows about Codex lives here: option vocabulary, comman
 words, turning a plan into `thread/start` params, and approval replies. The thread
 registry and the process holder are in [codex-session.ts](../../lib/codex-session.ts).
 
+The driver declares `attach: false`: `activate` sends `turn/start` to the managed
+thread. A human's existing Codex Desktop chat is a different thread. An active Desktop
+turn can read the selected root's [activity feed](03-cli.md#observe) without attaching
+or starting a reporter. The holder does not wake the idle Desktop chat; Desktop UI
+delivery still requires a live measurement on the target build.
+
 **What Codex does differently.** A session is a thread in its own
 `codex app-server --stdio` process, and that process runs in a `CODEX_HOME` of its
 own — one per participant, built at lift and removed at `done`. cwd, sandbox and

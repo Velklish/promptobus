@@ -27,7 +27,7 @@ interface RunOptions { host?: CliHost | null; cwd?: string; env?: NodeJS.Process
 
 // The command vocabulary, exported so a host's passthrough and refusal read it rather than a copy.
 export const COMMANDS = Object.freeze([
-  'lead', 'spawn', 'step', 'review', 'report', 'models', 'status', 'digest', 'send', 'ask', 'link', 'unlink',
+  'lead', 'spawn', 'step', 'review', 'report', 'models', 'status', 'digest', 'observe', 'send', 'ask', 'link', 'unlink',
   'message-order', 'done', 'abandon', 'stop', 'sweep', 'dismiss', 'history', 'guard', 'warden', 'service', 'mcp', 'install', 'uninstall', 'lease', 'stats',
 ]);
 // `send` and `ask` are not store commands on purpose: each resolves its own home and primes the store
@@ -149,6 +149,9 @@ Participant launch options: --context-purpose technical|user-facing|author-voice
                               active tasks: participants, unread mail, session state
   ${cmd} digest [--task <id>] [--json]
                               task trees: last status lines, open questions, debts and pieces
+  ${cmd} observe --task <root> [--after <cursor>] [--wait <seconds>]
+                              read a JSON activity page without opening a mailbox or harness;
+                              wait at most 20 seconds and resume with nextCursor
   ${cmd} stats [--task <id>]
                               recorded participant generations: wall time, token kinds,
                               bus counts and reasons for unavailable measurements
@@ -724,6 +727,14 @@ export async function runPromptobus(argv: readonly string[] | null | undefined, 
           options: { task: { type: 'string' }, json: { type: 'boolean' } },
         });
         (await import('./digest.js')).digest(host, values);
+        return 0;
+      }
+      case 'observe': {
+        const { values } = parse(at('observe'), rest, {
+          options: { task: { type: 'string' }, after: { type: 'string' }, wait: { type: 'string' } },
+        });
+        const result = await (await import('./observe.js')).observe(host, values);
+        writeLine(output, JSON.stringify(result));
         return 0;
       }
       case 'abandon': {

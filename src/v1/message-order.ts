@@ -1,4 +1,4 @@
-import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { writeJsonAtomic } from '../fs/atomic.js';
@@ -11,12 +11,22 @@ import { requireValid } from './validate.js';
 
 const HEAD_LIMIT = 4096;
 export const messageOrderFile = (home: string) => path.join(home, 'message-order.json');
+const messageOrderLock = (home: string) => path.join(home, '.message-order-lock');
 export function withMessageCommit<T>(home: string, fn: () => T): T {
   mkdirSync(home, { recursive: true });
-  return withDirLock(path.join(home, '.message-order-lock'), fn, {
+  return withDirLock(messageOrderLock(home), fn, {
     onMissing: () => new Error('message order store is missing'),
     onBusy: () => new Error('message order commit is busy; retry after the current writer finishes'),
   });
+}
+export function readMessageFence(home: string): { head: string | null; busy: boolean } {
+  const state = readHead(home);
+  if (state.kind === 'malformed') return refusal('malformed high-water state');
+  // The head may be published before its intent. A held commit lock makes that fence unusable.
+  let busy = false;
+  try { lstatSync(messageOrderLock(home)); busy = true; }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  return { head: state.kind === 'valid' ? state.head : null, busy };
 }
 function refusal(note: string): never {
   return fail('schema-invalid', `message order: ${note}; stop other writers and run message-order rebuild`, {});
