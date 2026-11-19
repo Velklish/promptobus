@@ -573,10 +573,19 @@ interactions are delivery observations. None proves mailbox consumption, complet
 work or acceptance. The SDK exposes no public spawn/send idempotency key; delivery
 and source-work effects are not exactly-once transactions across the two stores.
 
-The adapter sends only to an available idle thread without background agents,
-pending interactions or other queued input. It uses `queue-if-active` to handle a
-concurrent start. A queued hint is reconciled by its marker; a lost accepted reply
-is reconciled against event history. Without a queue or request record it waits
+The adapter sends canonical unread-mail hints to an available idle or active
+thread without background agents, pending interactions or other queued input.
+Raw and display status must agree. The adapter uses `queue-if-active` to queue
+behind current work or handle a concurrent start. If the participant reads all
+actionable mail before its hint runs, recovery retires the unstarted hint even
+after the turn ends. Dispatch also checks the mailbox: newly arrived actionable
+mail can use the same hint; otherwise a mixed queue waits for removal of the
+obsolete hint so the other input can proceed. Obligation-only
+continuations wait for an idle turn boundary. After a lost send reply, recovery
+looks for the hint in the queue by its marker and in the thread's request history.
+Once history records a request for that marker, an older queue snapshot or late
+send reply cannot change it back to queued. A retry has a new marker.
+Without a queue or request record it waits
 30 seconds before a bounded repeated hint. There are at most three hints per
 unread revision. A canonical `task` acknowledged by a non-owner, non-reporter role
 without a later canonical `result` or `review` gets at most two turn-boundary

@@ -111,7 +111,11 @@ async function stand(t, options = {}) {
       } },
       interactions: { list: async ({ threadId }) => interactions.get(threadId) ?? [] },
       queuedMessages: {
-        list: async ({ threadId }) => queues.get(threadId) ?? [],
+        list: async ({ threadId }) => {
+          const entries = queues.get(threadId) ?? [];
+          options.afterQueueSnapshot?.(threadId, entries);
+          return entries;
+        },
         delete: async ({ threadId, queuedMessageId }) => {
           if (options.beforeQueueDelete) await options.beforeQueueDelete();
           const entries = queues.get(threadId) ?? []; const entry = entries.find(row => row.id === queuedMessageId);
@@ -1478,6 +1482,205 @@ test('recovery closes the canon-to-outbox crash gap and reconciles a lost accept
   assert.equal(engine.unread(s.task, 'worker-one'), 1);
 });
 
+for (const ambiguous of [false, true]) test(`active unread canonical mail queues once${ambiguous ? ' with lost reply' : ''} across reload`, async t => {
+  const s = await stand(t, { wakeSend({ threadId, input, queues, threads }) {
+    assert.equal(threads.get(threadId).status, 'active', 'The queued response requires an actually active worker');
+    assert.equal(threads.get(threadId).runtime.displayStatus, 'active');
+    const entry = { id: 'active-queued-wake', threadId, originPluginId: 'promptobus', content: input };
+    queues.set(threadId, [entry]);
+    if (ambiguous) throw new Error('Active queued response was lost');
+    return { ok: true, delivery: 'queued', queuedMessage: entry, waitingOn: { kind: 'thread-busy' } };
+  } });
+  await s.create(); await s.add('worker-one');
+  const thread = s.threads.get('thr-2'); thread.status = thread.runtime.displayStatus = 'active';
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+  const { message: sent } = engine.sendSync(s.task, { from: 'orchestrator', to: ['worker-one'], type: 'task', body: 'Active queue application marker' });
+  await s.reconcile();
+  assert.equal(s.wakes.length, 1, 'Canonical unread mail must queue while the worker is active');
+  assert.equal(s.wakes[0].mode, 'queue-if-active');
+  assert.equal(s.wakes[0].input[0].visibility, 'agent-only');
+  assert.ok(s.wakes[0].input[0].text.includes(sent.id));
+  const before = s.delivery('thr-2');
+  assert.equal(before.pending.state, ambiguous ? 'unknown' : 'queued');
+  const binding = bindingStore(s.host.bb).thread('thr-2');
+  const queued = s.queues.get('thr-2')[0];
+  assert.equal(queued.originPluginId, 'promptobus');
+  assert.equal(queued.content[0].text, before.pending.text);
+  await s.reload(); await s.reconcile();
+  const second = JSON.parse(await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'status', body: 'New revision behind the same queued wake' }));
+  for (let i = 0; i < 3; i++) await s.host.harness.behavior.emitThreadEvent('experimental_thread.events', { thread, sequence: 1 });
+  await s.reconcile(); await s.reload(); await s.reconcile();
+  const after = s.delivery('thr-2');
+  assert.equal(s.wakes.length, 1, 'A new revision and plugin reload must not duplicate the owned queued hint');
+  assert.equal(after.epoch, before.epoch); assert.equal(after.pending.marker, before.pending.marker);
+  assert.equal(after.pending.state, 'queued'); assert.equal(after.pending.queuedId, queued.id);
+  assert.deepEqual(bindingStore(s.host.bb).thread('thr-2'), binding);
+  assert.equal(engine.unread(s.task, 'worker-one'), 2, 'Queue and reload must not ACK either canonical message');
+  s.queues.set('thr-2', []);
+  const hook = s.host.harness.inspection.registrations.hooks['message.dispatch'];
+  const admission = await hook(makeMessageDispatchHookContext({ thread, originPluginId: 'promptobus',
+    input: { blocks: queued.content, text: queued.content[0].text } }));
+  assert.equal(admission.action, 'proceed');
+  const request = s.append('thr-2', 'client/turn/requested', { input: queued.content });
+  await s.reconcile();
+  const recovered = s.delivery('thr-2').pending;
+  assert.equal(recovered.state, 'sent'); assert.equal(recovered.queuedId, null);
+  assert.equal(recovered.requestId, request.data.requestId); assert.equal(recovered.requestSeq, request.seq);
+  assert.deepEqual(JSON.parse(await s.call('thr-2', 'promptobus_mailbox', { mode: 'read' })).messages.map(m => m.id), [sent.id, second.message.id]);
+  assert.equal(JSON.parse(await s.call('thr-2', 'promptobus_mailbox', { mode: 'read' })).messages.length, 0);
+  await s.reconcile(); assert.equal(s.wakes.length, 1, 'ACK during the active turn must not send a result continuation');
+});
+
+test('request history wins over an older queue snapshot for the same hint across reload', async t => {
+  let sends = 0;
+  const options = { wakeSend({ threadId, input, queues }) {
+    const entry = { id: `queued-${++sends}`, threadId, originPluginId: 'promptobus', content: input };
+    queues.set(threadId, [entry]);
+    if (sends === 2) throw new Error('Second queue reply lost');
+    return { delivery: 'queued', queuedMessage: entry };
+  } };
+  const s = await stand(t, options); await s.create(); await s.add('worker-one');
+  const thread = s.threads.get('thr-2'); thread.status = thread.runtime.displayStatus = 'active';
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+  engine.sendSync(s.task, { from: 'orchestrator', to: ['worker-one'], type: 'task', body: 'Keep unread across turns' });
+  await s.reconcile();
+  const first = s.delivery(thread.id).pending;
+  assert.equal(first.queuedId, 'queued-1');
+  let request;
+  options.afterQueueSnapshot = (id, entries) => {
+    if (id !== thread.id) return;
+    delete options.afterQueueSnapshot;
+    assert.equal(entries[0].id, first.queuedId);
+    s.queues.set(id, []);
+    request = s.append(id, 'client/turn/requested', { input: entries[0].content });
+  };
+  const assertRequested = () => {
+    const { cursor, pending } = s.delivery(thread.id);
+    assert.equal(cursor, request.seq); assert.equal(pending.marker, first.marker);
+    assert.equal(pending.state, 'sent'); assert.equal(pending.queuedId, null);
+    assert.equal(pending.requestId, request.data.requestId); assert.equal(pending.requestSeq, request.seq);
+    assert.equal(sends, 1);
+  };
+  await s.reconcile(); assertRequested();
+  await s.reload(); await s.reconcile(); assertRequested();
+  s.finish(thread.id); await s.reconcile();
+  const second = s.delivery(thread.id).pending;
+  assert.notEqual(second.marker, first.marker); assert.equal(second.state, 'unknown');
+  await s.reconcile();
+  const queued = s.delivery(thread.id).pending;
+  assert.equal(queued.marker, second.marker); assert.equal(queued.state, 'queued');
+  assert.equal(queued.queuedId, 'queued-2'); assert.equal(queued.requestId, null);
+  assert.equal(sends, 2); assert.equal(engine.unread(s.task, 'worker-one'), 1);
+});
+
+for (const finish of [false, true]) test(`mailbox read retires only its queued hint when recovery observes ${finish ? 'idle' : 'active'}`, async t => {
+  const s = await stand(t, { wakeSend({ threadId, input, queues }) {
+    const entry = { id: 'owned', threadId, originPluginId: 'promptobus', content: input };
+    queues.set(threadId, [entry]); return { delivery: 'queued', queuedMessage: entry };
+  } });
+  await s.create(); await s.add('worker-one');
+  const thread = s.threads.get('thr-2'); thread.status = thread.runtime.displayStatus = 'active';
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'task', body: 'Read before the queued hint runs' });
+  await s.reconcile();
+  const foreign = { ...s.queues.get(thread.id)[0], id: 'foreign', originPluginId: 'other' };
+  s.queues.get(thread.id).push(foreign);
+  await s.call(thread.id, 'promptobus_mailbox', { mode: 'read' });
+  if (finish) s.finish(thread.id);
+  await s.reconcile();
+  assert.deepEqual(s.queues.get(thread.id), [foreign]); assert.equal(s.delivery(thread.id).pending, null);
+  assert.equal(s.delivery(thread.id).paused, false); assert.equal(s.wakes.length, 1);
+  s.queues.set(thread.id, []); await s.reconcile();
+  assert.equal(s.delivery(thread.id).continuations, finish ? 1 : 0);
+});
+
+for (const scenario of ['alone', 'mixed', 'new mail']) test(`dispatch before recovery after a mailbox read: ${scenario}`, async t => {
+  const s = await stand(t, { wakeSend({ threadId, input, queues }) {
+    const entry = { id: 'hint', threadId, originPluginId: 'promptobus', content: input };
+    queues.set(threadId, [entry]); return { delivery: 'queued', queuedMessage: entry };
+  } });
+  await s.create(); await s.add('worker-one');
+  const thread = s.threads.get('thr-2'); thread.status = thread.runtime.displayStatus = 'active';
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'task', body: 'Queued before read' });
+  await s.reconcile();
+  const [hint] = s.queues.get(thread.id);
+  const foreign = { ...hint, id: 'foreign', originPluginId: 'another-plugin' };
+  const dispatch = entries => {
+    const blocks = entries.flatMap(entry => entry.content);
+    return s.host.harness.inspection.registrations.hooks['message.dispatch'](makeMessageDispatchHookContext({
+      thread, queuedMessages: entries, input: { blocks, text: blocks.map(block => block.text).join('\n') } }));
+  };
+  await s.call(thread.id, 'promptobus_mailbox', { mode: 'read' });
+  if (scenario === 'new mail') {
+    const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+    const { message } = engine.sendSync(s.task, { from: 'orchestrator', to: ['worker-one'], type: 'status', body: 'Arrived after read' });
+    assert.equal((await dispatch([hint])).action, 'proceed');
+    assert.deepEqual(engine.glance(s.task, 'worker-one').map(m => m.id), [message.id]);
+    assert.equal(s.delivery(thread.id).pending.queuedId, hint.id);
+  } else {
+    const mixed = scenario === 'mixed', entries = mixed ? [hint, foreign] : [hint];
+    s.queues.set(thread.id, entries); s.interactions.set(thread.id, [{ id: 'approval' }]);
+    const decision = await dispatch(entries);
+    if (mixed) assert.equal(decision.action, 'wait');
+    else {
+      assert.equal(decision.action, 'reject'); assert.match(decision.message, /cancelled wake was superseded/);
+      s.append(thread.id, 'client/turn/rejected', { requestId: 'obsolete', message: decision.message });
+    }
+    assert.equal(s.delivery(thread.id).pending, null);
+    await s.reconcile(); assert.deepEqual(s.queues.get(thread.id), mixed ? [foreign] : []);
+    if (mixed) assert.equal((await dispatch([foreign])).action, 'proceed');
+    assert.equal(s.delivery(thread.id).paused, false);
+  }
+  assert.equal(s.wakes.length, 1);
+});
+
+test('active obligation-only turns defer continuations until an idle boundary', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  const thread = s.threads.get('thr-2'); thread.status = thread.runtime.displayStatus = 'active';
+  for (let i = 0; i < 3; i++) { await s.reconcile(); await s.host.harness.behavior.emitThreadEvent('thread.active', { thread }); }
+  assert.equal(s.wakes.length, 0); assert.equal(s.delivery('thr-2').continuations, 0);
+  s.finish('thr-2'); await s.reconcile();
+  assert.equal(s.wakes.length, 1); assert.match(s.delivery('thr-2').pending.key, /^result:/);
+  assert.equal(s.delivery('thr-2').continuations, 1);
+  await s.reconcile(); assert.equal(s.wakes.length, 1, 'The continuation itself is now active');
+});
+
+for (const unavailable of ['background', 'interaction', 'raw-status', 'display-status', 'offline', 'starting', 'stopping', 'error', 'binding']) {
+  test(`active unread mail defers for ${unavailable}`, async t => {
+    const s = await stand(t); await s.create(); await s.add('worker-one');
+    const thread = s.threads.get('thr-2'); thread.status = thread.runtime.displayStatus = 'active';
+    if (unavailable === 'background') thread.activeBackgroundAgentCount = 1;
+    else if (unavailable === 'interaction') s.interactions.set('thr-2', [{ id: 'approval' }]);
+    else if (unavailable === 'raw-status') thread.status = 'idle';
+    else if (unavailable === 'display-status') thread.runtime.displayStatus = 'idle';
+    else if (unavailable === 'offline') s.host.harness.inspection.sdk.stub('hosts.get', async () => ({ id: 'local', status: 'disconnected', lifecycle: { phase: 'active' } }));
+    else if (unavailable === 'binding') thread.environmentId = 'foreign';
+    else thread.status = thread.runtime.displayStatus = unavailable;
+    const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+    engine.sendSync(s.task, { from: 'orchestrator', to: ['worker-one'], type: 'task', body: 'Deferred active mail' });
+    await s.reconcile();
+    assert.equal(s.wakes.length, 0); assert.equal(s.delivery('thr-2').pending, null);
+    assert.equal(engine.unread(s.task, 'worker-one'), 1);
+  });
+}
+
+test('active unread mail preserves foreign queued input and refuses an active resume', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  const thread = s.threads.get('thr-2'); thread.status = thread.runtime.displayStatus = 'active';
+  const foreign = { id: 'foreign', threadId: 'thr-2', originPluginId: 'other', content: [{ type: 'text', text: 'User-owned queued input' }] };
+  s.queues.set('thr-2', [foreign]);
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'task', body: 'Wait behind foreign input' });
+  await s.reconcile(); assert.equal(s.wakes.length, 0); assert.deepEqual(s.queues.get('thr-2'), [foreign]);
+  assert.equal((await s.control('stop', 'worker-one')).exitCode, 0);
+  thread.status = thread.runtime.displayStatus = 'active';
+  const resumed = await s.control('resume', 'worker-one');
+  assert.equal(resumed.exitCode, 1); assert.match(resumed.stderr, /available idle thread/);
+  thread.runtime.displayStatus = 'idle';
+  assert.equal((await s.control('resume', 'worker-one')).exitCode, 1, 'Raw active status still blocks resume');
+  await s.reload(); await s.reconcile();
+  assert.equal(s.delivery('thr-2').paused, true); assert.equal(s.wakes.length, 0);
+  assert.deepEqual(s.queues.get('thr-2'), [foreign]);
+});
+
 for (const ambiguous of [false, true]) test(`queued wake${ambiguous ? ' with lost reply' : ''} survives reload without duplicate send or mailbox ACK`, async t => {
   const s = await stand(t, { wakeSend({ threadId, input, queues }) {
     const entry = { id: 'queued-wake', threadId, originPluginId: 'promptobus', content: input }; queues.set(threadId, [entry]);
@@ -1509,7 +1712,7 @@ test('pending interaction defers wake, a denied interaction pauses it, and repla
   assert.equal(s.delivery('thr-2').paused, true); assert.equal(s.delivery('thr-2').epoch, epoch);
 });
 
-test('operator Stop wins over a late queued send response and stays paused after reload until explicit resume', async t => {
+for (const initial of ['idle', 'active']) test(`operator Stop wins over a late queued send from ${initial} and stays paused after reload until explicit resume`, { timeout: 10000 }, async t => {
   const entered = deferred(); const reply = deferred();
   let queued = true;
   const s = await stand(t, { async wakeSend({ threadId, input, queues, append, threads }) {
@@ -1521,6 +1724,7 @@ test('operator Stop wins over a late queued send response and stays paused after
     return { ok: true, delivery: 'sent' };
   } });
   await s.create(); await s.add('worker-one');
+  s.threads.get('thr-2').status = s.threads.get('thr-2').runtime.displayStatus = initial;
   await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'status', body: 'Stop while send is unresolved' });
   await entered.promise;
   assert.equal((await s.control('stop', 'worker-one')).exitCode, 0);

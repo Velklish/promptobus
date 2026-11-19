@@ -120,7 +120,8 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
     if (observation.thread?.archivedAt !== null && observation.thread?.archivedAt !== undefined
       || observation.thread?.deletedAt !== null && observation.thread?.deletedAt !== undefined) { pause(b, 'BB thread archived or deleted'); return; }
     if (observation.status === 'error' || observation.status === 'stopping') { pause(b, `BB ${observation.status}`); return; }
-    if (observation.view.state !== 'alive' || observation.status !== 'idle' || observation.thread?.activeBackgroundAgentCount !== 0) return;
+    if (observation.view.state !== 'alive' || observation.thread?.activeBackgroundAgentCount !== 0
+      || observation.thread.status !== observation.status || !['active', 'idle'].includes(observation.status)) return;
     if ((await bb.sdk.threads.interactions.list({ threadId: id, signal })).length) return;
     const mail = pendingSchema.parse(await onHost(b, { operation: 'pending' }, signal));
     const entries = await bb.sdk.threads.queuedMessages.list({ threadId: id, signal });
@@ -134,10 +135,18 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
       await cancelQueued(b);
       return;
     }
+    if (!mail.ids.length) {
+      if (state.pending?.key.startsWith('mail:') && state.pending.requestSeq === null) {
+        store.updateDelivery(id, retire);
+        await sweepRetired(b, signal);
+        return;
+      }
+      if (observation.status === 'active') return;
+    }
     if (state.pending) {
       const pending = state.pending;
       const queued = entries.find(entry => owns(id, entry.content, entry.originPluginId) && matches(entry.content, pending.text, pending.visibility));
-      if (queued) {
+      if (queued && pending.requestSeq === null) {
         store.updateDelivery(id, current => { if (current.epoch === epoch && current.pending?.marker === pending.marker) {
           current.pending.state = 'queued'; current.pending.queuedId = queued.id;
         } });
@@ -176,11 +185,11 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
       const result = await Promise.race([sent,
         new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('BB send response deadline exceeded')), 5000); })]);
       if (disposed) return;
-      store.updateDelivery(id, current => { if (current.epoch === epoch && current.pending?.marker === marker) {
+      store.updateDelivery(id, current => { if (current.epoch === epoch && current.pending?.marker === marker && current.pending.requestSeq === null) {
         current.pending.state = result.delivery; current.pending.queuedId = result.delivery === 'queued' ? result.queuedMessage.id : null;
       } });
     } catch (error) {
-      if (!disposed) store.updateDelivery(id, current => { if (current.epoch === epoch && current.pending?.marker === marker) {
+      if (!disposed) store.updateDelivery(id, current => { if (current.epoch === epoch && current.pending?.marker === marker && current.pending.requestSeq === null) {
         current.pending.state = 'unknown'; current.reason = `Ambiguous BB send: ${(error as Error).message}`;
       } });
     } finally { clearTimeout(timer); }
@@ -218,6 +227,15 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
   bb.onDispose(() => { disposed = true; });
   return {
     owns,
+    async recheckMail(b: Binding, owned: string[], epoch: number, signal: AbortSignal) {
+      const id = b.threadId!, pending = store.delivery(id).pending;
+      if (!pending?.key.startsWith('mail:') || !owned.includes(pending.text)) return;
+      const mail = pendingSchema.parse(await onHost(b, { operation: 'pending' }, signal));
+      signal.throwIfAborted();
+      if (!mail.ids.length) store.updateDelivery(id, state => {
+        if (state.epoch === epoch && state.pending?.marker === pending.marker) retire(state);
+      });
+    },
     run,
     replay,
     pause,
@@ -238,7 +256,7 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
       await replay(b);
       const epoch = expectedEpoch;
       const observation = await observeBbParticipant(bb, b);
-      if (observation.view.state !== 'alive' || observation.status !== 'idle' || observation.thread?.activeBackgroundAgentCount !== 0
+      if (observation.view.state !== 'alive' || observation.status !== 'idle' || observation.thread?.status !== 'idle' || observation.thread.activeBackgroundAgentCount !== 0
         || (await bb.sdk.threads.interactions.list({ threadId: b.threadId! })).length) throw new Error('Resume requires an available idle thread without pending interactions');
       await cancelQueued(b);
       store.updateDelivery(b.threadId!, state => {

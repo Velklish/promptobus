@@ -290,6 +290,8 @@ export function registerRuntime(bb: BbPluginApi) {
         signal.throwIfAborted();
         await checkStep(b, signal);
         signal.throwIfAborted();
+        await recovery.recheckMail(b, owned, epoch, signal);
+        signal.throwIfAborted();
         await recovery.replay(b, signal);
         signal.throwIfAborted();
         await admit(b, signal);
