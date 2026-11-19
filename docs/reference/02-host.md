@@ -287,6 +287,12 @@ The executable scripts under `scripts/live-*.mjs` run only when the file is the 
 
 A syntax check is `node --check scripts/<script>.mjs`. It parses the file and runs nothing. Importing the file is a refusal: the module throws `LIVE_SCRIPT_IMPORT` before any harness binary is probed, and no session starts.
 
+During the release canary's live loop, the wrapper owns one direct child in a separate process group. It forwards the first INT, TERM or HUP to that child and waits up to 15 seconds. A timeout reports `termination UNKNOWN`. Even confirmed wrapper-child exit does not establish that every native session stopped: on interruption the canary retains the installed workspace and output, and its unresolved marker prevents a later canary sweep.
+
+Without a signal, the canary removes its workspace only after the child exits zero with a final `safe: true` cleanup receipt and the wrapper confirms session, process and path cleanup. A failed version check still makes the report red even when cleanup was confirmed. The wrapper records completion only after writing the report. Beyond the age and count thresholds, sweep requires a completed report for that exact directory, a dead owner and only the expected report files. Unmarked older reports and unfinished runs stay in place.
+
+For the registry check, the canary reads `claude agents --json` afresh and applies the live E2E cleanup parser to the raw response. A bare array, `{ "agents": [...] }` or `{ "sessions": [...] }` supplies a list. `[]` confirms zero sessions; `{}` supplies no list, so the canary retains the workspace and pack with the unresolved marker.
+
 <!-- quote:../../scripts/live-entry.mjs -->
 ```text
 export function refuseImportedEntry(metaUrl, argv = process.argv) {

@@ -177,19 +177,48 @@ const fixtureSpawn = (...args) => {
 };
 process.on('exit', () => { for (const child of fixtureChildren) child.kill('SIGKILL'); });
 const fixture = path.join(SB, 'abort-fixture.mjs');
-const idleCode = 'process.on("SIGTERM",()=>{});process.stdout.write("ready\\n");setInterval(()=>{},1000)';
+const idleCode = 'process.on("SIGTERM",()=>{});process.stdout.write("ready\\n");setTimeout(()=>{},30000)';
 writeFileSync(fixture, `
 import { spawn } from 'node:child_process';
-import { liveRun, onAbort } from ${JSON.stringify(new URL('../scripts/live-run.mjs', import.meta.url).href)};
+import { writeFileSync } from 'node:fs';
+import { liveRun, onAbort, processTable } from ${JSON.stringify(new URL('../scripts/live-run.mjs', import.meta.url).href)};
 const sandbox = process.argv[2];
-const run = liveRun({ sandbox, readSessions: () => [], stopSession: async () => {}, timeoutMs: 100 });
+const fault = process.argv[3];
+const run = liveRun({ sandbox, readSessions: () => [], stopSession: async () => {}, timeoutMs: 100,
+  readProcesses: fault ? () => { throw Error('injected discovery failure'); } : processTable });
 const child = spawn(process.execPath, ['-e', ${JSON.stringify(idleCode)}], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
+process.once('exit', () => child.kill('SIGKILL'));
+const receipt = processTable().find(row => row.pid === child.pid && row.parent === process.pid);
+if (!receipt?.birth) throw Error('owned child identity unavailable');
+writeFileSync(sandbox+'/receipt.json', JSON.stringify(receipt));
 run.child(child, { detached: true });
 await new Promise((resolve) => child.stdout.once('data', resolve));
 onAbort(async () => { const result = await run.cleanup(); process.stdout.write(JSON.stringify(result)+'\\n'); });
 process.stdout.write(JSON.stringify({ready:true,pid:child.pid})+'\\n');
 setInterval(()=>{},1000);
 `);
+
+const ownedAlive = receipt => processTable().some(row => row.pid === receipt.pid && row.birth === receipt.birth);
+{
+  const dir = stand('discovery-fault');
+  const foreign = fixtureSpawn(process.execPath, ['-e', 'setTimeout(()=>{},15000)'], { stdio: 'ignore' });
+  const parent = fixtureSpawn(process.execPath, [fixture, dir, 'fail'], { stdio: ['ignore', 'ignore', 'pipe'] });
+  let err = '';
+  parent.stderr.on('data', chunk => { err += chunk; });
+  let owned;
+  try {
+    const ended = await waitFor(() => parent.exitCode !== null, { timeoutMs: 5000 });
+    owned = JSON.parse(readFileSync(path.join(dir, 'receipt.json')));
+    const dead = await waitFor(() => !ownedAlive(owned), { timeoutMs: 2000 });
+    console.log('discovery fault:', JSON.stringify({ owned, dead, foreign: foreign.pid, parentExit: parent.exitCode }));
+    check('discovery failure before abort registration releases the exact child and preserves its neighbour',
+      ended && parent.exitCode === 1 && err.includes('injected discovery failure') && owned.parent === parent.pid
+      && dead && samePid(foreign.pid), err);
+  } finally {
+    parent.kill('SIGKILL'); foreign.kill();
+    if (owned && ownedAlive(owned)) process.kill(owned.pid, 'SIGKILL');
+  }
+}
 
 async function launch(name) {
   const dir = stand(name);
@@ -202,7 +231,8 @@ async function launch(name) {
     try { return JSON.parse(output.split('\n')[0]); } catch { return null; }
   }, { timeoutMs: 10_000 });
   if (!ready?.ready) { parent.kill('SIGKILL'); throw new Error(`fixture not ready: ${errors}`); }
-  return { dir, parent, pid: ready.pid, output: () => output, errors: () => errors };
+  const receipt = JSON.parse(readFileSync(path.join(dir, 'receipt.json')));
+  return { dir, parent, pid: ready.pid, receipt, output: () => output, errors: () => errors };
 }
 
 for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]]) {
@@ -215,7 +245,7 @@ for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]
       dead && run.parent.exitCode === code && !samePid(run.pid) && existsSync(run.dir) && priorRunIsLive(run.dir), `${run.output()} ${run.errors()}`);
     check(`${signal} leaves an unrelated Node process alive`, samePid(foreign.pid));
   } finally {
-    if (samePid(run.pid)) process.kill(run.pid, 'SIGKILL');
+    if (ownedAlive(run.receipt)) process.kill(run.pid, 'SIGKILL');
     if (run.parent.exitCode === null) run.parent.kill('SIGKILL');
     foreign.kill('SIGTERM');
     await waitFor(() => !samePid(run.pid) && foreign.exitCode !== null && run.parent.exitCode !== null, { timeoutMs: 10_000 });
@@ -234,7 +264,7 @@ for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]
     const next = freshScenarioIdentity('e2ebus', clock);
     check('a new run cannot reuse the interrupted task id or visible title',
       next.id !== identityA.id && next.title !== identityA.title);
-    process.kill(run.pid, 'SIGKILL');
+    if (ownedAlive(run.receipt)) process.kill(run.pid, 'SIGKILL');
     await waitFor(() => !samePid(run.pid), { timeoutMs: 10_000 });
     check('an unverified old lifecycle remains held even after orphan death', priorRunIsLive(run.dir));
     const record = JSON.parse(readFileSync(path.join(run.dir, LIVE_RECORD), 'utf8'));
@@ -246,7 +276,7 @@ for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]
     check('a confirmed dead old lifecycle is eligible for the shared sweep', removed.length === 1 && !existsSync(run.dir), JSON.stringify({ record, removed, held: priorRunIsLive(run.dir),
       processes: processTable().filter((p) => record.processes.some((own) => own.pid === p.pid) || record.groups.includes(p.group)) }));
   } finally {
-    if (samePid(run.pid)) process.kill(run.pid, 'SIGKILL');
+    if (ownedAlive(run.receipt)) process.kill(run.pid, 'SIGKILL');
     if (run.parent.exitCode === null && run.parent.signalCode === null) run.parent.kill('SIGKILL');
     await waitFor(() => !samePid(run.pid), { timeoutMs: 10_000 });
   }

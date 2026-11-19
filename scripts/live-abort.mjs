@@ -1,6 +1,7 @@
 // Cleanup of a live run cut off by a signal: `finally` of the script body never runs on one.
 // The contract and why the handler goes first — contributing guide § Live harness scenarios.
 import { writeSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import os from 'node:os';
 import process from 'node:process';
 
@@ -15,6 +16,42 @@ export function exitCodeOf(signal, signals = os.constants.signals) {
 
 /** How long an awaited cleanup may run before the exit goes without it. */
 export const ABORT_WAIT_MS = 15_000;
+
+// A separate group makes a parent-only signal and a terminal group signal one forwarding path.
+export function runCanaryChild(entry, { cwd, env, fd, waitMs = ABORT_WAIT_MS }) {
+  const child = spawn(process.execPath, [entry], { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  return new Promise((resolve, reject) => {
+    let abort = null, timer, logError, remaining = 64 * 1024 * 1024;
+    const capture = bytes => {
+      if (logError) return;
+      try {
+        const length = Math.min(remaining, bytes.length);
+        for (let n = 0; n < length;) n += writeSync(fd, bytes, n, length - n);
+        remaining -= length;
+        if (length !== bytes.length) logError = new Error('live output exceeded 64 MiB');
+      } catch (error) { logError = error; }
+    };
+    for (const stream of [child.stdout, child.stderr]) stream.on('data', capture);
+    const finish = (status, terminated, error) => {
+      clearTimeout(timer);
+      for (const signal of ABORT_SIGNALS) process.off(signal, forward);
+      for (const stream of [child.stdout, child.stderr]) stream.off('data', capture);
+      if (error || (!abort && logError)) reject(error ?? logError);
+      else resolve({ status, abort, terminated, pid: child.pid });
+    };
+    const forward = signal => {
+      if (abort) return;
+      abort = signal;
+      timer = setTimeout(() => { child.unref(); finish(null, false); }, waitMs);
+      child.kill(signal);
+    };
+    for (const signal of ABORT_SIGNALS) process.on(signal, forward);
+    child.once('error', error => {
+      if (!abort) finish(null, false, error);
+    });
+    child.once('close', code => finish(code, true));
+  });
+}
 
 // Prepended: the sandbox helper's own handler exits 130 and would otherwise run first. An
 // AWAITED cleanup needs the run's sandbox outside that handler (`signalCleanup: false`).

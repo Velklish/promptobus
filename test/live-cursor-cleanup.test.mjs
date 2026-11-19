@@ -14,7 +14,8 @@ import { cursorDriver } from '../lib/driver-cursor.js';
 import { processState } from '../lib/service-state.js';
 
 const PACKAGE = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-for (const boundary of ['early normal', 'delayed abort', 'unknown abort', 'unknown normal', 'foreign task', 'foreign home']) {
+for (const boundary of ['early normal', 'delayed abort', 'pending abort', 'unknown abort', 'unknown normal', 'foreign task', 'foreign home']) {
+  const pending = boundary === 'pending abort';
   const foreign = boundary.startsWith('foreign');
   const ROOT = makeSandbox('promptobus-promptobus-live-cursor-cleanup-');
   const bins = path.join(ROOT, 'bin'), harness = await cursorStub.installHarness({ binDir: bins, bundledRuntime: true });
@@ -26,6 +27,11 @@ for (const boundary of ['early normal', 'delayed abort', 'unknown abort', 'unkno
   const stopFile = path.join(ROOT, 'Stop.json'), removedFile = path.join(ROOT, 'before-remove.json'), delayed = path.join(ROOT, 'delayed.jsonl');
   const privateBeforeMigration = mkdtempSync(path.join(realpathSync('/tmp'), 'pbcur-fixture-'));
   let source = readFileSync(entry, 'utf8');
+  if (pending) {
+    const budget = '}, { waitMs: 30_000 });';
+    if (source.split(budget).length !== 2) throw Error('Cursor abort budget boundary missing');
+    source = source.replace(budget, '}, { waitMs: 1500 });');
+  }
   const anchor = boundary === 'early normal' ? '  // --- step 2: raise a Cursor participant' : "  ref = wp?.sessionRef ?? '';";
   if (source.split(anchor).length !== 2) throw new Error(`live Cursor fixture lost the ${boundary} boundary`);
   const injection = `
@@ -83,7 +89,8 @@ import {processIdentity as fixtureIdentity,processState as fixtureState} from '.
 const fixtureStop=cursorDriver.stop;
 cursorDriver.stop=async(ref,options)=>{
   const record=readSession(ref),pane=record?.panePid?fixtureIdentity(record.panePid):null;
-  fixtureWrite(${JSON.stringify(armed)},'native Stop entered');
+  fixtureWrite(${JSON.stringify(armed)},JSON.stringify({ref,pane}));
+  ${pending ? 'await new Promise(()=>{});' : ''}
   const result=await fixtureStop(ref,options);
   fixtureWrite(${JSON.stringify(stopFile)},JSON.stringify({ref,timeoutMs:options?.timeoutMs,pane,result,
     stateBeforeTeardown:pane?fixtureState(pane):'unknown',recordPresent:!!readSession(ref)}));
@@ -105,7 +112,7 @@ if(process.argv.includes('list-sessions')&&existsSync(${JSON.stringify(armed)}))
       PROMPTOBUS_CURSOR_USER_HOME: harness.userHome }, env: process.env });
   if (!proved.ok) throw new Error(`owned Cursor isolation refused: ${proved.reason}`);
   const child = spawn(process.execPath, [entry], { stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, PROMPTOBUS_SERVICE_HOME: privateBeforeMigration, [STUB_BIN]: bins } });
+    env: { ...process.env, TMPDIR: ROOT, PROMPTOBUS_SERVICE_HOME: privateBeforeMigration, [STUB_BIN]: bins } });
   let out = '', exit = null;
   child.stdout.on('data', bytes => { out += bytes; }); child.stderr.on('data', bytes => { out += bytes; });
   const done = new Promise(resolve => child.on('close', (code, signal) => { exit = { code, signal }; resolve(exit); }));
@@ -117,12 +124,17 @@ if(process.argv.includes('list-sessions')&&existsSync(${JSON.stringify(armed)}))
       && (boundary === 'early normal' ? !raised.ref && !raised.pane : !!raised.pane && processState(raised.pane) === 'alive'),
       JSON.stringify({ raised, out }));
     const signal = boundary.endsWith('abort');
+    const neighbour = cursorSession.sessionFile('foreign-fixture');
+    if (signal) cursorSession.writeSession({ ref: 'foreign-fixture', cwd: ROOT });
+    const before = signal && readFileSync(neighbour);
     if (signal) child.kill('SIGTERM'); else writeFileSync(release, 'raise the normal fixture exception');
     await Promise.race([done, new Promise(resolve => setTimeout(resolve, 40000).unref())]);
     const stopped = existsSync(stopFile) ? JSON.parse(readFileSync(stopFile, 'utf8')) : null;
     const removed = existsSync(removedFile) ? JSON.parse(readFileSync(removedFile, 'utf8')) : null;
     const record = raised?.ref ? cursorSession.readSession(raised.ref) : null;
     const sandbox = raised?.sandbox, unknown = boundary.startsWith('unknown');
+    if (signal) check(`live Cursor ${boundary}: the foreign registry record survived byte-for-byte`,
+      existsSync(neighbour) && before.equals(readFileSync(neighbour)));
     writeSync(1, `  · live-cursor-cleanup-receipt: ${JSON.stringify({ boundary, runtimeDirectory: mechanism,
       exit, raised, stopped, removed, sandboxPresentAfterExit: sandbox ? existsSync(sandbox) : null,
       recordPresentAfterExit: !!record, homePresentAfterExit: record?.cwd ? existsSync(record.cwd) : null,
@@ -135,7 +147,7 @@ if(process.argv.includes('list-sessions')&&existsSync(${JSON.stringify(armed)}))
       && processState(raised.owner) === 'alive' && stopped?.result?.stopped === true && !record
       && !!sandbox && existsSync(sandbox) && !removed && out.includes('Shared service still has live clients or active work'),
       JSON.stringify({ raised, stopped, removed, out }));
-    else check(`live Cursor ${boundary}: the same physical shared owner exits and releases its task seat before teardown`,
+    else if (!pending) check(`live Cursor ${boundary}: the same physical shared owner exits and releases its task seat before teardown`,
       !!raised?.owner && processState(raised.owner) === 'dead'
       && (unknown ? !!sandbox && existsSync(sandbox) : removed?.ownerState === 'dead' && removed?.seat === null && removed?.sandboxPresent === true),
       JSON.stringify({ raised, removed, out }));
@@ -147,10 +159,14 @@ if(process.argv.includes('list-sessions')&&existsSync(${JSON.stringify(armed)}))
         && stopped?.result?.ok === true && stopped?.result?.stopped === true && stopped?.stateBeforeTeardown === 'dead'
         && removed?.paneState === 'dead' && !record && !existsSync(sandbox), JSON.stringify({ reads, raised, stopped, removed, out }));
     }
-    if (unknown) {
+    if (unknown || pending) {
       const marker = sandbox && existsSync(path.join(sandbox, RUN_OWNER_FILE)) ? JSON.parse(readFileSync(path.join(sandbox, RUN_OWNER_FILE), 'utf8')) : null;
+      const entered = readCompleteJson(armed);
+      const outcome = pending ? !stopped && out.includes('cleanup after SIGTERM did not end in 1500 ms')
+        && !out.includes('owned native cleanup and service exit confirmed') : stopped?.result?.ok === false && stopped?.stateBeforeTeardown === 'alive';
       check(`live Cursor ${boundary}: child exit preserves UNKNOWN record, same live pane, home and unresolved sandbox`,
-        stopped?.result?.ok === false && stopped?.stateBeforeTeardown === 'alive'
+        outcome && entered?.ref === raised.ref && entered.pane?.birth === raised.pane.birth && entered.pane?.pid === raised.pane.pid
+        && record?.panePid === raised.pane.pid && processState(raised.pane) === 'alive'
         && !!record?.cwd && existsSync(record.cwd) && !!sandbox && existsSync(sandbox) && marker?.cleanup?.state === 'unresolved',
         JSON.stringify({ raised, stopped, marker, recordHome: record?.cwd, out }));
       const lines = sandbox ? sweepLiveRuns(path.dirname(sandbox), { prefix: path.basename(sandbox), current: null }) : [];
@@ -171,8 +187,10 @@ if(process.argv.includes('list-sessions')&&existsSync(${JSON.stringify(armed)}))
       try { process.kill(raised.owner.pid, 'SIGTERM'); } catch { /* same owner already exited */ }
       await waitFor(() => processState(raised.owner) === 'dead', { timeoutMs: 10000 });
     }
-    if (raised?.sandbox && (!raised.pane || processState(raised.pane) === 'dead') && processState(raised.owner) === 'dead'
-      && (!raised.ref || !cursorSession.readSession(raised.ref))) rmSync(raised.sandbox, { recursive: true, force: true });
+    const released = raised?.owner && processState(raised.owner) === 'dead' && (!raised.pane || processState(raised.pane) === 'dead')
+      && (!raised.ref || !cursorSession.readSession(raised.ref));
+    if (pending) check('live Cursor pending abort: fixture insurance released its retained native pane and service owner', released);
+    if (raised?.sandbox && released) rmSync(raised.sandbox, { recursive: true, force: true });
     if (!raised?.owner || processState(raised.owner) === 'dead') rmSync(privateBeforeMigration, { recursive: true, force: true });
     harness.restore();
   }

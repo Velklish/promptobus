@@ -136,14 +136,16 @@ setInterval(() => {}, 1000);
   return file;
 }
 
-async function abortRun(name, register = null, signal = 'SIGTERM', fixture = null) {
+async function abortRun(name, register = null, signal = 'SIGTERM', fixture = null, executable = process.execPath) {
   const dir = path.join(SB, name);
   mkdirSync(dir, { recursive: true });
   writeFileSync(path.join(dir, 'owned'), 'resource the run owns\n');
   writeFileSync(path.join(dir, 'neighbour'), 'resource another run owns\n');
-  const child = spawn(process.execPath, [fixture ?? writeFixture(dir, register)], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(executable, [fixture ?? writeFixture(dir, register)], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const exited = new Promise(resolve => child.once('close', (code, sig) => resolve({ code, sig })));
   let out = '';
   let err = '';
+  child.once('error', error => { err += error.message; });
   child.stderr.on('data', (c) => { err += c; });
   const ready = await new Promise((resolve) => {
     const timer = setTimeout(() => resolve(null), 15000);
@@ -152,13 +154,19 @@ async function abortRun(name, register = null, signal = 'SIGTERM', fixture = nul
       const m = /READY (\S+)/.exec(out);
       if (m) { clearTimeout(timer); resolve(m[1]); }
     });
-    child.on('exit', () => { clearTimeout(timer); resolve(null); });
+    exited.then(() => { clearTimeout(timer); resolve(null); });
   });
   const traceBefore = existsSync(path.join(dir, 'trace.json'));
-  const exited = new Promise((resolve) => child.on('exit', (code, sig) => resolve({ code, sig })));
   if (ready) child.kill(signal);
   else child.kill('SIGKILL');
-  const { code, sig } = await exited;
+  let deadline;
+  const timeout = new Promise((_, reject) => {
+    deadline = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error(`fixture ${name} did not close; stderr: ${err}`));
+    }, 5000);
+  });
+  const { code, sig } = await Promise.race([exited, timeout]).finally(() => clearTimeout(deadline));
   let trace = null;
   try { trace = JSON.parse(readFileSync(path.join(dir, 'trace.json'), 'utf8')); } catch { trace = null; }
   return {
@@ -167,6 +175,17 @@ async function abortRun(name, register = null, signal = 'SIGTERM', fixture = nul
     owned: existsSync(path.join(dir, 'owned')),
     neighbour: existsSync(path.join(dir, 'neighbour')),
   };
+}
+
+const earlyFixture = path.join(SB, 'early.mjs');
+writeFileSync(earlyFixture, "process.stderr.write('fixture refused before READY\\n'); process.exitCode = 17;");
+for (const [name, executable, expected] of [['early exit', process.execPath, 'fixture refused'],
+  ['spawn error', path.join(SB, 'absent'), 'ENOENT']]) {
+  const started = Date.now();
+  const result = await abortRun(name, null, 'SIGTERM', earlyFixture, executable);
+  check(`abort: ${name} before READY keeps its diagnostic without exhausting the ready timeout`,
+    !result.ready && result.err.includes(expected) && (name !== 'early exit' || result.code === 17)
+    && Date.now() - started < 15000, JSON.stringify(result));
 }
 
 const term = await abortRun('prepended');
