@@ -36,13 +36,14 @@
 // **The file runs in a serial runner group** — for the same reason as its stub-Claude
 // twin: the knock loop runs between processes over real sockets and tmux panes, and under
 // pool load those thresholds either go red on working code or go green on nothing.
+import { spawnSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { check, skip } from './check.mjs';
 import { listenTestSocket, makeSandbox, makeSockPath, writeHostConfig } from './sandbox.mjs';
 import * as cursorStub from './harness-cursor.mjs';
 import * as codexStub from './harness-codex.mjs';
-import { REVIEWER, runScenario, sentBy, store, WORKER } from './scenario.mjs';
+import { MARK, REVIEWER, runScenario, sentBy, store, WORKER } from './scenario.mjs';
 import { cursorDriver } from '../lib/driver-cursor.js';
 import { codexDriver } from '../lib/driver-codex.js';
 import * as cursorSession from '../lib/cursor-persist.js';
@@ -77,6 +78,10 @@ const binDir = path.join(SB, 'bin');
 // the sandbox hook removes its directory before the stand has time to kill its processes.
 const cursorHarness = await cursorStub.installHarness({ binDir, bundledRuntime: true });
 const codexHarness = await codexStub.installHarness({ binDir });
+const tmuxPath = cursorSession.tmuxBin();
+if (tmuxPath !== path.join(binDir, 'tmux')) throw new Error(`Mixed fixture did not resolve its own tmux: ${tmuxPath}`);
+const tmuxVersion = spawnSync(tmuxPath, ['-V'], { encoding: 'utf8', timeout: 5000 });
+if (tmuxVersion.status !== 0) throw new Error(`Mixed fixture could not run ${tmuxPath}: ${tmuxVersion.error ?? tmuxVersion.stderr}`);
 
 // The caller prepares the workspace: `--harness` refuses a tool that is not in
 // `promptobus.json` — `sync` did not lay out adapters for it, and the participant would
@@ -183,6 +188,7 @@ const report = await runScenario({
   // diff at the same address, without a second session.
   reviewRounds: 2,
   listenSocket: listenTestSocket,
+  trace: line => { if (line.startsWith('step 7 evidence:')) console.log(`  ${line}`); },
 });
 
 if (report.skipped) {
@@ -198,6 +204,19 @@ process.stdout.write(`  ⏱ ${report.timings.map((t) => `${t.name} ${(t.ms / 100
 // "the lineup came together" from "we got lucky".
 const workerTrace = cursorStub.readTrace(cursorHarness.home, WORKER);
 const reviewerTrace = codexStub.readTrace(codexHarness.home, REVIEWER);
+const tookAt = workerTrace.findIndex(entry => entry.kind === 'tool'
+  && entry.tool === 'promptobus_mailbox' && !entry.isError && entry.text?.includes(MARK.order));
+const actions = [];
+if (tookAt >= 0) for (const entry of workerTrace.slice(tookAt + 1)) {
+  if (entry.kind === 'turn-end') break;
+  actions.push(entry);
+}
+const resultAt = actions.findIndex(entry => entry.kind === 'tool' && entry.tool === 'promptobus_send' && !entry.isError);
+const delivery = resultAt < 0 ? null : actions.slice(0, resultAt).find(entry => entry.kind === 'untilDelivered');
+const evidence = { mailbox: workerTrace[tookAt]?.at, deliveredAt: delivery?.deliveredAt, reply: actions[resultAt]?.at };
+check('step 7: the Cursor stand took the review note and observed delivery before sending its reply',
+  !!delivery?.deliveredAt && !delivery.timeout && Date.parse(delivery.deliveredAt) <= Date.parse(evidence.reply), JSON.stringify(evidence));
+console.log(`  Cursor delivery trace: ${JSON.stringify(evidence)}`);
 const served = (trace) => trace.some((e) => e.kind === 'turn-end') && trace.some((e) => e.kind === 'tool');
 check('both stub stands played turns of one loop — worker with the agent binary, reviewer with the codex binary',
   served(workerTrace) && served(reviewerTrace),

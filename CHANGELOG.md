@@ -35,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Rebuild both TypeScript projects before a focused one-file test and refuse orphaned JavaScript or declarations. The runtime build refreshes ESM and CommonJS output even after the last source import is removed.
+- Require a readable baseline for the fixture's warden delivery mark before reading mail, and compare the driver record's Cursor pane PID with the run-owned tmux pane.
+
 - Keep an OpenCode stdio server whose first argument repeats its command: only the bus entry drops the duplicated binary.
 - Let hosts keep private environment variables out of managed participants and owner snapshots. Refuse old snapshots that still contain those variables.
 

@@ -161,6 +161,20 @@ A release follows [releasing](releasing.md).
 
 ## Local test groups
 
+Run one file with `npm run test:one -- <file.test.mjs>`. This builds both
+TypeScript projects, then starts that file with the test home and environment
+isolation. Raw `node test/<file>.test.mjs` does not prove build freshness.
+The runtime build includes `.ts`, `.mts` and `.cts` under `lib/` and `bin/`
+even if no other source imports them. It excludes generated `.d.mts` and
+`.d.cts` from the root file list so a later build can replace them.
+If the build fails, the command reports `Test not started: npm run build failed`.
+If a checkout or rename leaves generated JavaScript or declarations without
+sources, it refuses before loading the file. This covers `.js`/`.d.ts`,
+`.mjs`/`.d.mts` and `.cjs`/`.d.cts` in both projects. Remove obsolete output or use a
+clean worktree, then run `npm run build`. Do not change sources or rebuild in
+the same worktree while this command runs. One-file execution is separate from
+test coverage selection; it does not change `npm test` or certify a gate.
+
 `npm run test:local -- --base <commit>` is an iteration check. The base is required
 and resolves to one local commit; the command neither guesses a remote nor fetches.
 Its input is that commit against the current tracked working tree, plus untracked,
@@ -261,6 +275,16 @@ The E2E scenario waits for persisted notification health within its existing
 step deadline. A socket postcard receipt can precede the end of the warden
 round that writes the channel and knock count; the receipt alone does not
 establish those persisted fields.
+
+Scripted fetch-then-send turns establish a readable delivery baseline before
+fetching. Unreadable health data does not count as an absent mark. If the
+baseline is still unreadable at the deadline, the fixture does not fetch.
+A newer mark written during the fetch can satisfy the barrier; without one,
+the fixture records the timeout and does not send the reply. The
+mixed scenario records late delivery and re-knock evidence separately from
+whether the turn yielded and the session remained alive. The Cursor driver
+fixture checks the runtime-resolved tmux path and compares the driver record's
+pane PID with both the listing and the pane record in its own home.
 
 Native Codex fixtures use the generated HTTP configuration with their own bearer
 and actual thread metadata. A completed turn alone does not prove its bus action:

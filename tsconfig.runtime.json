@@ -5,6 +5,6 @@
     "rootDir": ".",
     "outDir": "."
   },
-  "include": ["lib/**/*.ts", "bin/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["lib/**/*.ts", "lib/**/*.mts", "lib/**/*.cts", "bin/**/*.ts", "bin/**/*.mts", "bin/**/*.cts"],
+  "exclude": ["node_modules", "dist", "**/*.d.mts", "**/*.d.cts"]
 }

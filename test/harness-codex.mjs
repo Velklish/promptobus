@@ -16,7 +16,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import Ajv from 'ajv';
 import { protocolThread, protocolThreadResponse, protocolTurn } from './codex-contract-witnesses.mjs';
-import { waitDelivered } from './delivery-wait.mjs';
+import { deliveryBarrier } from './delivery-wait.mjs';
 import { diagnoseTrace as formatTraceDiagnosis } from './harness-shared.mjs';
 import { DEFAULT_MODEL, PROVEN_CODEX_VERSION } from '../lib/driver-codex.js';
 import { TURN_STARTED_TIMEOUT_MS } from '../lib/codex-session.js';
@@ -1145,10 +1145,19 @@ async function runScript({ home, address, thread, sandbox, nativeClients, turnSt
     }
     bus = await entry.client;
   }
-  for (const action of plan.do ?? []) {
+  const actions = plan.do ?? [];
+  const gate = actions.find(action => action.untilDelivered);
+  const delivery = gate && await deliveryBarrier(cfg?.env?.PROMPTOBUS_HOME ?? process.env.PROMPTOBUS_HOME,
+    cfg?.env?.PROMPTOBUS_TASK ?? process.env.PROMPTOBUS_TASK, address, gate.untilDelivered);
+  if (delivery?.ok === false) {
+    note(home, address, { kind: 'action-failed', action: gate, error: delivery.note });
+    return;
+  }
+  for (const action of actions) {
     if (action.untilDelivered) {
-      const marked = await waitDelivered(cfg?.env?.PROMPTOBUS_HOME ?? process.env.PROMPTOBUS_HOME, cfg?.env?.PROMPTOBUS_TASK ?? process.env.PROMPTOBUS_TASK, address, action.untilDelivered);
+      const marked = await delivery.wait();
       note(home, address, { kind: 'untilDelivered', ms: action.untilDelivered, deliveredAt: marked.deliveredAt, timeout: marked.note });
+      if (!marked.ok) break;
       continue;
     }
     if (action.wait) {

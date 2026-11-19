@@ -379,13 +379,14 @@ cd promptobus
 npm ci               # builds core and runtime through prepare
 npm run build        # builds dist/ and adjacent lib/ runtime outputs
 npm test             # test/run.mjs runs every test/*.test.mjs
+npm run test:one -- <file.test.mjs>  # rebuild both projects and run one isolated file
 npm run test:local -- --base <commit>  # local iteration from an explicit Git base
 npm run audit        # publicity audit over tracked files and the packed tarball
 npm run docs-links:external  # http(s) documentation links; not a gate
 npm run schema-skew  # record schemas against the installed package; not a project gate
 ```
 
-Maintained runtime and CLI source is TypeScript: `src/` compiles to `dist/`, while `lib/` and `bin/` compile beside their source to the existing JavaScript and declaration paths. A fresh build restores executable permission on the standalone CLI. The tarball contains runtime JavaScript and declarations without authored TypeScript. `skills/`, `schemas/` and `models/` ship in the tarball.
+Maintained runtime and CLI source is TypeScript: `src/` compiles to `dist/`, while `.ts`, `.mts` and `.cts` under `lib/` and `bin/` compile beside their source, even when no other module imports them. A fresh build restores executable permission on the standalone CLI. The tarball contains runtime JavaScript and declarations without authored TypeScript. `skills/`, `schemas/` and `models/` ship in the tarball.
 
 The local command reports selected and omitted groups and test files, builds the core and runtime,
 then uses the same isolated runner and propagates its exit code. Add `--list` to

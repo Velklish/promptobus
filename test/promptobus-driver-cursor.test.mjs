@@ -29,7 +29,7 @@ import { makeSandbox, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { buildWorkspace, cli, store } from './scenario.mjs';
 import {
   HANG_CHILD_VAR, HANG_VAR, HANG_WRITE_VAR, diagnoseTrace, installHarness, planParticipant,
-  readTrace, traceFile,
+  readTrace, serverDir, traceFile,
 } from './harness-cursor.mjs';
 import { waitFor } from './harness.mjs';
 
@@ -60,10 +60,12 @@ const {
 } = cursorModule;
 const {
   ADDRESS_OPT, dropSession, injectText, launchScript, TASK_OPT, tmuxSessions, readSession, readTmuxSessions, readTranscript, sessionFile, SESSION_ENV_VAR,
-  sessionKey, silentIsStall, isRuntimeCmd, mcpRuntimeNeedles, BUS_MCP_NEEDLE, toolKidsOf, tmux, transcriptOf,
+  sessionKey, silentIsStall, isRuntimeCmd, mcpRuntimeNeedles, BUS_MCP_NEEDLE, toolKidsOf, tmux, tmuxBin, transcriptOf,
   turnState, injectionActivityFile, markInjected, INJECT_GRACE_MS,
   workspaceHash, writeSession, searchPath,
 } = await import(path.join(here, '..', 'lib', 'cursor-persist.js'));
+const resolvedTmux = tmuxBin({ env: process.env });
+if (resolvedTmux !== path.join(SB, 'bin', 'tmux')) throw new Error(`Cursor fixture did not resolve its own tmux: ${resolvedTmux}`);
 const { liftDriver, REGISTRY } = await import(path.join(here, '..', 'lib', 'drivers.js'));
 const { liftHarness, skillsNote, writeLaunchFiles } = await import(path.join(here, '..', 'lib', 'spawn.js'));
 const { approverLayer } = await import(path.join(here, '..', 'lib', 'approver.js'));
@@ -1165,6 +1167,18 @@ check('step 1: the session landed in the mechanism registry — persist-session 
   && typeof record.chatId === 'string' && record.chatId.length > 10
   && record.tmuxServer === 'cursor-agent' && record.cwd === wp?.metadata?.worktree,
   JSON.stringify(record));
+if (record?.sessionName && record.tmuxServer) {
+  const paneFile = path.join(serverDir(HARNESS, record.tmuxServer), 'sessions', `${record.sessionName}.json`);
+  const pane = existsSync(paneFile) ? JSON.parse(readFileSync(paneFile, 'utf8')) : null;
+  const listed = tmuxSessions({ server: record.tmuxServer, env }).find(row => row.name === record.sessionName);
+  const identity = { resolvedTmux, paneFile, name: listed?.name, chatId: listed?.chatId,
+    driverPanePid: record.panePid, listedPanePid: listed?.panePid, fixturePanePid: pane?.panePid };
+  check('step 1: the resolved tmux lists the exact pane stored in this fixture home',
+    pane?.name === record.sessionName && pane?.server === record.tmuxServer && listed?.chatId === record.chatId
+    && Number.isInteger(record.panePid) && record.panePid > 0
+    && record.panePid === listed?.panePid && record.panePid === pane?.panePid, JSON.stringify(identity));
+  console.log(`  Cursor fixture identity: ${JSON.stringify(identity)}`);
+} else check('step 1: the resolved tmux lists the exact pane stored in this fixture home', false, 'no session record');
 
 // What goes to a human in the participant record is the session NAME — `attach` and
 // `stop` are called with it; the full id is the chat, and address ownership is checked

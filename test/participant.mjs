@@ -27,7 +27,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, appendFileSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { waitDelivered } from './delivery-wait.mjs';
+import { deliveryBarrier } from './delivery-wait.mjs';
 import { openScriptedHttp, scriptedHttpScope } from './participant-http.mjs';
 import {
   HARNESS_HOME_VAR, claudeConfigDir, handshakeMark, readSession, scriptFile, traceFile, writeSession,
@@ -238,12 +238,6 @@ function git(args) {
 }
 
 async function act(action) {
-  // Fetch-then-send only. A `{ wait }` holds the turn for the whole interval.
-  if (action.untilDelivered) {
-    const marked = await waitDelivered(busHome, task, address, action.untilDelivered);
-    note({ kind: 'untilDelivered', ms: action.untilDelivered, deliveredAt: marked.deliveredAt, timeout: marked.note });
-    return;
-  }
   if (action.wait) {
     await new Promise((r) => { setTimeout(r, action.wait); });
     note({ kind: 'wait', ms: action.wait });
@@ -308,7 +302,17 @@ function playTurn(reason) {
     turnNo += 1;
     mark({ status: 'busy', state: 'working', waitingFor: null });
     note({ kind: 'turn', no, reason, actions: (turn?.do ?? []).length });
-    for (const action of turn?.do ?? []) {
+    const actions = turn?.do ?? [];
+    const gate = actions.find(action => action.untilDelivered);
+    const delivery = gate && await deliveryBarrier(busHome, task, address, gate.untilDelivered);
+    if (delivery?.ok === false) note({ kind: 'action-failed', action: gate, error: delivery.note });
+    for (const action of delivery?.ok === false ? [] : actions) {
+      if (action.untilDelivered) {
+        const marked = await delivery.wait();
+        note({ kind: 'untilDelivered', ms: action.untilDelivered, deliveredAt: marked.deliveredAt, timeout: marked.note });
+        if (!marked.ok) break;
+        continue;
+      }
       try {
         await act(action);
       } catch (e) {

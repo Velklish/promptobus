@@ -872,14 +872,15 @@ export async function runScenario({
     const viewAfterSend = wh.inspect(ref);
     const stands = stallStands(home, TASK, participantOf(WORKER), viewAfterSend?.stall);
     const atVerdict = stampsOf(WORKER);
+    const { knockedAt, deliveredAt } = healthOf(WORKER);
+    const activationDetail = `${said(atVerdict)} · knockedAt ${knockedAt ?? 'none'} · deliveredAt ${deliveredAt ?? 'none'}`;
+    trace(`step 7 evidence: ${activationDetail} · yielded ${idleAfterSend} · snapshot ${JSON.stringify(viewAfterSend)} · predicate ${stands}`);
     // The stamps are asserted TWICE: as the wait saw them and as they stand beside the
     // predicate, so a knock inside the residual window reddens this line and not the last one.
     check('step 7: the worker\'s last send is not older than its last activation — the predicate\'s precondition',
       stamps !== null && atVerdict.sent !== null && atVerdict.since !== null
       && atVerdict.sent >= atVerdict.since,
-      `${said(atVerdict)} — RE-KNOCK CLASS: a knock landed between the reply and the verdict,`
-      + ' so the predicate below is asked about a turn nobody has answered yet. The mechanism'
-      + ` is right to call that a stall · ${wh.diagnose()}`);
+      `${activationDetail} — activation is later than the reply; check for a later knock or a delayed delivery mark · ${wh.diagnose()}`);
     check('step 7: the worker turn yielded — the session handed the turn back before the snapshot',
       idleAfterSend === true,
       `turn yielded: ${idleAfterSend} — TIMED-OUT CLASS: the turn never came back inside the`
