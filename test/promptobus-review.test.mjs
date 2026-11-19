@@ -3077,6 +3077,9 @@ check('PB-234: a probe that names no target is named too — an absent `expected
 check('PB-234.3: a present treeLag is named with both shas and is not a probe of HEAD',
   /A present `treeLag` is named together with both shas/.test(gatePlan.prompt)
   && /checks\.mutationProbe\.tree/.test(gatePlan.prompt)
+  && gatePlan.prompt.includes('`checks.mutationProbe.treeLag`')
+  && gatePlan.prompt.includes('`checks.mutationProbe[i].tree`')
+  && gatePlan.prompt.includes('`checks.mutationProbe[i].treeLag`')
   && /not a probe of HEAD/.test(gatePlan.prompt)
   && /do not take the record as covering the tree being accepted/.test(gatePlan.prompt)
   && /Hand the orchestrator the command `git log --oneline <probe\.tree>\.\.<tree> -- <mutated file> <files of the tests in reddened>`/.test(gatePlan.prompt)

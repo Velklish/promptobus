@@ -177,7 +177,7 @@ check(': and the red run\'s own line is quoted, so the report says WHAT fired',
   /✖ the marker is gone/.test(good.out), good.out);
 check(': the subject is put back — from the snapshot, which is the whole point of the script',
   subject() === `${MARKER}\n`, subject());
-check(': a successful probe on the committed baseline restores the original bytes and leaves a clean tree',
+check(': a successful probe restores the bytes of the UTF-8 text fixture and leaves a clean tree',
   readFileSync(SUBJECT).equals(beforeGood) && status() === '', status());
 
 // --- the mutation that changed nothing ---------------------------------------
@@ -380,6 +380,17 @@ const exitContract = protocol.split('**The probe wrapper and the mutated command
 check(': the protocol separates wrapper pass, failure and refusal from the mutated command exit',
   /^- `0`: .*fails with the mutation and passes after restoration/m.test(exitContract)
     && /^- `1`: .*passes with the mutation or fails after restoration/m.test(exitContract)
+    && /unhandled error in the wrapper itself also exits `1`.*I\/O error/.test(exitContract)
     && /^- `2`: .*tree is dirty.*mutated run is cut off/m.test(exitContract)
     && /`mutatedRunExit`, the exit code of the command run with the mutation in place, not the wrapper/.test(exitContract),
   exitContract || 'The protocol has no separate wrapper exit-code contract.');
+check(': the protocol limits snapshot restoration to UTF-8 text',
+  /pre-mutation UTF-8 text snapshot/.test(exitContract)
+    && /invalid UTF-8 sequences, are not guaranteed to survive restoration/.test(exitContract), exitContract);
+
+const guide = readFileSync(path.join(here, '..', 'docs', 'guides', 'contributing.md'), 'utf8');
+const gateStep = guide.split('\n').find((line) => line.startsWith('4. **Gates on an unchanged tree.**')) ?? '';
+check(': the contributing gate step requires a clean committed baseline and explains UTF-8 snapshot restoration',
+  gateStep.includes('refuses a dirty tree so the probe has a clean, committed baseline')
+    && gateStep.includes('snapshots the file as UTF-8 text')
+    && gateStep.includes('restores from the snapshot rather than Git'), gateStep);

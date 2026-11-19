@@ -115,7 +115,7 @@
       "required": ["tree", "mutated", "mutatedRunExit", "applied", "verdicts", "reddened", "coverage"],
       "properties": {
         "tree": {
-          "description": "The sha of the clean, committed baseline the probe ran on. Restoration uses the pre-mutation snapshot, not Git.",
+          "description": "The sha of the clean, committed baseline the probe ran on. Restoration uses the pre-mutation UTF-8 text snapshot, not Git.",
           "$ref": "#/$defs/sha"
         },
         "treeLag": {
