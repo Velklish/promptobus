@@ -261,7 +261,10 @@ been reported. There is no delivery channel here, and no text: the channel
 comes from the driver via `activate`, and the same driver renders the text —
 the frame and the words belong to the harness channel, not the bus. There is
 also no process in `src/supervisor.ts`. The shared workspace service owns one
-package Worker for the task loops, their `fs.watch` observers and provider reads.
+package Worker for the task loops and provider reads. On macOS, the loops use
+the existing abortable inbox poll because closing a directory `fs.watch`
+can block in FSEvents. The one-second wait is between rounds and each round
+takes its own time. Elsewhere, `fs.watch` can wake a loop before its next poll.
 Task cleanup attempts watcher closure, departure-note persistence and owned seat
 clear independently. A rejected cleanup stays failed, with primary and cleanup
 causes preserved across the Worker channel. The coordinator retains recovery
@@ -370,7 +373,7 @@ the shared process after death, and bus writes request their task's loop
 health, silence escalation, stall resolution, and the "whom to activate" decision
 live in the package ([supervisor.ts](../../src/supervisor.ts)) and know nothing about
 the harness. What remains here is exactly what belongs to the harness and the
-workspace: the shared process's single Worker, `fs.watch` watchers, a session
+workspace: the shared process's single Worker, inbox polling and notifications, a session
 snapshot through the fixed common poll context, human diagnostics, and the loop.
 The original owner Host remains on main; its stall formatter is the one typed
 callback bridge. The delivery channel is the

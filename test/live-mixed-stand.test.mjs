@@ -1,6 +1,6 @@
 // Mixed live script on isolated stubs: catalog refusal, awaited abort and a slow stop.
 import { spawn } from 'node:child_process';
-import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
@@ -13,6 +13,7 @@ import { readCompleteJson, waitFor } from './harness.mjs';
 import * as cursorSession from '../lib/cursor-persist.js';
 import * as codexSession from '../lib/codex-session.js';
 import { processState } from '../lib/service-state.js';
+import { wardenMarkFile } from '../dist/sidecar.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.join(here, '..', 'scripts', 'live-mixed.mjs');
@@ -51,7 +52,6 @@ function start(args = [], env = {}) {
 }
 
 const line = (out, re) => re.exec(out)?.[1] ?? null;
-const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 const expiry = (ms) => new Promise((resolve) => { setTimeout(() => resolve(null), ms).unref(); });
 const pidAlive = codexStub.pidAlive;
 // A listing that cannot be read is empty: the stand creates its sessions directory only with
@@ -101,42 +101,92 @@ if (argv[0] === 'warden' && process.env.PROMPTOBUS_TEST_MIXED_COLD_START) {
   const { existsSync, renameSync, writeFileSync } = await import('node:fs');
   const { requireProcess } = await import('../lib/service-state.js');
   const { workspaceServiceStatus } = await import('../lib/service-client.js');
+  const { readWardenMark } = await import('../dist/sidecar.js');
   const marker = process.env.PROMPTOBUS_TEST_MIXED_COLD_START;
-  const status = await workspaceServiceStatus(host, { env: process.env });
+  const release = marker + '.release';
+  const home = process.env.PROMPTOBUS_HOME, task = argv[argv.indexOf('--task') + 1];
+  let status, seat;
+  do {
+    if (existsSync(release)) throw new Error('Cold-start fixture released before the Worker acknowledged the task');
+    status = await workspaceServiceStatus(host, { env: process.env });
+    if (!status.running) throw new Error('Cold-start service exited before the Worker acknowledged the task');
+    seat = readWardenMark(home, task);
+    if (seat?.pid === status.process.pid && status.warden.tasks.some(row => row.task === task && row.state === 'running')) break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  } while (true);
   writeFileSync(marker + '.pending', JSON.stringify({ cli: requireProcess(), owner: status.process,
-    parent: process.ppid, cwd: process.cwd(), home: process.env.PROMPTOBUS_HOME, task: argv[argv.indexOf('--task') + 1] }));
+    parent: process.ppid, cwd: process.cwd(), home, task, seat }));
   renameSync(marker + '.pending', marker);
-  while (!existsSync(marker + '.release')) await new Promise(resolve => setTimeout(resolve, 10));
+  while (!existsSync(release)) await new Promise(resolve => setTimeout(resolve, 10));
 }
 `);
-const coldBarrier = path.join(SB, 'cold-start.json');
-const cold = start([], { PROMPTOBUS_E2E_ROOT: externalMechanism, PROMPTOBUS_TEST_MIXED_COLD_START: coldBarrier });
-const coldOwner = await waitFor(() => readCompleteJson(coldBarrier), { timeoutMs: 60000 });
-const coldTask = coldOwner ? store.readTask(coldOwner.home, coldOwner.task) : null;
+const retainedSeat = '{invalid retained warden seat';
+const retainSeatFlag = path.join(SB, 'retain-seat');
+const retainedSeatProof = path.join(SB, 'retained-seat-file');
+const sidecar = path.join(externalMechanism, 'dist', 'sidecar.js');
+const sidecarSource = readFileSync(sidecar, 'utf8');
+const dropSeat = 'export function dropWardenMark(home, id) {';
+if (sidecarSource.split(dropSeat).length !== 2) throw new Error('Owned warden seat disposal seam changed');
+writeFileSync(sidecar, sidecarSource.replace(dropSeat, `${dropSeat}
+    if (existsSync(${JSON.stringify(retainSeatFlag)})) {
+        writeFileAtomic(wardenMarkFile(home, id), ${JSON.stringify(retainedSeat)});
+        writeFileAtomic(${JSON.stringify(retainedSeatProof)}, wardenMarkFile(home, id));
+        return;
+    }`));
+
+async function coldAbort(name) {
+  const barrier = path.join(SB, name);
+  const run = start([], { PROMPTOBUS_E2E_ROOT: externalMechanism, PROMPTOBUS_TEST_MIXED_COLD_START: barrier });
+  const owner = await waitFor(() => readCompleteJson(barrier), { timeoutMs: 60000 });
+  const task = owner ? store.readTask(owner.home, owner.task) : null;
+  const pending = owner?.cli && owner?.owner && owner.parent === run.child.pid && owner.seat?.pid === owner.owner.pid
+    && processState(owner.cli) === 'alive' && processState(owner.owner) === 'alive'
+    && !store.participantOf(task, WORKER) && !store.participantOf(task, REVIEWER);
+  run.child.kill('SIGTERM');
+  writeFileSync(barrier + '.release', 'release');
+  const exit = await Promise.race([run.done, expiry(30000)]);
+  const preExit = JSON.parse(line(run.out, /^ {2}· pre-exit: (.+)$/m) ?? 'null');
+  const ownerExited = !!owner?.owner && processState(owner.owner) === 'dead';
+  const sandboxRetained = !!owner?.cwd && existsSync(path.dirname(owner.cwd));
+  const seatFile = owner ? wardenMarkFile(owner.home, owner.task) : null;
+  const physicalSeat = seatFile && existsSync(seatFile) ? realpathSync(seatFile) : null;
+  const seatContents = physicalSeat ? readFileSync(physicalSeat, 'utf8') : null;
+  if (!exit) { run.child.kill('SIGKILL'); await run.done; }
+  for (const owned of [owner?.cli, owner?.owner]) {
+    if (owned && processState(owned) === 'alive') {
+      try { process.kill(owned.pid, 'SIGTERM'); } catch { /* already gone */ }
+      await waitFor(() => processState(owned) === 'dead', { timeoutMs: 10000 });
+    }
+  }
+  if (owner?.cwd) rmSync(path.dirname(owner.cwd), { recursive: true, force: true });
+  return { pending, owner, preExit, exit, ownerExited, sandboxRetained, seatFile, physicalSeat, seatContents, out: run.out };
+}
+
+const cold = await coldAbort('cold-start.json');
+const { owner: coldOwner, preExit: coldPreExit, exit: coldExit } = cold;
 check('cold start: the owned service is live while its warden CLI and parent are still pending before native lifts',
-  coldOwner?.cli && coldOwner?.owner && coldOwner.parent === cold.child.pid
-  && processState(coldOwner.cli) === 'alive' && processState(coldOwner.owner) === 'alive'
-  && !store.participantOf(coldTask, WORKER) && !store.participantOf(coldTask, REVIEWER), JSON.stringify({ coldOwner, out: cold.out }));
-cold.child.kill('SIGTERM');
-await sleep(30);
-writeFileSync(coldBarrier + '.release', 'release');
-const coldExit = await Promise.race([cold.done, expiry(30000)]);
-const coldPreExit = JSON.parse(line(cold.out, /^ {2}· pre-exit: (.+)$/m) ?? 'null');
+  cold.pending, JSON.stringify({ coldOwner, out: cold.out }));
 check('cold abort: the queued signal reaches awaited cleanup before either native participant is raised',
   coldExit?.code === 143 && /run cut off by SIGTERM/.test(cold.out) && coldPreExit?.sandboxPresent === true
   && coldPreExit.worker.ref === '' && coldPreExit.reviewer.ref === '', JSON.stringify({ coldExit, coldPreExit, out: cold.out }));
 check('cold abort: the same owned physical service exits and its task seat is gone before parent exit',
-  coldPreExit?.warden?.stopped === true && coldPreExit.warden.seat === null
+  coldPreExit?.warden?.stopped === true && coldPreExit.warden.seat?.state === 'absent'
+  && coldPreExit.warden.seat.file === cold.seatFile && !cold.sandboxRetained
   && coldPreExit.warden.process?.pid === coldOwner?.owner?.pid && coldPreExit.warden.process?.birth === coldOwner?.owner?.birth
-  && processState(coldOwner.owner) === 'dead', JSON.stringify({ coldPreExit, coldOwner }));
-if (!coldExit) { cold.child.kill('SIGKILL'); await cold.done; }
-for (const owned of [coldOwner?.cli, coldOwner?.owner]) {
-  if (owned && processState(owned) === 'alive') {
-    try { process.kill(owned.pid, 'SIGTERM'); } catch { /* already gone */ }
-    await waitFor(() => processState(owned) === 'dead', { timeoutMs: 10000 });
-  }
-}
-if (coldOwner?.cwd) rmSync(path.dirname(coldOwner.cwd), { recursive: true, force: true });
+  && cold.ownerExited, JSON.stringify(cold));
+writeFileSync(retainSeatFlag, 'retain malformed task warden seat in the owned fixture');
+const retained = await coldAbort('cold-retained-seat.json');
+rmSync(retainSeatFlag);
+const writtenSeat = existsSync(retainedSeatProof) ? readFileSync(retainedSeatProof, 'utf8') : null;
+const retainedWarden = retained.preExit?.warden;
+check('cold abort: a malformed retained seat keeps the sandbox after the owned service exits',
+  retained.pending && retained.exit?.code === 143 && retained.ownerExited && retainedWarden?.stopped === true
+  && retained.preExit.sandboxPresent === true && retained.preExit.worker.ref === '' && retained.preExit.reviewer.ref === ''
+  && retainedWarden.process?.pid === retained.owner.owner.pid && retainedWarden.process?.birth === retained.owner.owner.birth
+  && retainedWarden.seat?.state === 'present' && retainedWarden.seat.file === retained.seatFile
+  && writtenSeat === retained.physicalSeat && retained.sandboxRetained && retained.seatContents === retainedSeat
+  && retained.out.includes('owned service physically stopped. Task seat cleanup unconfirmed')
+  && retained.out.includes('cleanup unconfirmed; sandbox retained'), JSON.stringify({ writtenSeat, ...retained }));
 cursorStub.planParticipant(cursorHarness.home, WORKER, { turns: [HELLO_TURN, HELLO_TURN] });
 codexStub.planParticipant(codexHarness.home, REVIEWER, { turns: [{ do: [{ tool: 'promptobus_mailbox' }] }] });
 
@@ -237,7 +287,7 @@ check('abort: the child sampled its own participants before teardown — matchin
   && preExit.worker.alive.every((alive) => alive === false) && preExit.reviewer.alive.every((alive) => alive === false)
   && preExit.worker.stop?.ok === true && preExit.worker.stop?.stopped === true
   && preExit.reviewer.stop?.ok === true && preExit.reviewer.stop?.stopped === true
-  && preExit.warden?.stopped === true && preExit.warden.seat === null && preExit.warden.process && processState(preExit.warden.process) === 'dead',
+  && preExit.warden?.stopped === true && preExit.warden.seat?.state === 'absent' && preExit.warden.process && processState(preExit.warden.process) === 'dead',
   JSON.stringify({ preExit, sandbox, workerPid, reviewerPids, receiptText }));
 // The parent waits for its own view, bounded past the record watch; only the child's sample proves stop.
 const goneLate = () => Number.isInteger(workerPid) && !pidAlive(workerPid)
@@ -317,7 +367,7 @@ check('hang: both participants\' stops and the warden\'s were still attempted in
   hang.out.includes(`  · stop returned for the Cursor worker ${hangWorkerRef}: `)
   && hang.out.includes(`  · stop returned for the Codex reviewer ${hangReviewerRef}: `)
   && hang.out.includes('  · task warden and owned service physically stopped')
-  && hangPreExit?.warden?.stopped === true && hangPreExit.warden.seat === null && hangPreExit.warden.process && processState(hangPreExit.warden.process) === 'dead'
+  && hangPreExit?.warden?.stopped === true && hangPreExit.warden.seat?.state === 'absent' && hangPreExit.warden.process && processState(hangPreExit.warden.process) === 'dead'
   && hangPreExit?.sandboxPresent === true && hangPreExit.elapsedMs < 10_000
   && hangPreExit.worker.ref === hangWorkerRef && hangPreExit.reviewer.ref === hangReviewerRef,
   hangStops || hang.out.slice(-500));
