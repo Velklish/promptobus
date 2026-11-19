@@ -7,6 +7,7 @@ generator command. The contract keeps the schema documents consumed by the drive
 tests, with their local `definitions` and `$ref` closure.
 
 Other version directories contain dated live evidence and historical provenance.
-The full generated schema captures are available in Git history. To regenerate a
-contract from a generator output, follow [Contributing](../../../docs/guides/contributing.md).
+Git history retains schema files that were previously checked in, but not the 0.165.0 consumed schemas.
+The [0.165.0 capture record](0.165.0/README.md) points to a comparison summary in a commit message.
+To regenerate a contract from a generator output, follow [Contributing](../../../docs/guides/contributing.md).
 Use `--historical` only for a stored capture that includes dated evidence JSON.

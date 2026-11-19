@@ -44,7 +44,7 @@ check('release guide names the writer ledgers',
   section.includes('currency ledger row for each behaviour-changing commit')
   && section.includes('style ledger row for each `backslop-humanizer` pattern'));
 check('release currency ledger covers CLI help and every shipped skill',
-  localRules.includes('one row for the CLI help and one row for **every** shipped skill')
+  localRules.includes('one row for the CLI help and one row for every shipped skill')
   && localRules.includes('`no change touches it`')
   && section.includes('one row for the CLI help and one for every shipped skill')
   && section.includes('`no change touches it`'));

@@ -90,7 +90,7 @@ closed if a crash leaves only one record. `unlink` removes both records without 
 the messages already in either journal. An orchestrator send to its `peer:<slug>` address
 is delivered to the other root's `orchestrator` mailbox with the sender recorded as
 `peer:<source-slug>`. Its artifact belongs to the destination task, and that task's
-warden wakes its owner. A direct send into the other root as its bound peer address uses
+warden can wake its owner for actionable mail. A direct send into the other root as its bound peer address uses
 the same reciprocal-link rule. Each routed peer message records `originTask`, the source
 root's id, beside `task`, the destination root's id. The field is optional in the v1
 message schema so journals written before it remain readable; new peer sends always write it.
@@ -162,7 +162,7 @@ registers one ([ADR-019](../adr/adr-019-session-address-per-task-lands.md)).
 | `answer` | no | nothing; it is itself the answer to a `question` |
 | `artifact` | no | nothing; the file is named in the message that carries it |
 
-Two limits on reading that table. It says what a TYPE asks for, not what any particular participant owes: the orchestrator owes only the `user` question named above, while other addresses follow the ordinary rule ([03-cli.md](03-cli.md) § Guard and warden). And "no answer expected" never means "no need to read": the warden escalates an unread mailbox to `SILENT` for every address including the orchestrator, and that is unchanged.
+Two limits on reading that table. It says what a type asks for, not what a participant owes: the orchestrator owes only the `user` question named above, while other addresses follow the ordinary rule ([Guard and warden](03-cli.md#guard-and-warden)). Not owing an answer does not remove the need to read. Unread mail can escalate to `SILENT`; for an owner inbox with only readable progress `status`, the warden neither knocks nor escalates to `SILENT`. The progress stays unread and visible. Other actionable mail still wakes and escalates normally; an unreadable inbox remains conservatively actionable.
 
 When one session orchestrates several tasks, a user question in any of them holds that session's bound turn after its mailbox is read. Only an `answer` to `user` in the task where the question landed clears that debt.
 

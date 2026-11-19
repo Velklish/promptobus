@@ -48,7 +48,7 @@ input continues that stored assignment. The holder waits after `thread/start` un
 thread identity is recorded as the task owner, then begins the first model turn. Worker,
 reviewer, approver and teamlead commands use the same task id and their existing role gates.
 
-The holder and warden wake this owner when mail arrives. From a plain terminal, `ask --task
+The holder and warden wake this owner for actionable mail, not for readable progress-only `status`. From a plain terminal, `ask --task
 <id>` sends a question as `user`, and `ask --answers --task <id>` consumes its replies.
 `status` and `digest` inspect progress. `done --task <id>` refuses while the managed owner
 or another native Codex participant lacks confirmed Stop, `--keep-sessions` included.
@@ -372,7 +372,9 @@ A `kind` is a name and `lengthSec` is the number. The line prints both as suppli
 
 `models validate` checks the catalog and every overlay: schema, references to tuple, model and harness, rating ranges, weight sums, duplicate ids, and rules that both allow and deny the same name. A `byRole` key must be a catalog role or a step admitted by the host's declaration; an unknown key is named at `allow.byRole.<name>` or `deny.byRole.<name>`. It also checks the host's pipeline declaration and reports each refused field as `pipeline-invalid` on the layer that holds it, the path of `promptobus.json` ([02-host § The pipeline declaration](02-host.md#the-pipeline-declaration)).
 
-`models calibrate` reads the local telemetry file back against the shipped catalog and proposes overlay lines; it is the only command that reads those records, and it never applies anything by itself. It groups ratings by `(harness, model, effort)` and lists each key's run and accepted-piece counts by step, with the catalog role beside each step. This keeps one rating per tuple while showing which steps supplied its evidence. It never groups by `tuple`, because a lift made with an explicit `--model` carries no routing decision and its record's `tuple` is `null` — grouping by tuple would silently drop most of a person's evidence. A model alias is resolved to the full id through the driver's own dictionary (`options.modelAliases`) before a catalog row is looked up, so runs typed `--model opus` land on the row that rates `claude-opus-5-5`. An alias in front of more than one id resolves to none of them — two ids is not a resolution, and taking the first would attribute a person's runs to a row at random — so `options.modelAliases` names exactly one id per alias and is a *different table* from the availability adapter's `MODEL_SCOPE_IDS`, which names a family and may name several. The two looked like one dictionary for as long as every family served one model, and the Claude driver handed over one object for both until the `fable` family gained a second id.
+`stats` reads local telemetry for its run report; `models` reads it for the record count and file size in text output, not in `--json`. These reports are descriptive. `models calibrate` compares the same records against the shipped catalog and proposes `speed` and `quotaCost` ratings, never `quality`. A proposal does not change any overlay. Only `--write` with confirmation applies the proposed `ratings` to the `user` overlay.
+
+Calibration groups ratings by `(harness, model, effort)` and lists each key's run and accepted-piece counts by step, with the catalog role beside each step. This keeps one rating per tuple while showing which steps supplied its evidence. It never groups by `tuple`, because a lift made with an explicit `--model` carries no routing decision and its record's `tuple` is `null` — grouping by tuple would silently drop most of a person's evidence. A model alias is resolved to the full id through the driver's own dictionary (`options.modelAliases`) before a catalog row is looked up, so runs typed `--model opus` land on the row that rates `claude-opus-5-5`. An alias in front of more than one id resolves to none of them — two ids is not a resolution, and taking the first would attribute a person's runs to a row at random — so `options.modelAliases` names exactly one id per alias and is a *different table* from the availability adapter's `MODEL_SCOPE_IDS`, which names a family and may name several. The two looked like one dictionary for as long as every family served one model, and the Claude driver handed over one object for both until the `fable` family gained a second id.
 
 **An alias resolves to where the proven binary points it today, and a telemetry record carries no binary version.** So a run recorded as `--model fable` before 2.1.257 is read now as `claude-fable-5-1`, and one recorded as `--model opus` before 2.1.280 as `claude-opus-5-5` — the model that alias means today — and each is rated against the successor's row. That is the honest limit of resolving a name whose meaning moved, not a defect to work around: the alternative is to resolve nothing and rate no aliased run at all. It is also one more reason a catalog row is never keyed on an alias — a row keyed that way would carry the same drift silently and with a date claiming otherwise.
 
@@ -578,13 +580,15 @@ Two library entry points sit behind the commands. `clearExhausted(host, harness)
 
 The catalog file, the layer merge and the checks `models validate` prints. The operational half — what is in a row, how the layers combine, the canonical-priority convention, and the overlay file a person copies — is [guides/model-routing.md](../guides/model-routing.md).
 
-Three library entry points, all in `lib/model-routing/`:
+For structured findings and cache-only routing readiness, import `routingDiagnosis` from `promptobus/integration` and call `await routingDiagnosis(host)`. For the CLI validation report and its command result, import `runPromptobus` from `promptobus/cli` and call `await runPromptobus(['models', 'validate'], { host })`. Both use the host's configured stack. There is no exported pure validator for an arbitrary in-memory layer.
+
+`loadCatalog`, `validate` and `validateLayers` in `lib/model-routing/` are internal implementation details, not package entry points:
 
 | Call | What it answers |
 |---|---|
 | `loadCatalog({ host, constraints })` | the merged tuple list and policy: the shipped catalog, then every overlay `host.routingPaths().overlays` names in that order, then the caller's constraints. A missing overlay file is normal; a present but unreadable one is a `GateError` |
 | `validate({ host, constraints })` | `{ ok, errors, warnings, layers }` for the real stack. A broken file is a finding here, not a throw — this is the call a person makes when a file is broken |
-| `validateLayers({ canonical, overlays, constraints, now })` | the same verdict for documents already in memory: `canonical` is `{ data }`, each overlay `{ id, path, present, data }`. Pure, so a consumer can check a policy layer it ships without touching disk |
+| `validateLayers({ canonical, overlays, constraints, now })` | the same verdict for documents already in memory: `canonical` is `{ data }`, each overlay `{ id, path, present, data }` |
 
 `--harness`, `--model` and `--effort` reach the merge as constraints and are carried through untouched — the resolver applies them. `--allow-payg` is the one constraint that changes policy at that layer, and it is opt-in: its absence does not undo an overlay that opted pay-as-you-go in.
 
@@ -1116,9 +1120,9 @@ native account limit.
 
 ### Participant telemetry
 
-The catalog's ratings come from published benchmarks, and two frontier models a point apart on one leaderboard share a band; nothing else in the tool learns from what actually happens on this machine. So `promptobus done` appends one record per harness generation of a participant to `telemetry.jsonl`, JSON Lines, beside the availability cache the host names ([02-host](02-host.md)), mode `0600`. This is the collecting half only: it does not score models, calibrate bands or propose routing; the typed public entry `promptobus/telemetry` exposes `telemetryStats` and `telemetrySummary` as a descriptive aggregation of persisted rows. `lib/model-routing/telemetry.ts` re-exports `telemetrySummary` from the compiled core (`src/telemetry.ts`) rather than holding a second copy of the algorithm — the pattern `lib/warden.js` already used for its own threshold — so a fix to the algorithm cannot land on one side and not the other. A turn-end hook appends numeric throughput evidence to a per-participant sidecar beside the task's guard mark; `done` reads each sidecar once and projects its run totals into the record. A new lift at the same address truncates that sidecar before replacing the participant record; after close it remains with the task until normal task pruning. The reading half is [`models calibrate`](#commands), which groups these records and proposes overlay lines a person then agrees to.
+The catalog's ratings come from published benchmarks, and two frontier models a point apart on one leaderboard share a band. `promptobus done` appends one record per harness generation of a participant to `telemetry.jsonl`, JSON Lines, beside the availability cache the host names ([02-host](02-host.md)), mode `0600`. Collection does not score models, calibrate bands or propose routing. The typed public entry `promptobus/telemetry` exposes `telemetryStats` and `telemetrySummary` as descriptive aggregations of persisted rows. `lib/model-routing/telemetry.ts` re-exports `telemetrySummary` from the compiled core (`src/telemetry.ts`) rather than holding a second copy of the algorithm. A turn-end hook appends numeric throughput evidence to a per-participant sidecar beside the task's guard mark; `done` reads each sidecar once and projects its run totals into the record. A new lift at the same address truncates that sidecar before replacing the participant record; after close it remains with the task until normal task pruning.
 
-**Local, and only local.** Nothing sends the file anywhere. Read paths are `stats`, the count line of `models`, `models calibrate`, and the typed `promptobus/telemetry` entry; the tool never rotates the file.
+**Local, and only local.** Nothing sends the file anywhere. Read paths are `stats`, the text count line of `models`, [`models calibrate`](#commands), and the typed `promptobus/telemetry` entry; the tool never rotates the file. Calibration proposes rating changes; applying them is a separate, confirmed write.
 
 **Who gets a record.** Every harness generation of a routed participant with a recorded model, plus teamleads and the root orchestrator with a recorded session identity or model. An attached root with no recorded model keeps `model: null`; a missing session log keeps token counts null with a reason. A reviewer that was re-bound leaves the closed generation as its own row: its earlier harness, model and routing decision, bus counts from the previous generation's `until` up to its own, and no window readings. The open generation counts from that last `until`. `from` on a closed generation is its last lift, not the start of its bus counts. An explicit `--model` pick gets a row with `strategy: null`. A sessionless address that only wrote to the task gets no row.
 
@@ -1466,7 +1470,7 @@ mail still held by the surviving root stays in its journal.
 After linking, `send peer:<slug-of-b> --task <task-a> --type question --body "…"` writes
 into B's orchestrator mailbox as `peer:<slug-of-a>`. The reply names B's task and the
 destination message id. The reverse direction uses B as the source. The same destination
-rule applies to `promptobus_send`, and the destination task's warden wakes its owner.
+rule applies to `promptobus_send`, with the destination task's normal actionable-mail wake rules.
 `question`, `answer`, `status` and `artifact` are the allowed types; an artifact goes into
 the destination task's files. `task`, `result` and `review` are refused. An owner can also
 name the other task directly with `--task` and send from the peer address it holds there.
@@ -1517,7 +1521,7 @@ The command refuses a process carrying `PROMPTOBUS_ROLE` or a harness session id
 
 ## Guard and warden
 
-Only `status` in an orchestrator mailbox does not knock or retry a knock.
+Readable `status` alone in an orchestrator mailbox does not knock, retry a knock, or escalate to `SILENT`.
 The messages remain unread and visible in `status` and mailbox reads. Any other
 message type wakes normally and carries retained progress in send order; a
 damaged ref still follows the existing diagnostic route.
@@ -1539,7 +1543,7 @@ manual recovery through the mailbox claim API remains available.
 
 `guard` is the Stop-hook helper. Clean mailbox and no user answer owed in any task this session orchestrates: exit 0, no output. Unread mail: exit 2, return the turn. A turn ending while an answer is owed: exit 2 as well. Same state twice, then it warns and lets the turn end.
 
-**Two states, not one, and their repairs are opposite.** `SILENT` is mail that was not READ — the warden escalates it after `SILENCE_SEC`, and it applies to every address, the orchestrator included. `UNANSWERED` is an answer that was not SENT. For ordinary participants, it appears when the mailbox is empty and a turn ended without a send since the debt began. For the orchestrator, the person's question is named as soon as it arrives and stays until an `answer` to `user`. `promptobus status` prints each under its own word. Unread mail is the guard's first repair; for ordinary participants, `status` prints the count instead of the debt while mail remains. Neither is a stall: a stall is a session that never yielded the turn at all, and the guard cannot see one — it is the end-of-turn hook, so it never runs.
+**Two states, not one, and their repairs are opposite.** `SILENT` is mail that was not read: the warden escalates after `SILENCE_SEC` when unread work qualifies, including actionable owner mail. Readable progress-only owner mail is not a `SILENT` trigger, but unreadable inboxes are conservatively actionable. `UNANSWERED` is an answer that was not SENT. For ordinary participants, it appears when the mailbox is empty and a turn ended without a send since the debt began. For the orchestrator, the person's question is named as soon as it arrives and stays until an `answer` to `user`. `promptobus status` prints each under its own word. Unread mail is the guard's first repair; for ordinary participants, `status` prints the count instead of the debt while mail remains. Neither is a stall: a stall is a session that never yielded the turn at all, and the guard cannot see one — it is the end-of-turn hook, so it never runs.
 
 For ordinary participants, that is also how a clean-and-silent turn is told from a session that died mid-turn, and the two need telling apart because the first wants a nudge and the second a respawn. The signal is the end-of-turn mark `waits/<address>.turn.json`, written by the guard on a clean end and by nothing else. No mark after the debt began means no turn ended: `status` then stays quiet rather than guessing. The orchestrator's user-question debt is an exception: the question itself is enough evidence to print it.
 
@@ -1811,10 +1815,13 @@ not that predicate. `stop orchestrator` leaves its task and watch open, includin
 after a confirmed self-Stop. `done` still requires the mailbox owner's own session;
 the private service owner does not acquire that identity or mailbox.
 
-For a finite native Codex root with two teamleads, finish participant work and
-request normal Stop through each participant's authorized session. Wait for all
-three matching retained Stop hashes, complete terminal command accounting,
-`app-server/close` code 0 and actual holder/app absence. Then, from the workspace
+For a finite native Codex root with two teamleads, finish participant work. The
+root stops its owned `teamlead:<slug>` sessions first and retains their results
+and Stop proofs, then requests its own `stop orchestrator`. A pending self-Stop
+acknowledgement is not confirmation. An authorized observer inspects retained
+proof: matching Stop hashes, complete terminal command accounting,
+`app-server/close` code 0 and actual holder/app absence for each session.
+`done --keep-sessions` is not a bypass before confirmed Stop. Then, from the workspace
 service owner's shell, using the same workspace, service home and harness homes:
 
 ```bash

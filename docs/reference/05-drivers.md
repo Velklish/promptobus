@@ -6,6 +6,11 @@ One page per harness contract. A driver owns the vocabulary of its binary — op
 words, how a lift plan becomes a launch — and nothing above it: which servers a participant
 gets is the workspace's call, and how a task is journalled is the engine's.
 
+The CLI registry contains Claude Code (`claude`), Cursor (`cursor`), Codex
+(`codex`), and OpenCode (`opencode`). This is a source inventory. It does not
+establish live account availability, automatic role eligibility in the
+[routing catalog](../guides/model-routing.md#the-catalog-file), or hook parity.
+
 Facts here were measured on the binaries named beside them. Where a harness publishes no
 documentation for what the mechanism uses, that is said rather than implied.
 
@@ -109,8 +114,10 @@ See [ADR-033](../adr/adr-033-bb-provider-routing.md).
 
 The current project hook is a loop guard: Claude Code and Codex install Stop and SessionStart,
 while Cursor installs stop only (`src/hooks.ts`, `lib/install.js`). A former PostToolUse feed
-hook and its runner are recognised for removal during install or uninstall. Teamlead and reporter sessions work at the install root (`lib/spawn.js:726`, `lib/report.js:180`);
-workers and approvers use worktrees, and diff reviewers use separate directories. The
+hook and its runner are recognised for removal during install or uninstall.
+Teamleads and reporters work at the install root: [`planTeamlead`](../../lib/spawn.ts)
+and [`planReport`](../../lib/report.ts) both pass the canonical `host.workspaceRoot()` as the launch `cwd`.
+Workers and approvers use worktrees, and diff reviewers use separate directories. The
 participant launch supplies its own identity to the guard.
 
 ## Participant binding before launch
@@ -1257,6 +1264,10 @@ firing. A write with nowhere to go is dropped, because this is diagnostics and t
 must not fall over its own log.
 
 ### Codex protocol versions
+
+Codex lift output does not estimate the current time, tokens or extra model turns
+per bus call. Older launch output carried a historical estimate, not a measurement
+of the installed binary.
 
 The committed contract covers codex-cli 0.158.0, the minimum, and 0.170.0, the selected
 version. Each version has 52 consumed schemas with the local definition closure.

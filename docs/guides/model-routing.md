@@ -78,6 +78,8 @@ The top layer is the command line. `--harness`, `--model` and `--effort` are car
 
 ## The catalog file
 
+The shipped catalog contains 82 rated tuples across four registered harnesses. These are source counts, not a live listing or an account qualification.
+
 `models/catalog.json`, shipped through `files` in `package.json`, valid against [catalog.schema.json](../../schemas/model-routing/catalog.schema.json). One row per thing that can actually be launched: `role + harness + model + effort`.
 
 **Cursor carries effort inside the model id.** `lib/driver-cursor.ts` appends `-<level>` to `--model` when it is given an effort, and the level is a flat suffix of the id — `claude-opus-5-thinking-max`, `gpt-5.6-sol-high`. So a Cursor tuple's `model` is the full id and its `effort` is `null`; the resolver must not add an effort for it, or the run would lift `…-max-max`. Claude and Codex take the level as a separate flag, and their tuples name it.
@@ -127,9 +129,9 @@ The lift is untouched: `--model opus` is as lawful as it ever was, and the drive
 - `quality` is a hypothesis of 8, the band of `cursor-grok-high`. The one figure a pair could band is Terminal-Bench 2.1 under Vals AI, 73.41 % at xhigh, which gives 5. The predecessor was placed by 2.1 figures under other harnesses, and every head-to-head on xAI's launch page puts 4.7 above 4.6, so the successor rule keeps 8. Terminal-Bench 4.0 lists 4.7 at 37.6 % under Grok Build, beside GPT-5.6 Sol at max, quality 8, at 37.3 % under Codex; that pair is keyed to Claude Code, so neither figure is banded.
 - `speed` cites Artificial Analysis at 52.4 tokens/s, band 1, and `quotaCost` the xAI list price of $2 / $6, blended $4, band 1. The Grok 4.6 rows keep their `quotaCost` of 10, a hypothesis from a local usage spike: xAI now lists grok-4.6 at the same $2 / $6 (docs.x.ai/developers/pricing, opened 2026-09-25), but whether Cursor's `cursor-grok-4.6` is that model is not established — the Cursor display name moved from "Cursor Grok 4.6" to "Grok 4.6" between the 2026-09-05 and 2026-09-25 listings — so no price is attached. On ratings alone the `quality`, `balanced` and `economy` weights put 4.7 above 4.6 at every rung, while the `speed` weights keep 4.6 ahead on its speed band; a local correction of the `quotaCost` band goes through `models calibrate`.
 
-**All three harnesses now offer a reviewer.** The reviewer floor is a quality of 9 on the ten-point scale ([ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md)), and fifteen rows reach it. They are Claude Code's Fable ladders and both Opus ladders at `high`, `xhigh` and `max`, Codex's `gpt-6-astra` at `max` and `ultra`, and Cursor's `kimi-k3` at `max`, whose SWE-bench Verified 93.4 bands 9. No Sol rung is a reviewer, because both Sol base rows sit at 8. Under the old 1–5 relative ranks no Cursor row cleared the floor at all; that was a property of a five-step scale over a narrow field rather than a rule about Cursor, and it is exactly what absolute bands were meant to fix. So ADR-005's reviewer diversity bonus now has three harnesses to move between, and a review of work done on Claude Code has somewhere to go under every strategy.
+**Three of the four harnesses have catalog-rated reviewers.** The reviewer floor is a quality of 9 on the ten-point scale ([ADR-005](../adr/adr-005-ten-point-scale-absolute-bands-calibrate.md)), and fifteen rows qualify. They are Claude Code's Fable ladders and both Opus ladders at `high`, `xhigh` and `max`, Codex's `gpt-6-astra` at `max` and `ultra`, and Cursor's `kimi-k3` at `max`, whose SWE-bench Verified 93.4 bands 9. No Sol rung is a reviewer, because both Sol base rows sit at 8. Under the old 1–5 relative ranks no Cursor row cleared the floor at all; that was a property of a five-step scale over a narrow field rather than a rule about Cursor, and it is exactly what absolute bands were meant to fix. OpenCode's only catalog tuple is rated for worker, not reviewer or approver. That limits automatic catalog selection, not the [native driver's lift support](../reference/05-drivers.md).
 
-**All three harnesses lift approvers.** The floor is 7, and 15 Claude Code,
+**The same three harnesses have catalog-rated approvers.** The floor is 7, and 15 Claude Code,
 12 Cursor and 16 Codex tuples reach it with an assessed base row at the same floor.
 Cursor offers the Gemini 3.8 Flash high and medium, Grok 4.7 and 4.6 medium through
 xhigh, Kimi K3 low, high and max, and Gemini 3.7 Flash high rows. The GLM 5.2 max
@@ -153,7 +155,7 @@ records why that work rejects 6 without buying the independent defect discovery 
 
 **An unrated model is not a tuple.** The catalog holds only models the maintainers assessed against a source they named: every row carries `source` and `evidence`, and a model nobody could assess at all gets no row.
 
-**A hypothesis is a row that says so, not a row that is missing.** This is the part the v1 wording got wrong and had to be settled. Where no figure can be cited for *that exact model and effort rung*, ADR-005 refuses to invent one — but it does not refuse the row: the rating is named in `evidence.hypothesis`, the reasoning behind the band is written in `evidence.text`, and the row ships. That is deliberate, because the alternative is worse: dropping the row would silently remove a model the person can actually launch, on the grounds that a leaderboard has not got round to it. Twelve of the twenty-two base models shipped today carry a hypothesis for `quality`, `composer-2.5` and `cursor-grok-4.6-high` carry one for all three, and the catalog is more honest for saying so than it would be for hiding them. What `validate` refuses is narrower and sharper: a rating with neither a source, nor an interpolation from a base row with evidence, nor a stated hypothesis.
+**A hypothesis is a row that says so, not a row that is missing.** Where no figure can be cited for *that exact model and effort rung*, ADR-005 refuses to invent one — but it does not refuse the row: the rating is named in `evidence.hypothesis`, the reasoning behind the band is written in `evidence.text`, and the row ships. Dropping it would remove a model from routing just because a leaderboard has not measured it. Of the 23 base rows (rows without `evidence.interpolatedFrom`), 13 carry a `quality` hypothesis. What `validate` refuses is a rating with neither a source, nor an interpolation from a base row with evidence, nor a stated hypothesis.
 
 **`evidence` says which of its numbers are published and which are not.** The field takes the v1 string still, but the shipped rows use the object form ADR-005 asks for — `{ text, sources, interpolatedFrom, hypothesis }` — and `validate` reads it: for each of `quality`, `speed` and `quotaCost` the row must either cite a figure in `sources` (the benchmark or price source, its version, the agent harness where the page names one, the figure, the size of the field the band was cut from, the URL and the date it was seen), or be marked `interpolatedFrom` a base row with a citation or hypothesis, or name that rating in `hypothesis` — "no citable figure for this model and effort rung, and here is the reasoning instead". A rating in none of the three is a `catalog-invalid` error. So "rated from a source" is now a machine-checkable claim rather than a promise in prose, and a reader can tell at a glance which half of a row rests on a published number. A model the account exposes and the catalog does not rate never enters automatic selection — `promptobus models` shows it as an `unrated` runtime row and nothing picks it.
 
@@ -161,7 +163,7 @@ records why that work rejects 6 without buying the independent defect discovery 
 
 `priority` is the resolver's last tie-break but one, and the catalog assigns it by a convention rather than by a schema rule:
 
-- tuples are grouped by harness, and the groups run in the order the driver registry lists them (`REGISTRY` in `lib/drivers.ts`: `claude`, `cursor`, `codex`, `opencode`). The groups do not interleave;
+- tuples are grouped in driver registry order (`REGISTRY` in `lib/drivers.ts`): `claude` → `cursor` → `codex` → `opencode`. The groups do not interleave;
 - inside a group the tuples run from the highest quality down;
 - initial numbers go in steps of ten; a rung added later takes an unused gap between two tens, preserving existing priorities and their relative order.
 
@@ -192,7 +194,7 @@ The no-`max` bases with interpolated rungs in the current catalog have these out
 
 **Effort rungs are arithmetic from the base row**, and only two of the three ratings move: `quality = clamp(base + steps, 1, 10)` and `quotaCost = clamp(base + steps, 1, 10)`, while `speed` is the base row's unchanged. Throughput belongs to the model and its serving stack, not to how hard it is thinking; the extra output tokens of a deeper effort are the `quotaCost` step. One band per step and not two: a two-band step spans eight bands over a five-rung ladder, so both ends run into the clamp and a top-tier model's low rung ends up in the same band as the cheapest model in the catalog. Rungs that clamp to the same three ratings all stay — the effort is still a launchable choice — and `models validate` says so with `ladder-indistinguishable`.
 
-**A local run can argue with a band.** `promptobus models calibrate` reads the telemetry of this machine and proposes `speed` and `quotaCost` lines for the user overlay, with the medians behind each and the catalog band beside it; `--write` merges them after you agree. Speed evidence is pooled by `(harness, model)` across the effort ladder, so one speed proposal applies to every rung; it comes from usable output throughput, never completion duration. A model with no usable throughput gets no speed proposal. The command proposes and never applies, and it never proposes `quality` — see [reference/03-cli.md](../reference/03-cli.md) § Commands.
+**A local run can argue with a band.** `promptobus models calibrate` reads local telemetry and proposes `speed` and `quotaCost` ratings for the user overlay, with the supporting medians and the catalog band beside each. Speed evidence is pooled by `(harness, model)` across the effort ladder, so one speed proposal applies to every rung; it comes from usable output throughput, never completion duration. A model with no usable throughput gets no speed proposal. Calibration never proposes `quality` and writes nothing by default. Only `--write` with confirmation applies the proposed ratings — see [reference/03-cli.md](../reference/03-cli.md) § Commands.
 
 ### Staleness
 
@@ -235,7 +237,7 @@ Line by line:
 - `qualityFloor` raises or lowers the bar per catalog role — the defaults are worker 5, reviewer 9 and approver 7 on the 1–10 scale. An explicit floor on a declared step takes precedence; otherwise that step uses its kind's merged catalog-role floor. All are soft choice rules: a candidate below one keeps its place and its score, only the pick moves past it, and if nothing reaches it the best remaining candidate is chosen with a warning rather than the run refusing;
 - `balance` moves the two numbers of the `balance` strategy, both in percentage points of a window: `band` is how close two accounts have to be on pace before the better-rated model wins, and `spendUnit` is how much of a window a heavy tuple gives up before harnesses are compared;
 - `nearLimit` moves when `models` says an account is running short — `usedPercent` (80) is a level, how much of the binding window is gone; `underspend` (−15 points) is a rate, how far ahead of its own pace the account is spending. Either one raises the line. `excludeAtUsedPercent` (90) is the level at which a tuple stops being a candidate at all: its binding window at or past it is the `window-nearly-spent` exclusion, so a `--strategy quality` run no longer lands on an account with 4 % left because the quality weight outran `remaining`. Naming the tuple with `--harness` or `--model` still spends it, with a `window-nearly-spent-named` warning;
-- `caps.liveParticipants.<harness>` is how many participants of one task may be live on a harness at once, and under `balance` a harness that has reached its ceiling leaves the pace comparison — the next worker goes to another subscription. Per harness, because your three subscriptions have different capacities. It bounds one run and not the account: the count is that task's own participant list, so two tasks going side by side each count their own. Counted in participants — the similarly named `penalties.liveParticipantCap` is a ceiling on the live-participant *penalty*, in score points, and the two do different jobs. It is a ceiling and not a steeper penalty: `penalties.liveParticipantPerHarness` only orders candidates inside a harness, so an account whose window is ahead of the others would otherwise attract the third and the fourth worker too. `0` means never this harness; a harness you do not name is unbounded, which is how every run behaved before the key existed. When the ceiling moves the pick, the decision and the `spawn` line carry a `live-participant-cap` warning naming it. The key exists because of a measurement rather than a worry: on 2026-09-06 on the consumer, three workers in a row went to one Codex account, the five-hour window was spent in forty minutes, and all three stalled mid-turn;
+- `caps.liveParticipants.<harness>` is how many participants of one task may be live on a harness at once, and under `balance` a harness that has reached its ceiling leaves the pace comparison — the next worker goes to another subscription. Each harness can have a different cap. It bounds one run and not the account: the count is that task's own participant list, so two tasks going side by side each count their own. Counted in participants — the similarly named `penalties.liveParticipantCap` is a ceiling on the live-participant *penalty*, in score points, and the two do different jobs. It is a ceiling and not a steeper penalty: `penalties.liveParticipantPerHarness` only orders candidates inside a harness, so an account whose window is ahead of the others would otherwise attract the third and the fourth worker too. `0` means never this harness; a harness you do not name is unbounded, which is how every run behaved before the key existed. When the ceiling moves the pick, the decision and the `spawn` line carry a `live-participant-cap` warning naming it. The key exists because of a measurement rather than a worry: on 2026-09-06 on the consumer, three workers in a row went to one Codex account, the five-hour window was spent in forty minutes, and all three stalled mid-turn;
 - `defaults.strategy` is what `spawn` and `review` route with when `--strategy` is absent. It is the one key a command writes: `promptobus models strategy --set <name>` puts it in the writable layer, `--clear` takes it away, and a flag on the command line always wins over it;
 - `account.<harness>.plan` supplies a plan name when the adapter cannot report one. `models` shows that effective name or the adapter's tier, with its source. A name alone changes no score. The adapter tiers `default_claude_ai`, `pro`, `included:2000` and an absent OpenCode tier are reference names; none establishes a numeric capacity;
 - `account.<harness>.capacity.<kind>` is a positive relative weight no greater than 1,000,000,000 for a `session`, `weekly` or `monthly` window. The upper bound keeps derived score and pace numbers finite. For example, `weekly: 4` means four times the allowance of `weekly: 1` at the same used percentage. Remaining allowance and the `balance` pace and spend penalty use that multiplier. A missing kind uses 1 and preserves the prior estimate. No tier-based numeric default is shipped because the plan names do not prove comparable limits. `models` shows the effective value and source for all three kinds. This weight is not an absolute quota;
@@ -266,14 +268,9 @@ Warnings carry required `code` and `message`; the decision schema also permits o
 
 `priority-duplicate`, `priority-not-canonical` and `ladder-indistinguishable` carry a `layer` as well, because they are raised from tuple values and after the merge those values may come from anywhere in your stack. It is the highest-precedence layer among the values that raised the warning, and `catalog` when your overlays touched none of them — so the question you actually have, *did my own file do this?*, is answered by comparing that field with your layer's id. It is always there: an overlay that collapses two rungs of a ladder gets `ladder-indistinguishable` with your layer's id on it, and the same code from the shipped catalog says `catalog`. `models validate` prints it on the line, as `<code> · <layer>: <message>`, so you do not have to call the library to ask.
 
-The same checks are a library call in `lib/model-routing/validate.js`, so a consumer can check a policy layer it ships without starting a subprocess:
+Validate a policy layer as part of the host's configured stack. For structured findings and cache-only routing readiness, import `routingDiagnosis` from `promptobus/integration` and call `await routingDiagnosis(host)`. For the CLI validation report and its command result, import `runPromptobus` from `promptobus/cli` and call `await runPromptobus(['models', 'validate'], { host })`, or run `promptobus models validate` directly. These routes read the catalog and host-declared overlay files; the package does not export a pure validator for an arbitrary in-memory layer.
 
-| Call | When |
-|---|---|
-| `validate({ host, constraints })` | the real stack: it reads the shipped catalog and every file `host.routingPaths()` names, and reports a broken file as a finding rather than a throw |
-| `validateLayers({ canonical, overlays, constraints, now })` | documents already in memory: `canonical` is `{ data }`, each overlay `{ id, path, present, data }`. Pure — no filesystem, no clock beyond `now` |
-
-Production reads no JSON Schema — the grammar is written out in that file, and a parity check against the schemas keeps the two descriptions one grammar.
+Production reads no JSON Schema — the internal validator spells out the grammar, and a parity check against the schemas keeps the two descriptions in sync.
 
 ## Adapters, telemetry and calibrate: what each file does and what was measured
 
@@ -286,7 +283,7 @@ binary on this machine, right now. The verdict shape and the rules it answers
 under are the contract ([model-routing.ts](../../src/model-routing.ts)); this
 file is only the harness half of it.
 
-The whole probe is TWO reads and no turn. Binary and version come from the host
+The probe takes two reads and no model turn. Binary and version come from the host
 (`resolveToolBin`) — ADR-005 says an adapter reports `binary_missing` from its
 verdict rather than searching `PATH` itself — and auth comes from `claude auth
 status --json`, the one non-interactive check the binary offers today.
@@ -568,11 +565,10 @@ Source: `lib/model-routing/calibrate.ts`.
 Reading the telemetry back: local runs against the shipped catalog, as a
 PROPOSAL for the user overlay and never as a write of its own.
 
-[telemetry.ts](../../lib/model-routing/telemetry.ts) is the collecting half and says so in its own
-header. This is the reading half, and
-it is the same shape of file: pure, no disk, no clock, no host. Records in, a
-report out. `lib/models.js` reads the file, hands the rows over, prints what
-comes back and — only after a person agrees — merges the `ratings` block.
+The calibration calculation is pure: records in, a proposal out. `lib/models.js`
+reads the file and prints the proposal; only `--write` with confirmation merges
+the proposed `ratings` into the user overlay. `stats` and the text `models`
+count line also read the file, but neither proposes nor applies ratings.
 
 Three rules shape it, all of them ADR-005's.
 
@@ -753,7 +749,7 @@ deadline, and each adapter is handed its answer ([model-routing.ts](../../src/mo
 parallel, so each is given the whole budget as its own ceiling and the run ends
 when the budget does. A harness that has not answered by then is `unknown` /
 `probe_timeout` and does not hold the command: a person waiting on `spawn` pays
-once for the slowest harness, never three times in a row.
+once for the slowest harness, not once per harness.
 
 **The cache is consulted before the adapters, not after.** A live entry means no
 probe at all unless `--refresh` is set. A routed lift rechecks a held exhaustion
@@ -763,9 +759,8 @@ time. A failed recheck keeps the exhaustion. A reset-less exhaustion is sticky
 
 **`--dry-run` without `--refresh` never probes.** It keeps a live timed
 exhaustion from the cache even when a routed lift would recheck that exhaustion.
-A dry run is how a person asks
-a question, and a question that starts three harness binaries and waits fifteen
-seconds is not one. A harness with no live entry then reports `unknown` /
+A dry run answers without starting harness binaries or waiting on probes.
+A harness with no live entry then reports `unknown` /
 `stale_cache` — reported, never silently taken as available.
 
 Flags are the CLI's words; this module takes `refresh` and `dryRun` as options
@@ -773,8 +768,8 @@ and knows nothing about argv.
 
 #### Killing a probe's child: why three lines and not one
 
-All three adapters end a timed-out launch the same way, and the shape is not
-redundancy. **The kill alone does not end the wait.** `close` fires when the last
+The Claude Code, Cursor and Codex adapters end a timed-out launch the same way.
+**The kill alone does not end the wait.** `close` fires when the last
 stdio pipe closes, not when the child dies, so a grandchild holding the inherited
 pipe keeps the probe pending long after the signal. Measured live on 2026-09-05
 against a `#!/bin/sh` wrapper whose `sleep 5` held the pipe: a 300 ms deadline gave
@@ -798,8 +793,8 @@ adapters carry their own `timedOut` flag, set by their own timer and by nothing 
 
 Source: `lib/model-routing/cache.ts`.
 
-Availability cache: the last availability snapshot, kept between commands so
-that a routed `spawn` does not start three harness binaries every time.
+The availability cache keeps the last snapshot between commands so that a routed
+`spawn` does not have to re-probe every harness each time.
 
 **This file is the disk boundary of routing, and it is the one new file that can
 leak.** Two rules hold it, and both are gates rather than intentions:
@@ -824,27 +819,30 @@ harness (ADR-005), so there is nothing to tell apart; the snapshot schema keeps
 a `fingerprint` slot for the day that changes, and the rule that comes with it
 is that the key must be opaque and one-way.
 
-**An expired entry is read once more, for one fact.** The preflight answers a
-harness whose entry outlived its TTL as `stale_cache` and carries nothing of
-the entry but its `checkedAt`, so the resolver alone cannot tell "its windows
-expired a minute ago" from "it never had any". `windowsExpiry` answers that
-from the stored entry — the moment its windows ran out, or `null` when the
-cascade aged it by another line — and `routingContext` hands the answer to the
-resolver, whose `unknown-remaining` then reads `window entries expired <N> s
-ago; refresh with --refresh` instead of `exposes no limit source`. The penalty
-is unchanged: an expired window is still not a measurement.
+**Expiry makes availability unknown but preserves the readings.** If the cache
+entry expires and no probe runs, preflight returns `unknown` / `stale_cache`.
+It retains the last model inventory and window readings, where present, with
+their original `checkedAt` timestamps (and thus their original age), and labels
+their source `cache`, not `probe`. The resolver can still use a retained measured
+percentage; it is a last-known reading, not fresh telemetry or confirmation of
+current availability.
+
+`windowsExpiry` is diagnostic only. It returns the stored entry's expiry
+timestamp when the window TTL applied, or `null` when there were no windows or
+another TTL applied. If the resolver has no usable remaining reading, that
+timestamp lets `unknown-remaining` say the windows expired and suggest
+`--refresh`, rather than say the harness exposes no limit source. It does not
+freshen, remove or replace any retained reading.
 
 ### Validate: what a catalog or an overlay is refused for
 
 Source: `lib/model-routing/validate.ts`.
 
-`models validate` as a library function: what is wrong with the catalog and
-the overlays, before anything tries to route on them.
-
-It is a library function and not a command on purpose. The
-`promptobus models validate` subcommand calls it; the resolver calls the same
-function on the same layers; and a consumer that ships a policy layer of its
-own can check that layer without a subprocess.
+`loadCatalog`, `validate` and `validateLayers` are internal implementation
+details, not package entry points. Routing loads the merged policy with
+`loadCatalog`; `validate` reads the host stack and reports findings;
+`validateLayers` checks documents already in memory inside the implementation.
+Consumers use the supported entry points described above.
 
 **Production reads no JSON Schema.** The grammar below is the same grammar as
 `schemas/model-routing/*.schema.json`, written by hand for the same reason

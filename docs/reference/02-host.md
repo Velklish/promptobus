@@ -237,7 +237,8 @@ Registry reads propagate that `GateError` rather than answer empty, as do direct
 
 `harnessStateHome()` is a required member of `PromptobusHost`, the second the routing series adds: an existing host implementation must add it, and `tsc` says so. Consumers meet both once, at the release that closes the series.
 
-The host is bound for the process by `runPromptobus` (and by `hostOf` for the package's own helper), because the registry helpers are called from places with no host in reach — `inspect(ref)` takes a ref and nothing else. Two hosts in one process share that binding and the first one wins — a host bound later cannot move the registries out from under a run already going. The same two doors make a second binding of the same kind, the host's `resolveToolBin` for the calls a driver makes after a lift ([05-drivers § The harness binary after a lift](05-drivers.md#the-harness-binary-after-a-lift-the-lifts-door-not-path)), and the first host wins there too. Those two are the exception to "no process-wide singleton", and they are written at the top of `runPromptobus` in `lib/cli.js`.
+The host is bound for the process by `runPromptobus` (and by `hostOf` for the package's own helper), because the registry helpers are called from places with no host in reach — `inspect(ref)` takes a ref and nothing else. Two hosts in one process share that binding and the first one wins — a host bound later cannot move the registries out from under a run already going. The same two doors make a second binding of the same kind, the host's `resolveToolBin` for the calls a driver makes after a lift ([05-drivers § The harness binary after a lift](05-drivers.md#the-harness-binary-after-a-lift-the-lifts-door-not-path)), and the first host wins there too. Those two are the exception to "no process-wide singleton".
+The source is `lib/cli.ts` (`runPromptobus`); the runtime build emits `lib/cli.js`.
 
 ### Shared-service Host factory
 
@@ -272,7 +273,9 @@ When a driver supplies an environment to `run`, that same environment governs co
 
 Cursor's stop path re-resolves its binary with the preference `cursor-agent`, then `agent`, then `cursor`, searching `PATH` and the known install directories (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`). The environment passed to `stop` controls both that resolution and the `persist stop` command, so teardown does not silently resolve against `process.env` while executing with another environment.
 
-`HostToolBin` answers `ok`, `bin`, `version`, `note`, `warn` and `reason`. Only `bin` reaches a process spawn; the rest are read to talk to a person. **`version` is optional, accepts `string | null`, and absent or `null` means UNREAD, never "old".** A string holds the binary's own version as the host read it — the raw `--version` line — and a host that does not probe versions may omit it or return `null`. The host suite scans the three drivers, the three availability adapters and `lib/harness-home.js`, and finds seven readers of `HostToolBin`; a changed count means a new reader needs inspection, not a counter adjustment. The lift's own reader (`sayTool` and the refusal in `lib/spawn.js`) is outside that scan.
+`HostToolBin` answers `ok`, `bin`, `version`, `note`, `warn` and `reason`. Only `bin` reaches a process spawn; the rest are read to talk to a person. **`version` is optional, accepts `string | null`, and absent or `null` means UNREAD, never "old".** A string holds the binary's own version as the host read it — the raw `--version` line — and a host that does not probe versions may omit it or return `null`.
+
+The [Host suite](../../test/host.test.mjs) dynamically discovers driver and availability adapter source files, adds `lib/harness-home.ts`, deduplicates source paths and scans for `HostToolBin` readers. It currently asserts 5 source readers, not a fixed number of drivers or adapters. A changed count calls for investigating which reader was added, removed or missed by the scan, and whether its field accesses are covered, before adjusting the assertion. The lift's own reader (`sayTool` and the refusal in `lib/spawn.ts`) is outside that scan.
 
 **The standalone host does not start a binary inside `resolveToolBin`.** That member stays synchronous and returns the name at once. A `spawnSync` there would block every caller — a lift, a review, a stop, a state query — and, if an adapter called it during the race, it would stop the single budget timer that caps the whole probe. The version read is the optional `readToolVersion(name, bin)`, and it does not switch on the name: it runs `<bin> --version` with a 5 s ceiling and returns the raw stdout line, or nothing. The package asks it only for a tool whose driver and adapter declare `readsVersion`. Claude declares it. The preflight asks before the probe race, and a real lift asks once when the resolved bin still has no version, before option validation and provenance reporting. `--dry-run` does not ask. A usable line is remembered for that host; a timeout, a non-zero exit, or an empty answer is not, so the next ask tries again. Cursor and Codex do not declare the read, so their proven-version warnings stay silent under this host — the boundary of the decision that named `claude --version`. A consumer host that fills `version` from its own `resolveToolBin` is not asked.
 
@@ -338,7 +341,7 @@ Two values have to agree: the config key the detached holder writes, and the too
 
 A third place names the same key: the wake text, which tells a participant to fetch its mailbox. It has no host either — a notification carries a task and an address and nothing else — so it takes the prefix off the same record. A record written before the prefix moved onto it carries none, and waking it refuses with the line the stale-holder branch beside it uses: lift the participant again. Nothing guesses a prefix, because a guessed key names a tool the session does not have.
 
-That is why `DriverPhrases.tool(server, name, host)` takes a host. A driver whose spelling does not depend on the workspace ignores the argument — Claude Code and Cursor do. Two hosts with different `commandName` in one process produce two different namespaces, which is the property that makes a process-wide host unnecessary here as everywhere else.
+That is why `DriverPhrases.tool(server, name, host)` takes a host. A driver whose spelling does not depend on the workspace ignores the argument — Claude Code and Cursor do. Two hosts with different `commandName` in one process produce two different namespaces. This lookup uses the passed Host, not the shared native helper bindings.
 
 The spawn path chooses a readable participant session name from the work-slice title (`Worker: <title> (<MMDD-HHMM>)`; a reviewer uses `Review:`), stores it as `sessionRef`, and passes it through a driver-owned name seam when the harness accepts one. Codex applies that value with `thread/name/set`; its thread id remains harness-owned and is the lookup handle. A Codex record written before the name field existed falls back to `promptobus:<task>:<address>`, keeping older sessions addressable while new lifts remain readable. Cursor still lets the harness invent its persist session name.
 
@@ -561,8 +564,11 @@ same reason: `inspect` and `stop` take a ref and nothing else
 Source: `src/host.ts`.
 
 Host contract: knowledge of the workspace the consumer passes into the bus
-explicitly on every call. There is no process-wide singleton: two hosts in
-one process are lawful and independent.
+explicitly on every call. Multiple Hosts can supply their own workspace callbacks.
+For the native helpers without a Host argument, the first process-wide harness-home
+and post-lift tool-binary bindings win. Shared-service identity and wake operations
+use explicit client context; service admission checks the common native bindings
+instead of changing them. See [the detailed binding rules](#the-harness-session-registry-and-the-refusal-when-nobody-says).
 
 Field names are about a workspace in general, not about one consumer's
 layout. Concrete paths (rules directory, tools manifest) are named by the

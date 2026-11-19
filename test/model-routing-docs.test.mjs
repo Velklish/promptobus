@@ -1,11 +1,14 @@
 import { check } from './check.mjs';
 import { readFileSync } from 'node:fs';
+import { REGISTRY } from '../lib/drivers.js';
 import { CATALOG_FILE, mergeRouting } from '../lib/model-routing/catalog.js';
 import { resolve } from '../lib/model-routing/resolver.js';
 
 const guide = readFileSync(new URL('../docs/guides/model-routing.md', import.meta.url), 'utf8');
 const cli = readFileSync(new URL('../docs/reference/03-cli.md', import.meta.url), 'utf8');
 const glossary = readFileSync(new URL('../docs/GLOSSARY.md', import.meta.url), 'utf8');
+const roadmap = readFileSync(new URL('../docs/ROADMAP.md', import.meta.url), 'utf8');
+const drivers = readFileSync(new URL('../docs/reference/05-drivers.md', import.meta.url), 'utf8');
 const adr = readFileSync(new URL('../docs/adr/adr-005-ten-point-scale-absolute-bands-calibrate.md', import.meta.url), 'utf8');
 const orchestrate = readFileSync(new URL('../skills/orchestrate/SKILL.md', import.meta.url), 'utf8');
 const warningSchema = JSON.parse(readFileSync(
@@ -29,6 +32,68 @@ const optionalWarnings = Object.keys(warningSchema.properties)
   .filter((field) => !warningSchema.required.includes(field));
 const fieldsIn = (text) => [...(text ?? '').matchAll(/`([^`]+)`/g)].map((match) => match[1]).sort();
 const sameFields = (text, expected) => JSON.stringify(fieldsIn(text)) === JSON.stringify([...expected].sort());
+const section = (text, heading) => text.split(`\n${heading}\n`)[1]?.split(/\n#{1,6} /, 1)[0] ?? '';
+
+const harnesses = Object.keys(REGISTRY.drivers);
+const { tuples } = JSON.parse(readFileSync(new URL('../models/catalog.json', import.meta.url), 'utf8'));
+const bases = tuples.filter((tuple) => !tuple.evidence?.interpolatedFrom);
+const qualityHypotheses = bases.filter((tuple) => tuple.evidence?.hypothesis?.includes('quality'));
+const catalogOrder = [...new Set([...tuples].sort((a, b) => a.priority - b.priority).map((tuple) => tuple.harness))];
+const documentedHarnesses = (text) => [...text.matchAll(/`([a-z]+)`/g)].map((match) => match[1]);
+const registryPassages = [
+  glossary.match(/^\| harness \|.*$/m)?.[0] ?? '',
+  roadmap.match(/^2\. \*\*.*harnesses in one CLI\..*$/m)?.[0] ?? '',
+  drivers.match(/The CLI registry contains [\s\S]*?\. This is a source inventory/)?.[0] ?? '',
+];
+const canonicalPriority = section(guide, '### Canonical priority').match(/^- tuples are grouped.*$/m)?.[0] ?? '';
+check('routing docs: current harness and catalog inventories match their sources',
+  registryPassages.every((text) => documentedHarnesses(text).join() === harnesses.join())
+  && documentedHarnesses(canonicalPriority).join() === catalogOrder.join()
+  && catalogOrder.join() === harnesses.join()
+  && roadmap.includes(`${tuples.length} rated tuples`)
+  && section(guide, '## The catalog file').includes(`${tuples.length} rated tuples`)
+  && guide.includes(`Of the ${bases.length} base rows (rows without \`evidence.interpolatedFrom\`), ${qualityHypotheses.length} carry a \`quality\` hypothesis`));
+
+const { exports: packageExports } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+const validationRef = section(cli, '### Catalog and overlays');
+const validationGuide = guide.match(/^Validate a policy layer .*$/m)?.[0] ?? '';
+const internalValidator = section(guide, '### Validate: what a catalog or an overlay is refused for');
+const supportedValidation = (text) => {
+  const imports = [...text.matchAll(/import `([^`]+)` from `promptobus(\/[^`]+)`/g)];
+  return imports.length === 2
+    && imports.every(([, , specifier]) => Object.hasOwn(packageExports, `.${specifier}`))
+    && imports.some(([, name, specifier]) => name === 'routingDiagnosis' && specifier === '/integration')
+    && imports.some(([, name, specifier]) => name === 'runPromptobus' && specifier === '/cli')
+    && text.includes('await routingDiagnosis(host)')
+    && text.includes("await runPromptobus(['models', 'validate'], { host })");
+};
+check('routing docs: consumer validation uses exported entries, not internal helpers',
+  [validationRef, validationGuide].every(supportedValidation)
+  && [validationRef, internalValidator].every((text) => /internal implementation\s+details, not package entry points/.test(text)
+    && ['loadCatalog', 'validate', 'validateLayers'].every((name) => text.includes(`\`${name}`)))
+  && /does not export a pure validator/.test(validationGuide)
+  && /no exported pure validator/.test(validationRef)
+  && !/so a consumer can check a policy layer|own can check that layer without a subprocess/.test(guide + cli));
+
+const cacheGuide = section(guide, '### The availability cache: the first disk boundary of routing');
+check('routing docs: expiry retains dated cache readings without confirming availability',
+  /returns `unknown` \/ `stale_cache`/.test(cacheGuide)
+  && /retains the last model inventory and window readings/.test(cacheGuide)
+  && /original `checkedAt` timestamps.*original age.*labels\s+their source `cache`, not `probe`/.test(cacheGuide)
+  && /not fresh telemetry or confirmation of\s+current availability/.test(cacheGuide)
+  && /`windowsExpiry` is diagnostic only/.test(cacheGuide)
+  && /If the resolver has no usable remaining reading, that\s+timestamp lets `unknown-remaining`/.test(cacheGuide)
+  && !/carries nothing of\s+the entry but its `checkedAt`/.test(cacheGuide));
+
+const routingCommands = section(cli, '### Commands');
+const telemetryRef = section(cli, '### Participant telemetry');
+check('routing docs: descriptive telemetry readers are separate from confirmed rating writes',
+  /`stats` reads local telemetry for its run report; `models` reads it for the record count and file size in text output, not in `--json`/.test(routingCommands)
+  && /`models calibrate` .* proposes `speed` and `quotaCost` ratings, never `quality`/.test(routingCommands)
+  && /A proposal does not change any overlay\. Only `--write` with confirmation applies the proposed `ratings` to the `user` overlay/.test(routingCommands)
+  && /Without a terminal it refuses unless `--yes` is also given/.test(routingCommands)
+  && /Read paths are `stats`, the text count line of `models`/.test(telemetryRef)
+  && !/the only command that reads those records|The reading half is/.test(routingCommands + telemetryRef));
 
 check('routing docs: Codex duration selects a kind before the snapshot and display',
   /^\| window \|.*Codex selects the kind from source duration.*seven days or longer.*`weekly`.*shorter positive duration.*`session`.*\|/m.test(glossary)

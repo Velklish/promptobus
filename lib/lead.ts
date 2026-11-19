@@ -104,7 +104,7 @@ export async function planLead(rootOrHost: unknown, opts: LeadOptions = {}): Pro
   const prompt = renderOrchestratorInstructions({ rules, brief, bindings: {
     tools: Object.fromEntries(['promptobus_send', 'promptobus_mailbox', 'promptobus_task'].map(name => [name, call(name)])) as Record<keyof ParticipantTools, string>,
     preamble: driver.phrases.rootPreamble({ task, root }),
-    delivery: 'The holder and warden deliver postcards when mail arrives;',
+    delivery: 'The holder and warden deliver postcards for actionable owner mail. Readable progress-only status does not start a turn;',
     operationalRules: driver.phrases.promptRulesFor(ORCHESTRATOR),
   } }) + nativeContextPrompt(selectedContext);
   const name = resumed ? sessionRefOf(resumed.owner)! : `Orchestrator: ${shortTitle(title) || slug} (${task})`;

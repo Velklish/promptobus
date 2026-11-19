@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
+import { participantFileStem } from '../dist/index.js';
 import { threadStartConfig } from '../lib/codex-session.js';
 import { sourceFile } from './source-files.mjs';
 
@@ -29,6 +30,76 @@ const section = (document, heading) => {
 };
 const decision = (document, label, nextLabel) => section(document, '## Decision')
   .split(`**${label}.**`)[1]?.split(`**${nextLabel}.**`)[0] ?? '';
+
+check('docs: release writer requires a regression for factual corrections, not style alone',
+  has(section(read('docs/guides/releasing.md'), '## Technical-writer pass'),
+    'A currency correction that changes a documented fact or contract needs a regression check that fails on the old text: a quote, a test, or a lint rule. A style-only edit that changes no fact does not need a currency regression.'));
+
+check('docs: participant file-stem list includes the child root prefix',
+  has(read('docs/reference/04-protocol.md'), `\`teamlead-<slug>\`, \`${participantFileStem('root:<slug>')}\`, \`peer-<slug>\``));
+
+check('docs: orchestration send routes admit the child-side root address',
+  has(read('skills/orchestrate/SKILL.md'), "governance routes also admit registered teamleads, a child task's `root:<root slug>`, linked peers and `user` under their message-type rules"));
+
+const hostReference = read('docs/reference/02-host.md');
+const readerAssertion = read('test/host.test.mjs').match(/const expectedToolBinReaders = (\d+);/)?.[1];
+const toolBinDocs = section(hostReference, '## Tool binaries');
+check('docs: HostToolBin reader count describes the dynamic source scan',
+  readerAssertion !== undefined
+  && has(toolBinDocs, 'dynamically discovers driver and availability adapter source files, adds `lib/harness-home.ts`, deduplicates source paths')
+  && has(toolBinDocs, `asserts ${readerAssertion} source readers, not a fixed number of drivers or adapters`)
+  && has(toolBinDocs, 'investigating which reader was added, removed or missed by the scan')
+  && !has(toolBinDocs, 'finds seven readers'));
+
+const standaloneDecision = adr('002', 'standalone-host-contract');
+const shortHost = section(hostReference, '### The host contract, in one sentence per member');
+check('docs: passed Hosts do not bypass first native bindings or explicit service client context',
+  [standaloneDecision, shortHost].every(text => has(text, 'first process-wide harness-home and post-lift tool-binary bindings win')
+    && has(text, 'explicit client context') && has(text, 'admission checks the common native bindings'))
+  && !/Nothing hidden in module scope joins them|Two hosts in one process stay independent|one process are lawful and independent/.test(compact(standaloneDecision + shortHost)));
+
+const observerRoot = 'integrations/bb-native-observer';
+const observerDocs = section(read(`${observerRoot}/README.md`), '## Observer boundary');
+const observerContract = read(`${observerRoot}/contract.ts`);
+check('docs: observer catalogue and bounded owner feed follow their separate outputs',
+  has(observerContract, 'tasks: { input: rootsSchema, output: catalogueSchema }, ownerFeed: { input: selectionSchema, output: ownerFeedSchema }')
+  && has(observerDocs, '`tasks` returns the catalogue `{tasks, truncated, scanned}`: at most 256 valid tasks from at most 4096 scanned directory entries')
+  && has(observerDocs, '`ownerFeed` returns `taskId`, `state`, `ownerParticipantId`, `ownerSessionRef` and up to 4096 owner message headers in `messages`: `id`, `sender`, `recipients` and `type`, without bodies')
+  && has(observerDocs, 'A missing task or store returns `not prepared`, an empty owner participant id, a null session reference and no messages'));
+
+const launchDocs = ['docs/guides/hooks-and-trust.md', 'docs/reference/05-drivers.md'];
+for (const [role, file, planner, oldCitation] of [
+  ['teamlead', 'spawn', 'planTeamlead', 'lib/spawn.js:726'],
+  ['reporter', 'report', 'planReport', 'lib/report.js:180'],
+]) {
+  const body = read(`lib/${file}.ts`).split(`export async function ${planner}(`)[1]?.split('\nexport ', 1)[0] ?? '';
+  check(`docs: ${role} install-root citation identifies the planner that supplies launch cwd`,
+    /const root = canonicalPath\(host\.workspaceRoot\(\)\)/.test(body)
+    && /driver\.prepare!\(\{[\s\S]*?cwd: root, root,/.test(body)
+    && launchDocs.every(doc => has(read(doc), `[\`${planner}\`](../../lib/${file}.ts)`)
+      && has(read(doc), 'both pass the canonical `host.workspaceRoot()` as the launch `cwd`')
+      && !has(read(doc), oldCitation)));
+}
+
+check('docs: readable owner progress neither wakes nor escalates; blocking HOLD needs a question',
+  has(read('docs/reference/04-protocol.md'), 'the warden neither knocks nor escalates to `SILENT`')
+  && has(read('docs/reference/04-protocol.md'), 'an unreadable inbox remains conservatively actionable')
+  && has(read('docs/reference/03-cli.md'), 'Readable progress-only owner mail is not a `SILENT` trigger, but unreadable inboxes are conservatively actionable')
+  && has(read('skills/orchestrate/SKILL.md'), 'Before ending a blocking HOLD, send an actionable `question`')
+  && has(read('skills/orchestrate/SKILL.md'), 'release comes as `answer`. Use `result` for completion')
+  && has(read('lib/prompts/roles.ts'), 'Before ending a blocking HOLD, send a question')
+  && !/knocks when mail arrives|wake this owner when mail arrives|deliver postcards when mail arrives/.test(
+    read('skills/orchestrate/SKILL.md') + read('docs/reference/03-cli.md') + read('lib/lead.ts')));
+
+const shutdownInstructions = read('skills/orchestrate/SKILL.md');
+const stopDecision = adr('012', 'stopping-one-participant-is-a-verb-of-its-own');
+check('docs: managed child Stop precedes root self-Stop and authorized proof inspection',
+  /first stops each owned child with `stop teamlead:<slug>`.*Then it requests `stop orchestrator`.*pending self-Stop acknowledgement is not confirmation.*authorized observer/.test(shutdownInstructions)
+  && has(shutdownInstructions, 'Do not use `done --keep-sessions` before confirmed Stop')
+  && has(shutdownInstructions, 'Task closure and service shutdown are separate')
+  && has(stopDecision, 'It refuses an unknown or attached participant')
+  && has(stopDecision, 'A managed orchestrator is eligible under the same owner gate')
+  && has(stopDecision, 'An unconfirmed stop is not a confirmed closure'));
 
 check('docs: native admission requires actual proof and Cursor observation preserves its registry revision',
   has(read('docs/reference/05-drivers.md'), 'Missing proof retains an unresolved binding and refuses actor tools;')
