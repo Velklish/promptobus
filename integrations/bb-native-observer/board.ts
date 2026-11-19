@@ -69,15 +69,16 @@ function openQuestion(participantId: string, messages: readonly MessageV1[]): st
     && reply.id > question.id && reply.sender === recipient && reply.recipients.includes(participantId))));
   return open.at(-1)?.id ?? null;
 }
-function sampleNotice(older: boolean, exhausted: boolean, scope: string): { notice?: string } {
+function sampleNotice(older: boolean, exhausted: boolean, incompleteIntents: boolean, scope: string): { notice?: string } {
   const notices = [];
   if (older) notices.push(`Older messages were not read (newest ${BOARD_REFERENCE_LIMIT} references only).`);
   if (exhausted) notices.push(`${scope} reached its byte budget; some records were not read.`);
+  if (incompleteIntents) notices.push('Sample incomplete: some delivery intents could not be parsed.');
   return notices.length ? { notice: notices.join(' ') } : {};
 }
 function runOf(root: string, task: TaskV1, budget: ReadBudget) {
   const participants = placed(task.participants);
-  const { messages, unread, older, pending } = boardMessages(root, task.id, budget);
+  const { messages, unread, older, pending, incompleteIntents } = boardMessages(root, task.id, budget);
   const stalls = stallsOf(root, task.id, budget);
   const steps = boardSteps({ participants });
   const pieces = piecesOf(participants, messages, steps).slice(0, 64).map(piece => {
@@ -100,7 +101,8 @@ function runOf(root: string, task: TaskV1, budget: ReadBudget) {
       ...(piece.participants.some(entry => pending.has(entry.id)) ? { unfinishedDelivery: true } : {}),
       participants: piece.participants.map(entry => ({ step: entry.step, participantId: entry.id })) });
   });
-  return { steps, pieces, inferred: steps.length > SHIPPED.length, ...sampleNotice(older, budget.exhausted, 'The board sample') };
+  return { steps, pieces, inferred: steps.length > SHIPPED.length,
+    ...sampleNotice(older, budget.exhausted, incompleteIntents, 'The board sample') };
 }
 export function readBoard(input: { storeRoot: string; nativeRoot: string }, instance: string, pid: number): Board {
   const { storeRoot } = rootsSchema.parse(input);
@@ -135,12 +137,12 @@ export function readPieceHistory(input: { storeRoot: string; nativeRoot: string;
   const task = selectedTask(storeRoot, input.taskId);
   if (!task) throw new Error('Selected run is unavailable');
   const budget = new ReadBudget(BOARD_READ_BYTES);
-  const { messages, older } = boardMessages(storeRoot, task.id, budget);
+  const { messages, older, incompleteIntents } = boardMessages(storeRoot, task.id, budget);
   const participants = placed(task.participants);
   const piece = piecesOf(participants, [], boardSteps({ participants })).find(value => value.slug === input.slug);
   if (!piece) throw new Error('Selected piece is not in this run');
   const ids = new Set(piece.participants.map(entry => entry.id));
   return historySchema.parse({ taskId: task.id, slug: piece.slug,
-    ...sampleNotice(older, budget.exhausted, 'Piece history'),
+    ...sampleNotice(older, budget.exhausted, incompleteIntents, 'Piece history'),
     messages: messages.filter(message => ids.has(message.sender) || message.recipients.some(id => ids.has(id))).slice(-64).map(toMessage) });
 }

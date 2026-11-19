@@ -4,6 +4,7 @@ import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, rmSync, symli
 import path from 'node:path';
 import { boardSchema } from '../contract.js';
 import { boardSteps, placed, readBoard, readPieceHistory } from '../board.js';
+import { showsPiece } from '../dashboard.js';
 import { fixture, treeDigest } from './fixture.js';
 
 const AFTER = '20261119T000000000-0000-000000';
@@ -308,5 +309,52 @@ test('an intents directory outside the owned store refuses the lane, even with n
     assert.match(board.runs.find(run => run.id === taskId)?.error ?? '', /Selected canonical intents/);
     assert.equal(board.runs.find(run => run.id === f.selection.taskId)?.error, null);
     assert.throws(() => readPieceHistory({ ...roots(f), taskId, slug: 'x' }), /Selected canonical intents/);
+  } finally { f.cleanup(); }
+});
+
+test('a visible but incomplete intent preserves cards and the open history without using its ID as a result', () => {
+  const f = fixture('board-torn-intent-fixture');
+  try {
+    const taskId = 'board-torn-intent-run';
+    secondRun(f, taskId, ['worker:x', 'worker:y']);
+    record(f, taskId, 1, 'history', 'worker-x', 'Confirmed status');
+    const source = { ...roots(f), hostId: 'host_fixture' }, opened = { taskId, slug: 'x', source };
+    const sample = () => ({ ...readBoard(roots(f), 'observer', 1), source });
+    assert.equal(showsPiece(sample(), opened), true);
+
+    const reference = record(f, taskId, 2, 'inbox', 'worker-x', 'Unconfirmed result', 'result');
+    const intents = path.join(f.selection.storeRoot, 'tasks', taskId, 'intents');
+    mkdirSync(intents, { recursive: true });
+    writeFileSync(path.join(intents, path.basename(reference)), '{"protocolVersion":');
+
+    const before = treeDigest(f.root), board = sample();
+    const lane = board.runs.find(run => run.id === taskId)!;
+    assert.equal(lane.error, null);
+    assert.match(lane.notice ?? '', /Sample incomplete: some delivery intents could not be parsed/);
+    assert.deepEqual(lane.pieces.map(piece => [piece.slug, piece.step]), [['x', 'worker'], ['y', 'worker']]);
+    assert.equal(showsPiece(board, opened), true);
+    const history = readPieceHistory({ ...roots(f), taskId, slug: opened.slug });
+    assert.match(history.notice ?? '', /Sample incomplete: some delivery intents could not be parsed/);
+    assert.deepEqual(history.messages.map(message => message.body), ['Confirmed status']);
+    assert.equal(treeDigest(f.root), before);
+  } finally { f.cleanup(); }
+});
+
+test('an incomplete intent is tolerated only inside the owned file and size boundary', () => {
+  const f = fixture('board-unowned-intent-fixture');
+  try {
+    const taskId = f.selection.taskId;
+    const intent = path.join(f.selection.storeRoot, 'tasks', taskId, 'intents', '20261201T000000000-0000-000000.json');
+    const foreign = path.join(f.root, 'foreign-intent.json');
+    writeFileSync(foreign, '{');
+    const refuses = () => {
+      assert.match(readBoard(roots(f), 'observer', 1).runs[0].error ?? '', /Selected canonical intents/);
+      assert.throws(() => readPieceHistory({ ...roots(f), taskId, slug: 'alpha' }), /Selected canonical intents/);
+    };
+    symlinkSync(foreign, intent);
+    refuses();
+    rmSync(intent);
+    writeFileSync(intent, '{'.repeat(256 * 1024 + 1));
+    refuses();
   } finally { f.cleanup(); }
 });

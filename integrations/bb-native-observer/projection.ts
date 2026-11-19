@@ -91,14 +91,15 @@ export function historyNames(directory: string, limit: number): string[] {
   return names;
 }
 type Reference = { id: string; participant: string; file: string };
-function readMessage(root: string, taskId: string, id: string, file: string, budget?: ReadBudget): MessageV1 | null {
-  const text = ownedText(root, file, OWNED_RECORD_BYTES, budget);
-  if (text === null) return null;
-  const value: unknown = JSON.parse(text);
+function checkedMessage(value: unknown, taskId: string, id: string): MessageV1 {
   requireValid('message', value);
   const message = value as MessageV1;
   if (message.task !== taskId || message.id !== id) throw new Error();
   return message;
+}
+function readMessage(root: string, taskId: string, id: string, file: string, budget?: ReadBudget): MessageV1 | null {
+  const text = ownedText(root, file, OWNED_RECORD_BYTES, budget);
+  return text === null ? null : checkedMessage(JSON.parse(text), taskId, id);
 }
 function addReference(messages: Map<string, MessageV1>, ref: Reference, message: MessageV1 | null) {
   if (!message || !message.recipients.includes(ref.participant)) throw new Error();
@@ -155,6 +156,7 @@ function recentReferences(root: string, taskId: string) {
 function readIntents(root: string, taskId: string, budget: ReadBudget) {
   const directory = path.join(root, 'tasks', taskId, 'intents');
   const ids = new Set<string>(), participants = new Set<string>();
+  let incomplete = false;
   try {
     const names = historyNames(directory, 4096).filter(name => name.endsWith('.json')).sort().reverse();
     for (const name of names) {
@@ -165,8 +167,17 @@ function readIntents(root: string, taskId: string, budget: ReadBudget) {
     for (const id of ids) {
       if (budget.exhausted) break;
       try {
-        const message = readMessage(root, taskId, id, path.join(directory, `${id}.json`), budget);
-        if (!message) { ids.delete(id); continue; }
+        const text = ownedText(root, path.join(directory, `${id}.json`), OWNED_RECORD_BYTES, budget);
+        if (text === null) { ids.delete(id); continue; }
+        let value: unknown;
+        // The writer can publish the intent name before its JSON is complete.
+        try { value = JSON.parse(text); }
+        catch (error) {
+          if (!(error instanceof SyntaxError)) throw error;
+          incomplete = true;
+          continue;
+        }
+        const message = checkedMessage(value, taskId, id);
         participants.add(message.sender);
         for (const recipient of message.recipients) participants.add(recipient);
       } catch (error) {
@@ -174,7 +185,7 @@ function readIntents(root: string, taskId: string, budget: ReadBudget) {
       }
     }
   } catch { throw new Error('Selected canonical intents are unavailable, malformed or outside the owned boundary'); }
-  return { ids, participants };
+  return { ids, participants, incomplete };
 }
 export function boardMessages(root: string, taskId: string, budget: ReadBudget) {
   const historyError = () => new Error('Selected canonical history is unavailable, malformed or outside the owned boundary');
@@ -196,7 +207,7 @@ export function boardMessages(root: string, taskId: string, budget: ReadBudget) 
     }
   } catch (error) { if (!(error instanceof ReadBudgetExceeded)) throw historyError(); }
   return { messages: [...messages.values()].reverse().filter(message => !pending.ids.has(message.id)),
-    unread, older, pending: pending.participants };
+    unread, older, pending: pending.participants, incompleteIntents: pending.incomplete };
 }
 export function toMessage(message: MessageV1) {
   return { id: message.id, sender: message.sender, recipients: message.recipients, type: message.type,
