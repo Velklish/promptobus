@@ -6,6 +6,11 @@ One page per harness contract. A driver owns the vocabulary of its binary — op
 words, how a lift plan becomes a launch — and nothing above it: which servers a participant
 gets is the workspace's call, and how a task is journalled is the engine's.
 
+The CLI registry contains Claude Code (`claude`), Cursor (`cursor`), Codex
+(`codex`), and OpenCode (`opencode`). This is a source inventory. It does not
+establish live account availability, automatic role eligibility in the
+[routing catalog](../guides/model-routing.md#the-catalog-file), or hook parity.
+
 Facts here were measured on the binaries named beside them. Where a harness publishes no
 documentation for what the mechanism uses, that is said rather than implied.
 

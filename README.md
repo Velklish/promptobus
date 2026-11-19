@@ -316,6 +316,8 @@ OpenCode routing can select `opencode-go/minimax-m3`. Its windows are a local es
 
 `promptobus stats [--task <id>]` prints persisted participant generations with wall time, token kinds, bus counts and reasons for missing measurements. It reads telemetry and optional journal labels without calling a harness.
 
+The text `promptobus models` output also reads telemetry for the record count and file size. `promptobus models calibrate` proposes `speed` and `quotaCost` ratings; it applies them to the user overlay only with `--write` and confirmation. Embedded hosts can read structured routing findings with `routingDiagnosis(host)` from `promptobus/integration`, or invoke `models validate` through `runPromptobus` from `promptobus/cli` for CLI output.
+
 ### Environment
 
 | Variable | Effect |
