@@ -1813,6 +1813,8 @@ That last case is the one this exists for. A cleanup hook reaps a holder only wh
 
 ## Shared service
 
+For installed workflow, recovery and process measurements, use the [qualification worksheet](../guides/shared-service-qualification.md).
+
 | Command | Behavior |
 | --- | --- |
 | `service ensure [--json]` | Reuse the compatible workspace owner or start it through the consumer entry point and wait for readiness. |
@@ -1826,6 +1828,74 @@ That last case is the one this exists for. A cleanup hook reaps a holder only wh
 
 Pending lifetime observations remain active work after client revocation.
 The owner refuses shutdown until those observations settle.
+
+### When an upgrade refuses a historical client
+
+Match the runtime fingerprint in the refusal to the original consumer launcher.
+`promptobus service status --json` does not start an owner. When it reports
+`running: false`, `discovery.runtime` and `discovery.version`, if present, describe
+the last listener, not necessarily the refused grant. An absent service PID says
+nothing about the native client. The version alone cannot identify the launcher:
+the runtime fingerprint also depends on the entry point, install and Node runtime.
+
+A startup with a different fingerprint checks the grant lifetime first. If it
+cannot establish expiry, it refuses **before** checking retained Stop receipts.
+With the matching runtime, a managed Codex grant with an absent launch record
+is eligible for the exact receipt-backed check described below. A receipt from
+another thread or launch is not a substitute. A matching launcher identifies
+the runtime; it grants no authority to stop a participant. For a live managed
+participant, the task mailbox owner or an approver of that task calls
+`promptobus stop <address> --task <id>` from their own registered session.
+For an attached session, its actual owner closes it through the harness;
+the participant Stop command refuses it. If the harness
+independently confirms death without a Stop receipt, the mailbox owner's targeted
+`abandon <address>` route concerns **task closure**; it neither creates a receipt
+nor revokes a historical service grant.
+
+**Retained case (private workspace consumer, 2026-11-13): unresolved.**
+Promptobus 0.32.9 via Host 0.107.0 refused startup (exit 1); retained discovery
+named Host 0.106.0. Neither the missing launch record (`ENOENT`) nor the missing
+listener established native death. The retained account establishes neither a
+matching confirmed receipt nor authority over that exact client. It records a
+successful smoke in a separate service home only. Both 0.32.9 and current source
+restrict receipt retirement to the matching runtime; the old refusal did not
+report a fingerprint. Do not infer one from the Host version.
+
+**Qualification procedure.** Keep two records:
+
+1. **Controlled fixture.** After building the candidate, run
+   `node --test test/shared-service-stop-retirement.test.mjs` in the batch test
+   environment. With the same runtime, expect only clients with exact confirmed
+   proof and absent processes to retire; missing, mismatched and live controls
+   must remain. With a different runtime and the same otherwise valid Stop,
+   expect startup refusal naming the old fingerprint, with the grant and journal
+   participant unchanged. This exercises a disposable service home only.
+2. **Original default home.** Request the original owner's scoped evidence for
+   the exact task, address, session reference, native thread and launch, retained
+   receipt and process observations, and identification of the matching launcher.
+   Prefer the owner's retained outputs: status on a *running* owner can perform
+   normal lifetime maintenance. `promptobus status --task <id>` reports task
+   state, not authority. If identity, proof or authority is unavailable, leave
+   the case unresolved. For the receipt-backed route, keep two distinct proofs:
+
+   - **Native Stop confirmed.** Match the retained Stop receipt to that task,
+     address, reference, thread and launch, and confirm holder and app absence.
+     A request or acknowledgement alone does not establish Stop.
+   - **Exact service grant retired.** Before any approved `promptobus service
+     ensure --json`, match the launcher and runtime fingerprint, canonical
+     workspace root, canonical Promptobus store, service home and effective Codex
+     state home to the original client. Startup performs namespace-wide maintenance;
+     approval must cover that home and its affected clients. Compare owner-provided
+     before/after evidence for the exact grant's nonsecret client ID. A successful
+     `ensure` or a lower aggregate count does not identify the grant removed.
+     Retry the upgrade only after both proofs are recorded. If grant-specific
+     evidence is unavailable, retirement remains unverified.
+
+For each record keep the source revision, Host and Node versions, launcher argv,
+service-home selection, command exits, and before/after counts tied to the same
+nonsecret client identities. A stopped service's status provides no such count;
+record it as unavailable, not zero. Omit credentials. Historical default-home
+recovery and post-change controlled checks: **notRun**.
 
 The service's active-work predicate includes running task loops and pending
 observations, plus any work supplied by the Host. Active task metadata alone is

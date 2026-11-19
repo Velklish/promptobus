@@ -54,6 +54,7 @@ test('confirmed managed Stop retires only its own service client', async () => {
       rmSync(actor.recordPath);
       return file;
     };
+    const originalGrant = JSON.parse(readFileSync(stopped.client.credentialFile, 'utf8'));
     stoppedReceipt(stopped); stoppedReceipt(attached); rmSync(unknown.recordPath);
     const negatives = [];
     for (const damage of ['receipt', 'thread', 'launch', 'live-holder', 'ref', 'unlaunched', 'binding']) {
@@ -115,6 +116,19 @@ test('confirmed managed Stop retires only its own service client', async () => {
     await stopWorkspaceService(host, options);
     serviceStopped = true;
     assert.equal((await workspaceServiceStatus(host, options)).running, false, 'public Stop must physically exit after proven clients retire');
+    const oldRuntime = 'a'.repeat(64), file = stopped.client.credentialFile;
+    const historical = JSON.stringify({ ...originalGrant, runtime: oldRuntime });
+    writeFileSync(file, historical, { mode: 0o600, flag: 'wx' });
+    try {
+      await assert.rejects(ensureWorkspaceService(host, options), error =>
+        error.message.includes(`another shared service runtime ${oldRuntime}`) && error.message.includes('matching launcher')
+        && !error.message.includes(originalGrant.token));
+      assert.ok(readFileSync(file, 'utf8') === historical, 'a matching Stop does not retire a different runtime grant');
+      assert.deepEqual(participantOf(readTask(home, task), 'worker:stopped'), before);
+    } finally {
+      rmSync(file, { force: true });
+      serviceStopped = !(await workspaceServiceStatus(host, options)).running;
+    }
   } finally {
     for (const client of clients) if (existsSync(client.credentialFile)) await revokeServiceClient(host, client.clientId, options);
     if (!serviceStopped) await stopWorkspaceService(host, options).catch(() => {});
