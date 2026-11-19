@@ -65,6 +65,14 @@ It does not introduce a native `bb` harness or share a quota bucket across provi
 | `acp-cursor` | worker, approver | Actual scoped SDK catalog; supported reasoning level separate from the BB model id | Selected provider's SDK usage on its host; unknown if unavailable |
 | `acp-opencode` | worker | Actual scoped SDK catalog; explicit supported effort or its catalog default | Selected provider's SDK usage on its host; unknown if unavailable |
 
+In stock BB, reporter status is the bound task’s recorded status, not live session state.
+Questions are answered in the BB conversation using task, mailbox and artifact reads.
+Teamleads have a single task and no child orchestrator identity. Teamleads and approvers
+route participant messages through that task’s orchestrator. For a native reporter, explicit `--harness` accepts `claude` or `codex`;
+the install-root project-layer refusal is specific to Cursor. A rated `--model` needs
+at least one catalog entry on either harness. Automatic selection uses reviewer routing
+with Cursor excluded; the two explicit choices do not limit the automatic candidate set.
+
 Ordinary roles default to Codex. Workers can explicitly select Cursor or OpenCode;
 approvers can explicitly select Cursor. Every selected provider must support
 `accept-edits`. Other role/provider pairs refuse. The selected provider survives

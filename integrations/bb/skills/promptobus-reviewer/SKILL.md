@@ -80,10 +80,10 @@ Read the authenticated task contacts before sending. No contact is created by re
 
 ## Communication protocol
 
-End the turn when waiting for mail. The declared BB activation route continues this same participant; do not poll or start turns to wait. The postcard names each message's sender, type and size, never its text: fetch the mailbox — it lists the headers and marks them read — and ask a body by its message id.
+End the turn when waiting for mail. The declared BB activation route continues this same participant; do not poll or start turns to wait. Call [promptobus_mailbox binding from initial context] with {"mode":"read"} to take unread messages and use the bodies in the reply. With {"mode":"peek"}, the same unread bodies are returned without marking them read.
 
 1. Finished the review — deliver every numbered status part through [promptobus_send binding from initial context], then the single terminal result and release, following the bounded hand-off form above.
-2. Stuck on a question without whose answer you cannot continue — [promptobus_send binding from initial context] {to:"orchestrator", type:"question", body:"question"} and end the turn. The answer (type=answer) will arrive as a postcard. Do not guess.
+2. Stuck on a question without whose answer you cannot continue — [promptobus_send binding from initial context] {"to":["orchestrator"],"type":"question","body":"question"} and end the turn. Read the answer from your mailbox. Do not guess.
 3. Work stretches past a couple of minutes of silence — send status with its content and a time estimate ("three files left, ~5 minutes") BEFORE you end the turn: a silent session is indistinguishable from a hung one to the orchestrator. A status expects NO answer — send it and go on working, never end a turn waiting for an acknowledgement that is not coming. Name the time by volume and a measurement, not by feeling.
 4. After result end the turn. A type=task message arrived with a path to a new diff — that is a re-review: first fetch the mailbox, then check against it whether your prior findings are closed, then look at what else changed. Answer with result again.
 5. Do not end a turn having sent nothing since the last thing that asked you for an answer. Types task, question, review and result ask for one; status, answer and artifact do not. Nothing to report yet — that is itself a status.

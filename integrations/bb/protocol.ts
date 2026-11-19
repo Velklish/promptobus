@@ -107,10 +107,10 @@ export const deliverySchema = z.object({
 export type DeliveryState = z.infer<typeof deliverySchema>;
 export const pendingSchema = z.object({ ids: z.array(z.string()), revision: z.string(), obligation: z.string().nullable() }).strict();
 export const sendSchema = z.object({
-  to: z.array(z.string().regex(PARTICIPANT_ID_RE)).min(1), type: z.enum(MESSAGE_TYPES), body: z.string().min(1).max(2400),
+  to: z.array(z.string().regex(PARTICIPANT_ID_RE)).min(1).describe('Recipient ids in the bound task; non-orchestrators route through the orchestrator.'), type: z.enum(MESSAGE_TYPES), body: z.string().min(1).max(2400),
   artifact: z.object({ filename: z.string().min(1).max(255), content: z.string().max(1_000_000) }).strict().optional(),
 }).strict();
-export const mailboxSchema = z.object({ mode: z.enum(['peek', 'read']) }).strict();
+export const mailboxSchema = z.object({ mode: z.enum(['peek', 'read']).describe('Both return unread message bodies. Only read marks them read.') }).strict();
 export const emptySchema = z.object({}).strict();
 export const artifactSchema = z.object({ id: z.string().min(1) }).strict();
 export const BUS_TOOLS = ['promptobus_send', 'promptobus_mailbox', 'promptobus_task', 'promptobus_artifact'] as const;

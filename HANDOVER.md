@@ -146,8 +146,8 @@ remaining to both drivers, and mixed abort retains its original Codex share.
 Both live callers initiate their participant Stops before awaiting either. Once
 one native absence is confirmed, its residual reaping may delay delivery of the
 other completion; neither whole cleanup nor service close is claimed to be5s.
-Report failed-lift cleanup permits only Claude/Codex (report explicit harness gate
-and routing filter), and live-codex is Codex only. No Cursor reachability through
+Report accepts only Claude/Codex for an explicit harness; automatic reporter
+routing excludes Cursor. The live-codex caller is Codex only. No Cursor reachability through
 those callers. Raw private stopSession without a registry ref has only its supplied
 fresh native tuple; production driver Stop always supplies its registry ref.
 

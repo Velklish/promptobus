@@ -79,6 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Explain why mutation probes require a clean, committed baseline and restore from a snapshot, not Git. Document wrapper exit codes separately from the mutated command's exit code.
 - Allow an orchestrator to claim an explicitly named root from its registered peer session. The full session ID must match; ordinary reads still use the peer mailbox.
 
+- Align stock BB role skills with the single-task bus: reporter reads, teamlead and approver routing, array recipients and mailbox bodies. Native reporter refusals for explicit harness or rated model requests name the matching harnesses.
 - Keep an OpenCode stdio server whose first argument repeats its command: only the bus entry drops the duplicated binary.
 - Let hosts keep private environment variables out of managed participants and owner snapshots. Refuse old snapshots that still contain those variables.
 - Refuse Cursor delivery when tmux cannot read the pane before paste. If the read fails after Enter, report delivery as unconfirmed without publishing activity.

@@ -351,7 +351,7 @@ export function registerRuntime(bb: BbPluginApi) {
     const delivery = () => createBbInstructionDelivery(b.role, { taskId: b.task, address: b.participant, environmentId: b.environmentId,
       workspace: b.environmentPath, assignment, launchContext: b.launchContext, evidenceManifest: b.evidenceManifest,
       commandAdmission: { format: COMMAND_ADMISSION_FORMAT, role: b.role },
-      bridgeCheck: 'First turn: call the actual BB promptobus_task and promptobus_mailbox bindings; report a refusal once. No native fallback, substitute identity or diagnostic model session.',
+      bridgeCheck: 'First turn: call the bound promptobus_task with {} and promptobus_mailbox with {"mode":"read"}; use the returned message bodies; report a refusal once. No native fallback, substitute identity or diagnostic model session.',
       tools: Object.fromEntries(participantTools(b).map(name => [name, name])) });
     const initialPrompt = () => `${LAUNCH_HEADER}${intent.attemptId}\n${delivery().initialPrompt}\n\n${b.hostContext ? renderBbHostContext(b.hostContext) : ''}`;
     if (prepare) b.bootstrap = `Prepare the BB environment only. Do not use any tools, read files, edit files or perform an assignment. Reply READY and end the turn. Preparation token: ${randomUUID()}`;

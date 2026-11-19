@@ -24,7 +24,7 @@ test('installed instruction delivery is a complete SDK configuration with explic
   try {
     writeFileSync(file, `import { createBbInstructionDelivery } from ${JSON.stringify(installed('promptobus/lib/instructions.js'))};
 import type { PluginAgentConfiguration } from ${JSON.stringify(installed('@get-bb/plugin-sdk/bundled-types/bb-plugin-sdk.d.ts'))};
-const delivery = createBbInstructionDelivery('approver', { taskId:'task', address:'approver:bb', environmentId:'env', workspace:'/owned', assignment:'accept', tools:{promptobus_send:'send'}, workerAddress:'worker:bb', allowDirectWorkerMessages:true });
+const delivery = createBbInstructionDelivery('approver', { taskId:'task', address:'approver:bb', environmentId:'env', workspace:'/owned', assignment:'accept', tools:{promptobus_send:'send'} });
 const denied: PluginAgentConfiguration = delivery.configuration;
 const authenticatedToolSelection: string[] = ['send'];
 const selected: PluginAgentConfiguration = { ...delivery.configuration, tools: authenticatedToolSelection };

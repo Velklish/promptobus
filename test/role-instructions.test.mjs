@@ -69,15 +69,13 @@ test('BB runtime context keeps exact task, tools, snapshot and long assignment w
   assert.notEqual(changed.initialPrompt, delivery.initialPrompt);
   assert.deepEqual(await captureRolePrompts(), actual);
 });
-test('BB approver contact policy follows registered runtime contacts instead of assuming no worker', async () => {
-  const { renderBbInstructionSkill, createBbInstructionDelivery } = await import('promptobus/instructions');
-  const body = renderBbInstructionSkill('approver');
-  assert.doesNotMatch(body, /There is no worker address registered/);
-  assert.match(body, /When the authenticated contacts register a worker/);
-  assert.match(body, /Without a registered worker, write to the orchestrator only/);
-  const context = { taskId:'task', address:'approver:bb', environmentId:'env', workspace:'/owned', assignment:'Accept this piece and contact its worker directly.',
-    tools:{promptobus_send:'actual_send'}, workerAddress:'worker:bb', allowDirectWorkerMessages:true };
-  assert.deepEqual(JSON.parse(createBbInstructionDelivery('approver', context).initialPrompt.split('\n\n')[1]), context);
+test('BB role skills describe only the bound task and its permitted routes', async () => {
+  const { renderBbInstructionSkill } = await import('promptobus/instructions');
+  const reporter = renderBbInstructionSkill('reporter');
+  assert.match(reporter, /answer the question, say what is missing and ask the person here/);
+  assert.doesNotMatch(reporter, /promptobus_(digest|ask|send|status)/);
+  assert.match(renderBbInstructionSkill('teamlead'), /single task in your authenticated binding/);
+  assert.match(renderBbInstructionSkill('approver'), /Route all messages, including questions for the worker, through the task orchestrator/);
 });
 test('unknown and inherited object names are refused as instruction roles', async () => {
   const { createBbInstructionDelivery, renderBbInstructionSkill } = await import('promptobus/instructions');
@@ -116,7 +114,7 @@ for (const role of ['worker', 'reviewer', 'approver']) {
     assert.doesNotMatch(skill, /bus checks (?:the record|the SHAPE)[^.\n]*schema|record is checked against its schema/i, role);
     assert.ok(skill.endsWith(rendered.trimEnd() + '\n'));
     if (role === 'worker') {
-      assert.match(rendered, /artifact: \{ filename, content \}/);
+      assert.match(rendered, /"artifact":\{"filename":"gates.txt","content":/);
       const protocol = readFileSync(new URL('../docs/reference/04-protocol.md', import.meta.url), 'utf8');
       assert.match(protocol, /Gate and handover evidence in BB uses UTF-8 opaque `\.txt` attachments/);
       assert.match(protocol, /Attachment acceptance is not schema validation/);

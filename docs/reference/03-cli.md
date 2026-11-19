@@ -39,8 +39,7 @@ role requires the corresponding supported session setup, not hot reconfiguration
 
 The returned SDK-compatible configuration selects no tools (`tools: []`). The
 caller adds its authenticated registered tool selection before `agents.configure`;
-putting tool names in the prompt alone does not expose them. Standing approver
-instructions follow supplied worker contacts and assignment authorization.
+putting tool names in the prompt alone does not expose them. A BB approver sends only to the task orchestrator, even when the worker is a registered contact.
 
 ## Lead
 
@@ -1395,13 +1394,15 @@ read. These are process-crash semantics, not fsync or power-loss guarantees. See
 ## Report
 
 `promptobus report --task <root> [routing flags] [--dry-run]` lifts one `reporter`
-on Claude Code or Codex at the install root. It refuses a child task, a closed task,
+at the install root. Explicit `--harness` accepts `claude` or `codex`. It refuses a child task, a closed task,
 or a second live reporter. Cursor is refused because its project layer would
 mutate the install root. Codex uses a private home, a read-only sandbox,
 and a thread override disabling project hooks; no project file is written. `--dry-run` prints
 the session, MCP, deny list and prompt plan without writing a participant
-or starting a harness. Routing uses the reviewer catalog role and is
-constrained to Claude Code and Codex.
+or starting a harness. When `--model` has entries in the merged catalog, at least one must be on
+Claude or Codex. An unrated model does not trigger that check. Automatic routing
+uses the reviewer role over the host’s declared harnesses excluding Cursor; an
+overlay can make an OpenCode tuple eligible there.
 
 Before writing launch files, `report` records a pending reporter under the
 task journal lock. A second command refuses if the reporter changed while it

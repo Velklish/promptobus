@@ -1,8 +1,8 @@
 import { APPROVER, ORCHESTRATOR, REVIEWER, WORKER } from '../../dist/registry.js';
 import { GATE_LINE_COUNTS, GATE_LINE_VERIFICATION, RESULT_BODY_MAX } from '../handoff.js';
 import {
-  renderApproverInstructions, renderOrchestratorInstructions, renderReporterInstructions,
-  renderReviewerInstructions, renderReviewProcedure, renderTeamleadInstructions, renderWorkerInstructions,
+  renderApproverInstructions, renderOrchestratorInstructions,
+  renderReviewerInstructions, renderReviewProcedure, renderWorkerInstructions, reporterAnswerStyle,
 } from './roles.js';
 
 import type { ParticipantTools } from './roles.js';
@@ -10,7 +10,7 @@ import type { ParticipantTools } from './roles.js';
 export type BbInstructionRole = typeof WORKER | typeof REVIEWER | typeof APPROVER | typeof ORCHESTRATOR | 'teamlead' | 'reporter';
 interface BbInstructionContext {
   taskId: string; address: string; environmentId: string; workspace: string; assignment: string;
-  tools: Readonly<Record<string, string>>; workerAddress?: string | null; allowDirectWorkerMessages?: boolean;
+  tools: Readonly<Record<string, string>>;
   snapshot?: { head: string; base: string; dirty: boolean; diffPath: string };
   gateRecords?: readonly string[]; launchContext?: unknown;
   commandAdmission?: { format: 'promptobus-bb-command-admission-v1'; role: BbInstructionRole };
@@ -26,9 +26,12 @@ export const BB_ROLE_SKILLS: Readonly<Record<BbInstructionRole, string>> = Objec
 });
 
 const tools = Object.freeze(Object.fromEntries([
-  'promptobus_send', 'promptobus_mailbox', 'promptobus_task', 'promptobus_digest', 'promptobus_status', 'promptobus_ask',
-].map(name => [name, `[${name} binding from initial context]`]))) as Readonly<ParticipantTools & { promptobus_digest: string; promptobus_status: string; promptobus_ask: string }>;
+  'promptobus_send', 'promptobus_mailbox', 'promptobus_task', 'promptobus_artifact',
+].map(name => [name, `[${name} binding from initial context]`]))) as Readonly<ParticipantTools & { promptobus_artifact: string }>;
+const mailbox = `Call ${tools.promptobus_mailbox} with {"mode":"read"} to take unread messages and use the bodies in the reply. With {"mode":"peek"}, the same unread bodies are returned without marking them read.`;
+const sendExample = (type: string, body: string) => JSON.stringify({ to: ['orchestrator'], type, body });
 const common = {
+  mailbox, sendExample, receivedBodies: 'then read the returned bodies', answerArrival: 'Read the answer from your mailbox.',
   tools,
   memory: 'Use only the memory reads explicitly supplied by the runtime; do not publish facts from this role.',
   contacts: 'Read the authenticated task contacts before sending. No contact is created by reading this skill.',
@@ -81,7 +84,7 @@ After originals are finalized, run \`node <generation>/commands/evidence-prepare
 
 Current \`artifacts/commands\` retain exact current source/base, producer/relayer, receipt/raw and required-gate checks. Optional \`support\` keeps an immutable multipart history index and explicitly required prior findings and failures, with their original source/base/producer, raw bytes and hashes. Retain indexed originals for on-demand reads; unrelated historical read/status payloads are not mandatory replay. Selected history contributes zero current gates. Selection is an owner/reviewer decision, never inferred from filenames or the latest success. Include exact source/base, changed paths, bounded read roots, the complete current manifest and required history in the initial assignment; assembly does not replace source/diff reads. A same-reviewer closure keeps exact changed paths and relevant prior findings. Preserve owner declaration hash, token/phase freshness, independent review and current acceptance. A changed selection needs a matching exact owner declaration where required. Do not claim cross-pin compatibility, O(current) total I/O, caching or savings from compactness. See the BB integration's compact evidence recipe and protocol for the input schema and example.`;
 const verdictNames = 'Keep complete raw output authoritative. Preserve exact test names, order and repeated occurrences; keep parentheses, punctuation, Unicode and internal spacing. Remove only the terminal numeric duration from a supported verdict line, including when the name itself contains duration-like parentheses. Keep lint and other gate status separate from test names. Compare inventory counts and multiplicities with the complete raw test scope; missing raw, unsupported formats and approximate inventories are explicitly incomplete, never invented PASS or skip entries. The checkout-only reference helper `scripts/bb-evidence-verdict-names.mjs` delegates to `extractNodeTestVerdictNames(raw)` exported by `promptobus/bb-host`, for one flat passing Node spec scope with one complete footer. It does not support nested or concatenated scopes, custom verdict printers, other reporters, failed or skipped output; it cannot certify gates. See `docs/reference/04-protocol.md#bb-evidence-attachments`; manual lossless opaque UTF-8 evidence with retained raw output remains valid. Unsupported complete scope certification is not invented.';
-const artifactDelivery = `Send an attachment through ${tools.promptobus_send} with type=artifact and artifact: { filename, content }, where content is UTF-8 text and filename ends in .txt. Read the landed filename from the immediate reply to your own send and cite that returned name in the result; do not infer it from a local path or another participant's reply.`;
+const artifactDelivery = `Send an attachment through ${tools.promptobus_send} with {"to":["orchestrator"],"type":"artifact","body":"Gate evidence","artifact":{"filename":"gates.txt","content":"exact UTF-8 evidence"}}. Supply the actual evidence as content and a .txt filename. Read the landed filename from the immediate reply to your own send and cite that returned name in the result; do not infer it from a local path or another participant's reply.`;
 const gateEvidence = `Attach gate evidence before the result, with one entry per command actually run: the exact command, \`exit\`, printed counts, full HEAD sha in \`tree\`, tracked-file \`dirty\` state, timestamp and authenticated actor in \`by\`. Keep raw output, including failing assertions. A command not run has no fabricated execution entry; name it and its reason as not run. ${GATE_LINE_COUNTS} ${GATE_LINE_VERIFICATION}`;
 const evidenceOverflow = `The whole result body is at most ${RESULT_BODY_MAX} characters. Attach overflow before the result and cite its landed filename. Keep gate and handover evidence in separate .txt attachments, with their landed names in the **Gate** line. A filename and successful attachment do not prove a check ran; only an authorized re-run on the same sha can verify the claim.`;
 const reviewerReport = `Every send body is at most ${RESULT_BODY_MAX} characters, including its header, findings, part marker and release. Do not truncate or drop findings. You produce no artifact of your own and need no filesystem writes. You may cite another participant's landed evidence filename in **Gate**.
@@ -93,7 +96,7 @@ If the complete report fits, send one terminal type=result with the four-line he
 After every part has a successful send reply, send one terminal type=result. It opens with the four-line header above, gives total findings by severity in **Done**, then \`Review <grant-token> complete N/N\`. Include a single all-calls release after all report content: authenticated actor, active token, exact completed review scope, pending=0 and running=0. No earlier part carries a release. After that release make no tool calls and end the turn. A failed or uncertain send leaves the report incomplete: do not claim completion, silently resend an uncertain part or release the grant as completed; tell the orchestrator the delivery gap through the supplied bounded channel.
 
 The orchestrator checks completeness as described in the BB protocol; the bus does not assemble or validate report parts. Keep the final header concise and put overflow details in the numbered payloads.`;
-const receiveReviewerReport = `A BB reviewer may send numbered status parts before its result. Read every full part body from the canonical mailbox/history, including acknowledged status messages; previews and the terminal header alone are insufficient. Match the authenticated reviewer sender and active grant token, fixed total N and consecutive send order 1 through N, then the terminal \`Review <grant-token> complete N/N\` marker (0/0 for a report wholly in the result). Rejoin payloads without inserted separators and check the findings against the severity totals in **Done**. Require a single terminal result after all parts and a single all-calls release with the authenticated actor, active token, completed scope, pending=0 and running=0. Reject missing, duplicated, reordered or mixed-token parts, inconsistent totals and an absent or early release before relying on the review or reallocating its slot. This is a procedural check: the bus does not assemble or validate report parts. A delivery gap requires repair under the current grant or a fresh grant when it has ended; it never permits dropping findings.`;
+const receiveReviewerReport = `A BB reviewer may send numbered status parts before its result. Retain each full part body when reading the mailbox and carry it across turns. The participant mailbox cannot replay acknowledged parts; previews and the terminal header alone are insufficient. Match the authenticated reviewer sender and active grant token, fixed total N and consecutive send order 1 through N, then the terminal \`Review <grant-token> complete N/N\` marker (0/0 for a report wholly in the result). Rejoin payloads without inserted separators and check the findings against the severity totals in **Done**. Require a single terminal result after all parts and a single all-calls release with the authenticated actor, active token, completed scope, pending=0 and running=0. Reject missing, duplicated, reordered or mixed-token parts, inconsistent totals and an absent or early release before relying on the review or reallocating its slot. This is a procedural check: the bus does not assemble or validate report parts. A delivery gap requires repair under the current grant or a fresh grant when it has ended; it never permits dropping findings.`;
 const minimalWorkflow = `## Minimal task workflow
 
 The default is this task owner as executor and one fresh independent reviewer. Run predictable preparation, checks, evidence assembly and integration bookkeeping through the supplied authorized code; do not add another model solely to repeat metadata. Additional roles remain available for an explicitly assigned responsibility. The global pipeline and optional approver's predecessor checks remain unchanged.
@@ -173,8 +176,8 @@ export function renderBbInstructionSkill(role: BbInstructionRole): string {
         reviewAddr: '[preceding participant address]',
         rules, brief, instructionsSection: '', bindings: { ...common,
           workspace: 'Use the owned acceptance environment and publication target supplied in initial context.',
-          workerContext: 'When the authenticated contacts register a worker, use that supplied address; otherwise route participant traffic through the orchestrator.',
-          workerContact: "You may write directly to the registered worker only when the orchestrator's assignment authorizes it. Without a registered worker, write to the orchestrator only.",
+          workerContext: 'The registered worker is a predecessor, not a direct recipient.',
+          workerContact: "Route all messages, including questions for the worker, through the task orchestrator.",
           acceptance: 'Perform the repository acceptance procedure and required gates in that environment. Publish only with the supplied authorized operation and its lease. If the target moved, reconcile in the acceptance environment, rerun the required checks and retry; do not edit a shared target directly.',
           evidenceInstructions: [evidenceProfile, verdictNames, artifactDelivery, evidenceOverflow, gateEvidence,
             "Read the worker's gate and handover evidence against the commit you accept, including all five checks and every notRun reason. You may cite another participant's landed filename, but record your own authorized gate executions with your own authenticated id. Missing, stale, dirty or failing evidence is not a pass; disclose it and follow the assigned acceptance procedure."].join('\n\n'),
@@ -182,23 +185,17 @@ export function renderBbInstructionSkill(role: BbInstructionRole): string {
       });
       break;
     case 'teamlead':
-      body = renderTeamleadInstructions({ rootTask: '[root task id]', childTask: '[child task id]', address: '[teamlead address]',
-        rootAddress: '[root coordinator address]', root: '[owned coordinator environment]', brief, siblings: ['[registered sibling addresses]'], rules,
-        bindings: { ...common, entry: 'native BB', installationNote: 'whose engine and rule bindings are supplied in initial context', secondaryMailbox: '' },
-      });
+      body = `You are the teamlead for the single task in your authenticated binding. Read the supplied rules and assignment before work. Use ${tools.promptobus_task} with {} for task status, your identity and current contacts. ${mailbox} Read a task artifact with ${tools.promptobus_artifact} and its returned artifact id.
+
+List the rule paths you read in your first status. Report progress with ${tools.promptobus_send} ${sendExample('status', 'Plan for this assignment')}. Send questions and results to that same orchestrator. Report as yourself; there is no child orchestrator seat, shared root mailbox, sibling route or task override.`;
       break;
     case 'reporter':
-      body = renderReporterInstructions({ task: '[root task id]', root: '[owned reporter environment]', rules,
-        bindings: { tools, contacts: common.contacts,
-          journalSources: 'The engine-backed root and child journals supplied through the declared BB tools are your sources.',
-          digestView: 'the engine-backed root-tree journal page', journalBody: 'the declared journal-body read operation',
-          answerChannel: 'in the BB conversation through its supplied response channel',
-          fileBoundary: 'File writes, shell execution, builds and tests are forbidden. Obtain journal bodies through the declared engine-backed read tools.',
-        },
-      });
+      body = `Answer questions in this BB conversation about your bound task. Read the supplied rules and ${tools.promptobus_task} with {} for its id, title, recorded status, your identity and contacts. ${mailbox} For an attachment use ${tools.promptobus_artifact} with its artifact id, not the message id.
+
+Cite the source message or artifact when available and distinguish a participant result from acceptance. ${reporterAnswerStyle} The mailbox is not the whole journal and task status is not live session health. If these records do not answer the question, say what is missing and ask the person here. There is no stock bus question or answer lookup, root-tree digest or history replay. Do not send bus messages, write files or run commands.`;
       break;
     case ORCHESTRATOR:
-      body = renderOrchestratorInstructions({ rules, brief, bindings: { tools,
+      body = renderOrchestratorInstructions({ rules, brief, bindings: { tools, mailbox, contactFields: 'the current participant ids and roles',
         preamble: 'You coordinate this task through its authenticated BB participants. Follow the supplied owner approval boundaries and read the rule paths below.',
         delivery: 'The declared BB activation route delivers mail to this participant;', operationalRules: '',
       } });
