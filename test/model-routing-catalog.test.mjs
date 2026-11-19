@@ -122,12 +122,12 @@ test('the Codex GPT-5.6 and GPT-5.5 families rate every listed effort', () => {
 
 test('ROADMAP catalog figures match shipped routing defaults', () => {
   const roadmap = readFileSync(path.join(ROOT, 'docs', 'ROADMAP.md'), 'utf8');
-  const tupleCount = roadmap.match(/`models\/catalog\.json` \((\d+) rated tuples\)/);
+  const tupleCount = roadmap.match(/`models\/catalog\.json`[^\n.;]*?\b(\d+) rated tuples\b/);
   assert.ok(tupleCount, 'docs/ROADMAP.md rated tuple count statement not found');
   assert.equal(Number(tupleCount[1]), CATALOG.tuples.length,
     'docs/ROADMAP.md rated tuple count must match models/catalog.json');
 
-  const floors = roadmap.match(/quality floors are `qualityFloor: \{ worker: (\d+), reviewer: (\d+), approver: (\d+) \}`/);
+  const floors = roadmap.match(/`qualityFloor: \{ worker: (\d+), reviewer: (\d+), approver: (\d+) \}`/);
   assert.ok(floors, 'docs/ROADMAP.md qualityFloor statement not found');
   assert.deepEqual(
     { worker: Number(floors[1]), reviewer: Number(floors[2]), approver: Number(floors[3]) },

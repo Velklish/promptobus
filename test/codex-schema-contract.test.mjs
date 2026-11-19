@@ -20,8 +20,13 @@ test('0.164.0 directs readers to the current-contract guide without relabeling n
 test('0.165.0 documents the local inventory and the historical 52-schema comparison', () => {
   const doc = readme('0.165.0');
   assert.deepEqual(readdirSync(new URL('0.165.0/', fixtures)).sort(), ['README.md', 'capture-provenance.json']);
+  const provenance = JSON.parse(readFileSync(new URL('0.165.0/capture-provenance.json', fixtures), 'utf8'));
+  const inventoryCount = Object.keys(provenance.inventory).length;
   assert.match(doc, /retains only this README and the dated `capture-provenance\.json`/);
-  assert.match(doc, /historical comparison of the 52 consumed schemas is recorded in \[Git history\]/);
+  assert.match(doc, new RegExp(`\\b${inventoryCount}-file inventory\\b`));
+  assert.match(doc, /\]\(https:\/\/github\.com\/Velklish\/promptobus\/commit\/adb620f8\)/);
+  assert.match(doc, /`7e0488b7`[^\n]*`4503555d`[^\n]*52 consumed schemas against 0\.164\.0/);
+  assert.match(doc, /exact contract comparison against 0\.164\.0 failed/);
   assert.match(doc, /\[parent README\]\(\.\.\/README\.md\) for the current consumed contract/);
   assert.doesNotMatch(doc, /`contract-provenance\.json`|schemas retained here/);
 });

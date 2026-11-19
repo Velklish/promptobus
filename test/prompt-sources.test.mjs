@@ -17,10 +17,7 @@ for (const harness of ['claude', 'cursor', 'opencode']) {
 const shared = (prompt) => prompt.split('\n\n## Rules for this tool (Codex)')[0];
 for (const role of ['worker', 'reviewer', 'orchestrator']) {
   test(`Codex ${role} preserves shared ownership, review and evidence instructions`, () => {
-    const current = shared(actual.codex[role]).replace(
-      'The orchestrator is a separate Promptobus participant at address orchestrator',
-      'The orchestrator is a separate Claude Code session');
-    assert.equal(current, shared(baseline.codex[role]));
+    assert.equal(shared(actual.codex[role]), shared(baseline.codex[role]));
   });
   test(`Codex ${role} reuses persistent MCP and checks actual identity and route`, () => {
     const prompt = actual.codex[role];
