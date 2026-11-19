@@ -198,7 +198,7 @@ function NativePanel() {
       {active.map(run => <section className="pb-lane" key={run.id} aria-label={run.title || run.id}>
         <div className="pb-lane-head"><h2>{run.title || run.id}</h2>
           <span className="pb-caption">{run.id}{run.owner ? ` · owner on ${run.owner}` : ''} · updated {relativeAge(run.updated, now)}</span></div>
-        {run.inferred && <p className="pb-caption">Step order inferred: the board cannot read this run's declared pipeline, so its other steps follow the shipped ones in the order their participants appear.</p>}
+        {run.inferred && <p className="pb-caption">Step order inferred: this run has no recorded pipeline. Extra steps follow the shipped ones in the order their participants appear.</p>}
         {run.notice && <p className="pb-notice">{run.notice} Step placement and message signals may be incomplete.</p>}
         {run.error && <p className="pb-notice" role="alert">{run.error}</p>}
         {!run.error && run.pieces.length === 0 && <p className="pb-caption">No pieces yet: the orchestrator has not handed work to a step.</p>}

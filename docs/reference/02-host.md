@@ -1438,6 +1438,10 @@ The host exposes read-only `snapshot`, `tasks`, `ownerFeed`, `board` and
 `pieceHistory` calls. The server exposes `snapshot`, `view`, `tasks`, `board`,
 `pieceHistory`, `selectTask`, `wakeStatus` and `bindOwner`.
 Both `selectTask` and `bindOwner` persist plugin configuration.
+When a native run starts under a host-declared pipeline, its task journal records
+the ordered step names in `adapter.pipelineSteps`. The board and piece history use
+that snapshot even if the host configuration changes. Without it, the board uses
+the shipped steps followed by extra steps in participant address order.
 Observation reads validated selected-task inbox/history and matching native
 registry/receipt records without consuming mail or opening a writable engine.
 For each sampled board lane and piece-history read, the observer considers the

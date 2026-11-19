@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { ok, info, warn, fail, gitIn, PROC_MAX_OUTPUT, GIT_NET_TIMEOUT_MS } from './util.js';
 import { normalize } from './fuzzy.js';
-import { hostOf } from './host.js';
+import { hostOf, pipelineSnapshot } from './host.js';
 import { guardHookCommand, managedGuardHookCommand } from '../dist/hooks.js';
 import {
   activeTasks, addressOf, attachmentsOf, bindIfOwner, canonicalPath, claimRoute, contactsOf, createTask, currentResult, filesDir,
@@ -391,6 +391,7 @@ export function planReview(rootOrHost: unknown, { target, base, task, title, mod
     title: String(title ?? '').trim(),
     status: 'active',
     adapter: {
+      ...pipelineSnapshot(host),
       ...(identity!.slug ? { slug: identity!.slug } : {}),
       ...(identity!.stamp ? { stamp: identity!.stamp } : {}),
     },
