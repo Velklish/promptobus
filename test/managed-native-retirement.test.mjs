@@ -19,6 +19,7 @@ import { createTask, participantOf, participantRecord, participantSessionPath, r
 import { installHarness, planParticipant } from './harness-cursor.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 
+const reviewersOnly = process.argv.includes('--reviewer-failures-only');
 const root = realpathSync(makeSandbox('pb-native-retirement-'));
 writeHostConfig(root, { tools: ['cursor', 'opencode'] });
 const host = createStandaloneHost({ cwd: root }), home = host.promptobusHome(), task = 'retirement-t20261101-000001';
@@ -167,19 +168,7 @@ async function openCode(ref, fail = null, beforeAdmission = false, fault = null)
   return { ref, address, file, plan, error, injected, get revokes() { return revokes; }, record: existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null };
 }
 
-try {
-  const deadline = Date.now() + 5000;
-  while (!readDiscovery(paths) && !serviceError && owner.exitCode === null && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
-  if (serviceError) throw serviceError;
-  if (readDiscovery(paths)?.process.pid !== owner.pid) throw new Error(`Owned retirement fixture service did not start: ${serviceStderr}`);
-  ownerEnvironment = createOwnerEnvironment(serviceHost, serviceEnv);
-  for (const fault of ['realize', 'ack', 'reassigned']) {
-    const failed = await openCode(`oc-review-${fault}`, null, false, fault);
-    failed.injected.verify(failed.error);
-    check(`OpenCode reviewer ${fault}: catch retains live holder independently of sender authority`,
-      failed.revokes === 1 && processState(failed.record.holderProcess) === 'alive');
-    await opencodeDriver.stop(failed.ref);
-  }
+async function otherOpenCodeCases() {
   const unknownError = new Error('owned OpenCode realization refused before admission');
   let unknownRecord, unknownBytes, unknownRegistry, unknownParticipant;
   deleted = []; successorSignals = [];
@@ -304,6 +293,22 @@ try {
   registry.dropSession(ref);
   const stopped = await opencodeDriver.stop(successor.ref);
   check('empty-record replacement fixture separately cleans its original actual owned successor', stopped.ok && stopped.stopped);
+}
+
+try {
+  const deadline = Date.now() + 5000;
+  while (!readDiscovery(paths) && !serviceError && owner.exitCode === null && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+  if (serviceError) throw serviceError;
+  if (readDiscovery(paths)?.process.pid !== owner.pid) throw new Error(`Owned retirement fixture service did not start: ${serviceStderr}`);
+  ownerEnvironment = createOwnerEnvironment(serviceHost, serviceEnv);
+  for (const fault of ['realize', 'ack', 'reassigned']) {
+    const failed = await openCode(`oc-review-${fault}`, null, false, fault);
+    failed.injected.verify(failed.error);
+    check(`OpenCode reviewer ${fault}: catch retains live holder independently of sender authority`,
+      failed.revokes === 1 && processState(failed.record.holderProcess) === 'alive');
+    await opencodeDriver.stop(failed.ref);
+  }
+  if (!reviewersOnly) await otherOpenCodeCases();
 } finally {
   cp.spawn = spawn; globalThis.fetch = fetch; process.kill = kill; fs.statSync = stat0; atRetirement.clear(); syncBuiltinESMExports();
   for (const child of children) if (child.ownedIdentity && processState(child.ownedIdentity) === 'alive') await reapHolder(child.pid, { identity: child.ownedIdentity });
@@ -464,20 +469,7 @@ async function cursor(ref, fail = null, fault = null) {
   } catch (caught) { error = caught; }
   return { ref, address, file, plan, error, injected, native, bytesAtRealize, get revokes() { return revokes; } };
 }
-try {
-  const edge = Date.now() + 5000;
-  while (!readDiscovery(paths) && !serviceError && owner.exitCode === null && Date.now() < edge) await new Promise(resolve => setTimeout(resolve, 10));
-  if (serviceError) throw serviceError;
-  if (readDiscovery(paths)?.process.pid !== owner.pid) throw new Error(`Owned Cursor fixture service did not start: ${serviceStderr}`);
-  ownerEnvironment = createOwnerEnvironment(serviceHost, cursorServiceEnv);
-  for (const fault of ['realize', 'ack', 'reassigned']) {
-    const failed = await cursor(`cursor-review-${fault}`, null, fault);
-    try {
-      failed.injected.verify(failed.error);
-      check(`Cursor reviewer ${fault}: catch retains live pane independently of sender authority`,
-        failed.revokes === 1 && readTmuxSessions().sessions.some(session => session.name === readCursor(failed.ref).sessionName));
-    } finally { await cursorDriver.stop(failed.ref); }
-  }
+async function otherCursorCases() {
   const original = new Error('Cursor realize response failed after its owner commit');
   const unknown = await cursor('cursor-uncertain-realize', async () => { throw original; });
   let callerError; try { await revokeFailedManagedLaunch(unknown.plan, unknown.error); } catch (error) { callerError = error; }
@@ -548,11 +540,29 @@ try {
       stopped.ok && stopped.stopped && !existsSync(current.file)
         && !readTmuxSessions().sessions.some(session => session.name === current.native.sessionName), stopped.note);
   }
+}
+
+try {
+  const edge = Date.now() + 5000;
+  while (!readDiscovery(paths) && !serviceError && owner.exitCode === null && Date.now() < edge) await new Promise(resolve => setTimeout(resolve, 10));
+  if (serviceError) throw serviceError;
+  if (readDiscovery(paths)?.process.pid !== owner.pid) throw new Error(`Owned Cursor fixture service did not start: ${serviceStderr}`);
+  ownerEnvironment = createOwnerEnvironment(serviceHost, cursorServiceEnv);
+  for (const fault of ['realize', 'ack', 'reassigned']) {
+    const failed = await cursor(`cursor-review-${fault}`, null, fault);
+    try {
+      failed.injected.verify(failed.error);
+      check(`Cursor reviewer ${fault}: catch retains live pane independently of sender authority`,
+        failed.revokes === 1 && readTmuxSessions().sessions.some(session => session.name === readCursor(failed.ref).sessionName));
+    } finally { await cursorDriver.stop(failed.ref); }
+  }
+  if (!reviewersOnly) await otherCursorCases();
 } finally {
   rmSync(fault, { force: true });
   for (const launch of launches) if (existsSync(launch.credentialFile)) await launch.revoke();
   if (owner.exitCode === null && owner.signalCode === null) {
-    if (!serviceError && readDiscovery(paths)?.process.pid === owner.pid) {
+    if (reviewersOnly && !serviceError && readDiscovery(paths)?.process.pid === owner.pid) await stopRetirementService();
+    else if (!serviceError && readDiscovery(paths)?.process.pid === owner.pid) {
       const began = Date.now();
       let undrained;
       try { await stopRetirementService({ timeoutMs: 100 }); } catch (error) { undrained = error; }
@@ -571,7 +581,7 @@ try {
   await running;
   check('retirement fixture confirms terminal service exit after releasing its owned observation', owner.exitCode !== null || owner.signalCode !== null);
   console.log('  retirement-drain-terminal: ' + JSON.stringify({ at: Date.now(), pid: owner.pid, code: owner.exitCode, signal: owner.signalCode, runtime: runtimeIdentity(serviceHost) }));
-  if (existsSync(drain.trace)) console.log('  retirement-drain-evidence: ' + readFileSync(drain.trace, 'utf8').trim().split('\n').join(' | '));
+  if (!reviewersOnly && existsSync(drain.trace)) console.log('  retirement-drain-evidence: ' + readFileSync(drain.trace, 'utf8').trim().split('\n').join(' | '));
   rmSync(serviceHome, { recursive: true, force: true }); harness.restore();
   if (priorConfig === undefined) delete process.env.CURSOR_CONFIG_DIR; else process.env.CURSOR_CONFIG_DIR = priorConfig;
 }

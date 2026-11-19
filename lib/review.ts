@@ -40,7 +40,7 @@ import {
   decideLift, effectiveStrategy, routingContext, routingLine, sayDecision,
 } from './models.js';
 import {
-  APPROVER, hasFeature, packageDenyTools, registryOf, REVIEWER, roleEntry, routingOf, ROUTING_FIELD,
+  APPROVER, boundSessionOf, hasFeature, packageDenyTools, registryOf, REVIEWER, roleEntry, routingOf, ROUTING_FIELD,
 } from '../dist/index.js';
 import { pipelineOf } from '../dist/pipeline.js';
 import { EDITS_TREE, READS_DIFF, WRITES_MAIN_TREE } from '../dist/registry.js';
@@ -308,6 +308,14 @@ function harnessChangeRefusal(host: PromptobusHost, { address, taskId, from, to,
     + `This call saw unknown. Check ${driver!.phrases.sessions}.`;
 }
 
+function requireReviewerBinding(host: PromptobusHost, task: string, address: string, participant: ParticipantV1) {
+  const { reviewLaunchId, revokedReviewLaunchId } = participant.metadata;
+  if (reviewLaunchId && (revokedReviewLaunchId === reviewLaunchId || !boundSessionOf(participant))) {
+    throw new GateError(`${address} has no active sender binding for this launch; no re-review sent. `
+      + `Confirm Stop with ${host.busCommand(['stop', address, '--task', task])}, then repeat review for a replacement.`);
+  }
+}
+
 // Review plan: everything computed, nothing written. Gates of the REQUEST throw; a refusal from what
 // was READ leaves as a `{ refusal }` field, because `fail()` here would take a unit test past the summary.
 export function planReview(rootOrHost: unknown, options: ReviewPlanningOptions & { contextPreflightOnly: true }): ReviewPreflight | ReviewRefusal;
@@ -531,6 +539,8 @@ export function planReview(rootOrHost: unknown, { target, base, task, title, mod
   // lifted. `pending` is what is read, not `participant.session`: a live one may have no field either.
   const unlaunched = !!was.pending && sessionState !== 'alive';
   const reuse = !!participant && sessionState !== 'dead' && !unlaunched;
+  if (participant && (reuse || (sessionState !== 'dead' && was.reviewLaunchId && was.revokedReviewLaunchId === was.reviewLaunchId)))
+    requireReviewerBinding(host, taskId, address, participant);
   const lastResultId = participant && !reuse
     ? strictTaskFacts(home, taskId).messages.filter((m) => m.sender === participant.id && m.type === 'result')
       .map((m) => m.id).sort().at(-1)
@@ -950,6 +960,7 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
         if (meta.status !== 'active' || !current) throw new GateError('review participant is no longer active');
         requireCurrentNativeLaunch(current, plan.participant);
         if (current.metadata.reviewLaunchId !== plan.participant?.metadata.reviewLaunchId) throw new GateError('reviewer was replaced before re-review');
+        requireReviewerBinding(plan.host, plan.taskId, plan.address, current);
         if (!plan.createNew) bindIfOwner(plan.home, plan.taskId);
         handOverContactPoints(plan.home, { env: process.env });
         retargetDiff(plan, writeDiff(path.dirname(plan.diffPath), plan.slug, plan.diff, plan.stepName));

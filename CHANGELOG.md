@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Re-review refuses a live reviewer whose launch lost its sender binding, before writing a diff or delivering another assignment.
+
 - Native reviewers can checkpoint findings for the diff they opened without writing a file. Replacements read the last terminal result and the verified checkpoints separately beside the new diff; neither body enters launch arguments. Cursor and OpenCode revoke the failed reviewer's journal binding even when admission fails after session publication. Committed findings remain readable; an unresolved native session keeps its record and is not reported as stopped.
 
 - Show a board of active runs in the BB native panel: lanes per run, columns per pipeline step plus Done, a card per piece with its holder, latest status, stall, open question and unread mail, and a side panel with the piece's history and an Open thread button for a BB participant. The digest and the board place pieces by one rule, now exported as `piecesOf` and `currentResult`.

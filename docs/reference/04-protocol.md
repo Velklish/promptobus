@@ -1059,6 +1059,9 @@ the expected native ID, both drivers revoke their own journal binding independen
 of HTTP credential revocation. An unconfirmed admission or Stop leaves the native
 record for inspection. Losing sender authority does not prove that the pane or
 holder exited.
+A live holder whose launch lost its sender binding cannot receive a re-review.
+`review` checks that binding during planning and again under the task lock before
+publishing the assignment. Confirm Stop, then repeat `review` to start a replacement.
 
 The send reply distinguishes the canonical message ID from the actual artifact
 ID and reports the landed filename, SHA-256 and artifact bytes. Read the artifact
