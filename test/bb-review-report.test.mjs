@@ -25,8 +25,9 @@ test('BB reviewer bounds every send body and delivers findings before its sole t
 
 test('BB orchestrator rejects incomplete reviewer parts before relying on a terminal result', () => {
   const body = renderBbInstructionSkill('orchestrator');
-  assert.match(body, /Retain each full part body when reading the mailbox and carry it across turns/);
-  assert.match(body, /mailbox cannot replay acknowledged parts/);
+  assert.match(body, /Retain each full part body and its canonical message id/);
+  assert.match(body, /promptobus_mailbox \{"mode":"review-part","id":"MESSAGE_ID"\}/);
+  assert.match(body, /Before answering or resuming, reconcile any terminal release/);
   assert.match(body, /authenticated reviewer[^.]*grant token/);
   assert.match(body, /Reject missing, duplicated, reordered or mixed-token parts/);
   assert.match(body, /single terminal result[^.]*single all-calls release/);

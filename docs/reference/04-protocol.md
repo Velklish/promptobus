@@ -933,7 +933,9 @@ opaque `sessionRef`; native process-oriented Driver launch is not involved.
 `promptobus_send` derives task and sender from the authenticated plugin binding.
 It accepts typed recipients/body and optional UTF-8 attachment content, which the
 host streams into the engine blob store after routing validation.
-`promptobus_mailbox` peeks or ACKs only the caller's mailbox; `promptobus_task`
+`promptobus_mailbox` peeks or ACKs only the caller's mailbox. The bound owner can also
+reread one acknowledged numbered reviewer status with `{"mode":"review-part","id":"MESSAGE_ID"}`;
+there is no task selector or history listing. `promptobus_task`
 returns current contacts without adapter credentials; `promptobus_artifact` reads
 verified content from the bound task. Reporter bindings cannot send. Initial
 routing goes through the orchestrator and refuses lateral worker sends. The

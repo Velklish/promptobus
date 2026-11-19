@@ -216,7 +216,9 @@ of registered tools, for example `{ ...delivery.configuration, tools:
 authenticatedToolSelection }`, before returning it from `agents.configure`.
 Prompt context tool names do not perform that selection. Each participant has one task binding. `promptobus_task` takes `{}`. Mailbox
 `{"mode":"peek"}` returns unread bodies; `{"mode":"read"}` returns and acknowledges
-them. There is no message-body lookup after acknowledgment. Use `promptobus_artifact`
+them. Keep their ids: the bound task owner can reread one acknowledged numbered
+BB reviewer status by id using `{"mode":"review-part","id":"MESSAGE_ID"}`.
+This returns the full message; it grants no filesystem read root. Use `promptobus_artifact`
 with the artifact id for attachment content. A reporter uses these three tools
 and answers in its BB conversation; it cannot send or query a root-tree journal.
 Teamleads work only in the bound task. They and approvers send through its
@@ -447,7 +449,7 @@ the SQLite rows; changed or missing threads/tasks/participants are refused.
 | Tool | Arguments | Effect |
 | --- | --- | --- |
 | `promptobus_task` | `{}` | Current task, own identity and registered contacts |
-| `promptobus_mailbox` | `mode: peek` or `read` | Peek retains unread refs; read ACKs only the caller's mailbox |
+| `promptobus_mailbox` | `mode: peek`, `read`, or `review-part` with `id` | Peek retains unread refs; read ACKs only the caller's mailbox; review-part rereads one acknowledged part for the bound owner |
 | `promptobus_send` | `to`, protocol `type`, `body`, optional `artifact: {filename, content}` | Engine-canonical typed send; UTF-8 artifact is streamed on the host |
 | `promptobus_artifact` | artifact `id` | Current-task metadata and verified UTF-8 content, up to 1 MB |
 | `promptobus_host_context` | `mode: inspect`, or `read` with `path`, optional `start_line`, `line_count` | Fresh Host rules/skills/catalog or bounded reads of declared rule/skill resources |

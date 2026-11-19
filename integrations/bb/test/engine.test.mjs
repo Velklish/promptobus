@@ -2189,6 +2189,33 @@ test('role tool selection uses stored bindings and refuses changed environment, 
   assert.equal(s.host.harness.inspection.experimental_hostRpcCalls.length, before);
 });
 
+test('terminal grant checkpoint fences late answers but permits continuation before release', async t => {
+  const s = await stand(t); await s.create(); await s.add('worker-one');
+  const worker = bindingStore(s.host.bb).thread('thr-2'), token = worker.launchContext.grant.token;
+  const answer = body => s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'answer', body });
+  const mailbox = () => s.call('thr-2', 'promptobus_mailbox', { mode: 'read' });
+  await answer('Continue within the same scope');
+  assert.ok(JSON.parse(await mailbox()).messages.some(m => m.type === 'answer'));
+  await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'status',
+    body: `All-calls release: actor worker-one, token ${token}, completed assigned scope, pending=0 and running=0; no future calls.` });
+  const receipt = JSON.parse(await s.call('thr-1', 'promptobus_mailbox', { mode: 'read' }));
+  assert.ok(receipt.messages.some(m => m.sender === 'worker-one' && m.body.includes(token)));
+  await s.call('thr-2', 'promptobus_task'); // Release prose alone did not retire the grant.
+  const { format, revision, ...control } = JSON.parse(readFileSync(path.join(s.root, 'current-control/current.json')));
+  delete control.grants['worker-one'];
+  const retire = () => s.host.harness.behavior.runCli(['control', 'publish', '--task', s.task,
+    '--expected-revision', String(revision), '--input', JSON.stringify(control)]);
+  const raced = await Promise.all([retire(), retire()]);
+  assert.deepEqual(raced.map(r => r.exitCode).sort(), [0, 1]);
+  assert.match(raced.find(r => r.exitCode).stderr, /stale-revision/);
+  await answer('Late owner answer');
+  await assert.rejects(mailbox(), /Current control blocked/);
+  const stopped = await s.control('stop', 'worker-one'); assert.equal(JSON.parse(stopped.stdout).confirmed, true);
+  assert.notEqual((await s.control('resume', 'worker-one')).exitCode, 0);
+  await assert.rejects(mailbox(), /Current control blocked/);
+  assert.equal(s.delivery('thr-2').paused, true);
+});
+
 test('constrained reviewer delivers a long lossless report through bounded status parts and one terminal result', async t => {
   const s = await stand(t);
   assert.equal((await s.create()).exitCode, 0);
@@ -2208,17 +2235,29 @@ test('constrained reviewer delivers a long lossless report through bounded statu
     const reply = JSON.parse(await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'status', body }));
     assert.equal(reply.message.sender, 'long-review');
     assert.equal(reply.artifact, null);
-    landed.push(reply.message);
-    await s.call('thr-1', 'promptobus_mailbox', { mode: 'read' });
+    const ack = JSON.parse(await s.call('thr-1', 'promptobus_mailbox', { mode: 'read' }));
+    landed.push(ack.messages.find(m => m.id === reply.message.id).id);
   }
   const body = `**Done** — Reviewed source; critical 0, major 12, minor 0.\n**Gate** — not run, reviewer runs no mechanical checks.\n**Open** — Fixture only.\n**Decide** — nothing.\nReview ${token} complete ${payloads.length}/${payloads.length}\nAll-calls release: actor long-review, token ${token}, completed scope source review, pending=0 and running=0.`;
   assert.ok(body.length <= 2400);
   const terminal = JSON.parse(await s.call('thr-2', 'promptobus_send', { to: ['orchestrator'], type: 'result', body }));
-  await s.call('thr-1', 'promptobus_mailbox', { mode: 'read' });
-  const engine = openEngine({ root: s.root, recover: false, policy: () => ({ allow: true }) });
-  const messages = engine.history({ task: s.task, all: true, strict: true }).entries.map(entry => entry.message)
-    .filter(message => message.sender === 'long-review').sort((a, b) => a.id.localeCompare(b.id));
-  assert.deepEqual(messages.map(message => message.id), [...landed, terminal.message].map(message => message.id));
+  await s.reload();
+  const ack = JSON.parse(await s.call('thr-1', 'promptobus_mailbox', { mode: 'read' }));
+  const replay = id => s.call('thr-1', 'promptobus_mailbox', { mode: 'review-part', id });
+  const messages = [];
+  for (const id of landed) messages.push(JSON.parse(await replay(id)));
+  messages.push(ack.messages.find(m => m.id === terminal.message.id));
+  assert.deepEqual(messages.map(m => m.id), [...landed, terminal.message.id].sort());
+  assert.deepEqual(messages.slice(0, -1).map(m => m.body.split('\n', 1)[0]), payloads.map((_, i) => `Review ${token} part ${i + 1}/${payloads.length}`));
+  await assert.rejects(replay(terminal.message.id), /Not an acknowledged BB review part/);
+  await assert.rejects(s.call('thr-2', 'promptobus_mailbox', { mode: 'review-part', id: landed[0] }), /requires the bound task owner/);
+  await assert.rejects(s.call('thr-1', 'promptobus_mailbox', { mode: 'review-part', id: landed[0], task: newTaskIdentity('foreign').id }));
+  await assert.rejects(s.call('thr-1', 'promptobus_mailbox', { mode: 'review-part', id: landed[0] }, 'wrong-project'));
+  const ref = path.join(s.root, '.promptobus/tasks', s.task, 'history/orchestrator', `${landed[0]}.json`);
+  rmSync(ref);
+  await assert.rejects(replay(landed[0]), /ENOENT/);
+  writeFileSync(ref, JSON.stringify({ ...messages[0], task: newTaskIdentity('foreign').id }));
+  await assert.rejects(replay(landed[0]), /mismatched/);
   assert.deepEqual(messages.map(message => message.type), [...payloads.map(() => 'status'), 'result']);
   assert.equal(messages.slice(0, -1).map(message => message.body.slice(message.body.indexOf('\n') + 1)).join(''), findings);
   assert.equal(messages.filter(message => message.body.includes('All-calls release:')).length, 1);

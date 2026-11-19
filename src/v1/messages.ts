@@ -352,6 +352,14 @@ export function ensureHistoryDir(home: string, task: string, participant: string
   mkdirSync(historyDir(home, task, participant), { recursive: true });
 }
 
+export function acknowledgedMessage(home: string, task: string, participant: string, id: string): MessageV1 {
+  const record = readRecord(historyRef(home, task, participant, id), `${id}.json`, null);
+  if ('broken' in record || record.message.id !== id || record.message.task !== task || !record.message.recipients.includes(participant)) {
+    throw new Error('Acknowledged message missing or mismatched');
+  }
+  return record.message;
+}
+
 /** History query. `all` lifts the limit whole; `before` — a cursor for paged reading. */
 export interface HistoryQuery {
   task?: string;

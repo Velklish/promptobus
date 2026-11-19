@@ -14,7 +14,7 @@ import {
   artifactFile, blobFile, brokenInboxDir, historyDir, homeOf, inboxDir, ROOT_DIR, taskDir, taskFile, tasksDir,
 } from './layout.js';
 import {
-  commitIntent, completeFanout, countInbox, eventFor, glanceInbox, history as historyOf, inboxIdentity,
+  acknowledgedMessage, commitIntent, completeFanout, countInbox, eventFor, glanceInbox, history as historyOf, inboxIdentity,
   inspectInbox, lastSentAt as lastSentAtOf, newMessage, newRecordId, peekInbox, readInbox, recoverTask,
 } from './messages.js';
 import type {
@@ -181,6 +181,7 @@ export interface Engine {
    */
   linkBlob(task: string, sha256: string, target: string): boolean;
   history(query?: HistoryQuery): HistoryPage;
+  acknowledgedMessage(task: string, participant: string, id: string): MessageV1;
   recover(task?: string): RecoverResult;
   readArtifact(task: string, id: string): ArtifactV1;
   readArtifactContent(task: string, id: string): Buffer;
@@ -433,6 +434,8 @@ export function openEngine({
         throw e;
       }
     },
+
+    acknowledgedMessage: (task, participant, id) => acknowledgedMessage(home, task, participant, id),
 
     history(query = {}) {
       const tasks = query.task ? [query.task] : listTasks(home, cli).tasks.map((t) => t.id);
