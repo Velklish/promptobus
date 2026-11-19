@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import fs from 'node:fs';
@@ -986,6 +987,26 @@ test('BB Host delivery uses complete rule/skill content and authentic canonical 
   assert.ok(context.rules[0].text.endsWith('RULE_TAIL'));
 });
 
+test('each shipped skill uses mailbox and send arguments accepted by the registered BB tools', async t => {
+  const s = await stand(t);
+  const parse = (name, args) => s.host.harness.inspection.registrations.agentTools.find(tool => tool.name === name).parse(args);
+  for (const role of ['worker', 'reviewer', 'approver', 'teamlead', 'reporter', 'orchestrator']) {
+    const text = readFileSync(new URL(`../skills/promptobus-${role}/SKILL.md`, import.meta.url), 'utf8');
+    const modes = [...text.matchAll(/\{"mode":[^{}]+\}/g)].map(([json]) => JSON.parse(json));
+    assert.deepEqual(new Set(modes.map(args => args.mode)), new Set(['peek', 'read']), role);
+    for (const args of modes) assert.deepEqual(parse('promptobus_mailbox', args), { ok: true, value: args });
+    assert.doesNotMatch(text, /to:\s*"|ask the bodies|body by (its|the) message id|body by its returned message id/);
+    const sends = [...text.matchAll(/\{"to":(?:[^{}]|\{[^{}]*\})*\}/g)].map(([json]) => JSON.parse(json));
+    if (['worker', 'reviewer', 'approver', 'teamlead'].includes(role)) assert.ok(sends.length > 0, role);
+    for (const args of sends) {
+      assert.deepEqual(args.to, ['orchestrator']);
+      assert.deepEqual(parse('promptobus_send', args), { ok: true, value: args });
+    }
+  }
+  assert.equal(parse('promptobus_send', { to: 'orchestrator', type: 'status', body: 'Plan' }).ok, false);
+  assert.equal(parse('promptobus_mailbox', { mode: 'read', message: 'old-message' }).ok, false);
+});
+
 test('selected BB tools export MCP object input schemas and preserve strict Host context requests', async t => {
   const calls = [];
   const s = await stand(t, { hostContext: () => ({ rules: [{ path: '/declared', text: 'Declared fixture rule' }], skills: [], tools: [] }),
@@ -1970,6 +1991,48 @@ test('an assignment arriving during Host preparation refuses before approver res
   assert.equal(bindingStore(s.host.bb).participant(s.task, 'acceptor'), undefined);
 });
 
+for (const role of ['reporter', 'teamlead']) test(`${role} uses the registered single-task tools as its own identity`, async t => {
+  const s = await stand(t); await s.create();
+  const participant = `${role}-one`;
+  const added = await s.add(participant, role); assert.equal(added.exitCode, 0, added.stderr);
+  const thread = JSON.parse(added.stdout).threadId;
+  const configuration = await s.host.harness.behavior.resolveAgentConfiguration(makePluginAgentConfigurationContext({
+    thread: s.threads.get(thread), project: { id: 'project' }, environment: { id: 'env', path: s.root },
+    host: { id: 'local' }, provider: { id: 'codex' },
+  }));
+  assert.deepEqual(configuration.tools.map(tool => tool.name).sort(), [
+    'promptobus_task', 'promptobus_mailbox', 'promptobus_artifact', ...(role === 'teamlead' ? ['promptobus_send'] : []),
+  ].sort());
+  const task = JSON.parse(await s.call(thread, 'promptobus_task'));
+  assert.deepEqual([task.id, task.status, task.role, task.participant], [s.task, 'active', role, participant]);
+  const sent = JSON.parse(await s.call('thr-1', 'promptobus_send', { to: [participant], type: 'artifact', body: 'Recorded status',
+    artifact: { filename: 'status.txt', content: 'Awaiting review' } }));
+  for (const mode of ['peek', 'read']) {
+    const { messages } = JSON.parse(await s.call(thread, 'promptobus_mailbox', { mode }));
+    assert.equal(messages.find(m => m.id === sent.message.id)?.body, 'Recorded status');
+  }
+  assert.deepEqual(JSON.parse(await s.call(thread, 'promptobus_mailbox', { mode: 'read' })).messages, []);
+  assert.equal(JSON.parse(await s.call(thread, 'promptobus_artifact', { id: sent.artifact.id })).content, 'Awaiting review');
+  const foreign = newTaskIdentity('unrelated').id;
+  const engine = openEngine({ root: s.root, recover: false, policy: () => ({ allow: true }) });
+  engine.createTask({ id: foreign, title: 'Other task', owner: engine.readTask(s.task).participants.find(p => p.id === 'orchestrator') });
+  const isolated = await engine.send(foreign, { from: 'orchestrator', to: ['orchestrator'], type: 'artifact', body: 'Foreign evidence',
+    artifact: { filename: 'foreign.txt', stream: Readable.from([Buffer.from('other task only')]) } });
+  await assert.rejects(s.call(thread, 'promptobus_artifact', { id: isolated.artifact.id }));
+  await assert.rejects(s.call(thread, 'promptobus_task', { task: foreign }));
+  await assert.rejects(s.call(thread, 'promptobus_mailbox', { mode: 'read', role: 'orchestrator' }));
+  const args = { to: ['orchestrator'], type: 'question', body: 'Is the review complete?' };
+  if (role === 'teamlead') {
+    assert.equal(JSON.parse(await s.call(thread, 'promptobus_send', args)).message.sender, participant);
+    await assert.rejects(s.call(thread, 'promptobus_send', { ...args, task: foreign }));
+    await s.add('another-worker');
+    await assert.rejects(s.call(thread, 'promptobus_send', { ...args, to: ['another-worker'] }), /Route through/);
+  } else {
+    await assert.rejects(s.call(thread, 'promptobus_send', args), /role/);
+    await assert.rejects(s.call(thread, 'promptobus_host_call', { server: 'catalog', tool: 'write', args: {} }), /role/);
+  }
+});
+
 test('canonical participant edits and closed tasks are refused; reporter cannot send', async t => {
   const s = await stand(t);
   await s.create(); await s.add('reporter-one', 'reporter');
@@ -2780,6 +2843,16 @@ async function displayAcceptance(t, extra = []) {
     { to: ['orchestrator'], type: 'result', body: 'Recorded result, content is opaque.' });
   return s;
 }
+
+for (const recipient of ['orchestrator', 'alpha']) test(`approver message to ${recipient} follows the bound route`, async t => {
+  const s = await displayAcceptance(t);
+  const added = await s.add('acceptor', 'approver', ['--environment', 'acceptance-env', '--worker', 'alpha', '--reviewer', 'beta']);
+  assert.equal(added.exitCode, 0, added.stderr);
+  const send = s.call(JSON.parse(added.stdout).threadId, 'promptobus_send', { to: [recipient], type: 'question', body: 'Please confirm the worker revision.' });
+  if (recipient === 'alpha') return assert.rejects(send, /Route through/);
+  const { message } = JSON.parse(await send);
+  assert.deepEqual([message.sender, message.recipients], ['acceptor', ['orchestrator']]);
+});
 
 for (const pair of [false, true]) test(`SDK display acceptance: authenticated worker parent and orchestrator lifecycle survive tools stop/resume (pair ${pair})`, async t => {
   const extra = pair ? ['--display-label', 'TASK-12 + TASK-13', '--display-subject', 'Markdown anchors'] : [];

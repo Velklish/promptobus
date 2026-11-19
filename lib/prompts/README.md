@@ -24,8 +24,8 @@ limit; role or model changes use a supported fresh session setup.
 The returned configuration is SDK-compatible and selects no tools (`tools: []`).
 The caller replaces that list with its authenticated, registered tool selection
 before `agents.configure`; tool names in prompt context alone expose no tool.
-The standing approver contract follows supplied worker contacts and assignment
-authorization rather than assuming a worker is present or absent.
+BB supplies its own mailbox examples and single-task reporter and teamlead duties.
+The BB approver sends through the orchestrator, even when its worker is registered.
 
 The BB plugin ships six generated skills. Its constrained reviewer supplies the
 complete reviewer contract before the first native turn, alongside runtime

@@ -214,8 +214,14 @@ participant. The payload builder grants no rights.
 The returned configuration has `tools: []`. The caller supplies a validated list
 of registered tools, for example `{ ...delivery.configuration, tools:
 authenticatedToolSelection }`, before returning it from `agents.configure`.
-Prompt context tool names do not perform that selection. Approver contact rules
-are conditional on the supplied registered worker and assignment authorization.
+Prompt context tool names do not perform that selection. Each participant has one task binding. `promptobus_task` takes `{}`. Mailbox
+`{"mode":"peek"}` returns unread bodies; `{"mode":"read"}` returns and acknowledges
+them. There is no message-body lookup after acknowledgment. Use `promptobus_artifact`
+with the artifact id for attachment content. A reporter uses these three tools
+and answers in its BB conversation; it cannot send or query a root-tree journal.
+Teamleads work only in the bound task. They and approvers send through its
+orchestrator, e.g. `{"to":["orchestrator"],"type":"question","body":"Which revision?"}`.
+A registered contact or a thread parent does not authorize a lateral send.
 
 The constrained reviewer bridge supplies the complete reviewer skill before the
 first native turn, alongside runtime instructions. It does not place the long
@@ -468,7 +474,7 @@ consecutive `status` bodies starting with `Review <grant-token> part i/N` and a
 newline, followed by the exact payload. One terminal `result` retains the four-line
 hand-off header, severity totals, `Review <grant-token> complete N/N` and the sole
 all-calls release. A report wholly in the result uses `complete 0/0`. The
-orchestrator reads full canonical bodies, including acknowledged status parts,
+orchestrator retains the full bodies on mailbox read, including status parts received before the result,
 checks sender, grant token, totals, order and release, and rejects incomplete,
 duplicated or reordered reports before relying on them. This is a procedural
 check; the bus does not assemble or validate parts. Reviewers need no artifact,

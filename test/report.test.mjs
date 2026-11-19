@@ -50,6 +50,11 @@ for (const harness of ['cursor']) {
   check(`report refuses ${harness} with the install-root project-layer reason`,
     refused.threw && /ADR-024/.test(refused.msg) && /project layer/.test(refused.msg), refused.msg);
 }
+for (const opts of [{ harness: 'opencode' }, { model: 'opencode-go/minimax-m3' }]) {
+  const refused = await refusal({ task: TASK, ...opts, dryRun: true });
+  check(`report identifies unsupported ${JSON.stringify(opts)} without the Cursor explanation`,
+    refused.threw && /opencode/.test(refused.msg) && /claude, codex/.test(refused.msg) && !/Cursor|project layer/.test(refused.msg), refused.msg);
+}
 const codexPlan = await planReport(host, { task: TASK, harness: 'codex', dryRun: true });
 check('Codex reporter uses a read-only private home without an install-root project write',
   codexPlan.launch.cwd === realpathSync(ROOT) && codexPlan.launch.files.length === 0

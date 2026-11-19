@@ -52,6 +52,8 @@ interface ReportPlan extends ReporterPromptPlan {
 export { reportQuestion } from './report-channel.js';
 
 const REPORTER = 'reporter';
+const reporterHarnesses = ['claude', 'codex'];
+const unsupportedReporter = `Supported reporter harnesses: ${reporterHarnesses.join(', ')}.`;
 const CURSOR_REFUSAL = 'A Cursor reporter at the install root is refused: '
   + 'ADR-024 found that Cursor reads the project layer from the selected cwd, '
   + 'where placing it would mutate the shared tree.';
@@ -91,12 +93,13 @@ export async function planReport(rootOrHost: unknown, opts: ReportOptions = {}):
   const meta = readTask(home, task);
   if (meta.parent) throw new GateError(`report needs a root task; ${task} is a child of ${meta.parent}`);
   if (meta.status !== 'active') throw new GateError(`task ${task} is closed — there is nobody for the reporter to ask`);
-  if (opts.harness && !['claude', 'codex'].includes(opts.harness)) throw new GateError(`--harness ${opts.harness}: ${CURSOR_REFUSAL}`);
+  if (opts.harness && !reporterHarnesses.includes(opts.harness)) throw new GateError(`--harness ${opts.harness}: ${opts.harness === 'cursor' ? CURSOR_REFUSAL : unsupportedReporter}`);
   let modelHarness = null;
   if (opts.model) {
     const matches = (loadCatalog({ host }).tuples ?? []).filter((tuple) => tuple.model === opts.model);
-    if (matches.length && !matches.some((tuple) => ['claude', 'codex'].includes(tuple.harness))) {
-      throw new GateError(`--model ${opts.model} resolves only to Cursor. ${CURSOR_REFUSAL}`);
+    if (matches.length && !matches.some((tuple) => reporterHarnesses.includes(tuple.harness))) {
+      const harnesses = [...new Set(matches.map(tuple => tuple.harness))];
+      throw new GateError(`--model ${opts.model} resolves only to ${harnesses.join(', ')}. ${harnesses.length === 1 && harnesses[0] === 'cursor' ? CURSOR_REFUSAL : unsupportedReporter}`);
     }
     if (matches.some((tuple) => tuple.harness === 'codex') && !matches.some((tuple) => tuple.harness === 'claude')) modelHarness = 'codex';
   }

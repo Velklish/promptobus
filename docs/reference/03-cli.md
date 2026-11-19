@@ -24,8 +24,7 @@ role requires the corresponding supported session setup, not hot reconfiguration
 
 The returned SDK-compatible configuration selects no tools (`tools: []`). The
 caller adds its authenticated registered tool selection before `agents.configure`;
-putting tool names in the prompt alone does not expose them. Standing approver
-instructions follow supplied worker contacts and assignment authorization.
+putting tool names in the prompt alone does not expose them. A BB approver sends only to the task orchestrator, even when the worker is a registered contact.
 
 ## Lead
 

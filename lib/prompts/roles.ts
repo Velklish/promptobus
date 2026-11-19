@@ -6,7 +6,15 @@ export interface ParticipantTools {
   promptobus_mailbox: string;
   promptobus_task: string;
 }
-interface ParticipantBindings {
+interface MailInstructions {
+  mailbox?: string;
+  sendExample?: (type: string, body: string) => string;
+  receivedBodies?: string;
+  answerArrival?: string;
+}
+const nativeSend = (type: string, body: string) => `{to:"orchestrator", type:"${type}", body:"${body}"}`;
+const nativeMailbox = "The postcard names each message's sender, type and size, never its text: fetch the mailbox — it lists the headers and marks them read — and ask a body by its message id.";
+interface ParticipantBindings extends MailInstructions {
   tools: ParticipantTools;
   memory: string;
   contacts: string;
@@ -115,7 +123,8 @@ export interface ReporterInstructionInput {
 export interface OrchestratorInstructionInput {
   rules: readonly string[];
   brief: string;
-  bindings: {
+  bindings: MailInstructions & {
+    contactFields?: string;
     tools: ParticipantTools;
     preamble: string;
     delivery: string;
@@ -157,12 +166,12 @@ ${bindings.contacts}
 
 ## Communication protocol
 
-1. Once you have taken the assignment — immediately ${bus('promptobus_send')} {to:"orchestrator", type:"status", body:"what you understood and how you plan to do it"}.
+1. Once you have taken the assignment — immediately ${bus('promptobus_send')} ${(bindings.sendExample ?? nativeSend)('status', 'what you understood and how you plan to do it')}.
 2. Send milestone status: the first message, a change of plan or a blocker, and before background work longer than a couple of minutes (a series of runs, a long build, a long probe). Announce its volume and a measured estimate ("a series of three runs, ~9 minutes") before going quiet. A status expects NO answer — send it and go on working, never wait for an acknowledgement. Status stays in the orchestrator mailbox without starting a turn of its own; the next actionable message or mailbox read carries it. A blocker needing a decision is a question, not status alone.
-3. ${bindings.wait} The postcard names each message's sender, type and size, never its text: fetch the mailbox — it lists the headers and marks them read — and ask a body by its message id.
-4. Stuck on a question you cannot continue without — ${bus('promptobus_send')} {to:"orchestrator", type:"question", body:"the question"} and end the turn. ${bindings.answerDelivery} Do not guess and do not decide for the user.
+3. ${bindings.wait} ${bindings.mailbox ?? nativeMailbox}
+4. Stuck on a question you cannot continue without — ${bus('promptobus_send')} ${(bindings.sendExample ?? nativeSend)('question', 'the question')} and end the turn. ${bindings.answerDelivery} Do not guess and do not decide for the user.
 5. Need context from another repository (an event contract, a schema, a signature) — ask the orchestrator with the same question: it will take that from another worker. Do not write into a foreign repository yourself.
-6. Finished — FIRST fetch the mailbox, then ask the bodies, then send result. While you worked, the orchestrator may have widened or narrowed the run, and a result sent past unread mail costs everyone a wasted round. Something new arrived — finish it, fetch the mailbox again, and so on until there is no incoming: while you finish, the orchestrator may have sent more. Empty — send ${bus('promptobus_send')} {to:"orchestrator", type:"result", body:"the hand-off header below"} and end the turn. The orchestrator will run an isolated review and send notes as a type=review message — ${bindings.reviewDelivery}: fix and send result again. No notes — the work is accepted.
+6. Finished — FIRST fetch the mailbox, ${bindings.receivedBodies ?? 'then ask the bodies'}, then send result. While you worked, the orchestrator may have widened or narrowed the run, and a result sent past unread mail costs everyone a wasted round. Something new arrived — finish it, fetch the mailbox again, and so on until there is no incoming: while you finish, the orchestrator may have sent more. Empty — send ${bus('promptobus_send')} ${(bindings.sendExample ?? nativeSend)('result', 'the hand-off header below')} and end the turn. The orchestrator will run an isolated review and send notes as a type=review message — ${bindings.reviewDelivery}: fix and send result again. No notes — the work is accepted.
 7. ${bindings.artifactDelivery ?? `A file to pass (a diff, an export, a schema) — send with ${bus('promptobus_send')} and artifactPath as an absolute path; it will go into the task artifacts directory.`}
 8. Do not end a turn having sent nothing since the last thing that asked you for an answer. Types task, question, review and result ask for one; status, answer and artifact do not. Nothing to report yet — that is itself a status: what you are doing and how long it will take.
 9. The assignment is the source of explicit requests, not wishes: if it asks to commit on your branch — commit at once, do not wait for a separate confirmation on the bus. What stays forbidden is what the assignment does not lift: push, and any edits to the repository main tree. ${bindings.branchDelivery}
@@ -268,10 +277,10 @@ ${bindings.contacts}
 
 ## Communication protocol
 
-${bindings.wait} The postcard names each message's sender, type and size, never its text: fetch the mailbox — it lists the headers and marks them read — and ask a body by its message id.
+${bindings.wait} ${bindings.mailbox ?? nativeMailbox}
 
-1. ${bindings.reportSend ?? `Finished the review — send the report in full: ${bus('promptobus_send')} {to:"orchestrator", type:"result", body:"the hand-off header above, then the findings or 'No findings' plus what was checked"}.`}
-2. Stuck on a question without whose answer you cannot continue — ${bus('promptobus_send')} {to:"orchestrator", type:"question", body:"question"} and end the turn. The answer (type=answer) will arrive as a postcard. Do not guess.
+1. ${bindings.reportSend ?? `Finished the review — send the report in full: ${bus('promptobus_send')} ${(bindings.sendExample ?? nativeSend)('result', "the hand-off header above, then the findings or 'No findings' plus what was checked")}.`}
+2. Stuck on a question without whose answer you cannot continue — ${bus('promptobus_send')} ${(bindings.sendExample ?? nativeSend)('question', 'question')} and end the turn. ${bindings.answerArrival ?? 'The answer (type=answer) will arrive as a postcard.'} Do not guess.
 3. Work stretches past a couple of minutes of silence — send status with its content and a time estimate ("three files left, ~5 minutes") BEFORE you end the turn: a silent session is indistinguishable from a hung one to the orchestrator. A status expects NO answer — send it and go on working, never end a turn waiting for an acknowledgement that is not coming. Name the time by volume and a measurement, not by feeling.
 4. After result end the turn. A type=task message arrived with a path to a new diff — that is a re-review: first fetch the mailbox, then check against it whether your prior findings are closed, then look at what else changed. Answer with result again.
 5. Do not end a turn having sent nothing since the last thing that asked you for an answer. Types task, question, review and result ask for one; status, answer and artifact do not. Nothing to report yet — that is itself a status.
@@ -311,12 +320,12 @@ ${bindings.contacts}
 
 ## Communication protocol
 
-1. Once you have taken the assignment — immediately ${bus('promptobus_send')} {to:"orchestrator", type:"status", body:"what you understood and how you plan to do it"}.
+1. Once you have taken the assignment — immediately ${bus('promptobus_send')} ${(bindings.sendExample ?? nativeSend)('status', 'what you understood and how you plan to do it')}.
 2. Send status at every notable step. A status expects NO answer — send it and go on working.
-3. To wait for a message — ${bindings.wait} Fetch the mailbox first.
-4. Stuck without an answer — ${bus('promptobus_send')} {to:"orchestrator", type:"question", body:"…"} and end the turn.
+3. To wait for a message — ${bindings.wait} ${bindings.mailbox ?? 'Fetch the mailbox first.'}
+4. Stuck without an answer — ${bus('promptobus_send')} ${(bindings.sendExample ?? nativeSend)('question', '…')} and end the turn.
 5. ${bindings.workerContact}
-6. Finished — fetch the mailbox, then send ${bus('promptobus_send')} {to:"orchestrator", type:"result", body:"the hand-off header below"} and end the turn.
+6. Finished — fetch the mailbox, then send ${bus('promptobus_send')} ${(bindings.sendExample ?? nativeSend)('result', 'the hand-off header below')} and end the turn.
 
 ## Hand-off form
 
@@ -336,6 +345,8 @@ ${ATTACHMENT_CONTRACT} So everything you attached as an artifact before a review
 Your gate run travels as JSON to \`${GATE_RECORD_SCHEMA}\` — one entry per gate command — and is sent BEFORE the result as type=artifact. Request the file stem \`gates-<your approver slug>.json\`. The bus checks the record against that schema at send and refuses an invalid one, naming the faults by field. ${GATE_LINE_COUNTS} ${GATE_LINE_VERIFICATION}`}`;
 }
 
+export const reporterAnswerStyle = `Word that answer so the person can read it with the queue closed. Name a task by its number and its title, never by the number alone: the title goes with the first mention in a message, in every heading and in every table row; later mentions in the same paragraph may use the number alone. Use no term or abbreviation you introduced yourself (a worker slug, "piece", a review code). A participant address and a review code never reach the person without a plain description of the work. A definition new to the person is used only after they confirm it.`;
+
 export function renderReporterInstructions({ task, root, rules, bindings }: ReporterInstructionInput) {
   const bus = (name: keyof typeof bindings.tools) => bindings.tools[name];
   return `You are reporter for root task ${task}. Your working directory is the install root ${root}.
@@ -343,7 +354,7 @@ You are a read-only bus participant. ${bindings.journalSources} Read ${bus('prom
 
 Answer the person ${bindings.answerChannel} from those records. Name the source message id behind each answer. A participant's result is a report, never an accepted outcome unless the journal itself records acceptance. Do not forward or filter worker status for the orchestrator.
 
-Word that answer so the person can read it with the queue closed. Name a task by its number and its title, never by the number alone: the title goes with the first mention in a message, in every heading and in every table row; later mentions in the same paragraph may use the number alone. Use no term or abbreviation you introduced yourself (a worker slug, "piece", a review code). A participant address and a review code never reach the person without a plain description of the work. A definition new to the person is used only after they confirm it.
+${reporterAnswerStyle}
 
 When the records do not answer the person's question, call ${bus('promptobus_ask')} with body and task:"${task}". It writes a question as user to the root orchestrator and returns the question message id. Call the same tool with answers:true, after:<that id>, task:"${task}" to read later answers. Bring the orchestrator's answer back to this conversation and name its answer message id. If no answer has arrived, say so here and check again when the person asks.
 
@@ -362,7 +373,7 @@ ${rules.map((file) => `- ${file}`).join('\n')}
 ${brief}
 
 ## Mailbox and delivery
-Read ${bus('promptobus_mailbox')} at the beginning of each turn and before accepting results. Read each body by its returned message id. Workers send status, questions and results to you; ${bus('promptobus_task')} shows their addresses and repositories. Send answers and assignments through ${bus('promptobus_send')}.
+Read ${bus('promptobus_mailbox')} at the beginning of each turn and before accepting results. ${bindings.mailbox ?? 'Read each body by its returned message id.'} Workers send status, questions and results to you; ${bus('promptobus_task')} shows ${bindings.contactFields ?? 'their addresses and repositories'}. Send answers and assignments through ${bus('promptobus_send')}.
 ${bindings.delivery} finish the turn when waiting for a worker or an answer. Keep the task open until its acceptance checks pass. A worker result is a report, not acceptance. Inspect the work, obtain an independent review, run the required gates, and preserve evidence and remaining limitations before reporting completion.
 ${bindings.operationalRules}`;
 }
