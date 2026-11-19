@@ -11,7 +11,7 @@ const root = makeSandbox('canary-abort-fixture-'), scripts = path.join(root, 'sc
 const runs = makeSandbox('canary-abort-runs-');
 mkdirSync(scripts);
 for (const dir of ['test', 'lib']) symlinkSync(path.resolve(dir), path.join(root, dir));
-for (const file of ['live-canary.mjs', 'live-entry.mjs', 'live-abort.mjs', 'canary-runs.mjs']) {
+for (const file of ['live-canary.mjs', 'live-entry.mjs', 'live-abort.mjs', 'live-run.mjs', 'canary-runs.mjs']) {
   copyFileSync(path.resolve('scripts', file), path.join(scripts, file));
 }
 writeFileSync(path.join(scripts, 'live-e2e.mjs'), `await import(process.env.PROMPTOBUS_E2E_ROOT+'/loop.mjs');`);
@@ -34,22 +34,33 @@ writeFileSync(path.join(root, 'loop.mjs'), `
   console.log('▸ cleanup: '+JSON.stringify({safe:mode!=='unsafe'}));
   if(mode==='unsafe') process.exitCode=1;
 `);
+stubCommand(bins, 'claude', `
+  import {readFileSync,writeFileSync} from 'node:fs';
+  if (process.argv.slice(2).join(' ') !== 'agents --json') process.exit(2);
+  const raw=readFileSync(${JSON.stringify(path.join(root,'registry-response'))},'utf8');
+  writeFileSync(${JSON.stringify(path.join(root,'registry-read'))},raw);
+  process.stdout.write(raw);
+`);
 stubCommand(bins, 'npm', `
-  import {mkdirSync,writeFileSync,copyFileSync} from 'node:fs';
+  import {mkdirSync,writeFileSync,copyFileSync,symlinkSync} from 'node:fs';
   if(process.argv[2]==='pack') writeFileSync(process.argv.at(-1)+'/fake.tgz','fixture');
   else if(process.argv[2]==='install') {
     const pkg='node_modules/promptobus';
-    for(const sub of ['bin','lib'])mkdirSync(pkg+'/'+sub,{recursive:true});
+    mkdirSync(pkg+'/bin',{recursive:true});
+    symlinkSync(${JSON.stringify(path.resolve('lib'))},pkg+'/lib','dir');
     writeFileSync(pkg+'/bin/promptobus.js','console.log("fixture version"); if(process.env.mode==="version-error") process.exitCode=1;');
-    writeFileSync(pkg+'/lib/liftoff.js','export const bgSessions=()=>process.env.mode==="unknown-registry"?null:[{cwd:"/foreign-fixture"}];');
     copyFileSync(${JSON.stringify(path.join(root, 'loop.mjs'))},pkg+'/loop.mjs');
   } else process.exitCode=1;
 `);
 const foreign = spawn(process.execPath, ['-e', 'setTimeout(()=>{},60000)'], { stdio: 'ignore' });
 try {
   const stands = {}, held = [];
-  for (const mode of ['normal', 'unsafe', 'unknown-registry', 'parent', 'group', 'pending', 'sweep', 'version-error']) {
+  for (const mode of ['normal', 'unsafe', 'unknown-registry', 'parent', 'group', 'pending', 'sweep', 'version-error', 'empty-registry']) {
     const receipt = path.join(runs, mode+'.json');
+    const raw = JSON.stringify(mode === 'unknown-registry' ? {} : mode === 'empty-registry' ? [] : mode === 'sweep' ? {sessions:[]}
+      : {agents:[{sessionId:'foreign-control',pid:foreign.pid,cwd:'/foreign-fixture'}]});
+    writeFileSync(path.join(root,'registry-response'),raw);
+    writeFileSync(path.join(root,'registry-read'),'not called');
     if (mode === 'sweep') {
       const complete = readCompleteJson(path.join(stands.normal, RUN_OWNER_FILE));
       for (const kind of ['unmarked', 'foreign-path', 'unfinished']) {
@@ -88,6 +99,12 @@ try {
         }
       }
       await waitFor(() => parent.exitCode !== null || parent.signalCode !== null, { timeoutMs: 18000 });
+      if (mode === 'empty-registry') {
+        check('canary registry: actual agents --json returned [] and confirmed cleanup completed',
+          readFileSync(path.join(root,'registry-read'),'utf8') === '[]' && parent.exitCode === 0 && !existsSync(child.tree)
+          && output.includes('sessions in the harness registry after the run: 0') && readCompleteJson(path.join(stand,RUN_OWNER_FILE))?.canaryReport === 'complete', output);
+        continue;
+      }
       if (mode === 'version-error') {
         check('canary version failure: report stays red although owned cleanup was confirmed',
           parent.exitCode === 1 && !existsSync(child.tree) && readCompleteJson(path.join(stand,RUN_OWNER_FILE))?.canaryReport === 'complete'
@@ -95,6 +112,8 @@ try {
         continue;
       }
       if (mode === 'unsafe' || mode === 'unknown-registry') {
+        if (mode === 'unknown-registry') check('canary registry: actual agents --json returned {} and its envelope was rejected',
+          readFileSync(path.join(root,'registry-read'),'utf8') === '{}' && output.includes('malformed session registry'), output);
         check(`canary ${mode}: no-signal failure retains the workspace, pack, report and unresolved marker`,
           parent.exitCode === 1 && !parent.signalCode && existsSync(child.tree) && existsSync(path.join(stand,'pack'))
           && existsSync(path.join(stand,'live-canary.md')) && readCompleteJson(path.join(stand,RUN_OWNER_FILE))?.cleanup?.state === 'unresolved'

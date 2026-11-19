@@ -38,6 +38,7 @@ import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { writeHostConfig } from '../test/sandbox.mjs';
 import { CANARY_PREFIX, RUN_OWNER_FILE, markRunOwner, markRunUnresolved, runOwnerIsDead, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
 import { exitCodeOf, runCanaryChild } from './live-abort.mjs';
+import { parseLiveSessions } from './live-run.mjs';
 import { refuseImportedEntry } from './live-entry.mjs';
 
 refuseImportedEntry(import.meta.url);
@@ -192,18 +193,6 @@ const cli = (args, opts = {}) => spawnSync(process.execPath, [BIN, ...args], {
 // "no list was given" are indistinguishable — so the live loop retains its
 // explicit refusal when it starts.
 
-// The session registry is read with the SAME parse the mechanism uses
-// (`bgSessions` from the installed tree), not our own. `claude agents --json`
-// has three reply shapes — a bare array, `{agents:[…]}` and `{sessions:[…]}` —
-// and a second copy of the parse would drift from the first in silence. `bgSessions`
-// itself calls `claude` through PATH; the PATH-only check in the live script makes
-// that same name available to both the canary and the registry.
-let bgSessions = null;
-let resetBgSessionsCache = null;
-try {
-  ({ bgSessions, resetBgSessionsCache } = await import(path.join(PKG, 'lib', 'liftoff.js')));
-} catch { bgSessions = null; }
-
 const sha = (text) => createHash('sha256').update(text).digest('hex').slice(0, 12);
 const fileMark = (file) => { try { return sha(readFileSync(file)); } catch { return '(no file)'; } };
 /**
@@ -301,14 +290,15 @@ try {
 
   // ── Cleanup ────────────────────────────────────────────────────────────────────────
 
-  // Run sessions: ask the harness with the same parse the mechanism uses. The
-  // parse is half the verdict: an unreadable reply would give an empty list and
-  // green on nothing.
+  // Use the same raw registry command and strict cleanup parser as live-e2e.
   let sessions = null;
+  let registryError;
   try {
-    resetBgSessionsCache?.();
-    sessions = bgSessions ? bgSessions({ fresh: true }) : null;
-  } catch { sessions = null; }
+    const { runClaude } = await import(path.join(PKG, 'lib', 'liftoff.js'));
+    const { r, missing } = runClaude(['agents', '--json']);
+    if (missing) throw Error(missing);
+    sessions = parseLiveSessions(r);
+  } catch (error) { registryError = error.message; }
   // Session cwd belongs to the installed run tree; a shared title prefix
   // also matches other runs and cannot establish ownership.
   const ours = Array.isArray(sessions)
@@ -318,7 +308,7 @@ try {
     Array.isArray(sessions) && sessions.every(row => typeof row?.cwd === 'string' && path.isAbsolute(row.cwd)) && ours.length === 0,
     Array.isArray(sessions)
       ? JSON.stringify(ours.map((x) => ({ name: x.name, cwd: x.cwd, status: x.status })))
-      : 'session registry not parsed — bgSessions did not return a list');
+      : `session registry not parsed — ${registryError}`);
   if (Array.isArray(sessions)) note(`sessions in the harness registry after the run: ${sessions.length}`);
 
   // Processes: first prove that we CAN look — our own pid must be in the
