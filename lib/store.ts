@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
 import { artifactClaimsInResult, recordRefusal } from './handoff.js';
 import { warn } from './util.js';
 import {
@@ -1253,17 +1254,18 @@ export function claimOwnership(home: string, id: string, owner: string) {
     const p = participantOf(meta, ORCHESTRATOR);
     const was = ownerOf(p);
     const version = writerVersion(home, `claiming task ${id} orchestrator participant`);
+    const claimed = { owner, ...(meta.parent && was !== owner ? { healthGeneration: randomUUID() } : {}) };
     if (p) {
       gate(() => engine(home).patchParticipant(id, p.id, {
         metadata: {
           ...p.metadata,
-          owner,
+          ...claimed,
           ...(version ? { [MECHANISM_VERSION_FIELD]: version } : {}),
         },
       }));
     } else {
       gate(() => engine(home).putParticipant(id, participantRecord(ORCHESTRATOR, {
-        owner,
+        ...claimed,
         ...(version ? { [MECHANISM_VERSION_FIELD]: version } : {}),
       })));
     }

@@ -5,6 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
 import { bindManagedNativeStart } from '../lib/drivers.js';
+import { claudeDriver } from '../lib/driver-claude.js';
+import { readManagedServiceHookContext, requireManagedClaudeMcp } from '../lib/service-launch.js';
 import { reserveManagedNativeIdentity } from '../lib/native-admission.js';
 import { prepareServicePaths, readPrivate, recordVersion, requireProcess, runtimeIdentity, servicePaths, writePrivate } from '../lib/service-state.js';
 import { bus, createTask, participantOf, participantRecord, readTask, upsertParticipant } from '../lib/store.js';
@@ -27,14 +29,50 @@ const initial = { home: paths.home, task, address, ref, launchId, cwd: root, ses
   nativeLaunchProvenance: { state: 'candidate', nativeStore: root },
   nativeCommand: { executable, nativeStore: root, argv: ['--bg', '--session-id', hint, 'fixture prompt'] } };
 writePrivate(file, initial);
-upsertParticipant(paths.home, task, participantRecord(address, { harness: 'claude', sessionRef: ref, sessionRecord: file, nativeLaunchId: launchId, sessionId: hint }));
+const owner = sessionId => participantRecord(address, { harness: 'claude', sessionRef: ref, sessionRecord: file, nativeLaunchId: launchId, sessionId });
+upsertParticipant(paths.home, task, owner(null));
 writeFileSync(transcript, JSON.stringify({ sessionId: nativeId }) + '\n', { mode: 0o600 });
 const binding = { harness: 'claude', nativeStore: root, nativeId, process: nativeProcess };
 // This unit packet represents a verified producer; it is not an actual native launch/SessionStart proof.
 const evidence = { kind: 'native-session-start', source: 'startup', ...binding, transcript, executable };
 const input = { harness: 'claude', home: paths.home, task, address, ref, record: file, launchId, nativeId, transcript };
 const refused = async action => { try { await action(); return false; } catch { return true; } };
+// Tokenless metadata only. Each case gets its own staged client at the same participant pointer.
+function stagedClient(generation, state) {
+  const id = randomUUID(), client = path.join(paths.clients, `${id}.json`);
+  const scope = { task, address, record: file, ...generation };
+  writePrivate(path.join(paths.directory, `launch-${id}.json`), { ...scope, runtime, home: paths.home, harness: 'claude', deferTaskBinding: false });
+  if (state) writePrivate(client, { id, runtime, lifetime: { kind: 'managed', ...scope }, nativeBinding: { kind: 'claude', ...state },
+    env: { PROMPTOBUS_TASK: task, PROMPTOBUS_ROLE: address } });
+  return { id, client };
+}
+const errorOf = action => { try { action(); return null; } catch (error) { return error.message; } };
 try {
+  const journal = () => participantOf(readTask(paths.home, task), address);
+  const journalBefore = JSON.stringify(journal()), pointerBefore = readFileSync(file, 'utf8');
+  const ledger = path.join(paths.directory, 'native-admission.json');
+  check('unreadable Claude list supplies no session observation', claudeDriver.inspect(ref, null) === null);
+  const predecessor = { state: 'bound', sessionId: 'a1b2c3d4-0000-4000-8000-000000000001' };
+  for (const [label, generation, state, expected] of [
+    ['ref mismatch only', { ref: 'previous-ref', launchId }, predecessor, 'Managed launch record identity changed'],
+    ['launch mismatch only', { ref, launchId: 'previous-launch' }, predecessor, 'Managed launch record identity changed'],
+    ['retired client with matching generation', { ref, launchId }, null, 'Managed client has no native launch binding'],
+  ]) {
+    const { client } = stagedClient(generation, state);
+    const reason = errorOf(() => readManagedServiceHookContext(host, client, { env }));
+    check(`managed reconnect: ${label}`, reason === expected && readFileSync(file, 'utf8') === pointerBefore
+      && JSON.stringify(journal()) === journalBefore && readPrivate(ledger) === null, reason);
+  }
+  const next = stagedClient({ ref, launchId }, { state: 'pending' }), context = readManagedServiceHookContext(host, next.client, { env });
+  const connection = randomUUID();
+  writePrivate(path.join(paths.sessions, `${connection}.json`), { id: connection, client: next.id, endpoint: 'bus', protocol: '2025-06-18', initialized: true });
+  const pending = errorOf(() => requireManagedClaudeMcp(host, next.client, { env }));
+  check('an initialized successor connection with matching launch metadata is still pending native admission',
+    context.ref === ref && context.launchId === launchId && pending === 'Claude execution requires its admitted native MCP client'
+    && readPrivate(next.client).nativeBinding.state === 'pending' && readPrivate(file).sessionId === null && readPrivate(ledger) === null, pending);
+  check('before verified startup the initialized successor has no native session ID in the participant journal',
+    journal()?.sessionRef === ref && journal().metadata.nativeLaunchId === launchId && journal().metadata.sessionId == null);
+  upsertParticipant(paths.home, task, owner(hint));
   const stale = recordVersion(file);
   writePrivate(file, { ...initial, heartbeat: 'ordinary intervening write' });
   const changed = readFileSync(file, 'utf8');

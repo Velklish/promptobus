@@ -29,6 +29,27 @@ A message to the person — your question, your status report, or the reporter's
 | Reviewer | `promptobus review` | Read every diff of a piece, send findings, confirm their closure on its next pass; a replacement receives the last result in its initial prompt and checks those findings for closure first | Fix the findings |
 | Reporter | optional read-only session on a root task | Answer the person from the task journals | Send as `reporter` or treat a result as accepted |
 
+## Root thread handoff
+
+Stop dispatching after the agreed batch of tasks or when the owner's context threshold is reached. For large logs, histories or another repository, use a read-only subagent only with approval; request conclusions, evidence locations and unknowns, not raw text. Otherwise narrow the read or ask.
+
+Write a new handoff file in the root task's `files/` directory reported by `promptobus_task`. Give the owner its exact path. Record:
+
+- Workspace, root task ID, full outgoing owner session ID, child task IDs, assignments, states and next actions.
+- Owner decisions and their scope, including the approved split, strategy envelope, pending interactions, pauses and intentional Stops.
+- Worktrees, open branches with heads, backup locations or missing backups. Link original briefs, checkpoints and relevant mail by task and message ID; distinguish acknowledged, outstanding and unverified work.
+
+After checkpointing, agree with the owner on the continuation route and who remains responsible for the original task and its participants. Only then may the outgoing session exit through an authorized host route. Without that agreement, stay at the checkpoint without dispatching. The boundary authorizes neither `stop`, `done`, `abandon` nor a whole-run pause.
+
+- **Managed Codex root:** `lead --resume --task <id>` recovers the same native thread and history only from an eligible retained launch. `stop` and `done` retire its resumable home. A fresh managed `lead` needs a separately approved new task; it cannot take over this one. Mail, participants and Stop receipts stay on the original task.
+- **Ordinary session-owned root:** the owner opens a new conversation with the handoff, not the old transcript. Require one authorized claimant and explicit owner approval for the exact active root task and the full outgoing and incoming session IDs. Before claim, verify the workspace and store, recorded owner, incoming harness identity and effective mailbox for this call: it must resolve to the root `orchestrator`. Verify the old session has ended through its host; neither an idle turn nor a missing or refused wake proves exit. If any check fails, leave ownership alone.
+
+A held address can override the declared role. Only where the installed dispatcher supports the registered-peer exception can an explicitly declared `orchestrator` select the named root for claim from its own exact-session linked peer. The exception applies only to explicit claim. Ordinary reads follow current bindings: while the session holds only the peer they select the peer; after a successful claim they may select the orchestrator. Never unlink the peer, change identity or bypass a refusal.
+
+For the authorized ordinary transfer use `promptobus_mailbox { task: <root>, claim: true }`. It does not check liveness or compare the previous owner before writing. It changes ownership and binding and takes unread mail into history before replying. Preserve returned headers and IDs; verify `MAILBOX CLAIMED`, task, both IDs and current owner. On a lost or mismatched reply, do not retry or probe with an ordinary mailbox read: it could consume new root mail. Reconcile ownership and binding through authorized non-consuming inspection; compare saved IDs with the named task's `history`, which does not mark mail read. If evidence is incomplete, report the gap and keep dispatch on hold.
+
+Before dispatch, reconcile the file against current task status, checkpoints and authorized root mail (including arrivals since the file was written). Leave child mail to its teamlead. Report gaps and the next approved action; a handoff neither resumes paused participants nor proves Stop or drain. Follow [Planned whole-run pause](#planned-whole-run-pause) for a paused run. If the host cannot establish successor authority, leave the run at the checkpoint and identify the missing grant or evidence.
+
 ## Choosing a flat task or a tree
 
 The owner measured 33 task journals on this machine on 2026-09-26. The median task had 3 pieces, 3 concurrent workers, 69 messages to the orchestrator and took 1.1 hours. The five largest had 5 to 33 pieces, peak concurrency of 3 to 7 workers, 400 to 832 messages to the orchestrator, 344 to 877 thousand characters of inbound mail and lasted up to 16.8 hours. Use the owner's thresholds from that measurement:
@@ -72,7 +93,7 @@ Types: `task`, `status`, `question`, `answer`, `artifact`, `result`, `review`.
 
 Without `task`, the server uses `PROMPTOBUS_TASK`, else this session's binding, else the only active task. If the reply names another title, you joined the wrong task. Pass `task`.
 
-A foreign-mailbox header names both session ids and means the originals stay with the owner. If the mail is yours and this session is new, `promptobus_mailbox { claim: true }`; the reply `MAILBOX CLAIMED` names the previous owner. Then read again without `claim`. A task an earlier CLI created has no owner and nothing to claim (`src/mcp/server.ts`).
+A foreign-mailbox header names both session IDs; the originals stay with the owner. For root takeover follow [Root thread handoff](#root-thread-handoff). An ownerless legacy task has nothing to claim.
 
 A session has one live binding: the active task its calls use without `task`. `spawn` and `review --approver` write it for the task's owner, `review` only when it joins an existing task, and `claim` rewrites it (`lib/store.js`).
 
@@ -206,50 +227,37 @@ Unnamed routing offers only tuples rated for the requested role. An explicit `--
 
 Role quality floors are soft; on the ten-point scale they default to worker 5, approver 7, reviewer 9; a pick below one carries `<role>-floor-not-met` (`src/registry.ts`). The shipped catalog rates no Anthropic model on Cursor (`models/catalog.json`).
 
-`balance` is not a row of the quality ladder and does not move with the price of a mistake: it answers which ACCOUNT to spend from, and orders tuples inside a harness by `balanced`. It is the strategy for a person paying several subscriptions who wants the work spread over all of them instead of exhausting one — reach for it when `models` says an account is running short, or when the run is long enough that the spend matters, not as a general default. The reviewer is inside it like a worker: **nothing in this package pins the reviewer to a harness** ([solo-review](../solo-review/SKILL.md) § Reviewer strategy).
+`balance` is outside the quality ladder, not a general default. Propose it for a long run across subscriptions or when an account runs short; within each harness it ranks by `balanced`. Reviewers have no pinned harness ([solo-review](../solo-review/SKILL.md) § Reviewer strategy).
 
 Each live participant of the task on a harness costs its tuples 5 score points by default (`penalties.liveParticipantPerHarness`), at most 20 (`penalties.liveParticipantCap`), under every strategy. `balance` chooses the harness by pace, so the penalty only orders the tied band. The `balance` projection uses `caps.liveParticipants.<harness>` as a ceiling; live-cap admission enforces it for every strategy and explicit model choice (03-cli § Live-cap admission).
 
 ### When `models` says an account is running short
 
-A `near-limit` line in `promptobus models` names a harness whose limit window is at or past its level threshold, or which is spending faster than the window refills past its rate threshold, and it names the strategy it would switch to — `economy` when every paced harness is short by either test, `balance` when at least one paced harness is not short.
+A `near-limit` line names the harness and proposed switch: `economy` if every paced harness is short on level or rate, otherwise `balance`.
 
 A `window-nearly-spent` row means that harness left automatic selection at 90 % or more of its binding window used; it returns once a `--refresh` shows the window refilled, or when the person names it with `--harness` or `--model`. A `candidates-empty` refusal carrying that detail means every account is past the threshold, and whether to name one and spend it is the person's decision, not yours.
 
-**Propose that switch to the person. Never make it.** The strategy envelope is what they approved, and a mechanism that quietly left it would make the envelope unauditable. Show them the line and the tuple it would change, and when they agree:
+Show the person the warning and affected tuple. Only with their agreement run:
 
 ```text
 promptobus models strategy --set <name>
 ```
 
-That records `defaults.strategy` in the host's writable overlay, and every following `spawn` and `review` without `--strategy` routes with it — the proposal holds without repeating a flag. `promptobus models strategy` alone prints the effective default and the layer it came from; `--clear` removes it. A `--strategy` on the command line always wins over the recorded default, so a track whose envelope names its own strategy is unaffected.
-
-This is the only thing that changes a strategy between spawns, and a person is on both ends of it.
+This sets the host's `defaults.strategy` for subsequent lifts without `--strategy`. `promptobus models strategy` shows the default and source; `--clear` removes it.
 
 ### When the local runs disagree with the catalog
 
-The catalog's ratings come from published benchmarks. `promptobus models calibrate` reads this machine's own telemetry back against them and prints, per harness/model/effort, how many runs it has, completion-duration evidence, usable throughput, the median movement of the account's limit windows, and — where evidence reaches the threshold — proposed `speed` and `quotaCost` lines for the user overlay with the catalog band beside them and the numbers behind them. Speed observations pool across every effort rung of a `(harness, model)` and produce one speed band for that ladder; completion duration is never a speed input.
-
-**Read it as evidence, not as a verdict.** The key with the most runs is the anchor and keeps its catalog band; every other key is proposed a step away from ITS OWN band, at most two, and only when the measurement differs materially from what the bands already imply. A line reading `insufficient data: N of 5` is the command declining to guess, and `quality` is never proposed at all — review rounds measure how work was received, not how good a model is.
-
-Run it when a person asks why a model was picked and their experience disagrees, or after a long series on one harness. Then show them the proposal and let them decide:
-
-```text
-promptobus models calibrate
-promptobus models calibrate --write
-```
-
-`--write` merges only the proposed `ratings` into the person's `user` overlay, keeps every other key of that file, and **asks on the terminal first**. Do not pass `--yes` on their behalf: it exists to record an agreement the person already gave, and using it to skip the question is the one thing the flag is not for. As with a strategy switch, a person is on both ends of this.
+Run `promptobus models calibrate` when experience contradicts a pick or after a long series on one harness. It proposes `speed` and `quotaCost`, never `quality`; insufficient data yields no proposal. Show the evidence before `promptobus models calibrate --write` updates the user overlay. `--yes` records prior consent; it cannot replace asking.
 
 ### The one question the tool cannot answer
 
-`models` prints the key and the file when nothing has recorded Cursor's plan name, because no Cursor method returns it. **Ask the person once, and only once**, and only when a run will actually use Cursor. The line goes in the `user` overlay, `~/.promptobus/model-routing.json`:
+If the run uses Cursor and `models` reports its plan missing, ask once. The user overlay at `~/.promptobus/model-routing.json` takes:
 
 ```json
 "account": { "cursor": { "plan": "<the plan name>" } }
 ```
 
-No command writes it: the writable layer is per-workspace, so a tool-written answer would be asked again in the next workspace. The value is display only and enters no score, so a run is not blocked while it is missing — do not stall a spawn on it, and do not ask a second time in the same run.
+The plan is display-only; its absence never blocks a lift.
 
 ### The strategy envelope
 
@@ -269,7 +277,7 @@ A fallback **inside** the envelope needs no second approval: a preflight that ex
 
 `promptobus done` writes one local telemetry record per recorded harness generation of a participant with a model, plus teamleads and the root orchestrator with a recorded session identity or model.
 
-It automatically refreshes the availability of exactly the window-bearing harnesses represented by those records. It uses the existing 15 s preflight budget for that probe set, so there is no separate `promptobus models --refresh` step to remember. A window entry still lives sixty seconds, and a probe refusal or timeout leaves that harness's end reading `null`; `done` warns with `telemetry: <harness> window <id> not re-read (<reason>) — end reading absent` for a missing window (or the harness-level form when the whole harness is unavailable) and still closes the task. The record is local, holds no prompt, path, session id or token contents, and may carry numeric token-usage counts separately from throughput evidence; nothing sends it anywhere.
+`done` refreshes the represented harness windows automatically. On refusal or timeout it warns, leaves the end reading absent and still closes. Local records may contain usage counts, not prompt or token contents.
 
 ### Constraints the user named
 
@@ -350,13 +358,43 @@ Reserve exclusivity for a named conflict: mutation or publication of the same cl
 
 Currently executing work and confirmed or UNKNOWN writers retain their resource until task-owned terminal evidence permits release. Administrative parking, idle metadata or grant revocation alone does not establish Stop/drain. Preserve original commands, failures, call completion, exact source/gates, independent review and quota evidence when allowing concurrency.
 
+## Planned whole-run pause
+
+### Pause at the owner's limit threshold
+
+The owner sets the threshold for the harness window and approves pausing the whole run. A `near-limit` line from `promptobus models` is one input, not a trigger. Record the binding window and its reset time in UTC. Stop dispatching new work; let in-flight work reach a safe boundary and record anything still running or unconfirmed.
+
+1. Send `pause` as `status` mail with `promptobus_send`, one per teamlead and directly managed participant that has a send route. Include the reset time, what to save and where to reply. Each teamlead does the same in its child task. Use only the contacts of the current task; do not send as the child owner from the root. The reporter cannot send mail: do not ask it to acknowledge either `pause` or `continue`. The root records the reporter's observed status separately, with any unknowns, not as an acknowledgment.
+2. Before ending the turn, each participating address saves a state file in `files/` of its own task. Use the artifacts directory reported by `promptobus_task`: root and teamlead owners with write access can write their own new file there; a write-capable worker or approver can send a local draft as `artifact` to its task's `orchestrator` and use the landed name. A read-only reviewer sends its state as `status` for its coordinator to save in that task, without gaining write access. Record the assignment, latest completed work, next step, branch and worktree where applicable, relevant mail IDs with their task, and in-flight work or unresolved checks. Acknowledge with `status` citing the original message ID and naming the saved file (or giving the state to save for a reviewer). Teamleads also report their children's acknowledgments and gaps. After checkpointing, end the turn and do not resume work on other mail while paused.
+3. The root saves its own state in the root task's `files/`, including the owner's decision, reset time, paused addresses, checkpoint paths and any missing acknowledgments. Set a one-shot timer for the reset in an already approved host scheduler to prompt the root to check the window; if none is available, arrange a reminder with the owner. Promptobus does not schedule or enforce the pause. Leave tasks, worktrees, bindings and retained Stop evidence intact: do not use `stop`, `done`, `abandon` or a mailbox claim to implement a pause. A checkpoint, an idle turn and a timer are not Stop or drain evidence.
+
+Use `status` both ways for `pause` and `continue`. Do not use `question` or `answer` for this exchange: it must not create a new question or close an unrelated one. Status-only mail does not wake the root or a teamlead's child `orchestrator` mailbox. Arrange an explicit mailbox check by the existing authorized sessions for both transitions. Each coordinator reads `promptobus_mailbox` in its own task and matches acknowledgments by sender and the outbound message ID. If an authorized check or a matching acknowledgment is missing, leave that participant unconfirmed; a sent ID, unread count or idle line is not an acknowledgment.
+
+### Continue after the reset
+
+Verify that the window has reset. Inspect the root and each child with `promptobus status --task <id>`; the root sends only to its own task. For a live, eligible session, send `continue` as `status` and check for a `status` acknowledgment citing that `continue` message ID before counting it as resumed. Each live or relifted teamlead checks and continues its own participants. Record the reporter's observed status, not a reply. Do not override an intentional Stop, a pending interaction or a missing grant. Use [Stops](#stops) for other dead roles, not the teamlead command.
+
+For a verified dead teamlead, the current root owner can relift the existing address into its active child task with the same slug and recorded harness. Keep the approved launch options. The continuation brief names all three inputs:
+
+- the original brief (the exact kept file in the child task);
+- the previous teamlead's state file in that child's `files/`;
+- the unread mail for that teamlead in the linked root and child mailbox slots. Name the tasks and any known relevant message IDs; have the successor read its own mailbox rather than claiming or draining it before relift.
+
+```bash
+promptobus spawn --teamlead --brief <continuation-file> --task <root> --slug <existing-slug>
+```
+
+Codex relift still requires the previous retained terminal proof. An unreadable Claude registry is not proof of death; public relift under that condition and real Claude reconnect behavior are unverified. If liveness, authority, required Stop proof or recovery inputs cannot be verified, report the gap and leave that teamlead blocked. Do not substitute another identity, clear protections or forge a binding.
+
+A relift starts a new session, not the old conversation. Context beyond the state file, original brief and retained mail is lost unless independently recorded. Before dispatching, the successor reads those inputs and sends `status` to the root naming what it recovered, what is missing and which children still need recovery. Check that the root alias and child owner name the same accepted session. The child health line is scoped to the accepted generation, not inherited from its predecessor. A startup health line does not prove binding, delivery or Stop. Synthetic reconnect checks exercise generation and identity fences; they do not establish a live Claude reconnect or public relift with an unreadable registry.
+
 ## Stops
 
 `promptobus status` prints a stopped participant with a reason and a driver route. Follow that route. Do not invent a attach/stop command for a harness you have not read. `status`, `spawn`, `review`, `done` and `stop` fill the harness's own commands, such as `claude attach <id>`, into their routes from its driver (`lib/driver-claude.js`).
 
 A stall goes to the warden journal once per sighting, to `status` and to the orchestrator's `promptobus_mailbox` reply, with no postcard; a refusal naming a reset sends the orchestrator one `unreachable` postcard and holds knocks to that participant until the named reset (`src/supervisor.ts`, `lib/server.js`).
 
-A line that says the process is gone is not a stop. Recover a retained dead managed Codex root with `promptobus lead --resume --task <id>`. Re-spawn other roles: `promptobus spawn` for `worker:<slug>`, `promptobus review <path> --task <id>` for `reviewer:<slug>`, `promptobus review <path> --task <id> --approver` for `approver:<slug>` after the reviewer has sent a result. Spawn cannot create a reviewer or approver address.
+A line that says the process is gone is not a stop. Recover a retained dead managed Codex root with `promptobus lead --resume --task <id>`. For a teamlead see [Continue after the reset](#continue-after-the-reset). Re-spawn other roles: `promptobus spawn` for `worker:<slug>`, `promptobus review <path> --task <id>` for `reviewer:<slug>`, `promptobus review <path> --task <id> --approver` for `approver:<slug>` after the reviewer has sent a result. Spawn cannot create a reviewer or approver address.
 
 A participant who sent you mail and then ended the turn is waiting, not stopped.
 

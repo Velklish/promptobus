@@ -266,7 +266,16 @@ check('second teamlead prompt lists its sibling address', sibling.prompt.include
 
 const sid3 = '33333333-3333-3333-3333-333333333333';
 // The dead session's points, and the new session's bus entry shaking hands before the rebind lands.
-store.writeWake(home, child.id, 'orchestrator', { socket: path.join(scratch, 'dead-child.sock'), session: sid1 });
+const predecessorWake = store.writeWake(home, child.id, 'orchestrator', { socket: path.join(scratch, 'dead-child.sock'), session: sid1 });
+const predecessorTriedAt = new Date(Date.parse(predecessorWake.at) + 1).toISOString();
+store.writeHealth(home, child.id, { ...store.readHealth(home, child.id), orchestrator: {
+  channel: 'self-wake', selfWake: 'refused', knockError: 'ENOENT', triedAt: predecessorTriedAt,
+} });
+const childOwnerLine = () => captureSplit(() => status(host, { task: child.id, sessions: [] })).out
+  .split('\n').find(line => line.trimStart().startsWith('orchestrator ·')) ?? '';
+const predecessorLine = childOwnerLine();
+check('the child status attributes the failed knock to the predecessor before rebind',
+  predecessorLine.includes(`owner ${sid1} is dead since ${predecessorTriedAt}`), predecessorLine);
 store.writeWake(home, task, 'teamlead:group-one', { socket: path.join(scratch, 'dead-root.sock'), session: sid1 });
 const leadSock = path.join(scratch, 'lead-3.sock');
 const leadMcp = spawn(process.execPath, [cli, 'mcp'], {
@@ -310,6 +319,11 @@ const relift = await quiet(() => spawnTeamlead(host, { ...reliftOpts, sessions: 
 const reliftLead = store.participantOf(store.readTask(home, task), 'teamlead:group-one');
 const reliftOwner = store.participantOf(store.readTask(home, child.id), 'orchestrator');
 const reliftSessions = snapshotOf([reliftLead, reliftOwner]);
+const beforeKnock = childOwnerLine();
+check('before its first knock the accepted child owner has a fresh alarm, not the predecessor death verdict',
+  reliftOwner.metadata.owner === sid3 && beforeKnock.includes(`owner ${sid3}`)
+  && /alarm: (?:awaiting the handover|self-wake — starting up)/.test(beforeKnock)
+  && !/is dead since|ENOENT/.test(beforeKnock), JSON.stringify({ sid1, sid3, predecessorLine, beforeKnock }));
 const leadSecondLog = path.join(scratch, 'lead-second.jsonl');
 writeFileSync(leadSecondLog, `${JSON.stringify(leadUsage(sid3, 'second', 5))}\n`);
 for (const [taskId, address] of [[task, 'teamlead:group-one'], [child.id, 'orchestrator']]) {
@@ -361,6 +375,11 @@ check('the child warden knocks the relifted teamlead once for root mail, and the
   rootMail === 0 && childKnocks.length === 1 && childKnocks[0].session === sid3
   && !rootKnocks.some((endpoint) => endpoint.address === 'teamlead:group-one'),
   JSON.stringify({ rootMail, childKnocks, rootKnocks }));
+store.writeWake(home, child.id, 'orchestrator', { socket: reliftBrief, session: sid3 });
+await wardenRound(home, child.id, { knock: async () => ({ ok: false, error: 'current child refusal' }) });
+const currentRefusal = childOwnerLine();
+check('a failed knock on the accepted child generation still reports its own self-wake reason',
+  currentRefusal.includes(`owner ${sid3}`) && currentRefusal.includes('alarm: self-wake (reason: current child refusal)'), currentRefusal);
 const sid4 = '44444444-4444-4444-4444-444444444444';
 installStub([{ id: 'ddeeffaa', sessionId: sid4, name: planned.name, state: 'working', pid: 4246 }]);
 let faultMessage = '';

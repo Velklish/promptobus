@@ -12,6 +12,11 @@ const warningSchema = JSON.parse(readFileSync(
   new URL('../schemas/model-routing/decision.schema.json', import.meta.url), 'utf8',
 )).properties.warnings.items;
 
+check('routing skill: balance and calibration are conditional and writes require consent',
+  orchestrate.includes('not a general default. Propose it for a long run across subscriptions or when an account runs short')
+  && orchestrate.includes('when experience contradicts a pick or after a long series on one harness')
+  && orchestrate.includes('`--yes` records prior consent; it cannot replace asking'));
+
 const roleRule = guide.split('## Routed roles and the schema boundary')[1]?.split('## The layers')[0] ?? '';
 const inventory = guide.split('**The inventory is not a binary listing.**')[1]?.split('**Where the tier')[0] ?? '';
 const telemetry = guide.split('### Participant telemetry: the collecting half')[1]?.split('### ', 1)[0] ?? '';

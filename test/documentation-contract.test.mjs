@@ -358,6 +358,65 @@ check('docs: the generate dry-run rule does not read as the trustedHooks rule',
 
 const installGuide = read('docs/guides/install.md');
 const orchestrateSkill = read('skills/orchestrate/SKILL.md');
+const handoff = section(orchestrateSkill, '## Root thread handoff');
+check('docs: root rotation checkpoints the run before a fresh conversation',
+  has(handoff, "after the agreed batch of tasks or when the owner's context threshold is reached")
+  && has(handoff, "Write a new handoff file in the root task's `files/`")
+  && has(handoff, 'opens a new conversation with the handoff, not the old transcript'));
+check('docs: no outgoing exit before a continuation route and participant owner are agreed',
+  has(handoff, 'After checkpointing, agree with the owner on the continuation route and who remains responsible for the original task and its participants. Only then may the outgoing session exit')
+  && has(handoff, 'Without that agreement, stay at the checkpoint without dispatching'));
+check('docs: fresh root succession requires exact consent and cannot transfer a managed launch',
+  has(handoff, 'explicit owner approval for the exact active root task and the full outgoing and incoming session IDs')
+  && has(handoff, 'Verify the old session has ended')
+  && has(handoff, '`lead --resume --task <id>` recovers the same native thread and history')
+  && has(handoff, 'Mail, participants and Stop receipts stay on the original task'));
+check('docs: ordinary claim checks resolved authority and host exit before transfer',
+  has(handoff, 'one authorized claimant')
+  && has(handoff, 'verify the workspace and store, recorded owner, incoming harness identity and effective mailbox for this call')
+  && has(handoff, 'neither an idle turn nor a missing or refused wake proves exit')
+  && has(handoff, 'Only where the installed dispatcher supports the registered-peer exception')
+  && has(handoff, 'an explicitly declared `orchestrator` select the named root for claim from its own exact-session linked peer')
+  && has(handoff, 'The exception applies only to explicit claim. Ordinary reads follow current bindings: while the session holds only the peer they select the peer; after a successful claim they may select the orchestrator'));
+check('docs: an uncertain claim result requires reconciliation, not replay',
+  has(handoff, 'changes ownership and binding and takes unread mail into history before replying')
+  && has(handoff, 'Preserve returned headers and IDs')
+  && has(handoff, 'On a lost or mismatched reply, do not retry or probe with an ordinary mailbox read: it could consume new root mail')
+  && has(handoff, "Reconcile ownership and binding through authorized non-consuming inspection; compare saved IDs with the named task's `history`, which does not mark mail read"));
+const wholeRunPause = section(orchestrateSkill, '## Planned whole-run pause');
+const pauseAtLimit = section(wholeRunPause, "### Pause at the owner's limit threshold");
+const continueAfterReset = section(wholeRunPause, '### Continue after the reset');
+check('docs: a planned whole-run pause checkpoints each task before the limit reset',
+  has(pauseAtLimit, 'The owner sets the threshold')
+  && has(pauseAtLimit, 'is one input, not a trigger')
+  && has(pauseAtLimit, 'Send `pause` as `status` mail with `promptobus_send`, one per teamlead')
+  && has(pauseAtLimit, 'Before ending the turn, each participating address saves a state file in `files/` of its own task.')
+  && has(pauseAtLimit, 'Set a one-shot timer for the reset')
+  && has(pauseAtLimit, 'A checkpoint, an idle turn and a timer are not Stop or drain evidence.'));
+check('docs: pause and continue correlate status without waking an orchestrator or requiring reporter mail',
+  has(pauseAtLimit, 'Use `status` both ways for `pause` and `continue`. Do not use `question` or `answer` for this exchange: it must not create a new question or close an unrelated one.')
+  && has(pauseAtLimit, 'Acknowledge with `status` citing the original message ID')
+  && has(continueAfterReset, 'send `continue` as `status` and check for a `status` acknowledgment citing that `continue` message ID')
+  && has(pauseAtLimit, 'Status-only mail does not wake the root or a teamlead\'s child `orchestrator` mailbox.')
+  && has(pauseAtLimit, 'reads `promptobus_mailbox` in its own task and matches acknowledgments by sender and the outbound message ID.')
+  && has(pauseAtLimit, 'leave that participant unconfirmed')
+  && has(pauseAtLimit, 'The reporter cannot send mail: do not ask it to acknowledge either `pause` or `continue`.')
+  && has(pauseAtLimit, 'The root records the reporter\'s observed status separately, with any unknowns, not as an acknowledgment.')
+  && has(pauseAtLimit, 'A read-only reviewer sends its state as `status` for its coordinator to save in that task, without gaining write access.')
+  && has(spawn, 'Pause and continue use `status` mail both ways with acknowledgments matched by message ID.'));
+check('docs: continuation uses the same teamlead address and all three inputs without bypassing authority',
+  has(continueAfterReset, 'promptobus spawn --teamlead --brief <continuation-file> --task <root> --slug <existing-slug>')
+  && has(continueAfterReset, '- the original brief')
+  && has(continueAfterReset, "- the previous teamlead's state file in that child's `files/`")
+  && has(continueAfterReset, '- the unread mail for that teamlead in the linked root and child mailbox slots')
+  && has(continueAfterReset, 'Codex relift still requires the previous retained terminal proof.')
+  && has(continueAfterReset, 'public relift under that condition and real Claude reconnect behavior are unverified.')
+  && has(continueAfterReset, 'A relift starts a new session, not the old conversation.')
+  && has(continueAfterReset, 'The child health line is scoped to the accepted generation, not inherited from its predecessor.')
+  && has(continueAfterReset, 'A startup health line does not prove binding, delivery or Stop.')
+  && has(continueAfterReset, 'Synthetic reconnect checks exercise generation and identity fences; they do not establish a live Claude reconnect or public relift with an unreadable registry.')
+  && has(spawn, 'Top-level `promptobus --help` lists this syntax')
+  && has(read('README.md'), 'skills/orchestrate/SKILL.md#planned-whole-run-pause'));
 check('docs: managed root self-Stop acknowledgement is pending until retained proof',
   has(orchestrateSkill, 'A managed Codex root stopping itself receives a pending acknowledgement:')
   && has(orchestrateSkill, 'check the retained Stop proof from another authorized session'));

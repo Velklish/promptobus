@@ -126,9 +126,11 @@ interface HealthMark {
   [key: string]: unknown;
 }
 
-function marksOf(health: Record<string, unknown>, addr: string): HealthMark {
+export function participantHealth(health: Record<string, unknown>, participant: ParticipantV1 | null | undefined): HealthMark {
+  const addr = String(addressOf(participant) ?? '');
   const v = health[addr];
-  return (v && typeof v === 'object' ? v : {}) as HealthMark;
+  const mark = (v && typeof v === 'object' ? v : {}) as HealthMark;
+  return mark.healthGeneration === participant?.metadata?.healthGeneration ? mark : {};
 }
 
 // The window is SYMMETRIC: spawn time is written by that machine's clock, and a clock set
@@ -141,7 +143,7 @@ export function justSpawned(participant: ParticipantV1 | null | undefined, now: 
 // When a turn was last STARTED: three marks, all meaning the participant was reached. A failed
 // activation (`triedAt`) is left out — silence after it speaks of a deaf channel, not a stall.
 export function lastActivation(home: string, task: string, participant: ParticipantV1 | null | undefined): number | null {
-  const marks = marksOf(readHealth(home, task), String(addressOf(participant) ?? ''));
+  const marks = participantHealth(readHealth(home, task), participant);
   const at = [startedOf(participant), marks.knockedAt, marks.deliveredAt]
     .map((v) => Date.parse(String(v ?? ''))).filter(Number.isFinite);
   return at.length ? Math.max(...at) : null;
@@ -526,8 +528,9 @@ export async function supervisorRound(home: string, task: string, {
       // A bad participant record has no right to stop the watch over the others.
       continue;
     }
-    const was = marksOf(health, addr);
+    const was = participantHealth(health, p);
     const h: HealthMark = { ...was };
+    if (p.metadata.healthGeneration) h.healthGeneration = p.metadata.healthGeneration;
     const complete = snapshots.every(slot => slot.complete);
     const identities = new Map(snapshots.map(slot => [JSON.stringify([slot.task, slot.participant]),
       { complete: slot.complete, ids: new Set(slot.ids) }]));

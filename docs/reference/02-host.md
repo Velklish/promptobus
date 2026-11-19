@@ -352,6 +352,8 @@ the tool-access boundary:
 Managed participant HTTP tools require the owner-realized actual native ID; a planned UUID or session-record pointer alone grants no tool access.
 <!-- /quote -->
 
+For a managed Claude reconnect, a missing client record does not tell you whether the generation check worked. The [unit fixture](../../test/managed-claude-genesis.test.mjs) keeps tokenless client metadata present and changes only `ref` or only `launchId` at the shared pointer. It checks a retired client separately. For the successor it supplies an initialized connection record and checks the participant journal before native startup evidence is published. These are synthetic inputs, including the unreadable registry observation; they do not establish a live reconnect, a public relift or native Stop.
+
 At the native child boundary, all four drivers remove inherited `BB_THREAD_ID`,
 `BB_ENVIRONMENT_ID`, `BB_PROJECT_ID` and `BB_THREAD_STORAGE` using the shared
 `PARENT_SESSION_ENV` list. These identify the parent, not the child.

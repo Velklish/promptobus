@@ -779,7 +779,9 @@ export function recoverTeamleadRebind(home: string, rootTask: string, address: s
       dropStaleWake(home, intent.childTask, ORCHESTRATOR, intent.sessionId);
       dropStaleWake(home, rootTask, address, intent.sessionId);
       if (owner.metadata.owner !== intent.sessionId || owner.metadata.sessionId !== intent.sessionId) {
-        upsertParticipant(home, intent.childTask, intent.childParticipant);
+        upsertParticipant(home, intent.childTask, { ...intent.childParticipant, metadata: {
+          ...intent.childParticipant.metadata, healthGeneration: intent.native?.launchId ?? intent.sessionId,
+        } });
         fault?.('teamlead-rebind-after-child');
       }
       if (lead.metadata.sessionId !== intent.sessionId) {
