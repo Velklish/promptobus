@@ -96,8 +96,10 @@ check('docs: declined Stop evidence preserves the non-start outcome and null exi
   && has(read('README.md'), 'its null exit stays null.')
   && has(read('CHANGELOG.md'), 'Keep its exit null and reject conflicting evidence during observation and receipt replay.'));
 
+const leaseSection = section(read('docs/reference/03-cli.md'), '## Lease');
 check('docs: the publisher result file belongs to the keyed-publication fixture, not the lease contract',
-  !has(section(read('docs/reference/03-cli.md'), '## Lease'), 'publisher result file')
+  has(leaseSection, 'promptobus lease [--as <address>]')
+  && !has(leaseSection, 'publisher result file')
   && has(section(read('docs/guides/contributing.md'), '## Suite isolation'),
     'Its publisher result file is a fixture artifact.'));
 
