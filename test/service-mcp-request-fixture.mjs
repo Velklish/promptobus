@@ -110,14 +110,19 @@ for (const endpoint of ['bus', 'reviewer_files']) {
   check(`${endpoint}: session flow, replay and ordinary receipt cleanup`, reads === 0 && !existsSync(directory));
 }
 
-{
+for (const [endpoint, expectedTool, foreignTool] of [
+  ['bus', 'promptobus_send', 'read_file'],
+  ['reviewer_files', 'read_file', 'promptobus_send'],
+]) {
   const { request, grant, file } = fixture({ nativeBinding: { kind: 'codex', state: 'pending' } });
-  const opened = await request('bus', init), session = opened.headers['mcp-session-id'];
-  await request('bus', initialized, session);
-  assert.equal((await request('bus', tool, session)).status, 403);
-  const result = await during(wait => request('bus', null, session, { readBody: async () => { await wait(); return { jsonrpc: '2.0', method: 'tools/list', id: 3 }; } }),
+  const opened = await request(endpoint, init), session = opened.headers['mcp-session-id'];
+  assert.deepEqual(await request(endpoint, initialized, session), { status: 202 });
+  assert.equal((await request(endpoint, tool, session)).status, 403);
+  const result = await during(wait => request(endpoint, null, session, { readBody: async () => { await wait(); return { jsonrpc: '2.0', method: 'tools/list', id: 3 }; } }),
     () => writePrivate(file, { ...grant, nativeBinding: { kind: 'codex', state: 'bound', threadId: 'realized' } }));
-  check('pending catalog accepts owner realization during body read', result.status === 200 && result.body.result.tools.length > 0);
+  const names = result.body?.result?.tools?.map(entry => entry.name) ?? [];
+  check(`${endpoint}: realization during body read returns its own catalog`, result.status === 200 && result.body.id === 3
+    && names.includes(expectedTool) && !names.includes(foreignTool), JSON.stringify({ status: result.status, names }));
 }
 
 for (const kind of ['standalone', 'BB']) {
