@@ -37,7 +37,7 @@ import { run } from '../lib/exec.js';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { writeHostConfig } from '../test/sandbox.mjs';
 import { CANARY_PREFIX, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
-import { refuseImportedEntry } from './live-entry.mjs';
+import { liveRoutingEnv, refuseImportedEntry } from './live-entry.mjs';
 
 refuseImportedEntry(import.meta.url);
 
@@ -171,7 +171,7 @@ if (tgz) note(`tarball ${tgzName} (${(statSync(tgz).size / 1024).toFixed(0)} KB)
 // PATH-only, so this canary leaves PATH unchanged for the version check and the
 // live run. An environment copy per call costs microseconds, and the canary has
 // a handful of calls.
-const childEnv = () => dropSessionLeaks({ ...process.env });
+const childEnv = () => dropSessionLeaks(liveRoutingEnv(RUN));
 
 const cli = (args, opts = {}) => spawnSync(process.execPath, [BIN, ...args], {
   cwd: ws, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, env: childEnv(), ...opts,

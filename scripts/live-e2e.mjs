@@ -24,7 +24,7 @@
 // listener puts only the "token matched" mark into the trace, not the token itself.
 import { mkdtempSync } from 'node:fs';
 import { finishLiveArgs, parseLiveArgs } from './live-args.mjs';
-import { guardStubLaunch, refuseImportedEntry } from './live-entry.mjs';
+import { guardStubLaunch, liveRoutingEnv, refuseImportedEntry } from './live-entry.mjs';
 import path from 'node:path';
 import process from 'node:process';
 import os from 'node:os';
@@ -202,6 +202,7 @@ try {
     check,
     harness,
     sandbox: SB,
+    env: liveRoutingEnv(SB),
     workspace: WS,
     timeouts: { step: 300000, stall: 300000 },
     trace: (line) => process.stdout.write(`  · ${line}\n`),

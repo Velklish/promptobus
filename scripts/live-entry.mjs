@@ -12,6 +12,10 @@ const PATH_SEAL = 'PROMPTOBUS_TEST_PATH_SEAL';
 
 const USER_HARNESS_DIRS = ['.cursor', '.codex', '.claude', '.promptobus'];
 
+export function liveRoutingEnv(sandbox, env = process.env) {
+  return { ...env, PROMPTOBUS_ROUTING_STATE_DIR: path.join(sandbox, 'model-routing') };
+}
+
 export function isDirectLiveEntry(metaUrl, argv = process.argv) {
   const entry = argv[1];
   if (!entry || !metaUrl) return false;

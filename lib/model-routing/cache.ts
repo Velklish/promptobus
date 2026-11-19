@@ -115,8 +115,11 @@ function withCacheLock<T>(file: string, body: (held: boolean) => T): T {
         break;
       } catch (e) {
         if ((e as NodeJS.ErrnoException | null | undefined)?.code !== 'EEXIST') break;
-        let age = Infinity;
-        try { age = Date.now() - statSync(lock).mtimeMs; } catch { age = Infinity; }
+        let age: number;
+        try { age = Date.now() - statSync(lock).mtimeMs; } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT' && Date.now() < deadline) continue;
+          break;
+        }
         if (age > LOCK_STALE_MS) {
           rmSync(lock, { force: true });
           continue;

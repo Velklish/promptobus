@@ -498,6 +498,7 @@ export function notificationMark(home, task, addr) {
 
 export async function runScenario({
   check, harness, sandbox, workspace = null, timeouts = {}, trace = () => {}, reviewRounds = 1, listenSocket = null,
+  env = process.env,
 }) {
   harness.assertRunning?.();
   const step = timeouts.step ?? 30000;
@@ -549,7 +550,7 @@ export async function runScenario({
   }
 
   const service = await taskServiceFixture({ workspace: ws, home, task: TASK,
-    socketDirectory: path.dirname(orchSock), mechanismRoot: MECHANISM_ROOT });
+    socketDirectory: path.dirname(orchSock), mechanismRoot: MECHANISM_ROOT, env });
   harness.resource?.(() => service.close());
   const orchEnv = {
     ...service.env,

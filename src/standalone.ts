@@ -39,6 +39,7 @@ const VERSION_READ_MS = 5_000;
 export interface StandaloneHostOptions {
   cwd?: string;
   home?: string;
+  routingStateDir?: string;
   id?: string;
   commandName?: string;
   version?: string;
@@ -187,6 +188,10 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
   const binPath = options.binPath ?? fileURLToPath(new URL('../bin/promptobus.js', import.meta.url));
   const extra = { ...(options.extraEnv ?? {}) };
   const home = options.home ?? homeOfRoot(root);
+  const routingStateDir = options.routingStateDir;
+  if (routingStateDir !== undefined && !path.isAbsolute(routingStateDir)) {
+    throw new TypeError('Standalone routing state directory must be absolute');
+  }
   const tools = Array.isArray(config.tools) ? config.tools.map(String) : [];
   const ruleFiles = Array.isArray(config.rules) ? config.rules.map(String) : [];
   const mcp = config.mcp && typeof config.mcp === 'object' ? config.mcp : {};
@@ -215,10 +220,8 @@ export function createStandaloneHost(options: StandaloneHostOptions = {}): Promp
       const foundRoot = existsSync(path.join(hit.root, HOST_CONFIG)) ? hit.root : path.resolve(cwd);
       return canonicalPath(foundRoot);
     },
-    // Routing files of a standalone workspace: the user home carries the account's cache and `user`
-    // overlay, the store home the workspace layer the tool writes. A consumer inserts its own between.
     routingPaths: (): HostRoutingPaths => ({
-      cacheFile: path.join(os.homedir(), ROUTING_HOME, ROUTING_DIR, ROUTING_CACHE),
+      cacheFile: path.join(routingStateDir ?? path.join(os.homedir(), ROUTING_HOME, ROUTING_DIR), ROUTING_CACHE),
       overlays: [
         { id: 'user', path: path.join(os.homedir(), ROUTING_HOME, ROUTING_OVERLAY) },
         // The workspace layer is STATE the tool writes, so it lives in this package's own directory

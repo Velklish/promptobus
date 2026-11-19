@@ -20,7 +20,8 @@ export async function taskServiceFixture({ workspace, home, task, socketDirector
     import(path.join(mechanismRoot, 'lib/service-client.js')),
   ]);
   const version = JSON.parse(readFileSync(path.join(mechanismRoot, 'package.json'), 'utf8')).version;
-  const host = createStandaloneHost({ cwd: workspace, binPath: realpathSync(path.join(mechanismRoot, 'bin/promptobus.js')), version });
+  const host = createStandaloneHost({ cwd: workspace, binPath: realpathSync(path.join(mechanismRoot, 'bin/promptobus.js')),
+    version, routingStateDir: env.PROMPTOBUS_ROUTING_STATE_DIR });
   const ownedEnv = { ...env, PROMPTOBUS_HOME: home,
     PROMPTOBUS_SERVICE_HOME: path.join(realpathSync(socketDirectory), 'service') };
   const options = { cwd: workspace, env: ownedEnv };
