@@ -20,14 +20,14 @@ function fixture(t, { owner = OLD, held = PEER, peerFields = { sessionId: NEXT, 
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const home = path.join(dir, '.promptobus');
   const engine = store.bus(home, { cli: version });
-  store.createTask(home, { id: ROOT, title: 'Original governed run', owner });
+  store.createTask(home, { id: ROOT, title: 'Original governed run', owner, adapter: { slug: 'original' } });
   const original = store.participantOf(store.readTask(home, ROOT), 'orchestrator');
   store.upsertParticipant(home, ROOT, {
     ...original, harness: 'codex', mode: 'managed', sessionRef: 'synthetic-original-root',
     metadata: { ...original.metadata, sessionId: OLD, nativeLaunchId: 'synthetic-original-launch',
       nativeStop: { launchId: 'synthetic-original-launch', threadId: OLD } },
   });
-  store.createTask(home, { id: OWN, title: 'Actual successor endpoint', owner: NEXT });
+  store.createTask(home, { id: OWN, title: 'Actual successor endpoint', owner: NEXT, adapter: { slug: 'bb-controller' } });
   store.createTask(home, { id: CHILD, title: 'Preserved lead', owner: 'original-lead-session', parent: ROOT, teamlead: 'teamlead:lead' });
   store.upsertParticipant(home, ROOT, store.participantRecord(held, peerFields));
   store.upsertParticipant(home, CHILD, store.participantRecord(PEER, { sessionId: NEXT, peerTask: OWN }));
@@ -36,7 +36,7 @@ function fixture(t, { owner = OLD, held = PEER, peerFields = { sessionId: NEXT, 
     engine.sendSync(task, { from: 'worker-report', to: ['orchestrator'], type: 'status', body: `Original payload for ${task}` });
   }
   const joins = [];
-  const connect = ({ session = NEXT, role = 'orchestrator', declaredTask = OWN } = {}) => createMcpServer({
+  const connect = ({ session = NEXT, role = 'orchestrator', hint = role, declaredTask = OWN } = {}) => createMcpServer({
     service: {
       ...store.busService,
       resolveTaskId: (home, task, session) => store.resolveTaskId(home, task, session, {
@@ -44,7 +44,7 @@ function fixture(t, { owner = OLD, held = PEER, peerFields = { sessionId: NEXT, 
       }),
     },
     protocolVersions: ['2025-03-26'],
-    resolveIdentity: () => ({ home, role, declaredTask, session }),
+    resolveIdentity: () => ({ home, role, hint, declaredTask, session }),
     serverInfo: () => ({ name: 'synthetic-claim-regression', version }),
     onJoin: join => { joins.push(join); },
     decorateParticipant: () => [],
@@ -52,7 +52,7 @@ function fixture(t, { owner = OLD, held = PEER, peerFields = { sessionId: NEXT, 
     errorText: event => event.cause?.message ?? event.kind,
   }).connect();
   const call = (connection, args, name = 'promptobus_mailbox') => connection.handle({
-    jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: { task: ROOT, ...args } },
+    jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args === undefined ? {} : { task: ROOT, ...args } },
   });
   const text = result => result.result?.content?.map(item => item.text ?? '').join('\n') ?? '';
   const ownerOf = task => store.taskOwner(home, task);
@@ -92,10 +92,37 @@ test('explicit root orchestrator claim reaches root despite the actual session h
 
 test('ordinary root mailbox call still reads the held peer without taking root mail', t => {
   const f = fixture(t);
+  const id = store.addrDir(PEER);
+  store.upsertParticipant(f.home, OWN, store.participantRecord('peer:original', { peerTask: ROOT, sessionId: OLD }));
+  f.engine.sendSync(ROOT, { from: 'orchestrator', to: [id], type: 'status', body: 'Only in the peer inbox' });
+  assert.equal(f.engine.unread(ROOT, id), 1);
   const result = f.call(f.connect(), {});
+  assert.match(f.text(result), /Only in the peer inbox/);
   assert.doesNotMatch(f.text(result), /MAILBOX CLAIMED|Original payload/);
+  assert.equal(f.engine.unread(ROOT, id), 0);
   f.unchanged();
 });
+
+test('default orchestrator with no role declaration cannot claim from the peer', t => {
+  const f = fixture(t);
+  assert.match(f.text(f.call(f.connect({ hint: null }), { claim: true })), /claim is for the orchestrator address/);
+  f.unchanged();
+});
+
+for (const declaredTask of [OWN, null]) {
+  test(`claim reply agrees with taskless follow-up when declared task is ${declaredTask}`, t => {
+    const f = fixture(t);
+    const connection = f.connect({ declaredTask });
+    const reply = f.text(f.call(connection, { claim: true }));
+    assert.match(reply, /MAILBOX CLAIMED/);
+    assert.equal(store.boundTaskId(f.home, NEXT), ROOT);
+    if (declaredTask) {
+      assert.ok(reply.includes(`declared task ${OWN} still takes precedence`));
+      assert.doesNotMatch(reply, /from now on the task resolves without an argument/);
+    } else assert.match(reply, /from now on the task resolves without an argument/);
+    assert.ok(f.text(f.call(connection, undefined, 'promptobus_task')).startsWith(`task ${declaredTask ?? ROOT} ·`));
+  });
+}
 
 for (const role of [PEER, 'worker:report', 'teamlead:lead']) {
   test(`claim declared as ${role} does not acquire root ownership`, t => {

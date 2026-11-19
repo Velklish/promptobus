@@ -135,7 +135,8 @@ export function createMcpServer(options: McpOptions): {
   }
 
   // Successor claiming the mailbox. Refusals are loud: a silent refusal would read as success.
-  function claim(home: string, task: string, addr: string, session: string | null, own: Ownership, box: Mailbox | undefined): string {
+  function claim(identity: McpIdentity, task: string, addr: string, own: Ownership, box: Mailbox | undefined): string {
+    const { home, session, declaredTask } = identity;
     if (box?.alias) {
       return `${addr} in task ${task} is an address alias of orchestrator of task ${box.primary.task}: claim that mailbox `
         + `by naming task ${box.primary.task} · ${service.identityLabel(home, task, addr, session)}`;
@@ -156,14 +157,14 @@ export function createMcpServer(options: McpOptions): {
       return `task ${task} has no owner — there is no gate, and nothing to claim: it was created `
         + `by the former CLI. Read with an ordinary call, without claim · ${service.identityLabel(home, task, addr, session)}`;
     }
-    // A claim is also a rebind: both the owner and the declared task are written.
+    // A claim updates the session binding, not the adapter's declaration.
     const mine = own.owner === session;
     if (mine) service.bindSession(home, task, session);
     const previous = mine ? null : service.claimOwnership(home, task, session);
-    // "From now on without an argument" — only for an ACTIVE task: claiming a
-    // closed one is lawful, but only an active one is bound.
     const bound = service.readTask(home, task).status === 'active';
-    const tail = bound ? ' — from now on the task resolves without an argument' : '';
+    const tail = !bound ? '' : declaredTask && declaredTask !== task
+      ? ` — without a task argument the declared task ${declaredTask} still takes precedence; name ${task} explicitly`
+      : ' — from now on the task resolves without an argument';
     const head = mine
       ? `mailbox is already bound to this session ${session}${bound ? ', binding updated' : ''}${tail}`
       : `${MAILBOX_CLAIMED_MARK}: the orchestrator address of task ${task} is bound to this session ${session}, `
@@ -224,7 +225,7 @@ export function createMcpServer(options: McpOptions): {
         // The record this session holds in the named task picks the mailbox (ADR-028).
         let addr = service.mailboxAddress?.(home, task, role, session) ?? role;
         if (args?.claim === true && typeof args.task === 'string' && args.task.trim() === task
-          && session && role === ORCHESTRATOR && addr.startsWith('peer:')) {
+          && session && role === ORCHESTRATOR && identity.hint === ORCHESTRATOR && addr.startsWith('peer:')) {
           const meta = service.readTask(home, task);
           const peer = meta.participants.find(p => addressOf(p) === addr);
           if (meta.parent === undefined && peer?.role === 'peer' && typeof peer.metadata?.peerTask === 'string'
@@ -239,7 +240,7 @@ export function createMcpServer(options: McpOptions): {
             throw new GateError('promptobus_mailbox takes "claim" or "message", not both — claim the mailbox first, '
               + 'then ask the body by its id');
           }
-          return claim(home, task, addr, session, own, box);
+          return claim(identity, task, addr, own, box);
         }
         // No session is not proved foreign, and this fetch still must not take the mail.
         const peek = own.gated || own.right === 'no-identity';
