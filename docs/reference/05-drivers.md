@@ -2198,6 +2198,16 @@ warden's one-second round costs one `fstat` while nothing is written.
 
 ## BB constrained Codex reviewer
 
+For numbered reviewer reports, the BB task owner can reread an acknowledged status
+by its retained message id with `promptobus_mailbox {"mode":"review-part","id":"MESSAGE_ID"}`.
+The Host reads one ref in the authenticated owner's task and mailbox. It checks the regular
+file's size on the open descriptor before reading: 16 KiB allows a 2400-code-unit body
+even with six-byte JSON escapes and room for the review envelope. Oversized, incomplete,
+invalid or mismatched records return no part. The CLI history preview
+is not the body. The owner still checks assignment, sender, token, order, completeness and release.
+A validated terminal release requires the owner to retire that grant before answering or resuming;
+the participant's declaration alone does not change published control.
+
 The BB integration supplies `promptobus-codex-reviewer` separately from the native
 Driver registry. It uses BB's provider bridge lifecycle and one Codex app-server
 per session. The built-in BB `codex` provider has no public per-role read-only

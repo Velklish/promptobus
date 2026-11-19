@@ -26,6 +26,21 @@ host, provider and canonical participant token. The host entry uses `openEngine`
 and checks the canonical participant before any bound operation. No store schema
 migration or native Driver session is introduced.
 
+**Acknowledged review parts (owner decision, 2026-11-20).** The owner approved
+one read-only exception to inbox-only delivery: the current task owner can
+retrieve one already acknowledged numbered status from a BB reviewer in the same
+task, by its retained canonical id. This grants neither discovery nor history
+access to another role. Keep the full body and id on first read; rereading a
+part does not certify report completeness, acceptance or renewed reviewer authority.
+
+Source inspection of the ATI Agent Workspace consumer (installed version 0.108.0,
+Promptobus 0.33.1; consumer checkout `f303b94e8b7e3e795d63906bcd5ce94b3e99d1f0`)
+found a native mailbox server in the canonical catalog, but no adapter proving
+that its session and mailbox authority derive from this BB recipient. The stock
+CLI renders a preview; artifact provenance reads and the native observer dashboard
+do not give a participant that authority. Optional consumer Host adapters may
+differ. This finding is based on code, not a query to a participant journal.
+
 The server reserves a pending participant, then requests an SDK thread. A
 `message.dispatch` hook holds its first assignment until the returned thread is
 verified, its opaque sessionRef is finalized on the host, and the binding becomes

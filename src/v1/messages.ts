@@ -1,7 +1,7 @@
 // Messages: names, order and what a read marks.
 // [reference/04-protocol.md#messages-names-order-and-what-a-read-marks](../../docs/reference/04-protocol.md#messages-names-order-and-what-a-read-marks)
 import {
-  existsSync, linkSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync,
+  closeSync, constants, existsSync, fstatSync, linkSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -350,6 +350,29 @@ export function readInbox(home: string, task: string, participant: string, fault
 // history/<participant> is created lazily, like inbox: the directory appears with the first read.
 export function ensureHistoryDir(home: string, task: string, participant: string): void {
   mkdirSync(historyDir(home, task, participant), { recursive: true });
+}
+
+export function acknowledgedMessage(home: string, task: string, participant: string, id: string): MessageV1 {
+  const file = historyRef(realpathSync(home), task, participant, id);
+  if (realpathSync(file) !== file) throw new Error('Acknowledged message path mismatch');
+  const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const opened = fstatSync(fd);
+    if (!opened.isFile() || opened.size > 16 * 1024) throw new Error('Acknowledged message exceeds bounded regular-file read');
+    const bytes = Buffer.alloc(opened.size);
+    for (let offset = 0; offset < bytes.length;) {
+      const count = readSync(fd, bytes, offset, bytes.length - offset, offset);
+      if (!count) throw new Error('Acknowledged message changed during read');
+      offset += count;
+    }
+    const after = fstatSync(fd);
+    if (after.size !== opened.size || after.ctimeMs !== opened.ctimeMs) throw new Error('Acknowledged message changed during read');
+    const record: MessageV1 = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    if (!validate('message', record).ok || record.id !== id || record.task !== task || !record.recipients.includes(participant)) {
+      throw new Error('Acknowledged message missing or mismatched');
+    }
+    return record;
+  } finally { closeSync(fd); }
 }
 
 /** History query. `all` lifts the limit whole; `before` — a cursor for paged reading. */

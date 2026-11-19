@@ -185,7 +185,18 @@ export async function engineOperation(input: unknown) {
       participant: b.participant, role: b.role, assignmentAfterId: participant.metadata.assignmentAfterId ?? null,
       ...(metadata.reviewEvidence ? { reviewEvidence: metadata.reviewEvidence } : {}),
       contacts: task.participants.map(p => ({ id: p.id, role: p.role, threadId: p.sessionRef })) };
-    case 'mailbox': return request.args.mode === 'read' ? engine.read(b.task, b.participant) : engine.peek(b.task, b.participant);
+    case 'mailbox': {
+      if (request.args.mode !== 'review-part') return request.args.mode === 'read' ? engine.read(b.task, b.participant) : engine.peek(b.task, b.participant);
+      if (b.role !== ORCHESTRATOR || task.owner !== b.participant) throw new Error('Review part lookup requires the bound task owner');
+      const authority = readCurrentControl(b);
+      if (authority.outcome !== 'allowed') throw new Error(authority.message);
+      const message = engine.acknowledgedMessage(b.task, b.participant, request.args.id!);
+      const marker = /^Review \S+ part ([1-9]\d*)\/([1-9]\d*)\n/.exec(message.body);
+      if ((message.originTask && message.originTask !== b.task) || message.type !== 'status' || message.body.length > 2400 || !marker
+        || !Number.isSafeInteger(Number(marker[2])) || Number(marker[1]) > Number(marker[2])
+        || !task.participants.some(p => p.id === message.sender && p.role === REVIEWER && p.harness === 'bb' && p.mode === 'managed')) throw new Error('Not an acknowledged BB review part');
+      return message;
+    }
     case 'artifact': {
       const artifact = engine.readArtifact(b.task, request.args.id);
       if (artifact.size > 1_000_000) throw new Error('Artifact exceeds the BB tool read limit');

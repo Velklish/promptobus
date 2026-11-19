@@ -175,12 +175,12 @@ for (const role of ['orchestrator', 'approver', 'worker']) {
     if (role === 'orchestrator') {
       assert.match(rendered, /Persist[^.]*authenticated actor[^.]*immutable authorization token[^.]*exact command scope[^.]*all preconditions[^.]*before[^.]*task create[^.]*participant dispatch/i,
         `${role}: prebound text contract persists the complete grant before reservation or dispatch`);
-      assert.match(rendered, /Keep the actor slot until the exact all-calls release is acknowledged, or an official task-owned stop\/pause is verified/i,
-        `${role}: retain text contract holds the actor slot until acknowledgment or verified Stop`);
+      assert.match(rendered, /Acknowledgement or verified task-owned Stop alone does not retire a grant/i,
+        `${role}: neither acknowledgement nor Stop substitutes for retirement`);
       assert.match(rendered, /all-calls release identifies actor, token and completed scope and confirms pending and running calls are zero/i,
         `${role}: exactRelease text contract requires exact identity, scope and drained calls`);
-      assert.match(rendered, /Validate it against current control before acknowledging it and reallocating the actor slot/i,
-        `${role}: exactRelease text contract validates current control before acknowledgment or reallocation`);
+      assert.match(rendered, /Validate it against current control\. Before reallocating the actor slot, confirm retirement of the exact grant by revision-checked publication/i,
+        `${role}: validate release against current control and retire by revision before reallocation`);
       assert.match(rendered, /Sent Hold[^.]*sent or queued are not acknowledgments[^.]*read or applied/i,
         `${role}: retain text contract distinguishes delivery from acknowledgment`);
       assert.match(rendered, /official task-owned participant stop\/pause route[^.]*verify fresh actual status, paused delivery and zero pending\/running calls before reassigning/i,
