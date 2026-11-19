@@ -132,7 +132,12 @@ test('identity and scope are required on fresh reads and continuations', async (
   assert.equal(refused.status, 1);
   assert.equal(refused.stdout, '');
   assert.match(refused.stderr, /bound orchestrator command identity/);
-  const admitted = cli(cwd, ['--task', root], ownerEnv);
+  const leaked = { CODEX_THREAD_ID: 'synthetic-foreign-thread', PROMPTOBUS_ROLE: 'worker:synthetic' };
+  const saved = Object.keys(leaked).map((name) => [name, process.env[name]]);
+  Object.assign(process.env, leaked);
+  let admitted;
+  try { admitted = cli(cwd, ['--task', root], ownerEnv); }
+  finally { for (const [name, value] of saved) if (value === undefined) delete process.env[name]; else process.env[name] = value; }
   assert.equal(admitted.status, 0, admitted.stderr);
   assert.deepEqual(JSON.parse(admitted.stdout).messages.map((m) => m.id), [id]);
   await assert.rejects(observe(host, { task: root }, { ...ownerEnv, PROMPTOBUS_HOME: cwd }), /declared store scope differs/);
