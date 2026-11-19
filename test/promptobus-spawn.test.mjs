@@ -566,6 +566,12 @@ const cliRun = (args, env = {}) => {
   return { status: r.status, text: `${r.stdout}${r.stderr}` };
 };
 const noStack = (run) => run.status === 1 && !/\n\s+at /.test(run.text) && !/^Error:/m.test(run.text);
+const launchHelp = cliRun(['--help']);
+const workerHelp = launchHelp.text.split('spawn --repo')[1]?.split('spawn --teamlead')[0] ?? '';
+check(': CLI help separates Codex worker permission modes from the managed lead profiles',
+  launchHelp.status === 0 && workerHelp.includes('Codex worker permission modes: read-only, workspace-write;')
+  && !workerHelp.includes('full-access')
+  && launchHelp.text.includes('A Codex teamlead also takes --permission-mode full-access'), launchHelp.text);
 const EMPTY_BRIEF = path.join(SB, 'empty-brief.md');
 writeFileSync(EMPTY_BRIEF, '');
 const briefRefusals = [
@@ -607,6 +613,15 @@ const badMode = cliRun([
 check(': spawn --permission-mode with an unknown value refuses without a stack and names the list',
   noStack(badMode) && /--permission-mode: unknown value "svoy"/.test(badMode.text) && /bypassPermissions/.test(badMode.text),
   `status=${badMode.status} ${badMode.text}`);
+
+const codexWorkerMode = cliRun([
+  'spawn', '--repo', 'orders-api', '--brief', BRIEF, '--task', TASK,
+  '--harness', 'codex', '--worker', 'bad-codex-mode', '--permission-mode', 'full-access', '--dry-run',
+]);
+check(': Codex worker preflight rejects full-access without recording a participant',
+  noStack(codexWorkerMode)
+  && codexWorkerMode.text.includes('--permission-mode: unknown value "full-access" — allowed: read-only, workspace-write')
+  && !store.participantOf(store.readTask(HOME, TASK), 'worker:bad-codex-mode'), codexWorkerMode.text);
 
 const badWorker = cliRun([
   'promptobus', 'spawn', '--repo', 'orders-api', '--brief', BRIEF, '--task', TASK,
@@ -1385,7 +1400,7 @@ check(': the install log sits next to the directory and carries npm output',
   existsSync(lockLog) ? readFileSync(lockLog, 'utf8') : `no ${lockLog}`);
 check(': a successful install is named in the worker preamble and need not be repeated',
   String(lockRun?.prompt).includes(`Worktree dependencies were installed in this worktree: ${npmCiCommand()} already ran; `
-    + 'you do not need to run it again before you work.'),
+    + 'you do not need to run it again at the root before you work.'),
   String(lockRun?.prompt).split('\n').find((l) => /Worktree dependencies/.test(l)) ?? String(lockRun?.prompt));
 
 // A repeat spawn keeps the surviving worktree and does not rerun or check its dependencies.
@@ -1648,6 +1663,20 @@ check(': the preamble names the failure and the exit code',
   && /exited with code 3/.test(String(badRun?.prompt)),
   String(badRun?.prompt ?? '').split('\n').slice(0, 6).join(' / '));
 
+writeFileSync(path.join(BAD_REPO, 'promptobus.json'), JSON.stringify({
+  generate: ['node', '-e', 'console.log("generator stdout"); require("./missing-generator-fixture.cjs")'],
+}));
+const crash = runRepoGenerator({ worktreePath: BAD_REPO });
+const crashOut = await capture(() => sayRepoSkills(crash));
+const crashLog = readFileSync(crash.logPath, 'utf8');
+check(': a crashing Node generator names the cause and preserves stdout, stack and version in the log',
+  crash.kind === 'failed' && crash.code === 1
+  && /exited with code 1: Error: Cannot find module '.\/missing-generator-fixture\.cjs'/.test(crash.why)
+  && crashOut.includes(crash.why) && !crashOut.includes('Node.js v')
+  && repoSkillsLine(crash).includes(crash.why)
+  && crashLog.includes('generator stdout') && crashLog.includes('Require stack:') && crashLog.includes('Node.js v'),
+  `${crashOut}\n${crashLog}`);
+
 // A declaration that is there but unusable is its own state, in the plan and in the
 // preamble alike. Reading it as "no generator" would print the opposite of what the
 // participant is told, and hide the reason a repository's skills went missing (review).
@@ -1729,6 +1758,9 @@ writeFileSync(path.join(DEPS_GEN_REPO, 'package.json'), `${JSON.stringify({ name
 writeFileSync(path.join(DEPS_GEN_REPO, 'package-lock.json'), `${JSON.stringify({
   name: 'gen-deps', lockfileVersion: 3, requires: true, packages: {},
 })}\n`);
+const nestedPackage = path.join('integrations', 'bb');
+mkdirSync(path.join(DEPS_GEN_REPO, nestedPackage), { recursive: true });
+writeFileSync(path.join(DEPS_GEN_REPO, nestedPackage, 'package-lock.json'), '{"lockfileVersion":3}\n');
 writeFileSync(path.join(DEPS_GEN_REPO, '.gitignore'), `node_modules\n${ADAPTER}\n`);
 writeFileSync(path.join(DEPS_GEN_REPO, 'promptobus.json'), `${JSON.stringify({
   generate: ['node', GEN_TOOL],
@@ -1761,6 +1793,11 @@ check(': the preamble names both outcomes, and the plan says the generator follo
   && /Worktree dependencies were installed in this worktree/.test(String(depsGenRun?.prompt))
   && /after the checkout and any dependency install/.test(depsGenPlan.prompt),
   String(depsGenRun?.prompt ?? '').split('\n').filter((l) => /Repository process skills|Worktree dependencies/.test(l)).join(' / '));
+check(': a clean lift does not claim to have set up separately locked packages',
+  existsSync(path.join(depsGenPlan.worktreePath, nestedPackage, 'package-lock.json'))
+  && !existsSync(path.join(depsGenPlan.worktreePath, nestedPackage, 'node_modules'))
+  && String(depsGenRun?.prompt).includes('Separately locked packages may need their own setup; follow the repository instructions.'),
+  String(depsGenRun?.prompt ?? ''));
 // Missing configuration is a different verdict from a gap: a locked repository that declares
 // nothing gets its install and no generator, and is told there was none.
 check(': a repository with a lock and no declaration installs dependencies and runs no generator',

@@ -1440,6 +1440,8 @@ export function runRepoGenerator({ worktreePath }: { worktreePath: string }, { f
   const before = new Set(worktreeDirt(worktreePath) ?? []);
   const result = runLogged(declared.argv, {
     cwd: worktreePath, timeout: PROC_INSTALL_TIMEOUT_MS, logPath, exec,
+    summarize: (output) => output.split(/\r?\n/)
+      .find((line) => /^(?:[A-Za-z]*Error|Error \[[A-Z_]+\]):\s+\S/.test(line))?.slice(0, 400),
   });
   // What the generator leaves is checked only after a successful run, net of what the install left.
   if (result.status === 0) {
@@ -1528,7 +1530,8 @@ export function worktreeDepsLine(state: WorktreeDepsState | null | undefined) {
   const command = state.command ?? npmCiCommand();
   if (state.ok) {
     return `Worktree dependencies were installed in this worktree: ${command} already ran; `
-      + 'you do not need to run it again before you work.';
+      + 'you do not need to run it again at the root before you work. '
+      + 'Separately locked packages may need their own setup; follow the repository instructions.';
   }
   return `Worktree dependencies were NOT installed: ${state.why ?? 'the install was refused'}; run ${command} by hand `
     + 'before you work, and say so in your first status.';

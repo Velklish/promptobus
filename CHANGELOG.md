@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- An approver refusal for a subject without a current reviewer result now lists reviewed subjects in the same task and their exact lift commands. The approver's recorded harness remains immutable.
+- Participant setup now reports the exception behind a crashed repository generator and distinguishes the root dependency install from separately locked packages. CLI help lists the ordinary Codex worker permission modes.
+
 - Check the consumed Codex app-server protocol against 0.170.0; the minimum remains 0.158.0.
 
 - Declare BB `>=0.50.1 <0.51` and Plugin SDK `>=0.6.157` for both BB plugins instead of one exact pair, so a BB patch release no longer disables them; a new BB minor line still needs a release. The build pins SDK 0.6.157. Source checks do not establish an installed live workflow.

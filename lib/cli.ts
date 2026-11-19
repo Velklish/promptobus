@@ -92,6 +92,7 @@ Participant launch options: --context-purpose technical|user-facing|author-voice
             [--harness <h>] [--strategy <s>] [--allow-payg] [--refresh] [--dry-run]
                               start a worker — a session in a repository directory
                               connected to the Promptobus bus (run only with approval);
+                              Codex worker permission modes: read-only, workspace-write;
                               --harness must be declared in the workspace tool manifest;
                               --title is the title of this SLICE of work; --task-title is
                               the TASK title; without --task, spawn attaches the worker to

@@ -192,7 +192,7 @@ function validateApproverPreconditions(host: PromptobusHost, {
   const taskMeta = readTask(home, task);
   const pipeline = pipelineOf(host);
   const { slug, address } = approverFor(pipeline[0], taskMeta, repoDir, clone, stepName);
-  requireStepResults(host, { home, taskId: task, taskMeta, stepName, slug, repoDir });
+  requireStepResults(host, { home, taskId: task, taskMeta, stepName, slug, repoDir, reviewCommands: host });
   const previous = pipeline[pipeline.findIndex((step) => step.name === stepName) - 1];
   const reviewAddr = `${previous.name}:${slug}`;
   const participant = participantOf(taskMeta, address);

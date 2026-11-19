@@ -819,12 +819,32 @@ check(': approver record separates the durable clone and the review subject',
   JSON.stringify(liveApprover?.metadata));
 
 const wrongSubject = thrown(() => planApprover(LIVE_WS, { target: LIVE_REPO, task: LIVE_TASK, dryRun: true }));
-check(': a clone-root approver lift names the path it got and the reviewer subject that would work',
+const reviewedCommand = `promptobus review ${LIVE_WT} --approver --task ${LIVE_TASK}`;
+check(': a clone-root approver lift refuses and gives the exact command for the reviewed worktree',
   wrongSubject.threw
   && wrongSubject.msg.includes(LIVE_REPO)
-  && wrongSubject.msg.includes(`reviewer:promptobus`)
-  && /no participant is recorded/.test(wrongSubject.msg),
+  && /type=result message from reviewer:promptobus.*no participant is recorded/.test(wrongSubject.msg)
+  && wrongSubject.msg.split('\n').includes(`  ${LIVE_WT}: ${reviewedCommand}`),
   wrongSubject.msg);
+const staleTask = 'reviewed-subject-with-stale-result';
+store.createTask(LIVE_HOME, { id: staleTask, title: 'stale review', status: 'active' });
+recordOwnerResult(LIVE_HOME, staleTask, LIVE_WT, 'warden');
+assignParticipant(LIVE_HOME, staleTask, store.participantRecord('reviewer:warden', {
+  harness: 'claude', reviewSubject: LIVE_WT,
+}));
+store.sendMessage(LIVE_HOME, staleTask, {
+  from: 'reviewer:warden', to: store.ORCHESTRATOR, type: 'result', body: 'earlier round',
+});
+store.sendMessage(LIVE_HOME, staleTask, {
+  from: store.ORCHESTRATOR, to: 'reviewer:warden', type: 'task', body: 'review again',
+});
+const noCurrentSuggestion = thrown(() => planApprover(LIVE_WS, { target: LIVE_REPO, task: staleTask, dryRun: true }));
+const noCurrentResult = thrown(() => planApprover(LIVE_WS, { target: LIVE_WT, task: staleTask, dryRun: true }));
+check(': stale results and a current result in another task do not supply a hint or unlock the gate',
+  noCurrentSuggestion.threw && !noCurrentSuggestion.msg.includes(LIVE_WT)
+  && noCurrentResult.threw && /no result is recorded after its current assignment/.test(noCurrentResult.msg)
+  && !noCurrentResult.msg.includes('--approver --task'),
+  `${noCurrentSuggestion.msg}\n${noCurrentResult.msg}`);
 
 const BRIEF_TASK = 'pb250-brief';
 const BRIEF_FILE = path.join(LIVE, 'assign.md');

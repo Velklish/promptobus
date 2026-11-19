@@ -397,6 +397,21 @@ const generatorArgv = (() => {
 })();
 const agentsDoc = read('AGENTS.md');
 const contributingDoc = read('docs/guides/contributing.md');
+const approverRecovery = section(cli, '### Approver harness recovery');
+check('docs: changing harness requires a fresh owned approver subject, not changing the old participant',
+  has(approverRecovery, 'An existing approver keeps its original harness even after it stops.')
+  && has(approverRecovery, 'refused before native launch; that refusal is not evidence of a model or native outage.')
+  && has(approverRecovery, 'Repeat-reviewer rebind rules do not apply to approvers.')
+  && has(approverRecovery, 'explicit owner authorization for a fresh owned subject for the same card, fresh results for that subject, and the intended harness selected on its first approver lift.')
+  && has(approverRecovery, 'The exact end-to-end recovery sequence is not verified here.')
+  && has(approverRecovery, 'Do not edit, claim or relift the old approver on a different harness.')
+  && has(approverRecovery, 'Evidence from the fresh subject cannot serve as Stop proof for the old generation.'),
+  approverRecovery);
+check('docs: manual worktrees restore root readiness before adapter lint; BB still needs its own install',
+  has(agentsDoc, 'In a checkout you made yourself, run `npm ci` and then `init`')
+  && has(contributingDoc, 'Before running BB integration checks in either a lifted or manually created worktree, run `npm --prefix integrations/bb ci --no-audit --no-fund`')
+  && has(read('integrations/bb/README.md'), 'A lifted Promptobus worktree installs root dependencies, not this separately locked package.'),
+  'manual root setup and separately locked integration setup serve different purposes');
 check('docs: this checkout restores its generated adapters with the command its promptobus.json declares',
   generatorArgv !== null
   && has(agentsDoc, `are written by \`${generatorArgv}\` and are not tracked`)
