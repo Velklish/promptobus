@@ -12,6 +12,8 @@ import * as store from '../lib/store.js';
 import { registerWake } from '../lib/driver-claude.js';
 import { KNOCK_RETRY_SEC, wardenRound } from '../lib/warden.js';
 import { buildDigest } from '../lib/digest.js';
+import { captureSplit } from './console.mjs';
+import { status } from '../lib/status.js';
 import { guardVerdict } from '../lib/guard.js';
 import { sweepJournals } from '../lib/prune.js';
 
@@ -423,6 +425,37 @@ test('after a claim on the child, mail to teamlead:<slug> stays unread in the ro
   const reply = JSON.parse(ran.stdout.split('\n')[0]).result.content[0].text;
   assert.match(reply, /^empty/, reply);
   assert.equal(store.countInbox(home, ROOT, 'teamlead:group-four'), 2, 'both stay in the root slot');
+});
+
+for (const tagged of [false, true]) test(`child claim isolates recorded and late knock refusals (${tagged ? 'tagged' : 'legacy'} health)`, async () => {
+  const slug = tagged ? 'tagged' : 'legacy', task = `${slug}-t20261003-130005`, address = 'orchestrator';
+  const old = `${slug}-old`, next = `${slug}-next`, seat = () => store.participantOf(store.readTask(home, task), address);
+  const line = () => captureSplit(() => status(stand, { task, sessions: [] })).out.split('\n').find(s => s.trimStart().startsWith('orchestrator ·'));
+  store.createTask(home, { id: task, parent: ROOT, teamlead: `teamlead:${slug}`, owner: old });
+  if (tagged) store.upsertParticipant(home, task, { ...seat(), metadata: { ...seat().metadata, healthGeneration: 'prior-lift' } });
+  const before = seat().metadata.healthGeneration;
+  store.bus(home).sendSync(ROOT, { from: address, to: [`teamlead-${slug}`], type: 'question', body: 'knock the child' });
+  const wake = store.writeWake(home, task, address, { socket: path.join(stand, 'promptobus.json'), session: old });
+  const first = Date.parse(wake.at) + 1, later = first + (KNOCK_RETRY_SEC + 1) * 1000;
+  await wardenRound(home, task, { now: first, knock: async () => ({ ok: false, error: 'ENOENT' }) });
+  assert.ok(line().includes(`owner ${old} is dead since ${new Date(first).toISOString()}`));
+  store.claimOwnership(home, task, old);
+  assert.equal(seat().metadata.healthGeneration, before, 'same-owner claim retains its refusal');
+  let atClaim;
+  await wardenRound(home, task, { now: later, knock: async () => {
+    store.dropStaleWake(home, task, address, next);
+    store.claimOwnership(home, task, next);
+    atClaim = line();
+    return { ok: false, error: 'ENOENT' };
+  } });
+  const late = store.readHealth(home, task)[address];
+  assert.equal(late.triedAt, new Date(later).toISOString());
+  assert.equal(late.healthGeneration, before, 'in-flight knock finishes on its original generation');
+  assert.notEqual(seat().metadata.healthGeneration, before);
+  for (const observed of [atClaim, line()]) {
+    assert.ok(observed?.includes(`owner ${next}`), observed);
+    assert.doesNotMatch(observed, /is dead since|ENOENT/);
+  }
 });
 
 test('a send to root:<slug> is refused while the root record and the child owner name different sessions', () => {

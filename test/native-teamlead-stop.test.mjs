@@ -90,7 +90,12 @@ test('native teamlead stopped child claim permits parent done', async () => {
   const f = await fixture();
   assert.equal((await codexDriver.stop(f.record.ref)).stopped, true);
   const proof = seat(f, f.parent, f.address).metadata.nativeStop;
+  const previous = seat(f, f.child, 'orchestrator').metadata;
   assert.equal(store.claimOwnership(f.home, f.child, 'root-owner'), 'native-thread');
+  const claimed = seat(f, f.child, 'orchestrator').metadata;
+  assert.notEqual(claimed.healthGeneration, previous.healthGeneration);
+  assert.equal(claimed.nativeLaunchId, previous.nativeLaunchId);
+  assert.deepEqual(claimed.nativeStop, previous.nativeStop);
   await quiet(() => close(f, f.child));
   assert.equal(store.readTask(f.home, f.child).status, 'done');
   const closed = bytes(f)[1], receipt = readFileSync(f.file);

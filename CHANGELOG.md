@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- After a teamlead relift, the child orchestrator no longer reports the predecessor's failed knock as the new owner's death.
+- After a teamlead relift or a child mailbox claim, the child orchestrator no longer reports the predecessor's failed knock as the new owner's death.
 
 - Keep an OpenCode stdio server whose first argument repeats its command: only the bus entry drops the duplicated binary.
 - Let hosts keep private environment variables out of managed participants and owner snapshots. Refuse old snapshots that still contain those variables.
