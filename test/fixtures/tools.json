@@ -113,6 +113,10 @@
         "task": {
           "type": "string",
           "description": "task id — needed when several tasks are active and this session has no binding; without it the session PROMPTOBUS_TASK is used, otherwise this session's declared binding (written by spawn, review, report, and claim), otherwise the only active task"
+        },
+        "checkpointDiff": {
+          "type": "string",
+          "description": "Exact diff path from the assignment opened by the reviewer"
         }
       },
       "additionalProperties": false

@@ -1031,8 +1031,10 @@ authenticated reviewer session may publish it; workers, reporters and other
 recipients cannot use this inline route. Reviewer filesystem, command and
 external-write restrictions remain unchanged.
 
-Read `reviewer checkpoint subject` from `promptobus_task` immediately before
-sending. It uses the same authenticated sender selection as `promptobus_send`,
+When opening the assignment, pass its exact diff file path as `checkpointDiff` to
+`promptobus_task`. Keep the returned `reviewer checkpoint subject` with those findings.
+An ordinary task read returns no subject. A lookup for a superseded path is refused,
+even when the new diff has identical bytes. Lookup uses the same authenticated sender selection as `promptobus_send`,
 including the declared role hint when a session holds several reviewer seats;
 an ambiguous or unheld sender exposes no checkpoint subject.
 It contains `assignmentAfterId`, `head`, resolved `base` and
@@ -1042,8 +1044,11 @@ actual session into the artifact envelope beside the complete report, its byte
 count and digest. No native launch or turn identity is inferred from those fields.
 An inline source and `artifactPath` together are refused.
 A re-review holds the task lock through assignment publication and snapshot
-stamping. A send using an intermediate subject must wait for that transition
-and is then refused if stale, before writing any report or reference.
+stamping. A stale send is refused before writing any report or reference. If the
+original launch finishes later, it updates only session fields on the current
+record under the task lock. A callback from a replaced launch is refused. If
+failed launch cleanup removes the binding after reassignment, its retired
+identity can verify already committed evidence but cannot authorize a send.
 
 The send reply distinguishes the canonical message ID from the actual artifact
 ID and reports the landed filename, SHA-256 and artifact bytes. Read the artifact
@@ -1053,7 +1058,13 @@ bounded file reader. A checkpoint is not a terminal `result` or an acceptance.
 Replacement planning verifies all current-generation checkpoints and inherited
 replacement references against canonical message linkage, producer, original
 subject and stored report bytes. It retains every full original report before
-the replacement's first turn and adds the exact new diff separately. A missing,
+the replacement's first turn and adds the exact new diff separately. The first
+prompt names a directory beside the new diff and a count. Each numbered JSONL
+file contains the verified reference followed by consecutive JSON strings of
+the report. Bounded line reads preserve whitespace and Unicode, even for a
+single-line report at the byte limit. Neither the reports nor a growing list of
+paths enters the process arguments. The existing diff read root covers these
+files. A missing,
 corrupt, stale, foreign or unregistered checkpoint refuses replacement; it does
 not silently start a reviewer without the retained findings. A failed send after
 canonical commit but before reference publication requires explicit repair.

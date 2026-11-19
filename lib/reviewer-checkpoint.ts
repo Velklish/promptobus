@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { GateError, holdsSession, ORCHESTRATOR } from '../dist/index.js';
 import type { Engine, ParticipantV1 } from '../dist/index.js';
@@ -37,6 +39,16 @@ export function prepareCheckpoint(task: string, producer: ParticipantV1, session
 export interface Reference {
   messageId: string; artifactId: string; filename: string; sha256: string; size: number; session: string; subject: Subject;
 }
+export function writeRecoveryReports(diffPath: string, reports: readonly (Reference & { report: string })[]) {
+  if (!reports.length) return;
+  const directory = `${diffPath}.checkpoints`;
+  mkdirSync(directory, { mode: 0o700 });
+  reports.forEach(({ report, ...reference }, index) => {
+    const lines = [JSON.stringify(reference)];
+    for (const [chunk] of report.matchAll(/[\s\S]{1,256}/gu)) lines.push(JSON.stringify(chunk));
+    writeFileSync(path.join(directory, `${index + 1}.jsonl`), lines.join('\n') + '\n', { flag: 'wx', mode: 0o400 });
+  });
+}
 function reference(value: unknown): value is Reference {
   return shape(value, ['messageId', 'artifactId', 'filename', 'sha256', 'size', 'session', 'subject'])
     && typeof value.messageId === 'string' && RECORD_ID_RE.test(value.messageId)
@@ -60,8 +72,11 @@ export function readReviewerCheckpoints(engine: Engine, task: string, participan
     if (!ref || m.task !== task || m.recipients.length !== 1 || m.recipients[0] !== ORCHESTRATOR
       || m.artifact !== ref.artifactId || m.id <= ref.subject.assignmentAfterId) refuse('message/artifact linkage mismatch');
     const current = currentSubject(participant);
+    const retired = participant.metadata.retiredCheckpointBinding as Record<string, unknown> | undefined;
+    const retiredProducer = retired && retired.assignmentAfterId === ref.subject.assignmentAfterId
+      && typeof retired.through === 'string' && m.id <= retired.through && holdsSession({ metadata: retired }, ref.session);
     if (typeof current.assignmentAfterId === 'string' && m.id > current.assignmentAfterId
-      && (!holdsSession(participant, ref.session) || !isDeepStrictEqual(current, ref.subject))) refuse('stale producer/subject reference');
+      && ((!holdsSession(participant, ref.session) && !retiredProducer) || !isDeepStrictEqual(current, ref.subject))) refuse('stale producer/subject reference');
     const artifact = engine.readArtifact(task, ref.artifactId);
     if (artifact.filename !== ref.filename || artifact.sha256 !== ref.sha256 || artifact.size !== ref.size) refuse('artifact metadata mismatch');
     const envelope: unknown = JSON.parse(engine.readArtifactContent(task, artifact.id).toString('utf8'));

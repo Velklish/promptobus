@@ -114,7 +114,7 @@ export function mcpTools(registry: RoleRegistry): McpTool[] {
       name: 'promptobus_task',
       description: 'Metadata of the current task: id, title, status, parent, children, participants with repositories '
         + 'and bg-sessions, unread counts, path to the artifacts folder, whom this address may write.',
-      inputSchema: { type: 'object', properties: { ...TASK_ARG }, additionalProperties: false },
+      inputSchema: { type: 'object', properties: { ...TASK_ARG, checkpointDiff: { type: 'string', description: 'Exact diff path from the assignment opened by the reviewer' } }, additionalProperties: false },
     },
     {
       name: 'promptobus_digest',

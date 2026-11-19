@@ -288,7 +288,7 @@ export function createMcpServer(options: McpOptions): {
           + (unread ? `\n${unread}` : '');
       }
       case 'promptobus_task':
-        return renderTask(service, home, task, role, identity, decorateParticipant, pipeline?.() ?? pipelineOf(null));
+        return renderTask(service, home, task, role, identity, decorateParticipant, pipeline?.() ?? pipelineOf(null), args.checkpointDiff);
       default:
         throw new UnknownToolError(name);
     }

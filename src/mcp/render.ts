@@ -174,6 +174,7 @@ export function renderTask(
   caller: SenderCaller,
   decorate: DecorateParticipant,
   steps: readonly DeclaredStep[],
+  checkpointDiff: unknown,
 ): string {
   const { session } = caller;
   const meta = service.readTask(home, id);
@@ -183,18 +184,18 @@ export function renderTask(
   // that is sure right now that it is waiting.
   const mine = service.unreadNote(home, id, addr, session);
   const contacts = service.contactsLine?.(home, id, service.mailboxAddress?.(home, id, addr, session) ?? addr) ?? null;
-  const candidates = meta.status === 'active' && !meta.adapter.bb ? meta.participants.filter(p =>
-    steps.some(s => s.name === p.role && s.kind === 'reads-diff') && !p.metadata.nativeStop && !p.metadata.nativeUnlaunched
-    && holdsSession(p, session)) : [];
-  let sender: string | null = null;
-  if (candidates.length) {
-    try { sender = service.senderFor(home, id, caller); } catch (error) {
-      if (!(error instanceof GateError)) throw error;
-    }
+  let checkpoint: string | null = null;
+  if (checkpointDiff !== undefined) {
+    const sender = service.senderFor(home, id, caller);
+    const reviewer = meta.participants.find(p => addressOf(p) === sender && holdsSession(p, session)
+      && steps.some(step => step.name === p.role && step.kind === 'reads-diff'));
+    const m = reviewer?.metadata;
+    if (!m || meta.status !== 'active' || meta.adapter.bb || m.nativeStop || m.nativeUnlaunched
+      || typeof checkpointDiff !== 'string' || checkpointDiff !== m.diffPath
+      || !['assignmentAfterId', 'diffHead', 'diffBase', 'diffSha256'].every(key => typeof m[key] === 'string'))
+      throw new GateError('No current checkpoint subject for this reviewer and opened diff');
+    checkpoint = JSON.stringify({ assignmentAfterId: m.assignmentAfterId, head: m.diffHead, base: m.diffBase, diffSha256: m.diffSha256 });
   }
-  const m = candidates.find(p => addressOf(p) === sender)?.metadata;
-  const checkpoint = m && ['assignmentAfterId', 'diffHead', 'diffBase', 'diffSha256'].every((key) => typeof m[key] === 'string')
-    ? JSON.stringify({ assignmentAfterId: m.assignmentAfterId, head: m.diffHead, base: m.diffBase, diffSha256: m.diffSha256 }) : null;
   const lines = [
     `task ${meta.id} · ${meta.title}`,
     `status: ${meta.status} · created: ${meta.created}`,

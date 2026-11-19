@@ -63,4 +63,4 @@ The package test installs a fresh tarball, imports this entry and compiles an
 external TypeScript consumer. The BB bridge test verifies complete instruction
 delivery before the first native turn; it does not establish model compliance.
 
-The native reviewer can send a complete finding checkpoint through its existing bus tool before terminal handover. The replacement prompt quotes each verified report with its original subject and artifact reference.
+The native reviewer can send a complete finding checkpoint through its existing bus tool before terminal handover. It requests the subject for the exact diff path it opened. The replacement prompt directs it to read every numbered report beside its new diff, including each original subject and artifact reference.

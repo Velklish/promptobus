@@ -7,7 +7,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
-import { createMcpServer, openEngine } from '../dist/index.js';
+import { boundSessionOf, createMcpServer, openEngine } from '../dist/index.js';
+import { persistReviewerSession } from '../lib/native-lifecycle.js';
+import { bindBeforeLaunch } from '../lib/driver-common.js';
 import * as store from '../lib/store.js';
 
 const hash = (text) => createHash('sha256').update(text).digest('hex');
@@ -18,12 +20,12 @@ function fixture(t) {
   store.bus(home, { cli: JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version });
   t.after(() => rmSync(home, { recursive: true, force: true }));
   const task = store.createTask(home, { id: 't20261024-100000', title: 'checkpoint', owner: 'owner' }).id;
-  const address = 'reviewer:orders';
+  const address = 'reviewer:orders', diffPath = path.join(store.filesDir(home, task), 'review-orders.diff');
   store.upsertParticipant(home, task, store.participantRecord(address, {
-    sessionId: 'session-r1', diffHead: subject.head, diffBase: subject.base, diffSha256: subject.diffSha256,
+    reviewLaunchId: 'lift-1', sessionId: 'session-r1', diffHead: subject.head, diffBase: subject.base, diffSha256: subject.diffSha256,
   }));
   store.sendMessage(home, task, { from: 'orchestrator', to: address, type: 'task', body: 'Review this diff' });
-  store.stampSnapshot(home, task, address, { ...subject, at: new Date().toISOString(), clean: true, modifiedTracked: [] });
+  store.stampSnapshot(home, task, address, { ...subject, diffPath, at: new Date().toISOString(), clean: true, modifiedTracked: [] });
   const participant = () => store.participantOf(store.readTask(home, task), address);
   const engine = () => openEngine({ home, recover: false, policy: () => ({ allow: true }) });
   const artifact = (content = report) => ({ content, subject: {
@@ -33,7 +35,7 @@ function fixture(t) {
     from: address, to: 'orchestrator', type: 'artifact', body: 'Finding checkpoint', session: 'session-r1',
     artifact: artifact(), ...extra,
   });
-  return { home, task, address, participant, engine, artifact, send };
+  return { home, task, address, diffPath, participant, engine, artifact, send };
 }
 async function call(f, args, session = 'session-r1', name = 'promptobus_send', identity = {}) {
   const output = [];
@@ -83,15 +85,16 @@ test('inline reviewer report traverses the actual MCP/store/engine and reopens i
 });
 test('the actual task tool exposes the current authenticated reviewer subject without guessing', async (t) => {
   const f = fixture(t);
-  const reply = await call(f, {}, 'session-r1', 'promptobus_task');
+  const reply = await call(f, { checkpointDiff: f.diffPath }, 'session-r1', 'promptobus_task');
   assert.ok(!reply.isError, reply.content[0].text);
   const line = reply.content[0].text.split('\n').find((s) => s.startsWith('reviewer checkpoint subject: '));
   assert.deepEqual(JSON.parse(line.slice('reviewer checkpoint subject: '.length)), f.artifact().subject);
-  const foreign = await call(f, {}, 'foreign', 'promptobus_task');
+  const foreign = await call(f, { checkpointDiff: f.diffPath }, 'foreign', 'promptobus_task');
   assert.ok(!foreign.content[0].text.includes('reviewer checkpoint subject: '));
 });
 test('task subject selects the same authenticated reviewer seat as the actual send', async (t) => {
   const f = fixture(t), address = 'reviewer:payments';
+  const secondPath = path.join(path.dirname(f.diffPath), 'review-payments.diff');
   const secondSubject = { head: '4'.repeat(40), base: '5'.repeat(40), diffSha256: '6'.repeat(64) };
   store.upsertParticipant(f.home, f.task, store.participantRecord(address, {
     sessionId: 'session-r1', diffHead: secondSubject.head, diffBase: secondSubject.base, diffSha256: secondSubject.diffSha256,
@@ -99,10 +102,10 @@ test('task subject selects the same authenticated reviewer seat as the actual se
   const assignment = store.sendMessage(f.home, f.task, {
     from: 'orchestrator', to: address, type: 'task', body: 'Review payments',
   });
-  store.stampSnapshot(f.home, f.task, address, { ...secondSubject, at: new Date().toISOString(), clean: true, modifiedTracked: [] });
+  store.stampSnapshot(f.home, f.task, address, { ...secondSubject, diffPath: secondPath, at: new Date().toISOString(), clean: true, modifiedTracked: [] });
   const expected = { ...secondSubject, assignmentAfterId: assignment.message.id };
   const caller = { role: address, hint: address };
-  const reply = await call(f, {}, 'session-r1', 'promptobus_task', caller);
+  const reply = await call(f, { checkpointDiff: secondPath }, 'session-r1', 'promptobus_task', caller);
   assert.ok(!reply.isError, reply.content[0].text);
   const line = reply.content[0].text.split('\n').find((s) => s.startsWith('reviewer checkpoint subject: '));
   const exposed = JSON.parse(line?.slice('reviewer checkpoint subject: '.length) ?? 'null');
@@ -115,13 +118,56 @@ test('task subject selects the same authenticated reviewer seat as the actual se
   assert.deepEqual(recovered[0].subject, expected);
   const message = f.engine().facts(f.task).messages.find((m) => m.id === recovered[0].messageId);
   assert.equal(message.sender, second.id);
-  const hinted = await call(f, {}, 'session-r1', 'promptobus_task', { role: f.address, hint: address });
+  const hinted = await call(f, { checkpointDiff: secondPath }, 'session-r1', 'promptobus_task', { role: f.address, hint: address });
   const hintedLine = hinted.content[0].text.split('\n').find((s) => s.startsWith('reviewer checkpoint subject: '));
   assert.deepEqual(JSON.parse(hintedLine?.slice('reviewer checkpoint subject: '.length) ?? 'null'), expected,
     'the authenticated send hint selects the subject even when the mailbox role differs');
-  const ambiguous = await call(f, {}, 'session-r1', 'promptobus_task', { role: address, hint: null });
-  assert.ok(!ambiguous.isError, ambiguous.content[0].text);
+  const ambiguous = await call(f, { checkpointDiff: secondPath }, 'session-r1', 'promptobus_task', { role: address, hint: null });
+  assert.ok(ambiguous.isError, ambiguous.content[0].text);
   assert.ok(!ambiguous.content[0].text.includes('reviewer checkpoint subject: '), 'ambiguous sender exposes no subject');
+});
+test('refreshing an opened diff cannot label old work with a newer assignment of identical bytes', async t => {
+  const f = fixture(t);
+  const lookup = async args => {
+    const reply = await call(f, args, 'session-r1', 'promptobus_task');
+    assert.ok(!reply.isError, reply.content[0].text);
+    return JSON.parse(reply.content[0].text.match(/^reviewer checkpoint subject: (.*)$/m)?.[1] ?? 'null');
+  };
+  const opened = await lookup({ checkpointDiff: f.diffPath });
+  assert.deepEqual(opened, f.artifact().subject);
+  const nextPath = f.diffPath + '.next';
+  store.sendMessage(f.home, f.task, { from: 'orchestrator', to: f.address, type: 'task', body: nextPath });
+  store.stampSnapshot(f.home, f.task, f.address, { ...subject, diffPath: nextPath, at: new Date().toISOString(), clean: true, modifiedTracked: [] });
+  assert.equal(await lookup({}), null);
+  const stale = await call(f, { checkpointDiff: f.diffPath }, 'session-r1', 'promptobus_task');
+  assert.ok(stale.isError);
+  assert.match(stale.content[0].text, /opened diff/);
+  assert.ok((await call(f, { artifact: { content: report, subject: opened } })).isError);
+  assert.deepEqual(await lookup({ checkpointDiff: nextPath }), f.artifact().subject);
+});
+
+test('late lift completion merges the session into the re-review that already checkpointed', t => {
+  const f = fixture(t), initial = f.participant();
+  const undo = bindBeforeLaunch(f.home, f.task, f.address, { sessionId: 'session-r1', session: 'newly-confirmed' });
+  const assignment = store.sendMessage(f.home, f.task, { from: 'orchestrator', to: f.address, type: 'task', body: 'Review again' });
+  const next = { ...subject, diffSha256: hash('new diff') };
+  store.stampSnapshot(f.home, f.task, f.address, { ...next, diffPath: f.diffPath + '.next', at: new Date().toISOString(), clean: true, modifiedTracked: [] });
+  const sent = f.send({ artifact: { content: report, subject: { ...next, assignmentAfterId: assignment.message.id } } });
+  persistReviewerSession(f.home, f.task, initial, 'newly-confirmed', false, 'session-r1');
+  const current = f.participant();
+  assert.equal(current.metadata.session, 'newly-confirmed');
+  assert.equal(current.metadata.assignmentAfterId, assignment.message.id);
+  assert.equal(current.metadata.diffSha256, next.diffSha256);
+  assert.equal(current.metadata.diffPath, f.diffPath + '.next');
+  assert.equal(store.retainedReviewerCheckpoints(f.home, f.task, current)[0].messageId, sent.message.id);
+  assert.throws(() => persistReviewerSession(f.home, f.task, initial, null, true, null));
+  undo();
+  assert.equal(boundSessionOf(f.participant()), null);
+  assert.throws(() => f.send(), /session/);
+  assert.equal(store.retainedReviewerCheckpoints(f.home, f.task, f.participant())[0].messageId, sent.message.id);
+  store.upsertParticipant(f.home, f.task, { ...current, metadata: { ...current.metadata, reviewLaunchId: 'replacement' } });
+  assert.throws(() => persistReviewerSession(f.home, f.task, initial, 'obsolete', false, 'session-r1'));
+  assert.equal(f.participant().metadata.session, 'newly-confirmed');
 });
 test('inline checkpoint rejects identity, scope, shape and byte overflow before payload writes', async (t) => {
   for (const [name, override] of [

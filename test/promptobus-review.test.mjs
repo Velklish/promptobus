@@ -10,6 +10,7 @@
 // rename didn't break what was already established.
 import { mkdirSync, readdirSync, writeFileSync, existsSync, readFileSync, utimesSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import os from 'node:os';
@@ -17,6 +18,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { check } from './check.mjs';
 import { commandReceipts, readStopConfirmation } from '../lib/codex-command-receipts.js';
 import { codexStateHome, sessionKey } from '../lib/codex-session.js';
+import { reviewerFiles } from '../lib/reviewer-files.js';
 import { retainNativeStop } from '../lib/native-lifecycle.js';
 import { ownedServiceFixture, stubCommand, writeHostConfig } from './sandbox.mjs';
 import { capture, expectThrow } from './console.mjs';
@@ -984,22 +986,25 @@ check('dead session without a result: the full prompt is unchanged by other mess
   && !statusOnly.prompt.includes('## Prior reviewer findings'), statusOnly.prompt);
 
 const checkpointParticipant = store.participantOf(store.readTask(home, pendingTask.id), 'reviewer:orders-api');
-store.stampSnapshot(home, pendingTask.id, 'reviewer:orders-api', withoutResult.snapshot);
+check('initial lift publishes the exact landed snapshot for checkpoint lookup', checkpointParticipant.metadata.diffPath === relaunchedPlan.diffPath);
 const checkpointSubject = {
   assignmentAfterId: checkpointParticipant.metadata.assignmentAfterId,
-  head: withoutResult.snapshot.head, base: withoutResult.snapshot.base, diffSha256: withoutResult.snapshot.diffSha256,
+  head: relaunchedPlan.snapshot.head, base: relaunchedPlan.snapshot.base, diffSha256: relaunchedPlan.snapshot.diffSha256,
 };
-const checkpointReports = ['Independent full checkpoint 😀\n'.repeat(150), 'Second finding with details\n'.repeat(180)];
+const checkpointReports = ['😀'.repeat(250000), '\r\n\u0000second finding\n'.repeat(50000)];
 const checkpoints = checkpointReports.map((content) => store.sendMessage(home, pendingTask.id, {
   from: 'reviewer:orders-api', to: 'orchestrator', type: 'artifact', body: 'Finding checkpoint',
   session: store.sessionIdOf(checkpointParticipant), artifact: { content, subject: checkpointSubject },
 }));
 const checkpointPlan = planReview(WS, { target: REPO, task: pendingTask.id });
-check('preterminal checkpoints: replacement automatically retains every full original report before launch',
-  checkpoints.every((sent, i) => checkpointPlan.prompt.includes(sent.artifact.id)
-    && checkpointPlan.prompt.includes(sent.message.id)
-    && checkpointPlan.prompt.includes(checkpointReports[i]))
-  && checkpointPlan.checkpointRefs.length === 2 && checkpointPlan.priorFindings === null, checkpointPlan.prompt);
+for (const harness of ['claude', 'cursor']) {
+  const recovery = harness === 'claude' ? checkpointPlan : planReview(WS, { target: REPO, task: pendingTask.id, harness });
+  check(`${harness} replacement without selected context: aggregate report size stays out of argv`,
+    !recovery.selectedContext && recovery.checkpointRefs.length === 2 && recovery.priorFindings === null
+    && Buffer.byteLength(checkpointReports[0]) === 1000000 && recovery.argv.includes(recovery.prompt)
+    && Buffer.byteLength(recovery.argv.join(' ')) < 100000 && recovery.prompt.includes(`${recovery.diffPath}.checkpoints`)
+    && recovery.addDirs.includes(path.dirname(recovery.diffPath)) && !recovery.addDirs.includes(`${recovery.diffPath}.checkpoints`));
+}
 const beforeCorruption = store.participantOf(store.readTask(home, pendingTask.id), 'reviewer:orders-api');
 store.upsertParticipant(home, pendingTask.id, { ...beforeCorruption, metadata: { ...beforeCorruption.metadata,
   findingCheckpoints: beforeCorruption.metadata.findingCheckpoints.slice(1) } });
@@ -1044,8 +1049,20 @@ check('dead session: prior findings select the last result of this reviewer, not
   && !withResult.prompt.includes('Later status, not findings'), withResult.prompt);
 let replacement;
 await capture(async () => { replacement = await review(WS, { tool: TOOL, target: REPO, task: pendingTask.id }); });
-check('replacement first turn receives both complete checkpoint reports beside the prior result',
-  checkpointReports.every(report => bgArgv().includes(report)) && bgArgv().includes(findingsSection), bgArgv());
+const readReport = reviewerFiles([path.dirname(replacement.diffPath)]);
+for (const [index, expected] of checkpointReports.entries()) {
+  const file = path.join(`${replacement.diffPath}.checkpoints`, `${index + 1}.jsonl`);
+  const lines = [];
+  for (let start = 1; ; start += 200) {
+    const part = readReport('read_file', { path: file, start_line: start, line_count: 200 });
+    lines.push(...part.lines.map(line => line.text));
+    if (start + 200 > part.total_lines) break;
+  }
+  const ref = JSON.parse(lines.shift());
+  check(`replacement first turn can read complete checkpoint ${index + 1} through its existing root`,
+    bgArgv().includes(`${replacement.diffPath}.checkpoints`) && ref.messageId === checkpoints[index].message.id
+    && ref.artifactId === checkpoints[index].artifact.id && lines.filter(Boolean).map(line => JSON.parse(line)).join('') === expected);
+}
 const successor = store.participantOf(store.readTask(home, pendingTask.id), 'reviewer:orders-api');
 const inherited = store.retainedReviewerCheckpoints(home, pendingTask.id, successor);
 check('replacement retains each original message and report for subsequent recovery',
@@ -1888,6 +1905,7 @@ await capture(() => review(WS, { tool: TOOL, target: W2, task: owned.id }));
 const reStamped = store.participantOf(store.readTask(home, owned.id), 'reviewer:vtoroy')?.metadata;
 check('PB-157 record: a re-review moves the snapshot and replaces its tracked-tree state',
   reStamped?.diffHead === afterHead && afterHead !== liftHead
+  && existsSync(reStamped.diffPath) && reStamped.diffPath !== revPart.diffPath
   && reStamped?.diffAt !== revPart?.diffAt
   && reStamped?.diffClean === false
   && JSON.stringify(reStamped?.diffModifiedTracked) === JSON.stringify(['vtoroy.txt'])
@@ -3193,6 +3211,26 @@ const liftStatus = await capture(() => status(WS, { task: LIFT_B, sessions: {} }
 const liftOrchLine = liftStatus.split('\n').find((l) => /^\s*orchestrator · /.test(l)) ?? '';
 check('PB-233: status of the lifted task no longer calls its orchestrator self-wake',
   !!liftOrchLine && !/self-wake/.test(liftOrchLine) && /unread 1/.test(liftOrchLine), liftStatus);
+
+const lateTask = store.createTask(home, { id: 't20261024-193000', title: 'late reviewer publication' });
+const lateSeat = liftPlan.address;
+let reassigned, lateCheckpoint;
+claudeSays('[]');
+await capture(() => review(WS, { tool: TOOL, target: LIFT_REPO, task: lateTask.id, awaitOptions: { tries: 1, sessions: () => {
+  const reviewer = store.participantOf(store.readTask(home, lateTask.id), lateSeat);
+  const m = reviewer.metadata;
+  const nextDiff = writeDiff(path.dirname(m.diffPath), 'lifted-api', 'new diff\n');
+  reassigned = store.sendMessage(home, lateTask.id, { from: 'orchestrator', to: lateSeat, type: 'task', body: nextDiff }).message.id;
+  const next = { head: m.diffHead, base: m.diffBase, diffSha256: createHash('sha256').update('new diff\n').digest('hex') };
+  store.stampSnapshot(home, lateTask.id, lateSeat, { ...next, diffPath: nextDiff, at: new Date().toISOString(), clean: false, modifiedTracked: ['a.txt'] });
+  lateCheckpoint = store.sendMessage(home, lateTask.id, { from: lateSeat, to: 'orchestrator', type: 'artifact', body: 'New finding',
+    session: m.sessionId, artifact: { content: 'finding on the new assignment', subject: { ...next, assignmentAfterId: reassigned } } });
+  return [{ name: m.name, id: 'sess-live', sessionId: m.sessionId, status: 'running' }];
+} } }));
+const afterLateLift = store.participantOf(store.readTask(home, lateTask.id), lateSeat);
+check('original lift returning after a new checkpoint preserves the newer assignment and recoverable evidence',
+  afterLateLift.metadata.assignmentAfterId === reassigned && !afterLateLift.metadata.pending
+  && store.retainedReviewerCheckpoints(home, lateTask.id, afterLateLift)[0]?.messageId === lateCheckpoint.message.id);
 
 // PATH stayed swapped until the end: the scheduler checks liveness on every call
 // against an already-opened participant, and the test shouldn't call a live claude for that.

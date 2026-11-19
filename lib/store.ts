@@ -875,7 +875,7 @@ export function watchParticipant(home: string, id: string, address: string) {
  * this diff was never taken from. The path list is always replaced too: otherwise a
  * clean re-review would keep reporting the prior dirty paths.
  */
-export function stampSnapshot(home: string, id: string, address: string, { at, head = null, base = null, diffSha256 = null, clean, modifiedTracked }: { at: string; head?: string | null; base?: string | null; diffSha256?: string | null; clean: boolean; modifiedTracked: string[] }) {
+export function stampSnapshot(home: string, id: string, address: string, { at, head = null, base = null, diffSha256 = null, diffPath = null, clean, modifiedTracked }: { at: string; head?: string | null; base?: string | null; diffSha256?: string | null; diffPath?: string | null; clean: boolean; modifiedTracked: string[] }) {
   return withTaskLock(home, id, () => {
     const meta = readTask(home, id);
     const p = participantOf(meta, address);
@@ -885,7 +885,7 @@ export function stampSnapshot(home: string, id: string, address: string, { at, h
       metadata: {
         ...rest,
         diffAt: at,
-        diffBase: base, diffSha256,
+        diffBase: base, diffSha256, diffPath,
         ...(head ? { diffHead: head } : {}),
         diffClean: clean,
         diffModifiedTracked: modifiedTracked,

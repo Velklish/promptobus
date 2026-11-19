@@ -91,9 +91,15 @@ export function bindBeforeLaunch(home: string | null, task: string | null, addre
   return () => withTaskLock(home, task, () => {
     const current = participantOf(readTask(home, task), address);
     if (!current) return;
+    if (record.metadata.reviewLaunchId && current.metadata.reviewLaunchId !== record.metadata.reviewLaunchId) return;
     try { requireCurrentNativeLaunch(current, record); }
     catch { return; }
     const metadata = { ...current.metadata };
+    if (record.metadata.reviewLaunchId && current.metadata.assignmentAfterId !== record.metadata.assignmentAfterId) {
+      const { assignmentAfterId, session, sessionId, sessionRecord, findingCheckpoints } = current.metadata;
+      const through = Array.isArray(findingCheckpoints) ? findingCheckpoints.at(-1)?.messageId : null;
+      if (typeof through === 'string') metadata.retiredCheckpointBinding = { assignmentAfterId, through, session, sessionId, sessionRecord };
+    }
     for (const [key, value] of Object.entries(binding)) {
       if (metadata[key] === value || metadata[key] === record!.metadata?.[key]) delete metadata[key];
     }

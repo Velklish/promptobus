@@ -281,7 +281,7 @@ replacement.
 |---|---|---|
 | `promptobus_send` | `{ to, type, body, artifactPath?, artifact?, task? }` | Send a typed message to a registered participant. The tool description lists the installation's active pipeline steps; the [route table](https://github.com/Velklish/promptobus/blob/v0.33.1/docs/reference/04-protocol.md#addresses) decides which pair and type are allowed. The sender is the address this session holds in that task |
 | `promptobus_mailbox` | `{ claim?, message?, task? }` | Without `message` it lists headers and marks them read; with `message` it returns that one body and marks nothing. On the orchestrator address, a call that names no session gets a copy, leaves the originals, and the reply says so. `claim: true` takes over a mailbox from a previous session |
-| `promptobus_task` | `{ task? }` | Task metadata, participants, artifact directory |
+| `promptobus_task` | `{ task?, checkpointDiff? }` | Task metadata, participants, artifact directory. A reviewer supplies the exact opened diff path for its checkpoint subject |
 | `promptobus_digest` | `{ task? }` | Reporter only: the root tree as `digest --json` |
 | `promptobus_status` | `{ task? }` | Reporter only: the root tree status and live session state |
 | `promptobus_ask` | `{ body?, answers?, after?, task? }` | Reporter only: ask as `user`; read later answers without consuming the user mailbox |
