@@ -527,15 +527,15 @@ export function planReview(rootOrHost: unknown, { target, base, task, title, mod
   // would sit in the mailbox forever. Unknown — the diff goes to the former address.
   const sessions = participant ? snapshotOf([participant]) : null;
   const sessionState = participant ? participantSession(participant, sessions) : null;
-  const lastResultId = sessionState === 'dead'
-    ? strictTaskFacts(home, taskId).messages.filter((m) => m.sender === participant!.id && m.type === 'result')
-      .map((m) => m.id).sort().at(-1)
-    : null;
-  const priorFindings = lastResultId ? journalMessageBody(home, taskId, lastResultId, 'review') : null;
   // A record BEFORE start makes "the reviewer is in the journal" true even for one that never
   // lifted. `pending` is what is read, not `participant.session`: a live one may have no field either.
   const unlaunched = !!was.pending && sessionState !== 'alive';
   const reuse = !!participant && sessionState !== 'dead' && !unlaunched;
+  const lastResultId = participant && !reuse
+    ? strictTaskFacts(home, taskId).messages.filter((m) => m.sender === participant.id && m.type === 'result')
+      .map((m) => m.id).sort().at(-1)
+    : null;
+  const priorFindings = lastResultId ? journalMessageBody(home, taskId, lastResultId, 'review') : null;
   const checkpointRefs = participant && !reuse ? retainedReviewerCheckpoints(home, taskId, participant) : [];
   const instructions = suppliedInstructions === undefined || (instructionsReuse !== undefined && instructionsReuse !== reuse)
     ? readGateInstructions(host, stepName, reuse ? was.gateInstructions : null) : suppliedInstructions;
@@ -993,14 +993,14 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
         || current.metadata.assignmentAfterId !== reserved!.record.metadata.assignmentAfterId) throw new GateError('review assignment changed before launch');
       retargetDiff(plan, writeDiff(path.dirname(plan.diffPath), plan.slug, plan.diff, plan.stepName));
       stampSnapshot(plan.home, plan.taskId, plan.address, { ...plan.snapshot, diffPath: plan.diffPath });
-      writeRecoveryReports(plan.diffPath, plan.checkpointRefs);
+      writeRecoveryReports(plan.diffPath, plan.checkpointRefs, plan.priorFindings);
     });
 
-    // A dead session cannot receive a re-review. Its last result travels in the initial prompt.
     if (plan.unlaunched) {
       // Not a single word about a dead session is true here: this reviewer was never started.
       warn(`record of the reviewer ${plan.address} is left from a failed start (pending), liveness cannot be confirmed — nobody to send a re-review to`);
-      warn(`starting the reviewer again with the full prompt: it has no prior context, it looks at the diff from a clean slate`);
+      if (plan.priorFindings !== null || plan.checkpointRefs.length) warn('the replacement reads retained findings beside the new diff');
+      else warn(`starting the reviewer again with the full prompt: it has no prior context, it looks at the diff from a clean slate`);
     } else if (plan.participant) {
       warn(`session of the reviewer ${plan.address} is dead (it is not among the live ones in ${plan.driver.phrases.sessions}) — nobody to send a re-review to`);
       if (plan.priorFindings !== null || plan.checkpointRefs.length) {
@@ -1545,7 +1545,7 @@ function buildPrompt({ taskId, nsPath, repoDir, address, stepName, instructions,
   const bus = (name: string) => toolName(driver, PROMPTOBUS_SERVER, name, host);
   const findings = priorFindings === null ? '' : '\n\n## Prior reviewer findings\n\n'
     + 'Check these findings for closure first, then review the rest of the diff. '
-    + 'The previous reviewer\'s last result follows unchanged:\n\n' + priorFindings;
+    + `Read the previous terminal result starting at ${diffPath}.result-1.jsonl. Read every JSON string after the header in order; continue with the numbered nextPage until it is null.`;
   return renderReviewerInstructions({ taskId, nsPath, repoDir, address, stepName, rules,
     reviewSubject: subject({ diffPath, repoDir, stat, untracked, baseLine, snapshot, gateRecords, handoverRecords, attachments, reviewedAddress, attachmentSeat, approverBeside, approverFiles }) + findings
       + (checkpointRefs.length ? `\n\n## Retained reviewer finding checkpoints\n\nBefore reviewing the new diff, read files 1.jsonl through ${checkpointRefs.length}.jsonl in ${diffPath}.checkpoints. Each first line identifies the original subject and artifact. Read every following JSON string in line ranges, in order, as consecutive chunks of the original report. Check these findings for closure; they are not terminal verdicts.` : ''),

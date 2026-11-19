@@ -1014,8 +1014,8 @@ check('preterminal checkpoints: an omitted committed checkpoint refuses replacem
 store.upsertParticipant(home, pendingTask.id, beforeCorruption);
 
 const earlierFindings = 'Earlier finding: obsolete detail';
-// english-authoring: input — preserve the complete Unicode findings body in a replacement prompt.
-const priorFindings = '\nmajor — Проверить закрытие α\n  keep  two spaces\n\n```text\nsecond finding → β\n```\n' + 'full finding '.repeat(400) + '\n';
+// english-authoring: input — preserve the complete Unicode findings body during replacement.
+const priorFindings = '\nmajor — Проверить закрытие α\n  keep  two spaces\n\n```text\nsecond finding → β\n```\n' + checkpointReports[0] + '\r\n\u0000end of terminal result\n';
 // english-authoring: end
 let findingsClock = Date.now();
 const { openEngine } = await import('../dist/index.js');
@@ -1039,30 +1039,42 @@ store.sendMessage(home, pendingTask.id, {
   from: 'reviewer:orders-api', to: store.ORCHESTRATOR, type: 'status', body: 'Later status, not findings',
 });
 const withResult = planReview(WS, { target: REPO, task: pendingTask.id });
-const findingsSection = '## Prior reviewer findings\n\nCheck these findings for closure first, then review the rest of the diff. '
-  + 'The previous reviewer\'s last result follows unchanged:\n\n' + priorFindings;
-check('dead session: the replacement initial prompt carries the last result in full for closure first',
-  withResult.prompt.includes(findingsSection), withResult.prompt);
-check('dead session: prior findings select the last result of this reviewer, not other messages',
-  !withResult.prompt.includes(earlierFindings)
-  && !withResult.prompt.includes('Another reviewer result')
-  && !withResult.prompt.includes('Later status, not findings'), withResult.prompt);
+const findingsSection = '## Prior reviewer findings';
+for (const harness of ['claude', 'cursor']) {
+  const recovery = harness === 'claude' ? withResult : planReview(WS, { target: REPO, task: pendingTask.id, harness });
+  check(`${harness}: a large terminal result beside large checkpoints stays outside every process argument`,
+    !recovery.selectedContext && recovery.priorFindings === priorFindings && recovery.checkpointRefs.length === 2
+    && recovery.prompt.includes(`${recovery.diffPath}.result-1.jsonl`) && recovery.prompt.includes(`${recovery.diffPath}.checkpoints`)
+    && recovery.argv.includes(recovery.prompt) && Buffer.byteLength(recovery.argv.join(' ')) < 100000
+    && !recovery.prompt.includes(priorFindings.slice(0, 64)) && !recovery.prompt.includes('end of terminal result'));
+}
 let replacement;
 await capture(async () => { replacement = await review(WS, { tool: TOOL, target: REPO, task: pendingTask.id }); });
 const readReport = reviewerFiles([path.dirname(replacement.diffPath)]);
-for (const [index, expected] of checkpointReports.entries()) {
-  const file = path.join(`${replacement.diffPath}.checkpoints`, `${index + 1}.jsonl`);
+function readPage(file) {
   const lines = [];
   for (let start = 1; ; start += 200) {
     const part = readReport('read_file', { path: file, start_line: start, line_count: 200 });
     lines.push(...part.lines.map(line => line.text));
     if (start + 200 > part.total_lines) break;
   }
-  const ref = JSON.parse(lines.shift());
+  return { header: JSON.parse(lines.shift()), text: lines.filter(Boolean).map(line => JSON.parse(line)).join('') };
+}
+for (const [index, expected] of checkpointReports.entries()) {
+  const { header: ref, text } = readPage(path.join(`${replacement.diffPath}.checkpoints`, `${index + 1}.jsonl`));
   check(`replacement first turn can read complete checkpoint ${index + 1} through its existing root`,
     bgArgv().includes(`${replacement.diffPath}.checkpoints`) && ref.messageId === checkpoints[index].message.id
-    && ref.artifactId === checkpoints[index].artifact.id && lines.filter(Boolean).map(line => JSON.parse(line)).join('') === expected);
+    && ref.artifactId === checkpoints[index].artifact.id && text === expected);
 }
+let terminal = '', page = 1;
+while (page !== null) {
+  const { header, text } = readPage(`${replacement.diffPath}.result-${page}.jsonl`);
+  if (header.type !== 'result' || (header.nextPage !== null && header.nextPage !== page + 1)) throw Error('invalid terminal result page');
+  terminal += text;
+  page = header.nextPage;
+}
+check('replacement restores only the latest terminal result byte for byte, separately from both checkpoints',
+  terminal === priorFindings && bgArgv().includes(`${replacement.diffPath}.result-1.jsonl`) && !bgArgv().includes('end of terminal result'));
 const successor = store.participantOf(store.readTask(home, pendingTask.id), 'reviewer:orders-api');
 const inherited = store.retainedReviewerCheckpoints(home, pendingTask.id, successor);
 check('replacement retains each original message and report for subsequent recovery',
@@ -1079,8 +1091,7 @@ check('live reviewer: prior findings stay in its session rather than being added
 check('replacement reviewer guidance carries the prior-result closure contract',
   ['../docs/reference/03-cli.md', '../skills/solo-review/SKILL.md', '../README.md', '../CHANGELOG.md']
     .map((file) => readFileSync(new URL(file, import.meta.url), 'utf8'))
-    .every((text) => text.includes('last result unchanged in') && text.includes('initial prompt')
-      && text.includes('for closure first') && !text.includes('Nothing then confirms')));
+    .every((text) => text.includes('terminal result') && text.includes('beside the new diff') && !text.includes('Nothing then confirms')));
 
 const unknownTask = store.createTask(home, { id: 't20260925-154800', title: 'reviewer liveness unknown' });
 store.upsertParticipant(home, unknownTask.id, store.participantRecord('reviewer:orders-api', {

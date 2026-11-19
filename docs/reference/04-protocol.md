@@ -1047,7 +1047,7 @@ A re-review holds the task lock through assignment publication and snapshot
 stamping. A stale send is refused before writing any report or reference. If the
 original launch finishes later, it updates only session fields on the current
 record under the task lock. A callback from a replaced launch is refused. If
-failed launch cleanup removes the binding after reassignment, its retired
+failed launch cleanup removes the binding on the initial or a later assignment, its retired
 identity can verify already committed evidence but cannot authorize a send.
 
 The send reply distinguishes the canonical message ID from the actual artifact
@@ -1068,7 +1068,10 @@ files. A missing,
 corrupt, stale, foreign or unregistered checkpoint refuses replacement; it does
 not silently start a reviewer without the retained findings. A failed send after
 canonical commit but before reference publication requires explicit repair.
-Legacy result-only recovery remains unchanged.
+The last terminal result is separate, including when no checkpoint exists.
+Its first page is `<diffPath>.result-1.jsonl`; the header gives `nextPage`, or
+`null` at the end. Concatenating the JSON strings after the header across pages
+recovers the original body. The initial prompt carries the first path, never the body.
 
 To pause before terminal handover, the reviewer may send a normal question with
 the checkpoint reference and end its turn awaiting the orchestrator's answer.

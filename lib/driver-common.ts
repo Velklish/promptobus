@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
-import { dropStaleWake, logWarden, participantOf, readTask, upsertParticipant, withTaskLock } from './store.js';
+import { dropStaleWake, holdsSession, logWarden, participantOf, readTask, upsertParticipant, withTaskLock } from './store.js';
 import { requireCurrentNativeLaunch } from './native-lifecycle.js';
 import { fail } from './util.js';
 import type { LibLaunchPlan } from './driver-runtime.js';
@@ -95,10 +95,12 @@ export function bindBeforeLaunch(home: string | null, task: string | null, addre
     try { requireCurrentNativeLaunch(current, record); }
     catch { return; }
     const metadata = { ...current.metadata };
-    if (record.metadata.reviewLaunchId && current.metadata.assignmentAfterId !== record.metadata.assignmentAfterId) {
+    if (record.metadata.reviewLaunchId) {
       const { assignmentAfterId, session, sessionId, sessionRecord, findingCheckpoints } = current.metadata;
-      const through = Array.isArray(findingCheckpoints) ? findingCheckpoints.at(-1)?.messageId : null;
-      if (typeof through === 'string') metadata.retiredCheckpointBinding = { assignmentAfterId, through, session, sessionId, sessionRecord };
+      const last = Array.isArray(findingCheckpoints) ? findingCheckpoints.at(-1) : null;
+      if (last?.subject?.assignmentAfterId === assignmentAfterId && typeof last?.messageId === 'string' && holdsSession(current, last.session))
+        metadata.retiredCheckpointBinding = { assignmentAfterId, through: last.messageId, session, sessionId, sessionRecord };
+      if (binding.sessionId && binding.sessionId === sessionId) delete metadata.session;
     }
     for (const [key, value] of Object.entries(binding)) {
       if (metadata[key] === value || metadata[key] === record!.metadata?.[key]) delete metadata[key];

@@ -39,14 +39,28 @@ export function prepareCheckpoint(task: string, producer: ParticipantV1, session
 export interface Reference {
   messageId: string; artifactId: string; filename: string; sha256: string; size: number; session: string; subject: Subject;
 }
-export function writeRecoveryReports(diffPath: string, reports: readonly (Reference & { report: string })[]) {
+function* reportLines(report: string) {
+  for (const [chunk] of report.matchAll(/[\s\S]{1,256}/gu)) yield JSON.stringify(chunk);
+}
+function writeReportPage(file: string, header: object, lines: string[]) {
+  writeFileSync(file, [JSON.stringify(header), ...lines].join('\n') + '\n', { flag: 'wx', mode: 0o400 });
+}
+export function writeRecoveryReports(diffPath: string, reports: readonly (Reference & { report: string })[], result: string | null) {
+  if (result !== null) {
+    const chunks = reportLines(result);
+    let next = chunks.next(), page = 1;
+    do {
+      const lines: string[] = [];
+      while (!next.done && lines.length < 256) { lines.push(next.value); next = chunks.next(); }
+      writeReportPage(`${diffPath}.result-${page}.jsonl`, { type: 'result', nextPage: next.done ? null : page + 1 }, lines);
+      page++;
+    } while (!next.done);
+  }
   if (!reports.length) return;
   const directory = `${diffPath}.checkpoints`;
   mkdirSync(directory, { mode: 0o700 });
   reports.forEach(({ report, ...reference }, index) => {
-    const lines = [JSON.stringify(reference)];
-    for (const [chunk] of report.matchAll(/[\s\S]{1,256}/gu)) lines.push(JSON.stringify(chunk));
-    writeFileSync(path.join(directory, `${index + 1}.jsonl`), lines.join('\n') + '\n', { flag: 'wx', mode: 0o400 });
+    writeReportPage(path.join(directory, `${index + 1}.jsonl`), reference, [...reportLines(report)]);
   });
 }
 function reference(value: unknown): value is Reference {

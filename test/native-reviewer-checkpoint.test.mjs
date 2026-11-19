@@ -146,6 +146,24 @@ test('refreshing an opened diff cannot label old work with a newer assignment of
   assert.deepEqual(await lookup({ checkpointDiff: nextPath }), f.artifact().subject);
 });
 
+for (const published of [false, true]) test(`initial lift rollback ${published ? 'after' : 'before'} session publication keeps evidence but no sender`, async t => {
+  const f = fixture(t), initial = f.participant(), pointer = path.join(f.home, 'reviewer.session.json');
+  const undo = bindBeforeLaunch(f.home, f.task, f.address, { sessionId: 'session-r1', sessionRecord: pointer });
+  const first = f.send(), second = f.send({ session: pointer, artifact: f.artifact('Second finding') });
+  if (published) persistReviewerSession(f.home, f.task, initial, 'short-r1', false, 'session-r1');
+  undo();
+  undo();
+  const retired = f.participant();
+  assert.equal(retired.metadata.assignmentAfterId, initial.metadata.assignmentAfterId);
+  assert.equal(boundSessionOf(retired), null);
+  assert.deepEqual(store.retainedReviewerCheckpoints(f.home, f.task, retired).map(r => [r.messageId, r.report]),
+    [[first.message.id, report], [second.message.id, 'Second finding']]);
+  for (const identity of ['session-r1', 'short-r1', pointer]) {
+    assert.ok((await call(f, {}, identity)).isError);
+    assert.ok((await call(f, { type: 'status', artifact: undefined }, identity)).isError);
+  }
+});
+
 test('late lift completion merges the session into the re-review that already checkpointed', t => {
   const f = fixture(t), initial = f.participant();
   const undo = bindBeforeLaunch(f.home, f.task, f.address, { sessionId: 'session-r1', session: 'newly-confirmed' });
