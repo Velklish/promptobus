@@ -19,7 +19,7 @@ import { claudeDriver } from '../lib/driver-claude.js';
 import { cursorDriver } from '../lib/driver-cursor.js';
 import { codexDriver, installPrivateHomeLayer, makeParticipantHome, pristineCodexSystemSkills } from '../lib/driver-codex.js';
 import { opencodeDriver } from '../lib/driver-opencode.js';
-import { assertNativeContextDriver, contextCliOptions, nativeContextMetadata, nativeContextPrompt, prepareNativeContext, selectedNativeFiles } from '../lib/native-participant-context.js';
+import { assertNativeContextDriver, contextCliOptions, nativeContextMetadata, nativeContextPrompt, openSelectedNativeSource, prepareNativeContext, selectedNativeFiles } from '../lib/native-participant-context.js';
 import { createTask, participantRecord, readTask, sendMessage, sessionIdentity, upsertParticipant } from '../lib/store.js';
 import { REGISTRY } from '../lib/drivers.js';
 import { openParticipant } from '../dist/index.js';
@@ -119,6 +119,42 @@ function selectedCopyPlan(name, kind) {
   assert.ok(destination);
   return { file, foreign, outside, destination, plan, config: path.join(cwd, '.cursor', 'mcp.json') };
 }
+
+test('selected native copy rejects a non-regular source before opening it or writing launch files', () => {
+  const fixture = selectedCopyPlan('copy-non-regular', 'skill');
+  unlinkSync(fixture.file); mkdirSync(fixture.file);
+  const originalOpen = fs.openSync;
+  fs.openSync = (candidate, ...args) => {
+    assert.notEqual(candidate, fixture.file, 'a known non-regular source must not be opened');
+    return originalOpen(candidate, ...args);
+  };
+  syncBuiltinESMExports();
+  try { assert.throws(() => writeLaunchFiles(fixture.plan.files), /source requires a regular file/); }
+  finally { fs.openSync = originalOpen; syncBuiltinESMExports(); }
+  assert.equal(existsSync(fixture.destination), false);
+  assert.equal(existsSync(fixture.config), false);
+});
+
+test('selected native source opens nonblocking and closes a non-regular descriptor', { skip: !fs.constants.O_NONBLOCK }, () => {
+  const file = put(path.join(sandbox, 'non-regular-descriptor.txt'), 'Normal file fixture.');
+  const { openSync, fstatSync, closeSync } = fs;
+  let opened, flags, closes = 0;
+  fs.openSync = (candidate, mode, ...rest) => {
+    const fd = openSync(candidate, mode, ...rest);
+    if (candidate === file) { opened = fd; flags = mode; }
+    return fd;
+  };
+  fs.fstatSync = (fd, ...rest) => fd === opened ? { isFile: () => false } : fstatSync(fd, ...rest);
+  fs.closeSync = fd => { if (fd === opened) closes++; return closeSync(fd); };
+  syncBuiltinESMExports();
+  try { assert.throws(() => openSelectedNativeSource(file), /source requires a regular file/); }
+  finally {
+    Object.assign(fs, { openSync, fstatSync, closeSync }); syncBuiltinESMExports();
+    if (opened !== undefined && closes === 0) closeSync(opened);
+  }
+  assert.equal(flags & fs.constants.O_NONBLOCK, fs.constants.O_NONBLOCK);
+  assert.equal(closes, 1);
+});
 
 for (const source of ['shared', 'skill']) {
   test(`selected native copy source refuses a changed ${source} leaf before launch-file writes`, () => {
@@ -374,6 +410,30 @@ test('immutable metadata retains purpose/declaration and prevents changed re-rev
   assert.throws(() => prepare({ participant, options: { ...options, contextPurpose: 'author-voice' } }), /prepare a new participant and session/);
   assert.throws(() => prepare({ participant, options: { ...options, contextDeclaration: { skills: [], resources: [] } } }), /prepare a new participant and session/);
   assert.throws(() => prepare({ participant: { metadata: {} } }), /legacy participant needs a new preparation/);
+});
+
+test('worker repository refusal takes precedence over a changed context without changing the participant', async () => {
+  const task = createTask(host.promptobusHome(), { id: 'native-repo-refusal-t20261020-000001', title: 'Repository refusal' });
+  const selected = prepare({ taskId: task.id });
+  const originalWorktree = path.join(sandbox, 'original-worker-worktree');
+  const sentinel = put(path.join(originalWorktree, 'keep.txt'), 'Original worktree');
+  upsertParticipant(host.promptobusHome(), task.id, participantRecord('worker:fixed', { harness: 'claude',
+    repo: 'demo', repoAbs: repo, worktree: originalWorktree, branch: 'fixed', ...nativeContextMetadata(selected) }));
+  const before = readTask(host.promptobusHome(), task.id);
+  const fixtureHost = Object.create(host);
+  fixtureHost.resolveRepo = async name => ({ nsPath: name });
+  fixtureHost.repoAbsPath = name => path.join(root, name);
+  fixtureHost.isClone = () => true;
+  mkdirSync(path.join(root, 'other'));
+  const request = { task: task.id, brief, worker: 'fixed', dryRun: true, contextPurpose: 'author-voice' };
+  await assert.rejects(planSpawn(fixtureHost, { ...request, repo: 'other' }), error => {
+    assert.ok(error.message.includes(`worker:fixed in task ${task.id} is the worker of repository demo`));
+    assert.match(error.message, /spawn is going to other.*pick another --worker/);
+    return true;
+  });
+  await assert.rejects(planSpawn(fixtureHost, { ...request, repo: 'demo' }), /Native participant context changed; prepare a new participant and session/);
+  assert.deepEqual(readTask(host.promptobusHome(), task.id), before);
+  assert.equal(readFileSync(sentinel, 'utf8'), 'Original worktree');
 });
 
 for (const driver of [claudeDriver, cursorDriver, codexDriver, opencodeDriver]) {

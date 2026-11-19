@@ -101,13 +101,15 @@ export function nativeContextPrompt(selection: Selection) {
 export function openSelectedNativeSource(file: string) {
   if (realpathSync(file) !== file) throw new GateError(`Selected native context source changed its canonical path: ${file}`);
   const before = statSync(file);
-  const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+  if (!before.isFile()) throw new GateError(`Selected native context source requires a regular file: ${file}`);
+  const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
-    const opened = fstatSync(fd), canonical = realpathSync(file);
+    const opened = fstatSync(fd);
+    if (!opened.isFile()) throw new GateError(`Selected native context source requires a regular file: ${file}`);
+    const canonical = realpathSync(file);
     if (canonical !== file) throw new GateError(`Selected native context source changed its canonical path while opening: ${file}`);
     const current = statSync(canonical);
     if ([before, current].some(entry => entry.dev !== opened.dev || entry.ino !== opened.ino)) throw new GateError(`Selected native context source changed while opening: ${file}`);
-    if (!opened.isFile()) throw new GateError(`Selected native context source requires a regular file: ${file}`);
     return { fd, stat: opened };
   } catch (error) { closeSync(fd); throw error; }
 }

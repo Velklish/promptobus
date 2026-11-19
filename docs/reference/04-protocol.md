@@ -1159,7 +1159,9 @@ Its exact immutable command entry is revalidated against current task/phase/toke
 after resource waits and immediately before spawn. The checkout recorder above
 remains an evidence collector. A post-spawn finalization failure retains the
 original executed outcome and unresolved resource blocker; it cannot report that
-the command was not run. The checked launcher remains an ordinary permissioned
+the command was not run. If raw stream hashing fails, the collector closes the
+reserved receipt descriptor without replacing the primary error or discarding
+the raw files. The checked launcher remains an ordinary permissioned
 native execution, with cooperative resource coverage rather than host-wide command
 interception or caller authentication from a supplied actor.
 
@@ -1255,6 +1257,8 @@ changed. No data is inferred from a message ID or a local filename.
 
 The manifest preserves `verdictNames`, `mutationProbe`, `treeState`,
 `environmentalRed` and `gatesNotRun` as complete details or a concrete `notRun`.
+Empty or whitespace-only `notRun` reasons refuse; nonblank reason text is kept
+unchanged.
 A complete mutation probe detail includes `coverage.establishes` and
 `coverage.doesNotEstablish`. A missing boundary, an unknown `scope` string, and
 the same claim in both fields are refused. `notRun` does not carry `coverage`.

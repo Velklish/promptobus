@@ -121,8 +121,13 @@ test('a complete probe carries coverage and a narrow boundary is not recipe proo
   await assert.rejects(f.validate(), /expected/);
   apply({ status: 'notRun', reason: 'Fictional transport fixture; no real gate or probe was run.', coverage: detail.coverage });
   await assert.rejects(f.validate(), /coverage|unrecognized|Unrecognized/i);
-  apply({ status: 'notRun', reason: 'Fictional transport fixture; no real gate or probe was run.' });
-  assert.equal((await f.validate()).checks.mutationProbe.status, 'notRun');
+  for (const blank of ['', ' \t\n', '\u00a0']) {
+    apply({ status: 'notRun', reason: blank });
+    await assert.rejects(f.validate(), /checks\.mutationProbe\.reason:/);
+  }
+  const reason = ' Fictional transport fixture; no real gate or probe was run. ';
+  apply({ status: 'notRun', reason });
+  assert.deepEqual((await f.validate()).checks.mutationProbe, { status: 'notRun', reason });
 });
 
 test('wrong IDs, source/base, hashes, producer, missing parts and cropped raw refuse mechanically', async t => {

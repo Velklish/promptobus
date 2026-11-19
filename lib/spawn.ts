@@ -1043,6 +1043,12 @@ export async function planSpawn(rootOrHost: unknown, opts: SpawnOptions): Promis
   // Two name lines: `name` is for a person in `claude agents`, `worktreeName` is for the
   // machine; both travel into the task journal.
   const participant = participantOf(taskMeta, address);
+  const was = (participant?.metadata as SpawnMetadata | undefined) ?? {};
+  // Automatic slugs split cross-repository collisions; explicit names must refuse.
+  if (opts.worker && was.repo && was.repo !== nsPath) {
+    throw new Error(`${address} in task ${taskId} is the worker of repository ${was.repo}, `
+      + `and spawn is going to ${nsPath}. The worker name is one per task: pick another --worker.`);
+  }
   const selectedContext = prepareNativeContext(host, { root: repoAbs, role: ownerName, taskId, options: opts, participant });
   assertNativeContextDriver(selectedContext, participant ? driverOf(participant) : liftHarness(host, opts.harness));
   const contacts = contactsOf(home, taskId, address, { registry: registryOf(host), seats: [{
@@ -1097,16 +1103,6 @@ export async function planSpawn(rootOrHost: unknown, opts: SpawnOptions): Promis
     throw new GateError(`${address} in task ${taskId} was lifted by harness ${driver.id}, and --harness asks for `
       + `${opts.harness}: a repeat spawn restarts an ALREADY STARTED participant, and there is no way to change `
       + `its tool mid-flight — its worktree and branch stayed with it. For a second tool pick another name: --worker <name>.`);
-  }
-  // Mechanism fields live in the v1 record `metadata`; v1's own fields are role, harness,
-  // mode, session reference, and the capabilities snapshot.
-  const was = (participant?.metadata as SpawnMetadata | undefined) ?? {};
-  // An explicit name taken by a worker of ANOTHER repository: the journal participant
-  // would hand over its worktree. An automatic slug splits that collision with a number;
-  // an explicit one does not.
-  if (opts.worker && was.repo && was.repo !== nsPath) {
-    throw new Error(`${address} in task ${taskId} is the worker of repository ${was.repo}, `
-      + `and spawn is going to ${nsPath}. The worker name is one per task: pick another --worker.`);
   }
   // Spawn at a live participant's address is a refusal: a repeat spawn routinely
   // restarts a DEAD one in its worktree and branch, and on a live one would send a

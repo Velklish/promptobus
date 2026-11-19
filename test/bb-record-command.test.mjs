@@ -128,7 +128,7 @@ test('recorder spawn failure records an incomplete receipt and exits nonzero', t
   assert.equal(receipt.complete, false); assert.match(receipt.error, /ENOENT/);
 });
 
-for (const fault of ['callback', 'lock-release', 'raw-read', 'receipt-write', 'receipt-close']) {
+for (const fault of ['callback', 'lock-release', 'raw-read', 'raw-read-and-close', 'receipt-write', 'receipt-close']) {
   test(`post-spawn ${fault} failure preserves owned child close and original exit 7`, t => {
     const directory = mkdtempSync(path.join(os.tmpdir(), 'pb-direct-receipt-'));
     t.after(() => rmSync(directory, { recursive: true, force: true }));
@@ -139,13 +139,13 @@ for (const fault of ['callback', 'lock-release', 'raw-read', 'receipt-write', 'r
 import {recordBbDirectCommand} from ${JSON.stringify(recorder)};import {withDirLock} from ${JSON.stringify(host)};
 const fault=${JSON.stringify(fault)},stem=${JSON.stringify(stem)},marker=stem+'.entered',release=stem+'.release',lock=stem+'.lock';
 const original={spawn:cp.spawn,open:fs.openSync,read:fs.readFileSync,write:fs.writeFileSync,close:fs.closeSync,rm:fs.rmSync};
-let owned,closed,receiptFd,settled=false,witnessOut='',witnessErr='',triggered=false;
+let owned,closed,receiptFd,receiptCloses=0,settled=false,witnessOut='',witnessErr='',triggered=false;
 cp.spawn=(...args)=>{owned=original.spawn(...args);owned.stdout.on('data',b=>witnessOut+=b);owned.stderr.on('data',b=>witnessErr+=b);
 closed=new Promise(resolve=>owned.on('close',(exit,signal)=>resolve({exit,signal})));return owned};
 fs.openSync=(file,...args)=>{const fd=original.open(file,...args);if(String(file)===stem+'.receipt.txt')receiptFd=fd;return fd};
-fs.readFileSync=(file,...args)=>{if(fault==='raw-read'&&String(file)===stem+'.stdout.txt'&&!triggered){triggered=true;throw new Error('fixture raw-read failure')}return original.read(file,...args)};
+fs.readFileSync=(file,...args)=>{if(fault.startsWith('raw-read')&&String(file)===stem+'.stdout.txt'&&!triggered){triggered=true;throw new Error('fixture raw-read failure')}return original.read(file,...args)};
 fs.writeFileSync=(file,...args)=>{if(fault==='receipt-write'&&file===receiptFd&&!triggered){triggered=true;throw new Error('fixture receipt-write failure')}return original.write(file,...args)};
-fs.closeSync=fd=>{if(fault==='receipt-close'&&fd===receiptFd&&!triggered){triggered=true;original.close(fd);throw new Error('fixture receipt-close failure')}return original.close(fd)};
+fs.closeSync=fd=>{if(fd===receiptFd){receiptCloses++;if(fault==='receipt-close'||fault==='raw-read-and-close'){original.close(fd);throw new Error('fixture receipt-close failure')}}return original.close(fd)};
 fs.rmSync=(file,...args)=>{if(fault==='lock-release'&&String(file)===lock&&!triggered){triggered=true;throw new Error('fixture lock-release failure')}return original.rm(file,...args)};syncBuiltinESMExports();
 const command=[process.execPath,'-e',"const fs=require('fs');fs.writeFileSync("+JSON.stringify(marker)+",'entered');process.stdout.write('ORIGINAL_STDOUT\\\\n');process.stderr.write('ORIGINAL_ASSERTION\\\\n');const timer=setInterval(()=>{if(fs.existsSync("+JSON.stringify(release)+")){clearInterval(timer);process.exitCode=7}},10);setTimeout(()=>process.exit(7),10000).unref()"];
 const fields={admission:{token:'exact-token',commandId:'run'},launcher:{sha256:'exact-launcher'}};
@@ -158,7 +158,7 @@ try{while(!fs.existsSync(marker))await new Promise(resolve=>setTimeout(resolve,1
 finally{original.write(release,'release');owned.stdout.resume();owned.stderr.resume();await closed;}
 const outcome=await recording,child=await closed;
 cp.spawn=original.spawn;fs.openSync=original.open;fs.readFileSync=original.read;fs.writeFileSync=original.write;fs.closeSync=original.close;fs.rmSync=original.rm;syncBuiltinESMExports();
-const report={fault,settledBeforeRelease,child,witnessOut,witnessErr,...outcome};original.write(stem+'.witness.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+const report={fault,settledBeforeRelease,child,witnessOut,witnessErr,receiptCloses,...outcome};original.write(stem+'.witness.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
 `);
     const result = spawnSync(process.execPath, [harness], { encoding: 'utf8', timeout: 15000 });
     writeFileSync(path.join(directory, 'harness.stdout.txt'), result.stdout ?? '');
@@ -178,6 +178,9 @@ const report={fault,settledBeforeRelease,child,witnessOut,witnessErr,...outcome}
     assert.equal(report.receipt.admission.token, 'exact-token'); assert.equal(report.receipt.launcher.sha256, 'exact-launcher');
     assert.equal(readFileSync(`${stem}.stdout.txt`, 'utf8'), report.witnessOut);
     assert.equal(readFileSync(`${stem}.stderr.txt`, 'utf8'), report.witnessErr);
-    assert.match(report.error, new RegExp(`fixture ${fault} failure`));
+    const primaryFault = fault === 'raw-read-and-close' ? 'raw-read' : fault;
+    assert.match(report.error, new RegExp(`fixture ${primaryFault} failure`));
+    assert.equal(report.receipt.finalizationError, report.error);
+    if (fault.startsWith('raw-read')) assert.equal(report.receiptCloses, 1);
   });
 }
