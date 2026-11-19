@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Clarify when a release-writer correction needs a regression check while retaining the CLI help and shipped-skill ledger requirements.
 - Remove the unmeasured Codex bus-call cost from lift output and point historical captures to the current contract guide.
 - Clarify which owner mail wakes a participant and how native Stop precedes task closure and service shutdown.
 - Align routing documentation with the shipped harness and catalog inventories, supported validation entry points, retained cache readings, and telemetry reports versus confirmed calibration writes.

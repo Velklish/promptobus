@@ -13,7 +13,7 @@ promises and the right behaviour for what it is. Between them there was nothing.
 
 So the worker killed the holder by hand, from the pids in the Codex registry record: 172 MB
 freed — a 45 MB holder and its 127 MB `app-server` — on a machine at 89.3 % swap under four
-workers. **The kill left a lie behind.** The record stayed at `state: alive`, and only `done` on
+workers. The record stayed at `state: alive`, and only `done` on
 that task would ever clear it, so anything reading the registry for liveness after that read a
 session that did not exist. That is the same shape as a contact-point file that outlives the session it names,
 and the two differ in where the cure lives: a contact point has an externally checkable sign

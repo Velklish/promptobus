@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
+import { participantFileStem } from '../dist/index.js';
 import { threadStartConfig } from '../lib/codex-session.js';
 import { sourceFile } from './source-files.mjs';
 
@@ -29,6 +30,16 @@ const section = (document, heading) => {
 };
 const decision = (document, label, nextLabel) => section(document, '## Decision')
   .split(`**${label}.**`)[1]?.split(`**${nextLabel}.**`)[0] ?? '';
+
+check('docs: release writer requires a regression for factual corrections, not style alone',
+  has(section(read('docs/guides/releasing.md'), '## Technical-writer pass'),
+    'A currency correction that changes a documented fact or contract needs a regression check that fails on the old text: a quote, a test, or a lint rule. A style-only edit that changes no fact does not need a currency regression.'));
+
+check('docs: participant file-stem list includes the child root prefix',
+  has(read('docs/reference/04-protocol.md'), `\`teamlead-<slug>\`, \`${participantFileStem('root:<slug>')}\`, \`peer-<slug>\``));
+
+check('docs: orchestration send routes admit the child-side root address',
+  has(read('skills/orchestrate/SKILL.md'), "governance routes also admit registered teamleads, a child task's `root:<root slug>`, linked peers and `user` under their message-type rules"));
 
 check('docs: readable owner progress neither wakes nor escalates; blocking HOLD needs a question',
   has(read('docs/reference/04-protocol.md'), 'the warden neither knocks nor escalates to `SILENT`')

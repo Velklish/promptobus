@@ -283,7 +283,7 @@ binary on this machine, right now. The verdict shape and the rules it answers
 under are the contract ([model-routing.ts](../../src/model-routing.ts)); this
 file is only the harness half of it.
 
-The whole probe is TWO reads and no turn. Binary and version come from the host
+The probe takes two reads and no model turn. Binary and version come from the host
 (`resolveToolBin`) — ADR-005 says an adapter reports `binary_missing` from its
 verdict rather than searching `PATH` itself — and auth comes from `claude auth
 status --json`, the one non-interactive check the binary offers today.

@@ -12,6 +12,8 @@ The `writer.style` glob in `backslop.json` selects all of `lib/cli.ts`, but the 
 
 Record a currency ledger row for each behaviour-changing commit, plus one row for the CLI help and one for every shipped skill. A surface row names the change it was checked against or says `no change touches it`. Record a style ledger row for each `backslop-humanizer` pattern. A release has no writer task, so put both ledgers in the message body of the commit carrying the writer fixes. Commit fixes by document group as the writer skill directs, then review those commits before the release commit.
 
+A currency correction that changes a documented fact or contract needs a regression check that fails on the old text: a quote, a test, or a lint rule. A style-only edit that changes no fact does not need a currency regression.
+
 ## Release commit
 
 Finish the writer pass and commit its fixes and the intended `Unreleased` changelog entries first. Start from a clean tree with the pinned dependencies installed (`npm ci`). Choose a new stable version and a release date. Keep receipts on durable storage outside **all** registered Git worktrees, so removing a disposable worktree does not remove the evidence. Replace the example version, date and absolute receipt path below with the intended release values.
