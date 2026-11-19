@@ -91,6 +91,9 @@ for (const kind of ['default','selected','selected-recovery','missing-original']
     check(`raw profile: production ${ref} keeps requested sandbox/approval and fixture identity`,
       record?.sandbox === 'workspace-write' && record.approvalPolicy === 'on-request' && spawned.session === 'thread');
     const request=trace.find(msg=>msg.method==='thread/start')?.params;
+    check(`raw profile: production ${ref} sends stable_environment_tools=false only for raw receipts`,
+      selected ? request.config['features.stable_environment_tools'] === false
+        : !Object.hasOwn(request.config, 'features.stable_environment_tools'));
     check(`raw profile: production ${ref} pins model, effort, roots, raw request and role denials`,
       record?.model==='gpt-6.1-sol' && record.effort==='xhigh' && record.addDirs.join()===root
       && request?.config?.model_reasoning_effort==='xhigh' && request?.model==='gpt-6.1-sol' && request.sandbox==='workspace-write' && request.approvalPolicy==='on-request'
