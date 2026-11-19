@@ -1094,9 +1094,12 @@ not a fresh routing receipt. A changed precondition in a running batch takes eff
 only after acknowledged application; otherwise the coordinator uses verified
 official stop/pause when the old conditions must no longer permit continuation.
 
-The coordinator retains the slot until it acknowledges the exact all-calls release
-or verifies an official task-owned stop/pause. SDK `sent` or `queued` and a sent
-Hold do not prove participant application. Stop requires fresh actual status and
+Before reassigning the slot, the coordinator confirms removal of the exact grant
+by publishing against the observed control revision. On a stale revision it rereads
+control; a delayed release never retires a successor grant. Neither acknowledging
+an all-calls release nor verifying an official task-owned Stop retires the grant.
+SDK `sent` or `queued` and a sent Hold do not prove participant application.
+Stop requires fresh actual status and
 paused delivery, with zero pending and running calls before reassignment.
 Worktrees, raw receipts and unrelated participants remain in place.
 The [release contract](04-protocol.md#bb-command-grant-release) defines the receipt
