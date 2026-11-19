@@ -354,7 +354,7 @@ import { runPromptobus } from 'promptobus/cli';
 | `promptobus/hooks` | Hook planner for the Stop and SessionStart loop guard; Cursor installs its stop event only |
 | `promptobus/bb-reviewer` | Constrained Codex executor and bounded file tools for the optional BB reviewer provider |
 | `promptobus/participant-context` | Strict task declarations and shared metadata-only context admission for BB and native delivery |
-| `promptobus/bb-host` | Full Host context delivery and role-classified canonical calls with typed consumer integration |
+| `promptobus/bb-host` | Host context delivery and role-classified canonical calls through a `BbContextHost` resolver |
 | `promptobus/instructions` | Pure role instruction renderers, typed runtime bindings and BB skill delivery |
 | `promptobus/driver` | Driver contract, `createRegistry`, session helpers, model-routing types |
 | `promptobus/telemetry` | Participant generation rows and role summaries: `telemetryStats(host, { task })`, `telemetrySummary` and their record types |

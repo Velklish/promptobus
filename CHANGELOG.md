@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - When startup refuses a retained client from another shared-service runtime, report its runtime fingerprint and direct the operator to the matching launcher owner. A missing launch record is not proof that the native session stopped.
 - Gate instructions must resolve to a file inside the install root. Internal symlinks still work; installations using external file or directory links must place the instructions under the root.
+- Use the BB context Host directly for pipeline lookups and align typed catch bindings in the Codex session and OpenCode driver. Runtime behavior is unchanged.
 - Check the consumed Codex app-server protocol against 0.170.0; the minimum remains 0.158.0.
 
 - Declare BB `>=0.50.1 <0.51` and Plugin SDK `>=0.6.157` for both BB plugins instead of one exact pair, so a BB patch release no longer disables them; a new BB minor line still needs a release. The build pins SDK 0.6.157. Source checks do not establish an installed live workflow.
