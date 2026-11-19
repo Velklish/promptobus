@@ -501,7 +501,8 @@ for resolving a task, reading a mailbox or sending a message.
 **A handover the binding gate refused is not an entry either.** `onJoin`
 passes the proven session to the driver. Claude Code checks the socket's
 declared session; Codex and OpenCode match the session and scope of their
-contact record before writing. The driver returns the written point, `null`
+contact record before writing, without trimming the recorded session ID.
+The driver returns the written point, `null`
 when there was nothing to hand over, or `false` when it refused. An authorized
 join without a contact point still requests a listener. Cursor only updates
 its contact point at turn end, not at join. `join` marks the task entered on

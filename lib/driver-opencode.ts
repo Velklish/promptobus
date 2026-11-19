@@ -840,8 +840,7 @@ export function registerWake(home: string, task: string, addr: string, env = pro
     const who = origin === 'join' ? record && joinWakeSession(home, { task, address: addr }, at, session, record, record.sessionId, file)
       : session ?? record?.sessionId ?? null;
     if (origin === 'join' && !who) return false;
-    if (!who) return null;
-    if (record?.sessionId && record.sessionId !== who) return null;
+    if (!who || (origin !== 'join' && record?.sessionId && record.sessionId !== who)) return null;
     const held = foreignSession(home, task, addr, who);
     if (held) {
       sayForeignWrite(home, task, addr, held, who, 'contact-point handoff');

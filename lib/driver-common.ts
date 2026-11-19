@@ -71,12 +71,12 @@ type WakeSlot = { task: string; address: string };
 
 export function joinWakeSession(home: string, declared: WakeSlot, primary: WakeSlot, session: string | null,
   record: { home?: unknown; task?: unknown; address?: unknown }, nativeId: unknown, file: string) {
-  const id = typeof nativeId === 'string' ? nativeId.trim() : '';
-  if (!session || !id || !sameStoreHome(record.home, home)
+  if (!session || typeof nativeId !== 'string' || !nativeId || nativeId !== nativeId.trim()
+    || !sameStoreHome(record.home, home)
     || ![declared, primary].some(slot => slot.task === record.task && slot.address === record.address)) return null;
-  if (session === id) return id;
+  if (session === nativeId) return nativeId;
   const participant = participantOf(readTask(home, declared.task), declared.address);
-  return file && session === file && participant?.metadata?.sessionRecord === file ? id : null;
+  return file && session === file && participant?.metadata?.sessionRecord === file ? nativeId : null;
 }
 
 const foreignWrites = new Set<string>();

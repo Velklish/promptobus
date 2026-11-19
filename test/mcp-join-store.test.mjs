@@ -8,6 +8,7 @@ import test from 'node:test';
 const { busConnection } = await import('../lib/server.js');
 const { bus, createTask, participantRecord, readWake, taskOwner, upsertParticipant, wakeFile, writeWake } = await import('../lib/store.js');
 const { bindSharedWarden } = await import('../lib/warden.js');
+const { registerWake: registerOpenCodeWake } = await import('../lib/driver-opencode.js');
 
 function fixture(t) {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'promptobus-mcp-'));
@@ -113,22 +114,28 @@ test('a refused handoff neither changes contact files nor requests a warden; ins
   assert.deepEqual(demands, [[home, target]]);
 });
 
-test('an OpenCode record must name the session proven through its scoped pointer', (t) => {
+test('an OpenCode record with an invalid session is refused and the same connection retries', (t) => {
   const { home, cwd, demands, connect } = fixture(t);
   const task = 't20261119-120000', address = 'worker:opencode-fixture';
   createTask(home, { id: task, owner: 'fixture-owner' });
   const file = path.join(cwd, 'opencode.json');
   upsertParticipant(home, task, participantRecord(address, { harness: 'opencode', sessionRecord: file }));
   const env = { PROMPTOBUS_OPENCODE_SESSION: file };
+  const sessionId = 'fixture-opencode-session';
+  assert.equal(registerOpenCodeWake(home, task, address, {}, sessionId, 'join'), null);
   writeFileSync(file, JSON.stringify({ home, task, address }));
-  inspect(connect(task, address, env), task);
-  assert.equal(existsSync(wakeFile(home, task, address)), false);
-  assert.deepEqual(demands, []);
+  const connection = connect(task, address, env);
+  for (const invalid of [` ${sessionId}\t`, undefined]) {
+    writeFileSync(file, JSON.stringify({ home, task, address, sessionId: invalid }));
+    inspect(connection, task);
+    assert.equal(existsSync(wakeFile(home, task, address)), false);
+    assert.deepEqual(demands, []);
+  }
 
-  writeFileSync(file, JSON.stringify({ home, task, address, sessionId: 'fixture-opencode-session' }));
-  initialize(connect(task, address, env));
+  writeFileSync(file, JSON.stringify({ home, task, address, sessionId }));
+  inspect(connection, task);
   assert.equal(readWake(home, task, address)?.socket, file);
-  assert.equal(readWake(home, task, address)?.session, 'fixture-opencode-session');
+  assert.equal(readWake(home, task, address)?.session, sessionId);
   assert.deepEqual(demands, [[home, task]]);
 });
 
