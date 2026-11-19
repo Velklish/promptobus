@@ -1082,6 +1082,9 @@ participant with no background agents, pending interactions or other queued
 input. Both raw and display status must be active on this route. The persisted
 marker and exact queue entry prevent another hint while that entry remains;
 plugin reload preserves the delivery epoch and does not acknowledge mail.
+Dispatch rechecks canonical unread mail before admitting an owned mail hint.
+If the mailbox no longer needs a wake, the hint is retired; other queued input
+in the same dispatch waits for its removal rather than being rejected with it.
 Obligation-only continuations remain restricted to idle turn boundaries. Pause,
 Stop replay and explicit-resume requirements apply to both routes.
 

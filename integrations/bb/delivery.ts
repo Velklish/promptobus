@@ -135,9 +135,13 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
       await cancelQueued(b);
       return;
     }
-    if (observation.status === 'active' && !mail.ids.length) {
-      if (state.pending?.key.startsWith('mail:') && state.pending.requestSeq === null) await cancelQueued(b);
-      return;
+    if (!mail.ids.length) {
+      if (state.pending?.key.startsWith('mail:') && state.pending.requestSeq === null) {
+        store.updateDelivery(id, retire);
+        await sweepRetired(b, signal);
+        return;
+      }
+      if (observation.status === 'active') return;
     }
     if (state.pending) {
       const pending = state.pending;
@@ -223,6 +227,15 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
   bb.onDispose(() => { disposed = true; });
   return {
     owns,
+    async recheckMail(b: Binding, owned: string[], epoch: number, signal: AbortSignal) {
+      const id = b.threadId!, pending = store.delivery(id).pending;
+      if (!pending?.key.startsWith('mail:') || !owned.includes(pending.text)) return;
+      const mail = pendingSchema.parse(await onHost(b, { operation: 'pending' }, signal));
+      signal.throwIfAborted();
+      if (!mail.ids.length) store.updateDelivery(id, state => {
+        if (state.epoch === epoch && state.pending?.marker === pending.marker) retire(state);
+      });
+    },
     run,
     replay,
     pause,

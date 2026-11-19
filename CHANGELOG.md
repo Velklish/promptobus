@@ -35,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Queue canonical unread-mail hints for active BB participants. A mailbox read can retire the queued hint during the turn; result reminders still wait for idle.
+- Queue canonical unread-mail hints for active BB participants. Recovery and dispatch retire obsolete hints after a mailbox read without discarding other queued input. Result reminders still wait for idle.
 - Keep an OpenCode stdio server whose first argument repeats its command: only the bus entry drops the duplicated binary.
 - Let hosts keep private environment variables out of managed participants and owner snapshots. Refuse old snapshots that still contain those variables.
 

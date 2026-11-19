@@ -570,8 +570,11 @@ and source-work effects are not exactly-once transactions across the two stores.
 The adapter sends canonical unread-mail hints to an available idle or active
 thread without background agents, pending interactions or other queued input.
 Raw and display status must agree. The adapter uses `queue-if-active` to queue
-behind current work or handle a concurrent start. If the active participant reads
-the mail before its hint runs, recovery retires that hint. Obligation-only
+behind current work or handle a concurrent start. If the participant reads all
+actionable mail before its hint runs, recovery retires the unstarted hint even
+after the turn ends. Dispatch also checks the mailbox: newly arrived actionable
+mail can use the same hint; otherwise a mixed queue waits for removal of the
+obsolete hint so the other input can proceed. Obligation-only
 continuations wait for an idle turn boundary. After a lost send reply, recovery
 looks for the hint in the queue by its marker and in the thread's request history.
 Without a queue or request record it waits

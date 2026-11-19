@@ -1517,14 +1517,17 @@ for (const ambiguous of [false, true]) test(`active unread canonical mail queues
   const admission = await hook(makeMessageDispatchHookContext({ thread, originPluginId: 'promptobus',
     input: { blocks: queued.content, text: queued.content[0].text } }));
   assert.equal(admission.action, 'proceed');
-  s.append('thr-2', 'client/turn/requested', { input: queued.content });
+  const request = s.append('thr-2', 'client/turn/requested', { input: queued.content });
   await s.reconcile();
+  const recovered = s.delivery('thr-2').pending;
+  assert.equal(recovered.state, 'sent'); assert.equal(recovered.queuedId, null);
+  assert.equal(recovered.requestId, request.data.requestId); assert.equal(recovered.requestSeq, request.seq);
   assert.deepEqual(JSON.parse(await s.call('thr-2', 'promptobus_mailbox', { mode: 'read' })).messages.map(m => m.id), [sent.id, second.message.id]);
   assert.equal(JSON.parse(await s.call('thr-2', 'promptobus_mailbox', { mode: 'read' })).messages.length, 0);
   await s.reconcile(); assert.equal(s.wakes.length, 1, 'ACK during the active turn must not send a result continuation');
 });
 
-test('an active mailbox read retires its still-queued hint and leaves foreign input alone', async t => {
+for (const finish of [false, true]) test(`mailbox read retires only its queued hint when recovery observes ${finish ? 'idle' : 'active'}`, async t => {
   const s = await stand(t, { wakeSend({ threadId, input, queues }) {
     const entry = { id: 'owned', threadId, originPluginId: 'promptobus', content: input };
     queues.set(threadId, [entry]); return { delivery: 'queued', queuedMessage: entry };
@@ -1535,9 +1538,53 @@ test('an active mailbox read retires its still-queued hint and leaves foreign in
   await s.reconcile();
   const foreign = { ...s.queues.get(thread.id)[0], id: 'foreign', originPluginId: 'other' };
   s.queues.get(thread.id).push(foreign);
-  await s.call(thread.id, 'promptobus_mailbox', { mode: 'read' }); await s.reconcile();
+  await s.call(thread.id, 'promptobus_mailbox', { mode: 'read' });
+  if (finish) s.finish(thread.id);
+  await s.reconcile();
   assert.deepEqual(s.queues.get(thread.id), [foreign]); assert.equal(s.delivery(thread.id).pending, null);
   assert.equal(s.delivery(thread.id).paused, false); assert.equal(s.wakes.length, 1);
+  s.queues.set(thread.id, []); await s.reconcile();
+  assert.equal(s.delivery(thread.id).continuations, finish ? 1 : 0);
+});
+
+for (const scenario of ['alone', 'mixed', 'new mail']) test(`dispatch before recovery after a mailbox read: ${scenario}`, async t => {
+  const s = await stand(t, { wakeSend({ threadId, input, queues }) {
+    const entry = { id: 'hint', threadId, originPluginId: 'promptobus', content: input };
+    queues.set(threadId, [entry]); return { delivery: 'queued', queuedMessage: entry };
+  } });
+  await s.create(); await s.add('worker-one');
+  const thread = s.threads.get('thr-2'); thread.status = thread.runtime.displayStatus = 'active';
+  await s.call('thr-1', 'promptobus_send', { to: ['worker-one'], type: 'task', body: 'Queued before read' });
+  await s.reconcile();
+  const [hint] = s.queues.get(thread.id);
+  const foreign = { ...hint, id: 'foreign', originPluginId: 'another-plugin' };
+  const dispatch = entries => {
+    const blocks = entries.flatMap(entry => entry.content);
+    return s.host.harness.inspection.registrations.hooks['message.dispatch'](makeMessageDispatchHookContext({
+      thread, queuedMessages: entries, input: { blocks, text: blocks.map(block => block.text).join('\n') } }));
+  };
+  await s.call(thread.id, 'promptobus_mailbox', { mode: 'read' });
+  if (scenario === 'new mail') {
+    const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+    const { message } = engine.sendSync(s.task, { from: 'orchestrator', to: ['worker-one'], type: 'status', body: 'Arrived after read' });
+    assert.equal((await dispatch([hint])).action, 'proceed');
+    assert.deepEqual(engine.glance(s.task, 'worker-one').map(m => m.id), [message.id]);
+    assert.equal(s.delivery(thread.id).pending.queuedId, hint.id);
+  } else {
+    const mixed = scenario === 'mixed', entries = mixed ? [hint, foreign] : [hint];
+    s.queues.set(thread.id, entries); s.interactions.set(thread.id, [{ id: 'approval' }]);
+    const decision = await dispatch(entries);
+    if (mixed) assert.equal(decision.action, 'wait');
+    else {
+      assert.equal(decision.action, 'reject'); assert.match(decision.message, /cancelled wake was superseded/);
+      s.append(thread.id, 'client/turn/rejected', { requestId: 'obsolete', message: decision.message });
+    }
+    assert.equal(s.delivery(thread.id).pending, null);
+    await s.reconcile(); assert.deepEqual(s.queues.get(thread.id), mixed ? [foreign] : []);
+    if (mixed) assert.equal((await dispatch([foreign])).action, 'proceed');
+    assert.equal(s.delivery(thread.id).paused, false);
+  }
+  assert.equal(s.wakes.length, 1);
 });
 
 test('active obligation-only turns defer continuations until an idle boundary', async t => {
