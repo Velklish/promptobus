@@ -1,35 +1,5 @@
 #!/usr/bin/env node
-// Live check of the Cursor driver on a real `agent`. Run:
-//
-//   node scripts/live-cursor.mjs [--model <id>]
-//
-// Not in `npm test` and will not be: it raises live Cursor sessions, spends
-// account limits and writes into the person home what Cursor itself writes
-// there.
-//
-// **Why not `live-e2e.mjs --harness cursor`.** That run is the same scenario as
-// the stub harness ([scenario.mjs](../test/scenario.mjs)), and it is built for
-// Claude Code whole: its own orchestrator messaging socket, a session snapshot
-// by list, `permission` and `limit` stall turns Cursor does not have by nature.
-// Driving it with a second harness would mean editing the scenario itself, not
-// its reads — and scenario verdicts and thresholds do not move. So this file
-// has its own loop, shorter and about its own: raise a Cursor participant, a
-// bus loop from its live persist session, a wake by injection, a human attach,
-// delivery into a going turn, a read-only reviewer, a skill read from
-// `.cursor/skills` of its `--workspace`, and cleanup.
-//
-// What the run checks and what it does not. It checks: that the mechanism
-// raises a live persist session with the real binary and finds it among
-// foreign ones, that the bus reaches it by a tool call (not by reply text),
-// that the warden wakes a stalled session by injection and without a new
-// process, that a human attaches to the same session as a second client, that
-// a message during a turn arrives and is executed on the next turn, that the
-// reviewer deny holds, that the participant reads a skill from `.cursor/skills`
-// of its `--workspace` (a stub in the canon, a marker in the first bus
-// message), and that after the loop the machine has neither sessions nor
-// processes nor registry records — and the person sessions are intact. It does
-// not check model-reasoning quality: checks go by a marker at the start of the
-// body.
+// Live Cursor persist scenario; see docs/guides/contributing.md#live-harness-scenarios.
 import {
   copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync, writeSync,
 } from 'node:fs';
@@ -88,9 +58,7 @@ if (!tool.ok) {
   process.exit(1);
 }
 
-// Session identity is stripped from this environment with the same list as the
-// suite: the run is driven from a session that has all five variables set, and
-// a leaked `PROMPTOBUS_TASK` would send sandbox commands onto a live-run task.
+// Strip session identity before issuing sandbox commands.
 const leaked = SESSION_LEAK_VARS.filter((name) => name in process.env);
 dropSessionLeaks(process.env);
 
@@ -106,9 +74,7 @@ function at_(name, ms) {
   process.stdout.write(`  · ${name}: ${(ms / 1000).toFixed(1)} s\n`);
 }
 
-// Snapshot of the person home: what Cursor writes there the report names by
-// name. Absolute timestamps are not needed here — directory compositions are
-// compared before and after.
+// Compare directory composition rather than timestamps in the owner home.
 const CURSOR_HOME = path.join(homedir(), '.cursor');
 function snapshotHome() {
   const listing = (dir) => {
@@ -125,17 +91,7 @@ function snapshotHome() {
 }
 const before = snapshotHome();
 
-// The mechanism session registry lives in the person home and is NOT redirected
-// in a live run: the subject is how this works for the user. That nothing is
-// left there after the loop is what the run compares — compositions before and
-// after.
-//
-// The path is NAMED here rather than left to a default, and it is the same path
-// the package used to fall back to. The fallback is gone: with no variable and
-// no host bound, the registry helpers refuse by name rather than guess a
-// directory under someone's real home (PB-2). A live run is exactly the case
-// that WANTS the real one, so it says so — the way `live-codex.mjs` names its
-// own state home, and nothing else in this process binds a host.
+// Name the real registry explicitly; the stand observes it rather than redirecting it.
 process.env.PROMPTOBUS_CURSOR_HOME = process.env.PROMPTOBUS_CURSOR_HOME
   ?? path.join(homedir(), '.promptobus', 'cursor');
 const STATE_HOME = cursorStateHome();
@@ -148,10 +104,7 @@ function snapshotState() {
 }
 const stateBefore = snapshotState();
 
-// Persist sessions on the shared server before the run: person sessions legally
-// live nearby, and they must be subtracted — an "empty list" after the loop
-// would be a wrong verdict on a machine where the person works in their own
-// session.
+// Record pre-existing persist sessions so teardown does not count them as leaks.
 let sessionsBefore;
 try {
   sessionsBefore = new Set(requiredTmuxSessions(readTmuxSessions).map((s) => s.name));
@@ -223,13 +176,7 @@ process.stdout.write(`▸ task: ${TASK}\n`);
 process.stdout.write(`▸ owned service directory: ${serviceDirectory}\n`);
 if (leaked.length) process.stdout.write(`▸ stripped from the run environment: ${leaked.join(', ')}\n`);
 
-// Transcripts of both participants — into a directory that outlives the run.
-// Under persist they are the stream a red is debugged by: the mechanism no
-// longer keeps its own turn journal. A copy is needed because the transcript
-// path sits in the session record, and teardown drops it — after the loop
-// there is nothing to find the file in the Cursor home by. Called from
-// `finally`, so it stays silent on any surprise: diagnostics must not drop
-// cleanup.
+// Copy transcripts before teardown drops the session records that name them.
 const transcripts = new Map();
 function rememberTranscript(addr) {
   try {
@@ -259,9 +206,7 @@ function keepTranscripts() {
 let ref = '';
 let reviewerRef = '';
 let sandboxDir = '';
-// Session markers of THIS run: `~/legacy/cursor/sessions/` is shared by every
-// persist session of the mechanism on the machine, and leftovers cannot be
-// judged by it (measurement below).
+// Session markers share one machine-wide directory; compare only this run’s markers.
 const probeMarks = [];
 function rememberProbeMarks() {
   for (const addr of [WORKER, REVIEWER]) {
@@ -399,10 +344,7 @@ try {
     JSON.stringify(hello ?? readSession(ref)?.last));
   at_('participant first turn', Date.now() - t3);
 
-  // The mark "the bus arrived by a TOOL" is a call in the transcript, not the
-  // fact of delivery: under `--force` the model may raise the bus server with
-  // the shell itself, and the store message would look the same. There is no
-  // `stream-json` stream under persist at all, so the transcript is read.
+  // A store message can come from the shell. Read the transcript to prove a tool call.
   const toolCalls = () => {
     const record = readSession(ref);
     const file = record?.transcript && existsSync(record.transcript) ? record.transcript : findTranscript(record?.chatId);
@@ -432,19 +374,13 @@ try {
     from: 'orchestrator', to: WORKER, type: 'answer',
     body: `Woke you. Fetch the mailbox and reply to the orchestrator with a result message whose body starts with the line «${MARK.woke}».`,
   });
-  // Check by TYPE and the START of the body, not by containment: a live model
-  // retells the next step in its own words and on the first turn already quotes
-  // the second marker — containment then catches the wrong turn, and the
-  // verdict goes green on nothing (measured 2026-09-03: the first run gave
-  // "wake 0.0 s").
+  // Match the start of the body: a model can quote the next marker in an earlier turn.
   const woke = await waitForRunning(() => store.glanceInbox(home, TASK, 'orchestrator')
     .find((m) => m.type === 'result' && String(m.body ?? '').trimStart().startsWith(MARK.woke)) ?? null,
   { timeoutMs: 300000 });
   check('step 4: the warden woke the Cursor session by injection, and the participant replied',
     !!woke, `${JSON.stringify(readSession(ref)?.last)} · ${store.tailWardenLog(home, TASK).slice(-6).join(' | ')}`);
-  // The main difference from headless: a wake does not start a new PROCESS. The
-  // session pane is the same — so the context was not rehydrated, and that is
-  // the gain the driver was moved to persist for.
+  // Persist wake must reuse the pane rather than start a process.
   check('step 4: the wake went WITHOUT a new process — the session pane is the same',
     !!paneWas && readSession(ref)?.panePid === paneWas
     && tmuxSessions().some((s) => s.name === record?.sessionName && s.panePid === paneWas),
@@ -453,12 +389,7 @@ try {
     store.countInbox(home, TASK, WORKER) === 0, String(store.countInbox(home, TASK, WORKER)));
   at_('wake and second turn', Date.now() - t4);
 
-  // --- step 4b: a human attaches to the same session -------------------------------------------
-  //
-  // Attach is modeled by a second client from a one-shot mechanism pane: live,
-  // a person does exactly this from their terminal. The price is named in the
-  // spike report — tmux shrinks the window to the narrowest client — so the
-  // attach pane is raised wide.
+  // Attach in a wide pane because tmux sizes the window to the narrowest client.
   const t4b = Date.now();
   const seat = `promptobus-live-attach-${process.pid}`;
   assertRunning();
@@ -479,13 +410,7 @@ try {
     !!leftSeat, JSON.stringify(tmuxSessions()));
   at_('human attach and leave', Date.now() - t4b);
 
-  // --- step 4c: delivery DURING a turn --------------------------------------------------
-  //
-  // The gap with Claude Code narrowed to "waits for the end of the turn": the
-  // text queues in the session and is executed as a separate turn right after
-  // the current one. This is checked by two deliveries in a row — the second
-  // leaves while the first turn is going — and by the process not changing for
-  // both.
+  // A delivery during a turn queues a separate turn in the same process.
   const t4c = Date.now();
   assertRunning();
   store.sendMessage(home, TASK, {
@@ -524,13 +449,7 @@ try {
     `${JSON.stringify(pairA)} · ${JSON.stringify(pairB)} · pane ${paneWas} → ${readSession(ref)?.panePid}`);
   at_('pair of messages in a row', Date.now() - t4c);
 
-  // --- step 4d: a race of two injections ------------------------------------------------------
-  //
-  // Open question 4 of the spike report: what happens if two writers write into
-  // one session. The mechanism answer is a lock on injection: a session has one
-  // writer, otherwise the second text would land in the input field on top of
-  // the first, between its paste and Enter, and one glued message would go into
-  // the transcript.
+  // Concurrent injections must not interleave one writer’s text with the other’s paste and Enter.
   assertRunning();
   const race = await Promise.all([1, 2].map(() => cursorDriver.activate({ ref }, {
     kind: 'unread', task: TASK, address: WORKER, unread: 1, messages: [],
@@ -561,17 +480,8 @@ try {
     && /Write\(\*\*\)/.test(readFileSync(path.join(sandboxDir, '.cursor', 'cli.json'), 'utf8')),
     sandboxDir);
 
-  // Read-only is checked by ITS OWN config and a separate turn: the review
-  // prompt does not ask for edits, and the guarantee must hold on the config,
-  // not on the model's obedience.
   const probe = path.join(wt, 'PWNED.txt');
-  // Without `--mode plan` on purpose: in plan mode the model does not try to
-  // write at all, and the mode would hold the guarantee, not the config. The
-  // subject is `deny` in the sandbox `.cursor/cli.json`, the one the reviewer
-  // read-only stands on.
-  // The probe goes PAST the driver, so it takes the session marker and cleanup
-  // of its own orphan itself: there is nobody left to collect this turn's
-  // `worker-server`.
+  // Omit plan mode so only the deny rule prevents the write. Clean up this probe’s own orphan.
   const probeMark = path.join(SB, 'readonly-probe');
   const denied = spawnSync(tool.path, ['-p', '--output-format', 'stream-json', '--workspace', sandboxDir,
     '--trust', '--force', '--model', MODEL, '--add-dir', wt,
@@ -614,9 +524,7 @@ try {
   check('step 6: no session records left in the mechanism registry',
     cursorDriver.inspect(ref)?.state === 'gone' && !existsSync(sandboxDir),
     `${JSON.stringify(cursorDriver.inspect(ref))} · ${sandboxDir}`);
-  // No mechanism sessions left on the shared server — and person sessions, if
-  // they were there, are intact: teardown goes by the participant record, not
-  // by "everything that was found".
+  // Judge teardown by the recorded sessions, not every session on the server.
   const finalList = tmuxAbsenceVerdict(readTmuxSessions, sessionsBefore);
   check('step 6: no persist sessions of the run left on the tmux server, foreign ones untouched',
     finalList.ok, finalList.detail);
@@ -638,17 +546,7 @@ try {
 }
 
 if (!aborted) {
-// Run processes — those whose argv/cwd/environment contain THIS run directory
-// (`SB` / `ws`) or a participant session marker of the run. The directory
-// `~/legacy/cursor/sessions/` is shared by every persist session of the
-// mechanism on the machine: the live run of 2026-09-03 (30/31 in 119 s,
-// `cursor-grok-4.6-xhigh-fast`) went red on pid 27785, 35039, 36372
-// (`…/cursor-agent/versions/2026.09.02-c22c1a3/node … index.js`, start 21:10:21
-// / 21:10:37 / 21:10:44) — persist sessions of three run workers, raised an
-// hour before the run, not processes of the run. Foreign processes of the same
-// commands do not paint the verdict — like the Claude canary,
-// "outside the run directory: N (not ours)".
-// A listing that cannot be read, or that lacks this very process, is red: an empty one passes on nothing.
+// Attribute processes by this run’s paths or markers; require our own PID as a read control.
 const ps = spawnSync('ps', ['-Ao', 'pid=,command='], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
 const seesSelf = String(ps.stdout ?? '').split('\n').some((l) => Number(l.trim().split(/\s+/)[0]) === process.pid);
 const ours = [];
@@ -682,21 +580,13 @@ const passed = verdicts.filter((v) => v.ok).length;
 process.stdout.write(`\n${passed}/${verdicts.length} verdicts passed\n`);
 process.stdout.write(`durations: ${times.join(' · ')} · total ${((Date.now() - t0) / 1000).toFixed(1)} s\n`);
 process.stdout.write(`binary: ${tool.path}${tool.version ? ` (${tool.version})` : ''} · model: ${MODEL}\n`);
-// Entries in the person home are named by name: Cursor itself makes them, and
-// the one who drove the run must know about them.
-// The logs directory is swept by the same module as the canary directories:
-// the three newest stay, nothing younger than an hour is removed. The trouble
-// is the same — pile-up in a shared `$TMPDIR` — and it is healed by shared
-// code, not a second copy of the thresholds.
 const refusedLogs = [];
 const sweptLogs = sweepPreviousRuns(tmpdir(), {
   prefix: LOGS_PREFIX, current: KEPT_LOGS, refused: refusedLogs,
 });
 process.stdout.write(`${sweptLine('previous-run logs', sweptLogs)}\n`);
 if (refusedLogs.length) process.stdout.write(`sweep refused (busy or foreign permissions): ${refusedLogs.join(', ')}\n`);
-// The line is printed BY FACT: there may be no logs at all — the run broke
-// before the first turn — and promising a directory that is not there means
-// sending a person into a void.
+// Name the logs only if the run reached the point of creating them.
 process.stdout.write(existsSync(KEPT_LOGS)
   ? `run turn logs: ${KEPT_LOGS}\n`
   : 'no run turn logs — the first turn was never reached\n');

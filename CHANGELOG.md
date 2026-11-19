@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When startup refuses a retained client from another shared-service runtime, report its runtime fingerprint and direct the operator to the matching launcher owner. A missing launch record is not proof that the native session stopped.
 - Gate instructions must resolve to a file inside the install root. Internal symlinks still work; installations using external file or directory links must place the instructions under the root.
 - Use the BB context Host directly for pipeline lookups and align typed catch bindings in the Codex session and OpenCode driver. Runtime behavior is unchanged.
+- Include authored scripts in the comment length check without adding pending exceptions. Use public, repository-local examples in the contributor guide and fixtures.
 - Check the consumed Codex app-server protocol against 0.170.0; the minimum remains 0.158.0.
 
 - Declare BB `>=0.50.1 <0.51` and Plugin SDK `>=0.6.157` for both BB plugins instead of one exact pair, so a BB patch release no longer disables them; a new BB minor line still needs a release. The build pins SDK 0.6.157. Source checks do not establish an installed live workflow.
@@ -86,6 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Align stock BB role skills with the single-task bus: reporter reads, teamlead and approver routing, array recipients and mailbox bodies. Native reporter refusals for explicit harness or rated model requests name the matching harnesses.
 - Retry a routing-cache lock that disappears during the age check, and refuse to write when a stale lock is observed. A waiter no longer removes a lock that may already belong to another writer. The concurrent preflight test reads stderr through close before deciding whether a writer warned.
 - Keep standalone live-script availability and telemetry in the run sandbox instead of the default account directory. User overlays and harness authentication paths are unchanged.
+- Refuse bare evidence names that only match a tracked basename elsewhere. Test the publicity audit's exit status and reported findings on synthetic leaks in both tracked and packed files.
 - Keep an OpenCode stdio server whose first argument repeats its command: only the bus entry drops the duplicated binary.
 - Let hosts keep private environment variables out of managed participants and owner snapshots. Refuse old snapshots that still contain those variables.
 - Refuse Cursor delivery when tmux cannot read the pane before paste. If the read fails after Enter, report delivery as unconfirmed without publishing activity.

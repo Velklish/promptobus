@@ -893,7 +893,7 @@ It renders a decision document and nothing else — no catalog, no snapshot, no
 policy — so the two outputs of the command cannot drift: whatever the JSON
 says, this is that same document with column widths. The order is the
 document's own, scored candidates first by descending total and excluded ones
-after, because `candidates` in `decision.schema.json` declares that order as
+after, because `candidates` in `schemas/model-routing/decision.schema.json` declares that order as
 part of the contract and the renderer prints the array as it stands.
 
 Byte-for-byte pinned by `test/fixtures/model-routing/models.txt`. The columns

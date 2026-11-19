@@ -1,28 +1,5 @@
 #!/usr/bin/env node
-// Live release canary. Run from the mechanism repository root:
-//
-//   node scripts/live-canary.mjs
-//
-// Packaging checks prove that a tarball is packed and contains what was
-// promised. The canary proves the next thing: the
-// packed package WORKS — in a separate clean workspace, on real Claude, through a
-// full orchestration loop.
-//
-// What is done here and what is NOT. The whole bus loop lives in the scenario
-// ([scenario.mjs](../test/scenario.mjs)) — one for the stub and live harnesses, and
-// a check edit goes into both runs at once. This script prepares and tears down the
-// world around the scenario: a temporary workspace, package install, the installed
-// bin's `--version` check, a live run on the tree under test, and proof of cleanup.
-// It does not check the bus at all.
-//
-// The package under test is installed from the tarball in a clean workspace, so
-// the source checkout and the installed package are deliberately separate.
-//
-// **The canary does not touch the person's home at all, and that is its subject,
-// not its politeness.** The home snapshot is taken before the installed bin's
-// `--version` check and compared again after the whole live run. Drift is a red
-// verdict with a list of changed fields; the canary does not clean up a person's
-// home because doing so would hide its own break.
+// Live release canary on the packed package; see docs/guides/contributing.md#live-harness-scenarios.
 import {
   existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync,
   writeFileSync, openSync, closeSync, writeSync,
@@ -55,16 +32,7 @@ const INSTALLED_PLUGINS = path.join(CLAUDE_PLUGINS, 'installed_plugins.json');
 const PLUGIN_CACHE = path.join(CLAUDE_PLUGINS, 'cache');
 const CLAUDE_SETTINGS = path.join(os.homedir(), '.claude', 'settings.json');
 
-// What has no right to outlive the run: the live loop raises participants, the
-// warden, and bus stdio servers, and stops the last without waiting.
-//
-// **It is judged against ITS own tree, not the whole machine.** These commands
-// are not started by the canary alone: on a machine with a going run the same
-// three templates match foreign processes from `workspace/node_modules`, and the
-// verdict went red on them — measured 2026-09-03 (a worker run): four
-// processes of a foreign run, none of its own. The cut-off is `under()` by the
-// run directory: the canary installs its own tree itself and wholly into it, so
-// the binary path in the process command line is the mark of belonging.
+// The installed binary path distinguishes this run’s processes from other runs.
 const LEFTOVERS = [/promptobus\s+warden/, /test[/\\]participant\.mjs/, /promptobus\s+mcp/];
 
 const RUN = mkdtempSync(path.join(os.tmpdir(), CANARY_PREFIX));
@@ -73,9 +41,6 @@ markRunUnresolved(RUN);
 const startedAt = new Date();
 const born = startedAt.getTime();
 
-// What the canary does — in prose, without numbering: the loop step count lives
-// in the scenario and changes there, and a caption with a number goes stale in
-// silence.
 const STEPS = [
   'tarball installed in a clean workspace, the installed bin answers --version',
   'live orchestration loop on the tree under test — complete, by scenario steps',
@@ -186,19 +151,10 @@ const cli = (args, opts = {}) => spawnSync(process.execPath, [BIN, ...args], {
   cwd: ws, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, env: childEnv(), ...opts,
 });
 
-// The harness binary is checked with the same PATH-only helper as live-e2e.
-// `ok` means `claude` is already reachable through PATH, which is also what
-// `run('claude', …)` and the installed session registry use. A cleanup verdict
-// on a missing binary would pass as success — "the session list is empty" and
-// "no list was given" are indistinguishable — so the live loop retains its
-// explicit refusal when it starts.
+// A missing harness is not evidence of an empty session registry.
 
 const sha = (text) => createHash('sha256').update(text).digest('hex').slice(0, 12);
 const fileMark = (file) => { try { return sha(readFileSync(file)); } catch { return '(no file)'; } };
-/**
- * State of the home paths as one object. Compare is over the whole object, not
- * one field, so the diff is printed by field and names what changed.
- */
 const homeSnapshot = () => ({
   'marketplace entries': marketplaceIds().sort().join(' ') || '(none)',
   'plugin installs': fileMark(INSTALLED_PLUGINS),
@@ -222,20 +178,13 @@ let failure = null;
 let childCleanupConfirmed = false, workspaceRemoved = false;
 try {
 
-  // ── Live loop ──────────────────────────────────────────────────────────────────────
-  // The mechanism under test is the installed tree whole, one root. The workspace
-  // is the clean workspace prepared for the installed package: the scenario
-  // must go in the world the canary exists for.
+  // Run the live loop entirely from the installed tree.
   const liveEnv = {
     ...childEnv(),
     PROMPTOBUS_E2E_ROOT: PKG,
     PROMPTOBUS_E2E_WORKSPACE: ws,
   };
-  // Verdict on the ACTUAL child environment, not on `process.env` at check time:
-  // the canary does not touch its own environment, and judging by it would mean
-  // judging the wrong thing. Mutation-probe target: put `{ ...process.env }`
-  // back here — the verdict goes red exactly when the canary is driven from a
-  // participant session, i.e. in the most common case.
+  // Judge what was actually passed to the child, not the parent environment.
   const dirty = SESSION_LEAK_VARS.filter((name) => name in liveEnv);
   const carried = SESSION_LEAK_VARS.filter((name) => name in process.env);
   check('canary: live-run environment is clean of session identity',
@@ -263,9 +212,7 @@ try {
   const total = /total ([\d.]+) s/.exec(liveOut);
   if (total) note(`the loop took ${total[1]} s`);
 
-  // Which mechanism the run used — by the word of the raised process itself, not
-  // by a path resolve in the script. Mutation-probe target: `PROMPTOBUS_E2E_ROOT`
-  // onto the checkout — the verdict goes red.
+  // The child reports its actual mechanism root; a parent-side path resolve is not evidence.
   const reported = (/mechanism as the process said: (.+)/.exec(liveOut) ?? [])[1]?.trim() ?? null;
   check('canary: the live run used the binary from the installed tree, not the checkout',
     !!reported && reported !== 'unnamed' && under(reported, PKG) && !under(reported, REPO),
@@ -273,14 +220,7 @@ try {
 } catch (e) {
   failure = e;
 } finally {
-  // ── The person home ──────────────────────────────────────────────────────────────────
-  // The second verdict on the same snapshot and the first in `finally`: the
-  // compare is over the WHOLE run, not one preliminary check. The live loop raises real
-  // Claude Code sessions, and they have no right to touch the person home
-  // either — a participant gets the canonical plugin by `--plugin-dir`, not by
-  // an install. It sits in `finally` because a broken run must still speak of
-  // its trace in a foreign home, even if there is nothing left to report about
-  // the loop verdicts.
+  // Compare the owner home with the same snapshot even if the live loop failed.
   const homeAfterRun = homeSnapshot();
   const runDiff = homeDiff(homeBefore, homeAfterRun);
   check('the person home: the canary left no changes over the whole run',
@@ -311,17 +251,10 @@ try {
       : `session registry not parsed — ${registryError}`);
   if (Array.isArray(sessions)) note(`sessions in the harness registry after the run: ${sessions.length}`);
 
-  // Processes: first prove that we CAN look — our own pid must be in the
-  // output. Without that a `ps` refusal would read as "nothing is left". The
-  // list is the same as the gates: the live loop also raises bus stop-servers,
-  // and their absence is checked on a par.
+  // Require our own PID in the listing before using it to prove absence.
   const ps = spawnSync('ps', ['-A', '-o', 'pid=', '-o', 'command='], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
   const psLines = (ps.stdout ?? '').split('\n').filter((l) => l.trim());
   const seesSelf = psLines.some((l) => Number(l.trim().split(/\s+/)[0]) === process.pid);
-  // Cut-off by our own tree (`LEFTOVERS` above): every absolute path is taken
-  // from the command line and asked of the same `under()` that judges the run
-  // binary. Without it the verdict goes red on a foreign run on the same
-  // machine, and is no more honest for being green.
   const underRun = (line) => (line.match(/\/[^\s]+/g) ?? []).some((token) => under(token, RUN));
   const stray = psLines.filter((l) => Number(l.trim().split(/\s+/)[0]) !== process.pid
     && LEFTOVERS.some((re) => re.test(l)) && underRun(l));
@@ -330,9 +263,7 @@ try {
   const processesClear = check('cleanup: no participant, warden, or bus-server processes of the run remain',
     ps.status === 0 && seesSelf && stray.length === 0,
     seesSelf ? stray.join('\n') : `ps did not even show this process (${tail(ps.stderr, 200)})`);
-  // Foreign processes of the same commands do not paint the verdict, but they
-  // cannot be silent either: a person reading the report must know that another
-  // run is going on the machine.
+  // Report matching foreign processes separately without making them failures.
   if (elsewhere.length) note(`processes of the same commands outside the run directory: ${elsewhere.length} (not ours)`);
 
   // Sandboxes and sockets — only younger than the start of the run: a name

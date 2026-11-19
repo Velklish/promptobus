@@ -1,14 +1,4 @@
-// Publicity gate. Fails when anything private to the project this package was
-// extracted from survives in what we ship.
-//
-// Two surfaces, and the second is why this script exists at all. Tracked files
-// are easy to grep by hand. The npm tarball is not: it carries `dist/`, which is
-// built rather than committed, so a leak compiled out of a clean source tree is
-// invisible to any check that reads git alone.
-//
-// The forbidden strings are assembled from fragments on purpose. A gate that
-// contained them literally would either flag itself or need an exemption, and an
-// exemption is a hole shaped exactly like the thing being looked for.
+// Publicity audit for tracked and packed files. See docs/guides/contributing.md#public-surface.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { TextDecoder } from 'node:util';
@@ -114,8 +104,6 @@ const ORGANIZATION = [
   ['organization tools', new RegExp(['\\b(?:kai', 'ten|team', 'ly)\\b'].join(''), 'iu')],
 ];
 // --- English authoring -------------------------------------------------------
-// Every tracked text file and packed entry is English: Cyrillic survives only in a snapshot named below
-// or, outside the runtime paths, in a region `english-authoring: input — <reason>` … `english-authoring: end`.
 const CYRILLIC = /[\u0400-\u04FF]/u;
 const CYRILLIC_ALL = /[\u0400-\u04FF]/gu;
 const WHOLE_FILE = /^[\s\S]*$/u;
@@ -271,12 +259,7 @@ if (IS_MAIN) {
   }
   for (const stale of staleAuthoringSnapshots(trackedTexts)) failures.push(`stale authoring snapshot: ${stale}`);
 
-  // Links that point outside this repository are the quieter half of the same
-  // problem: they read as documentation and resolve to nothing.
-  //
-  // Only prose is examined. In a markdown file every line is prose; in code only
-  // comment lines are, because `](` also occurs inside regular expressions and
-  // string literals, and a gate that reported those would be answered by muting it.
+  // Read links in prose, not in code strings, regexes or Markdown examples.
   const LINK = /\[[^\]\n]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
   // In markdown a fenced block or an inline code span is not prose either: a sentence
   // that QUOTES the link pattern would otherwise be read as a link to its example.

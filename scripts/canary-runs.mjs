@@ -1,14 +1,4 @@
-// Sweep of previous live-canary run directories.
-//
-// The canary leaves a run directory on disk on purpose: the path is printed, and the
-// report (`live-canary.md`) and the full live-loop output are read after the run. Nobody
-// swept them — neither the canary nor `doctor` knew about them — and the directories
-// piled up: a 2026-09-03 measurement on the owner's machine found nine of them at 20 KB
-// each.
-//
-// A separate module, not a function inside [live-canary.mjs](live-canary.mjs): that file
-// runs whole already on import — it raises a workspace, installs a tarball and drives
-// live sessions — and there would be no other way to cover the sweep with a suite.
+// Shared sweep of previous run directories; see docs/guides/contributing.md#sweeping-run-directories.
 import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -17,43 +7,21 @@ import process from 'node:process';
 /** Prefix of a run directory. It has one home: `live-canary.mjs` calls `mkdtempSync` with it. */
 export const CANARY_PREFIX = 'promptobus-canary-';
 
-// How many previous runs stay. Three, not one: the last run's report is read after it,
-// and a spare is needed to compare two neighbours — "the last one was green, this one
-// is red" is read from two directories at once. Zero would remove a report a person
-// still has open.
 export const KEEP_RUNS = 3;
 
-// Age cut-off: a directory younger than this is not removed, however many fresh ones
-// stand beside it. The "three newest" threshold does NOT protect a GOING run — the run
-// directory's mtime stops growing seconds after start (`pack`, the base clone and the
-// workspace come up at once, then work happens in nested directories, and the report
-// is written at the very end), so a run that has been going for half an hour is older
-// by mtime than three that finished during that time. An hour is slack for the longest
-// live run: a canary loop lasts minutes.
+// A live run's root mtime may stop advancing even while its children are working.
 export const MIN_AGE_MS = 60 * 60 * 1000;
 
-// Unix-socket directories are created directly under `/tmp` by the test and
-// live harness helpers. The shared sweep owns this list so a runner copy can
-// carry the complete cleanup seam without importing a test-only module.
+// Keep the socket prefixes here so runner copies need no test-only imports.
 export const SOCK_PREFIXES = ['a2l-', 'a2e-', 'a2h-', 'a2s-', 'ags-', 'a2m-', 'pb-stop-account-', 'pb-stop-recovery-', 'pb-stop-lock-',
   'pb-http-order-', 'pb-rollback-', 'pb-native-cleanup-', 'pb-ctx-'];
 
-// The age cut-off is the first line of defence: children keep updating their
-// run root while they work, and FILE_TIMEOUT_MS is five minutes, so a going
-// run stays younger than the one-hour sweep window. A suite run writes this
-// marker at its root as the second line of defence. The marker is an ownership
-// claim, and the pid check is deliberately fail-closed: a reused pid can keep
-// an old directory for one more run, but must never make a live neighbour
-// eligible for removal.
+// An owner marker fails closed: a reused PID can keep an old directory, never remove a live one.
 export const RUN_OWNER_FILE = '.promptobus-run-owner.json';
 
 const SOCKET_DEAD_CODE = 3;
 
-// A probe against a live `test/participant.mjs` server (`a2e-`/`a2m-`) ends a
-// connection that can append a `knock` note to its trace. Only a directory
-// older than an hour reaches this probe — the live-e2e/live-canary loops keep
-// their roots younger — so the note is harmless cleanup evidence, but it is
-// recorded.
+// Probing an old participant socket can append a `knock` note to its trace.
 const SOCKET_PROBE = `
 import net from 'node:net';
 let client;
@@ -140,12 +108,7 @@ export function runOwnerIsDead(dir) {
   }
 }
 
-/**
- * Return whether a directory contains a socket that still accepts a connection.
- * The probe is a short child process because the sweep is synchronous and must
- * not block its own event loop while it asks a neighbouring run for liveness.
- * An unknown probe result is held, never removed.
- */
+// Check liveness out of process: the synchronous sweep cannot service its own probe.
 export function socketDirIsLive(dir) {
   if (process.platform === 'win32') return true;
   let entries;
@@ -170,33 +133,7 @@ export function socketDirIsLive(dir) {
   return false;
 }
 
-/**
- * Remove previous-run directories in `dir`, leaving `keep` newest by mtime. The current
- * run directory (`current`) is not counted and not removed: this same command created
- * it.
- *
- * A neighbouring foreign run is held by an owner/liveness check when the caller
- * has one, and otherwise by the age cut-off: nothing younger than `MIN_AGE_MS` is
- * removed. Returns the list of what was swept — the caller prints it: a silent
- * sweep in a shared `$TMPDIR` reads as a disappearance.
- *
- * `prefix` — whose directories to sweep. More than one canary piles up in `$TMPDIR`:
- * the live Cursor-driver check leaves turn logs there, release gates leave their own
- * run directories, the suite leaves sandboxes of cut-off runs, and the trouble is the
- * same for all — the one this module exists for. A shared trouble is healed by shared
- * code, not four copies of the thresholds: drifted, they would give four sweeps
- * different rules on one directory.
- *
- * `refused` — directories the sweep was not allowed to remove (busy, foreign
- * permissions) are pushed here. A separate list, because the return promises the
- * SWEPT: promising a removal that did not happen is a lie — a person reads the list.
- *
- * `isLive` — an optional ownership/liveness predicate. A true result holds the
- * directory and adds its name to `held`; a thrown predicate is also held closed.
- *
- * `isDead` — an optional predicate for a directory whose owner is gone: it is swept
- * past both thresholds, and a thrown predicate is not dead.
- */
+// The return lists successful removals only; held and refused runs are reported separately.
 export function sweepPreviousRuns(dir, {
   keep = KEEP_RUNS, current = null, now = Date.now(), prefix = CANARY_PREFIX, refused = [],
   isLive = null, held = [], isDead = null,
@@ -228,11 +165,7 @@ export function sweepPreviousRuns(dir, {
         continue;
       }
     }
-    // A refused removal does not drop the walk and does not take names of already
-    // swept neighbours: the directory may have been busy or the permissions foreign,
-    // and the next one is swept as if nothing happened. It is caught PER DIRECTORY
-    // for that reason — a guard around the whole walk would wipe the list the sweep
-    // reports.
+      // A refused removal must not discard successful removals or stop the walk.
     try {
       rmSync(full, { recursive: true, force: true });
       swept.push(r.name);
@@ -241,12 +174,7 @@ export function sweepPreviousRuns(dir, {
   return swept;
 }
 
-/**
- * Sweep summary line — one home for every caller. The empty case must name BOTH
- * thresholds: "nothing beyond the three kept" lies when there is nothing to sweep
- * by age, not by count. Thresholds are interpolated from the constants so the
- * phrase cannot drift from the code.
- */
+// An empty result names both thresholds; count alone does not explain why nothing was swept.
 export function sweptLine(what, swept, { keep = KEEP_RUNS } = {}) {
   if (swept.length) return `${what} swept: ${swept.length} (${swept.join(', ')})`;
   const guards = [
