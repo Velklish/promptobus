@@ -14,7 +14,7 @@ import { releaseDirLock } from '../dist/fs/lock.js';
 
 const script = fileURLToPath(new URL('../scripts/bb-record-command.mjs', import.meta.url));
 test('raw digest refuses non-regular evidence, oversize content and an exhausted read budget', t => {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'pb-digest-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const root = mkdtempSync(path.join(os.tmpdir(), 'promptobus-test-bb-digest-')); t.after(() => rmSync(root, { recursive: true, force: true }));
   const file = path.join(root, 'raw'), bytes = Buffer.alloc(131073, 37); writeFileSync(file, bytes);
   assert.deepEqual(digestRegularEvidence(file, bytes.length), { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
   assert.throws(() => digestRegularEvidence(root, bytes.length));
@@ -23,7 +23,7 @@ test('raw digest refuses non-regular evidence, oversize content and an exhausted
 });
 
 test('unfinished keyed acquisition rolls back only its own directory and partial owner', t => {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'pb-acquisition-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const root = mkdtempSync(path.join(os.tmpdir(), 'promptobus-test-bb-acquisition-')); t.after(() => rmSync(root, { recursive: true, force: true }));
   const dir = path.join(root, 'acquisition'), other = path.join(root, 'other-generation'); mkdirSync(dir); mkdirSync(other);
   const stat = file => lstatSync(file, { bigint: true }), owner = path.join(dir, 'owner'); writeFileSync(owner, '{');
   assert.throws(() => initializeKeyedOwner(dir, 'unused'), { code: 'EEXIST' }); assert.equal(readFileSync(owner, 'utf8'), '{');
@@ -33,7 +33,7 @@ test('unfinished keyed acquisition rolls back only its own directory and partial
   rollbackKeyedAcquisition(other, stat(other)); assert.equal(existsSync(other), false);
 });
 test('verified release preserves a directory without matching owner evidence', t => {
-  const lock = mkdtempSync(path.join(os.tmpdir(), 'pb-owner-proof-')); t.after(() => rmSync(lock, { recursive: true, force: true }));
+  const lock = mkdtempSync(path.join(os.tmpdir(), 'promptobus-test-bb-owner-proof-')); t.after(() => rmSync(lock, { recursive: true, force: true }));
   assert.throws(() => releaseDirLock(lock, 'expected', true), /verify ownership/);
   const owner = JSON.stringify({ pid: process.pid, nonce: 'different' }); writeFileSync(path.join(lock, 'owner'), owner);
   assert.throws(() => releaseDirLock(lock, 'expected', true), /verify ownership/);

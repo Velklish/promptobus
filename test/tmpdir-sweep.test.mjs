@@ -132,7 +132,7 @@ check(': an empty sweep summary names both thresholds, and at keep = 0 — only 
 // at all.
 const BOXES = makeSandbox('promptobus-sweep-tmp-');
 const OLD = ['promptobus-telemetry-old', 'promptobus-promptobus spawn-old', 'promptobus-ambient-old',
-  'promptobus-cursor-wake-old', 'promptobus-test-run-old',
+  'promptobus-cursor-wake-old', 'promptobus-test-run-old', 'promptobus-test-canary-abort-runs-old',
   // Nested-package suite sandbox: a hand `npm test --prefix` pours
   // it into the same system `$TMPDIR`, and it is swept on a par with
   // our own.
@@ -146,8 +146,13 @@ for (const name of FRESH) plant(BOXES, name, 5 * MIN);
 // All old — i.e. they would have been swept if it were about age,
 // not prefix.
 const FOREIGN = ['promptobus-canary-old', 'promptobus-release-gates-old', 'promptobus-live-e2e-old',
-  'promptobus-live-cursor-logs-42', 'agents-review-old'];
+  'promptobus-live-cursor-logs-42', 'agents-review-old', 'promptobus-testimonial-old'];
 for (const name of FOREIGN) plant(BOXES, name, 3 * DAY);
+const LEGACY = ['pb-digest-', 'pb-acquisition-', 'pb-owner-proof-', 'pb-native-fifo-', 'pb-checkpoint-',
+  'canary-abort-fixture-', 'canary-abort-runs-', 'codex-capture-contract-', 'review-reuse-',
+  'promptobus-canonical-skills-', 'promptobus-integration-preflight-', 'promptobus-observe-', 'promptobus-request-']
+  .map(prefix => `${prefix}outside`);
+for (const name of LEGACY) plant(BOXES, name, 3 * DAY);
 // Directory of THIS run: old by mtime, but the runner itself created
 // it — the sweep does not count it.
 const RUN_TMP = plant(BOXES, 'promptobus-test-run-current', 3 * DAY);
@@ -178,6 +183,13 @@ check(': directories of foreign prefixes the suite sweep does not touch',
   FOREIGN.every((n) => existsSync(path.join(BOXES, n))),
   `swept: ${swept.join(', ') || 'none'}`);
 
+const legacyChanges = LEGACY.filter((name) => {
+  const file = path.join(BOXES, name, 'run.md');
+  return !existsSync(file) || readFileSync(file, 'utf8') !== `# ${name}\n`;
+});
+check(': old directories with former fixture prefixes keep their contents',
+  legacyChanges.length === 0, `changed: ${legacyChanges.join(', ') || 'none'}`);
+
 check(': the current run directory is not swept, even though it is old',
   existsSync(RUN_TMP) && !swept.includes(path.basename(RUN_TMP)), RUN_TMP);
 
@@ -193,7 +205,7 @@ check(': a live neighbouring run keeps its owner tree and all six live holders',
 // the remainder.
 check(': a second pass has nothing to sweep — the remainder is not touched',
   sweepTestSandboxes(BOXES, { current: RUN_TMP, isLive: runOwnerIsLive }).length === 0
-  && listOf(BOXES).length === FRESH.length + FOREIGN.length + 2,
+  && listOf(BOXES).length === FRESH.length + FOREIGN.length + LEGACY.length + 2,
   listOf(BOXES).join(', '));
 
 // The marker's path is resolved before it is compared: a realpath spelling

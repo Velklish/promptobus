@@ -137,7 +137,7 @@ test('selected native copy rejects a non-regular source before opening it or wri
 });
 
 test('selected native launch preflight refuses an existing POSIX FIFO without changing planned files', { skip: process.platform === 'win32' }, t => {
-  const temp = mkdtempSync(path.join(os.tmpdir(), 'pb-native-fifo-'));
+  const temp = mkdtempSync(path.join(os.tmpdir(), 'promptobus-test-native-fifo-'));
   t.after(() => rmSync(temp, { recursive: true, force: true }));
   const directory = realpathSync(temp), source = path.join(directory, 'selected.fifo');
   const fifo = spawnSync('mkfifo', [source], { encoding: 'utf8', timeout: 5000, killSignal: 'SIGKILL' });

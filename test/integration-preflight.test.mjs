@@ -13,7 +13,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const preflight = path.join(root, 'scripts/integration-preflight.mjs');
 
 function run({ preload = '', missing, denied, adapterDiagnostics, exit = 0 } = {}) {
-  const directory = makeSandbox('promptobus-integration-preflight-');
+  const directory = makeSandbox('promptobus-test-integration-preflight-');
   const bin = path.join(directory, 'bin');
   mkdirSync(bin);
   for (const name of REACHABLE_BINARIES) {

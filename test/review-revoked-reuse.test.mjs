@@ -11,7 +11,7 @@ import { planReview, review } from '../lib/review.js';
 import * as store from '../lib/store.js';
 
 for (const phase of ['before plan', 'before publication', 'active binding']) test(`live reviewer reuse: ${phase}`, async t => {
-  const root = realpathSync(makeSandbox('review-reuse-')), repo = path.join(root, 'orders');
+  const root = realpathSync(makeSandbox('promptobus-test-review-revoked-reuse-')), repo = path.join(root, 'orders');
   writeHostConfig(root, { tools: ['opencode'] });
   mkdirSync(repo);
   const git = (...args) => execFileSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', ...args]);

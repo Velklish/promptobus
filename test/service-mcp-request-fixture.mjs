@@ -13,7 +13,7 @@ import { createMcpRequests } from '../lib/service-mcp-request.js';
 import { prepareServicePaths, readPrivate, runtimeIdentity, servicePaths, writePrivate } from '../lib/service-state.js';
 import { createTask, participantRecord, upsertParticipant } from '../lib/store.js';
 
-const root = realpathSync(makeSandbox('promptobus-request-'));
+const root = realpathSync(makeSandbox('promptobus-test-service-mcp-request-'));
 writeHostConfig(root, { tools: [] });
 const host = createStandaloneHost({ cwd: root }), runtime = runtimeIdentity(host);
 const env = { PROMPTOBUS_SERVICE_HOME: path.join(root, 'private') };

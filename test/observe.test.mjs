@@ -29,7 +29,7 @@ const ownerEnv = { CLAUDE_CODE_SESSION_ID: 'managed-thread', PROMPTOBUS_TASK: ro
 const childEnv = { CLAUDE_CODE_SESSION_ID: 'child-thread', PROMPTOBUS_TASK: child };
 
 function fixture() {
-  const cwd = makeSandbox('promptobus-observe-');
+  const cwd = makeSandbox('promptobus-test-observe-');
   writeHostConfig(cwd);
   const host = hostOf(cwd);
   const home = host.promptobusHome();
