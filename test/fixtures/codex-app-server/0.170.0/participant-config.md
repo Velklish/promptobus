@@ -104,6 +104,8 @@ reviewer 0, outside-after 0. An EOF timeout is not a successful graceful Stop.
 
 ## Proposed full-lift check — separate authorization required
 
+The bounded local qualification was subsequently authorized. Its [preflight receipt](lift-route-preflight.md) records why neither lift started.
+
 Use this binary and a **local recording Responses stub**, with no account, keychain,
 subscription or external endpoint. Allow loopback only to the fixture. Use one disposable
 git repository and worktree, fresh synthetic HOME, owner CODEX_HOME, participant registry,
