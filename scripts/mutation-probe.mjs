@@ -129,11 +129,10 @@ async function main() {
   const command = opts.run ?? `node ${JSON.stringify(rel)}`;
   const argv = opts.run === null ? [process.execPath, rel] : null;
 
-  // Commit first. A probe over uncommitted work loses it: restoring the mutation with git takes
-  // the edit with it, which has cost this repository three fixes in two days.
+  // A probe requires a clean, committed baseline. The restore uses the pre-mutation snapshot, not Git.
   const dirty = sh('git status --porcelain').out.trim();
   if (dirty) {
-    say('✖ probe: the tree is not clean — commit before probing, or the restore takes your edit with the mutation');
+    say('✖ probe: the tree is not clean — commit before probing to establish a clean baseline. Restoration uses the pre-mutation snapshot, not Git.');
     for (const line of dirty.split('\n').slice(0, 20)) say(`    ${line}`);
     process.exitCode = 2;
     return;

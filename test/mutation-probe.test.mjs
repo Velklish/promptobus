@@ -8,9 +8,7 @@
 //   the check passed WITH the mutation   → the check does not see the file. This is the shape
 //                                          this repository kept finding by eye all through the
 //                                          2026-09-12 run, and the first one a machine catches.
-//   the tree is not clean                → refusal. "Commit first" was held by nothing but the
-//                                          agent remembering, and a probe over uncommitted work
-//                                          loses it: three fixes in two days.
+//   the tree is not clean                → refusal before mutation; a committed baseline is required.
 //
 // **The probe is run against a repository of its own**, built here with `git init`, and never
 // against this one: the script resolves its root as its own `..`, so a copy under `<tmp>/scripts`
@@ -167,6 +165,7 @@ const clean = () => { git('reset', '-q', '--hard'); git('clean', '-qfd'); };
 
 // --- the one pass: red with the mutation, green without ----------------------
 
+const beforeGood = readFileSync(SUBJECT);
 const good = probe('subject.txt', '--mutate', `s/${MARKER}/broken/`, ...RUN);
 check(': a check that sees its subject is red with the mutation and green without it',
   good.code === 0 && /✔ probe: red with the mutation \(exit 1\), green without it/.test(good.out),
@@ -178,6 +177,8 @@ check(': and the red run\'s own line is quoted, so the report says WHAT fired',
   /✖ the marker is gone/.test(good.out), good.out);
 check(': the subject is put back — from the snapshot, which is the whole point of the script',
   subject() === `${MARKER}\n`, subject());
+check(': a successful probe on the committed baseline restores the original bytes and leaves a clean tree',
+  readFileSync(SUBJECT).equals(beforeGood) && status() === '', status());
 
 // --- the mutation that changed nothing ---------------------------------------
 
@@ -366,5 +367,19 @@ const dirty = probe('subject.txt', '--mutate', `s/${MARKER}/broken/`, ...RUN);
 check(': a dirty tree is refused before anything is touched, and what is dirty is named',
   dirty.code === 2 && /the tree is not clean/.test(dirty.out) && /uncommitted\.txt/.test(dirty.out),
   `exit ${dirty.code} · ${dirty.out}`);
+check(': the dirty-tree message explains the clean committed baseline and snapshot restoration, not Git restoration',
+  /commit before probing to establish a clean baseline/.test(dirty.out)
+    && /restoration uses the pre-mutation snapshot, not Git/i.test(dirty.out)
+    && !/restore takes your edit/i.test(dirty.out), dirty.out);
 check(': the refusal ran no check at all — the subject was never mutated',
   subject() === `${MARKER}\n` && !/mutated →/.test(dirty.out), dirty.out);
+
+const protocol = readFileSync(path.join(here, '..', 'docs', 'reference', '04-protocol.md'), 'utf8');
+const exitContract = protocol.split('**The probe wrapper and the mutated command have separate exit codes.**')[1]
+  ?.split('\n**')[0] ?? '';
+check(': the protocol separates wrapper pass, failure and refusal from the mutated command exit',
+  /^- `0`: .*fails with the mutation and passes after restoration/m.test(exitContract)
+    && /^- `1`: .*passes with the mutation or fails after restoration/m.test(exitContract)
+    && /^- `2`: .*tree is dirty.*mutated run is cut off/m.test(exitContract)
+    && /`mutatedRunExit`, the exit code of the command run with the mutation in place, not the wrapper/.test(exitContract),
+  exitContract || 'The protocol has no separate wrapper exit-code contract.');
