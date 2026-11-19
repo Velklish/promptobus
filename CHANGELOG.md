@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Clarify that progress-only status does not wake a managed Codex root, distinguish the Codex 0.165.0 comparison summary in a commit message from schema files that were never checked in, and point the Host binding, session identity, warden and guard references at their TypeScript sources.
+
 - Document the Host's shared native bindings, observer output shapes and the source of teamlead and reporter working directories.
 - Clarify when a release-writer correction needs a regression check while retaining the CLI help and shipped-skill ledger requirements.
 - Remove the unmeasured Codex bus-call cost from lift output and point historical captures to the current contract guide.

@@ -237,7 +237,8 @@ Registry reads propagate that `GateError` rather than answer empty, as do direct
 
 `harnessStateHome()` is a required member of `PromptobusHost`, the second the routing series adds: an existing host implementation must add it, and `tsc` says so. Consumers meet both once, at the release that closes the series.
 
-The host is bound for the process by `runPromptobus` (and by `hostOf` for the package's own helper), because the registry helpers are called from places with no host in reach — `inspect(ref)` takes a ref and nothing else. Two hosts in one process share that binding and the first one wins — a host bound later cannot move the registries out from under a run already going. The same two doors make a second binding of the same kind, the host's `resolveToolBin` for the calls a driver makes after a lift ([05-drivers § The harness binary after a lift](05-drivers.md#the-harness-binary-after-a-lift-the-lifts-door-not-path)), and the first host wins there too. Those two are the exception to "no process-wide singleton", and they are written at the top of `runPromptobus` in `lib/cli.js`.
+The host is bound for the process by `runPromptobus` (and by `hostOf` for the package's own helper), because the registry helpers are called from places with no host in reach — `inspect(ref)` takes a ref and nothing else. Two hosts in one process share that binding and the first one wins — a host bound later cannot move the registries out from under a run already going. The same two doors make a second binding of the same kind, the host's `resolveToolBin` for the calls a driver makes after a lift ([05-drivers § The harness binary after a lift](05-drivers.md#the-harness-binary-after-a-lift-the-lifts-door-not-path)), and the first host wins there too. Those two are the exception to "no process-wide singleton".
+The source is `lib/cli.ts` (`runPromptobus`); the runtime build emits `lib/cli.js`.
 
 ### Shared-service Host factory
 
