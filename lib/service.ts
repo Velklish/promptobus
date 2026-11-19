@@ -472,7 +472,10 @@ export async function runWorkspaceService({ host, createHost, env = process.env,
       const values = grants();
       for (const grant of values) if (grant.runtime !== runtime) {
         if (lifetimeState(grant, paths.home, unavailableObservations) === 'dead') removeClient(grant.id);
-        else throw new Error('Live clients belong to another shared service runtime; close and reconnect them before upgrade');
+        else {
+          const fingerprint = /^[a-f0-9]{64}$/.test(grant.runtime) ? grant.runtime : '(fingerprint unavailable)';
+          throw new Error(`Client lifetime is unresolved or live under another shared service runtime ${fingerprint}; ask its owner to close the client through the matching launcher before retrying the upgrade`);
+        }
       }
       for (const grant of values) {
         if (grant.runtime !== runtime) continue;

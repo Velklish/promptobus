@@ -1795,6 +1795,60 @@ That last case is the one this exists for. A cleanup hook reaps a holder only wh
 Pending lifetime observations remain active work after client revocation.
 The owner refuses shutdown until those observations settle.
 
+### When an upgrade refuses a historical client
+
+Match the runtime fingerprint in the refusal to the original consumer launcher.
+`promptobus service status --json` does not start an owner. When it reports
+`running: false`, `discovery.runtime` and `discovery.version`, if present, describe
+the last listener, not necessarily the refused grant. An absent service PID says
+nothing about the native client. The version alone cannot identify the launcher:
+the runtime fingerprint also depends on the entry point, install and Node runtime.
+
+A startup with a different fingerprint checks the grant lifetime first. If it
+cannot establish expiry, it refuses **before** checking retained Stop receipts.
+With the matching runtime, a managed Codex grant with an absent launch record
+is eligible for the exact receipt-backed check described below. A receipt from
+another thread or launch is not a substitute. If the native client is live,
+its owner must close it normally through the original launcher. If the harness
+independently confirms death without a Stop receipt, the mailbox owner's targeted
+`abandon <address>` route concerns **task closure**; it neither creates a receipt
+nor revokes a historical service grant.
+
+**Retained case (private workspace consumer, 2026-11-13): unresolved.**
+Promptobus 0.32.9 via Host 0.107.0 refused startup (exit 1); retained discovery
+named Host 0.106.0. Neither the missing launch record (`ENOENT`) nor the missing
+listener established native death. The retained account establishes neither a
+matching confirmed receipt nor authority over that exact client. It records a
+successful smoke in a separate service home only. Both 0.32.9 and current source
+restrict receipt retirement to the matching runtime; the old refusal did not
+report a fingerprint. Do not infer one from the Host version.
+
+**Qualification procedure.** Keep two records:
+
+1. **Controlled fixture.** After building the candidate, run
+   `node --test test/shared-service-stop-retirement.test.mjs` in the batch test
+   environment. With the same runtime, expect only clients with exact confirmed
+   proof and absent processes to retire; missing, mismatched and live controls
+   must remain. With a different runtime and the same otherwise valid Stop,
+   expect startup refusal naming the old fingerprint, with the grant and journal
+   participant unchanged. This exercises a disposable service home only.
+2. **Original default home.** Request the original owner's scoped evidence for
+   the exact task, address, session reference, native thread and launch, retained
+   receipt and process observations, and identification of the matching launcher.
+   Prefer the owner's retained outputs: status on a *running* owner can perform
+   normal lifetime maintenance. `promptobus status --task <id>` reports task
+   state, not authority. If identity, proof or authority is unavailable, leave
+   the case unresolved. Any later `promptobus service ensure --json` through the
+   matching launcher requires specific approval for that home and its affected
+   clients; startup performs maintenance across the namespace. Do not use it as
+   a read-only probe. Retry the upgrade only after owned closure is established.
+
+For each record keep the source revision, Host and Node versions, launcher argv,
+service-home selection, command exits, and before/after counts tied to the same
+nonsecret client identities. A stopped service's status provides no such count;
+record it as unavailable, not zero. Omit credentials. Historical default-home
+recovery and post-change controlled checks: **notRun**.
+
 The service's active-work predicate includes running task loops and pending
 observations, plus any work supplied by the Host. Active task metadata alone is
 not that predicate. `stop orchestrator` leaves its task and watch open, including

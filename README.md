@@ -357,6 +357,10 @@ Native client registration checks compatibility with the active shared service
 before starting a participant. A Claude Code teamlead's managed hooks use the
 same child task and orchestrator address as its native client grant.
 
+If an upgrade refuses a retained client, give the reported runtime fingerprint to
+the original launcher owner. A new service cannot apply its Stop-receipt check
+to a client registered by a different runtime.
+
 Managed Claude prompts and tools also require verified fresh startup and an
 initialized MCP connection owned by that launch. If the transcript is absent at
 the first prompt, admission uses the captured native process and the exact session
