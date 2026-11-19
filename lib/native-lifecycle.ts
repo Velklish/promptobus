@@ -292,6 +292,7 @@ export function persistReviewerSession(home: string, task: string, reserved: Par
   return withTaskLock(home, task, () => {
     const current = participantOf(readTask(home, task), addressOf(reserved));
     if (!current || !reserved.metadata.reviewLaunchId || current.metadata.reviewLaunchId !== reserved.metadata.reviewLaunchId
+      || current.metadata.revokedReviewLaunchId === reserved.metadata.reviewLaunchId
       || current.harness !== reserved.harness || current.sessionRef !== reserved.sessionRef
       || (sessionId && current.metadata.sessionId && current.metadata.sessionId !== sessionId)
       || (dead && current.metadata.assignmentAfterId !== reserved.metadata.assignmentAfterId))

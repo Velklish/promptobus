@@ -15,14 +15,14 @@ import * as store from '../lib/store.js';
 const hash = (text) => createHash('sha256').update(text).digest('hex');
 const subject = { head: '1'.repeat(40), base: '2'.repeat(40), diffSha256: '3'.repeat(64) };
 const report = '\nFinding alpha → beta\n  preserve spaces\n\n' + 'finding 😀\n'.repeat(450);
-function fixture(t) {
+function fixture(t, fields = {}) {
   const home = mkdtempSync(path.join(os.tmpdir(), 'pb-checkpoint-'));
   store.bus(home, { cli: JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version });
   t.after(() => rmSync(home, { recursive: true, force: true }));
   const task = store.createTask(home, { id: 't20261024-100000', title: 'checkpoint', owner: 'owner' }).id;
   const address = 'reviewer:orders', diffPath = path.join(store.filesDir(home, task), 'review-orders.diff');
   store.upsertParticipant(home, task, store.participantRecord(address, {
-    reviewLaunchId: 'lift-1', sessionId: 'session-r1', diffHead: subject.head, diffBase: subject.base, diffSha256: subject.diffSha256,
+    reviewLaunchId: 'lift-1', sessionId: 'session-r1', diffHead: subject.head, diffBase: subject.base, diffSha256: subject.diffSha256, ...fields,
   }));
   store.sendMessage(home, task, { from: 'orchestrator', to: address, type: 'task', body: 'Review this diff' });
   store.stampSnapshot(home, task, address, { ...subject, diffPath, at: new Date().toISOString(), clean: true, modifiedTracked: [] });
@@ -163,6 +163,60 @@ for (const published of [false, true]) test(`initial lift rollback ${published ?
     assert.ok((await call(f, { type: 'status', artifact: undefined }, identity)).isError);
   }
 });
+
+for (const [harness, sessionId, session] of [
+  ['cursor', '61a55703-8cb6-4000-8459-d9b2cd9b54fa', 'cursor-pane-17'],
+  ['opencode', 'ses_01_owned', 'ses_01_owned'],
+]) {
+  function pointerLift(t) {
+    const f = fixture(t, { harness, sessionRef: 'orders-review', sessionId: null });
+    const reserved = f.participant(), pointer = path.join(f.home, `${harness}.session.json`);
+    const undo = bindBeforeLaunch(f.home, f.task, f.address, { sessionRecord: pointer });
+    return { f, reserved, pointer, undo };
+  }
+  for (const phase of ['pointer only', 'ID published', 'persist returned']) test(`${harness}: rollback at ${phase} retires only historical checkpoint proof`, async t => {
+    const { f, reserved, pointer, undo } = pointerLift(t);
+    const first = f.send({ session: pointer });
+    const expected = [[first.message.id, report]];
+    if (phase !== 'pointer only') {
+      const current = f.participant();
+      store.upsertParticipant(f.home, f.task, { ...current, metadata: { ...current.metadata, sessionId } });
+      const second = f.send({ session: sessionId, artifact: f.artifact('Finding after native ID publication') });
+      expected.push([second.message.id, 'Finding after native ID publication']);
+    }
+    if (phase === 'persist returned') persistReviewerSession(f.home, f.task, reserved, session, false, sessionId);
+    const owned = { sessionId: phase === 'pointer only' ? null : sessionId,
+      session: phase === 'pointer only' || (phase === 'ID published' && harness === 'cursor') ? null : session };
+    undo(owned, 'check');
+    assert.equal(store.senderFor(f.home, f.task, { session: pointer }), f.address);
+    undo(owned);
+    assert.equal(boundSessionOf(f.participant()), null);
+    assert.throws(() => persistReviewerSession(f.home, f.task, reserved, session, false, sessionId));
+    for (const identity of new Set([pointer, sessionId, session])) {
+      assert.throws(() => store.senderFor(f.home, f.task, { session: identity }));
+      assert.ok((await call(f, {}, identity)).isError);
+    }
+    assert.deepEqual(store.retainedReviewerCheckpoints(f.home, f.task, f.participant()).map(r => [r.messageId, r.report]), expected);
+  });
+  for (const change of ['assignment', 'launch', 'pointer', 'full ID', 'alias']) test(`${harness}: stale rollback preserves a changed ${change}`, t => {
+    const { f, reserved, pointer, undo } = pointerLift(t), owned = { sessionId, session };
+    persistReviewerSession(f.home, f.task, reserved, session, false, sessionId);
+    undo(owned, 'check');
+    if (change === 'assignment') {
+      store.sendMessage(f.home, f.task, { from: 'orchestrator', to: f.address, type: 'task', body: 'Next review' });
+    } else {
+      const patch = { launch: { reviewLaunchId: 'successor' }, pointer: { sessionRecord: `${pointer}.next` },
+        'full ID': { sessionId: 'foreign-native-id' }, alias: { session: 'foreign-session' } }[change];
+      const current = f.participant();
+      store.upsertParticipant(f.home, f.task, { ...current, metadata: { ...current.metadata, ...patch } });
+    }
+    const successor = f.participant();
+    assert.throws(() => undo(owned, 'check'), /changed before binding rollback/);
+    assert.throws(() => undo(owned), /changed before binding rollback/);
+    assert.deepEqual(f.participant(), successor);
+    assert.equal(store.senderFor(f.home, f.task, { session: successor.metadata.sessionId }), f.address);
+  });
+}
 
 test('late lift completion merges the session into the re-review that already checkpointed', t => {
   const f = fixture(t), initial = f.participant();

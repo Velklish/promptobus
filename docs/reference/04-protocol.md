@@ -1049,6 +1049,11 @@ original launch finishes later, it updates only session fields on the current
 record under the task lock. A callback from a replaced launch is refused. If
 failed launch cleanup removes the binding on the initial or a later assignment, its retired
 identity can verify already committed evidence but cannot authorize a send.
+Cursor and OpenCode bind a record path before they publish the native ID or
+session name. Rollback compares the launch, assignment, path and published
+identity with the driver's owned record under the task lock. A match clears
+the path, native ID and session name together and refuses late publication
+from that launch. A changed assignment or holder keeps its binding.
 
 The send reply distinguishes the canonical message ID from the actual artifact
 ID and reports the landed filename, SHA-256 and artifact bytes. Read the artifact

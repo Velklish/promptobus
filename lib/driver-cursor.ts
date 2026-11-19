@@ -888,6 +888,7 @@ async function spawn(plan: LibLaunchPlan, {
         const p = taskExists(runtimeHome, runtimeTask) ? participantOf(readTask(runtimeHome, runtimeTask), runtimeAddress) : null;
         return [p?.harness, p?.sessionRef, p?.metadata.sessionRecord, p?.metadata.nativeLaunchId, p?.metadata.sessionId];
       };
+      const owned = { sessionId: nativeId ?? lifted?.session?.chatId ?? null, session: lifted?.session?.name ?? null };
       const { current, version, participant } = locked(() => {
         const version = recordVersion(sessionFile(ref, env)), current = readSession(ref, env);
         const participant = participantState();
@@ -895,6 +896,7 @@ async function spawn(plan: LibLaunchPlan, {
           || current.launchId !== launchId || !sameRecordVersion(version)
           || (plan.service && taskExists(runtimeHome, runtimeTask) && (participant[0] !== CURSOR || participant[1] !== ref
             || participant[2] !== sessionFile(ref, env)))) throw new GateError(`Cursor launch ${ref} changed ownership before cleanup`);
+        undo(owned, 'check');
         return { current, version, participant };
       });
       if (lifted?.paneStarted) {
@@ -924,7 +926,7 @@ async function spawn(plan: LibLaunchPlan, {
         if (!sameRecordVersion(version) || !isDeepStrictEqual(participantState(), participant)) {
           throw new GateError(`Cursor launch ${ref} changed ownership during native cleanup; replacement retained`);
         }
-        undo();
+        undo(owned);
         dropSession(ref, env);
       });
       plan.liveSeat?.stopped();

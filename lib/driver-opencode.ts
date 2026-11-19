@@ -613,9 +613,11 @@ async function spawn(rawPlan: LibLaunchPlan, {
       }
       if (!ownsRecord()) throw new GateError(`OpenCode launch ${ref} changed ownership before cleanup`);
       const retire = file ? captureRetirement(ref, file, record, env) : (cleanup: () => void) => cleanup();
+      const owned = { sessionId: record.sessionId, session: record.sessionId };
+      undo(owned, 'check');
       if (child?.pid) await reapHolder(child.pid, { identity: record.holderProcess });
       retire(() => {
-        undo();
+        undo(owned);
         if (log) rmSync(log, { force: true });
         opencodeRegistry.dropSession(ref, env);
         if (file) rmSync(file, { force: true });
