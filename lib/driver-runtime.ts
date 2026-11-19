@@ -22,6 +22,7 @@ export interface LibLaunchPlan extends LaunchPlan {
   skillsNote?: string | null;
   envNote?: string;
   configDir?: string;
+  prepareMcpRoot?: () => void;
 }
 export interface LibPrepareContext extends Pick<SpawnContext,
   'ref' | 'address' | 'task' | 'mcp' | 'prompt' | 'cwd' | 'role' | 'model' | 'effort' | 'permissionMode' |

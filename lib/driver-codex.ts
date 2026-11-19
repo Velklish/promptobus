@@ -55,7 +55,7 @@ interface CodexLaunchPlan extends LibLaunchPlan {
   prompt: string;
   rootSessionRecord?: string | null; codexHome?: string; privateHomeSkills?: string | null;
   privateHomeFiles?: LaunchFile[]; canonicalSkillsDir?: string | null; homeHooks?: string | null;
-  bindBeforeFirstTurn?: boolean; trustProject?: boolean; resumeThreadId?: string; launchId?: string;
+  bindBeforeFirstTurn?: boolean; trustProject?: boolean; untrustedMcpRoot?: string; resumeThreadId?: string; launchId?: string;
   retainFailedSession?: boolean;
   managedResume?: { version: RecordVersion; ref: string; home: string; task: string; address: string;
     nativeId: string; nativeStore: string; cwd: string; previousLaunchId: string; previous: CodexSessionRecord['nativeAdmission'] | null;
@@ -398,12 +398,13 @@ const APPS_OFF = '[features]\napps = false';
 
 /** `config.toml` of a participant home. There is no trust COMMAND on codex-cli 0.156.1, and the
  * `[projects]` key is the project's REALPATH — the unresolved spelling is not recognised. */
-export function codexHomeConfig({ servers = {}, trusted = [], hooksEnabled = true, rawToolReceipts = false }: { servers?: Record<string, LibMcpServer>; trusted?: string[]; hooksEnabled?: boolean; rawToolReceipts?: boolean } = {}) {
+export function codexHomeConfig({ servers = {}, trusted = [], untrusted = [], hooksEnabled = true, rawToolReceipts = false }: { servers?: Record<string, LibMcpServer>; trusted?: string[]; untrusted?: string[]; hooksEnabled?: boolean; rawToolReceipts?: boolean } = {}) {
   const blocks = [
     `${APPS_OFF}${hooksEnabled ? '' : '\nhooks = false'}`,
     ...(rawToolReceipts ? ['[features.code_mode]\ndirect_only_tool_namespaces = ["functions"]'] : []),
     ...Object.entries(servers).map(([name, entry]) => tomlTable(['mcp_servers', name], entry)),
-    ...trusted.map((dir) => `${tomlHeader('projects', dir)}\ntrust_level = "trusted"`),
+    ...trusted.filter(dir => !untrusted.includes(dir)).map((dir) => `${tomlHeader('projects', dir)}\ntrust_level = "trusted"`),
+    ...untrusted.map((dir) => `${tomlHeader('projects', dir)}\ntrust_level = "untrusted"`),
   ];
   return `${blocks.join('\n\n')}\n`;
 }
@@ -959,6 +960,7 @@ function prepare({
     homeHooks,
     bindBeforeFirstTurn: privateHome,
     trustProject: !privateHome,
+    ...(mcp.isolateProject && root ? { untrustedMcpRoot: trustPath(root) } : {}),
     // Printed right after the dropped-variable line, and it has to be: that line alone reads as
     // "the session will use ~/.codex", the exact opposite of what happens.
     envNote: `Codex home: ${home} — CODEX_HOME is dropped from the parent and set to this;`
@@ -1540,6 +1542,7 @@ async function spawn(input: LibLaunchPlan, {
       config: codexHomeConfig({
         servers: mcp.servers,
         trusted: plan.trustProject === false ? [] : [trustPath(workdir)],
+        untrusted: plan.untrustedMcpRoot ? [plan.untrustedMcpRoot] : [],
         hooksEnabled: plan.trustProject !== false,
         rawToolReceipts: (env ?? process.env).PROMPTOBUS_CODEX_RAW_TOOL_RECEIPTS === '1',
       }),

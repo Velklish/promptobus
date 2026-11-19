@@ -53,6 +53,7 @@ export function createOwnerEnvironment(host: PromptobusHost, env: NodeJS.Process
   const file = path.join(paths.directory, `owner-environment-${randomUUID()}.json`);
   const snapshot = { ...env };
   delete snapshot[OWNER_ENV_FILE];
+  for (const key of host.privateEnvironmentKeys?.(snapshot) ?? []) delete snapshot[key];
   for (const name of Object.keys(snapshot)) if (name.startsWith('PROMPTOBUS_CLIENT_') || name.startsWith('PROMPTOBUS_ROOT_')) delete snapshot[name];
   writePrivate(file, { schemaVersion: 1, root: paths.root, home: paths.home, runtime: runtimeIdentity(host), env: snapshot });
   return file;
@@ -67,7 +68,11 @@ export function readOwnerEnvironment(host: PromptobusHost, file: string, { env =
   if (!recordOf(value) || value.schemaVersion !== 1 || value.root !== paths.root || value.home !== paths.home || value.runtime !== runtimeIdentity(host)) {
     throw new Error('Owner environment snapshot identity does not match this workspace and runtime');
   }
-  return Object.freeze(stringEnvironment(value.env));
+  const snapshot = stringEnvironment(value.env);
+  if ([...(host.privateEnvironmentKeys?.(snapshot) ?? [])].some(key => Object.hasOwn(snapshot, key))) {
+    throw new Error('Owner environment snapshot predates the host private environment policy; reconnect with a new root profile');
+  }
+  return Object.freeze(snapshot);
 }
 
 function ownerEnvironment(host: PromptobusHost, env: NodeJS.ProcessEnv, commonEnv: NodeJS.ProcessEnv) {
@@ -183,6 +188,7 @@ export async function finalizeManagedServiceLaunch(host: PromptobusHost, input: 
   if (!nativeHarness(driver.id)) throw new Error('Unsupported managed HTTP harness');
   if (canonicalPath(home) !== canonicalPath(host.promptobusHome())) throw new Error('Managed HTTP launch belongs to another store');
   const owner = ownerEnvironment(host, env, commonEnv), actorEnv = clientEnvironment({ ...env, ...launch.env });
+  for (const key of host.privateEnvironmentKeys?.(actorEnv) ?? []) delete actorEnv[key];
   actorEnv.PROMPTOBUS_HOME = canonicalPath(home);
   actorEnv.PROMPTOBUS_TASK = task;
   actorEnv.PROMPTOBUS_ROLE = address;

@@ -1005,7 +1005,7 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
       ...plan, task: plan.taskId, ref: plan.name, cwd: plan.repoDir,
     })).env;
     plan.mcpConfig = plan.launch.mcpConfig;
-    writeLaunchFiles(plan.launch.files.filter(file => !grantResources.includes(file)), plan.driver.options.launchDirs);
+    writeLaunchFiles(plan.launch.files.filter(file => !grantResources.includes(file)), plan.driver.options.launchDirs, plan.launch.prepareMcpRoot);
 
     tool = harnessTool();
 

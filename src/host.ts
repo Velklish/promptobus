@@ -2,7 +2,7 @@
 // [reference/02-host.md#the-host-contract-in-one-sentence-per-member](../docs/reference/02-host.md#the-host-contract-in-one-sentence-per-member)
 
 import path from 'node:path';
-import type { DeclaredStep, HostDenyRole, StepKind } from './registry.js';
+import type { DeclaredStep, HostDenyRole, StepKind, WORKER } from './registry.js';
 import { ROOT_DIR } from './v1/layout.js';
 
 /** Host object marker: the suite uses it to tell a host from a root string. */
@@ -52,7 +52,12 @@ export interface HostServers {
   servers: Record<string, unknown>;
   /** Names of externally authorized servers that did not travel to the participant. */
   external: string[];
+  /** Keep native project discovery from widening the explicit MCP set. */
+  isolateProject?: boolean;
 }
+
+export const PARTICIPANT_MCP_POLICY_VERSION = 1;
+export interface HostMcpAudience { audience: typeof WORKER | 'control' }
 
 export type HostParticipantContextPurpose = 'technical' | 'user-facing' | 'author-voice';
 
@@ -194,7 +199,7 @@ export interface PromptobusHost {
   resolveRepoModule(repoDir: string): HostRepoModule | null;
   reviewSkillDir(name: string, repoDir?: string): string;
 
-  participantServers(repoDir?: string): HostServers;
+  participantServers(repoDir?: string, context?: HostMcpAudience): HostServers;
   /** Classify external write tools by step kind; never include the bus. */
   participantDenyToolsByKind?(kind: StepKind, repoDir?: string): HostMcpToolClassification;
   /** Optional external write-tool classification for a constrained participant; never include the Promptobus bus. */
@@ -224,6 +229,7 @@ export interface PromptobusHost {
   reportFresh(result: HostFreshness, label: string): void;
 
   extraEnv(): Record<string, string>;
+  privateEnvironmentKeys?(env: Readonly<NodeJS.ProcessEnv>): ReadonlySet<string>;
   resolveToolBin(name: string): HostToolBin;
   /** Optional. Asked when a declared tool's `resolveToolBin` returned no version.
    * See 02-host, section The standalone host. */

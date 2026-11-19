@@ -35,6 +35,7 @@ import type { LibDriver, LibLaunchPlan, LibPrepareContext, LibSpawnContext, LibS
 type CursorSessionRecord = NonNullable<ReturnType<typeof readSession>>;
 type CursorPrepareContext = LibPrepareContext;
 interface UtilityResult { ok: boolean; reason?: string; version?: string | null }
+type CursorLaunchPlan = LibLaunchPlan & { enforceMcpRoot?: boolean };
 
 // Cursor harness driver: everything the mechanism knows about Cursor. The registry and the tmux
 // talk sit one floor below ([cursor-persist.js](cursor-persist.js)); every number below was measured.
@@ -329,6 +330,9 @@ function prepare({
   const readOnly = role === REVIEWER || (role !== APPROVER && !!denyTools?.length);
   const isolated = readOnly;
   const configDir = isolated ? reviewSandbox(settingsPath) : cwd;
+  if (mcp.isolateProject && root && path.resolve(configDir) === path.resolve(root)) {
+    throw new GateError('Cursor MCP isolation requires a launch directory distinct from the host workspace');
+  }
   const sessionDir = configDir;
   const cfg = mcpConfig(mcp, ref, env);
   const settings = cliConfig(denyTools);
@@ -368,6 +372,13 @@ function prepare({
     settings,
     ...(bootstrap.files.length ? { prompt } : {}),
     cwd: sessionDir,
+    ...(mcp.isolateProject ? {
+      enforceMcpRoot: true,
+      prepareMcpRoot: () => {
+        if (isolated) initGit(configDir);
+        assertMcpRoot(configDir);
+      },
+    } : {}),
     // File order is write order. The MCP config carries substituted tokens of the
     // canonical servers and is therefore marked secret.
     files,
@@ -662,6 +673,7 @@ async function spawn(plan: LibLaunchPlan, {
   const sessionDir = plan.cwd ?? cwd;
   const configDir = plan.configDir ?? sessionDir;
   if (configDir !== cwd) initGit(configDir);
+  if ((plan as CursorLaunchPlan).enforceMcpRoot) assertMcpRoot(configDir);
   const launchId = plan.service?.launchId ?? plan.launchId ?? randomUUID();
   const locked = <T>(fn: () => T): T => taskExists(runtimeHome, runtimeTask) ? withTaskLock(runtimeHome, runtimeTask, fn) : fn();
   locked(() => writeSession({
@@ -945,6 +957,13 @@ function saidLiftoff({ output }: Pick<LibSpawnResult, 'output'>) {
 function initGit(dir: string) {
   if (existsSync(path.join(dir, '.git'))) return;
   run('git', ['init', '-q', dir], { encoding: 'utf8' });
+}
+
+export function assertMcpRoot(dir: string) {
+  const root = run('git', ['rev-parse', '--show-toplevel'], { cwd: dir, encoding: 'utf8' });
+  if (root.status !== 0 || realpathSync(root.stdout.trim()) !== realpathSync(dir)) {
+    throw new GateError('Cursor MCP isolation requires the launch directory to be its own Git root');
+  }
 }
 
 // Pointwise approval of our own server; the record lands under the directory the call is made from,

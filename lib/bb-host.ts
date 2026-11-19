@@ -37,7 +37,7 @@ export { assertBbDirectCommand } from './bb-direct-command.js';
 import { recordBbDirectCommand as recordDirectCommand } from './bb-direct-command.js';
 import path from 'node:path';
 import { reviewerFiles } from './reviewer-files.js';
-import { selectParticipantContext } from './participant-context.js';
+import { participantAudience, selectParticipantContext } from './participant-context.js';
 import { hostDenyClassification, requireStepResults } from './review.js';
 import type { DenyEntry } from './review.js';
 import { registryOf, roleEntry, REVIEWER } from '../dist/index.js';
@@ -141,7 +141,7 @@ export function createBbHostIntegration({ resolveHost, listTools, invokeTool, pr
         skills.push({ name: reviewSkill, ...readText(path.join(directory, 'SKILL.md')), root: realpathSync(directory) });
       }
     }
-    const { servers, external } = host.participantServers(root);
+    const { servers, external } = host.participantServers(root, { audience: participantAudience(host as PromptobusHost, role) });
     if (external.length) throw new Error('Host canonical server delivery is incomplete');
     const names = Object.keys(servers);
     if (names.length && (typeof listTools !== 'function' || typeof invokeTool !== 'function')) throw new Error('A consumer-owned canonical tool adapter is required');

@@ -179,7 +179,7 @@ function mcpConfig({ servers }: Pick<LibPrepareContext['mcp'], 'servers'>, point
       // The bus entry carries the binary twice (`command` plus a `busArgv` head) — dedupe, or the
       // holder would exec the runtime as a script of itself.
       const args = Array.isArray(entry.args) ? entry.args : [];
-      const command = args[0] === entry.command ? args : [entry.command, ...args];
+      const command = name === PROMPTOBUS_SERVER && args[0] === entry.command ? args : [entry.command, ...args];
       mcp[name] = {
         type: 'local',
         command,
@@ -333,6 +333,7 @@ export function prepare({
       ...env,
       OPENCODE_CONFIG: mcpConfigPath,
       OPENCODE_CONFIG_DIR: holderDir,
+      ...(mcp.isolateProject ? { OPENCODE_CONFIG_PROJECT_DISABLE: '1', OPENCODE_DISABLE_PROJECT_CONFIG: '1' } : {}),
       OPENCODE_SERVER_PASSWORD: password,
       ...(pointer ? { [SESSION_RECORD_VAR]: pointer } : {}),
     },

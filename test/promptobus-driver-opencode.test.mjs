@@ -135,7 +135,7 @@ check(': stdio servers become local entries, url entries remote ones, junk is dr
   && written.mcp.promptobus?.environment?.PROMPTOBUS_ROLE === 'worker:x'
   && written.mcp.docs?.type === 'remote'
   && written.mcp.docs?.url === 'https://docs.example/mcp'
-  && written.mcp.bus?.command.join(' ') === '/bin/node mcp'
+  && written.mcp.bus?.command.join(' ') === '/bin/node /bin/node mcp'
   && !('skip' in written.mcp),
   JSON.stringify(written.mcp));
 

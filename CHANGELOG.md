@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Show a board of active runs in the BB native panel: lanes per run, columns per pipeline step plus Done, a card per piece with its holder, latest status, stall, open question and unread mail, and a side panel with the piece's history and an Open thread button for a BB participant. The digest and the board place pieces by one rule, now exported as `piecesOf` and `currentResult`.
+- Hosts can select different MCP sets for background workers and control roles. An opt-in project-discovery boundary restricts access to MCP servers from ancestor workspace configs. The worker set goes to the step of kind `edits-tree`, whatever its name.
 
 ### Changed
 
@@ -29,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Confirm exit without a socket for a failed Codex launch in the cleanup fixture.
 - Exclude transient task locks from routing dry-run snapshots while checking durable journal and repository state.
 - Give the BB owner, Codex mock and native-store fixtures time for process startup without changing product deadlines.
+
+### Fixed
+
+- Keep an OpenCode stdio server whose first argument repeats its command: only the bus entry drops the duplicated binary.
+- Let hosts keep private environment variables out of managed participants and owner snapshots. Refuse old snapshots that still contain those variables.
 
 ## [0.33.1] — 2026-11-18
 

@@ -604,7 +604,7 @@ export async function approverLift(rootOrHost: unknown, opts: ApproverOptions): 
       ...plan, task: plan.taskId, ref: plan.name, cwd: plan.worktreePath,
     })).env;
     plan.mcpConfig = plan.launch.mcpConfig;
-    writeLaunchFiles(plan.launch.files, plan.driver.options.launchDirs);
+    writeLaunchFiles(plan.launch.files, plan.driver.options.launchDirs, plan.launch.prepareMcpRoot);
     record = {
       ...record,
       metadata: {

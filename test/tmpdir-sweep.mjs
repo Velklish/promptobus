@@ -95,7 +95,7 @@ export const SUITE_PREFIXES = [
   // per-harness one would have to be added again for every driver that gains an
   // adapter, and the sweep does not care which harness left the directory.
   'promptobus-adapter-',
-  'participant-context-', 'promptobus-native-context-',
+  'participant-context-', 'participant-mcp-policy-', 'promptobus-native-context-',
   'promptobus-admission-', 'promptobus-lifecycle-closure-', 'promptobus-lifecycle-', 'promptobus-close-repeat-',
   'review-file-swap-', 'pb-git-metadata-', 'promptobus-turn-reservation-', 'promptobus-lock-',
   'promptobus-approver-', 'promptobus-auth-', 'promptobus-lead-', 'promptobus-review-files-',

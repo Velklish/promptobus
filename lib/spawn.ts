@@ -21,6 +21,7 @@ import {
   sessionIdentity, SLUG_MAX, slugify, TASK_TITLE_SEP, taskExists, titleFromLines,
   upsertParticipant, withTaskLock, workerAddress, writeJsonAtomic,
 } from './store.js';
+import { participantAudience } from './participant-context.js';
 import { writeTask as writeTaskJournal } from '../dist/v1/store.js';
 import { PROMPTOBUS_SERVER, TEAMLEAD_HARNESSES, harnessName } from './contract.js';
 import {
@@ -45,7 +46,7 @@ import { participantSession } from './status.js';
 import { leaseRule } from './lease.js';
 import { assertNativeContextDriver, assertSelectedNativeFiles, contextRules, nativeContextMetadata, nativeContextPrompt, prepareNativeContext, writeSelectedNativeFile } from './native-participant-context.js';
 
-import type { PromptobusHost, TaskV1, ParticipantV1, RoleRegistry, LaunchFile, HostModuleNote, SessionSnapshot } from '../dist/index.js';
+import type { HostMcpAudience, PromptobusHost, TaskV1, ParticipantV1, RoleRegistry, LaunchFile, HostModuleNote, SessionSnapshot } from '../dist/index.js';
 import type { LibDriver, LibLaunchPlan, LibToolBin } from './driver-runtime.js';
 import type { CodexDriver } from './drivers.js';
 import type { CatalogTuple } from './model-routing/catalog.js';
@@ -184,9 +185,9 @@ export { PROMPTOBUS_SERVER } from './contract.js';
 
 // The participant's MCP descriptor: the host's `participantServers()`, then the bus entry, which
 // overrides a same-named one so its `PROMPTOBUS_*` env is the participant's own; the driver writes the file.
-export function participantMcp(rootOrHost: unknown, { address, taskId, home, reportTaskId = null, repoDir }: { address: string; taskId: string; home: string; reportTaskId?: string | null; repoDir?: string }, driver: Required<Pick<LibDriver, 'shadowedUserServers'>>) {
+export function participantMcp(rootOrHost: unknown, { address, taskId, home, reportTaskId = null, repoDir, audience = 'control' }: { address: string; taskId: string; home: string; reportTaskId?: string | null; repoDir?: string; audience?: HostMcpAudience['audience'] }, driver: Required<Pick<LibDriver, 'shadowedUserServers'>>) {
   const host = hostOf(rootOrHost);
-  const { servers, external } = host.participantServers(repoDir);
+  const { servers, external, isolateProject } = host.participantServers(repoDir, { audience });
   const mcpServers = {
     ...(host.substituteVars(servers) as Record<string, unknown>),
     [PROMPTOBUS_SERVER]: {
@@ -200,7 +201,7 @@ export function participantMcp(rootOrHost: unknown, { address, taskId, home, rep
     },
   };
   return {
-    descriptor: { address, task: taskId, home, servers: mcpServers },
+    descriptor: { address, task: taskId, home, servers: mcpServers, ...(isolateProject ? { isolateProject: true } : {}) },
     external,
     // Shadowed personal entries are counted by the driver: the harness personal config is its dictionary.
     shadowed: driver.shadowedUserServers(Object.keys(mcpServers)),
@@ -306,8 +307,9 @@ function warnTrackedLaunchDirs(files: readonly LaunchFile[], launchDirs?: readon
  * than the whole driver, because this function writes files and asks nothing else of the
  * harness.
  */
-export function writeLaunchFiles(files: LaunchFile[], launchDirs: readonly string[] = []) {
+export function writeLaunchFiles(files: LaunchFile[], launchDirs: readonly string[] = [], prepareMcpRoot?: () => void) {
   assertSelectedNativeFiles(files);
+  prepareMcpRoot?.();
   warnTrackedLaunchDirs(files, launchDirs);
   for (const file of files) {
     if (writeSelectedNativeFile(file)) continue;
@@ -1237,7 +1239,7 @@ export async function planSpawn(rootOrHost: unknown, opts: SpawnOptions): Promis
   const commonEnv = { ...process.env, ...host.extraEnv() };
   const env = driver.sessionEnv(commonEnv);
   const mcpConfigPath = participantMcpPath(home, taskId, address);
-  const mcp = participantMcp(host, { address, taskId, home, repoDir: repoAbs }, driver);
+  const mcp = participantMcp(host, { address, taskId, home, repoDir: repoAbs, audience: participantAudience(host, ownerName) }, driver);
 
   const collected = contextRules(selectedContext, () => host.collectRules(repoAbs));
   const module = host.moduleNote(repoAbs);
@@ -1725,7 +1727,7 @@ export async function spawnTeamlead(rootOrHost: unknown, opts: SpawnOptions): Pr
       ...plan, task: plan.childTask, address: ORCHESTRATOR, ref: plan.name, cwd: plan.root,
       env: { ...plan.env, PROMPTOBUS_ROOT_TASK: plan.rootTask }, deferTaskBinding: true,
     })).env;
-    writeLaunchFiles(plan.launch.files, plan.driver.options.launchDirs);
+    writeLaunchFiles(plan.launch.files, plan.driver.options.launchDirs, plan.launch.prepareMcpRoot);
   }
   catch (error) {
     return revokeFailedManagedLaunch(plan.launch, error, () => {
@@ -2062,7 +2064,7 @@ export async function spawn(rootOrHost: unknown, opts: SpawnOptions): Promise<Sp
     plan.mcpConfig = rebuilt.launch.mcpConfig;
     plan.settings = rebuilt.launch.settings;
 
-    writeLaunchFiles(plan.launch.files, plan.driver.options.launchDirs);
+    writeLaunchFiles(plan.launch.files, plan.driver.options.launchDirs, plan.launch.prepareMcpRoot);
 
     // The task title is extended AFTER the participant write and entirely under the lock:
     // assembly walks the journal that already has this track.

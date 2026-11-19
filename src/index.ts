@@ -90,7 +90,7 @@ export {
 } from './host.js';
 export type {
   HostClone, HostFreshness, HostModuleNote, HostRepo, HostRepoCandidate,
-  HostMcpTool, HostMcpToolClassification, HostPipelineStep, HostRepoModule, HostRoutingOverlay, HostRoutingPaths, HostServers, HostToolBin, PromptobusHost,
+  HostMcpAudience, HostMcpTool, HostMcpToolClassification, HostPipelineStep, HostRepoModule, HostRoutingOverlay, HostRoutingPaths, HostServers, HostToolBin, PromptobusHost,
   HostParticipantContextPurpose, HostParticipantContextTask, HostParticipantContextRequest, HostParticipantContextSelection,
   HostContextRef, HostTaskContextDeclaration, PreparedHostParticipantContextSelection,
 } from './host.js';

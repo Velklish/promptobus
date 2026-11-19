@@ -225,7 +225,7 @@ export async function report(rootOrHost: unknown, opts: ReportOptions = {}): Pro
     plan.env = (await finalizeManagedServiceLaunch(plan.host, {
       ...plan, address: REPORTER, ref: plan.name, cwd: plan.root,
     })).env;
-    writeLaunchFiles(plan.launch.files, plan.driver.options.launchDirs);
+    writeLaunchFiles(plan.launch.files, plan.driver.options.launchDirs, plan.launch.prepareMcpRoot);
   }
   catch (error) {
     return revokeFailedManagedLaunch(plan.launch, error, () => {

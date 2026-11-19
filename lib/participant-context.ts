@@ -1,8 +1,8 @@
 import { realpathSync, statSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
-import { REVIEWER } from '../dist/index.js';
-import type { HostContextRef, HostParticipantContextTask, HostTaskContextDeclaration, PreparedHostParticipantContextSelection, PromptobusHost } from '../dist/index.js';
+import { EDITS_TREE, registryOf, REVIEWER, roleEntry, WORKER } from '../dist/index.js';
+import type { HostContextRef, HostMcpAudience, HostParticipantContextTask, HostTaskContextDeclaration, PreparedHostParticipantContextSelection, PromptobusHost } from '../dist/index.js';
 
 export type ParticipantContextHost = Pick<PromptobusHost, 'selectParticipantContext' | 'resolveRepoModule' | 'reviewSkillDir'>;
 export interface ParticipantContextCeiling {
@@ -164,4 +164,8 @@ export function selectParticipantContext(host: ParticipantContextHost, { root, r
     if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error(`Selected Host skill instructions escape their root: ${file}`);
   }
   return freeze(selection);
+}
+
+export function participantAudience(host: PromptobusHost, role: string): HostMcpAudience['audience'] {
+  return roleEntry(registryOf(host), role)?.kind === EDITS_TREE ? WORKER : 'control';
 }

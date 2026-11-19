@@ -1017,6 +1017,10 @@ export function codexMcpName(name: unknown, prefix: string) {
 export function codexMcpServers(servers: Record<string, LibMcpServer> | null | undefined, prefix: string) {
   const out: Record<string, LibMcpServer> = {};
   const skipped: string[] = [];
+  const add = (key: string, entry: LibMcpServer) => {
+    if (Object.hasOwn(out, key)) throw new Error(`Codex MCP server names collide after normalization: ${key}`);
+    out[key] = entry;
+  };
   const copyDisabledTools = (entry: LibMcpServer, cfg: LibMcpServer) => {
     const tools = Array.isArray(cfg.disabled_tools)
       ? [...new Set(cfg.disabled_tools.map(String).filter(Boolean))]
@@ -1043,13 +1047,13 @@ export function codexMcpServers(servers: Record<string, LibMcpServer> | null | u
       if (cfg.bearer_token_env_var !== undefined) entry.bearer_token_env_var = cfg.bearer_token_env_var;
       if (cfg.env_http_headers !== undefined) entry.env_http_headers = { ...cfg.env_http_headers };
       copyDisabledTools(entry, cfg);
-      out[key] = entry;
+      add(key, entry);
       continue;
     }
     if (type === 'stdio' && cfg.command) {
       const entry = { command: cfg.command, args: cfg.args ?? [], env: cfg.env ?? {} };
       copyDisabledTools(entry, cfg);
-      out[key] = entry;
+      add(key, entry);
       continue;
     }
     skipped.push(name);

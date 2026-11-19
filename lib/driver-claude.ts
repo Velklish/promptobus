@@ -582,11 +582,12 @@ export function mcpDenyTools(tools: readonly HostMcpTool[]) {
 // positionals, so the prompt sits only after a non-variadic option and always last.
 function spawnArgv({
   ref, mcpConfigPath, mcpConfig: cfg, addDirs = [], pluginDir = null, settingsPath,
-  model, effort = null, permissionMode = null, prompt, sessionId,
-}: Pick<ClaudePrepareContext, 'ref' | 'mcpConfigPath' | 'addDirs' | 'pluginDir' | 'settingsPath' | 'model' | 'effort' | 'permissionMode' | 'prompt'> & { mcpConfig: LibMcpConfig; sessionId: string }) {
+  model, effort = null, permissionMode = null, prompt, sessionId, isolateProject,
+}: Pick<ClaudePrepareContext, 'ref' | 'mcpConfigPath' | 'addDirs' | 'pluginDir' | 'settingsPath' | 'model' | 'effort' | 'permissionMode' | 'prompt'> & { mcpConfig: LibMcpConfig; sessionId: string; isolateProject?: boolean }) {
   return [
     '--bg',
     '--name', ref,
+    ...(isolateProject ? ['--strict-mcp-config'] : []),
     '--mcp-config', mcpConfigPath,
     '--allowedTools', ...mcpAllowedTools(cfg),
     ...(addDirs.length ? ['--add-dir', ...addDirs] : []),
@@ -643,7 +644,7 @@ function prepare({
     argv: spawnArgv({
       ref, mcpConfigPath, mcpConfig: cfg, addDirs: [...new Set([...addDirs, ...bootstrap.addDirs])], pluginDir: selectedPlugin ?? pluginDir, settingsPath,
       model, effort, permissionMode, prompt: bootstrap.argument,
-      sessionId,
+      sessionId, isolateProject: mcp.isolateProject,
     }),
     claudeStartHook: { command: guardCommand, settingsPath },
     prelaunchBinding: { sessionId, ...(pointer ? { sessionRecord: pointer } : {}) },

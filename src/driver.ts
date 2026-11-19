@@ -169,6 +169,7 @@ export interface McpDescriptor {
   task: string;
   home: string;
   servers: Record<string, unknown>;
+  isolateProject?: boolean;
 }
 
 /** A driver deny rule: plain harness ids, or structured MCP rules kept until prepare. */
