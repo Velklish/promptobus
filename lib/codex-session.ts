@@ -422,7 +422,7 @@ function sendHolder(sock: string, obj: unknown, timeoutMs = 30_000) {
       try {
         resolve(JSON.parse(buf.slice(0, nl)));
       } catch (caught) {
-      const err = caught as NodeJS.ErrnoException;
+        const err = caught as NodeJS.ErrnoException;
         reject(err);
       }
       client.end();
@@ -1131,7 +1131,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
   try {
     record = JSON.parse(readFileSync(file, 'utf8'));
   } catch (caught) {
-      const err = caught as NodeJS.ErrnoException;
+    const err = caught as NodeJS.ErrnoException;
     process.stderr.write(`codex-hold: record unreadable: ${err.message}\n`);
     process.exit(2);
   }
@@ -1190,7 +1190,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
           'CODEX_EXEC_SERVER_NOISE_CHATGPT_ACCOUNT_ID'].some(key => Object.hasOwn(env, key))) {
         try { lstatSync(path.join(record.codexHome, 'environments.toml')); }
         catch (caught) {
-      const error = caught as NodeJS.ErrnoException; localOnly = error.code === 'ENOENT'; }
+          const error = caught as NodeJS.ErrnoException; localOnly = error.code === 'ENOENT'; }
       }
     } catch { /* An unproved private home cannot establish the executor selection. */ }
     if (!localOnly) {
@@ -1327,7 +1327,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
           unresolvedStart = `${method} returned no terminally accountable turn id`;
         return response;
       } catch (caught) {
-      const error = caught as NodeJS.ErrnoException;
+        const error = caught as NodeJS.ErrnoException;
         unresolvedStart = `${method} outcome unknown: ${error.message}`;
         throw error;
       } finally {
@@ -1552,7 +1552,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
       try {
         req = JSON.parse(buf.slice(0, nl));
       } catch (caught) {
-      const err = caught as NodeJS.ErrnoException;
+        const err = caught as NodeJS.ErrnoException;
         conn.write(`${JSON.stringify({ id: null, error: err.message })}\n`);
         conn.end();
         return;
@@ -1562,7 +1562,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
         const result = await handleOp(req);
         conn.write(`${JSON.stringify({ id: req.id, result })}\n`);
       } catch (caught) {
-      const err = caught as NodeJS.ErrnoException;
+        const err = caught as NodeJS.ErrnoException;
         conn.write(`${JSON.stringify({ id: req.id, error: err.message })}\n`);
       }
       conn.end();
@@ -1705,7 +1705,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
         if (!persist({ ...cleanup, appClosed: true, appClose, closedAt: new Date().toISOString(), holderExitRequested: true })
           || Date.now() >= deadline) return unresolved(auditError);
       } catch (caught) {
-      const error = caught as NodeJS.ErrnoException;
+        const error = caught as NodeJS.ErrnoException;
         receipts.fail(`failed Stop resource cleanup failed: ${error.message}`);
         log(`failed Stop resource cleanup retained holder: ${error.message}`);
         return unresolved(auditError);
@@ -1737,7 +1737,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
         interruptedTurns.set(turnId, answer.error ? answer.error.message ?? 'interrupt refused' : null);
         receipts.append('stop/interrupt', { turnId, error: interruptedTurns.get(turnId) });
       } catch (caught) {
-      const error = caught as NodeJS.ErrnoException;
+        const error = caught as NodeJS.ErrnoException;
         interruptedTurns.set(turnId, error.message);
         receipts.append('stop/interrupt', { turnId, error: error.message });
       }
@@ -1807,7 +1807,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
           return;
         }
       } catch (caught) {
-      const err = caught as NodeJS.ErrnoException;
+        const err = caught as NodeJS.ErrnoException;
         log(`model/list: ${err.message} — check skipped`);
       }
     }
@@ -1966,7 +1966,7 @@ export async function holdMain(argv = process.argv.slice(2), env = process.env) 
     }, env);
     log('alive');
   } catch (caught) {
-      const err = caught as NodeJS.ErrnoException;
+    const err = caught as NodeJS.ErrnoException;
     failHold(err.message);
   }
 }

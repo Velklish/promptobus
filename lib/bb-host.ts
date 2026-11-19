@@ -153,7 +153,7 @@ export function createBbHostIntegration({ resolveHost, listTools, invokeTool, pr
       });
     }))).flat();
     const constrained = role === REVIEWER || role === 'reporter';
-    const denied = constrained ? hostDenyClassification(host, roleEntry(registryOf(host as PromptobusHost), role === 'reporter' ? REVIEWER : role) as DenyEntry, names, root) : null;
+    const denied = constrained ? hostDenyClassification(host, roleEntry(registryOf(host), role === 'reporter' ? REVIEWER : role) as DenyEntry, names, root) : null;
     if (denied && !denied.complete) throw new Error('Host canonical write-tool classification is incomplete');
     const isDenied = (tool: BbHostContext['tools'][number]) => denied?.tools.some(write => write.server === tool.server && write.tool === tool.tool);
     if (constrained && tools.some(tool => tool.access === 'write' && !isDenied(tool))) throw new Error('Host canonical write-tool classification omits a declared write');
@@ -167,7 +167,7 @@ export function createBbHostIntegration({ resolveHost, listTools, invokeTool, pr
     async checkStep(input) {
       input.signal?.throwIfAborted();
       const host = await resolveHost(input.repoDir);
-      const steps = pipelineOf(host as PromptobusHost), supported = pipelineSteps(DEFAULT_PIPELINE);
+      const steps = pipelineOf(host), supported = pipelineSteps(DEFAULT_PIPELINE);
       if (steps.length !== supported.length || steps.some((step, index) => step.name !== supported[index].name || step.kind !== supported[index].kind)) {
         throw new Error('BB requires the shipped worker/reviewer/approver pipeline');
       }

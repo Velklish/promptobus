@@ -1195,10 +1195,13 @@ not measured input, cache, output or tool tokens.
 
 `promptobus/bb-host` exports `createBbHostIntegration`, `renderBbHostContext`
 and the additive `createBbManagedAdmission`, with [public types](../../lib/bb-host.ts). The consumer
-supplies `resolveHost(root)`, optional `prepareEnvironment({root, role, signal})`,
-and `listTools` / `invokeTool` when canonical servers are declared. The default
-plugin resolves the standalone Host and refuses declared servers without those
-adapters. Hosts without a selector retain existing unselected delivery.
+supplies `resolveHost(root)` returning a `BbContextHost`, optional
+`prepareEnvironment({root, role, signal})`, and `listTools` / `invokeTool` when
+canonical servers are declared. Registry and pipeline lookup use only the
+context Host's `pipeline` field; they do not require a full `PromptobusHost`.
+The default plugin resolves the standalone Host and refuses declared servers
+without those adapters. Hosts without a selector retain existing unselected
+delivery.
 
 `createBbManagedAdmission(resolveOwnerHost, env?)` is the consumer's managed-launch
 admission bridge. The explicit resolver receives a canonical execution path and

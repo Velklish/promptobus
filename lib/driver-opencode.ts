@@ -596,7 +596,7 @@ async function spawn(rawPlan: LibLaunchPlan, {
         url, password, sessionId, roots, pollMs: plan.permissionPollMs ?? PERMISSION_POLL_MS,
       });
     } catch (caught) {
-    const error = caught as Error;
+      const error = caught as Error;
       if (error instanceof GateError) fail(error.message);
       throw error;
     }
