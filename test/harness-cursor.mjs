@@ -45,6 +45,7 @@ import { fileURLToPath } from 'node:url';
 import { deliveryBarrier } from './delivery-wait.mjs';
 import { waitFor } from './harness.mjs';
 import { diagnoseTrace as formatTraceDiagnosis } from './harness-shared.mjs';
+import { MAILBOX_COPY } from '../dist/index.js';
 import { KNOWN_HOOK_EVENTS, PROVEN_CURSOR_VERSION } from '../lib/driver-cursor.js';
 import { LIFT_TRIES, LIFT_STEP_MS, SESSION_ENV_VAR } from '../lib/cursor-persist.js';
 import { readPrivate } from '../lib/service-state.js';
@@ -232,6 +233,38 @@ export function readTrace(home, address) {
   } catch {
     return [];
   }
+}
+
+export function cursorToolTrace(tool, args, result) {
+  const text = result?.content?.map(c => c.text).join('\n') ?? '';
+  const entry = { kind: 'tool', tool, isError: !!result?.isError };
+  if (!entry.isError && tool === 'promptobus_mailbox' && args?.message === undefined && !args?.claim
+    && !text.split('\n').includes(MAILBOX_COPY)) {
+    entry.takenReviewIds = [...text.matchAll(/^### review from [^\n]+ · address orchestrator · [^\n]+\nmessage (\S+) · \d+ characters(?:: [^\n]*)?$/gm)]
+      .map(match => match[1]);
+  }
+  if (!entry.isError && tool === 'promptobus_send') {
+    entry.sentResultId = /^sent result → [^\n]+? · address orchestrator · id (\S+)(?: · |$)/.exec(text)?.[1];
+  }
+  return { ...entry, text: text.slice(0, 400) };
+}
+
+export function reviewDelivery(trace, { reviewId, resultId } = {}) {
+  if (!reviewId || !resultId) return null;
+  const tookAt = trace.findIndex(entry => entry.kind === 'tool' && entry.tool === 'promptobus_mailbox'
+    && !entry.isError && entry.takenReviewIds?.includes(reviewId));
+  if (tookAt < 0) return null;
+  let delivery;
+  for (const entry of trace.slice(tookAt + 1)) {
+    if (entry.kind === 'turn-end' || entry.kind === 'turn-start' || entry.tool === 'promptobus_mailbox') break;
+    if (entry.kind === 'untilDelivered') delivery = entry;
+    if (entry.kind === 'tool' && entry.tool === 'promptobus_send' && !entry.isError && entry.sentResultId === resultId) {
+      return delivery?.deliveredAt && !delivery.timeout && Date.parse(delivery.deliveredAt) <= Date.parse(entry.at)
+        ? { reviewId, resultId, mailbox: trace[tookAt].at, deliveredAt: delivery.deliveredAt, reply: entry.at }
+        : null;
+    }
+  }
+  return null;
 }
 
 export function planParticipant(home, address, script) {
@@ -1172,8 +1205,7 @@ async function act({
       note(home, address, { kind: 'action-failed', tool: action.tool, error: e.message });
       return;
     }
-    const text = answer?.result?.content?.map((c) => c.text).join('\n') ?? '';
-    note(home, address, { kind: 'tool', tool: action.tool, isError: !!answer?.result?.isError, text: text.slice(0, 400) });
+    note(home, address, cursorToolTrace(action.tool, action.args, answer?.result));
     return;
   }
   note(home, address, { kind: 'unknown-action', action });

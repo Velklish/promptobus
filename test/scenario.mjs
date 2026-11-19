@@ -636,6 +636,7 @@ export async function runScenario({
   const postcard = (line) => inbox.seen.find((p) => String(p.body ?? '').includes(line)) ?? null;
   const timings = [];
   let sessionNames = [];
+  let step7;
   const at = (name, ms) => { timings.push({ name, ms }); trace(`${name}: ${(ms / 1000).toFixed(1)} s`); };
   // What the run actually went with — by the word of the started process. Goes into the
   // report: the canary checks it against its install tree, and the scenario has nowhere
@@ -820,13 +821,15 @@ export async function runScenario({
     await mcp.tool('promptobus_mailbox');
     harness.assertRunning?.();
     const order = await mcp.tool('promptobus_send', { to: WORKER, type: 'review', body: `${MARK.order}: a reviewer's note — close it` });
+    const reviewNote = msgOf(WORKER, MARK.order);
     check('step 7: the notes went to the worker as a review message',
-      order.isError === false && msgOf(WORKER, MARK.order)?.type === 'review', tail(order.text));
+      order.isError === false && reviewNote?.type === 'review' && sentBy(reviewNote, store.ORCHESTRATOR), tail(order.text));
     orchGuard();
     const result2 = await waitFor(() => msgOf(store.ORCHESTRATOR, MARK.result2), { timeoutMs: step });
     check('step 7: the worker closed the note and sent a second result',
       sentBy(result2, WORKER) && result2?.type === 'result',
       `${JSON.stringify(result2)} · ${wh.diagnose()}`);
+    step7 = { reviewId: reviewNote?.id, resultId: result2?.id };
     // We check with a PREDICATE, not with an empty `stalls.json`: only the report tick
     // on a heartbeat writes the reported mark, and by this step there has been no beat
     // yet — an empty file would mean «nobody has scored any turns», and the verdict
@@ -1349,7 +1352,8 @@ export async function runScenario({
     }
     await harness.cleanup();
   }
-  return { task: TASK, sessionNames, timings, totalMs: Date.now() - t0, postcards: inbox.seen, mechanism: { declared: PROMPTOBUS_BIN, reported: selfBin } };
+  return { task: TASK, sessionNames, timings, totalMs: Date.now() - t0, postcards: inbox.seen, step7,
+    mechanism: { declared: PROMPTOBUS_BIN, reported: selfBin } };
 }
 
 function out(r) {
