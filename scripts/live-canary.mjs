@@ -24,7 +24,7 @@
 // verdict with a list of changed fields; the canary does not clean up a person's
 // home because doing so would hide its own break.
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync,
+  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync,
   writeFileSync, openSync, closeSync, writeSync,
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -36,7 +36,7 @@ import { fileURLToPath } from 'node:url';
 import { run } from '../lib/exec.js';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { writeHostConfig } from '../test/sandbox.mjs';
-import { CANARY_PREFIX, RUN_OWNER_FILE, markRunOwner, markRunUnresolved, runOwnerIsLive, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
+import { CANARY_PREFIX, RUN_OWNER_FILE, markRunOwner, markRunUnresolved, runOwnerIsDead, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
 import { exitCodeOf, runCanaryChild } from './live-abort.mjs';
 import { refuseImportedEntry } from './live-entry.mjs';
 
@@ -68,6 +68,7 @@ const LEFTOVERS = [/promptobus\s+warden/, /test[/\\]participant\.mjs/, /promptob
 
 const RUN = mkdtempSync(path.join(os.tmpdir(), CANARY_PREFIX));
 markRunOwner(RUN);
+markRunUnresolved(RUN);
 const startedAt = new Date();
 const born = startedAt.getTime();
 
@@ -106,24 +107,29 @@ const bornAfter = (file) => {
   try {
     const st = statSync(file);
     return (st.birthtimeMs || st.mtimeMs) >= born;
-  } catch { return false; }
+  } catch (error) { return error.code !== 'ENOENT'; }
+};
+const recentEntries = (dir, matches) => {
+  try { return readdirSync(dir).filter(matches).filter(name => bornAfter(path.join(dir, name))); }
+  catch { return null; }
 };
 const readJson = (file) => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; } };
 /** Marketplace names in the Claude Code global registry. No file — an empty list. */
 const marketplaceIds = () => Object.keys(readJson(KNOWN_MARKETPLACES)?.marketplaces
   ?? readJson(KNOWN_MARKETPLACES) ?? {});
 
-// The canary itself sweeps previous-run directories, keeping the three newest.
-// It leaves its own directory on purpose — the path is printed, the report is
-// read after the run — but nobody swept what piled up: a 2026-09-03 measurement
-// on the owner's machine found nine directories at 20 KB each. What was swept is
-// printed as a list: a silent sweep in a shared `$TMPDIR` reads as a
-// disappearance. A neighbouring foreign run is held by the age cut-off, not by
-// mtime rank: its directory stops growing seconds after start and the "three
-// newest" threshold does not protect it.
+function completedReport(dir) {
+  const files = [RUN_OWNER_FILE, 'live-canary.md', 'live-e2e.out'];
+  const st = lstatSync(dir);
+  if (!st.isDirectory() || (process.getuid && st.uid !== process.getuid())) return false;
+  return readdirSync(dir).length === files.length && files.every(name => lstatSync(path.join(dir, name)).isFile())
+    && readJson(path.join(dir, RUN_OWNER_FILE))?.canaryReport === 'complete' && runOwnerIsDead(dir);
+}
 const refusedRuns = [];
-const swept = sweepPreviousRuns(os.tmpdir(), { current: RUN, refused: refusedRuns, isLive: runOwnerIsLive });
+const heldRuns = [];
+const swept = sweepPreviousRuns(os.tmpdir(), { current: RUN, refused: refusedRuns, held: heldRuns, isLive: dir => !completedReport(dir) });
 note(sweptLine('previous-run directories', swept));
+if (heldRuns.length) note(`held without a completed owned report: ${heldRuns.join(', ')}`);
 if (refusedRuns.length) note(`sweep refused (busy or foreign permissions): ${refusedRuns.join(', ')}`);
 
 // ── Step 1: clean workspace, install and version check ─────────────────────────────
@@ -224,6 +230,7 @@ check('canary: the installed tarball answers --version',
   `code ${versioned.status} · ${tail(`${versioned.stdout}${versioned.stderr}`)}`);
 
 let failure = null;
+let childCleanupConfirmed = false, workspaceRemoved = false;
 try {
 
   // ── Live loop ──────────────────────────────────────────────────────────────────────
@@ -248,7 +255,6 @@ try {
   note(`session identity on the canary: ${carried.join(', ') || 'nothing'}; in the run environment: `
     + `${dirty.join(', ') || 'nothing'}`);
   const log = path.join(RUN, 'live-e2e.out');
-  markRunUnresolved(RUN);
   const fd = openSync(log, 'w');
   let live;
   try { live = await runCanaryChild(LIVE_E2E, { cwd: REPO, env: liveEnv, fd }); }
@@ -258,6 +264,8 @@ try {
     process.exit(exitCodeOf(live.abort));
   }
   const liveOut = readFileSync(log, 'utf8');
+  const terminal = /^▸ cleanup: (.+)$/.exec(liveOut.trimEnd().split('\n').at(-1));
+  childCleanupConfirmed = live.status === 0 && !!terminal && JSON.parse(terminal[1])?.safe === true;
   const tally = /(\d+)\/(\d+) verdicts passed/.exec(liveOut);
   check('canary: the live orchestration loop passed in full',
     live.status === 0 && !!tally && tally[1] === tally[2],
@@ -306,8 +314,8 @@ try {
   const ours = Array.isArray(sessions)
     ? sessions.filter((x) => x?.cwd && under(x.cwd, RUN))
     : [];
-  check('cleanup: no run sessions left in the harness registry',
-    Array.isArray(sessions) && ours.length === 0,
+  const sessionsClear = check('cleanup: no run sessions left in the harness registry',
+    Array.isArray(sessions) && sessions.every(row => typeof row?.cwd === 'string' && path.isAbsolute(row.cwd)) && ours.length === 0,
     Array.isArray(sessions)
       ? JSON.stringify(ours.map((x) => ({ name: x.name, cwd: x.cwd, status: x.status })))
       : 'session registry not parsed — bgSessions did not return a list');
@@ -329,7 +337,7 @@ try {
     && LEFTOVERS.some((re) => re.test(l)) && underRun(l));
   const elsewhere = psLines.filter((l) => Number(l.trim().split(/\s+/)[0]) !== process.pid
     && LEFTOVERS.some((re) => re.test(l)) && !underRun(l));
-  check('cleanup: no participant, warden, or bus-server processes of the run remain',
+  const processesClear = check('cleanup: no participant, warden, or bus-server processes of the run remain',
     ps.status === 0 && seesSelf && stray.length === 0,
     seesSelf ? stray.join('\n') : `ps did not even show this process (${tail(ps.stderr, 200)})`);
   // Foreign processes of the same commands do not paint the verdict, but they
@@ -340,21 +348,19 @@ try {
   // Sandboxes and sockets — only younger than the start of the run: a name
   // literal without a time cut-off would paint the verdict with a foreign tail,
   // and would go green in silence on a prefix change.
-  const sandboxes = listOf(os.tmpdir())
-    .filter((n) => n.startsWith('promptobus-live-e2e-'))
-    .filter((n) => bornAfter(path.join(os.tmpdir(), n)));
-  const socks = listOf('/tmp')
-    .filter((n) => ['a2l-', 'a2e-', 'a2h-'].some((pref) => n.startsWith(pref)))
-    .filter((n) => bornAfter(path.join('/tmp', n)));
-  check('cleanup: no run sandboxes or bus sockets remain',
-    sandboxes.length === 0 && socks.length === 0,
+  const sandboxes = recentEntries(os.tmpdir(), n => n.startsWith('promptobus-live-e2e-'));
+  const socks = recentEntries('/tmp', n => ['a2l-', 'a2e-', 'a2h-'].some(pref => n.startsWith(pref)));
+  const pathsClear = check('cleanup: no run sandboxes or bus sockets remain',
+    sandboxes?.length === 0 && socks?.length === 0,
     `sandboxes ${JSON.stringify(sandboxes)} · sockets ${JSON.stringify(socks)}`);
 
   // The workspace itself with its store — last: cleanup commands above reach it
   // first.
-  rmSync(ws, { recursive: true, force: true });
-  rmSync(packDir, { recursive: true, force: true });
-  rmSync(path.join(RUN, RUN_OWNER_FILE), { force: true });
+  if (childCleanupConfirmed && sessionsClear && processesClear && pathsClear) {
+    rmSync(ws, { recursive: true, force: true });
+    rmSync(packDir, { recursive: true, force: true });
+    workspaceRemoved = true;
+  } else note(`cleanup unconfirmed; stand retained: ${RUN}`);
   check('cleanup: the canary workspace and its store are swept',
     !existsSync(ws) && !existsSync(packDir), `${ws} · ${packDir}`);
 
@@ -402,6 +408,7 @@ function report() {
   ];
   const file = path.join(RUN, 'live-canary.md');
   writeFileSync(file, lines.join('\n'));
+  if (workspaceRemoved) writeFileSync(path.join(RUN, RUN_OWNER_FILE), JSON.stringify({ pid: process.pid, path: RUN, canaryReport: 'complete' }));
   process.stdout.write(`\n${passed}/${verdicts.length} wrapper verdicts passed\n`);
   process.stdout.write(`▸ report: ${file}\n`);
   process.exit(green ? 0 : 1);
