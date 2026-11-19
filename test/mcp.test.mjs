@@ -488,7 +488,22 @@ test('tools/call: a participant address with no session identity still fetches i
   assert.equal(said.includes('the participant\'s own mail'), true);
   assert.equal(/carries no session identity/.test(said), false);
   assert.equal(at(home).unread(SECOND, addrDir('worker:orders-api')), 0);
-  assert.deepEqual(calls.joins, [{ home, task: SECOND, address: 'worker:orders-api', gated: false, mayRegister: true }]);
+  assert.deepEqual(calls.joins, [{ home, task: SECOND, address: 'worker:orders-api', gated: false, mayRegister: false }]);
+});
+
+test('join permits contact handoff only for the listed participant held by this session', async () => {
+  const address = 'worker:join-fixture';
+  upsertParticipant(home, SECOND, { address, session: 'join-fixture-session' });
+  const request = (task) => rpc(1, 'tools/call', { name: 'promptobus_task', arguments: { task } });
+  for (const [task, session, mayRegister] of [
+    [TASK, 'join-fixture-session', false],
+    [SECOND, 'another-session', false],
+    [SECOND, 'join-fixture-session', true],
+  ]) {
+    const { responses, calls } = await talk([request(task)], { role: address, session, declaredTask: SECOND });
+    assert.equal(responses[0].result.isError, undefined, 'task inspection stays available');
+    assert.deepEqual(calls.joins, [{ home, task, address, gated: false, mayRegister }], task);
+  }
 });
 
 test('tools/call: a foreign session mailbox is a copy with a loud heading, originals stay with the owner', async () => {

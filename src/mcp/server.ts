@@ -1,7 +1,7 @@
 // The stdio server: transport rules.
 // [reference/01-overview.md#the-stdio-server-transport-rules](../../docs/reference/01-overview.md#the-stdio-server-transport-rules)
 import {
-  GateError, MAILBOX_CLAIMED_MARK, ORCHESTRATOR,
+  addressOf, GateError, holdsSession, MAILBOX_CLAIMED_MARK, ORCHESTRATOR,
 } from '../protocol.js';
 import type { Ownership } from '../protocol.js';
 import { mcpTools } from './tools.js';
@@ -39,7 +39,7 @@ export interface McpJoin {
   task: string;
   address: string;
   gated: boolean;
-  /** Whether this call's `right` may take the contact point — false for `no-identity` and `foreign`. */
+  /** Whether the declared address is listed and this session may hand over its contact point. */
   mayRegister: boolean;
 }
 
@@ -297,16 +297,14 @@ export function createMcpServer(options: McpOptions): {
   function join(identity: McpIdentity, task: string, joined: Set<string>): void {
     if (joined.has(task)) return;
     const { home, role, session } = identity;
-    // Ownership is asked here: contact-point handoff must happen before work
-    // — otherwise the first call of a foreign session would have time to
-    // write its own socket.
+    const participant = service.readTask(home, task).participants.find((p) => addressOf(p) === role);
     const box = service.mailboxOf?.(home, task, role);
     // An address alias hands over its primary's point, so the owner gate judges the primary.
     const gate = box?.alias ? box.primary : { task, address: role };
     const own = service.ownership(home, gate.task, gate.address, session);
-    // A no-identity call proves nothing either way, so it may not register —
-    // `gated` alone would let it through: `gated` means "proved foreign" only.
-    const mayRegister = own.right !== 'no-identity' && own.right !== 'foreign';
+    const mayRegister = !!participant && !!session
+      && (role === ORCHESTRATOR || holdsSession(participant, session))
+      && (role === ORCHESTRATOR || box?.alias ? own.allowed : own.right === 'other-address');
     const handed = onJoin({ home, task, address: role, gated: own.gated, mayRegister });
     // A refused handover is not an entry: the next tool call tries again.
     if (mayRegister && handed !== false) joined.add(task);

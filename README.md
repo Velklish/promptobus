@@ -288,6 +288,8 @@ replacement.
 
 The full names a session sees are `mcp__promptobus__promptobus_send` and the same prefix for the other tools. Without `task` the server uses `PROMPTOBUS_TASK`, then the session's binding, then the only active task.
 
+Naming a task does not register a contact point there unless the declared address is listed and the session can prove it holds that address. The orchestrator owner gate, including its ownerless-task rule, still applies.
+
 A worker sends an artifact named by its result before sending that result, reads the landed filename from the immediate reply to its own `promptobus_send` call, and uses it in the header without ending the turn. The bus may number a colliding filename; reviewers cannot attach files.
 
 ### Model routing
