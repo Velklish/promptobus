@@ -35,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Align stock BB role skills with the single-task bus: reporter reads, teamlead and approver routing, array recipients and mailbox bodies. Native reporter refusals name the actual unsupported harness.
+- Align stock BB role skills with the single-task bus: reporter reads, teamlead and approver routing, array recipients and mailbox bodies. Native reporter refusals for explicit harness or rated model requests name the matching harnesses.
 - Keep an OpenCode stdio server whose first argument repeats its command: only the bus entry drops the duplicated binary.
 - Let hosts keep private environment variables out of managed participants and owner snapshots. Refuse old snapshots that still contain those variables.
 

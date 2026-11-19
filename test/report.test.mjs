@@ -50,10 +50,13 @@ for (const harness of ['cursor']) {
   check(`report refuses ${harness} with the install-root project-layer reason`,
     refused.threw && /ADR-024/.test(refused.msg) && /project layer/.test(refused.msg), refused.msg);
 }
-for (const opts of [{ harness: 'opencode' }, { model: 'opencode-go/minimax-m3' }]) {
+for (const [opts, reason] of [
+  [{ harness: 'opencode' }, /--harness opencode: Explicit --harness choices: claude, codex/],
+  [{ model: 'opencode-go/minimax-m3' }, /resolves only to opencode\. An explicitly requested rated reporter model needs a catalog entry for claude or codex/],
+]) {
   const refused = await refusal({ task: TASK, ...opts, dryRun: true });
-  check(`report identifies unsupported ${JSON.stringify(opts)} without the Cursor explanation`,
-    refused.threw && /opencode/.test(refused.msg) && /claude, codex/.test(refused.msg) && !/Cursor|project layer/.test(refused.msg), refused.msg);
+  check(`report explains the explicit request ${JSON.stringify(opts)} without the Cursor explanation`,
+    refused.threw && reason.test(refused.msg) && !/Cursor|project layer/.test(refused.msg), refused.msg);
 }
 const codexPlan = await planReport(host, { task: TASK, harness: 'codex', dryRun: true });
 check('Codex reporter uses a read-only private home without an install-root project write',

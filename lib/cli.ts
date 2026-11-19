@@ -116,7 +116,7 @@ Participant launch options: --context-purpose technical|user-facing|author-voice
                               A Codex teamlead also takes --permission-mode full-access
   ${cmd} report --task <root> [--strategy <s>] [--harness claude|codex] [--model <m>] [--effort <e>]
             [--permission-mode <p>] [--allow-payg] [--refresh] [--dry-run]
-                              lift one read-only Claude Code or Codex reporter for the root task;
+                              lift one read-only reporter for the root task;
   ${cmd} report --task <root> --question <text>
                               ask the existing Codex reporter and print its reply;
                               it answers from the digest and journals, asking the root

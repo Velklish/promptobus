@@ -75,11 +75,11 @@ const cliOutput = await capture(async () => {
 check('lead CLI dispatch reaches the dry plan without creating a task',
   cliCode === 0 && /root task: lead-t20261001-000001/.test(cliOutput)
   && /dry-run: nothing written/.test(cliOutput) && !taskExists(host.promptobusHome(), opts.task));
-check('CLI help exposes the managed root and both reporter harnesses',
+check('CLI help exposes the managed root and both explicit reporter harness choices',
   /lead --brief/.test(helpText(host))
   && !/workspace-write\|full-access/.test(helpText(host))
   && /report --task[^\n]*\[--harness claude\|codex\]/.test(helpText(host))
-  && /read-only Claude Code or Codex reporter/.test(helpText(host)));
+  && /read-only reporter for the root task/.test(helpText(host)));
 
 const existing = bus(host.promptobusHome(), { cli: host.version }).createTask({
   id: opts.task, title: 'Already owned root',
