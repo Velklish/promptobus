@@ -4,13 +4,14 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { readBoard } from '../board.js';
+import { readBoard, readPieceHistory } from '../board.js';
+import { columnsOf } from '../dashboard.js';
 import { readProjection, sessionFileName } from '../projection.js';
 import { fixture, treeDigest } from './fixture.js';
 
 test('the board follows the pipeline recorded by spawn and agrees with digest on the same store', async () => {
   const runtime = (file: string) => import(pathToFileURL(path.resolve(`../../lib/${file}.js`)).href);
-  const [{ hostOf }, { planSpawn }, store, { buildDigest }] = await Promise.all(['host', 'spawn', 'store', 'digest'].map(runtime));
+  const [{ hostOf }, { planSpawn }, store, { buildDigest }, { requireStepResults }] = await Promise.all(['host', 'spawn', 'store', 'digest', 'review'].map(runtime));
   const f = fixture('legacy');
   try {
     const repo = path.join(f.root, 'app'), brief = path.join(f.root, 'brief.md');
@@ -24,15 +25,43 @@ test('the board follows the pipeline recorded by spawn and agrees with digest on
       store.bus(home, { cli: host.version });
       const plan = await planSpawn(host, { repo, brief, worker: 'parser', newTask: true, slug: `run-${gates.length}`, dryRun: true });
       store.createTask(home, plan.createNew);
-      const worker = store.participantRecord('worker:parser', { assignmentAfterId: '20200101T000000000-0000-000000' });
+      const boundary = { assignmentAfterId: '20200101T000000000-0000-000000' };
+      const worker = store.participantRecord('worker:parser', { ...boundary, worktree: repo });
       f.engine.addParticipant(plan.taskId, worker);
       f.engine.sendSync(plan.taskId, { from: worker.id, to: ['orchestrator'], type: 'result', body: 'ready' });
       const digest = buildDigest(host, { task: plan.taskId }).tasks[0];
-      const run = readBoard({ storeRoot: home, nativeRoot: f.selection.nativeRoot }, 'producer-test', 1).runs.find(row => row.id === plan.taskId)!;
+      const roots = { storeRoot: home, nativeRoot: f.selection.nativeRoot };
+      const lane = () => readBoard(roots, 'producer-test', 1).runs.find(row => row.id === plan.taskId)!;
+      const run = lane();
       assert.deepEqual(run.steps, ['worker', ...gates]);
       assert.equal(run.inferred, false);
       assert.deepEqual(digest.pieces, [{ slug: 'parser', step: 'approver' }]);
       assert.deepEqual(run.pieces.map(({ slug, step }) => ({ slug, step })), digest.pieces);
+      if (gates.length !== 1) continue;
+      const gate = (config: typeof host, stepName: string) => requireStepResults(config, { home, taskId: plan.taskId,
+        taskMeta: f.engine.readTask(plan.taskId), stepName, slug: 'parser', repoDir: repo });
+      gate(host, 'approver');
+      pipeline.gates.unshift({ name: 'reviewer', kind: 'reads-diff' });
+      writeFileSync(path.join(f.root, 'promptobus.json'), JSON.stringify({ commandName: 'promptobus', tools: ['claude'], pipeline }));
+      const changed = hostOf(f.root, { home });
+      assert.deepEqual(buildDigest(changed, { task: plan.taskId }).tasks[0].pieces, [{ slug: 'parser', step: 'reviewer' }]);
+      gate(changed, 'reviewer');
+      assert.throws(() => gate(changed, 'approver'), /requires a type=result message from reviewer:parser/);
+      assert.deepEqual(lane().startSteps, ['worker', 'approver']);
+      assert.equal(lane().pieces[0].placement, 'expected-at-start');
+      assert.equal(lane().pieces[0].holder, null);
+      const reviewer = store.participantRecord('reviewer:parser', { ...boundary, reviewSubject: repo });
+      f.engine.addParticipant(plan.taskId, reviewer);
+      f.engine.sendSync(plan.taskId, { from: reviewer.id, to: ['orchestrator'], type: 'status', body: 'checking parser' });
+      const observed = lane();
+      assert.deepEqual(observed.steps, ['worker', 'approver', 'reviewer']);
+      assert.equal(observed.pieces[0].step, 'reviewer');
+      assert.equal(observed.pieces[0].placement, 'observed');
+      assert.equal(observed.pieces[0].holder?.participantId, reviewer.id);
+      assert.ok(readPieceHistory({ ...roots, taskId: plan.taskId, slug: 'parser' }).messages.some(m => m.body === 'checking parser'));
+      f.engine.sendSync(plan.taskId, { from: reviewer.id, to: ['orchestrator'], type: 'result', body: 'reviewed' });
+      gate(changed, 'approver');
+      assert.deepEqual(columnsOf(lane()).filter(col => col.pieces.length).map(col => col.label), ['Next step unconfirmed']);
     }
   } finally { f.cleanup(); }
 });

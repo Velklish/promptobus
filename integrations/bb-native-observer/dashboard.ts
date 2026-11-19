@@ -56,8 +56,8 @@ export function relativeAge(at: string | null | undefined, now: number): string 
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 /** The run's steps as columns plus Done; a piece sits in the column of the step that holds it. */
-export function columnsOf(run: Pick<Run, 'steps' | 'pieces'>): { step: string | null; label: string; pieces: Piece[] }[] {
-  return [...run.steps.map(step => ({ step, label: step })), { step: null, label: 'Done' }]
+export function columnsOf(run: Pick<Run, 'steps' | 'pieces' | 'startSteps'>): { step: string | null; label: string; pieces: Piece[] }[] {
+  return [...run.steps.map(step => ({ step, label: step })), { step: null, label: run.startSteps ? 'Next step unconfirmed' : 'Done' }]
     .map(column => ({ ...column, pieces: run.pieces.filter(piece => piece.step === column.step) }));
 }
 export function pieceSignals(piece: Piece): { label: string; tone: string }[] {

@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The BB native board follows the pipeline a host declared when the run started, including omitted or reordered steps. Runs without a recorded order keep their previous columns.
+- The BB native board shows the pipeline declared at run start, distinguishes predicted steps from observed participants, and includes steps added during the run. Runs without a recorded order keep their previous columns.
 
 - Check the consumed Codex app-server protocol against 0.170.0; the minimum remains 0.158.0.
 

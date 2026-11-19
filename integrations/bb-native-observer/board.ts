@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { addressOf, DEFAULT_PIPELINE, pipelineSteps, piecesOf, SHIPPED_REGISTRY, STEP_NAME_PATTERN, type MessageV1, type ParticipantV1, type TaskV1 } from '../../src/index.ts';
+import { addressOf, currentResult, DEFAULT_PIPELINE, pipelineSteps, piecesOf, SHIPPED_REGISTRY, STEP_NAME_PATTERN, type MessageV1, type ParticipantV1, type TaskV1 } from '../../src/index.ts';
 import { boardSchema, historySchema, pieceSchema, rootsSchema, type Board } from './contract.js';
 import { BOARD_REFERENCE_LIMIT, boardMessages, OWNED_RECORD_BYTES, ownedDirectory, ownedText, ReadBudget, ReadBudgetExceeded, readTasks, selectedTask, toMessage, type BeforeIntentRead } from './projection.js';
 
@@ -44,15 +44,14 @@ export function boardSteps(task: Pick<TaskV1, 'participants'>, recorded?: unknow
   if (recorded !== undefined) {
     if (!Array.isArray(recorded) || !recorded.length || recorded.some(name => typeof name !== 'string' || !stepName.test(name) || GOVERNANCE.has(name))
       || new Set(recorded).size !== recorded.length) throw new Error('Invalid recorded pipeline steps');
-    if (recorded.length > 16) throw new Error('Run exceeds 16 board steps');
-    return recorded;
   }
-  const steps = [...SHIPPED];
+  const steps = [...(recorded ?? SHIPPED)];
   for (const participant of task.participants) {
     const address = addressOf(participant) ?? '', colon = address.indexOf(':');
     const prefix = address.slice(0, colon);
     if (colon > 0 && !GOVERNANCE.has(prefix) && !steps.includes(prefix)) steps.push(prefix);
   }
+  if (recorded && steps.length > 16) throw new Error('Run exceeds 16 board steps');
   return steps.slice(0, 16);
 }
 function stallsOf(root: string, taskId: string, budget: ReadBudget): Record<string, string> {
@@ -87,9 +86,13 @@ function runOf(root: string, task: TaskV1, budget: ReadBudget, beforeIntentRead?
   const { messages, unread, older, pending, incompleteIntents } = boardMessages(root, task.id, budget, beforeIntentRead);
   const stalls = stallsOf(root, task.id, budget);
   const steps = boardSteps({ participants }, task.adapter.pipelineSteps);
+  const startSteps = task.adapter.pipelineSteps as string[] | undefined;
+  const byId = new Map(participants.map(p => [p.id, p]));
   const pieces = piecesOf(participants, messages, steps).slice(0, 64).map(piece => {
-    const held = piece.participants.find(entry => entry.step === piece.step)
-      ?? (piece.step === null ? piece.participants.at(-1) : undefined);
+    const observed = startSteps && piece.participants.find(entry => !currentResult(byId.get(entry.id), messages));
+    const step = startSteps ? observed?.step ?? (steps.length === startSteps.length ? piece.step : null) : piece.step;
+    const held = piece.participants.find(entry => entry.step === step)
+      ?? (step === null ? piece.participants.at(-1) : undefined);
     const participant = held && participants.find(value => value.id === held.id);
     let holder = null;
     if (participant) {
@@ -103,11 +106,12 @@ function runOf(root: string, task: TaskV1, budget: ReadBudget, beforeIntentRead?
         unread: unread.get(participant.id) ?? 0, stall: stalls[address] ?? null,
         question: openQuestion(participant.id, messages) };
     }
-    return pieceSchema.parse({ slug: piece.slug, step: piece.step, holder,
+    return pieceSchema.parse({ slug: piece.slug, step, holder,
+      ...(startSteps && { placement: observed ? 'observed' : step === null ? 'next-unconfirmed' : 'expected-at-start' }),
       ...(piece.participants.some(entry => pending.has(entry.id)) ? { unfinishedDelivery: true } : {}),
       participants: piece.participants.map(entry => ({ step: entry.step, participantId: entry.id })) });
   });
-  return { steps, pieces, inferred: task.adapter.pipelineSteps === undefined && steps.length > SHIPPED.length,
+  return { steps, pieces, ...(startSteps && { startSteps }), inferred: !startSteps && steps.length > SHIPPED.length,
     ...sampleNotice(older, budget.exhausted, incompleteIntents, 'The board sample') };
 }
 export function readBoard(input: { storeRoot: string; nativeRoot: string }, instance: string, pid: number, beforeIntentRead?: BeforeIntentRead): Board {
@@ -116,7 +120,7 @@ export function readBoard(input: { storeRoot: string; nativeRoot: string }, inst
   const catalogue = readTasks(input, discoveryBudget);
   const board: Board = { sampledAt: new Date().toISOString(), observer: { instance, pid }, runs: [], truncated: catalogue.truncated, limits: [
     `The board reads the ${ACTIVE_RUNS} most recently updated active runs; finished runs are listed without pieces.`,
-    'Columns follow the recorded pipeline. Without one, extra steps follow the shipped steps in address order.',
+    'Columns show the startup pipeline and any additional observed steps. The board cannot verify the current host pipeline.',
     'Board reads do not execute work, consume mail, ACK, recover or control actors.',
   ] };
   if (discoveryBudget.exhausted) board.limits.push('Run discovery reached its byte budget; some runs were not read.');
