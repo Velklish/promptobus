@@ -39,6 +39,7 @@ const { cursorDriver } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-c
 const { codexDriver, DEFAULT_MODEL: CODEX_DEFAULT } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-codex.js'));
 const { hostOf } = await import(path.join(MECHANISM_ROOT, 'lib', 'host.js'));
 const { READS_DIFF, registryOf, roleEntry } = await import(path.join(MECHANISM_ROOT, 'dist', 'index.js'));
+const { readWardenMark } = await import(path.join(MECHANISM_ROOT, 'dist', 'sidecar.js'));
 const cursorPersist = await import(path.join(MECHANISM_ROOT, 'lib', 'cursor-persist.js'));
 const codexSession = await import(path.join(MECHANISM_ROOT, 'lib', 'codex-session.js'));
 
@@ -362,7 +363,7 @@ onAbort(async (signal) => {
   // The stop verdict is sampled HERE, while the sandbox still exists: once
   // the exit hook takes them, a reader cannot tell a real stop from the teardown.
   say(`  · pre-exit: ${JSON.stringify({ sandbox: SB, sandboxPresent: existsSync(SB), elapsedMs: Date.now() - (deadline - ABORT_STOP_MS),
-    warden: { process: serviceStopped.process ?? null, seat: store.liveWarden(home, TASK), stopped: serviceStopped.stopped },
+    warden: { process: serviceStopped.process ?? null, seat: readWardenMark(home, TASK), stopped: serviceStopped.stopped },
     worker: { ref: workerRef, pids: [workerPane], alive: [workerPane == null ? null : cursorPersist.pidAlive(workerPane)], stop: workerStopped },
     reviewer: { ref: reviewerRef, pids: reviewerPids, alive: reviewerPids.map((pid) => codexSession.pidAlive(pid)), stop: reviewerStopped },
   })}\n`);

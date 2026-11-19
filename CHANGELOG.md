@@ -69,6 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Use the warden's abortable inbox poll on macOS so FSEvents cannot block task and shared service shutdown.
+
 - After a teamlead relift or a child mailbox claim, the child orchestrator no longer reports the predecessor's failed knock as the new owner's death.
 
 - Clarify that progress-only status does not wake a managed Codex root, distinguish the Codex 0.165.0 comparison summary in a commit message from schema files that were never checked in, and point the Host binding, session identity, warden and guard references at their TypeScript sources.

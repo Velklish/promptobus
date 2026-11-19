@@ -88,16 +88,16 @@ export async function reportStalls(home: string, task: string, {
   return [...fresh.map((s) => stallLine(s, task, host)), ...reported];
 }
 
-// Wake on `fs.watch` on top of polling: the event arrives in milliseconds, and polling
-// backs it up — on network and virtual filesystems `fs.watch` silently drops events.
 function watchInboxes(home: string, task: string, addrs: readonly string[], signal?: AbortSignal) {
+  // Closing a directory fs.watch can block in macOS FSEvents. Keep the abortable poll there.
+  const dirs = process.platform === 'darwin' ? null : watchedDirs(home, task, addrs);
   const watchers: FSWatcher[] = [];
   const drained: Promise<void>[] = [];
   let wake: (() => void) | null = null;
   let closed: Promise<void> | null = null;
   const abort = () => wake?.();
   signal?.addEventListener('abort', abort);
-  for (const dir of watchedDirs(home, task, addrs)) {
+  for (const dir of dirs ?? []) {
     try {
       mkdirSync(dir, { recursive: true });
       const w = watch(dir, () => {
@@ -113,7 +113,7 @@ function watchInboxes(home: string, task: string, addrs: readonly string[], sign
     }
   }
   return {
-    addrs: watchKey(home, task, addrs),
+    addrs: dirs?.sort().join(',') ?? null,
     next(ms: number) {
       if (signal?.aborted || closed) return Promise.resolve();
       return new Promise<void>((resolve) => {
@@ -291,11 +291,12 @@ export async function runTaskWarden({ home, task, host, session, signal, registr
           if (signal?.aborted) { why = 'warden task aborted'; break; }
           why = beatRound(home, task, startedMs, { sessions, session, mailboxes });
           if (why) break;
-          // The participant set changes during the run — watchers are rebuilt on the beat.
-          const addrs = addrsOf();
-          if (watchKey(home, task, addrs) !== watcher.addrs) {
-            await watcher.close();
-            watcher = watchInboxes(home, task, addrs, signal);
+          if (watcher.addrs !== null) {
+            const addrs = addrsOf();
+            if (watchKey(home, task, addrs) !== watcher.addrs) {
+              await watcher.close();
+              watcher = watchInboxes(home, task, addrs, signal);
+            }
           }
         }
         failures = 0;

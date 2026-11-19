@@ -51,7 +51,6 @@ function start(args = [], env = {}) {
 }
 
 const line = (out, re) => re.exec(out)?.[1] ?? null;
-const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 const expiry = (ms) => new Promise((resolve) => { setTimeout(() => resolve(null), ms).unref(); });
 const pidAlive = codexStub.pidAlive;
 // A listing that cannot be read is empty: the stand creates its sessions directory only with
@@ -101,12 +100,23 @@ if (argv[0] === 'warden' && process.env.PROMPTOBUS_TEST_MIXED_COLD_START) {
   const { existsSync, renameSync, writeFileSync } = await import('node:fs');
   const { requireProcess } = await import('../lib/service-state.js');
   const { workspaceServiceStatus } = await import('../lib/service-client.js');
+  const { readWardenMark } = await import('../dist/sidecar.js');
   const marker = process.env.PROMPTOBUS_TEST_MIXED_COLD_START;
-  const status = await workspaceServiceStatus(host, { env: process.env });
+  const release = marker + '.release';
+  const home = process.env.PROMPTOBUS_HOME, task = argv[argv.indexOf('--task') + 1];
+  let status, seat;
+  do {
+    if (existsSync(release)) throw new Error('Cold-start fixture released before the Worker acknowledged the task');
+    status = await workspaceServiceStatus(host, { env: process.env });
+    if (!status.running) throw new Error('Cold-start service exited before the Worker acknowledged the task');
+    seat = readWardenMark(home, task);
+    if (seat?.pid === status.process.pid && status.warden.tasks.some(row => row.task === task && row.state === 'running')) break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  } while (true);
   writeFileSync(marker + '.pending', JSON.stringify({ cli: requireProcess(), owner: status.process,
-    parent: process.ppid, cwd: process.cwd(), home: process.env.PROMPTOBUS_HOME, task: argv[argv.indexOf('--task') + 1] }));
+    parent: process.ppid, cwd: process.cwd(), home, task, seat }));
   renameSync(marker + '.pending', marker);
-  while (!existsSync(marker + '.release')) await new Promise(resolve => setTimeout(resolve, 10));
+  while (!existsSync(release)) await new Promise(resolve => setTimeout(resolve, 10));
 }
 `);
 const coldBarrier = path.join(SB, 'cold-start.json');
@@ -114,11 +124,10 @@ const cold = start([], { PROMPTOBUS_E2E_ROOT: externalMechanism, PROMPTOBUS_TEST
 const coldOwner = await waitFor(() => readCompleteJson(coldBarrier), { timeoutMs: 60000 });
 const coldTask = coldOwner ? store.readTask(coldOwner.home, coldOwner.task) : null;
 check('cold start: the owned service is live while its warden CLI and parent are still pending before native lifts',
-  coldOwner?.cli && coldOwner?.owner && coldOwner.parent === cold.child.pid
+  coldOwner?.cli && coldOwner?.owner && coldOwner.parent === cold.child.pid && coldOwner.seat?.pid === coldOwner.owner.pid
   && processState(coldOwner.cli) === 'alive' && processState(coldOwner.owner) === 'alive'
   && !store.participantOf(coldTask, WORKER) && !store.participantOf(coldTask, REVIEWER), JSON.stringify({ coldOwner, out: cold.out }));
 cold.child.kill('SIGTERM');
-await sleep(30);
 writeFileSync(coldBarrier + '.release', 'release');
 const coldExit = await Promise.race([cold.done, expiry(30000)]);
 const coldPreExit = JSON.parse(line(cold.out, /^ {2}· pre-exit: (.+)$/m) ?? 'null');
@@ -128,7 +137,7 @@ check('cold abort: the queued signal reaches awaited cleanup before either nativ
 check('cold abort: the same owned physical service exits and its task seat is gone before parent exit',
   coldPreExit?.warden?.stopped === true && coldPreExit.warden.seat === null
   && coldPreExit.warden.process?.pid === coldOwner?.owner?.pid && coldPreExit.warden.process?.birth === coldOwner?.owner?.birth
-  && processState(coldOwner.owner) === 'dead', JSON.stringify({ coldPreExit, coldOwner }));
+  && processState(coldOwner.owner) === 'dead', JSON.stringify({ coldPreExit, coldOwner, out: cold.out }));
 if (!coldExit) { cold.child.kill('SIGKILL'); await cold.done; }
 for (const owned of [coldOwner?.cli, coldOwner?.owner]) {
   if (owned && processState(owned) === 'alive') {
