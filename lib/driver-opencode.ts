@@ -21,7 +21,7 @@ import type { ProcessIdentity, RecordVersion } from './service-state.js';
 import {
   foreignSession, wakeAddressOf, writeWake,
 } from './store.js';
-import { bindBeforeLaunch, readRecordAt, revokeFailedManagedLaunch, sayForeignWrite as commonSayForeignWrite, sessionEnvFor } from './driver-common.js';
+import { bindBeforeLaunch, joinWakeSession, readRecordAt, revokeFailedManagedLaunch, sayForeignWrite as commonSayForeignWrite, sessionEnvFor } from './driver-common.js';
 import {
   createSession, deleteSession, holderPassword, holderRequestSync, holderUrl, idleOutcome,
   listPermissions, parsePermissionList, pidAlive, portOfLog, readMessages, reapHolder,
@@ -830,13 +830,16 @@ export async function sweepParticipant(participant: ParticipantV1, taskId: strin
 
 /** Contact point of an opencode participant: the session-record path. The record holds url,
  * password and session id behind mode 0600 — no secret travels the journal. */
-export function registerWake(home: string, task: string, addr: string, env = process.env, session: string | null = null) {
+export function registerWake(home: string, task: string, addr: string, env = process.env, session: string | null = null, origin?: 'join') {
   try {
     const file = String(env?.[SESSION_RECORD_VAR] ?? '').trim();
     if (!file) return null;
+    if (origin === 'join' && !path.isAbsolute(file)) return false;
     const record = readRecordAt<OpenCodeRecord>(file);
-    // The bus server hands over with no session argument; the record names it.
-    const who = session ?? record?.sessionId ?? null;
+    const at = wakeAddressOf(home, task, addr);
+    const who = origin === 'join' ? record && joinWakeSession(home, { task, address: addr }, at, session, record, record.sessionId, file)
+      : session ?? record?.sessionId ?? null;
+    if (origin === 'join' && !who) return false;
     if (!who) return null;
     if (record?.sessionId && record.sessionId !== who) return null;
     const held = foreignSession(home, task, addr, who);
@@ -844,10 +847,9 @@ export function registerWake(home: string, task: string, addr: string, env = pro
       sayForeignWrite(home, task, addr, held, who, 'contact-point handoff');
       return false;
     }
-    const at = wakeAddressOf(home, task, addr);
     return writeWake(home, at.task, at.address, { socket: file, token: null, session: who });
   } catch {
-    return null;
+    return origin === 'join' ? false : null;
   }
 }
 

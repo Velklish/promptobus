@@ -41,6 +41,8 @@ export interface McpJoin {
   gated: boolean;
   /** Whether the declared address is listed and this session may hand over its contact point. */
   mayRegister: boolean;
+  /** Session proven for handoff; null on refusal. */
+  session: string | null;
 }
 
 /** Who stall diagnosis is asked about. */
@@ -305,7 +307,7 @@ export function createMcpServer(options: McpOptions): {
     const mayRegister = !!participant && !!session
       && (role === ORCHESTRATOR || holdsSession(participant, session))
       && (role === ORCHESTRATOR || box?.alias ? own.allowed : own.right === 'other-address');
-    const handed = onJoin({ home, task, address: role, gated: own.gated, mayRegister });
+    const handed = onJoin({ home, task, address: role, gated: own.gated, mayRegister, session: mayRegister ? session : null });
     // A refused handover is not an entry: the next tool call tries again.
     if (mayRegister && handed !== false) joined.add(task);
   }

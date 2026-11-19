@@ -486,8 +486,10 @@ export async function checkWake(env = process.env): Promise<WakeProbe> {
 
 // Hand off this session's contact point. **A write for a foreign address is refused**, here rather
 // than on the two callers; the session arrives as an ARGUMENT, since a Stop hook may lack the variable.
-export function registerWake(home: string, task: string, addr: string, env = process.env, session: string | null = null) {
+export function registerWake(home: string, task: string, addr: string, env = process.env, session: string | null = null, origin?: 'join') {
   try {
+    if (origin === 'join' && env.CLAUDE_CODE_MESSAGING_SOCKET?.trim()
+      && (!session || env.CLAUDE_CODE_SESSION_ID?.trim() !== session)) return false;
     const who = session ?? env.CLAUDE_CODE_SESSION_ID?.trim() ?? null;
     const held = foreignSession(home, task, addr, who);
     if (held) {
@@ -512,22 +514,23 @@ export function registerWake(home: string, task: string, addr: string, env = pro
 // The handshake binds the session's own id once through the lift's pointer; a later id is refused
 // and kept in the session record. `bound`, `refused` or `null`: 02-host § Session identity.
 export function bindHandshake(home: string, task: string, addr: string, env = process.env, session: string | null = null,
-  expected: { ref: string; launchId: string } | null = null) {
+  expected: { ref: string; launchId: string } | 'join' | null = null) {
   try {
     const file = String(env?.[SESSION_RECORD_VAR] ?? '').trim();
     const who = session ?? env?.CLAUDE_CODE_SESSION_ID?.trim() ?? null;
     if (!file || !path.isAbsolute(file) || !who) return null;
     return withTaskLock(home, task, () => {
-      const record = readRecordAt<ClaudeBindingRecord>(file);
-      if (typeof record?.home !== 'string' || canonicalPath(record.home) !== canonicalPath(home)
-        || record.task !== task || record.address !== addr) return null;
       const meta = readTask(home, task), participant = participantOf(meta, addr);
       if (!participant || participant.harness === 'codex' || participant.metadata?.nativeLaunchId
         || participant.metadata?.nativeStop || participant.metadata?.sessionRecord !== file) return null;
-      if (expected && (meta.status !== 'active' || record.ref !== expected.ref || record.launchId !== expected.launchId
+      const record = readRecordAt<ClaudeBindingRecord>(file);
+      if (typeof record?.home !== 'string' || canonicalPath(record.home) !== canonicalPath(home)
+        || record.task !== task || record.address !== addr) return expected === 'join' ? 'refused' : null;
+      if (expected && expected !== 'join' && (meta.status !== 'active' || record.ref !== expected.ref || record.launchId !== expected.launchId
         || participant.harness !== CLAUDE || participant.sessionRef !== expected.ref)) return 'refused';
       const at = new Date().toISOString();
       if (record.sessionId && record.sessionId !== who) {
+        if (expected === 'join') return 'refused';
         const refused = (Array.isArray(record.refused) ? record.refused : []).filter((r) => r?.session !== who);
         writeJsonAtomic(file, { ...record, refused: [...refused, { session: who, at }] }, { mode: 0o600 });
         return 'refused';
@@ -539,7 +542,7 @@ export function bindHandshake(home: string, task: string, addr: string, env = pr
       return 'bound';
     });
   } catch {
-    return null;
+    return expected === 'join' ? 'refused' : null;
   }
 }
 

@@ -495,15 +495,17 @@ participant, `other-address` says only that the orchestrator gate did not
 judge that address. The session must hold the declared participant record in
 the target task. For `orchestrator`, the owner gate still allows the owner or
 a session that names itself on a task with no recorded owner. Refusing the
-handoff does not change the tool's own rules for resolving a task, reading
-a mailbox or sending a message.
+handoff does not request a listener and does not change the tool's own rules
+for resolving a task, reading a mailbox or sending a message.
 
 **A handover the binding gate refused is not an entry either.** `onJoin`
-returns what the driver's `registerWake` answered: the written contact point,
-`null` when there was nothing to hand over, and `false` when the gate refused
-because the participant record names another session or the handshake refused —
-or, for Claude Code, when the handover threw. With permission to register,
-`join` marks the task entered on anything but `false`, so
+passes the proven session to the driver. Claude Code checks the socket's
+declared session; Codex and OpenCode match the session and scope of their
+contact record before writing. The driver returns the written point, `null`
+when there was nothing to hand over, or `false` when it refused. An authorized
+join without a contact point still requests a listener. Cursor only updates
+its contact point at turn end, not at join. `join` marks the task entered on
+anything but `false` when it authorized the handoff, so
 the next tool call asks again — once the record names this session, by the
 post-launch persist or a rebind, or once the write goes through, that call hands
 the point over instead of leaving it to the Stop guard at turn end.
