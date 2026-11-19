@@ -45,6 +45,13 @@ if(fs.existsSync('.fixture/dirty') && name==='build') fs.appendFileSync('README.
 process.exitCode = fs.existsSync('.fixture/fail') && name==='test' ? 7 : 0;
 `);
   put('scripts/release.mjs', read(path.join(repo, 'scripts/release.mjs')));
+  put('scripts/integration-preflight.mjs', `import { existsSync } from 'node:fs';
+const refused = existsSync('.fixture/preflight-refused');
+console.log(JSON.stringify(refused ? { status: 'failed', failure: { operation: 'listen', error: 'listen EPERM: fixture' } }
+  : { status: 'passed' }));
+if (refused) console.error('listen EPERM: fixture');
+process.exitCode = refused ? 1 : 0;
+`);
   put('lib/exec.js', read(path.join(repo, 'lib/exec.js')));
   const exec = (argv, env = {}) => run(argv[0], argv.slice(1), { cwd: root, encoding: 'utf8', env: { ...process.env,
     GIT_CONFIG_GLOBAL: path.join(owner, 'no-global'), GIT_CONFIG_SYSTEM: path.join(owner, 'no-system'),
@@ -107,12 +114,34 @@ test('guide commands repair stale metadata over an exact previous tag, commit fi
   assert.equal(receipt.steps[1].attempts[0].notRun.length, 1);
   assert.equal(receipt.publication.status, 'notRun');
   assert.ok(receipt.context.node && receipt.context.tmpdir && receipt.context.tools.npm.sha256);
+  assert.equal(receipt.preflight[0].exitCode, 0);
+  assert.equal(receipt.preflight[0].permissions, 'inherited from verify');
+  assert.ok(receipt.steps.slice(1).every((step) => step.attempts[0].preflight === 0));
   const ran = f.trace().length;
   passed(f.verify({ UNRELATED_RELEASE_VARIABLE: 'different, not recorded' }));
   passed(f.prepare());
   assert.equal(f.trace().length, ran);
   assert.equal(f.git('rev-parse', 'HEAD'), candidate);
   assert.equal(f.git('tag', '--list'), 'v1.0.0');
+});
+
+test('preflight refusal retains original diagnostics and prevents the suite from starting', () => {
+  const f = fixture();
+  passed(f.prepare());
+  f.put('.fixture/preflight-refused', 'yes');
+  refused(f.verify(), /Integration preflight refused: listen EPERM: fixture/);
+  const red = f.receipt();
+  assert.deepEqual(f.trace().map((entry) => entry.name), ['build']);
+  assert.ok(red.steps.slice(1).every((step) => step.status === 'notRun' && step.attempts.length === 0));
+  assert.deepEqual(red.preflight[0].argv, [process.execPath, 'scripts/integration-preflight.mjs']);
+  assert.equal(red.preflight[0].exitCode, 1);
+  assert.equal(red.preflight[0].report.failure.error, 'listen EPERM: fixture');
+  rmSync(path.join(f.root, '.fixture/preflight-refused'));
+  passed(f.verify());
+  const resumed = f.receipt();
+  assert.deepEqual(resumed.preflight[0], red.preflight[0]);
+  assert.equal(resumed.preflight[1].status, 'passed');
+  assert.equal(resumed.steps[1].attempts[0].preflight, 1);
 });
 
 test('failure retains exact exit/logs and notRun steps, then retries only failed and unreached commands', () => {
@@ -278,6 +307,8 @@ test('release guide orders writer, committed candidate, verification and publica
   assert.ok(stages.every((stage, index) => guide.includes(stage) && (!index || guide.indexOf(stage) > guide.indexOf(stages[index - 1]))));
   assert.match(guide, /npm run release -- prepare 0\.33\.0 --date 2026-11-13 --receipt \/durable\/releases\/promptobus-0\.33\.0\.json/);
   assert.match(guide, /npm run release -- verify --receipt \/durable\/releases\/promptobus-0\.33\.0\.json/);
+  assert.match(guide, /After build and before the gates, `verify` runs the \[integration preflight\]/);
+  assert.match(guide, /A pass does not count toward the gate total/);
   assert.match(guide, /An absent future tag never counts as a successful remote installation check/);
   assert.equal(JSON.parse(read(path.join(repo, 'package.json'))).scripts.release, 'node scripts/release.mjs');
 });

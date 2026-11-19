@@ -37,6 +37,12 @@ export const contained = (root: string, file: string) => file === root
   || (!path.relative(root, file).startsWith(`..${path.sep}`) && path.relative(root, file) !== '..' && !path.isAbsolute(path.relative(root, file)));
 
 interface ProcessObservation { scope: string; identity: ProcessIdentity | null; zombie: boolean }
+interface ProcessObservationFailure {
+  operation: string;
+  kind: 'access-denied' | 'read-failed' | 'unparseable' | 'unavailable';
+  error: string;
+  code: string | null;
+}
 const LINUX_BOOT = '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}';
 const DARWIN_SCOPE = 'v2:darwin:utc-c';
 const darwinObservationEnv = () => ({ ...process.env, LC_ALL: 'C', LANG: 'C', TZ: 'UTC' });
@@ -81,22 +87,51 @@ function darwinObservation(pid: number, status: number | null, stdout: string, s
     ? { pid, birth: `${DARWIN_SCOPE}:${start}` } : null, zombie: Boolean(match && start && match[1]!.startsWith('Z')) };
 }
 
-function observeProcess(pid: number): ProcessObservation | null {
+function observeProcess(pid: number, diagnose?: (failure: ProcessObservationFailure) => void): ProcessObservation | null {
   if (!Number.isSafeInteger(pid) || pid <= 0) return null;
+  let operation = 'observe process on this platform';
+  const readFailed = (error: string, code: string | null = null) => {
+    const denied = /\b(?:EPERM|EACCES)\b|operation not permitted|permission denied/i;
+    diagnose?.({ operation, error, code, kind: denied.test(code ?? '') || denied.test(error) ? 'access-denied' : 'read-failed' });
+  };
+  const caught = (error: unknown) => readFailed(error instanceof Error ? error.message : String(error),
+    recordOf(error) && typeof error.code === 'string' ? error.code : null);
+  const unparseable = (error: string) => diagnose?.({ operation, kind: 'unparseable', error, code: null });
+  const readText = (file: string) => { operation = `read ${file}`; return readFileSync(file, 'utf8'); };
   try {
     if (process.platform === 'linux') {
-      const scope = linuxView(readFileSync('/proc/sys/kernel/random/boot_id', 'utf8'), readlinkSync('/proc/self/ns/pid'),
-        readFileSync('/proc/self/stat', 'utf8'), readFileSync('/proc/self/status', 'utf8'));
-      if (!scope) return null;
+      const boot = readText('/proc/sys/kernel/random/boot_id');
+      operation = 'readlink /proc/self/ns/pid';
+      const namespace = readlinkSync('/proc/self/ns/pid');
+      const scope = linuxView(boot, namespace, readText('/proc/self/stat'), readText('/proc/self/status'));
+      if (!scope) {
+        operation = 'parse /proc boot ID, PID namespace, self stat and status';
+        unparseable('invalid boot ID, PID namespace, self stat or PID view');
+        return null;
+      }
       let stat: ReturnType<typeof linuxStat> = null;
-      try { stat = linuxStat(pid, readFileSync(`/proc/${pid}/stat`, 'utf8')); } catch {}
+      try {
+        stat = linuxStat(pid, readText(`/proc/${pid}/stat`));
+        if (!stat) unparseable('invalid process stat fields');
+      } catch (error) { caught(error); }
       return { scope, identity: stat ? { pid, birth: `${scope}:${stat.ticks}` } : null, zombie: stat?.state === 'Z' };
     }
     if (process.platform === 'darwin') {
+      operation = `/bin/ps -p ${pid} -o stat= -o lstart=`;
       const result = run('/bin/ps', ['-p', String(pid), '-o', 'stat=', '-o', 'lstart='], { encoding: 'utf8', timeout: 2000, env: darwinObservationEnv() });
-      return darwinObservation(pid, result.status, result.stdout ?? '', result.stderr ?? '');
+      const observation = darwinObservation(pid, result.status, result.stdout ?? '', result.stderr ?? '');
+      if (!observation.identity && diagnose) {
+        if (result.error || result.status !== 0 || result.stderr?.trim()) {
+          const details = [result.error?.message, result.stderr?.trim()].filter(Boolean).join('\n');
+          const code = recordOf(result.error) && typeof result.error.code === 'string' ? result.error.code
+            : /\b(EPERM|EACCES)\b/.exec(details)?.[1] ?? null;
+          readFailed(`exit ${result.status}, signal ${result.signal ?? null}${details ? `: ${details}` : ''}`, code);
+        } else unparseable(`invalid process stat or start time: ${JSON.stringify(result.stdout)}`);
+      }
+      return observation;
     }
-  } catch {}
+    diagnose?.({ operation, kind: 'unavailable', error: `unsupported platform ${process.platform}`, code: null });
+  } catch (error) { caught(error); }
   return null;
 }
 
@@ -162,9 +197,12 @@ export function processStateAsync(identity: ProcessIdentity): Promise<'alive' | 
 }
 
 export function requireProcess(pid = process.pid) {
-  const identity = processIdentity(pid);
-  if (!identity) throw new Error('Shared service requires an observable process birth identity on this platform');
-  return identity;
+  let cause: ProcessObservationFailure | undefined;
+  const observed = observeProcess(pid, (failure) => { cause = failure; });
+  if (!observed?.identity || observed.zombie) {
+    throw new Error('Shared service requires an observable process birth identity on this platform', { cause });
+  }
+  return observed.identity;
 }
 
 export function servicePaths(host: PromptobusHost, env: NodeJS.ProcessEnv = process.env): ServicePaths {

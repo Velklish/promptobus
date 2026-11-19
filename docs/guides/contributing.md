@@ -139,6 +139,20 @@ Between the two, fill `docs/archive/<id>-<slug>/result.md` (outcome, what was do
 
 A task without attachments reaches the default branch as one commit; one with attachments reaches it as the attachment squash and the fold-draft commit. For a task without attachments, intermediate worker and review commits are squashed in the approver worktree, and the squashed commit carries the `fold` draft as its message and the acceptance trailer: `git reset --soft <base>`, then `git commit --cleanup=verbatim -F <draft> --trailer "Squash-of: <sha>"`, where `<sha>` is the full sha of the worker head that was squashed — the subject may become `PB-N: closed — …`, the body stays, and `--trailer` appends to the draft rather than replacing it. The trailer is the proof `done` and `sweep` take for a squash whose content was edited while merging — a conflict resolved by hand, a card archived and folded — where neither `merge-tree` nor `patch-id` sees the branch any more ([03-cli § namedBySquash](../reference/03-cli.md#namedbysquash--did-an-acceptance-commit-name-the-branch-head)). It must name the head exactly: a worker commit after the named one keeps the worktree and branch, and an acceptance without the trailer leaves both for the owner to remove by hand. Naming a head discards whatever of it the squash left out — `merge-tree` finding the base without it no longer keeps the branch — so leave out only what the fold draft says was left out. A `fixup` onto the worker's `PB-N:` commit drops the draft and with it the only copy of `result.md`. In the ordinary path, an extra commit between `archive N` and `fold N` would put a revision into the journal line that the final squash discards. Run lint on the final commit, verify the clone root is on main, then publish only with `promptobus lease --as approver:<slug> --task <id> --key <clone root> -- git -C <clone root> merge --ff-only <approver branch>`. If main moved, redo the squash on current main in the approver worktree and rerun gates before retrying. Once the session is stopped and the branch is taken, `sweep` or `done` removes that worktree and branch.
 
+## Integration preflight
+
+From the repository root, with the pinned dependencies installed and `npm run build` complete, run `node scripts/integration-preflight.mjs` for a capability report only. To guard an integration gate command, put the entire wrapper (not just the suite) under the same execution permissions and, when needed, the same machine lease:
+
+```bash
+node scripts/integration-preflight.mjs -- npx --no-install backslop gates --require-clean --base <base>
+```
+
+The wrapper checks its own process birth identity through the fixture's `requireProcess`, creates a private directory in the effective `os.tmpdir()`, and exchanges data through an owned Unix socket under `/tmp` (the fixtures use the short path). It checks execution access to each required binary it finds on PATH, runs `node` to verify the executable and version, and validates the configured adapters with `npx --no-install backslop lint --require-adapters`. The access check refuses if real and effective user or group IDs differ. The wrapper removes only its own probe directories.
+
+The wrapper prints a JSON capability report. For a process refusal, the report and stderr distinguish denied access to `/proc` or `ps` from an unparseable observation, using the original read or command result. If cleanup also fails, they list the original probe error first. On refusal the wrapper exits nonzero without starting the supplied command. Otherwise, it passes through that command's exit status.
+
+For missing generated files, run the pinned `npx --no-install backslop init` in the candidate worktree. For a missing binary, restore the named dependency on the executor's PATH. For process or socket refusal, stop and keep the diagnostics: use an executor the owner has approved for both this check and the gates. Do not request automatic escalation, change identities or rerun the gates under broader permissions. A pass covers only these prerequisites; report suite results, skips and not-run gates separately.
+
 ## Skills
 
 | Skill | When |

@@ -3,13 +3,14 @@ import { spawnSync } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { run as launch, wouldResolve } from '../lib/exec.js';
+import { PROC_MAX_OUTPUT, run as launch, wouldResolve } from '../lib/exec.js';
 
 const root = realpathSync(process.cwd());
 const links = ['README.md', 'docs/guides/install.md', 'skills/orchestrate/SKILL.md'];
 const metadata = ['package.json', 'package-lock.json', 'CHANGELOG.md', 'docs/reference/01-overview.md', ...links];
 const commands = [['npm', 'run', 'build'], ['npm', 'test'], ['npx', '--no-install', 'backslop', 'lint'],
   ['npm', 'run', 'audit'], ['npm', 'run', 'pins'], ['npm', 'run', 'codex-schema']];
+const preflightArgv = (executable) => [executable, 'scripts/integration-preflight.mjs'];
 const blob = /https:\/\/github\.com\/Velklish\/promptobus\/blob\/v\d+\.\d+\.\d+\//g;
 const install = /github:Velklish\/promptobus#v\d+\.\d+\.\d+/g;
 const overview = /Version in `package\.json` is `([^`]+)`/g;
@@ -118,7 +119,7 @@ function prepare(version, date, file) {
     git('commit', '-m', message);
   }
   clean();
-  const receipt = { format: 1, version, date, base, source: source(), context: null,
+  const receipt = { format: 1, version, date, base, source: source(), context: null, preflight: [],
     steps: commands.map((argv) => ({ argv, status: 'notRun', reason: 'Verification has not reached this command', attempts: [] })),
     skips: [], publication: { status: 'notRun', reason: 'Tag creation, remote installation and publication are separate acceptance steps' } };
   save(file, receipt);
@@ -152,6 +153,38 @@ function candidate(file) {
   return receipt;
 }
 
+function verifyPreflight(file, receipt, runtime) {
+  const argv = preflightArgv(process.execPath);
+  const attempt = { argv, status: 'running', started: new Date().toISOString(), permissions: 'inherited from verify' };
+  (receipt.preflight ??= []).push(attempt);
+  save(file, receipt);
+  const start = performance.now();
+  const result = spawnSync(process.execPath, argv.slice(1), {
+    cwd: root, encoding: 'utf8', timeout: 30_000, maxBuffer: PROC_MAX_OUTPUT,
+  });
+  let report;
+  try { report = JSON.parse(result.stdout); } catch {}
+  Object.assign(attempt, { status: 'failed', exitCode: result.status, signal: result.signal,
+    elapsedMs: Math.round(performance.now() - start), stdout: result.stdout, stderr: result.stderr, report });
+  if (result.error) attempt.error = result.error.message;
+  save(file, receipt);
+  clean();
+  requireThat(same(receipt.source, source()) && same(runtime, context()), 'Source or runtime changed during integration preflight');
+  if (result.status !== 0 || report?.status !== 'passed') {
+    console.error(`Integration preflight refused: ${attempt.error ?? (attempt.stderr?.trim() || 'no passing capability report')}`);
+    return false;
+  }
+  attempt.status = 'passed';
+  save(file, receipt);
+  console.log(`Integration preflight passed (${attempt.elapsedMs} ms); not a gate`);
+  return true;
+}
+
+function passedPreflight(receipt, attempt) {
+  return attempt?.status === 'passed' && attempt.exitCode === 0 && attempt.signal === null
+    && attempt.report?.status === 'passed' && same(attempt.argv, preflightArgv(receipt.context.executable));
+}
+
 function verify(file) {
   const receipt = candidate(file);
   const runtime = context();
@@ -159,9 +192,12 @@ function verify(file) {
   receipt.context = runtime;
   save(file, receipt);
   for (const [index, step] of receipt.steps.entries()) {
-    if (step.status === 'passed') continue;
+    if (index === 1 && !verifyPreflight(file, receipt, runtime)) return 1;
+    if (step.status === 'passed' && (index === 0
+        || passedPreflight(receipt, receipt.preflight[step.attempts.at(-1)?.preflight]))) continue;
     const attempt = { argv: step.argv, started: new Date().toISOString(), exitCode: null, signal: null, elapsedMs: null,
       stdout: `${file}.${index}.${step.attempts.length}.stdout`, stderr: `${file}.${index}.${step.attempts.length}.stderr` };
+    if (index > 0) attempt.preflight = receipt.preflight.length - 1;
     step.status = 'running';
     delete step.reason;
     step.attempts.push(attempt);
@@ -304,6 +340,9 @@ function publish(file, id) {
   requireRuntimeIdentity(receipt.context);
   requireThat(receipt.steps.every((step) => step.status === 'passed'),
     'Complete local candidate verification before publication');
+  requireThat(passedPreflight(receipt, receipt.preflight?.at(-1)) && receipt.steps.slice(1).every((step) =>
+    passedPreflight(receipt, receipt.preflight?.[step.attempts.at(-1)?.preflight])),
+  'Complete integration preflight in local candidate verification before publication');
   const qualification = qualify(receipt, file, id);
   clean();
   requireThat(same(receipt.source, source()), 'Candidate source changed after Linux qualification');
