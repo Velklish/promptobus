@@ -60,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refuse cyclic BB dependency capture with the package chain and reject whitespace-only review evidence `notRun` reasons.
 - Close the BB command receipt descriptor on raw-read failure without masking the error or losing the executed outcome.
 - Keep the wrong-repository diagnostic ahead of native worker context mismatches and refuse non-regular selected sources without a blocking open.
+- Rebuild both TypeScript projects before a focused one-file test and refuse orphaned JavaScript or declarations. The runtime build refreshes ESM and CommonJS output even after the last source import is removed.
+- Require a readable baseline for the fixture's warden delivery mark before reading mail, and compare the driver record's Cursor pane PID with the run-owned tmux pane.
 - Keep an OpenCode stdio server whose first argument repeats its command: only the bus entry drops the duplicated binary.
 - Let hosts keep private environment variables out of managed participants and owner snapshots. Refuse old snapshots that still contain those variables.
 

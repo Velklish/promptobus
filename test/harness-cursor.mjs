@@ -42,7 +42,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { waitDelivered } from './delivery-wait.mjs';
+import { deliveryBarrier } from './delivery-wait.mjs';
 import { waitFor } from './harness.mjs';
 import { diagnoseTrace as formatTraceDiagnosis } from './harness-shared.mjs';
 import { KNOWN_HOOK_EVENTS, PROVEN_CURSOR_VERSION } from '../lib/driver-cursor.js';
@@ -1076,11 +1076,21 @@ async function runScript({ home, address, cfg, turn, chatId, workspace, env, bus
     }
     note(home, address, { kind: 'native-ready', turn, chatId, clientId: credential.id });
   }
-  for (const action of plan.do ?? []) {
-    await act({ home, address, bus, action, workspace, cfg });
+  const actions = plan.do ?? [];
+  const gate = actions.find(action => action.untilDelivered);
+  const delivery = gate && await deliveryBarrier(cfg.env?.PROMPTOBUS_HOME ?? env.PROMPTOBUS_HOME,
+    cfg.env?.PROMPTOBUS_TASK ?? env.PROMPTOBUS_TASK, address, gate.untilDelivered);
+  let outcome = delivery?.ok === false ? 'error' : 'done';
+  if (outcome === 'error') note(home, address, { kind: 'action-failed', action: gate, error: delivery.note });
+  for (const action of outcome === 'done' ? actions : []) {
+    if (action.untilDelivered) {
+      const marked = await delivery.wait();
+      note(home, address, { kind: 'untilDelivered', ms: action.untilDelivered, deliveredAt: marked.deliveredAt, timeout: marked.note });
+      if (!marked.ok) { outcome = 'error'; break; }
+    } else await act({ home, address, bus, action, workspace });
   }
   if (!busState) await bus.close();
-  return 'done';
+  return outcome;
 }
 
 // A real `promptobus mcp` as a child process and line-delimited JSON-RPC — the same
@@ -1126,17 +1136,12 @@ async function openBus(cfg, env) {
 }
 
 async function act({
-  home, address, bus, action, workspace, cfg,
+  home, address, bus, action, workspace,
 }) {
   if (action.untilFile) {
     const released = await waitFor(() => existsSync(action.untilFile), { timeoutMs: 30000 });
     note(home, address, { kind: 'release-file', released });
     if (!released) throw new Error('Owned turn release file was not published within 30000 ms');
-    return;
-  }
-  if (action.untilDelivered) {
-    const marked = await waitDelivered(cfg?.env?.PROMPTOBUS_HOME ?? process.env.PROMPTOBUS_HOME, cfg?.env?.PROMPTOBUS_TASK ?? process.env.PROMPTOBUS_TASK, address, action.untilDelivered);
-    note(home, address, { kind: 'untilDelivered', ms: action.untilDelivered, deliveredAt: marked.deliveredAt, timeout: marked.note });
     return;
   }
   if (action.wait) {
