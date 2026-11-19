@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- BB checked commands require a finalization acknowledgment bound to the original receipt and verify both raw streams before reusing a resource. An observed signal exit can end the call without yielding complete gate evidence. Existing calls without an acknowledgment remain unresolved.
+
 - Check the consumed Codex app-server protocol against 0.170.0; the minimum remains 0.158.0.
 
 - Declare BB `>=0.50.1 <0.51` and Plugin SDK `>=0.6.157` for both BB plugins instead of one exact pair, so a BB patch release no longer disables them; a new BB minor line still needs a release. The build pins SDK 0.6.157. Source checks do not establish an installed live workflow.

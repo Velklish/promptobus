@@ -1404,8 +1404,11 @@ Each admitted command leaves a durable call record before spawn. A bounded
 current `pendingCommands` projection references unresolved calls without scanning
 history. A concrete resource also retains its exact unresolved command reference
 outside the transient lease lock. Other checked launchers using the same resource
-namespace refuse until both the exact terminal call state and original receipt
-are verified. Missing, partial or unreadable evidence, failed finalization and
+namespace verify the terminal call, receipt digest, and the byte count and SHA-256
+of each raw stream. The sibling `calls/<call-hash>.json.ack` binds that call to
+its receipt after the finalization callback returns and releases the control lock.
+A child's observed signal can end the call without passing a gate. Missing,
+partial or unreadable evidence, failed finalization and
 UNKNOWN remain blockers; idle, ended grants, administrative parking or dead
 wrapper metadata alone cannot release them. Complete direct nonzero exits retain
 their original outcome. The PID handshake still protects a known surviving keyed

@@ -116,6 +116,7 @@ export async function runBoundedCommand(input: unknown, invocation: Invocation) 
     }
     const launcherSha256 = createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex');
     try {
+    const finalization: { acknowledge?: ReturnType<typeof completeCommand> } = {};
     const result = await recordBbDirectCommand({ command: command.argv, stem: command.output, by: invocation.by, cwd: command.cwd, env,
       spawnPlan: keyedCommandPlan(command.argv, env, locks),
       beforeSpawn: start => admitCommand(binding, commandId, () => {
@@ -129,13 +130,14 @@ export async function runBoundedCommand(input: unknown, invocation: Invocation) 
         validateCommandPaths(binding, command);
         if (!isDeepStrictEqual([...new Set(command.exclusiveKeys.map(key => realpathSync(key)))].sort(), keys)) throw new Error('resource identity changed while waiting');
       }),
-      onReceipt: () => completeCommand(binding, commandId),
+      onReceipt: receipt => { finalization.acknowledge = completeCommand(binding, commandId, receipt); },
       receiptFields: { admission: { task: binding.task, token: binding.launchContext!.grant.token, phase: binding.launchContext!.grant.phase,
         commandId, commandSha256: commandDigest(command) }, resourceNamespace: leaseRoot(env), launcher: { buildIdentity: BUILD_IDENTITY, sha256: launcherSha256 } } });
     observedReceipt = result.receipt;
+    finalization.acknowledge?.();
     return result;
     } catch (error) {
-      observedReceipt = (error as { receipt?: typeof observedReceipt }).receipt;
+      observedReceipt = (error as { receipt?: typeof observedReceipt }).receipt ?? observedReceipt;
       throw error;
     }
   };

@@ -1,9 +1,9 @@
 import { spawn, execFileSync } from 'node:child_process';
 import type { ChildProcessByStdio } from 'node:child_process';
 import type { Readable } from 'node:stream';
-import { createWriteStream, readFileSync, writeFileSync, openSync, closeSync } from 'node:fs';
+import { createWriteStream, existsSync, readFileSync, writeFileSync, openSync, closeSync, renameSync, rmSync } from 'node:fs';
 import { finished } from 'node:stream/promises';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 type DirectChild = ChildProcessByStdio<null, Readable, Readable>;
@@ -19,6 +19,19 @@ export interface DirectCommandInput {
   onReceipt?: (receipt: DirectCommandReceipt) => unknown;
   receiptFields?: Record<string, unknown>;
   spawnPlan?: { file: string; args: readonly string[]; verbatim?: boolean };
+}
+
+export function publishCommandEvidence(file: string, content: string) {
+  const stage = `${file}.${randomUUID()}.tmp`, fd = openSync(stage, 'wx', 0o600);
+  try {
+    try { writeFileSync(fd, content); } finally { closeSync(fd); }
+    try { renameSync(stage, file); } catch (failure) {
+      let committed = false;
+      try { committed = !existsSync(stage) && readFileSync(file).equals(Buffer.from(content)); } catch { /* destination unavailable */ }
+      if (!committed) throw failure;
+      process.stderr.write(`Command evidence committed with warning: ${String(failure)}\n`);
+    }
+  } catch (failure) { rmSync(stage, { force: true }); throw failure; }
 }
 
 export function assertBbDirectCommand(command: readonly string[]) {
@@ -88,15 +101,15 @@ export async function recordBbDirectCommand({ command, stem, by, cwd = process.c
   runningChild.stdout.pipe(stdout); runningChild.stderr.pipe(stderr);
   const [exit, signal] = await new Promise<[number | null, NodeJS.Signals | null]>(resolve => runningChild.on('close', (exit, signal) => resolve([exit, signal])));
   await Promise.all(sinks);
-  Object.assign(execution, { exit, signal, error, ended: new Date().toISOString() });
+  Object.assign(execution, { exit, signal, error, terminationObserved: error === null && (exit !== null || signal !== null), ended: new Date().toISOString() });
   const raw = (stream: string) => {
     const file = `${stem}.${stream}.txt`, bytes = readFileSync(file);
     return { file, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
   };
+  closeSync(outputs.get('receipt')!);
   const receipt = { ...execution, complete: exit !== null && signal === null && error === null,
     ...(startFailure ? { finalizationComplete: false, finalizationError: startFailure.message } : {}), stdout: raw('stdout'), stderr: raw('stderr') };
-  try { writeFileSync(outputs.get('receipt')!, `${JSON.stringify(receipt, null, 2)}\n`); }
-  finally { closeSync(outputs.get('receipt')!); }
+  publishCommandEvidence(`${stem}.receipt.txt`, `${JSON.stringify(receipt, null, 2)}\n`);
   if (startFailure) { startFailure.receipt = { ...receipt, notRun: false }; throw startFailure; }
   try { onReceipt?.(receipt); } catch (caught) {
     const failure = caught as ReceiptFailure; failure.receipt = { ...receipt, notRun: false, finalizationComplete: false, finalizationError: failure.message }; throw failure; }

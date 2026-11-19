@@ -1099,6 +1099,17 @@ or verifies an official task-owned stop/pause. SDK `sent` or `queued` and a sent
 Hold do not prove participant application. Stop requires fresh actual status and
 paused delivery, with zero pending and running calls before reassignment.
 Worktrees, raw receipts and unrelated participants remain in place.
+
+For a checked command, `terminationObserved` records the owned child's close
+after the output streams finish. A signal reported by the child process API
+can establish termination without a complete gate result. To release a checked
+resource, the launcher also requires the terminal call, the exact receipt and
+both raw streams, and an acknowledgment of the receipt digest published after
+the finalization callback returns. A terminal call on disk without that
+acknowledgment remains unresolved, including calls recorded by older launchers.
+The direct recorder does not currently forward a Stop delivered only to the
+recorder. Its death does not establish whether the child received a signal.
+
 The [release contract](04-protocol.md#bb-command-grant-release) defines the receipt
 and terminal authorization boundary. Control revocation refuses later Promptobus
 admissions; it does not confirm physical Stop or completion of an already running

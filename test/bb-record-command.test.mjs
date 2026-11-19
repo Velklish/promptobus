@@ -2,13 +2,49 @@ import './home.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const script = fileURLToPath(new URL('../scripts/bb-record-command.mjs', import.meta.url));
+
+for (const [signal, nested, cooperative] of [['SIGINT', false, false], ['SIGTERM', true, true], ['SIGHUP', false, true]]) {
+  test(`Stop reproduction: ${signal}, nested=${nested}, cooperative=${cooperative}`, { skip: process.platform === 'win32' }, async t => {
+    const { directory, stem } = recorderFixture(t), inner = `${stem}-inner`;
+    const wrap = (output, argv) => [process.execPath, script, '--output', output, '--by', 'fixture-recorder', '--', ...argv];
+    const child = [process.execPath, '-e', `process.chdir(${JSON.stringify(directory)});const fs=require('fs');let count=0;
+      if (${cooperative}) process.on('${signal}',()=>fs.writeFileSync('seen-'+(++count),'${signal}'));
+      fs.writeFileSync('ready','ready');const timer=setInterval(()=>{if(fs.existsSync('release')){clearInterval(timer);process.stdout.write('last stdout');process.stderr.write('last stderr')}},10);
+      setTimeout(()=>process.exit(99),15000).unref() `];
+    const [file, ...args] = wrap(stem, nested ? wrap(inner, child) : child);
+    const recorder = spawn(file, args, { stdio: 'ignore' });
+    const done = new Promise((resolve, reject) => { recorder.once('error', reject); recorder.once('close', (code, signal) => resolve({ code, signal })); });
+    async function witness(name) {
+      for (let i = 0; i < 500; i++) { if (existsSync(path.join(directory, name))) return; await delay(10); }
+      assert.fail(`leaf did not publish ${name}; recorder exit=${recorder.exitCode}, signal=${recorder.signalCode}`);
+    }
+    try {
+      await witness('ready'); assert.ok(recorder.kill(signal));
+      if (cooperative) {
+        await witness('seen-1'); assert.ok(recorder.kill(signal)); await witness('seen-2');
+        assert.equal(recorder.exitCode, null); assert.equal(recorder.signalCode, null);
+        writeFileSync(path.join(directory, 'release'), 'close');
+      }
+      const result = await done; assert.equal(result.signal, null); assert.notEqual(result.code, 0);
+      for (const output of nested ? [inner, stem] : [stem]) {
+        const receipt = JSON.parse(readFileSync(`${output}.receipt.txt`, 'utf8'));
+        assert.equal(receipt.terminationObserved, true); assert.equal(receipt.complete, false); assert.equal(receipt.error, null);
+        if (output === (nested ? inner : stem)) {
+          assert.equal(receipt.exit, cooperative ? 0 : null); assert.equal(receipt.signal, cooperative ? null : signal);
+          if (cooperative) for (const stream of ['stdout', 'stderr']) assert.equal(readFileSync(`${output}.${stream}.txt`, 'utf8'), `last ${stream}`);
+        }
+      }
+    } finally { writeFileSync(path.join(directory, 'release'), 'cleanup'); await done; }
+  });
+}
 test('BB direct recorder preserves complete stdout/stderr, hashes and the nonzero runner return code', t => {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'pb-direct-receipt-')); t.after(() => rmSync(directory, { recursive: true, force: true }));
   const stem = path.join(directory, 'original');
@@ -142,7 +178,7 @@ const original={spawn:cp.spawn,open:fs.openSync,read:fs.readFileSync,write:fs.wr
 let owned,closed,receiptFd,settled=false,witnessOut='',witnessErr='',triggered=false;
 cp.spawn=(...args)=>{owned=original.spawn(...args);owned.stdout.on('data',b=>witnessOut+=b);owned.stderr.on('data',b=>witnessErr+=b);
 closed=new Promise(resolve=>owned.on('close',(exit,signal)=>resolve({exit,signal})));return owned};
-fs.openSync=(file,...args)=>{const fd=original.open(file,...args);if(String(file)===stem+'.receipt.txt')receiptFd=fd;return fd};
+fs.openSync=(file,...args)=>{const fd=original.open(file,...args);if(String(file).startsWith(stem+'.receipt.txt.')&&String(file).endsWith('.tmp'))receiptFd=fd;return fd};
 fs.readFileSync=(file,...args)=>{if(fault==='raw-read'&&String(file)===stem+'.stdout.txt'&&!triggered){triggered=true;throw new Error('fixture raw-read failure')}return original.read(file,...args)};
 fs.writeFileSync=(file,...args)=>{if(fault==='receipt-write'&&file===receiptFd&&!triggered){triggered=true;throw new Error('fixture receipt-write failure')}return original.write(file,...args)};
 fs.closeSync=fd=>{if(fault==='receipt-close'&&fd===receiptFd&&!triggered){triggered=true;original.close(fd);throw new Error('fixture receipt-close failure')}return original.close(fd)};

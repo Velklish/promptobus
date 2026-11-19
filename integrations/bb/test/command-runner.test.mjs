@@ -364,6 +364,70 @@ test('launcher crash after child PID handshake retains known live child and late
   f.release(c); assert.equal((await cc.done).exit, 0);
 });
 
+test('Stop reproduction: checked resource outlives signal delivery but not verified cooperative close', { skip: process.platform === 'win32' }, async t => {
+  const f = await fixture(t), key = path.join(f.root, 'shared'); fs.mkdirSync(key);
+  const a = f.member('worker-a', { key, code: `const fs=require('fs');process.on('SIGTERM',()=>fs.writeFileSync('seen','TERM'));
+    fs.writeFileSync('entered','ready');const timer=setInterval(()=>{if(fs.existsSync('release')){clearInterval(timer);process.stderr.write('last bytes')}},10);
+    setTimeout(()=>process.exit(99),15000).unref();` });
+  const b = f.member('worker-b', { key }), ref = commandReference(a.binding, a.command);
+  const first = f.run(a); await f.entered(a); first.kill('SIGTERM');
+  await until(() => fs.existsSync(path.join(a.directory, 'seen')), 'leaf received Stop');
+  assert.equal(commandTerminal(f.reference, ref), false);
+  const next = f.run(b);
+  f.release(a); const stopped = await first.done; assert.equal(stopped.signal, null); assert.notEqual(stopped.exit, 0);
+  assert.equal(f.receipt(a).exit, 0); assert.equal(f.receipt(a).complete, false);
+  assert.equal(commandTerminal(f.reference, ref), true);
+  f.release(b); assert.equal((await next.done).exit, 0);
+});
+
+test('checked resource accepts observed child signal without complete gate evidence', { skip: process.platform === 'win32' }, async t => {
+  const f = await fixture(t), a = f.member('worker-a', { code: `process.kill(process.pid,'SIGTERM')` });
+  assert.notEqual((await f.run(a).done).exit, 0);
+  const receipt = f.receipt(a); assert.equal(receipt.signal, 'SIGTERM'); assert.equal(receipt.exit, null);
+  assert.equal(receipt.terminationObserved, true); assert.equal(receipt.complete, false);
+  assert.equal(commandTerminal(f.reference, commandReference(a.binding, a.command)), true);
+});
+
+test('checked finalization rejects changed streams and an acknowledgment copied from another command', async t => {
+  const f = await fixture(t), a = f.member('worker-a'), b = f.member('worker-b');
+  const ref = m => commandReference(m.binding, m.command);
+  const ack = m => path.join(f.reference.directory, 'calls', createHash('sha256').update(JSON.stringify(ref(m))).digest('hex') + '.json.ack');
+  for (const m of [a,b]) { f.release(m); assert.equal((await f.run(m).done).exit, 0); }
+  for (const name of ['stdout', 'stderr']) {
+    const file = `${a.output}.${name}.txt`, bytes = fs.readFileSync(file);
+    fs.writeFileSync(file, Buffer.alloc(bytes.length)); assert.equal(commandTerminal(f.reference, ref(a)), false);
+    fs.writeFileSync(file, bytes); assert.equal(commandTerminal(f.reference, ref(a)), true);
+  }
+  fs.copyFileSync(ack(b), ack(a)); assert.equal(commandTerminal(f.reference, ref(a)), false);
+});
+
+for (const [target, point] of [['terminal','unlock'], ['receipt','write'], ['receipt','close'], ['receipt','rename'], ['receipt','after'], ['ack','write'], ['ack','close'], ['ack','rename'], ['ack','after']]) {
+  test(`checked finalization ${target} ${point} fault preserves the commit boundary`, { skip: process.platform === 'win32' }, async t => {
+    const f = await fixture(t), a = f.member('worker-a', { code: `process.kill(process.pid,'SIGTERM')` }), ref = commandReference(a.binding, a.command);
+    const call = path.join(f.reference.directory, 'calls', createHash('sha256').update(JSON.stringify(ref)).digest('hex') + '.json');
+    const ack = call + '.ack', dest = target === 'receipt' ? `${a.output}.receipt.txt` : ack;
+    const hook = path.join(f.root, 'fault.mjs');
+    fs.writeFileSync(hook, `import fs from 'node:fs'; import {syncBuiltinESMExports} from 'node:module';
+      const dest=${JSON.stringify(dest)}, call=${JSON.stringify(call)}, lock=${JSON.stringify(path.join(f.reference.directory,'.lock'))}, point=${JSON.stringify(point)};
+      const {openSync,closeSync,writeFileSync,renameSync,rmSync}=fs;let fd,terminal=false;
+      const fail=()=>{throw new Error('fixture publication fault')};
+      fs.openSync=(p,...args)=>{const f=openSync(p,...args);if(String(p).startsWith(dest+'.')&&String(p).endsWith('.tmp'))fd=f;return f};
+      fs.writeFileSync=(p,...args)=>{if(point==='write'&&p===fd)fail();return writeFileSync(p,...args)};
+      fs.closeSync=f=>{closeSync(f);if(f===fd){fd=undefined;if(point==='close')fail()}};
+      fs.renameSync=(from,to)=>{if(to===dest&&point==='rename')fail();renameSync(from,to);
+        if(to===call&&JSON.parse(fs.readFileSync(to)).state==='terminal')terminal=true;if(to===dest&&point==='after')fail()};
+      fs.rmSync=(p,...args)=>{if(point==='unlock'&&terminal&&p===lock)fail();return rmSync(p,...args)};syncBuiltinESMExports();`);
+    f.release(a); const result = await f.run(a, ['--import',hook]).done, committed = point === 'after';
+    assert.match(result.stderr, /fixture publication fault/); assert.equal(result.exit, 1);
+    if (committed) assert.match(result.stderr, /committed with warning/);
+    else assert.equal(JSON.parse(result.stderr).finalizationComplete, false);
+    const receipt = JSON.parse(committed ? result.stdout : result.stderr);
+    assert.equal(receipt.terminationObserved, true); assert.equal(receipt.exit, null); assert.equal(receipt.signal, 'SIGTERM'); assert.equal(receipt.complete, false);
+    if (target === 'terminal') assert.equal(JSON.parse(fs.readFileSync(call)).state, 'terminal');
+    assert.equal(fs.existsSync(ack), committed); assert.equal(commandTerminal(f.reference, ref), committed);
+  });
+}
+
 
 for (const name of ['NPM_CONFIG_CACHE', 'npm_config_cache', 'XDG_CONFIG_HOME', 'NPM_CONFIG_LOGS_DIR', 'PROMPTOBUS_LEASE_DIR']) {
   test(`immutable environment must explicitly pin ${name}`, async t => {
@@ -434,7 +498,7 @@ for (const fault of ['control-release', 'raw-read', 'receipt-write', 'receipt-cl
     const a = f.member('worker-a', { key, exit: 7 }), b = f.member('worker-b', { key }), c = f.member('worker-c');
     const hook = path.join(f.root, 'fail-finalization.mjs');
     fs.writeFileSync(hook, `import fs from 'node:fs';import {syncBuiltinESMExports} from 'node:module';const fault=${JSON.stringify(fault)},stem=${JSON.stringify(a.output)},control=${JSON.stringify(path.join(f.reference.directory, '.lock'))};const original={open:fs.openSync,read:fs.readFileSync,write:fs.writeFileSync,close:fs.closeSync,rm:fs.rmSync};let receiptFd,failed=false;
-fs.openSync=(file,...args)=>{const fd=original.open(file,...args);if(String(file)===stem+'.receipt.txt')receiptFd=fd;return fd};
+fs.openSync=(file,...args)=>{const fd=original.open(file,...args);if(String(file).startsWith(stem+'.receipt.txt.')&&String(file).endsWith('.tmp'))receiptFd=fd;return fd};
 fs.readFileSync=(file,...args)=>{if(fault==='raw-read'&&String(file)===stem+'.stdout.txt'&&!failed){failed=true;throw new Error('fixture '+fault+' failure')}return original.read(file,...args)};
 fs.writeFileSync=(file,...args)=>{if(fault==='receipt-write'&&file===receiptFd&&!failed){failed=true;throw new Error('fixture '+fault+' failure')}return original.write(file,...args)};
 fs.closeSync=fd=>{if(fault==='receipt-close'&&fd===receiptFd&&!failed){failed=true;original.close(fd);throw new Error('fixture '+fault+' failure')}return original.close(fd)};
