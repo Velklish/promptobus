@@ -350,13 +350,41 @@ Reserve exclusivity for a named conflict: mutation or publication of the same cl
 
 Currently executing work and confirmed or UNKNOWN writers retain their resource until task-owned terminal evidence permits release. Administrative parking, idle metadata or grant revocation alone does not establish Stop/drain. Preserve original commands, failures, call completion, exact source/gates, independent review and quota evidence when allowing concurrency.
 
+## Planned whole-run pause
+
+### Pause at the owner's limit threshold
+
+The owner sets the threshold for the harness window and approves pausing the whole run. A `near-limit` line from `promptobus models` is one input, not a trigger. Record the binding window and its reset time in UTC. Stop dispatching new work; let in-flight work reach a safe boundary and record anything still running or unconfirmed.
+
+1. Send a `pause` request as ordinary `question` mail with `promptobus_send`, one per teamlead and directly managed participant in the root task. Include the reset time, what to save and where to reply. Each teamlead does the same for its own child task's participants. Use only the contacts of the current task; do not send as the child owner from the root.
+2. Before ending the turn, each participant saves a state file in `files/` of its own task. Use the artifacts directory reported by `promptobus_task`: root and teamlead owners with write access can write their own new file there; a write-capable worker or approver can send a local draft as `artifact` to its task's `orchestrator` and use the landed name. A read-only participant reports its state by mail for its coordinator to save in that task, without granting write access. Record the assignment, latest completed work, next step, branch and worktree where applicable, relevant mail IDs with their task, and any in-flight work or unresolved checks. Reply with `answer` naming the saved file (or the state to save for a read-only role); teamleads also report their children's acknowledgments and gaps. Missing checkpoints or acknowledgments stay unconfirmed. After checkpointing, end the turn and do not resume work on other mail while paused.
+3. The root saves its own state in the root task's `files/`, including the owner's decision, reset time, paused addresses, checkpoint paths and any missing acknowledgments. Set a one-shot timer for the reset in an already approved host scheduler to prompt the root to check the window; if none is available, arrange a reminder with the owner. Promptobus does not schedule or enforce the pause. Leave tasks, worktrees, bindings and retained Stop evidence intact: do not use `stop`, `done`, `abandon` or a mailbox claim to implement a pause. A checkpoint, an idle turn and a timer are not Stop or drain evidence.
+
+### Continue after the reset
+
+Verify that the window has reset. Inspect the root and each child with `promptobus status --task <id>`; the root sends only to its own task. For a live, eligible session, send a `continue` request by the same `question` route and check its `answer` before counting it as resumed. Each live or relifted teamlead checks and continues its own participants. Do not override an intentional Stop, a pending interaction or a missing grant. Use [Stops](#stops) for other dead roles, not the teamlead command.
+
+For a verified dead teamlead, the current root owner can relift the existing address into its active child task with the same slug and recorded harness. Keep the approved launch options. The continuation brief names all three inputs:
+
+- the original brief (the exact kept file in the child task);
+- the previous teamlead's state file in that child's `files/`;
+- the unread mail for that teamlead in the linked root and child mailbox slots. Name the tasks and any known relevant message IDs; have the successor read its own mailbox rather than claiming or draining it before relift.
+
+```bash
+promptobus spawn --teamlead --brief <continuation-file> --task <root> --slug <existing-slug>
+```
+
+Codex relift still requires the previous retained terminal proof. An unreadable Claude registry is not proof of death; public relift under that condition and real Claude reconnect behavior are unverified. If liveness, authority, required Stop proof or recovery inputs cannot be verified, report the gap and leave that teamlead blocked. Do not substitute another identity, clear protections or forge a binding.
+
+A relift starts a new session, not the old conversation. Context beyond the state file, original brief and retained mail is lost unless independently recorded. Before dispatching, the successor reads those inputs and sends `status` to the root naming what it recovered, what is missing and which children still need recovery. Check the root alias and child owner against the accepted generation. A startup health line does not prove binding, delivery or Stop. See the CLI reference on [generation health](https://github.com/Velklish/promptobus/blob/v0.33.1/docs/reference/03-cli.md#status-done-sweep-dismiss-history) and the Host reference on [session identity and reconnect evidence](https://github.com/Velklish/promptobus/blob/v0.33.1/docs/reference/02-host.md#session-identity).
+
 ## Stops
 
 `promptobus status` prints a stopped participant with a reason and a driver route. Follow that route. Do not invent a attach/stop command for a harness you have not read. `status`, `spawn`, `review`, `done` and `stop` fill the harness's own commands, such as `claude attach <id>`, into their routes from its driver (`lib/driver-claude.js`).
 
 A stall goes to the warden journal once per sighting, to `status` and to the orchestrator's `promptobus_mailbox` reply, with no postcard; a refusal naming a reset sends the orchestrator one `unreachable` postcard and holds knocks to that participant until the named reset (`src/supervisor.ts`, `lib/server.js`).
 
-A line that says the process is gone is not a stop. Recover a retained dead managed Codex root with `promptobus lead --resume --task <id>`. Re-spawn other roles: `promptobus spawn` for `worker:<slug>`, `promptobus review <path> --task <id>` for `reviewer:<slug>`, `promptobus review <path> --task <id> --approver` for `approver:<slug>` after the reviewer has sent a result. Spawn cannot create a reviewer or approver address.
+A line that says the process is gone is not a stop. Recover a retained dead managed Codex root with `promptobus lead --resume --task <id>`. For a teamlead see [Continue after the reset](#continue-after-the-reset). Re-spawn other roles: `promptobus spawn` for `worker:<slug>`, `promptobus review <path> --task <id>` for `reviewer:<slug>`, `promptobus review <path> --task <id> --approver` for `approver:<slug>` after the reviewer has sent a result. Spawn cannot create a reviewer or approver address.
 
 A participant who sent you mail and then ended the turn is waiting, not stopped.
 

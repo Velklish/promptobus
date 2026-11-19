@@ -358,6 +358,27 @@ check('docs: the generate dry-run rule does not read as the trustedHooks rule',
 
 const installGuide = read('docs/guides/install.md');
 const orchestrateSkill = read('skills/orchestrate/SKILL.md');
+const wholeRunPause = section(orchestrateSkill, '## Planned whole-run pause');
+const pauseAtLimit = section(wholeRunPause, "### Pause at the owner's limit threshold");
+const continueAfterReset = section(wholeRunPause, '### Continue after the reset');
+check('docs: a planned whole-run pause checkpoints each task before the limit reset',
+  has(pauseAtLimit, 'The owner sets the threshold')
+  && has(pauseAtLimit, 'is one input, not a trigger')
+  && has(pauseAtLimit, 'Send a `pause` request as ordinary `question` mail with `promptobus_send`, one per teamlead and directly managed participant in the root task.')
+  && has(pauseAtLimit, 'Before ending the turn, each participant saves a state file in `files/` of its own task.')
+  && has(pauseAtLimit, 'Set a one-shot timer for the reset')
+  && has(pauseAtLimit, 'A checkpoint, an idle turn and a timer are not Stop or drain evidence.'));
+check('docs: continuation uses the same teamlead address and all three inputs without bypassing authority',
+  has(continueAfterReset, 'send a `continue` request by the same `question` route')
+  && has(continueAfterReset, 'promptobus spawn --teamlead --brief <continuation-file> --task <root> --slug <existing-slug>')
+  && has(continueAfterReset, '- the original brief')
+  && has(continueAfterReset, "- the previous teamlead's state file in that child's `files/`")
+  && has(continueAfterReset, '- the unread mail for that teamlead in the linked root and child mailbox slots')
+  && has(continueAfterReset, 'Codex relift still requires the previous retained terminal proof.')
+  && has(continueAfterReset, 'public relift under that condition and real Claude reconnect behavior are unverified.')
+  && has(continueAfterReset, 'A relift starts a new session, not the old conversation.')
+  && has(spawn, 'Top-level `promptobus --help` lists this syntax')
+  && has(read('README.md'), 'skills/orchestrate/SKILL.md#planned-whole-run-pause'));
 check('docs: managed root self-Stop acknowledgement is pending until retained proof',
   has(orchestrateSkill, 'A managed Codex root stopping itself receives a pending acknowledgement:')
   && has(orchestrateSkill, 'check the retained Stop proof from another authorized session'));
