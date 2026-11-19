@@ -1077,6 +1077,14 @@ do not prove live sidebar rendering or new-source native BB behavior.
 
 ### BB command grant delivery
 
+Canonical unread mail can queue an agent-only hint behind a verified active BB
+participant with no background agents, pending interactions or other queued
+input. Both raw and display status must be active on this route. The persisted
+marker and exact queue entry prevent another hint while that entry remains;
+plugin reload preserves the delivery epoch and does not acknowledge mail.
+Obligation-only continuations remain restricted to idle turn boundaries. Pause,
+Stop replay and explicit-resume requirements apply to both routes.
+
 Before `task create`, the operator publishes complete supplied owner confirmation
 and grants with `bb promptobus control publish --task TASK --initialize --input
 <JSON>`. Initialization requires that the canonical task does not yet exist; it

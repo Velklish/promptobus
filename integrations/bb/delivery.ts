@@ -120,7 +120,8 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
     if (observation.thread?.archivedAt !== null && observation.thread?.archivedAt !== undefined
       || observation.thread?.deletedAt !== null && observation.thread?.deletedAt !== undefined) { pause(b, 'BB thread archived or deleted'); return; }
     if (observation.status === 'error' || observation.status === 'stopping') { pause(b, `BB ${observation.status}`); return; }
-    if (observation.view.state !== 'alive' || observation.status !== 'idle' || observation.thread?.activeBackgroundAgentCount !== 0) return;
+    if (observation.view.state !== 'alive' || observation.thread?.activeBackgroundAgentCount !== 0
+      || observation.thread.status !== observation.status || !['active', 'idle'].includes(observation.status)) return;
     if ((await bb.sdk.threads.interactions.list({ threadId: id, signal })).length) return;
     const mail = pendingSchema.parse(await onHost(b, { operation: 'pending' }, signal));
     const entries = await bb.sdk.threads.queuedMessages.list({ threadId: id, signal });
@@ -132,6 +133,10 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
     });
     if (!mail.ids.length && !mail.obligation) {
       await cancelQueued(b);
+      return;
+    }
+    if (observation.status === 'active' && !mail.ids.length) {
+      if (state.pending?.key.startsWith('mail:') && state.pending.requestSeq === null) await cancelQueued(b);
       return;
     }
     if (state.pending) {
@@ -238,7 +243,7 @@ export function registerDelivery(bb: BbPluginApi, store: Store, onHost: OnHost) 
       await replay(b);
       const epoch = expectedEpoch;
       const observation = await observeBbParticipant(bb, b);
-      if (observation.view.state !== 'alive' || observation.status !== 'idle' || observation.thread?.activeBackgroundAgentCount !== 0
+      if (observation.view.state !== 'alive' || observation.status !== 'idle' || observation.thread?.status !== 'idle' || observation.thread.activeBackgroundAgentCount !== 0
         || (await bb.sdk.threads.interactions.list({ threadId: b.threadId! })).length) throw new Error('Resume requires an available idle thread without pending interactions');
       await cancelQueued(b);
       store.updateDelivery(b.threadId!, state => {
