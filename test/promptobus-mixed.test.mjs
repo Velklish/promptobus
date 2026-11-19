@@ -43,7 +43,7 @@ import { check, skip } from './check.mjs';
 import { listenTestSocket, makeSandbox, makeSockPath, writeHostConfig } from './sandbox.mjs';
 import * as cursorStub from './harness-cursor.mjs';
 import * as codexStub from './harness-codex.mjs';
-import { REVIEWER, runScenario, sentBy, store, WORKER } from './scenario.mjs';
+import { MARK, REVIEWER, runScenario, sentBy, store, WORKER } from './scenario.mjs';
 import { cursorDriver } from '../lib/driver-cursor.js';
 import { codexDriver } from '../lib/driver-codex.js';
 import * as cursorSession from '../lib/cursor-persist.js';
@@ -122,7 +122,13 @@ const worker = {
   stalls: false,
   files: false,
   spawnFlags: ['--harness', 'cursor'],
-  plan: (address, script) => cursorStub.planParticipant(cursorHarness.home, address, script),
+  plan: (address, script) => cursorStub.planParticipant(cursorHarness.home, address, {
+    ...script,
+    turns: script.turns.map(turn => turn.do?.some(action => action.tool === 'promptobus_send'
+      && action.args.body.startsWith(`${MARK.result2}:`))
+      ? { ...turn, do: turn.do.map(action => action.untilDelivered ? { ...action, proveReviewDelivery: true } : action) }
+      : turn),
+  }),
   liveSessions: (refs) => alive(cursorDriver, refs),
   pidsOf: (refs) => refs.map(cursorPid).filter((pid) => Number.isInteger(pid)),
   pidAlive: cursorSession.pidAlive,
