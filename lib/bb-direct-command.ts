@@ -16,7 +16,7 @@ interface ReceiptFailure extends Error { receipt?: Record<string, unknown> }
 export interface DirectCommandInput {
   command: readonly string[]; stem: string; by: string; cwd?: string; env?: NodeJS.ProcessEnv;
   beforeSpawn?: (start: () => DirectChild) => unknown;
-  onReceipt?: (receipt: DirectCommandReceipt) => unknown;
+  onReceipt?: (receipt: DirectCommandReceipt, publishedSha256: string) => unknown;
   receiptFields?: Record<string, unknown>;
   spawnPlan?: { file: string; args: readonly string[]; verbatim?: boolean };
 }
@@ -32,6 +32,10 @@ export function publishCommandEvidence(file: string, content: string) {
       process.stderr.write(`Command evidence committed with warning: ${String(failure)}\n`);
     }
   } catch (failure) { rmSync(stage, { force: true }); throw failure; }
+}
+
+export function capturedStreamMatches(captured: { bytes: number; sha256: string }, stored: Buffer) {
+  return captured.bytes === stored.length && captured.sha256 === createHash('sha256').update(stored).digest('hex');
 }
 
 export function assertBbDirectCommand(command: readonly string[]) {
@@ -98,20 +102,30 @@ export async function recordBbDirectCommand({ command, stem, by, cwd = process.c
   try {
   const runningChild = child!;
   runningChild.on('error', failure => { error ??= failure.message; });
+  const capture = (stream: Readable) => {
+    const hash = createHash('sha256'); let bytes = 0;
+    stream.on('data', (chunk: Buffer) => { hash.update(chunk); bytes += chunk.length; });
+    return () => ({ bytes, sha256: hash.digest('hex') });
+  };
+  const captured = { stdout: capture(runningChild.stdout), stderr: capture(runningChild.stderr) };
   runningChild.stdout.pipe(stdout); runningChild.stderr.pipe(stderr);
   const [exit, signal] = await new Promise<[number | null, NodeJS.Signals | null]>(resolve => runningChild.on('close', (exit, signal) => resolve([exit, signal])));
   await Promise.all(sinks);
   Object.assign(execution, { exit, signal, error, terminationObserved: error === null && (exit !== null || signal !== null), ended: new Date().toISOString() });
-  const raw = (stream: string) => {
+  const raw = (stream: keyof typeof captured) => {
     const file = `${stem}.${stream}.txt`, bytes = readFileSync(file);
-    return { file, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
+    const observed = captured[stream]();
+    if (error) return { file, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
+    if (!capturedStreamMatches(observed, bytes)) throw new Error(`Captured ${stream} differs from the published stream`);
+    return { file, ...observed };
   };
   closeSync(outputs.get('receipt')!);
   const receipt = { ...execution, complete: exit !== null && signal === null && error === null,
     ...(startFailure ? { finalizationComplete: false, finalizationError: startFailure.message } : {}), stdout: raw('stdout'), stderr: raw('stderr') };
-  publishCommandEvidence(`${stem}.receipt.txt`, `${JSON.stringify(receipt, null, 2)}\n`);
+  const content = `${JSON.stringify(receipt, null, 2)}\n`, digest = createHash('sha256').update(content).digest('hex');
+  publishCommandEvidence(`${stem}.receipt.txt`, content);
   if (startFailure) { startFailure.receipt = { ...receipt, notRun: false }; throw startFailure; }
-  try { onReceipt?.(receipt); } catch (caught) {
+  try { onReceipt?.(receipt, digest); } catch (caught) {
     const failure = caught as ReceiptFailure; failure.receipt = { ...receipt, notRun: false, finalizationComplete: false, finalizationError: failure.message }; throw failure; }
   return { receipt, exitCode: error ? 1 : exit ?? 1 };
   } catch (caught) {

@@ -200,7 +200,7 @@ export interface DirectCommandReceipt { command: string[]; by: string; cwd: stri
 
 export function recordBbDirectCommand(input: { command: string[]; stem: string; by: string; cwd?: string; env?: NodeJS.ProcessEnv;
   beforeSpawn?: (start: () => import('node:child_process').ChildProcessWithoutNullStreams) => import('node:child_process').ChildProcessWithoutNullStreams;
-  onReceipt?: (receipt: DirectCommandReceipt) => void; receiptFields?: Record<string, unknown>;
+  onReceipt?: (receipt: DirectCommandReceipt, publishedSha256: string) => void; receiptFields?: Record<string, unknown>;
   spawnPlan?: { file: string; args: string[]; verbatim?: boolean } }): Promise<{ receipt: DirectCommandReceipt; exitCode: number }> {
   return recordDirectCommand(input as Parameters<typeof recordDirectCommand>[0]) as Promise<Awaited<ReturnType<typeof recordDirectCommand>> & { receipt: DirectCommandReceipt }>;
 }

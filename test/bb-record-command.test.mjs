@@ -8,8 +8,22 @@ import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { capturedStreamMatches } from '../lib/bb-direct-command.js';
+import { releaseDirLock } from '../dist/fs/lock.js';
 
 const script = fileURLToPath(new URL('../scripts/bb-record-command.mjs', import.meta.url));
+test('verified release preserves a directory without matching owner evidence', t => {
+  const lock = mkdtempSync(path.join(os.tmpdir(), 'pb-owner-proof-')); t.after(() => rmSync(lock, { recursive: true, force: true }));
+  assert.throws(() => releaseDirLock(lock, 'expected', true), /verify ownership/);
+  const owner = JSON.stringify({ pid: process.pid, nonce: 'different' }); writeFileSync(path.join(lock, 'owner'), owner);
+  assert.throws(() => releaseDirLock(lock, 'expected', true), /verify ownership/);
+  assert.equal(readFileSync(path.join(lock, 'owner'), 'utf8'), owner);
+});
+test('stored stream must match captured bytes, not only their length', () => {
+  const bytes = Buffer.from([0, 255, 1]), captured = { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
+  assert.ok(capturedStreamMatches(captured, bytes));
+  assert.equal(capturedStreamMatches(captured, Buffer.from([0, 254, 1])), false);
+});
 
 for (const [signal, nested, cooperative] of [['SIGINT', false, false], ['SIGTERM', true, true], ['SIGHUP', false, true]]) {
   test(`Stop reproduction: ${signal}, nested=${nested}, cooperative=${cooperative}`, { skip: process.platform === 'win32' }, async t => {

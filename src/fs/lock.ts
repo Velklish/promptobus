@@ -97,6 +97,7 @@ function reclamationRefusal(lock: string): Error | null {
 
 /** How the lock answers its two lawful refusals. The words are the caller's business. */
 export interface DirLockOptions {
+  requireRelease?: boolean;
   waitMs?: number;
   retryMs?: number;
   /** Session identity in the owner file: pid answers "is it alive", session answers "whose is it". */
@@ -188,15 +189,22 @@ async function grabDirLockAsync(lock: string, {
   }
 }
 
-function releaseDirLock(lock: string, nonce: string): void {
-  if (lockHolder(lock)?.nonce !== nonce) return;
-  rmSync(lock, { recursive: true, force: true });
+export function releaseDirLock(lock: string, nonce: string, required = false): void {
+  const owner = lockHolder(lock);
+  if (!nonce || !owner || owner.nonce !== nonce || (required && owner.pid !== process.pid)) {
+    if (required) throw new Error(`Cannot verify ownership before releasing ${lock}`);
+    return;
+  }
+  rmSync(lock, { recursive: true, force: !required });
 }
 
 /** Take the lock directory, run, and drop. A missing task directory stays the caller's
  * own refusal: a nested call does not reach the directory at all. */
 export function withDirLock<T>(lock: string, fn: () => T, options: DirLockOptions): T {
-  if (heldSync.has(lock)) { requireSynchronousAuthority(); return fn(); }
+  if (heldSync.has(lock)) {
+    if (options.requireRelease) throw new Error(`Cannot attest release of nested lock ${lock}`);
+    requireSynchronousAuthority(); return fn();
+  }
   if (heldAsync.has(lock)) throw (options.onSelfAsync ?? selfAsyncError)(lock);
   const nonce = grabDirLock(lock, options);
   heldSync.add(lock);
@@ -205,7 +213,7 @@ export function withDirLock<T>(lock: string, fn: () => T, options: DirLockOption
     return fn();
   } finally {
     heldSync.delete(lock);
-    releaseDirLock(lock, nonce);
+    releaseDirLock(lock, nonce, options.requireRelease);
   }
 }
 
@@ -216,7 +224,7 @@ async function underDirLock<T>(lock: string, fn: () => Promise<T>, options: DirL
     return await fn();
   } finally {
     heldAsync.delete(lock);
-    releaseDirLock(lock, nonce);
+    releaseDirLock(lock, nonce, options.requireRelease);
   }
 }
 

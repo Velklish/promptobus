@@ -1104,8 +1104,11 @@ For a checked command, `terminationObserved` records the owned child's close
 after the output streams finish. A signal reported by the child process API
 can establish termination without a complete gate result. To release a checked
 resource, the launcher also requires the terminal call, the exact receipt and
-both raw streams, and an acknowledgment of the receipt digest published after
-the finalization callback returns. A terminal call on disk without that
+both raw streams, and an acknowledgment published after the finalization callback
+and all keyed leases release successfully. The digest covers the bytes the recorder
+serialized; the stream hashes cover the bytes the child emitted. The receipt binds
+the canonical resource keys and lease namespace. The intermediate terminal record
+uses format v2 so a v1 reader cannot release a resource on its strength. A terminal call on disk without that
 acknowledgment remains unresolved, including calls recorded by older launchers.
 The direct recorder does not currently forward a Stop delivered only to the
 recorder. Its death does not establish whether the child received a signal.

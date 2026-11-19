@@ -6,7 +6,7 @@ import { openEngine, ORCHESTRATOR, withTaskLock } from 'promptobus';
 import { withDirLock, writeFileAtomic } from 'promptobus/host';
 import { publishCommandEvidence } from 'promptobus/bb-host';
 import { z } from 'zod';
-import { commandCallSchema, executionCommandSchema, commandGrantSchema, controlPublicationSchema, controlReferenceSchema, currentControlSchema, tokenRecordSchema } from './control-schema.js';
+import { commandCallSchema, observedCallSchema, executionCommandSchema, commandGrantSchema, controlPublicationSchema, controlReferenceSchema, currentControlSchema, tokenRecordSchema } from './control-schema.js';
 import type { CommandGrant, ControlOutcome, ControlPublication, ControlReference, ExecutionCommand, CommandRef } from './control-schema.js';
 import type { Binding, CommandBinding } from './protocol.js';
 import { matchesDeclaredStream, readDeclaredFile, underRoots } from './launch-context.js';
@@ -46,10 +46,10 @@ function normalize(reference: ControlReference, initialize = false) {
     blocked('reference-mismatch', 'control directory identity changed');
   }
 }
-function locked<T>(reference: ControlReference, fn: () => T) {
+function locked<T>(reference: ControlReference, fn: () => T, requireRelease = false) {
   normalize(reference);
   return withDirLock(path.join(reference.directory, '.lock'), () => { normalize(reference); return fn(); }, {
-    waitMs: 100, onMissing: () => new ControlError('missing-current', 'initialize the declared control source explicitly'),
+    requireRelease, waitMs: 100, onMissing: () => new ControlError('missing-current', 'initialize the declared control source explicitly'),
     onBusy: () => new ControlError('lock-busy', 'publisher or reader is busy; retry the bounded operation', true),
   });
 }
@@ -145,23 +145,25 @@ export function readCurrentControl(binding: Binding, predecessor?: CommandGrant)
 }
 
 export const commandDigest = (command: ExecutionCommand) => hash(JSON.stringify(executionCommandSchema.parse(command)));
+export const matchesPublication = (bytes: Buffer, observed: unknown, digest: string) => hash(bytes) === digest && isDeepStrictEqual(JSON.parse(bytes.toString('utf8')), observed);
 const callPath = (r: ControlReference, command: CommandRef) => path.join(r.directory, 'calls', `${hash(JSON.stringify(command))}.json`);
 const acknowledgment = (command: CommandRef, receiptSha256: string) => serialized({ format: 'promptobus-bb-finalized-v1', command, receiptSha256 }, TOKEN_LIMIT);
 const observedClose = (receipt: Record<string, unknown>) => receipt.format === 'bb-direct-command-v1' && receipt.direct === true
   && receipt.terminationObserved === true && receipt.error === null && receipt.finalizationComplete !== false
   && ((receipt.signal === null && Number.isInteger(receipt.exit)) || (receipt.exit === null && typeof receipt.signal === 'string' && receipt.complete === false));
-export function commandTerminal(reference: ControlReference, command: CommandRef) {
+export function commandTerminal(reference: ControlReference, command: CommandRef, resource?: { key: string; namespace: string }) {
   try {
     normalize(reference);
     canonicalControl({ task: reference.owner.task } as Binding, reference);
     readCurrent(reference);
-    const call = readJson(reference, callPath(reference, command), TOKEN_LIMIT, commandCallSchema, 'call');
+    const call = readJson(reference, callPath(reference, command), TOKEN_LIMIT, observedCallSchema, 'call');
     if (!isDeepStrictEqual(call.command, command) || call.state !== 'terminal' || !call.receiptSha256) return false;
     const bytes = readDeclaredFile(`${command.output}.receipt.txt`, reference.readRoots, TOKEN_LIMIT);
     const receipt = JSON.parse(bytes.toString('utf8'));
     const ack = readDeclaredFile(`${callPath(reference, command)}.ack`, [reference.directory], TOKEN_LIMIT);
     return ack.equals(Buffer.from(acknowledgment(command, call.receiptSha256)))
       && hash(bytes) === call.receiptSha256 && observedClose(receipt)
+      && (!resource || (receipt.resourceNamespace === resource.namespace && Array.isArray(receipt.resourceKeys) && receipt.resourceKeys.includes(resource.key)))
       && receipt.admission?.task === reference.owner.task && receipt.admission?.phase === command.phase
       && receipt.by === command.actor && receipt.admission?.token === command.token && receipt.admission?.commandId === command.commandId
       && receipt.admission?.commandSha256 === command.commandSha256
@@ -237,25 +239,29 @@ export function admitCommand<T>(binding: CommandBinding, commandId: string, star
     writeFileAtomic(file, serialized({ format: 'promptobus-bb-call-v1', command: ref, state: 'admitted' }, TOKEN_LIMIT), { mode: 0o600 });
     writeFileAtomic(path.join(reference.directory, 'current.json'), serialized({ ...current, pendingCommands: [...pending, ref] }, CURRENT_LIMIT), { mode: 0o600 });
     return start();
-  }));
+  }, true), { requireRelease: true });
 }
-export function completeCommand(binding: CommandBinding, commandId: string, observed: unknown) {
+export function completeCommand(binding: CommandBinding, commandId: string, observed: unknown, publishedSha256: string) {
   const launch = binding.launchContext;
   if (!launch || launch.control.mode !== 'current') blocked('migration-required', 'bounded execution requires current control');
   const reference = launch.control.reference, ref = commandReference(binding, executionCommand(binding, commandId));
-  const digest = locked(reference, () => {
-    const call = readJson(reference, callPath(reference, ref), TOKEN_LIMIT, commandCallSchema, 'call');
-    if (!isDeepStrictEqual(call.command, ref)) blocked('command-mismatch', 'terminal command differs from admitted call');
+  const verify = () => {
     const bytes = readDeclaredFile(`${ref.output}.receipt.txt`, reference.readRoots, TOKEN_LIMIT);
     const receipt = JSON.parse(bytes.toString('utf8'));
-    if (!isDeepStrictEqual(receipt, observed)) blocked('receipt-mismatch', 'published receipt differs from the observed execution');
-    if (!observedClose(receipt)) return;
-    const receiptSha256 = hash(bytes);
-    writeFileAtomic(callPath(reference, ref), serialized({ ...call, state: 'terminal', receiptSha256 }, TOKEN_LIMIT), { mode: 0o600 });
-    return receiptSha256;
-  });
-  if (!digest) return;
-  return () => publishCommandEvidence(`${callPath(reference, ref)}.ack`, acknowledgment(ref, digest));
+    if (!matchesPublication(bytes, observed, publishedSha256)) blocked('receipt-mismatch', 'published receipt differs from the observed execution');
+    if (!observedClose(receipt)) return false;
+    if (!['stdout', 'stderr'].every(stream => matchesDeclaredStream(`${ref.output}.${stream}.txt`, reference.readRoots, receipt[stream]))) blocked('receipt-mismatch', 'published streams differ from the captured bytes');
+    return true;
+  };
+  const observedCall = locked(reference, () => {
+    const call = readJson(reference, callPath(reference, ref), TOKEN_LIMIT, commandCallSchema, 'call');
+    if (call.state !== 'admitted' || !isDeepStrictEqual(call.command, ref)) blocked('command-mismatch', 'terminal command differs from admitted call');
+    if (!verify()) return false;
+    writeFileAtomic(callPath(reference, ref), serialized({ ...call, format: 'promptobus-bb-call-v2', state: 'terminal', receiptSha256: publishedSha256 }, TOKEN_LIMIT), { mode: 0o600 });
+    return true;
+  }, true);
+  if (!observedCall) return;
+  return () => { if (verify()) publishCommandEvidence(`${callPath(reference, ref)}.ack`, acknowledgment(ref, publishedSha256)); };
 }
 
 export function publishControl(input: unknown, options: { initialize: boolean; expectedRevision: number | null; binding?: Binding; denyOnly?: boolean },

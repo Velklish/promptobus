@@ -374,12 +374,13 @@ export function lockBusyError(id: string, lock: string, held: LockHolder | null,
 // Task lock, exported for journal read-modify-write on the adapter side and for the test, whose seam
 // is `waitMs`. Session identity arrives as an ARGUMENT and only for busy-lock diagnosis.
 export function withTaskLock<T>(home: string, id: string, fn: () => T, {
-  waitMs = LOCK_WAIT_MS, session = null,
-}: { waitMs?: number; session?: string | null } = {}): T {
+  waitMs = LOCK_WAIT_MS, session = null, requireRelease = false,
+}: { waitMs?: number; session?: string | null; requireRelease?: boolean } = {}): T {
   const task = requireTaskId(id);
   const lock = lockDir(home, task);
   const guarded = suspenders.reduce<() => T>((inner, suspend) => () => suspend(inner), fn);
   return withDirLock(lock, guarded, {
+    requireRelease,
     waitMs,
     session,
     // No task directory at all is not a busy lock: we speak with the words and the CLASS of

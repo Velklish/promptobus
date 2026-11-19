@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { GateError, pidAlive } from '../dist/index.js';
-import { lockHolder, withDirLockAsync } from '../dist/fs/lock.js';
+import { lockHolder, releaseDirLock, withDirLockAsync } from '../dist/fs/lock.js';
 import { planRun } from './exec.js';
 import type { PromptobusHost } from '../dist/index.js';
 
@@ -215,16 +215,17 @@ export async function underLease<T>(root: string, me: LeaseParty, fn: (lock?: st
             if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw new GateError(`lease: the lease directory ${root} vanished`);
             throw e;
           }
+          const nonce = randomUUID();
           try {
             writeFileSync(path.join(lock, 'owner'), `${JSON.stringify({
-              pid: process.pid, session: null, since: new Date().toISOString(),
+              pid: process.pid, session: null, since: new Date().toISOString(), nonce,
             })}\n`);
             takeTurn();
             rmSync(waiterFile, { force: true });
             writeFileSync(path.join(lock, HOLDER_FILE), `${JSON.stringify(me)}\n`);
             return await fn(lock);
           } finally {
-            rmSync(lock, { recursive: true, force: true });
+            releaseDirLock(lock, nonce, true);
           }
         }
         return await withDirLockAsync(lock, async () => {

@@ -1406,7 +1406,11 @@ history. A concrete resource also retains its exact unresolved command reference
 outside the transient lease lock. Other checked launchers using the same resource
 namespace verify the terminal call, receipt digest, and the byte count and SHA-256
 of each raw stream. The sibling `calls/<call-hash>.json.ack` binds that call to
-its receipt after the finalization callback returns and releases the control lock.
+the exact bytes the recorder published. It is written only after the control lock
+and every keyed lease release successfully. A resource claim names its canonical
+key and namespace; both must match the location being checked and the receipt.
+Before the acknowledgment, contenders must retry rather than enter. V1 readers
+reject the v2 call record even after finalization; use matching launcher generations.
 A child's observed signal can end the call without passing a gate. Missing,
 partial or unreadable evidence, failed finalization and
 UNKNOWN remain blockers; idle, ended grants, administrative parking or dead

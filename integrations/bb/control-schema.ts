@@ -18,6 +18,8 @@ export const measurementFenceSchema = z.object({ scope: absolute, cohort: text, 
 export const commandCallSchema = z.object({ format: z.literal('promptobus-bb-call-v1'), command: commandRefSchema,
   state: z.enum(['admitted', 'terminal']), receiptSha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
 }).strict();
+export const observedCallSchema = commandCallSchema.extend({ format: z.literal('promptobus-bb-call-v2'),
+  state: z.literal('terminal'), receiptSha256: z.string().regex(/^[a-f0-9]{64}$/) });
 export const commandGrantSchema = z.object({
   actor: text, task: text, token: text, state: z.literal('active'), phase: text,
   scope: z.object({ repository: absolute, branch: text, base: z.string().regex(/^[a-f0-9]{40,64}$/), operations: z.array(text).min(1) }).strict(),
@@ -31,6 +33,8 @@ export const controlReferenceSchema = z.object({
 }).strict();
 const projection = { ownerConfirmed: z.boolean(), STOP: z.boolean(), noNewStages: z.boolean(),
   grants: z.record(text, commandGrantSchema), measurementFence: measurementFenceSchema.optional() };
+export const resourceClaimSchema = (key: string, namespace: string) => z.object({ key: z.literal(key), namespace: z.literal(namespace),
+  reference: controlReferenceSchema, call: commandCallSchema.extend({ state: z.literal('admitted') }) }).strict();
 export const controlPublicationSchema = z.object({ reference: controlReferenceSchema, ...projection }).strict();
 export const currentControlSchema = z.object({ format: z.literal('promptobus-bb-control-v1'), reference: controlReferenceSchema,
   revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), pendingCommands: z.array(commandRefSchema).max(256).optional(), ...projection }).strict();
