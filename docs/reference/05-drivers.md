@@ -649,6 +649,11 @@ live miss:
   4. **paste and send are checked against `capture-pane`**: empty in the field
      means it went.
 
+If `capture-pane` fails before the paste, delivery stops without sending the new
+message. If it fails after `Enter`, delivery is unconfirmed: the message may have
+been sent, but activation reports failure and does not publish an activity mark.
+An unreadable pane does not make an existing session stale.
+
 Delivery also goes into a RUNNING turn. The text queues in the TUI and runs as a
 separate turn right after the current one: the running turn does not
 see it, the injection does not interrupt the turn, a second parallel turn does not

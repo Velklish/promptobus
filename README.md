@@ -44,6 +44,8 @@ The optional plugin's constrained reviewer verifies the runtime restrictions wit
 - Git — worktrees, diffs and freshness checks
 - At least one harness CLI on `PATH` for `spawn` and `review`: Claude Code, Cursor (`cursor-agent`, plus `tmux`), Codex, or OpenCode
 - Participant sessions are lifted on macOS and Linux. Windows is outside the participant contract (owner decision, 2026-09-16): the Cursor participant is a tmux pane and the Codex holder is an app-server process measured on macOS only, and neither is adapted, probed or promised on Windows. The CLI itself, including the host layer, stays cross-platform. Asynchronous commands refuse Windows `.cmd`/`.bat` wrappers before launch because killing the wrapper cannot cancel its descendants; use a native `.exe`. Synchronous batch execution is unchanged.
+
+Cursor delivery requires a readable tmux pane. If the pane cannot be read after Enter, Promptobus reports delivery as unconfirmed, not as a missing session.
 - For working on the package itself: `tmux` and `ast-grep` (see [Development](#development))
 
 ## Installation

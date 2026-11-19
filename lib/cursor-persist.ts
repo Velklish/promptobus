@@ -397,8 +397,8 @@ const BUSY_LINE = 'ctrl+c to stop';
 
 /** Text standing in the pane input field; an empty field is the prompt with no text. **The running-
  * turn label lives on the SAME line**, so unstripped it makes every running turn read as occupied. */
-export function inputText(pane: unknown) {
-  const lines = String(pane ?? '').split('\n');
+export function inputText(pane: string) {
+  const lines = pane.split('\n');
   for (let i = lines.length - 1; i >= 0; i -= 1) {
     const line = lines[i].trim();
     if (!line.startsWith(INPUT_PROMPT)) continue;
@@ -525,8 +525,11 @@ export async function injectText(record: CursorRecord, text: string, { env = pro
     }
     // The field empties right after Enter — wait a tick, not the full ceiling: the warden loop waits
     // for this SYNCHRONOUSLY, and extra seconds cost every other participant a delivery delay.
-    const gone = await waitInput(name, { server, env }, (value) => value === '', { timeoutMs: ENTER_SETTLE_MS });
-    if (!gone) {
+    const input = await waitForEmptyInput(name, { server, env }, ENTER_SETTLE_MS);
+    if (input === 'unreadable') {
+      return { ok: false, error: 'could not read the tmux pane after Enter — delivery is unconfirmed' };
+    }
+    if (input === 'timeout') {
       return {
         ok: false,
         error: 'text stayed in the input field after Enter — the message was not sent; the next delivery clears the field '
@@ -544,22 +547,30 @@ export async function injectText(record: CursorRecord, text: string, { env = pro
 /** Clear the input field before paste. A session that did not understand `C-u` leaves the text and
  * delivery honestly refuses: gluing onto someone else's leftover is worse than not delivering. */
 async function clearInput(name: string, { server, env }: TmuxContext) {
-  if (!inputText(capturePane(name, { server, env }))) return { ok: true };
-  tmux(['send-keys', '-t', name, 'C-u'], { server, env });
-  const empty = await waitInput(name, { server, env }, (value) => value === '');
-  if (empty) return { ok: true };
+  const pane = capturePane(name, { server, env });
+  if (pane !== null) {
+    if (inputText(pane) === '') return { ok: true };
+    tmux(['send-keys', '-t', name, 'C-u'], { server, env });
+    const input = await waitForEmptyInput(name, { server, env });
+    if (input === 'empty') return { ok: true };
+    if (input === 'timeout') {
+      return { ok: false, error: 'text stayed in the session input field, and clearing it failed — a new message would glue onto it' };
+    }
+  }
   return {
     ok: false,
-    error: `text stayed in the session input field, and clearing it failed — a new message would glue onto it`,
+    error: 'could not read the tmux pane before pasting — no message was sent',
   };
 }
 
-async function waitInput(name: string, { server, env }: TmuxContext, ok: (value: string) => boolean, { timeoutMs = INPUT_WAIT_MS, stepMs = INPUT_STEP_MS } = {}) {
+async function waitForEmptyInput(name: string, { server, env }: TmuxContext, timeoutMs = INPUT_WAIT_MS) {
   const edge = Date.now() + timeoutMs;
   for (;;) {
-    if (ok(inputText(capturePane(name, { server, env })))) return true;
-    if (Date.now() >= edge) return false;
-    await settle(stepMs);
+    const pane = capturePane(name, { server, env });
+    if (pane === null) return 'unreadable';
+    if (inputText(pane) === '') return 'empty';
+    if (Date.now() >= edge) return 'timeout';
+    await settle(INPUT_STEP_MS);
   }
 }
 

@@ -984,14 +984,26 @@ const pb151TmuxDir = path.join(SB, 'pb151-tmux');
 const pb151ModeFile = path.join(SB, 'pb151-mode.txt');
 const pb151CaptureFile = path.join(SB, 'pb151-captures.txt');
 stubCommand(pb151TmuxDir, 'tmux', `
-import { statSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, statSync, readFileSync, writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 const failAt = process.env.PROMPTOBUS_PB151_FAIL_AT ?? '';
+const trace = process.env.PROMPTOBUS_CAPTURE_TRACE;
+if (trace) {
+  const command = args[5];
+  appendFileSync(trace, (command === 'send-keys' ? args.at(-1) : command) + '\\n');
+  if (command === 'list-sessions' && failAt !== 'missing-session') process.stdout.write('capture-test-session\\n');
+}
 if (args.includes('capture-pane')) {
   let count = 0;
   try { count = Number(readFileSync(process.env.PROMPTOBUS_PB151_CAPTURE_FILE, 'utf8')); } catch {}
   writeFileSync(process.env.PROMPTOBUS_PB151_CAPTURE_FILE, String(count + 1));
-  process.stdout.write(failAt === 'wait-input' && count > 0 ? '  → stuck\\n' : '  → Add a follow-up\\n');
+  if ((failAt === 'initial-capture' && count === 0)
+    || (['clear-capture', 'enter-capture'].includes(failAt) && count === 1)) {
+    process.exitCode = 1;
+  } else {
+    const occupied = (failAt === 'wait-input' && count > 0) || (failAt === 'clear-capture' && count === 0);
+    process.stdout.write(occupied ? '  → stuck\\n' : '  → Add a follow-up\\n');
+  }
 }
 if (args.includes('load-buffer')) {
   const file = args.at(-1);
@@ -1006,13 +1018,13 @@ const pb151BufferFile = (ref) => path.join(stateHome, 'sessions', `${sessionKey(
 const pb151ObservedMode = () => {
   try { return Number(readFileSync(pb151ModeFile, 'utf8')); } catch { return null; }
 };
-const pb151Env = (failAt = '') => ({
-  ...process.env,
+const pb151Overrides = (failAt = '') => ({
   PATH: [pb151TmuxDir, process.env.PATH].join(path.delimiter),
   PROMPTOBUS_PB151_MODE_FILE: pb151ModeFile,
   PROMPTOBUS_PB151_CAPTURE_FILE: pb151CaptureFile,
   PROMPTOBUS_PB151_FAIL_AT: failAt,
 });
+const pb151Env = (failAt) => ({ ...process.env, ...pb151Overrides(failAt) });
 const originalUmask = process.umask();
 const pb151Modes = [];
 try {
@@ -1057,6 +1069,8 @@ for (const failAt of ['load-buffer', 'paste-buffer', 'send-keys', 'wait-input'])
 check('PB-151: wake buffer is removed on every post-creation delivery exit',
   pb151Failures.every((entry) => entry.outcome.ok === false && entry.gone),
   JSON.stringify(pb151Failures));
+check('Cursor delivery: a readable field still occupied after Enter reports stuck input',
+  /text stayed in the input field after Enter/.test(pb151Failures.find(({ failAt }) => failAt === 'wait-input').outcome.error));
 
 // --- live loop on stub binaries -----------------------------------------------------
 
@@ -1371,6 +1385,44 @@ dropSession(activityRecord.ref, env);
 check('injection activity: owned drop removes its sidecar and preserves other records and the symlink target',
   !existsSync(activityFile) && !existsSync(activityRegistry) && !!readSession(ref, env)
   && sameRecordVersion(foreignActivityVersion) && readFileSync(foreignActivityFile).equals(foreignActivityBytes));
+
+const captureRecord = { ...activityRecord, ref: 'pane capture delivery', sessionName: 'capture-test-session' };
+const captureTrace = path.join(SB, 'capture-delivery-trace.txt');
+const captureActivity = injectionActivityFile(captureRecord.ref);
+const captureEnv = { ...pb151Overrides(), PROMPTOBUS_CAPTURE_TRACE: captureTrace };
+const savedCaptureEnv = new Map(Object.keys(captureEnv).map((name) => [name, process.env[name]]));
+const pasteAndEnter = ['load-buffer', 'paste-buffer', 'Enter', 'capture-pane'];
+writeSession(captureRecord);
+try {
+  Object.assign(process.env, captureEnv);
+  for (const [failAt, error, commands] of [
+    ['initial-capture', /before pasting/, ['capture-pane']],
+    ['clear-capture', /before pasting/, ['capture-pane', 'C-u', 'capture-pane']],
+    ['enter-capture', /after Enter.*unconfirmed/, ['capture-pane', ...pasteAndEnter]],
+    ['missing-session', /not on the tmux server.*Lift the participant again/, []],
+    ['', null, ['capture-pane', ...pasteAndEnter]],
+  ]) {
+    process.env.PROMPTOBUS_PB151_FAIL_AT = failAt;
+    rmSync(pb151CaptureFile, { force: true });
+    rmSync(captureActivity, { force: true });
+    writeFileSync(captureTrace, '');
+    const outcome = await cursorDriver.activate({ ref: captureRecord.ref }, {
+      kind: 'unread', task: TASK, address: WORKER, unread: 1, messages: [],
+    });
+    const activityPublished = existsSync(captureActivity);
+    const trace = readFileSync(captureTrace, 'utf8').trim().split('\n');
+    check(`Cursor delivery: ${failAt || 'readable empty input'} returns the expected result and activity`,
+      (error ? outcome.ok === false && error.test(outcome.error) : outcome.ok === true)
+      && activityPublished === !error && trace.join(',') === ['list-sessions', ...commands].join(','),
+      JSON.stringify({ outcome, activityPublished, trace }));
+  }
+} finally {
+  for (const [name, value] of savedCaptureEnv) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+  dropSession(captureRecord.ref, process.env);
+}
 
 check('step 3: the stall route calls a human into the session with a persist command',
   cursorDriver.stallRoute({ kind: 'unknown', address: WORKER, repoAbs: wt }, record?.sessionName)
