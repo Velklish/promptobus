@@ -30,6 +30,26 @@ const section = (document, heading) => {
 const decision = (document, label, nextLabel) => section(document, '## Decision')
   .split(`**${label}.**`)[1]?.split(`**${nextLabel}.**`)[0] ?? '';
 
+check('docs: readable owner progress neither wakes nor escalates; blocking HOLD needs a question',
+  has(read('docs/reference/04-protocol.md'), 'the warden neither knocks nor escalates to `SILENT`')
+  && has(read('docs/reference/04-protocol.md'), 'an unreadable inbox remains conservatively actionable')
+  && has(read('docs/reference/03-cli.md'), 'Readable progress-only owner mail is not a `SILENT` trigger, but unreadable inboxes are conservatively actionable')
+  && has(read('skills/orchestrate/SKILL.md'), 'Before ending a blocking HOLD, send an actionable `question`')
+  && has(read('skills/orchestrate/SKILL.md'), 'release comes as `answer`. Use `result` for completion')
+  && has(read('lib/prompts/roles.ts'), 'Before ending a blocking HOLD, send a question')
+  && !/knocks when mail arrives|wake this owner when mail arrives|deliver postcards when mail arrives/.test(
+    read('skills/orchestrate/SKILL.md') + read('docs/reference/03-cli.md') + read('lib/lead.ts')));
+
+const shutdownInstructions = read('skills/orchestrate/SKILL.md');
+const stopDecision = adr('012', 'stopping-one-participant-is-a-verb-of-its-own');
+check('docs: managed child Stop precedes root self-Stop and authorized proof inspection',
+  /first stops each owned child with `stop teamlead:<slug>`.*Then it requests `stop orchestrator`.*pending self-Stop acknowledgement is not confirmation.*authorized observer/.test(shutdownInstructions)
+  && has(shutdownInstructions, 'Do not use `done --keep-sessions` before confirmed Stop')
+  && has(shutdownInstructions, 'Task closure and service shutdown are separate')
+  && has(stopDecision, 'It refuses an unknown or attached participant')
+  && has(stopDecision, 'A managed orchestrator is eligible under the same owner gate')
+  && has(stopDecision, 'An unconfirmed stop is not a confirmed closure'));
+
 check('docs: native admission requires actual proof and Cursor observation preserves its registry revision',
   has(read('docs/reference/05-drivers.md'), 'Missing proof retains an unresolved binding and refuses actor tools;')
   && has(read('docs/reference/05-drivers.md'), 'Cursor turn-state observation reads or discovers its transcript without rewriting the registry.')

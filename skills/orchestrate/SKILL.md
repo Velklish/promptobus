@@ -164,6 +164,8 @@ An active managed Codex root whose holder and app-server are both dead can conti
 
 A root already owned by a Claude Code session continues to use its messaging socket. `lead` does not convert an arbitrary Desktop chat into a managed owner. A teamlead lift records its own harness and native session as the child task owner, so Codex can lead both roots and children.
 
+To Stop a finite managed Codex tree, the root first stops each owned child with `stop teamlead:<slug>` and retains its result and Stop proof. Then it requests `stop orchestrator` for itself. A pending self-Stop acknowledgement is not confirmation: an authorized observer inspects the retained receipt, terminal command accounting, clean app-server close and process absence. Stop leaves task metadata and its watch open. Do not use `done --keep-sessions` before confirmed Stop or treat self-Stop as a grant of mailbox ownership to another controller. Task closure and service shutdown are separate; follow the scoped owner route in the [Shared service reference](https://github.com/Velklish/promptobus/blob/v0.33.1/docs/reference/03-cli.md#shared-service) only after all required native Stops are confirmed.
+
 Names: task id `<task-slug>-t<YYYYMMDD>-<HHMMSS>` (UTC), slug from `--slug` or the task title; worker slug `--worker`, else the repository directory, numbered `-2`, `-3` when another repository already holds it; worktree `<clone>/.claude/worktrees/promptobus-<task-slug>-<worker-slug>-t<date>-<time>` on branch `worktree-<that name>`; session `Worker: <slice title> (<MMDD-HHMM>)`, or `Review:` and `Accept:`, with the slug added on a name collision; Cursor names its own persist session (`lib/spawn.js`, `src/protocol.ts`).
 
 `--title` names the slice and its session, and defaults to the brief's first line. `--task-title` names and pins the task; without it the task title joins the slice titles with ` · ` (`lib/spawn.js`).
@@ -290,7 +292,7 @@ Flags, reason codes and error codes: [reference/03-cli.md](https://github.com/Ve
 
 ## Mail
 
-Do not wait on the bus. The warden knocks when mail arrives. A knock names each message's type, sender and size and never carries its text. Only `promptobus_mailbox` marks mail read. Call it, then ask the bodies you need by id.
+Do not poll when the warden is active. It knocks for actionable owner mail, not readable progress-only `status`. A knock names each message's type, sender and size and never carries its text. Only `promptobus_mailbox` marks mail read. Call it, then ask the bodies you need by id.
 
 A lost knock loses nothing. The mail stays in the mailbox.
 
@@ -306,7 +308,7 @@ The Stop guard (`promptobus guard`) returns the turn when the mailbox is unread.
 
 ## Worker protocol
 
-A worker's first bus message is `status`: what it read, what it will do. Further milestone `status` announces a change of plan, a blocker, or background work longer than a couple of minutes, with volume and a measured estimate before the worker goes quiet. A `status` alone stays unread without knocking the orchestrator; the next actionable message or mailbox read carries it. A blocker needing a decision is a `question`.
+A participant's first bus message is `status`: what it read and what it will do. Use `status` for nonblocking progress, not to request release or a mandatory answer. Before ending a blocking HOLD, send an actionable `question` to the person or participant who can answer; release comes as `answer`. Use `result` for completion, not a final `status`.
 
 The spawn preamble reports repository dependency state. On a fresh worktree, dependency installation runs first and the repository generator after it, both before launch files are written; the launch files are written once with both outcomes. The preamble says when installation succeeded and need not be repeated, when it refused and which command to run by hand, or when there is no lock to install. A repeat spawn does not rerun or check dependencies in the surviving worktree, so the worker must look before relying on them. If installation is interrupted, the worktree can temporarily have its journal record but no launch files; a repeat spawn rewrites the launch files without checking dependencies.
 

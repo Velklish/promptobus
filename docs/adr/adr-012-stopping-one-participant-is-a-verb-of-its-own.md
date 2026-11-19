@@ -63,6 +63,12 @@ the record, because the record's owner is the driver.
 
 ## Consequences
 
+For a finite managed Codex tree, the root stops its owned teamleads and retains their
+results before requesting its own Stop. An authorized observer inspects the retained
+completion proof, not just the pending acknowledgement. Native Stop, task metadata
+closure and service shutdown are separate operations; `done --keep-sessions` is not
+a way around the Stop prerequisite. See the [scoped service route](../reference/03-cli.md#shared-service).
+
 - The surface gains one verb, and the help of all three now states the boundary in one breath:
   `done` is the task, `stop` is one session, `dismiss` is the watch.
 - The memory a stuck participant holds can be reclaimed without ending the run — the case that

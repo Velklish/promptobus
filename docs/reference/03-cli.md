@@ -48,7 +48,7 @@ input continues that stored assignment. The holder waits after `thread/start` un
 thread identity is recorded as the task owner, then begins the first model turn. Worker,
 reviewer, approver and teamlead commands use the same task id and their existing role gates.
 
-The holder and warden wake this owner when mail arrives. From a plain terminal, `ask --task
+The holder and warden wake this owner for actionable mail, not for readable progress-only `status`. From a plain terminal, `ask --task
 <id>` sends a question as `user`, and `ask --answers --task <id>` consumes its replies.
 `status` and `digest` inspect progress. `done --task <id>` refuses while the managed owner
 or another native Codex participant lacks confirmed Stop, `--keep-sessions` included.
@@ -1460,7 +1460,7 @@ mail still held by the surviving root stays in its journal.
 After linking, `send peer:<slug-of-b> --task <task-a> --type question --body "…"` writes
 into B's orchestrator mailbox as `peer:<slug-of-a>`. The reply names B's task and the
 destination message id. The reverse direction uses B as the source. The same destination
-rule applies to `promptobus_send`, and the destination task's warden wakes its owner.
+rule applies to `promptobus_send`, with the destination task's normal actionable-mail wake rules.
 `question`, `answer`, `status` and `artifact` are the allowed types; an artifact goes into
 the destination task's files. `task`, `result` and `review` are refused. An owner can also
 name the other task directly with `--task` and send from the peer address it holds there.
@@ -1511,7 +1511,7 @@ The command refuses a process carrying `PROMPTOBUS_ROLE` or a harness session id
 
 ## Guard and warden
 
-Only `status` in an orchestrator mailbox does not knock or retry a knock.
+Readable `status` alone in an orchestrator mailbox does not knock, retry a knock, or escalate to `SILENT`.
 The messages remain unread and visible in `status` and mailbox reads. Any other
 message type wakes normally and carries retained progress in send order; a
 damaged ref still follows the existing diagnostic route.
@@ -1533,7 +1533,7 @@ manual recovery through the mailbox claim API remains available.
 
 `guard` is the Stop-hook helper. Clean mailbox and no user answer owed in any task this session orchestrates: exit 0, no output. Unread mail: exit 2, return the turn. A turn ending while an answer is owed: exit 2 as well. Same state twice, then it warns and lets the turn end.
 
-**Two states, not one, and their repairs are opposite.** `SILENT` is mail that was not READ — the warden escalates it after `SILENCE_SEC`, and it applies to every address, the orchestrator included. `UNANSWERED` is an answer that was not SENT. For ordinary participants, it appears when the mailbox is empty and a turn ended without a send since the debt began. For the orchestrator, the person's question is named as soon as it arrives and stays until an `answer` to `user`. `promptobus status` prints each under its own word. Unread mail is the guard's first repair; for ordinary participants, `status` prints the count instead of the debt while mail remains. Neither is a stall: a stall is a session that never yielded the turn at all, and the guard cannot see one — it is the end-of-turn hook, so it never runs.
+**Two states, not one, and their repairs are opposite.** `SILENT` is mail that was not read: the warden escalates after `SILENCE_SEC` when unread work qualifies, including actionable owner mail. Readable progress-only owner mail is not a `SILENT` trigger, but unreadable inboxes are conservatively actionable. `UNANSWERED` is an answer that was not SENT. For ordinary participants, it appears when the mailbox is empty and a turn ended without a send since the debt began. For the orchestrator, the person's question is named as soon as it arrives and stays until an `answer` to `user`. `promptobus status` prints each under its own word. Unread mail is the guard's first repair; for ordinary participants, `status` prints the count instead of the debt while mail remains. Neither is a stall: a stall is a session that never yielded the turn at all, and the guard cannot see one — it is the end-of-turn hook, so it never runs.
 
 For ordinary participants, that is also how a clean-and-silent turn is told from a session that died mid-turn, and the two need telling apart because the first wants a nudge and the second a respawn. The signal is the end-of-turn mark `waits/<address>.turn.json`, written by the guard on a clean end and by nothing else. No mark after the debt began means no turn ended: `status` then stays quiet rather than guessing. The orchestrator's user-question debt is an exception: the question itself is enough evidence to print it.
 
@@ -1805,10 +1805,13 @@ not that predicate. `stop orchestrator` leaves its task and watch open, includin
 after a confirmed self-Stop. `done` still requires the mailbox owner's own session;
 the private service owner does not acquire that identity or mailbox.
 
-For a finite native Codex root with two teamleads, finish participant work and
-request normal Stop through each participant's authorized session. Wait for all
-three matching retained Stop hashes, complete terminal command accounting,
-`app-server/close` code 0 and actual holder/app absence. Then, from the workspace
+For a finite native Codex root with two teamleads, finish participant work. The
+root stops its owned `teamlead:<slug>` sessions first and retains their results
+and Stop proofs, then requests its own `stop orchestrator`. A pending self-Stop
+acknowledgement is not confirmation. An authorized observer inspects retained
+proof: matching Stop hashes, complete terminal command accounting,
+`app-server/close` code 0 and actual holder/app absence for each session.
+`done --keep-sessions` is not a bypass before confirmed Stop. Then, from the workspace
 service owner's shell, using the same workspace, service home and harness homes:
 
 ```bash

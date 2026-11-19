@@ -158,7 +158,7 @@ ${bindings.contacts}
 ## Communication protocol
 
 1. Once you have taken the assignment — immediately ${bus('promptobus_send')} {to:"orchestrator", type:"status", body:"what you understood and how you plan to do it"}.
-2. Send milestone status: the first message, a change of plan or a blocker, and before background work longer than a couple of minutes (a series of runs, a long build, a long probe). Announce its volume and a measured estimate ("a series of three runs, ~9 minutes") before going quiet. A status expects NO answer — send it and go on working, never wait for an acknowledgement. Status stays in the orchestrator mailbox without starting a turn of its own; the next actionable message or mailbox read carries it. A blocker needing a decision is a question, not status alone.
+2. Send milestone status: the first message, a change of plan, and before background work longer than a couple of minutes (a series of runs, a long build, a long probe). Announce its volume and a measured estimate ("a series of three runs, ~9 minutes") before going quiet. A status expects NO answer — send it and go on working, never wait for an acknowledgement. Status stays in the orchestrator mailbox without starting a turn of its own; the next actionable message or mailbox read carries it. A blocker needing a decision is a question, not status alone.
 3. ${bindings.wait} The postcard names each message's sender, type and size, never its text: fetch the mailbox — it lists the headers and marks them read — and ask a body by its message id.
 4. Stuck on a question you cannot continue without — ${bus('promptobus_send')} {to:"orchestrator", type:"question", body:"the question"} and end the turn. ${bindings.answerDelivery} Do not guess and do not decide for the user.
 5. Need context from another repository (an event contract, a schema, a signature) — ask the orchestrator with the same question: it will take that from another worker. Do not write into a foreign repository yourself.
@@ -214,6 +214,8 @@ ${brief}
 ${rules.map((file) => `- ${file}`).join('\n')}
 
 Read these files before work. The bus tools are ${bus('promptobus_send')}, ${bus('promptobus_mailbox')} and ${bus('promptobus_task')}. Start each turn with the child task mailbox.${rootMailbox} A task sent to a worker of ${childTask} is sent from orchestrator. The root task is always named explicitly when reporting upward.
+
+Report progress as status; it does not force an owner wake. Before ending a blocking HOLD, send a question and await an answer. Send result for completion.
 
 ${bindings.memory}
 ${bindings.lease}`;
@@ -312,7 +314,7 @@ ${bindings.contacts}
 ## Communication protocol
 
 1. Once you have taken the assignment — immediately ${bus('promptobus_send')} {to:"orchestrator", type:"status", body:"what you understood and how you plan to do it"}.
-2. Send status at every notable step. A status expects NO answer — send it and go on working.
+2. Send status for progress. It expects no answer and does not force an owner wake. Before ending a blocking HOLD, send a question and await an answer; send result for completion.
 3. To wait for a message — ${bindings.wait} Fetch the mailbox first.
 4. Stuck without an answer — ${bus('promptobus_send')} {to:"orchestrator", type:"question", body:"…"} and end the turn.
 5. ${bindings.workerContact}
@@ -362,7 +364,7 @@ ${rules.map((file) => `- ${file}`).join('\n')}
 ${brief}
 
 ## Mailbox and delivery
-Read ${bus('promptobus_mailbox')} at the beginning of each turn and before accepting results. Read each body by its returned message id. Workers send status, questions and results to you; ${bus('promptobus_task')} shows their addresses and repositories. Send answers and assignments through ${bus('promptobus_send')}.
+Read ${bus('promptobus_mailbox')} at the beginning of each turn and before accepting results. Read each body by its returned message id. Workers send status, questions and results to you; ${bus('promptobus_task')} shows their addresses and repositories. Use status for progress and result for completion. Before ending a blocking HOLD, send a question to whoever can answer. Release a participant with an answer, not a status. Send answers and assignments through ${bus('promptobus_send')}.
 ${bindings.delivery} finish the turn when waiting for a worker or an answer. Keep the task open until its acceptance checks pass. A worker result is a report, not acceptance. Inspect the work, obtain an independent review, run the required gates, and preserve evidence and remaining limitations before reporting completion.
 ${bindings.operationalRules}`;
 }
