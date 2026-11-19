@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Synchronize seven fixture tests with the turn, log, process, lock and socket events they assert, and test delivery deadlines with a logical clock. Opt-in schedules retain the premature and missing-event controls.
 - BB task owners can reread a numbered reviewer part by its acknowledged message id. The orchestrator now checks for terminal release and retires the matching grant before answer-driven continuation.
 
-- Read a task's orchestrator correspondence and persisted stall changes with `observe --task <id>`. Only the task's bound orchestrator can use the cursor feed, which does not take mail. A separate Desktop conversation has no access through this command and is not woken.
+- Read a task's orchestrator correspondence and persisted stall changes with `observe --task <id>`. Only the task's bound orchestrator can use the cursor feed, which does not take mail. A separate Desktop conversation has no access through this command and is not woken. A child's teamlead may declare its parent task and teamlead address when the parent's record links that child to its session. A record replaced atomically during a poll is re-read a bounded number of times, a closure is reported once across intermediate pages, and a journal past the per-poll read limits is refused on every poll.
 - Re-review refuses a live reviewer whose launch lost its sender binding, before writing a diff or delivering another assignment.
 
 - Native reviewers can checkpoint findings for the diff they opened without writing a file. Replacements read the last terminal result and the verified checkpoints separately beside the new diff; neither body enters launch arguments. Cursor and OpenCode revoke the failed reviewer's journal binding even when admission fails after session publication. Committed findings remain readable; an unresolved native session keeps its record and is not reported as stopped.
@@ -34,13 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Encapsulate bus and reviewer-file MCP request admission per shared-service owner. An expired pending native reservation now returns 401 before MCP header validation or body reading. Valid pending catalog discovery, managed task locking and receipt replay rules are unchanged.
-- The BB native board shows the pipeline declared at run start, distinguishes predicted steps from observed participants, and includes steps added during the run. Runs without a recorded order keep their previous columns.
+- The BB native board shows the pipeline declared at run start, distinguishes predicted steps from observed participants, and includes steps added during the run. A recorded pipeline ends in **Next step unconfirmed** instead of Done; runs without a recorded order keep their previous columns, Done included.
 - An approver refusal for a subject without a current reviewer result now lists reviewed subjects in the same task and their exact lift commands. The approver's recorded harness remains immutable.
 - Participant setup now reports the exception behind a crashed repository generator and distinguishes the root dependency install from separately locked packages. CLI help lists the ordinary Codex worker permission modes.
 
 - When startup refuses a retained client from another shared-service runtime, report its runtime fingerprint and direct the operator to the matching launcher owner. A missing launch record is not proof that the native session stopped.
 - Gate instructions must resolve to a file inside the install root. Internal symlinks still work; installations using external file or directory links must place the instructions under the root.
-- Use the BB context Host directly for pipeline lookups and align typed catch bindings in the Codex session and OpenCode driver. Runtime behavior is unchanged.
+- Use the BB context Host directly for pipeline and MCP audience lookups; `participantAudience` accepts any Host with a `pipeline` field. Align typed catch bindings in the Codex session and OpenCode driver. Runtime behavior is unchanged.
 - Include authored scripts in the comment length check without adding pending exceptions. Use public, repository-local examples in the contributor guide and fixtures.
 - On POSIX, the BB direct recorder forwards catchable Stop signals to its child and records its actual exit after draining both streams. A child that handles Stop and exits zero still cannot supply passing gate evidence.
 
@@ -91,6 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Queue canonical unread-mail hints for active BB participants. A stale queue snapshot cannot overwrite a recorded turn request. Recovery and dispatch retire obsolete hints after a mailbox read without discarding other queued input. Result reminders still wait for idle.
 - Fail Codex and mixed live verification when the Codex process list or config cannot be observed, instead of treating an observation error as no change.
 - Keep the canonical Codex skill when the participant directory is reached through an alias and Codex lists its physical path.
+- Restore a probed file from its exact bytes, invalid UTF-8 included. `--mutate` refuses a file that is not valid UTF-8 with exit 2 before writing it; `--stdin-patch` still probes such a file.
 - Explain why mutation probes require a clean, committed baseline and restore from a snapshot, not Git. Document wrapper exit codes separately from the mutated command's exit code.
 - Allow an orchestrator to claim an explicitly named root from its registered peer session. The full session ID must match; ordinary reads still use the peer mailbox.
 

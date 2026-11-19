@@ -1594,6 +1594,38 @@ test('request history wins over an older queue snapshot for the same hint across
   assert.equal(sends, 2); assert.equal(engine.unread(s.task, 'worker-one'), 1);
 });
 
+for (const late of ['queued', 'lost']) test(`a ${late} send reply after the actual request for the same hint keeps the request`, async t => {
+  let request, observed;
+  const s = await stand(t, { async wakeSend({ threadId, input, queues, append, threads, host }) {
+    const thread = threads.get(threadId);
+    const entry = { id: 'late-queued', threadId, originPluginId: 'promptobus', content: input };
+    queues.set(threadId, []); thread.status = thread.runtime.displayStatus = 'active';
+    request = append(threadId, 'client/turn/requested', { input });
+    const text = 'Operator note during the hint turn';
+    await host.harness.inspection.registrations.hooks['message.dispatch'](makeMessageDispatchHookContext({ thread, originPluginId: null,
+      input: { blocks: [{ type: 'text', text, mentions: [] }], text } }));
+    observed = structuredClone(bindingStore(host.bb).delivery(threadId).pending);
+    if (late === 'lost') throw new Error('Late send reply was lost');
+    return { ok: true, delivery: 'queued', queuedMessage: entry, waitingOn: { kind: 'thread-busy' } };
+  } });
+  await s.create(); await s.add('worker-one');
+  const thread = s.threads.get('thr-2'); thread.status = thread.runtime.displayStatus = 'active';
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+  engine.sendSync(s.task, { from: 'orchestrator', to: ['worker-one'], type: 'task', body: 'Late reply marker' });
+  await s.reconcile();
+  assert.equal(observed.requestSeq, request.seq, 'The actual request must be recorded before the late reply lands');
+  const assertRequested = () => {
+    const { pending, reason } = s.delivery(thread.id);
+    assert.equal(pending.marker, observed.marker); assert.equal(pending.state, 'sent'); assert.equal(pending.queuedId, null);
+    assert.equal(pending.requestSeq, request.seq); assert.equal(pending.requestId, request.data.requestId);
+    assert.equal(reason, ''); assert.equal(s.wakes.length, 1);
+  };
+  assertRequested();
+  await s.reconcile(); assertRequested();
+  await s.reload(); await s.reconcile(); assertRequested();
+  assert.equal(engine.unread(s.task, 'worker-one'), 1);
+});
+
 for (const finish of [false, true]) test(`mailbox read retires only its queued hint when recovery observes ${finish ? 'idle' : 'active'}`, async t => {
   const s = await stand(t, { wakeSend({ threadId, input, queues }) {
     const entry = { id: 'owned', threadId, originPluginId: 'promptobus', content: input };

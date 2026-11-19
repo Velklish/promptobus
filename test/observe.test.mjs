@@ -1,7 +1,8 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import fs, { mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
@@ -139,6 +140,85 @@ test('identity and scope are required on fresh reads and continuations', async (
   assert.deepEqual(managed.messages.map((m) => m.id), [id]);
 });
 
+test('a teamlead declaring its parent task and address observes its child only when that parent record links them', async () => {
+  const { host, home, send } = fixture();
+  const id = await send(child, b, 'status', 'Child progress');
+  const lead = { CLAUDE_CODE_SESSION_ID: 'child-thread', PROMPTOBUS_ROLE: 'teamlead:child' };
+  for (const env of [{ ...lead, PROMPTOBUS_TASK: root }, lead]) {
+    assert.deepEqual((await observe(host, { task: child }, env)).messages.map((m) => m.id), [id]);
+  }
+  const mustRefuse = [
+    [child, { ...lead, PROMPTOBUS_TASK: other }], [child, { ...lead, PROMPTOBUS_TASK: sibling }],
+    [child, { ...lead, PROMPTOBUS_ROLE: 'teamlead:sibling' }], [child, { ...lead, PROMPTOBUS_ROLE: 'worker:beta' }],
+    [sibling, { ...lead, PROMPTOBUS_ROLE: 'teamlead:sibling', CLAUDE_CODE_SESSION_ID: 'child-thread' }],
+    [root, { ...lead, PROMPTOBUS_TASK: root }], [other, { ...lead, CLAUDE_CODE_SESSION_ID: 'other-thread' }],
+    [child, { ...lead, CLAUDE_CODE_SESSION_ID: 'managed-thread' }],
+  ];
+  for (const [task, env] of mustRefuse) {
+    await assert.rejects(observe(host, { task }, env), /bound orchestrator command identity/, `${task} ${JSON.stringify(env)}`);
+  }
+  const parent = JSON.parse(readFileSync(taskFile(home, root), 'utf8'));
+  parent.participants.find((p) => p.metadata.address === 'teamlead:child').metadata.sessionId = 'replacement-thread';
+  writeFileSync(taskFile(home, root), JSON.stringify(parent));
+  await assert.rejects(observe(host, { task: child }, lead), /bound orchestrator command identity/);
+});
+
+test('a record replaced atomically during the read is re-read a bounded number of times', async () => {
+  const { host, home, send } = fixture();
+  const first = await observe(host, { task: root }, ownerEnv);
+  const id = await send(root, a, 'status', 'after a replacement');
+  writeStalls(home, root, { [a]: { at, reason: 'holder stalled' } });
+  const open = fs.openSync;
+  const replace = (targets, times) => {
+    const left = new Map(targets.map((file) => [file, times]));
+    fs.openSync = (file, ...rest) => {
+      if (left.get(file) > 0) {
+        left.set(file, left.get(file) - 1);
+        fs.openSync = open;
+        syncBuiltinESMExports();
+        writeFileSync(`${file}.swap`, readFileSync(file));
+        renameSync(`${file}.swap`, file);
+        replace([...left.keys()], left.get(file));
+      }
+      return open(file, ...rest);
+    };
+    syncBuiltinESMExports();
+  };
+  try {
+    for (const file of [taskFile(home, root), stallsFile(home, root)]) {
+      replace([file], 1);
+      const page = await observe(host, { task: root, after: first.nextCursor }, ownerEnv);
+      assert.deepEqual(page.messages.map((m) => m.id), [id]);
+      assert.deepEqual(page.changes, [{ kind: 'stall', task: root, address: a, at, reason: 'holder stalled' }]);
+    }
+    replace([taskFile(home, root)], Infinity);
+    await assert.rejects(observe(host, { task: root, after: first.nextCursor }, ownerEnv),
+      /feed unavailable; keep the previous cursor: a selected store record was replaced while it was read/);
+  } finally {
+    fs.openSync = open;
+    syncBuiltinESMExports();
+  }
+});
+
+test('a closure already reported is not reported again after intermediate pages', async () => {
+  const { home, host } = fixture();
+  const otherEnv = { CLAUDE_CODE_SESSION_ID: 'other-thread' };
+  store.closeTask(home, other);
+  const closed = await observe(host, { task: other }, otherEnv);
+  assert.equal(closed.closed, true);
+  assert.deepEqual(closed.changes.map((c) => c.kind), ['task-state']);
+  const when = new Date(at);
+  for (let i = 0; i < 11; i++) {
+    completeFanout(home, other, commitIntent(home, other, newMessage(other, store.addrDir(b), ['orchestrator'], 'status', `late ${i}`, null, when), when));
+  }
+  const middle = await observe(host, { task: other, after: closed.nextCursor }, otherEnv);
+  assert.equal(middle.more, true);
+  const last = await observe(host, { task: other, after: middle.nextCursor }, otherEnv);
+  assert.equal(last.more, false);
+  assert.equal(last.closed, true);
+  assert.deepEqual(last.changes, []);
+});
+
 test('bounded waiting returns a new message or explicitly times out idle', async () => {
   const { host, send } = fixture();
   const first = await observe(host, { task: root }, ownerEnv);
@@ -233,6 +313,9 @@ test('Desktop instructions name the authorization blocker separately from idle w
   const guide = readFileSync(new URL('../skills/orchestrate/SKILL.md', import.meta.url), 'utf8');
   assert.match(reference, /observe --task <id> \[--after <cursor>\] \[--wait <seconds>\]/);
   assert.match(reference, /bounds retry scheduling, not total command\s+time/);
+  assert.match(reference, /rescans the selected journal from its start[^.]*\. Past one of these\s+limits observation of that task is refused on every poll/);
+  assert.match(reference, /replaced atomically while it is read is re-read up to three\s+times/);
+  assert.match(reference, /may instead declare its parent task and its `teamlead:<slug>` address/);
   assert.match(guide, /`nextCursor`/);
   assert.match(guide, /A separate Desktop thread cannot read message bodies through it/);
   assert.match(guide, /does not wake an idle Desktop conversation/);

@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { addressOf, GateError, ORCHESTRATOR, ownerOf, PromptobusError, readStalls, requireTaskId, type PromptobusHost, type TaskV1 } from '../dist/index.js';
-import { ownedReader, type OwnedReader } from '../dist/fs/owned-reader.js';
+import { addressOf, GateError, ORCHESTRATOR, ownerOf, PromptobusError, readStalls, requireTaskId, sessionIdOf, type PromptobusHost, type TaskV1 } from '../dist/index.js';
+import { OwnedReadChanged, ownedReader, type OwnedReader } from '../dist/fs/owned-reader.js';
 import { taskFile } from '../dist/v1/layout.js';
 import { readMessageFence, strictCommittedMessages, validOrderId } from '../dist/v1/message-order.js';
 import { requireValid } from '../dist/v1/validate.js';
@@ -14,6 +14,9 @@ const BODY_LIMIT = 2000;
 const MAIL_TYPES = new Set(['status', 'question', 'answer', 'result', 'review']);
 const BUSY = 'store message order is busy; retry with the last successful cursor';
 const INCOMPLETE = 'selected journal is incomplete: unresolved message fan-out';
+const REPLACED = 'a selected store record was replaced while it was read; retry with the last successful cursor';
+const REPLACED_REREADS = 3;
+const IDENTITY = 'observation requires the selected task’s bound orchestrator command identity';
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 type Cursor = { v: 1; scope: string; last: string | null; closed: boolean; stalls: Record<string, string> };
 
@@ -30,28 +33,38 @@ function decode(token: string | undefined): Cursor | null {
   throw new GateError('observe: invalid cursor; use the exact nextCursor from the last successful page');
 }
 
-function identityFor(task: string, env: NodeJS.ProcessEnv) {
+function identityFor(env: NodeJS.ProcessEnv) {
   const identity = resolveSessionIdentity(env);
   const candidate = identity.candidates[0];
-  const declaredTask = env.PROMPTOBUS_TASK?.trim();
-  const declaredRole = env.PROMPTOBUS_ROLE?.trim();
-  if (identity.reason !== 'resolved' || !identity.id || !candidate?.harness || candidate.id !== identity.id
-    || (declaredTask && declaredTask !== task) || (declaredRole && declaredRole !== ORCHESTRATOR)) {
-    throw new GateError('observation requires the selected task’s bound orchestrator command identity');
+  if (identity.reason !== 'resolved' || !identity.id || !candidate?.harness || candidate.id !== identity.id) {
+    throw new GateError(IDENTITY);
   }
-  return { id: identity.id, harness: candidate.harness };
+  return { id: identity.id, harness: candidate.harness,
+    task: env.PROMPTOBUS_TASK?.trim() || null, role: env.PROMPTOBUS_ROLE?.trim() || null };
+}
+
+function readTask(reader: OwnedReader, home: string, id: string) {
+  const text = reader.text(taskFile(home, id));
+  if (text === null) throw new GateError(`task ${id} journal is unavailable`);
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { throw new GateError(`task ${id} journal is malformed`); }
+  requireValid('task', value, { task: id });
+  return value as TaskV1;
+}
+
+// A teamlead may declare its parent task and teamlead address; that parent record must link this child to the same session.
+function declaredByOwner(reader: OwnedReader, home: string, meta: TaskV1, identity: ReturnType<typeof identityFor>) {
+  if ((!identity.task || identity.task === meta.id) && (!identity.role || identity.role === ORCHESTRATOR)) return true;
+  if (!identity.role?.startsWith('teamlead:') || !meta.parent || (identity.task && identity.task !== meta.parent)) return false;
+  const lead = readTask(reader, home, meta.parent).participants.find((p) => addressOf(p) === identity.role);
+  return lead?.role === 'teamlead' && lead.metadata.childTask === meta.id && sessionIdOf(lead) === identity.id;
 }
 
 function authorizedTask(reader: OwnedReader, home: string, id: string, identity: ReturnType<typeof identityFor>) {
-  const text = reader.text(taskFile(home, id));
-  if (text === null) throw new GateError('selected task journal is unavailable');
-  let value: unknown;
-  try { value = JSON.parse(text); } catch { throw new GateError('selected task journal is malformed'); }
-  requireValid('task', value, { task: id });
-  const meta = value as TaskV1;
+  const meta = readTask(reader, home, id);
   const owner = meta.participants.find((p) => p.id === meta.owner && p.role === ORCHESTRATOR);
   if (meta.id !== id || !owner || addressOf(owner) !== ORCHESTRATOR || owner.harness !== identity.harness
-    || ownerOf(owner) !== identity.id) throw new GateError('observation requires the selected task’s bound orchestrator command identity');
+    || ownerOf(owner) !== identity.id || !declaredByOwner(reader, home, meta, identity)) throw new GateError(IDENTITY);
   return { meta, owner };
 }
 
@@ -63,7 +76,10 @@ function sample(reader: OwnedReader, home: string, task: TaskV1, before: Cursor)
   }
   let marks;
   try { marks = readStalls(home, task.id, { read: reader.text }); }
-  catch { throw new GateError(`task ${task.id} stall marks cannot be read as an owned valid record`); }
+  catch (error) {
+    if (error instanceof OwnedReadChanged) throw error;
+    throw new GateError(`task ${task.id} stall marks cannot be read as an owned valid record`);
+  }
   for (const address of Object.keys(marks).sort()) {
     const stall = marks[address]!;
     stalls[address] = hash([stall.reason, stall.at]);
@@ -107,7 +123,7 @@ function page(reader: OwnedReader, home: string, id: string, identity: ReturnTyp
   const { stalls, changes, closed } = more ? { stalls: before.stalls, changes: [], closed: false } : sample(reader, home, task, before);
   const rechecked = authorizedTask(reader, home, id, identity);
   if (rechecked.meta.created !== task.created || rechecked.owner.id !== owner.id) throw new GateError('selected task binding changed during observation');
-  const next: Cursor = { v: 1, scope, last: messages.at(-1)?.id ?? before.last, closed, stalls };
+  const next: Cursor = { v: 1, scope, last: messages.at(-1)?.id ?? before.last, closed: more ? before.closed : closed, stalls };
   return { schemaVersion: 1, task: id, observedAt: new Date().toISOString(),
     status: messages.length || changes.length ? 'activity' : closed ? 'closed' : 'idle',
     closed, more, messages, changes, nextCursor: Buffer.from(JSON.stringify(next)).toString('base64url') };
@@ -121,12 +137,16 @@ export async function observe(host: PromptobusHost, opts: { task?: string; after
   const cursor = decode(opts.after);
   const deadline = performance.now() + Number(wait) * 1000;
   try {
-    const identity = identityFor(id, env);
+    const identity = identityFor(env);
     const reader = ownedReader(host.promptobusHome());
     const home = reader.root;
     if (env.PROMPTOBUS_HOME?.trim() && realpathSync(env.PROMPTOBUS_HOME.trim()) !== home) throw new GateError('declared store scope differs from the workspace store');
+    let rereads = 0;
     for (;;) {
-      const result = page(reader, home, id, identity, cursor);
+      let result;
+      try { result = page(reader, home, id, identity, cursor); }
+      catch (error) { if (!(error instanceof OwnedReadChanged)) throw error; result = REPLACED; }
+      if (result === REPLACED && rereads++ < REPLACED_REREADS) continue;
       if (typeof result !== 'string' && result.status !== 'idle') return result;
       const remaining = deadline - performance.now();
       if (remaining > 0) await sleep(Math.min(500, remaining));

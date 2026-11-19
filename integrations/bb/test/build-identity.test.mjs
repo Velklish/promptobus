@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -84,6 +84,22 @@ test('dependency capture accepts shared inputs but refuses a cycle by resolved p
   assert.equal(computeBuildIdentity(root).inputs.dependencies.length, 2);
   depend('promptobus', '@get-bb/plugin-sdk');
   assert.throws(() => computeBuildIdentity(root), /Cannot freeze cyclic BB dependencies: @get-bb\/plugin-sdk -> promptobus -> @get-bb\/plugin-sdk/);
+});
+
+test('build resolves a shared acyclic dependency from the frozen graph and refuses a cycle before the builder', async t => {
+  const root = fixture(t); withFakeBuilder(t, root);
+  const sdk = path.join(root, 'node_modules/@get-bb/plugin-sdk/package.json');
+  const depend = (file, dependency) => writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file)), dependencies: { [dependency]: '*' } }));
+  depend(sdk, 'promptobus');
+  const manifest = await build(root);
+  const installed = path.join(root, manifest.installationDirectory);
+  assert.deepEqual(readFileSync(path.join(installed, 'node_modules/@get-bb/plugin-sdk/node_modules/promptobus/index.js')),
+    readFileSync(path.join(root, 'node_modules/promptobus/index.js')), 'the shared dependency is frozen beside its dependent');
+  assert.deepEqual(manifest.identity.inputs.dependencies, computeBuildIdentity(root, '0.46.1').inputs.dependencies);
+  assert.equal(manifest.identity.inputs.dependencies.length, 2);
+  depend(path.join(root, 'node_modules/promptobus/package.json'), '@get-bb/plugin-sdk');
+  await assert.rejects(build(root), /Cannot freeze cyclic BB dependencies: @get-bb\/plugin-sdk -> promptobus -> @get-bb\/plugin-sdk/);
+  assert.deepEqual(readdirSync(root).filter(name => name.startsWith('.runtime-stage-')), []);
 });
 
 test('an untracked consumer under an unrelated Git parent does not claim the parent revision', t => {

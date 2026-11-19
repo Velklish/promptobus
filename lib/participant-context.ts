@@ -166,6 +166,6 @@ export function selectParticipantContext(host: ParticipantContextHost, { root, r
   return freeze(selection);
 }
 
-export function participantAudience(host: PromptobusHost, role: string): HostMcpAudience['audience'] {
+export function participantAudience(host: Pick<PromptobusHost, 'pipeline'>, role: string): HostMcpAudience['audience'] {
   return roleEntry(registryOf(host), role)?.kind === EDITS_TREE ? WORKER : 'control';
 }

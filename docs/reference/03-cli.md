@@ -1448,7 +1448,7 @@ native Codex participant does. The reporter owes no bus answer: its answer is sp
 window, so the Stop guard does not wait for a `promptobus_send` it cannot
 make. These instructions are the lift's copy of the reporter rules in
 [`skills/orchestrate/SKILL.md` § Reporter for the person](../../skills/orchestrate/SKILL.md#reporter-for-the-person).
-The same prompt carries the wording rule, because a Claude reporter is denied the shell and cannot open the skill (`lib/prompts/roles.js`):
+The same prompt carries the wording rule, because a Claude reporter is denied the shell and cannot open the skill (`lib/prompts/roles.ts`, `reporterAnswerStyle`):
 
 <!-- quote:../../lib/prompts/roles.ts -->
 ```typescript
@@ -1477,7 +1477,7 @@ promptobus observe --task <id> [--after <cursor>] [--wait <seconds>]
 The command requires the selected task's bound orchestrator, verified by the existing
 [command-path session identity](02-host.md#session-identity) and the selected task's
 recorded harness and owner. `--task` selects one journal; it does not authorize access.
-Any declared task, role or store scope must agree. A root owner cannot see child mail
+Any declared task, role or store scope must agree. A child task's owner may instead declare its parent task and its `teamlead:<slug>` address, as a teamlead's own environment does: the parent's teamlead record at that address must name this child and hold the calling session. The owner check above still applies. A root owner cannot see child mail
 through the root, and a child owner cannot see its root or siblings. An unbound, ambiguous
 or foreign caller is refused. A cursor grants no access.
 
@@ -1486,7 +1486,10 @@ messages sent by or addressed to that orchestrator in that journal. Observation 
 take mail, claim an address, recover the store, answer mail, or start a participant. The
 reader accepts only owned directories and regular files within the store: no symlinks,
 at most 16,384 entries per scanned directory, and at most 1 MiB per task or message record,
-256 KiB for stall marks, 4 KiB for the message-order head and 32 MiB per poll. Platforms without the required
+256 KiB for stall marks, 4 KiB for the message-order head and 32 MiB per poll. Each poll
+rescans the selected journal from its start, not from the cursor, so paging does not lower
+these totals. Past one of these
+limits observation of that task is refused on every poll. Platforms without the required
 owner and no-follow checks are refused.
 
 Without `--after`, the feed starts at the oldest retained matching message. After showing
@@ -1507,7 +1510,10 @@ has no changes at the deadline. `closed: true` means the selected task is done a
 page is queued. An unreadable or stale snapshot exits 1 with no page or new cursor. A busy
 store-wide order fence can reflect any writer; an unresolved fan-out in the selected journal
 instead reports that journal incomplete. Both conditions can be retried within the wait;
-keep the last successful cursor on refusal. There is no model turn or wake request.
+keep the last successful cursor on refusal. A task or stall record that a writer
+replaced atomically while it is read is re-read up to three
+times at once, then retried within the wait the same way; every re-read repeats the owner
+check. A closure is reported once, on the final page that follows it. There is no model turn or wake request.
 
 ### Desktop observation and idle wake
 
