@@ -8,8 +8,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
+import { scheduled, observe, receipt } from './fixture-order.mjs';
 import {
-  dropSession, holderLogFile, readSession, sessionFile, startHolder, waitReady, writeSession,
+  dropSession, holderLogFile, pidAlive, readSession, sessionFile, startHolder, waitReady, writeSession,
 } from '../lib/codex-session.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -115,6 +116,9 @@ function runHold(file) {
   // holder's next RPC write (thread/start) is then EPIPE.
   const dying = path.join(HOME, 'closed-stdio.sh');
   const initCapture = path.join(HOME, 'closed-stdio-initialize.json');
+  const release = path.join(HOME, 'release-notification');
+  const producer = path.join(HOME, 'producer-ack');
+  const splitNotices = scheduled('late-notice') || scheduled('missing-notice');
   writeFileSync(dying, [
     '#!/bin/sh',
     'IFS= read -r line',
@@ -122,7 +126,10 @@ function runHold(file) {
     'exec 0<&-',
     'printf \'{"jsonrpc":"2.0","id":1,"result":{}}\\n\'',
     'printf \'{"jsonrpc":"2.0","method":"account/rateLimits/updated","params":{"primary":{"usedPercent":0}}}\\n\'',
+    ...(splitNotices ? [`while [ ! -f "${release}" ]; do sleep 0.02; done`] : []),
+    ...(scheduled('missing-notice') ? [`echo withheld > "${producer}"`, 'exec /bin/sleep 3600'] : []),
     'printf \'{"jsonrpc":"2.0","method":"item/completed","params":{"item":{"type":"mcpToolCall","server":"acme_tools_promptobus","tool":"promptobus_send","status":"failed","error":{"message":"stub: tool not found"}}}}\\n\'',
+    ...(splitNotices ? [`test "$?" = 0 && echo emitted > "${producer}"`] : []),
     'exec /bin/sleep 3600',
     '',
   ].join('\n'));
@@ -137,6 +144,8 @@ function runHold(file) {
     child.once('exit', (code, sig) => resolve({ code, sig }));
   });
   const logFile = holderLogFile(ref, env);
+  let log = '';
+  try {
   const initialized = await new Promise((resolve) => {
     const t0 = Date.now();
     const tick = () => {
@@ -155,13 +164,34 @@ function runHold(file) {
     tick();
   });
   // initialize ok means stdin is already closed; the next write is thread/start.
-  await new Promise((r) => { setTimeout(r, 250); });
+  if (splitNotices) await new Promise((r) => { setTimeout(r, 250); });
   const outcome = await Promise.race([
     finished,
     new Promise((r) => { setTimeout(() => r({ code: 'running', sig: null }), 200); }),
   ]);
-  let log = '';
   try { log = readFileSync(logFile, 'utf8'); } catch { /* none */ }
+  if (splitNotices) {
+    receipt('original log snapshot', { log, outcome });
+    check('only the first notification is visible at the original snapshot',
+      /debug event account\/rateLimits\/updated payload=/.test(log) && !/event item\/completed mcp/.test(log), log);
+    const live = pidAlive(child.pid) && child.exitCode === null && child.signalCode === null;
+    if (!live) throw new Error(`holder exited before notification handoff: ${JSON.stringify(outcome)}`);
+    writeFileSync(release, 'release');
+    const expected = scheduled('missing-notice') ? 'withheld' : 'emitted';
+    const ack = await observe('producer handoff', () => {
+      try { return readFileSync(producer, 'utf8').trim(); } catch { return false; }
+    }, 2000);
+    check('live holder at producer acknowledgment', ack === expected && pidAlive(child.pid), JSON.stringify({ ack, expected }));
+  }
+  let latest = log;
+  const rateNotice = /debug event account\/rateLimits\/updated payload=\{"primary":\{"usedPercent":0\}\}/;
+  const toolNotice = /event item\/completed mcp acme_tools_promptobus\/promptobus_send failed .*stub: tool not found/;
+  const logged = await observe('both holder notifications', () => {
+    try { latest = readFileSync(logFile, 'utf8'); } catch { return false; }
+    return rateNotice.test(latest) && toolNotice.test(latest);
+  }, 4000);
+  check('both specific notifications reached the log within the watchdog', !!logged, latest);
+  log = latest;
   const firstLine = log.split('\n')[0];
   check(': holder journal starts with the lift provenance',
     firstLine.includes('promptobus copy: cli=/stand/promptobus.js package='
@@ -177,10 +207,10 @@ function runHold(file) {
   // the reason — before this line the log said only `event item/completed`, and a bus
   // call dying in 0 ms looked exactly like a dead server.
   check(': a rate-limit notification is logged with its complete params',
-    /debug event account\/rateLimits\/updated payload=\{"primary":\{"usedPercent":0\}\}/.test(log),
+    rateNotice.test(log),
     `log=${log.slice(0, 600)}`);
   check(': a failed MCP call reaches the holder log with server, tool, status and reason',
-    /event item\/completed mcp acme_tools_promptobus\/promptobus_send failed .*stub: tool not found/.test(log),
+    toolNotice.test(log),
     `log=${log.slice(0, 600)}`);
   check(': the stub answered initialize only after closing stdin',
     initialized && /initialize ok/.test(log),
@@ -189,14 +219,17 @@ function runHold(file) {
     !/Unhandled ['"]error['"] event/i.test(stderr)
       && (outcome.code === 'running' || outcome.code === 1 || outcome.code === 0),
     `outcome=${JSON.stringify(outcome)} stderr=${stderr.slice(0, 400)} log=${log.slice(0, 300)}`);
+  } finally {
   const rec = readSession(ref, env);
   const appPid = rec?.appPid ?? Number((log.match(/app-server pid (\d+)/) ?? [])[1]);
   try { child.kill('SIGKILL'); } catch { /* already gone */ }
   if (Number.isFinite(appPid) && appPid > 0) {
     try { process.kill(appPid, 'SIGKILL'); } catch { /* already gone */ }
   }
-  await new Promise((r) => { child.once('exit', r); setTimeout(r, 500); });
+  check('notification fixture holder and producer exited', Number.isInteger(appPid) && !!await observe('owned notification PIDs exited',
+    () => !pidAlive(child.pid) && !pidAlive(appPid) && { holderPid: child.pid, appPid }, 3000));
   dropSession(ref, env);
+  }
 }
 
 {

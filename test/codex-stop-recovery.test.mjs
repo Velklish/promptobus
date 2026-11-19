@@ -1,4 +1,5 @@
 import { check } from './check.mjs';
+import { scheduled, receipt, bounded } from './fixture-order.mjs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { makeSandbox, makeSockDir } from './sandbox.mjs';
@@ -35,31 +36,50 @@ function confirmed(ref, holderPid, fields = {}) {
   writeSession(record);
   return record;
 }
-const holder = runChild(500);
+const exited = scheduled('exited-holder');
+const held = !exited;
+const holder = held ? spawn(process.execPath, ['-e', 'process.stdin.resume()'], { stdio: ['pipe', 'ignore', 'ignore'] }) : runChild(500);
+if (held) holder.done = new Promise(resolve => holder.once('exit', resolve));
 const late = confirmed('late-confirmation', holder.pid);
 const socket = makeSockDir('pb-stop-recovery-').sock('holder');
 writeSession({ ...late, rpcSocket: socket });
-const server = net.createServer(conn => conn.once('data', data => {
+const connections = new Set();
+let ack;
+const server = net.createServer(conn => {
+  connections.add(conn);
+  conn.once('close', () => connections.delete(conn));
+  conn.once('data', data => {
   const request = JSON.parse(String(data));
   conn.end(JSON.stringify({ id: request.id, result: { ok: true, stopped: true, launchId: late.launchId,
-    receiptFile: late.commandReceiptFile } }) + '\n');
-}));
-await new Promise(resolve => server.listen(socket, resolve));
+    receiptFile: late.commandReceiptFile } }) + '\n', () => { ack = { id: request.id, op: request.op, launchId: request.launchId }; });
+  });
+});
 try {
+  await new Promise((resolve, reject) => server.once('error', reject).listen(socket, resolve));
+  if (exited) await bounded('pre-Stop exit', holder.done, 3000);
+  if (scheduled('held-holder')) await new Promise(resolve => setTimeout(resolve, 510));
+  receipt('before first Stop', { holder: holder.pid, exit: holder.exitCode });
   const first = await codexDriver.stop(late.ref, { timeoutMs: 60 });
-  check('Stop recovery: confirmation before deadline with a still-live holder remains unresolved',
-    !first.ok && first.attempted && !first.stopped && !!readSession(late.ref), JSON.stringify(first));
-  await holder.done;
-  await new Promise(resolve => server.close(resolve));
+  if (held) check('original child is still alive at the first Stop verdict', holder.exitCode === null && holder.signalCode === null);
+  if (exited) check('first Stop after exit retires exactly once without a socket request',
+    first.ok && first.stopped && !readSession(late.ref) && !ack, JSON.stringify(first));
+  else check('Stop recovery: confirmed shutdown while holder is alive specifically refuses retirement',
+    ack?.op === 'shutdown' && ack.launchId === late.launchId && !first.ok && first.attempted && !first.stopped
+    && first.note.includes('holder exit was not confirmed before the Stop deadline') && !!readSession(late.ref), JSON.stringify({ ack, first }));
+  if (held) holder.stdin.end();
+  await bounded('holder exit', holder.done, 3000);
+  receipt('before recovery', { first, ack, exit: holder.exitCode });
+  await bounded('Stop listener close', new Promise(resolve => server.close(resolve)), 2000);
   const second = await codexDriver.stop(late.ref, { timeoutMs: 200 });
-  check('Stop recovery: validated same-launch confirmation retires after original holder exit without a socket',
-    second.ok && second.stopped && !readSession(late.ref), JSON.stringify(second));
+  check(exited ? 'second Stop is already idempotent' : 'Stop after holder exit retires without a socket',
+    second.ok && Boolean(second.stopped) === !exited && !readSession(late.ref), JSON.stringify(second));
   const third = await codexDriver.stop(late.ref, { timeoutMs: 200 });
   check('Stop recovery: retirement is idempotent', third.ok && !third.stopped, JSON.stringify(third));
 } finally {
-  if (holder.exitCode === null) holder.kill('SIGTERM');
-  await holder.done;
-  if (server.listening) await new Promise(resolve => server.close(resolve));
+  for (const conn of connections) conn.destroy();
+  if (holder.exitCode === null && holder.signalCode === null) holder.kill('SIGKILL');
+  await bounded('child teardown', holder.done, 2000);
+  if (server.listening) await bounded('Stop socket teardown', new Promise(resolve => server.close(resolve)), 2000);
   dropSession(late.ref);
 }
 

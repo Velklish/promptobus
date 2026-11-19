@@ -1742,6 +1742,8 @@ name, before any write, and that is the whole job of the list.
 
 ## The Codex holder
 
+The [fixture schedule guide](../../test/fixture-order/README.md) distinguishes acceptance of a turn from its started notification, and a Stop confirmation from the holder's actual exit. The ordinary reservation test observes B in the holder's active turn set before starting B. The ordinary Stop test confirms exit before retrying retirement. These local fixtures do not qualify native behavior.
+
 The [glossary](../GLOSSARY.md) defines the harness terms used here — holder, contact point, persist session, thread, and session record — and keeps a Codex thread distinct from a Cursor persist session.
 
 The holder is measured on macOS, and CI exercises it on Linux with stubs; Windows is outside the participant contract ([§ Spawn](#spawn)). Each measurement below names the binary it was taken on. The current consumed contract is codex-cli 0.170.0 ([capture](../../test/fixtures/codex-app-server/0.170.0/README.md)); schema matching does not qualify an ordinary native workflow. Historical 0.156.1 measurements date from 2026-09-25, and a fact stamped 0.146.0 alone was not re-taken on that binary. Selected-profile ordinary workflow qualification and available-subscription measurements on 0.170.0 remain unmeasured.

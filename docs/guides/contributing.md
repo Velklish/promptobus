@@ -249,6 +249,8 @@ The keyed-publication fixture uses a local repository and fake publishers. Its p
 
 The history fixture checks canonical UTC timestamps with valid 2026 and 2027 examples and rejects invalid dates and fields. The reviewer stdio and BB permission-proof cleanup tests pass decoded filesystem paths to Node so the fixtures run in checkouts with spaces or Unicode.
 
+The [controlled fixture schedules](../../test/fixture-order/README.md) exercise one ordering at a time. Ordinary runs use explicit release or observed completion; only the controls force the original timing window. Keep the event receipts alongside the individual assertions: a failing process exit alone does not identify a scheduling dependency.
+
 The release publication tests copy a verified candidate into a private directory per case. Each copy owns its source repository, bare remote, receipts and command stubs. The publication smoke still drives the npm entry point and installs the real tag from the local Git remote. The negative cases call the release script directly and inspect the same Git refs and refusal evidence.
 
 The review inventory fixture checks both the number of returned paths and a byte floor above Node's default process output buffer. POSIX uses longer basenames to reach that floor with fewer files; Windows keeps short paths.

@@ -24,7 +24,7 @@
 // `{ waitingFor }` for a permission dialog, `{ limit }` for an exhausted limit.
 import { createServer } from 'node:net';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, appendFileSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, appendFileSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { deliveryBarrier } from './delivery-wait.mjs';
@@ -238,6 +238,14 @@ function git(args) {
 }
 
 async function act(action) {
+  if (action.untilFile) {
+    note({ kind: 'turn-held' });
+    const edge = Date.now() + 30000;
+    while (!existsSync(action.untilFile) && Date.now() < edge) await new Promise(r => setTimeout(r, 20));
+    if (!existsSync(action.untilFile)) throw new Error('turn release watchdog expired');
+    note({ kind: 'turn-released', value: readFileSync(action.untilFile, 'utf8') });
+    return;
+  }
   if (action.wait) {
     await new Promise((r) => { setTimeout(r, action.wait); });
     note({ kind: 'wait', ms: action.wait });

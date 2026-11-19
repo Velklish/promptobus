@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { scheduled, receipt } from './fixture-order.mjs';
 import { check } from './check.mjs';
 import { makeSandbox } from './sandbox.mjs';
 import { deliveryBarrier, waitDelivered } from './delivery-wait.mjs';
@@ -20,6 +21,13 @@ function writeMark(at) {
 
 const watchdog = setTimeout(() => { throw new Error('delivery wait experiment exceeded 10 seconds'); }, 10_000);
 const before = '2026-10-27T12:00:03.000Z', after = '2026-10-27T12:00:04.000Z';
+async function pauseObserver(kind, result, started, bound) {
+  receipt(`${kind}: wait returned`, { result, elapsedMs: Date.now() - started });
+  await new Promise(resolve => setTimeout(resolve, Math.max(0, started + bound + 1 - Date.now())));
+  receipt(`${kind}: controller samples elapsed`, { elapsedMs: Date.now() - started });
+}
+
+if (!scheduled('paused-observer')) {
 for (const phase of ['update', 'torn', 'deadline', 'absent', 'unreadable']) {
   writeMark(before);
   if (phase === 'absent') writeFileSync(file, '{}');
@@ -56,6 +64,42 @@ for (const publishNew of [false, true]) {
     && (publishNew ? replyAt === 40 && result.deliveredAt === after
       : time === 60 && replyAt === null && result.deliveredAt === before && result.note.includes('newer deliveredAt')),
   JSON.stringify({ time, takeAt, replyAt, result }));
+}
+
+} else {
+{
+  writeMark('2026-10-27T12:00:00.000Z');
+  const started = Date.now();
+  setTimeout(() => writeMark('2026-10-27T12:00:01.000Z'), 80);
+  const marked = await waitDelivered(home, task, address, 2_000);
+  await pauseObserver('update', marked, started, 1500);
+  check('a newer deliveredAt ends the wait before the timeout',
+    marked.ok === true && marked.deliveredAt === '2026-10-27T12:00:01.000Z' && Date.now() - started < 1_500,
+    JSON.stringify(marked));
+}
+
+{
+  writeMark(before);
+  setTimeout(() => writeFileSync(file, '{'), 10);
+  const started = Date.now();
+  setTimeout(() => writeMark('2026-10-27T12:00:02.000Z'), 80);
+  const marked = await waitDelivered(home, task, address, 2_000);
+  await pauseObserver('torn', marked, started, 1500);
+  check('a torn health file is retried until it parses and the mark is newer',
+    marked.ok === true && marked.deliveredAt === '2026-10-27T12:00:02.000Z' && Date.now() - started < 1_500,
+    JSON.stringify(marked));
+}
+
+{
+  writeMark('2026-10-27T12:00:03.000Z');
+  const started = Date.now();
+  const missed = await waitDelivered(home, task, address, 200);
+  await pauseObserver('deadline', missed, started, 1000);
+  check('a delivery mark that never moves names the health file and the timeout',
+    missed.ok === false && missed.note?.includes(`TIMEOUT after 200 ms waiting for ${file}`)
+      && missed.note.includes(address) && Date.now() - started >= 200 && Date.now() - started < 1_000,
+    JSON.stringify(missed));
+}
 }
 
 {

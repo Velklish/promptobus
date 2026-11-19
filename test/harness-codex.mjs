@@ -874,6 +874,11 @@ async function playTurn(home, started, turnId, params, ask, notify, nativeClient
     await new Promise(() => {});
     return;
   }
+  const gate = process.env.CODEX_STUB_RESERVATION_GATE;
+  if (gate && params.input?.[0]?.text === 'Continue in the same thread.') {
+    note(home, addressOf(started), { kind: 'reservation-gate', turnId });
+    await awaitRelease(gate);
+  }
   const t = readThread(home, started.id) ?? started;
   t.turnStarted = true;
   t.turnId = turnId;
@@ -1098,6 +1103,12 @@ async function playTurn(home, started, turnId, params, ask, notify, nativeClient
   }
 }
 
+async function awaitRelease(file) {
+  const end = performance.now() + 10000;
+  while (!existsSync(file) && performance.now() < end) await new Promise(r => setTimeout(r, 10));
+  if (!existsSync(file)) throw new Error(`fixture never released turn: ${file}`);
+}
+
 async function runScript({ home, address, thread, sandbox, nativeClients, turnStartedAt }) {
   if (!address) return;
   let script = { turns: [] };
@@ -1154,6 +1165,7 @@ async function runScript({ home, address, thread, sandbox, nativeClients, turnSt
     return;
   }
   for (const action of actions) {
+    if (action.untilFile) { await awaitRelease(action.untilFile); continue; }
     if (action.untilDelivered) {
       const marked = await delivery.wait();
       note(home, address, { kind: 'untilDelivered', ms: action.untilDelivered, deliveredAt: marked.deliveredAt, timeout: marked.note });
