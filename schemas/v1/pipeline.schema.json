@@ -41,7 +41,7 @@
           "enum": ["reads-diff", "writes-main-tree"]
         },
         "instructions": {
-          "description": "A file inside the install root, named relative to it, whose text is meant for the step's lift prompt.",
+          "description": "A file inside the install root, named relative to it, whose text joins the step's lift prompt. Both the path and its final target after resolving symlinks must be inside the root.",
           "type": "string",
           "minLength": 1
         },

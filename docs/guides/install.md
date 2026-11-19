@@ -60,6 +60,8 @@ So `promptobus install --harnesses codex` succeeds and leaves `tools` untouched,
 
 ### The pipeline
 
+Gate instructions may use symlinks, including linked directories, when the final file is inside the directory containing `promptobus.json`. Copy any externally linked instructions into that directory before upgrading.
+
 `pipeline` declares the steps a piece passes after the hand-over to a worker, one declaration per installation. Without it the pipeline is `worker`, then `reviewer` and `approver`, and nothing changes. To add a read-only security review between the reviewer and the approver:
 
 ```json
