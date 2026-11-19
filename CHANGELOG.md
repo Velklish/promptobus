@@ -70,6 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fail Codex and mixed live verification when the Codex process list or config cannot be observed, instead of treating an observation error as no change.
 - Keep an OpenCode stdio server whose first argument repeats its command: only the bus entry drops the duplicated binary.
 - Let hosts keep private environment variables out of managed participants and owner snapshots. Refuse old snapshots that still contain those variables.
+- Refuse Cursor delivery when tmux cannot read the pane before paste. If the read fails after Enter, report delivery as unconfirmed without publishing activity.
 
 ## [0.33.1] — 2026-11-18
 
