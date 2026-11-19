@@ -62,7 +62,11 @@ export function columnsOf(run: Pick<Run, 'steps' | 'pieces'>): { step: string | 
 }
 export function pieceSignals(piece: Piece): { label: string; tone: string }[] {
   const holder = piece.holder, signals: { label: string; tone: string }[] = [];
-  if (!holder) return piece.step === null ? signals : [{ label: `No ${piece.step} yet`, tone: 'unknown' }];
+  if (piece.unfinishedDelivery) signals.push({ label: 'Unfinished delivery', tone: 'warning' });
+  if (!holder) {
+    if (piece.step !== null) signals.push({ label: `No ${piece.step} yet`, tone: 'unknown' });
+    return signals;
+  }
   if (holder.stall) signals.push({ label: 'Stalled', tone: 'warning' });
   if (holder.question) signals.push({ label: 'Asked a question', tone: 'warning' });
   if (holder.unread) signals.push({ label: `${holder.unread} unread`, tone: 'active' });

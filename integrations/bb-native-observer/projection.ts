@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { closeSync, constants, existsSync, fstatSync, lstatSync, opendirSync, openSync, readSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { addressOf, PARTICIPANT_ID_RE, requireValid, type MessageV1, type TaskV1 } from '../../src/index.ts';
+import { RECORD_ID_RE } from '../../src/v1/model.js';
 import { rootsSchema, selectionSchema, snapshotSchema, catalogueSchema, type Selection, type Snapshot } from './contract.js';
 
 const clipped = (value: unknown) => typeof value === 'string' ? value.slice(0, 240) : null;
@@ -10,12 +11,27 @@ function parseRecord(text: string) {
   catch { throw new Error('Selected native JSON is malformed'); }
 }
 export function ownedDirectory(directory: string): void {
-  if (!path.isAbsolute(directory) || path.resolve(directory) !== directory || realpathSync(directory) !== directory)
+  if (!path.isAbsolute(directory) || path.resolve(directory) !== directory)
     throw new Error('Selected directory must be a canonical absolute path without symlinks');
   const stat = lstatSync(directory);
+  if (stat.isSymbolicLink() || realpathSync(directory) !== directory)
+    throw new Error('Selected directory must be a canonical absolute path without symlinks');
   if (!stat.isDirectory() || (process.getuid && stat.uid !== process.getuid())) throw new Error('Selected directory is not owned by the host user');
 }
-export function ownedText(root: string, file: string, maximum = 262144): string | null {
+export const OWNED_RECORD_BYTES = 256 * 1024;
+export class ReadBudgetExceeded extends Error {}
+export class ReadBudget {
+  exhausted = false;
+  constructor(private remaining: number) {}
+  reserve(bytes: number) {
+    if (this.exhausted || bytes > this.remaining) {
+      this.exhausted = true;
+      throw new ReadBudgetExceeded();
+    }
+    this.remaining -= bytes;
+  }
+}
+export function ownedText(root: string, file: string, maximum = OWNED_RECORD_BYTES, budget?: ReadBudget): string | null {
   ownedDirectory(root);
   if (!file.startsWith(root + path.sep)) throw new Error('File is outside the selected root');
   let fd: number | undefined;
@@ -28,7 +44,8 @@ export function ownedText(root: string, file: string, maximum = 262144): string 
     const stat = fstatSync(fd);
     if (!stat.isFile() || stat.size > maximum || stat.dev !== before.dev || stat.ino !== before.ino
       || (process.getuid && stat.uid !== process.getuid())) throw new Error('Selected file exceeds the owned regular-file boundary');
-    const buffer = Buffer.alloc(Math.min(maximum + 1, stat.size + 1));
+    budget?.reserve(stat.size + 1);
+    const buffer = Buffer.alloc(stat.size + 1);
     let bytes = 0, read = 0;
     do { read = readSync(fd, buffer, bytes, buffer.length - bytes, null); bytes += read; } while (read && bytes < buffer.length);
     if (bytes > maximum || bytes > stat.size) throw new Error('Selected file grew during the bounded read');
@@ -43,32 +60,55 @@ export function sessionFileName(ref: string): string {
   const hash = createHash('sha1').update(ref).digest('hex').slice(0, 12);
   return `${head ? head + '-' : ''}${hash}.json`;
 }
-export function selectedTask(root: string, taskId: string): TaskV1 | null {
+export function selectedTask(root: string, taskId: string, budget?: ReadBudget): TaskV1 | null {
   try {
-    const text = ownedText(root, path.join(root, 'tasks', taskId, 'task.json'));
+    const text = ownedText(root, path.join(root, 'tasks', taskId, 'task.json'), OWNED_RECORD_BYTES, budget);
     if (text === null) return null;
     const value: unknown = JSON.parse(text);
     requireValid('task', value);
     const task = value as TaskV1;
     if (task.id !== taskId) throw new Error();
     return task;
-  } catch { throw new Error('Selected canonical task is unavailable, malformed or outside the owned boundary'); }
+  } catch (error) {
+    if (error instanceof ReadBudgetExceeded) throw error;
+    throw new Error('Selected canonical task is unavailable, malformed or outside the owned boundary');
+  }
+}
+function* entryNames(directory: string) {
+  try { ownedDirectory(directory); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error; }
+  const handle = opendirSync(directory);
+  try {
+    for (let entry = handle.readSync(); entry; entry = handle.readSync()) yield entry.name;
+  } finally { handle.closeSync(); }
 }
 export function historyNames(directory: string, limit: number): string[] {
-  try { ownedDirectory(directory); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error; }
-  const handle = opendirSync(directory), names: string[] = [];
-  try {
-    for (let entry = handle.readSync(); entry; entry = handle.readSync()) {
-      if (names.length >= limit) throw new Error();
-      names.push(entry.name);
-    }
-  } finally { handle.closeSync(); }
+  const names: string[] = [];
+  for (const name of entryNames(directory)) {
+    if (names.length >= limit) throw new Error();
+    names.push(name);
+  }
   return names;
+}
+type Reference = { id: string; participant: string; file: string };
+function readMessage(root: string, taskId: string, id: string, file: string, budget?: ReadBudget): MessageV1 | null {
+  const text = ownedText(root, file, OWNED_RECORD_BYTES, budget);
+  if (text === null) return null;
+  const value: unknown = JSON.parse(text);
+  requireValid('message', value);
+  const message = value as MessageV1;
+  if (message.task !== taskId || message.id !== id) throw new Error();
+  return message;
+}
+function addReference(messages: Map<string, MessageV1>, ref: Reference, message: MessageV1 | null) {
+  if (!message || !message.recipients.includes(ref.participant)) throw new Error();
+  const prior = messages.get(message.id);
+  if (prior && JSON.stringify(prior) !== JSON.stringify(message)) throw new Error();
+  messages.set(message.id, message);
 }
 export function taskMessages(root: string, taskId: string, onlyParticipant?: string): MessageV1[] {
   try {
-    const refs: { id: string; participant: string; file: string }[] = [];
+    const refs: Reference[] = [];
     for (const area of ['history', 'inbox']) {
       const directory = path.join(root, 'tasks', taskId, area);
       const participants = onlyParticipant ? [onlyParticipant] : historyNames(directory, 64);
@@ -82,19 +122,81 @@ export function taskMessages(root: string, taskId: string, onlyParticipant?: str
       }
     }
     const messages = new Map<string, MessageV1>();
-    for (const ref of refs) {
-      const text = ownedText(root, ref.file);
-      if (text === null) throw new Error();
-      const value: unknown = JSON.parse(text);
-      requireValid('message', value);
-      const message = value as MessageV1;
-      if (message.task !== taskId || message.id !== ref.id || !message.recipients.includes(ref.participant)) throw new Error();
-      const prior = messages.get(message.id);
-      if (prior && JSON.stringify(prior) !== JSON.stringify(message)) throw new Error();
-      messages.set(message.id, message);
-    }
+    for (const ref of refs) addReference(messages, ref, readMessage(root, taskId, ref.id, ref.file));
     return [...messages.values()].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   } catch { throw new Error('Selected canonical history is unavailable, malformed or outside the owned boundary'); }
+}
+export const BOARD_REFERENCE_LIMIT = 4096;
+function recentReferences(root: string, taskId: string) {
+  const refs: Reference[] = [], unread = new Map<string, number>();
+  const newestFirst = (a: Reference, b: Reference) => a.id > b.id ? -1 : a.id < b.id ? 1 : 0;
+  let count = 0;
+  for (const area of ['inbox', 'history']) {
+    const directory = path.join(root, 'tasks', taskId, area);
+    for (const participant of historyNames(directory, 64)) {
+      if (!PARTICIPANT_ID_RE.test(participant)) throw new Error();
+      const mailbox = path.join(directory, participant);
+      for (const name of entryNames(mailbox)) {
+        if (!name.endsWith('.json')) continue;
+        const id = name.slice(0, -5);
+        if (!RECORD_ID_RE.test(id)) throw new Error();
+        if (area === 'inbox') unread.set(participant, (unread.get(participant) ?? 0) + 1);
+        count++;
+        refs.push({ id, participant, file: path.join(mailbox, name) });
+        if (refs.length === 2 * BOARD_REFERENCE_LIMIT) {
+          refs.sort(newestFirst);
+          refs.length = BOARD_REFERENCE_LIMIT;
+        }
+      }
+    }
+  }
+  return { refs: refs.sort(newestFirst).slice(0, BOARD_REFERENCE_LIMIT), unread, older: count > BOARD_REFERENCE_LIMIT };
+}
+function readIntents(root: string, taskId: string, budget: ReadBudget) {
+  const directory = path.join(root, 'tasks', taskId, 'intents');
+  const ids = new Set<string>(), participants = new Set<string>();
+  try {
+    const names = historyNames(directory, 4096).filter(name => name.endsWith('.json')).sort().reverse();
+    for (const name of names) {
+      const id = name.slice(0, -5);
+      if (!RECORD_ID_RE.test(id)) throw new Error();
+      ids.add(id);
+    }
+    for (const id of ids) {
+      if (budget.exhausted) break;
+      try {
+        const message = readMessage(root, taskId, id, path.join(directory, `${id}.json`), budget);
+        if (!message) { ids.delete(id); continue; }
+        participants.add(message.sender);
+        for (const recipient of message.recipients) participants.add(recipient);
+      } catch (error) {
+        if (!(error instanceof ReadBudgetExceeded)) throw error;
+      }
+    }
+  } catch { throw new Error('Selected canonical intents are unavailable, malformed or outside the owned boundary'); }
+  return { ids, participants };
+}
+export function boardMessages(root: string, taskId: string, budget: ReadBudget) {
+  const historyError = () => new Error('Selected canonical history is unavailable, malformed or outside the owned boundary');
+  let recent: ReturnType<typeof recentReferences>;
+  try { recent = recentReferences(root, taskId); }
+  catch { throw historyError(); }
+  const { refs, unread, older } = recent;
+  // A link in the sample can still belong to a partially delivered intent; list intents after the links.
+  const pending = readIntents(root, taskId, budget), messages = new Map<string, MessageV1>();
+  try {
+    for (const ref of refs) {
+      if (budget.exhausted) break;
+      let message = readMessage(root, taskId, ref.id, ref.file, budget);
+      if (!message) {
+        const history = path.join(root, 'tasks', taskId, 'history', ref.participant, `${ref.id}.json`);
+        if (history !== ref.file) message = readMessage(root, taskId, ref.id, history, budget);
+      }
+      addReference(messages, ref, message);
+    }
+  } catch (error) { if (!(error instanceof ReadBudgetExceeded)) throw historyError(); }
+  return { messages: [...messages.values()].reverse().filter(message => !pending.ids.has(message.id)),
+    unread, older, pending: pending.participants };
 }
 export function toMessage(message: MessageV1) {
   return { id: message.id, sender: message.sender, recipients: message.recipients, type: message.type,
@@ -106,7 +208,7 @@ function taskOwner(task: TaskV1) {
   if (!participant || participant.role !== 'orchestrator') throw new Error('Selected task owner is unavailable');
   return { id: participant.id, harness: participant.harness, sessionRef: clipped(participant.metadata.owner) };
 }
-export function readTasks(input: { storeRoot: string; nativeRoot: string }) {
+export function readTasks(input: { storeRoot: string; nativeRoot: string }, budget?: ReadBudget) {
   const { storeRoot } = rootsSchema.parse(input);
   const result: { tasks: { id: string; title: string; state: 'active' | 'done'; updated: string }[]; truncated: boolean; scanned: number }
     = { tasks: [], truncated: false, scanned: 0 };
@@ -122,9 +224,11 @@ export function readTasks(input: { storeRoot: string; nativeRoot: string }) {
       result.scanned++;
       if (!selectionSchema.shape.taskId.safeParse(entry.name).success) continue;
       try {
-        const task = selectedTask(storeRoot, entry.name);
+        const task = selectedTask(storeRoot, entry.name, budget);
         if (task) result.tasks.push({ id: task.id, title: task.title, state: task.status, updated: task.updated });
-      } catch { continue; }
+      } catch (error) {
+        if (error instanceof ReadBudgetExceeded) { result.truncated = true; break; }
+      }
     }
   } finally { handle.closeSync(); }
   // Active runs first, so finished ones never crowd an active run out of the 256 kept.

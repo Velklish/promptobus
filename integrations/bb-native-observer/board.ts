@@ -1,9 +1,11 @@
 import path from 'node:path';
 import { addressOf, DEFAULT_PIPELINE, pipelineSteps, piecesOf, SHIPPED_REGISTRY, type MessageV1, type ParticipantV1, type TaskV1 } from '../../src/index.ts';
 import { boardSchema, historySchema, pieceSchema, rootsSchema, type Board } from './contract.js';
-import { historyNames, ownedDirectory, ownedText, readTasks, selectedTask, taskMessages, toMessage } from './projection.js';
+import { BOARD_REFERENCE_LIMIT, boardMessages, OWNED_RECORD_BYTES, ownedDirectory, ownedText, ReadBudget, ReadBudgetExceeded, readTasks, selectedTask, toMessage } from './projection.js';
 
 const ACTIVE_RUNS = 16;
+const BOARD_READ_BYTES = 8 * 1024 * 1024;
+const DISCOVERY_READ_BYTES = 8 * 1024 * 1024;
 const clipped = (value: unknown) => typeof value === 'string' ? value.slice(0, 240) : null;
 const GOVERNANCE = new Set(SHIPPED_REGISTRY.entries.filter(entry => entry.layer !== 'step').map(entry => entry.name));
 const BB_THREAD = /^thr_[a-z0-9]+$/;
@@ -47,8 +49,11 @@ export function boardSteps(task: Pick<TaskV1, 'participants'>): string[] {
   }
   return steps.slice(0, 16);
 }
-function stallsOf(root: string, taskId: string): Record<string, string> {
-  const text = ownedText(root, path.join(root, 'tasks', taskId, 'stalls.json'));
+function stallsOf(root: string, taskId: string, budget: ReadBudget): Record<string, string> {
+  if (budget.exhausted) return {};
+  let text: string | null;
+  try { text = ownedText(root, path.join(root, 'tasks', taskId, 'stalls.json'), OWNED_RECORD_BYTES, budget); }
+  catch (error) { if (error instanceof ReadBudgetExceeded) return {}; throw error; }
   if (text === null) return {};
   let raw: unknown;
   try { raw = JSON.parse(text); } catch { return {}; }
@@ -58,17 +63,22 @@ function stallsOf(root: string, taskId: string): Record<string, string> {
     return typeof reason === 'string' ? [[address, reason.slice(0, 240)]] : [];
   }));
 }
-function unreadOf(root: string, taskId: string, participantId: string): number {
-  return historyNames(path.join(root, 'tasks', taskId, 'inbox', participantId), 4096).filter(name => name.endsWith('.json')).length;
-}
 function openQuestion(participantId: string, messages: readonly MessageV1[]): string | null {
   const asked = messages.filter(message => message.type === 'question' && message.sender === participantId);
   const open = asked.filter(question => question.recipients.some(recipient => !messages.some(reply => reply.type === 'answer'
     && reply.id > question.id && reply.sender === recipient && reply.recipients.includes(participantId))));
   return open.at(-1)?.id ?? null;
 }
-function runOf(root: string, task: TaskV1) {
-  const participants = placed(task.participants), messages = taskMessages(root, task.id), stalls = stallsOf(root, task.id);
+function sampleNotice(older: boolean, exhausted: boolean, scope: string): { notice?: string } {
+  const notices = [];
+  if (older) notices.push(`Older messages were not read (newest ${BOARD_REFERENCE_LIMIT} references only).`);
+  if (exhausted) notices.push(`${scope} reached its byte budget; some records were not read.`);
+  return notices.length ? { notice: notices.join(' ') } : {};
+}
+function runOf(root: string, task: TaskV1, budget: ReadBudget) {
+  const participants = placed(task.participants);
+  const { messages, unread, older, pending } = boardMessages(root, task.id, budget);
+  const stalls = stallsOf(root, task.id, budget);
   const steps = boardSteps({ participants });
   const pieces = piecesOf(participants, messages, steps).slice(0, 64).map(piece => {
     const held = piece.participants.find(entry => entry.step === piece.step)
@@ -83,22 +93,25 @@ function runOf(root: string, task: TaskV1) {
           ? (participant.metadata.bb as { execution?: { model?: unknown } } | null | undefined)?.execution?.model : undefined)), sessionRef: clipped(participant.sessionRef),
         bbThreadId: participant.harness === 'bb' && BB_THREAD.test(participant.sessionRef ?? '') ? participant.sessionRef : null,
         status: status ? { line: (status.body.trim().split('\n')[0] ?? '').slice(0, 240), at: status.ts } : null,
-        unread: unreadOf(root, task.id, participant.id), stall: stalls[address] ?? null,
+        unread: unread.get(participant.id) ?? 0, stall: stalls[address] ?? null,
         question: openQuestion(participant.id, messages) };
     }
     return pieceSchema.parse({ slug: piece.slug, step: piece.step, holder,
+      ...(piece.participants.some(entry => pending.has(entry.id)) ? { unfinishedDelivery: true } : {}),
       participants: piece.participants.map(entry => ({ step: entry.step, participantId: entry.id })) });
   });
-  return { steps, pieces, inferred: steps.length > SHIPPED.length };
+  return { steps, pieces, inferred: steps.length > SHIPPED.length, ...sampleNotice(older, budget.exhausted, 'The board sample') };
 }
 export function readBoard(input: { storeRoot: string; nativeRoot: string }, instance: string, pid: number): Board {
   const { storeRoot } = rootsSchema.parse(input);
-  const catalogue = readTasks(input);
+  const discoveryBudget = new ReadBudget(DISCOVERY_READ_BYTES), budget = new ReadBudget(BOARD_READ_BYTES);
+  const catalogue = readTasks(input, discoveryBudget);
   const board: Board = { sampledAt: new Date().toISOString(), observer: { instance, pid }, runs: [], truncated: catalogue.truncated, limits: [
     `The board reads the ${ACTIVE_RUNS} most recently updated active runs; finished runs are listed without pieces.`,
     'Columns follow the shipped pipeline. The board cannot read a pipeline a host declared: its other steps follow in address order.',
     'Board reads do not execute work, consume mail, ACK, recover or control actors.',
   ] };
+  if (discoveryBudget.exhausted) board.limits.push('Run discovery reached its byte budget; some runs were not read.');
   let read = 0;
   for (const entry of catalogue.tasks) {
     const run = { id: entry.id, title: entry.title, state: entry.state, updated: entry.updated, owner: null as string | null,
@@ -111,7 +124,7 @@ export function readBoard(input: { storeRoot: string; nativeRoot: string }, inst
       if (!task) { run.error = 'Run disappeared during the sample'; continue; }
       if (task.participants.length > 64) throw new Error('Run exceeds 64 participants');
       run.owner = clipped(task.participants.find(value => value.id === task.owner)?.harness);
-      Object.assign(run, runOf(storeRoot, task));
+      Object.assign(run, runOf(storeRoot, task, budget));
     } catch (error) { run.error = String(error instanceof Error ? error.message : error).slice(0, 240); }
   }
   return boardSchema.parse(board);
@@ -121,11 +134,13 @@ export function readPieceHistory(input: { storeRoot: string; nativeRoot: string;
   ownedDirectory(storeRoot);
   const task = selectedTask(storeRoot, input.taskId);
   if (!task) throw new Error('Selected run is unavailable');
-  const messages = taskMessages(storeRoot, task.id);
+  const budget = new ReadBudget(BOARD_READ_BYTES);
+  const { messages, older } = boardMessages(storeRoot, task.id, budget);
   const participants = placed(task.participants);
-  const piece = piecesOf(participants, messages, boardSteps({ participants })).find(value => value.slug === input.slug);
+  const piece = piecesOf(participants, [], boardSteps({ participants })).find(value => value.slug === input.slug);
   if (!piece) throw new Error('Selected piece is not in this run');
   const ids = new Set(piece.participants.map(entry => entry.id));
   return historySchema.parse({ taskId: task.id, slug: piece.slug,
+    ...sampleNotice(older, budget.exhausted, 'Piece history'),
     messages: messages.filter(message => ids.has(message.sender) || message.recipients.some(id => ids.has(id))).slice(-64).map(toMessage) });
 }
