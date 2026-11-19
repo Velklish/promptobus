@@ -13,6 +13,7 @@ import { messageOrderFile, strictCommittedMessages, withMessageCommit } from '..
 import { commitIntent, completeFanout, newMessage } from '../dist/v1/messages.js';
 import { runPromptobus } from '../lib/cli.js';
 import { hostOf } from '../lib/host.js';
+import { actorIdentityVariables } from '../lib/drivers.js';
 import { observe } from '../lib/observe.js';
 import * as store from '../lib/store.js';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
@@ -27,6 +28,9 @@ const at = '2026-11-20T12:00:00.000Z';
 const bin = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url));
 const ownerEnv = { CLAUDE_CODE_SESSION_ID: 'managed-thread', PROMPTOBUS_TASK: root };
 const childEnv = { CLAUDE_CODE_SESSION_ID: 'child-thread', PROMPTOBUS_TASK: child };
+const inherited = new Set([...actorIdentityVariables(), 'PROMPTOBUS_TASK', 'PROMPTOBUS_ROLE', 'PROMPTOBUS_HOME', 'PROMPTOBUS_ROOT_TASK']);
+const cli = (cwd, args, env) => spawnSync(process.execPath, [bin, 'observe', ...args], { cwd, encoding: 'utf8',
+  env: { ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !inherited.has(name))), ...env } });
 
 function fixture() {
   const cwd = makeSandbox('promptobus-observe-');
@@ -124,12 +128,13 @@ test('identity and scope are required on fresh reads and continuations', async (
       await assert.rejects(observe(host, { task, after }, env), /bound orchestrator command identity/);
     }
   }
-  const refused = spawnSync(process.execPath, [bin, 'observe', '--task', root], {
-    cwd, encoding: 'utf8', env: { ...process.env, ...childEnv },
-  });
+  const refused = cli(cwd, ['--task', root], childEnv);
   assert.equal(refused.status, 1);
   assert.equal(refused.stdout, '');
   assert.match(refused.stderr, /bound orchestrator command identity/);
+  const admitted = cli(cwd, ['--task', root], ownerEnv);
+  assert.equal(admitted.status, 0, admitted.stderr);
+  assert.deepEqual(JSON.parse(admitted.stdout).messages.map((m) => m.id), [id]);
   await assert.rejects(observe(host, { task: root }, { ...ownerEnv, PROMPTOBUS_HOME: cwd }), /declared store scope differs/);
   await assert.rejects(observe(host, { task: child, after: first.nextCursor }, childEnv), /different store, task or owner/);
   store.claimOwnership(home, root, 'replacement-thread');
@@ -141,7 +146,7 @@ test('identity and scope are required on fresh reads and continuations', async (
 });
 
 test('a teamlead declaring its parent task and address observes its child only when that parent record links them', async () => {
-  const { host, home, send } = fixture();
+  const { cwd, host, home, send } = fixture();
   const id = await send(child, b, 'status', 'Child progress');
   const lead = { CLAUDE_CODE_SESSION_ID: 'child-thread', PROMPTOBUS_ROLE: 'teamlead:child' };
   for (const env of [{ ...lead, PROMPTOBUS_TASK: root }, lead]) {
@@ -157,10 +162,26 @@ test('a teamlead declaring its parent task and address observes its child only w
   for (const [task, env] of mustRefuse) {
     await assert.rejects(observe(host, { task }, env), /bound orchestrator command identity/, `${task} ${JSON.stringify(env)}`);
   }
-  const parent = JSON.parse(readFileSync(taskFile(home, root), 'utf8'));
-  parent.participants.find((p) => p.metadata.address === 'teamlead:child').metadata.sessionId = 'replacement-thread';
-  writeFileSync(taskFile(home, root), JSON.stringify(parent));
-  await assert.rejects(observe(host, { task: child }, lead), /bound orchestrator command identity/);
+  const journal = readFileSync(taskFile(home, root), 'utf8');
+  const relinked = (field, value) => {
+    const parent = JSON.parse(journal);
+    const record = parent.participants.find((p) => p.metadata.address === 'teamlead:child');
+    assert.equal(record.metadata.sessionId, 'child-thread');
+    record.metadata[field] = value;
+    writeFileSync(taskFile(home, root), JSON.stringify(parent));
+  };
+  const leadCli = () => cli(cwd, ['--task', child], { ...lead, PROMPTOBUS_TASK: root });
+  for (const [field, value] of [['childTask', sibling], ['sessionId', 'replacement-thread']]) {
+    relinked(field, value);
+    const refused = leadCli();
+    assert.equal(refused.status, 1, field);
+    assert.equal(refused.stdout, '', field);
+    assert.match(refused.stderr, /bound orchestrator command identity/, field);
+  }
+  writeFileSync(taskFile(home, root), journal);
+  const restored = leadCli();
+  assert.equal(restored.status, 0, restored.stderr);
+  assert.deepEqual(JSON.parse(restored.stdout).messages.map((m) => m.id), [id]);
 });
 
 test('a record replaced atomically during the read is re-read a bounded number of times', async () => {
@@ -239,8 +260,7 @@ test('incomplete selected mail fails without recovery, unrelated intents do not 
   const unselected = commitIntent(home, child, draft(child), new Date(at));
   const early = commitIntent(home, root, draft(root), new Date(at));
   const late = await send(root, a, 'status', 'later commit');
-  const command = () => spawnSync(process.execPath, [bin, 'observe', '--task', root, '--after', first.nextCursor],
-    { cwd, env: { ...process.env, ...ownerEnv }, encoding: 'utf8' });
+  const command = () => cli(cwd, ['--task', root, '--after', first.nextCursor], ownerEnv);
   const refused = command();
   assert.equal(refused.status, 1);
   assert.equal(refused.stdout, '');
@@ -262,8 +282,7 @@ test('out-of-store files, non-regular entries and oversize records fail without 
   const first = await observe(host, { task: root }, ownerEnv);
   const id = await send(root, a, 'status', 'Not returned on any read refusal');
   writeStalls(home, root, { [a]: { reason: 'holder stalled', at } });
-  const command = () => spawnSync(process.execPath, [bin, 'observe', '--task', root, '--after', first.nextCursor],
-    { cwd, encoding: 'utf8', env: { ...process.env, ...ownerEnv } });
+  const command = () => cli(cwd, ['--task', root, '--after', first.nextCursor], ownerEnv);
   const assertUnavailable = () => {
     const refused = command();
     assert.equal(refused.status, 1);
