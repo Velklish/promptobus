@@ -141,7 +141,7 @@ test('identity and scope are required on fresh reads and continuations', async (
 });
 
 test('a teamlead declaring its parent task and address observes its child only when that parent record links them', async () => {
-  const { host, home, send } = fixture();
+  const { cwd, host, home, send } = fixture();
   const id = await send(child, b, 'status', 'Child progress');
   const lead = { CLAUDE_CODE_SESSION_ID: 'child-thread', PROMPTOBUS_ROLE: 'teamlead:child' };
   for (const env of [{ ...lead, PROMPTOBUS_TASK: root }, lead]) {
@@ -157,10 +157,25 @@ test('a teamlead declaring its parent task and address observes its child only w
   for (const [task, env] of mustRefuse) {
     await assert.rejects(observe(host, { task }, env), /bound orchestrator command identity/, `${task} ${JSON.stringify(env)}`);
   }
-  const parent = JSON.parse(readFileSync(taskFile(home, root), 'utf8'));
-  parent.participants.find((p) => p.metadata.address === 'teamlead:child').metadata.sessionId = 'replacement-thread';
-  writeFileSync(taskFile(home, root), JSON.stringify(parent));
-  await assert.rejects(observe(host, { task: child }, lead), /bound orchestrator command identity/);
+  const journal = readFileSync(taskFile(home, root), 'utf8');
+  const relinked = (field, value) => {
+    const parent = JSON.parse(journal);
+    const record = parent.participants.find((p) => p.metadata.address === 'teamlead:child');
+    assert.equal(record.metadata.sessionId, 'child-thread');
+    record.metadata[field] = value;
+    writeFileSync(taskFile(home, root), JSON.stringify(parent));
+  };
+  for (const [field, value] of [['childTask', sibling], ['sessionId', 'replacement-thread']]) {
+    relinked(field, value);
+    const refused = spawnSync(process.execPath, [bin, 'observe', '--task', child], {
+      cwd, encoding: 'utf8', env: { ...process.env, ...lead, PROMPTOBUS_TASK: root },
+    });
+    assert.equal(refused.status, 1, field);
+    assert.equal(refused.stdout, '', field);
+    assert.match(refused.stderr, /bound orchestrator command identity/, field);
+  }
+  writeFileSync(taskFile(home, root), journal);
+  assert.deepEqual((await observe(host, { task: child }, lead)).messages.map((m) => m.id), [id]);
 });
 
 test('a record replaced atomically during the read is re-read a bounded number of times', async () => {
