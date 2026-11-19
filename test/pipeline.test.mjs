@@ -3,7 +3,8 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, readlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import fs, { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
@@ -26,7 +27,7 @@ const { hostOf } = await import('../lib/host.js');
 const { models } = await import('../lib/models.js');
 const { status } = await import('../lib/status.js');
 const { serve } = await import('../lib/server.js');
-const { planReview, step } = await import('../lib/review.js');
+const { planReview, readGateInstructions, step } = await import('../lib/review.js');
 const { cacheFileOf } = await import('../lib/model-routing/cache.js');
 const { claudeDriver } = await import('../lib/driver-claude.js');
 
@@ -136,6 +137,35 @@ test('a declaration with security between reviewer and approver loads, in order,
   const said = await captureSplit(() => models(host, { subcommand: 'validate' }));
   assert.equal(said.value, 0);
   assert.match(noAnsi(said.out), /pipeline: worker → reviewer → security → approver/);
+});
+
+test('gate instruction links must resolve inside the install root at load and at read', (t) => {
+  const dir = workspace(SECURITY);
+  const file = path.join(dir, 'security.md');
+  const internal = path.join(dir, 'internal.md');
+  writeFileSync(internal, 'internal');
+  unlinkSync(file);
+  symlinkSync(internal, file, 'file');
+  const host = hostOf(dir);
+  assert.equal(readGateInstructions(host, 'security').text, 'internal');
+  const outsideDir = path.join(dir, 'linked-dir');
+  symlinkSync(realpathSync(SB), outsideDir, 'junction');
+  for (const target of [OUTSIDE, path.join(outsideDir, 'outside.md')]) {
+    unlinkSync(file);
+    symlinkSync(target, file, 'file');
+    const { pipeline, findings } = pipe.readPipeline(SECURITY, { root: dir, file: 'f' });
+    assert.equal(pipeline, null);
+    assert.match(findings[0].line, /instructions: .*outside the install root/);
+    const read = t.mock.method(fs, 'readFileSync');
+    syncBuiltinESMExports();
+    try {
+      assert.throws(() => readGateInstructions(host, 'security'), /outside the install root/);
+      assert.equal(read.mock.callCount(), 0);
+    } finally {
+      read.mock.restore();
+      syncBuiltinESMExports();
+    }
+  }
 });
 
 test('gate instructions reach real lifts, live re-review, and dead-session relifts without partial refusals', async () => {

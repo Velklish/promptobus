@@ -60,6 +60,8 @@ So `promptobus install --harnesses codex` succeeds and leaves `tools` untouched,
 
 ### The pipeline
 
+Gate instructions may use symlinks, including linked directories, when the final file is inside the directory containing `promptobus.json`. Copy any externally linked instructions into that directory before upgrading.
+
 `pipeline` declares the steps a piece passes after the hand-over to a worker, one declaration per installation. Without it the pipeline is `worker`, then `reviewer` and `approver`, and nothing changes. To add a read-only security review between the reviewer and the approver:
 
 ```json
@@ -76,7 +78,11 @@ So `promptobus install --harnesses codex` succeeds and leaves `tools` untouched,
 }
 ```
 
-`owner` is the one step that edits its worktree. `gates` run in the order listed, and each is `reads-diff` (reads the diff, writes nothing) or `writes-main-tree` (accepts the piece in its own worktree, then fast-forwards the clone's default branch). `qualityFloor` (1–10) is checked and used by routing when explicitly declared. `instructions` is a file inside this directory, named relative to it. Its text joins that gate's lift assignment; a live reviewer receives the same text on re-review, and a new session reads the file again. A missing or unreadable file refuses a new lift before routing preflight or participant start, names the path, and leaves the availability cache and task files unchanged. `promptobus status` names `worker → reviewer → security → approver` in its task header. `promptobus step security <path> --task <id>` lifts the declared gate after `reviewer:<slug>` reports; `review` and `review --approver` select the first gates of their kinds. The MCP send tool description and recipient refusals name the declared steps. `spawn --worker <slug>` uses `owner.name` as the address prefix; without a declaration it records `worker:<slug>`.
+`owner` is the one step that edits its worktree. `gates` run in the order listed, and each is `reads-diff` (reads the diff, writes nothing) or `writes-main-tree` (accepts the piece in its own worktree, then fast-forwards the clone's default branch). `qualityFloor` (1–10) is checked and used by routing when explicitly declared.
+
+A new reviewer or approver session reads the `instructions` file for its assignment. On a repeat lift, a live reviewer receives a re-review assignment with the saved text if the path still matches. For a live approver, the lift can use the saved text at that path for planning, but sends no new assignment. A missing or unreadable file refuses a new session lift before routing preflight or participant start, names the path, and leaves the availability cache and task files unchanged.
+
+`promptobus status` names `worker → reviewer → security → approver` in its task header. `promptobus step security <path> --task <id>` lifts the declared gate after `reviewer:<slug>` reports; `review` and `review --approver` select the first gates of their kinds. The MCP send tool description and recipient refusals name the declared steps. `spawn --worker <slug>` uses `owner.name` as the address prefix; without a declaration it records `worker:<slug>`.
 
 `promptobus models validate` names every field it refuses: a second `edits-tree` step, a name declared twice, a name outside `[a-z][a-z0-9-]{0,31}`, the name of a governance role (`orchestrator`, `teamlead`, `root`, `peer`, `reporter`, `user`), and an `instructions` path outside this directory or not a file there. A declaration it refuses is refused by every command that reads the pipeline, with the same lines. The rules and the schema: [reference/02-host § The pipeline declaration](../reference/02-host.md#the-pipeline-declaration).
 

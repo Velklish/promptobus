@@ -1,6 +1,6 @@
 // The declared pipeline: one owner step, the gate steps in order, their defaults and the rules a
 // declaration obeys. The prose is 02-host § The pipeline declaration.
-import { statSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { HostPipelineStep, PromptobusHost } from './host.js';
 import {
@@ -93,12 +93,20 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-function isFile(abs: string): boolean {
+function inside(root: string, file: string): boolean {
+  const rel = path.relative(root, file);
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel);
+}
+
+export function resolveInstructionFile(root: string, file: string): { target: string } | { reason: string } {
+  const outside = { reason: 'is outside the install root' };
+  if (!inside(root, file)) return outside;
   try {
-    return statSync(abs).isFile();
-  } catch {
-    return false;
-  }
+    const target = realpathSync(file);
+    if (!inside(realpathSync(root), target)) return outside;
+    if (statSync(target).isFile()) return { target };
+  } catch { /* Missing and inaccessible paths share the declaration refusal. */ }
+  return { reason: 'is not a file' };
 }
 
 const quoted = (v: unknown) => `«${typeof v === 'string' ? v : JSON.stringify(v)}»`;
@@ -198,11 +206,9 @@ function checkStep(
       refuseField('instructions', `${quoted(value.instructions)} is not a path: a file relative to the install root`);
     } else {
       instructions = path.resolve(root, value.instructions);
-      const rel = path.relative(root, instructions);
-      if (rel === '' || rel.startsWith(`..${path.sep}`) || rel === '..' || path.isAbsolute(rel)) {
-        refuseField('instructions', `${quoted(value.instructions)} is outside the install root (${instructions})`);
-      } else if (!isFile(instructions)) {
-        refuseField('instructions', `${quoted(value.instructions)} is not a file (${instructions})`);
+      const resolved = resolveInstructionFile(root, instructions);
+      if ('reason' in resolved) {
+        refuseField('instructions', `${quoted(value.instructions)} ${resolved.reason} (${instructions})`);
       }
     }
   }

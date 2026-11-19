@@ -40,7 +40,7 @@ import {
 import {
   APPROVER, hasFeature, packageDenyTools, registryOf, REVIEWER, roleEntry, routingOf, ROUTING_FIELD,
 } from '../dist/index.js';
-import { pipelineOf } from '../dist/pipeline.js';
+import { pipelineOf, resolveInstructionFile } from '../dist/pipeline.js';
 import { EDITS_TREE, READS_DIFF, WRITES_MAIN_TREE } from '../dist/registry.js';
 import { driverOf, REGISTRY, snapshotOf } from './drivers.js';
 import { ensureWarden, handOverContactPoints } from './warden.js';
@@ -249,7 +249,9 @@ export function readGateInstructions(host: PromptobusHost, stepName: string | un
   }
   if ((cached as { path?: unknown } | null)?.path === file && typeof (cached as { text?: unknown }).text === 'string') return cached as GateInstructions;
   try {
-    return { path: file, text: readFileSync(file, 'utf8') };
+    const resolved = resolveInstructionFile(host.workspaceRoot(), file);
+    if ('reason' in resolved) throw new Error(resolved.reason);
+    return { path: file, text: readFileSync(resolved.target, 'utf8') };
   } catch (error) {
     throw new GateError(`step ${stepName} instructions ${file} cannot be read: ${(error as Error).message}`);
   }
