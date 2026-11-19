@@ -1,15 +1,14 @@
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
-import { z } from 'zod';
 import { assertBbDirectCommand, recordBbDirectCommand, underLease, leaseRoot, keyedCommandPlan } from 'promptobus/bb-host';
 import { toolsFor } from './protocol.js';
 import { parseCommandAdmission } from './command-admission.js';
 import { readDeclaredFile, underRoots, validateLaunchContext } from './launch-context.js';
 import { writeFileAtomic } from 'promptobus/host';
-import { controlReferenceSchema, commandCallSchema } from './control-schema.js';
+import { resourceClaimSchema } from './control-schema.js';
 import { commandReference, commandTerminal, admitCommand, completeCommand, executionCommand, commandDigest } from './control.js';
 import { BUILD_IDENTITY } from './build-identity.js';
 import type { CommandBinding } from './protocol.js';
@@ -86,12 +85,30 @@ function preflightCommand(input: unknown, invocation: Invocation) {
     substantiveCommandStarted: false, declaredTools, createdDirectories,
     notChecked: ['dynamic-current-control', 'evidence-artifact-bytes', 'installed-tool-eligibility', 'execution-permissions'] };
 }
+export function claimPresent(file: string) {
+  let entry;
+  try { entry = lstatSync(file); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+  if (!entry.isFile() || realpathSync(file) !== file) throw new Error('resource claim is not a canonical regular file');
+  return true;
+}
+
+export async function afterLeaseRelease<T>(leased: Promise<T>, acknowledge: () => void) {
+  const result = await leased;
+  acknowledge();
+  return result;
+}
+
 export async function runBoundedCommand(input: unknown, invocation: Invocation) {
   const { binding, commandId, command } = parseInvocation(input, invocation);
   validateCommandPaths(binding, command);
   const env = { ...process.env, ...command.env }, locks: string[] = [];
   const me = { pid: process.pid, address: invocation.by, task: binding.task, command: command.argv.join(' '), cwd: command.cwd };
   let observedReceipt: Awaited<ReturnType<typeof recordBbDirectCommand>>['receipt'] | undefined;
+  const finalization: { acknowledge?: ReturnType<typeof completeCommand> } = {};
+  const namespace = realpathSync(leaseDirectory(command));
   const keys = [...new Set(command.exclusiveKeys.map(key => realpathSync(key)))].sort();
   const enter = async (index: number): Promise<Awaited<ReturnType<typeof recordBbDirectCommand>>> => {
     if (index < keys.length) return underLease(leaseRoot(env), me, async lock => {
@@ -107,13 +124,15 @@ export async function runBoundedCommand(input: unknown, invocation: Invocation) 
         || (process.getuid && stat.uid !== process.getuid())) throw new Error('resource claim directory must remain owned and canonical');
     };
     verifyResources();
-    const resources = keys.map(key => path.join(resourceDirectory, `${createHash('sha256').update(key).digest('hex')}.json`));
-    for (const file of resources) {
-      if (!existsSync(file)) continue;
-      const state = z.object({ reference: controlReferenceSchema, call: commandCallSchema }).strict()
-        .parse(JSON.parse(readDeclaredFile(file, [resourceDirectory], 256 * 1024).toString('utf8')));
-      if (!commandTerminal(state.reference, state.call.command)) throw new Error('resource has an unresolved admitted command; exact terminal receipt is required');
-    }
+    const resources = keys.map(key => ({ key, file: path.join(resourceDirectory, `${createHash('sha256').update(key).digest('hex')}.json`) }));
+    const verifyClaims = () => {
+      for (const { key, file } of resources) {
+        if (!claimPresent(file)) continue;
+        const state = resourceClaimSchema(key, namespace).safeParse(JSON.parse(readDeclaredFile(file, [resourceDirectory], 256 * 1024).toString('utf8')));
+        if (!state.success || !commandTerminal(state.data.reference, state.data.call.command, { key, namespace })) throw new Error('resource has an unresolved admitted command; exact terminal receipt is required');
+      }
+    };
+    verifyClaims();
     const launcherSha256 = createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex');
     try {
     const result = await recordBbDirectCommand({ command: command.argv, stem: command.output, by: invocation.by, cwd: command.cwd, env,
@@ -122,24 +141,27 @@ export async function runBoundedCommand(input: unknown, invocation: Invocation) 
         const launch = binding.launchContext!;
         if (launch.control.mode !== 'current') throw new Error('current control is required');
         verifyResources();
-        for (const file of resources) writeFileAtomic(file, `${JSON.stringify({ reference: launch.control.reference,
+        verifyClaims();
+        for (const { key, file } of resources) writeFileAtomic(file, `${JSON.stringify({ key, namespace, reference: launch.control.reference,
           call: { format: 'promptobus-bb-call-v1', command: commandReference(binding, command), state: 'admitted' } })}\n`, { mode: 0o600 });
         return start();
       }, () => {
         validateCommandPaths(binding, command);
         if (!isDeepStrictEqual([...new Set(command.exclusiveKeys.map(key => realpathSync(key)))].sort(), keys)) throw new Error('resource identity changed while waiting');
       }),
-      onReceipt: () => completeCommand(binding, commandId),
+      onReceipt: (receipt, digest) => { finalization.acknowledge = completeCommand(binding, commandId, receipt, digest); },
       receiptFields: { admission: { task: binding.task, token: binding.launchContext!.grant.token, phase: binding.launchContext!.grant.phase,
-        commandId, commandSha256: commandDigest(command) }, resourceNamespace: leaseRoot(env), launcher: { buildIdentity: BUILD_IDENTITY, sha256: launcherSha256 } } });
+        commandId, commandSha256: commandDigest(command) }, resourceNamespace: namespace, resourceKeys: keys, launcher: { buildIdentity: BUILD_IDENTITY, sha256: launcherSha256 } } });
     observedReceipt = result.receipt;
     return result;
     } catch (error) {
-      observedReceipt = (error as { receipt?: typeof observedReceipt }).receipt;
+      observedReceipt = (error as { receipt?: typeof observedReceipt }).receipt ?? observedReceipt;
       throw error;
     }
   };
-  try { return await enter(0); } catch (error) {
+  try {
+    return await afterLeaseRelease(enter(0), () => finalization.acknowledge?.());
+  } catch (error) {
     if (observedReceipt) (error as { receipt?: typeof observedReceipt }).receipt ??= { ...observedReceipt,
       notRun: observedReceipt.notRun === true, finalizationComplete: false, finalizationError: String(error) };
     throw error;

@@ -1,14 +1,87 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { capturedStreamMatches, digestRegularEvidence } from '../lib/bb-direct-command.js';
+import { initializeKeyedOwner, rollbackKeyedAcquisition } from '../lib/lease.js';
+import { releaseDirLock } from '../dist/fs/lock.js';
 
 const script = fileURLToPath(new URL('../scripts/bb-record-command.mjs', import.meta.url));
+test('raw digest refuses non-regular evidence, oversize content and an exhausted read budget', t => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'pb-digest-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, 'raw'), bytes = Buffer.alloc(131073, 37); writeFileSync(file, bytes);
+  assert.deepEqual(digestRegularEvidence(file, bytes.length), { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
+  assert.throws(() => digestRegularEvidence(root, bytes.length));
+  assert.throws(() => digestRegularEvidence(file, bytes.length - 1), /size-bounded/);
+  assert.throws(() => digestRegularEvidence(file, bytes.length, 0), /deadline/);
+});
+
+test('unfinished keyed acquisition rolls back only its own directory and partial owner', t => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'pb-acquisition-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const dir = path.join(root, 'acquisition'), other = path.join(root, 'other-generation'); mkdirSync(dir); mkdirSync(other);
+  const stat = file => lstatSync(file, { bigint: true }), owner = path.join(dir, 'owner'); writeFileSync(owner, '{');
+  assert.throws(() => initializeKeyedOwner(dir, 'unused'), { code: 'EEXIST' }); assert.equal(readFileSync(owner, 'utf8'), '{');
+  rollbackKeyedAcquisition(dir, stat(other), stat(owner)); assert.equal(readFileSync(owner, 'utf8'), '{');
+  rollbackKeyedAcquisition(dir, stat(dir), stat(other)); assert.equal(readFileSync(owner, 'utf8'), '{');
+  rollbackKeyedAcquisition(dir, stat(dir), stat(owner)); assert.equal(existsSync(dir), false);
+  rollbackKeyedAcquisition(other, stat(other)); assert.equal(existsSync(other), false);
+});
+test('verified release preserves a directory without matching owner evidence', t => {
+  const lock = mkdtempSync(path.join(os.tmpdir(), 'pb-owner-proof-')); t.after(() => rmSync(lock, { recursive: true, force: true }));
+  assert.throws(() => releaseDirLock(lock, 'expected', true), /verify ownership/);
+  const owner = JSON.stringify({ pid: process.pid, nonce: 'different' }); writeFileSync(path.join(lock, 'owner'), owner);
+  assert.throws(() => releaseDirLock(lock, 'expected', true), /verify ownership/);
+  assert.equal(readFileSync(path.join(lock, 'owner'), 'utf8'), owner);
+});
+test('stored stream must match captured bytes, not only their length', () => {
+  const bytes = Buffer.from([0, 255, 1]), captured = { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
+  assert.ok(capturedStreamMatches(captured, { ...captured }));
+  assert.equal(capturedStreamMatches(captured, { bytes: bytes.length, sha256: createHash('sha256').update(Buffer.from([0, 254, 1])).digest('hex') }), false);
+});
+
+for (const [signal, nested, cooperative] of [['SIGINT', false, false], ['SIGTERM', true, true], ['SIGHUP', false, true]]) {
+  test(`Stop reproduction: ${signal}, nested=${nested}, cooperative=${cooperative}`, { skip: process.platform === 'win32' }, async t => {
+    const { directory, stem } = recorderFixture(t), inner = `${stem}-inner`;
+    const wrap = (output, argv) => [process.execPath, script, '--output', output, '--by', 'fixture-recorder', '--', ...argv];
+    const child = [process.execPath, '-e', `process.chdir(${JSON.stringify(directory)});const fs=require('fs');let count=0;
+      if (${cooperative}) process.on('${signal}',()=>fs.writeFileSync('seen-'+(++count),'${signal}'));
+      fs.writeFileSync('ready','ready');const timer=setInterval(()=>{if(fs.existsSync('release')){clearInterval(timer);process.stdout.write('last stdout');process.stderr.write('last stderr')}},10);
+      setTimeout(()=>process.exit(99),15000).unref() `];
+    const [file, ...args] = wrap(stem, nested ? wrap(inner, child) : child);
+    const recorder = spawn(file, args, { stdio: 'ignore' });
+    const done = new Promise((resolve, reject) => { recorder.once('error', reject); recorder.once('close', (code, signal) => resolve({ code, signal })); });
+    async function witness(name) {
+      for (let i = 0; i < 500; i++) { if (existsSync(path.join(directory, name))) return; await delay(10); }
+      assert.fail(`leaf did not publish ${name}; recorder exit=${recorder.exitCode}, signal=${recorder.signalCode}`);
+    }
+    try {
+      await witness('ready'); assert.ok(recorder.kill(signal));
+      if (cooperative) {
+        await witness('seen-1'); assert.ok(recorder.kill(signal)); await witness('seen-2');
+        assert.equal(recorder.exitCode, null); assert.equal(recorder.signalCode, null);
+        writeFileSync(path.join(directory, 'release'), 'close');
+      }
+      const result = await done; assert.equal(result.signal, null); assert.notEqual(result.code, 0);
+      for (const output of nested ? [inner, stem] : [stem]) {
+        const receipt = JSON.parse(readFileSync(`${output}.receipt.txt`, 'utf8'));
+        t.diagnostic(JSON.stringify({ layer: output === stem ? 'outer' : 'inner', recorder: result, exit: receipt.exit,
+          signal: receipt.signal, stop: receipt.stop, terminationObserved: receipt.terminationObserved, complete: receipt.complete }));
+        assert.deepEqual(receipt.stop, { firstSignal: signal, received: cooperative ? 2 : 1, forwarded: cooperative ? 2 : 1 });
+        assert.equal(receipt.terminationObserved, true); assert.equal(receipt.complete, false); assert.equal(receipt.error, null);
+        if (output === (nested ? inner : stem)) {
+          assert.equal(receipt.exit, cooperative ? 0 : null); assert.equal(receipt.signal, cooperative ? null : signal);
+          if (cooperative) for (const stream of ['stdout', 'stderr']) assert.equal(readFileSync(`${output}.${stream}.txt`, 'utf8'), `last ${stream}`);
+        }
+      }
+    } finally { writeFileSync(path.join(directory, 'release'), 'cleanup'); await done; }
+  });
+}
 test('BB direct recorder preserves complete stdout/stderr, hashes and the nonzero runner return code', t => {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'pb-direct-receipt-')); t.after(() => rmSync(directory, { recursive: true, force: true }));
   const stem = path.join(directory, 'original');
@@ -139,13 +212,13 @@ for (const fault of ['callback', 'lock-release', 'raw-read', 'raw-read-and-close
 import {recordBbDirectCommand} from ${JSON.stringify(recorder)};import {withDirLock} from ${JSON.stringify(host)};
 const fault=${JSON.stringify(fault)},stem=${JSON.stringify(stem)},marker=stem+'.entered',release=stem+'.release',lock=stem+'.lock';
 const original={spawn:cp.spawn,open:fs.openSync,read:fs.readFileSync,write:fs.writeFileSync,close:fs.closeSync,rm:fs.rmSync};
-let owned,closed,receiptFd,receiptCloses=0,settled=false,witnessOut='',witnessErr='',triggered=false;
+let owned,closed,reservedFd,receiptFd,receiptCloses=0,settled=false,witnessOut='',witnessErr='',triggered=false;
 cp.spawn=(...args)=>{owned=original.spawn(...args);owned.stdout.on('data',b=>witnessOut+=b);owned.stderr.on('data',b=>witnessErr+=b);
 closed=new Promise(resolve=>owned.on('close',(exit,signal)=>resolve({exit,signal})));return owned};
-fs.openSync=(file,...args)=>{const fd=original.open(file,...args);if(String(file)===stem+'.receipt.txt')receiptFd=fd;return fd};
-fs.readFileSync=(file,...args)=>{if(fault.startsWith('raw-read')&&String(file)===stem+'.stdout.txt'&&!triggered){triggered=true;throw new Error('fixture raw-read failure')}return original.read(file,...args)};
+fs.openSync=(file,...args)=>{if(fault.startsWith('raw-read')&&String(file)===stem+'.stdout.txt'&&typeof args[0]==='number'&&!triggered){triggered=true;throw new Error('fixture raw-read failure')}
+const fd=original.open(file,...args);if(String(file)===stem+'.receipt.txt')reservedFd=fd;if(String(file).startsWith(stem+'.receipt.txt.')&&String(file).endsWith('.tmp'))receiptFd=fd;return fd};
 fs.writeFileSync=(file,...args)=>{if(fault==='receipt-write'&&file===receiptFd&&!triggered){triggered=true;throw new Error('fixture receipt-write failure')}return original.write(file,...args)};
-fs.closeSync=fd=>{if(fd===receiptFd){receiptCloses++;if(fault==='receipt-close'||fault==='raw-read-and-close'){original.close(fd);throw new Error('fixture receipt-close failure')}}return original.close(fd)};
+fs.closeSync=fd=>{if(fd===reservedFd){reservedFd=undefined;receiptCloses++;if(fault==='raw-read-and-close'){original.close(fd);throw new Error('fixture receipt-close failure')}}if(fd===receiptFd){receiptFd=undefined;if(fault==='receipt-close'){original.close(fd);throw new Error('fixture receipt-close failure')}}return original.close(fd)};
 fs.rmSync=(file,...args)=>{if(fault==='lock-release'&&String(file)===lock&&!triggered){triggered=true;throw new Error('fixture lock-release failure')}return original.rm(file,...args)};syncBuiltinESMExports();
 const command=[process.execPath,'-e',"const fs=require('fs');fs.writeFileSync("+JSON.stringify(marker)+",'entered');process.stdout.write('ORIGINAL_STDOUT\\\\n');process.stderr.write('ORIGINAL_ASSERTION\\\\n');const timer=setInterval(()=>{if(fs.existsSync("+JSON.stringify(release)+")){clearInterval(timer);process.exitCode=7}},10);setTimeout(()=>process.exit(7),10000).unref()"];
 const fields={admission:{token:'exact-token',commandId:'run'},launcher:{sha256:'exact-launcher'}};

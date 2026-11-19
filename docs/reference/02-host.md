@@ -1142,6 +1142,28 @@ SDK `sent` or `queued` and a sent Hold do not prove participant application.
 Stop requires fresh actual status and
 paused delivery, with zero pending and running calls before reassignment.
 Worktrees, raw receipts and unrelated participants remain in place.
+
+For a checked command, `terminationObserved` records the owned child's close
+after the output streams finish. A signal reported by the child process API
+can establish termination without a complete gate result. To release a checked
+resource, the launcher also requires the terminal call, the exact receipt and
+both raw streams, and an acknowledgment published after the finalization callback
+and all keyed leases release successfully. The digest covers the bytes the recorder
+serialized; the stream hashes cover the bytes the child emitted. The receipt binds
+the canonical resource keys and lease namespace. The intermediate terminal record
+uses format v2 so a v1 reader cannot release a resource on its strength. A terminal call on disk without that
+acknowledgment remains unresolved, including calls recorded by older launchers.
+Stream verification opens a nonblocking descriptor and hashes only a regular file,
+in chunks up to 64 KiB. The verifier checks the captured size and a five-second
+monotonic deadline per stream; the deadline does not preempt a stalled kernel call.
+An unreadable resource claim, including a dangling link, blocks admission.
+On POSIX the direct recorder forwards each observed `SIGINT`, `SIGTERM` or `SIGHUP`
+to its own running child. `stop.received` counts notifications; `stop.forwarded`
+counts successful signal sends, not child acknowledgments. The recorder waits for
+close and output finalization. A child can handle Stop and exit zero: its receipt
+keeps `exit: 0` and `complete: false`, and the recorder returns 1. Recorder death
+without verified termination still leaves the call unresolved.
+
 The [release contract](04-protocol.md#bb-command-grant-release) defines the receipt
 and terminal authorization boundary. Control revocation refuses later Promptobus
 admissions; it does not confirm physical Stop or completion of an already running

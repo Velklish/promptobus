@@ -38,6 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Gate instructions must resolve to a file inside the install root. Internal symlinks still work; installations using external file or directory links must place the instructions under the root.
 - Use the BB context Host directly for pipeline lookups and align typed catch bindings in the Codex session and OpenCode driver. Runtime behavior is unchanged.
 - Include authored scripts in the comment length check without adding pending exceptions. Use public, repository-local examples in the contributor guide and fixtures.
+- On POSIX, the BB direct recorder forwards catchable Stop signals to its child and records its actual exit after draining both streams. A child that handles Stop and exits zero still cannot supply passing gate evidence.
+
+- BB command evidence reads check regular-file identity, captured size, and a per-stream deadline. Unreadable resource claims block reuse; a failed keyed lease setup preserves its original error.
+
+- BB checked commands verify captured output and the exact serialized receipt before reusing a resource in its lease namespace. The acknowledgment follows control and keyed lock release. V1 readers reject v2 terminal records; calls without an acknowledgment remain unresolved. An observed signal exit can end the call without yielding complete gate evidence.
+
 - Check the consumed Codex app-server protocol against 0.170.0; the minimum remains 0.158.0.
 
 - Declare BB `>=0.50.1 <0.51` and Plugin SDK `>=0.6.157` for both BB plugins instead of one exact pair, so a BB patch release no longer disables them; a new BB minor line still needs a release. The build pins SDK 0.6.157. Source checks do not establish an installed live workflow.

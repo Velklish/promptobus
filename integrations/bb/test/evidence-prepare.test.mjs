@@ -156,6 +156,14 @@ test('real checked launcher original terminal JSON links gate, admission and out
     f.change(changed, id, raw => { const receipt = JSON.parse(raw); receipt.admission[field] = value; return JSON.stringify(receipt); });
     await assert.rejects(f.validate(changed), /admission mismatch/); f.records.set(id, saved);
   }
+  const interrupted = structuredClone(manifest), outer = manifest.commands[1];
+  const original = JSON.parse(f.records.get(outer.receipt).content);
+  assert.equal(original.cwd, f.grant.execution.commands[0].cwd); assert.equal(original.by, f.grant.actor);
+  assert.equal(original.complete, true); assert.equal(original.exit, 0); assert.equal(original.signal, null);
+  f.change(interrupted, outer.receipt, () => JSON.stringify({ ...original, complete: false }));
+  await assert.rejects(f.validate(interrupted), /incomplete or pipe-masked collector receipt/);
+  f.change(interrupted, outer.receipt, () => JSON.stringify({ ...original, stop: { firstSignal: 'SIGTERM', received: 1, forwarded: 1 } }));
+  await assert.rejects(f.validate(interrupted), /incomplete or pipe-masked collector receipt/);
 });
 
 test('public command admission survives original upload and independent review evidence validation', async t => {

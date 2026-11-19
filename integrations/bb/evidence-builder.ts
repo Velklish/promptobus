@@ -32,7 +32,7 @@ export async function currentEvidenceFiles(input: unknown, io: Originals) {
   for (const selected of prepared.commands) {
     const receipt = JSON.parse(await read(selected.receipt));
     if (receipt.format !== 'bb-direct-command-v1' || receipt.complete !== true || receipt.direct !== true
-      || receipt.signal !== null || receipt.error !== null || receipt.finalizationComplete === false || receipt.finalizationError || receipt.notRun === true) {
+      || receipt.stop !== undefined || receipt.signal !== null || receipt.error !== null || receipt.finalizationComplete === false || receipt.finalizationError || receipt.notRun === true) {
       throw new Error('evidence preparation: original receipt is not finalized');
     }
     for (const stream of ['stdout', 'stderr']) {

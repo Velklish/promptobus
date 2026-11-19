@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { digestRegularEvidence } from 'promptobus/bb-host';
 import { isDeepStrictEqual } from 'node:util';
 import { closeSync, constants, fstatSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
 import { z } from 'zod';
@@ -42,11 +43,11 @@ export function underRoots(file: string, roots: readonly string[]) {
   });
 }
 
-export function readDeclaredFile(file: string, roots: readonly string[], maximum: number) {
+function withDeclaredFile<T>(file: string, roots: readonly string[], maximum: number, read: (fd: number, size: number) => T) {
   const resolved = realpathSync(file), allowed = roots.map(root => realpathSync(root));
   if (!underRoots(resolved, allowed)) throw new Error('launch context: file outside declared roots');
   const before = statSync(resolved);
-  const fd = openSync(resolved, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const fd = openSync(resolved, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const opened = fstatSync(fd), current = statSync(realpathSync(file));
     if (!opened.isFile()) throw new Error('launch context: bounded file is not a regular file');
@@ -54,16 +55,33 @@ export function readDeclaredFile(file: string, roots: readonly string[], maximum
     if ([before, current].some(entry => entry.dev !== opened.dev || entry.ino !== opened.ino)) {
       throw new Error('launch context: bounded file changed while opening');
     }
-    const bytes = Buffer.alloc(opened.size);
+    const result = read(fd, opened.size);
+    const currentPath = realpathSync(file), after = statSync(currentPath);
+    if (currentPath !== resolved || opened.size !== after.size || opened.ino !== after.ino
+      || opened.dev !== after.dev || opened.ctimeMs !== after.ctimeMs) throw new Error('launch context: bounded file changed while reading');
+    return result;
+  } finally { closeSync(fd); }
+}
+
+export function readDeclaredFile(file: string, roots: readonly string[], maximum: number) {
+  return withDeclaredFile(file, roots, maximum, (fd, size) => {
+    const bytes = Buffer.alloc(size);
     let offset = 0;
     while (offset < bytes.length) {
       const count = readSync(fd, bytes, offset, bytes.length - offset, offset);
       if (!count) break;
       offset += count;
     }
-    if (offset !== opened.size || fstatSync(fd).size !== opened.size || !underRoots(realpathSync(file), allowed)) throw new Error('launch context: bounded file changed while reading');
+    if (offset !== size) throw new Error('launch context: bounded file changed while reading');
     return bytes;
-  } finally { closeSync(fd); }
+  });
+}
+
+export function matchesDeclaredStream(file: string, roots: readonly string[], stream: { file: string; bytes: number; sha256: string }) {
+  const allowed = roots.map(root => realpathSync(root));
+  if (stream.file !== file || realpathSync(file) !== file || !underRoots(file, allowed)) return false;
+  const stored = digestRegularEvidence(file, stream.bytes);
+  return realpathSync(file) === file && stored.bytes === stream.bytes && stored.sha256 === stream.sha256;
 }
 
 export function validateControl(context: LaunchContext, input: unknown) {

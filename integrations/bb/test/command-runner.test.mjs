@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { commandGrantSchema } from '../.test-build/control-schema.js';
+import { commandGrantSchema, commandCallSchema, observedCallSchema, resourceClaimSchema } from '../.test-build/control-schema.js';
 
 test('immutable execution command entries are admitted by the strict grant schema', () => {
   assert.doesNotThrow(() => commandGrantSchema.parse({ actor: 'orchestrator', task: 'task', token: 'grant', state: 'active', phase: 'tests',
@@ -16,11 +16,43 @@ import { createHash, randomUUID } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { newTaskIdentity, openEngine } from 'promptobus';
-import { publishControl, commandReference, commandTerminal } from '../.test-build/control.js';
+import { admitCommand, completeCommand, publishControl, commandReference, commandTerminal, matchesPublication } from '../.test-build/control.js';
+import { afterLeaseRelease, claimPresent } from '../.test-build/command-runner.js';
 import { engineOperation } from '../.test-build/engine-host.js';
 import { launchFixture } from './evidence-fixture.mjs';
 const runner = process.env.PB_COMMAND_RUNNER ?? fileURLToPath(new URL('../.test-build/command-runner.js', import.meta.url));
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+test('finalization requires the serializer bytes even when two receipts decode identically', () => {
+  const observed = { exit: 0 }, bytes = Buffer.from('{"exit":0}\n'), digest = createHash('sha256').update(bytes).digest('hex');
+  assert.equal(matchesPublication(bytes, observed, digest), true);
+  assert.equal(matchesPublication(Buffer.from('{"exit": 0}\n'), observed, digest), false);
+  assert.equal(matchesPublication(bytes, { exit: 1 }, digest), false);
+});
+
+test('absence is distinct from an unverifiable claim entry', t => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pb-claim-'))); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, 'claim'); assert.equal(claimPresent(file), false);
+  fs.symlinkSync(path.join(root, 'absent'), file); assert.throws(() => claimPresent(file), /regular file/); assert.ok(fs.lstatSync(file).isSymbolicLink());
+});
+
+test('a released lease is not terminal evidence until its exact acknowledgment is published', async t => {
+  const f = await fixture(t), m = f.member('worker'), ref = commandReference(m.binding, m.command);
+  const raw = stream => { const file = `${m.output}.${stream}.txt`; fs.writeFileSync(file, ''); return { file, bytes: 0, sha256: createHash('sha256').digest('hex') }; };
+  admitCommand(m.binding, 'run', () => {});
+  const receipt = { format: 'bb-direct-command-v1', command: m.command.argv, by: ref.actor, cwd: m.command.cwd,
+    admission: { task: m.binding.task, token: ref.token, phase: ref.phase, commandId: ref.commandId, commandSha256: ref.commandSha256 },
+    resourceKeys: m.command.exclusiveKeys, resourceNamespace: f.leases, stdout: raw('stdout'), stderr: raw('stderr'),
+    exit: 0, signal: null, error: null, complete: true, direct: true, terminationObserved: true };
+  const content = JSON.stringify(receipt); fs.writeFileSync(`${m.output}.receipt.txt`, content);
+  const ack = completeCommand(m.binding, 'run', receipt, createHash('sha256').update(content).digest('hex'));
+  const reusable = () => commandTerminal(f.reference, ref, { key: m.command.buildRoot, namespace: f.leases });
+  await assert.rejects(afterLeaseRelease(Promise.reject(new Error('release refused')), ack), /release refused/);
+  assert.equal(reusable(), false);
+  const release = Promise.withResolvers(); let reached = false;
+  const done = afterLeaseRelease(release.promise, () => { reached = true; assert.equal(reusable(), false); ack(); });
+  assert.equal(reached, false); release.resolve(); await done;
+  assert.equal(reached, true); assert.equal(reusable(), true);
+});
 async function until(fn, label) {
   for (let i = 0; i < 800; i++) { if (fn()) return; await pause(10); }
   assert.fail(`barrier not reached: ${label}`);
@@ -57,7 +89,7 @@ async function fixture(t, shared = null) {
       fs.cpSync(path.join(root, 'control'), path.join(destination, 'control'), { recursive: true });
       for (const member of members) {
         const directory = path.join(destination, member.binding.participant); fs.mkdirSync(directory);
-        for (const file of ['input.json', 'entered', 'run.stdout.txt', 'run.stderr.txt', 'run.receipt.txt']) {
+        for (const file of ['input.json', 'entered', 'seen', 'run.stdout.txt', 'run.stderr.txt', 'run.receipt.txt', 'run-outer.receipt.txt', 'run-outer.stdout.txt', 'run-outer.stderr.txt']) {
           if (fs.existsSync(path.join(member.directory, file))) fs.copyFileSync(path.join(member.directory, file), path.join(directory, file));
         }
       }
@@ -81,8 +113,9 @@ async function fixture(t, shared = null) {
     const input = path.join(directory, 'input.json'); fs.writeFileSync(input, JSON.stringify({ binding: b, commandId: 'run' }));
     const member = { binding: b, command, input, marker, release, output, directory }; members.push(member); return member;
   }
-  function run(member, args = []) {
-    const child = spawn(process.execPath, [...args, runner, '--admission', member.input, '--output', member.output, '--by', member.binding.participant, '--', ...member.command.argv], { stdio: ['ignore', 'pipe', 'pipe'] });
+  function run(member, args = [], outer = false) {
+    const prefix = outer ? [fileURLToPath(new URL('../../../scripts/bb-record-command.mjs', import.meta.url)), '--output', member.output + '-outer', '--by', member.binding.participant, '--', process.execPath] : [];
+    const child = spawn(process.execPath, [...prefix, ...args, runner, '--admission', member.input, '--output', member.output, '--by', member.binding.participant, '--', ...member.command.argv], { cwd: outer ? member.command.cwd : undefined, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '', stderr = ''; child.stdout.on('data', b => stdout += b); child.stderr.on('data', b => stderr += b);
     child.done = new Promise(resolve => child.on('close', (exit, signal) => resolve({ exit, signal, stdout, stderr })));
     children.push(child); return child;
@@ -364,6 +397,93 @@ test('launcher crash after child PID handshake retains known live child and late
   f.release(c); assert.equal((await cc.done).exit, 0);
 });
 
+for (const outer of [false, true]) test(`Stop reproduction: checked resource outlives signal delivery but not verified cooperative close, outer=${outer}`, { skip: process.platform === 'win32' }, async t => {
+  const f = await fixture(t), key = path.join(f.root, 'shared'); fs.mkdirSync(key);
+  const a = f.member('worker-a', { key, code: `const fs=require('fs');process.on('SIGTERM',()=>fs.writeFileSync('seen','TERM'));
+    fs.writeFileSync('entered','ready');const timer=setInterval(()=>{if(fs.existsSync('release')){clearInterval(timer);process.stdout.write('stdout tail');process.stderr.write('stderr tail')}},10);
+    setTimeout(()=>process.exit(99),15000).unref();` });
+  const b = f.member('worker-b', { key }), ref = commandReference(a.binding, a.command);
+  const first = f.run(a, [], outer); await f.entered(a); first.kill('SIGTERM');
+  await until(() => fs.existsSync(path.join(a.directory, 'seen')), 'leaf received Stop');
+  assert.equal(commandTerminal(f.reference, ref), false);
+  const next = f.run(b);
+  const waiter = path.join(f.leases, 'key-waiters', createHash('sha256').update(key).digest('hex'), `${next.pid}.json`);
+  await until(() => fs.existsSync(waiter), 'competing launcher queued on the exact key');
+  assert.equal(fs.existsSync(b.marker), false); assert.equal(commandTerminal(f.reference, ref), false);
+  f.release(a); const stopped = await first.done; assert.equal(stopped.signal, null); assert.notEqual(stopped.exit, 0);
+  assert.equal(f.receipt(a).exit, 0); assert.equal(f.receipt(a).complete, false);
+  assert.deepEqual(f.receipt(a).stop, { firstSignal: 'SIGTERM', received: 1, forwarded: 1 });
+  for (const stream of ['stdout', 'stderr']) assert.equal(fs.readFileSync(`${a.output}.${stream}.txt`, 'utf8'), `${stream} tail`);
+  if (outer) {
+    const wrapped = JSON.parse(fs.readFileSync(`${a.output}-outer.receipt.txt`));
+    assert.equal(wrapped.complete, false); assert.equal(wrapped.terminationObserved, true);
+    assert.equal(wrapped.signal, null); assert.ok(Number.isInteger(wrapped.exit) && wrapped.exit !== 0);
+    assert.deepEqual(JSON.parse(fs.readFileSync(`${a.output}-outer.stdout.txt`)), f.receipt(a));
+  }
+  assert.equal(commandTerminal(f.reference, ref), true);
+  f.release(b); const attempt = await next.done;
+  if (attempt.exit !== 0) {
+    assert.equal(attempt.exit, 1); assert.match(attempt.stderr, /unresolved admitted command/); assert.equal(fs.existsSync(b.marker), false);
+    assert.equal((await f.run(b).done).exit, 0);
+  } else assert.ok(fs.existsSync(b.marker));
+});
+
+test('checked resource accepts observed child signal without complete gate evidence', { skip: process.platform === 'win32' }, async t => {
+  const f = await fixture(t), a = f.member('worker-a', { code: `process.kill(process.pid,'SIGTERM')` });
+  assert.notEqual((await f.run(a).done).exit, 0);
+  const receipt = f.receipt(a); assert.equal(receipt.signal, 'SIGTERM'); assert.equal(receipt.exit, null);
+  assert.equal(receipt.terminationObserved, true); assert.equal(receipt.complete, false);
+  assert.equal(commandTerminal(f.reference, commandReference(a.binding, a.command)), true);
+});
+
+test('checked finalization rejects changed streams and an acknowledgment copied from another command', async t => {
+  const f = await fixture(t), a = f.member('worker-a'), b = f.member('worker-b');
+  const ref = m => commandReference(m.binding, m.command);
+  const ack = m => path.join(f.reference.directory, 'calls', createHash('sha256').update(JSON.stringify(ref(m))).digest('hex') + '.json.ack');
+  for (const m of [a,b]) { f.release(m); assert.equal((await f.run(m).done).exit, 0); }
+  const key = a.command.buildRoot, claimFile = path.join(f.leases, 'command-resources', createHash('sha256').update(key).digest('hex') + '.json');
+  const claim = JSON.parse(fs.readFileSync(claimFile));
+  assert.ok(resourceClaimSchema(key, f.leases).safeParse(claim).success);
+  assert.equal(resourceClaimSchema(b.command.buildRoot, f.leases).safeParse(claim).success, false);
+  assert.equal(resourceClaimSchema(key, f.root).safeParse(claim).success, false);
+  assert.equal(commandTerminal(f.reference, ref(a), { key: a.command.buildRoot, namespace: f.leases }), true);
+  assert.equal(commandTerminal(f.reference, ref(a), { key: b.command.buildRoot, namespace: f.leases }), false);
+  assert.equal(commandTerminal(f.reference, ref(a), { key: a.command.buildRoot, namespace: f.root }), false);
+  for (const name of ['stdout', 'stderr']) {
+    const file = `${a.output}.${name}.txt`, bytes = fs.readFileSync(file);
+    fs.writeFileSync(file, Buffer.alloc(bytes.length)); assert.equal(commandTerminal(f.reference, ref(a)), false);
+    fs.writeFileSync(file, bytes); assert.equal(commandTerminal(f.reference, ref(a)), true);
+  }
+  fs.copyFileSync(ack(b), ack(a)); assert.equal(commandTerminal(f.reference, ref(a)), false);
+});
+
+for (const [target, point] of [['terminal','unlock'], ['receipt','write'], ['receipt','close'], ['receipt','rename'], ['receipt','after'], ['ack','write'], ['ack','close'], ['ack','rename'], ['ack','after']]) {
+  test(`checked finalization ${target} ${point} fault preserves the commit boundary`, { skip: process.platform === 'win32' }, async t => {
+    const f = await fixture(t), a = f.member('worker-a', { code: `process.kill(process.pid,'SIGTERM')` }), ref = commandReference(a.binding, a.command);
+    const call = path.join(f.reference.directory, 'calls', createHash('sha256').update(JSON.stringify(ref)).digest('hex') + '.json');
+    const ack = call + '.ack', dest = target === 'receipt' ? `${a.output}.receipt.txt` : ack;
+    const hook = path.join(f.root, 'fault.mjs');
+    fs.writeFileSync(hook, `import fs from 'node:fs'; import {syncBuiltinESMExports} from 'node:module';
+      const dest=${JSON.stringify(dest)}, call=${JSON.stringify(call)}, lock=${JSON.stringify(path.join(f.reference.directory,'.lock'))}, point=${JSON.stringify(point)};
+      const {openSync,closeSync,writeFileSync,renameSync,rmSync}=fs;let fd,terminal=false;
+      const fail=()=>{throw new Error('fixture publication fault')};
+      fs.openSync=(p,...args)=>{const f=openSync(p,...args);if(String(p).startsWith(dest+'.')&&String(p).endsWith('.tmp'))fd=f;return f};
+      fs.writeFileSync=(p,...args)=>{if(point==='write'&&p===fd)fail();return writeFileSync(p,...args)};
+      fs.closeSync=f=>{closeSync(f);if(f===fd){fd=undefined;if(point==='close')fail()}};
+      fs.renameSync=(from,to)=>{if(to===dest&&point==='rename')fail();renameSync(from,to);
+        if(to===call&&JSON.parse(fs.readFileSync(to)).state==='terminal')terminal=true;if(to===dest&&point==='after')fail()};
+      fs.rmSync=(p,...args)=>{if(point==='unlock'&&terminal&&p===lock)fail();return rmSync(p,...args)};syncBuiltinESMExports();`);
+    f.release(a); const result = await f.run(a, ['--import',hook]).done, committed = point === 'after';
+    assert.match(result.stderr, /fixture publication fault/); assert.equal(result.exit, 1);
+    if (committed) assert.match(result.stderr, /committed with warning/);
+    else assert.equal(JSON.parse(result.stderr).finalizationComplete, false);
+    const receipt = JSON.parse(committed ? result.stdout : result.stderr);
+    assert.equal(receipt.terminationObserved, true); assert.equal(receipt.exit, null); assert.equal(receipt.signal, 'SIGTERM'); assert.equal(receipt.complete, false);
+    if (target === 'terminal') assert.equal(JSON.parse(fs.readFileSync(call)).state, 'terminal');
+    assert.equal(fs.existsSync(ack), committed); assert.equal(commandTerminal(f.reference, ref), committed);
+  });
+}
+
 
 for (const name of ['NPM_CONFIG_CACHE', 'npm_config_cache', 'XDG_CONFIG_HOME', 'NPM_CONFIG_LOGS_DIR', 'PROMPTOBUS_LEASE_DIR']) {
   test(`immutable environment must explicitly pin ${name}`, async t => {
@@ -426,6 +546,11 @@ test('outer lease cleanup failure preserves the collected executed receipt and e
   assert.equal(receipt.finalizationComplete, false); assert.equal(receipt.admission.commandId, 'run');
   assert.equal(receipt.launcher.sha256, f.receipt(a).launcher.sha256);
   assert.equal(f.receipt(a).exit, 7); assert.equal(f.receipt(a).complete, true);
+  const ref = commandReference(a.binding, a.command), file = path.join(f.reference.directory, 'calls', createHash('sha256').update(JSON.stringify(ref)).digest('hex') + '.json');
+  const intermediate = JSON.parse(fs.readFileSync(file));
+  assert.equal(observedCallSchema.safeParse(intermediate).success, true);
+  assert.equal(commandCallSchema.safeParse(intermediate).success, false, 'v1 reader must reject the numeric-exit intermediate');
+  assert.equal(fs.existsSync(file + '.ack'), false); assert.equal(commandTerminal(f.reference, ref), false);
 });
 
 for (const fault of ['control-release', 'raw-read', 'receipt-write', 'receipt-close']) {
@@ -434,8 +559,8 @@ for (const fault of ['control-release', 'raw-read', 'receipt-write', 'receipt-cl
     const a = f.member('worker-a', { key, exit: 7 }), b = f.member('worker-b', { key }), c = f.member('worker-c');
     const hook = path.join(f.root, 'fail-finalization.mjs');
     fs.writeFileSync(hook, `import fs from 'node:fs';import {syncBuiltinESMExports} from 'node:module';const fault=${JSON.stringify(fault)},stem=${JSON.stringify(a.output)},control=${JSON.stringify(path.join(f.reference.directory, '.lock'))};const original={open:fs.openSync,read:fs.readFileSync,write:fs.writeFileSync,close:fs.closeSync,rm:fs.rmSync};let receiptFd,failed=false;
-fs.openSync=(file,...args)=>{const fd=original.open(file,...args);if(String(file)===stem+'.receipt.txt')receiptFd=fd;return fd};
-fs.readFileSync=(file,...args)=>{if(fault==='raw-read'&&String(file)===stem+'.stdout.txt'&&!failed){failed=true;throw new Error('fixture '+fault+' failure')}return original.read(file,...args)};
+fs.openSync=(file,...args)=>{if(fault==='raw-read'&&String(file)===stem+'.stdout.txt'&&typeof args[0]==='number'&&!failed){failed=true;throw new Error('fixture '+fault+' failure')}
+const fd=original.open(file,...args);if(String(file).startsWith(stem+'.receipt.txt.')&&String(file).endsWith('.tmp'))receiptFd=fd;return fd};
 fs.writeFileSync=(file,...args)=>{if(fault==='receipt-write'&&file===receiptFd&&!failed){failed=true;throw new Error('fixture '+fault+' failure')}return original.write(file,...args)};
 fs.closeSync=fd=>{if(fault==='receipt-close'&&fd===receiptFd&&!failed){failed=true;original.close(fd);throw new Error('fixture '+fault+' failure')}return original.close(fd)};
 fs.rmSync=(file,...args)=>{if(fault==='control-release'&&String(file)===control&&!failed){failed=true;throw new Error('fixture '+fault+' failure')}return original.rm(file,...args)};syncBuiltinESMExports();`);

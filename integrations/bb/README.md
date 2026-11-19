@@ -1432,8 +1432,21 @@ Each admitted command leaves a durable call record before spawn. A bounded
 current `pendingCommands` projection references unresolved calls without scanning
 history. A concrete resource also retains its exact unresolved command reference
 outside the transient lease lock. Other checked launchers using the same resource
-namespace refuse until both the exact terminal call state and original receipt
-are verified. Missing, partial or unreadable evidence, failed finalization and
+namespace verify the terminal call, receipt digest, and the byte count and SHA-256
+of each raw stream. The sibling `calls/<call-hash>.json.ack` binds that call to
+the exact bytes the recorder published. It is written only after the control lock
+and every keyed lease release successfully. A resource claim names its canonical
+key and namespace; both must match the location being checked and the receipt.
+Before the acknowledgment, contenders must retry rather than enter. V1 readers
+reject the v2 call record even after finalization; use matching launcher generations.
+Only a missing claim permits first use. An existing claim that cannot be verified
+stays in place. If keyed lease setup fails before the owner record is complete,
+rollback removes only the recorded owner inode and its empty directory generation;
+uncertain identity leaves the entry for inspection and preserves the setup error.
+A POSIX Stop sent to the recorder is forwarded to its direct child, including a
+nested checked launcher. An observed close can end the call without passing a gate:
+even a cooperative exit zero leaves an interrupted receipt incomplete. Missing,
+partial or unreadable evidence, failed finalization and
 UNKNOWN remain blockers; idle, ended grants, administrative parking or dead
 wrapper metadata alone cannot release them. Complete direct nonzero exits retain
 their original outcome. The PID handshake still protects a known surviving keyed

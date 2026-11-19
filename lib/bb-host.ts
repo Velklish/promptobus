@@ -35,6 +35,7 @@ import { underLease as runUnderLease, keyedCommandPlan as coreCommandPlan } from
 export { leaseRoot } from './lease.js';
 export { assertBbDirectCommand } from './bb-direct-command.js';
 import { recordBbDirectCommand as recordDirectCommand } from './bb-direct-command.js';
+export { digestRegularEvidence, publishCommandEvidence } from './bb-direct-command.js';
 import path from 'node:path';
 import { reviewerFiles } from './reviewer-files.js';
 import { participantAudience, selectParticipantContext } from './participant-context.js';
@@ -199,7 +200,7 @@ export interface DirectCommandReceipt { command: string[]; by: string; cwd: stri
 
 export function recordBbDirectCommand(input: { command: string[]; stem: string; by: string; cwd?: string; env?: NodeJS.ProcessEnv;
   beforeSpawn?: (start: () => import('node:child_process').ChildProcessWithoutNullStreams) => import('node:child_process').ChildProcessWithoutNullStreams;
-  onReceipt?: (receipt: DirectCommandReceipt) => void; receiptFields?: Record<string, unknown>;
+  onReceipt?: (receipt: DirectCommandReceipt, publishedSha256: string) => void; receiptFields?: Record<string, unknown>;
   spawnPlan?: { file: string; args: string[]; verbatim?: boolean } }): Promise<{ receipt: DirectCommandReceipt; exitCode: number }> {
   return recordDirectCommand(input as Parameters<typeof recordDirectCommand>[0]) as Promise<Awaited<ReturnType<typeof recordDirectCommand>> & { receipt: DirectCommandReceipt }>;
 }
