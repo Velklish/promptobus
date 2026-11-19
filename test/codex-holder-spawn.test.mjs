@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { scheduled, observe, receipt } from './fixture-order.mjs';
 import {
-  dropSession, holderLogFile, readSession, sessionFile, startHolder, waitReady, writeSession,
+  dropSession, holderLogFile, pidAlive, readSession, sessionFile, startHolder, waitReady, writeSession,
 } from '../lib/codex-session.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -117,6 +117,7 @@ function runHold(file) {
   const dying = path.join(HOME, 'closed-stdio.sh');
   const initCapture = path.join(HOME, 'closed-stdio-initialize.json');
   const release = path.join(HOME, 'release-notification');
+  const producer = path.join(HOME, 'producer-ack');
   const splitNotices = scheduled('late-notice') || scheduled('missing-notice');
   writeFileSync(dying, [
     '#!/bin/sh',
@@ -126,8 +127,9 @@ function runHold(file) {
     'printf \'{"jsonrpc":"2.0","id":1,"result":{}}\\n\'',
     'printf \'{"jsonrpc":"2.0","method":"account/rateLimits/updated","params":{"primary":{"usedPercent":0}}}\\n\'',
     ...(splitNotices ? [`while [ ! -f "${release}" ]; do sleep 0.02; done`] : []),
-    ...(scheduled('missing-notice') ? ['exec /bin/sleep 3600'] : []),
+    ...(scheduled('missing-notice') ? [`echo withheld > "${producer}"`, 'exec /bin/sleep 3600'] : []),
     'printf \'{"jsonrpc":"2.0","method":"item/completed","params":{"item":{"type":"mcpToolCall","server":"acme_tools_promptobus","tool":"promptobus_send","status":"failed","error":{"message":"stub: tool not found"}}}}\\n\'',
+    ...(splitNotices ? [`test "$?" = 0 && echo emitted > "${producer}"`] : []),
     'exec /bin/sleep 3600',
     '',
   ].join('\n'));
@@ -142,6 +144,8 @@ function runHold(file) {
     child.once('exit', (code, sig) => resolve({ code, sig }));
   });
   const logFile = holderLogFile(ref, env);
+  let log = '';
+  try {
   const initialized = await new Promise((resolve) => {
     const t0 = Date.now();
     const tick = () => {
@@ -165,14 +169,20 @@ function runHold(file) {
     finished,
     new Promise((r) => { setTimeout(() => r({ code: 'running', sig: null }), 200); }),
   ]);
-  let log = '';
   try { log = readFileSync(logFile, 'utf8'); } catch { /* none */ }
   const firstLine = log.split('\n')[0];
   if (splitNotices) {
     receipt('original log snapshot', { log, outcome });
     check('only the first notification is visible at the original snapshot',
       /debug event account\/rateLimits\/updated payload=/.test(log) && !/event item\/completed mcp/.test(log), log);
+    const live = pidAlive(child.pid) && child.exitCode === null && child.signalCode === null;
+    if (!live) throw new Error(`holder exited before notification handoff: ${JSON.stringify(outcome)}`);
     writeFileSync(release, 'release');
+    const expected = scheduled('missing-notice') ? 'withheld' : 'emitted';
+    const ack = await observe('producer handoff', () => {
+      try { return readFileSync(producer, 'utf8').trim(); } catch { return false; }
+    }, 2000);
+    check('live holder at producer acknowledgment', ack === expected && pidAlive(child.pid), JSON.stringify({ ack, expected }));
     let latest = log;
     const logged = await observe('post-release holder log', () => {
       try { latest = readFileSync(logFile, 'utf8'); } catch { return false; }
@@ -207,14 +217,18 @@ function runHold(file) {
     !/Unhandled ['"]error['"] event/i.test(stderr)
       && (outcome.code === 'running' || outcome.code === 1 || outcome.code === 0),
     `outcome=${JSON.stringify(outcome)} stderr=${stderr.slice(0, 400)} log=${log.slice(0, 300)}`);
+  } finally {
   const rec = readSession(ref, env);
   const appPid = rec?.appPid ?? Number((log.match(/app-server pid (\d+)/) ?? [])[1]);
   try { child.kill('SIGKILL'); } catch { /* already gone */ }
   if (Number.isFinite(appPid) && appPid > 0) {
     try { process.kill(appPid, 'SIGKILL'); } catch { /* already gone */ }
   }
-  await new Promise((r) => { child.once('exit', r); setTimeout(r, 500); });
+  if (splitNotices) check('notification fixture holder and producer exited', Number.isInteger(appPid) && !!await observe('owned notification PIDs exited',
+    () => !pidAlive(child.pid) && !pidAlive(appPid) && { holderPid: child.pid, appPid }, 3000));
+  else await Promise.race([finished, new Promise(r => setTimeout(r, 500))]);
   dropSession(ref, env);
+  }
 }
 
 {

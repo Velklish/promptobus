@@ -88,10 +88,12 @@ async function runStand() {
     { cwd: ws, env: orchEnv });
   check('stand: the orchestrator sends to the relifted worker', sent.status === 0, sent.out);
 
+  const mail = store.peekInbox(HOME, TASK, WORKER).messages.find(m => m.body === 'mail after the relift' && m.sender === store.addrDir('orchestrator'));
+  check('the sent task is identifiable in the mailbox', !!mail?.ts, sent.out);
   let knocked = [];
   for (let i = 0; i < 20 && !knocked.length; i += 1) {
     await wardenRound(HOME, TASK, { sessions: snapshotOf(store.readTask(HOME, TASK).participants) });
-    knocked = notesOf(WORKER, s2?.id, 'knock');
+    knocked = notesOf(WORKER, s2?.id, 'knock').filter(n => mail && n.tokenOk && n.body?.includes(`task from orchestrator · ${mail.ts}:`));
     if (!knocked.length) await settle(200);
   }
   const ended = notesOf(WORKER, s2?.id, 'guard');
@@ -103,6 +105,11 @@ async function runStand() {
     check('the relift barrier still holds at the ordering assertion', !ended.length);
     writeFileSync(releaseTurn, 'checked');
     check('the released turn reached the guard', !!await observe('released guard', () => notesOf(WORKER, s2?.id, 'guard')[0], 10000));
+    const trace = readTrace(HARNESS, WORKER).filter(n => n.session === s2.id);
+    const ack = trace.findIndex(n => n.kind === 'turn-released' && n.value === 'checked');
+    check('the participant acknowledged release before the guard without an action failure', ack >= 0
+      && ack < trace.findIndex(n => n.kind === 'guard') && !trace.some(n => n.kind === 'action-failed'), JSON.stringify(trace));
+    receipt('release acknowledgment', { ack: trace[ack], mail: mail?.ts });
   }
   const record = recordOf(WORKER);
   check('relift: the participant record names the session\'s own id, not the UUID chosen before launch',

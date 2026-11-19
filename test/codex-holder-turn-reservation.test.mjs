@@ -38,8 +38,9 @@ check('managed holder starts turn A', started.status === 0,
 const host = hostOf(root);
 const owner = participantOf(bus(host.promptobusHome(), { cli: host.version }).readTask(task), 'orchestrator');
 const ref = owner.sessionRef;
+const initial = readSession(ref, env);
+const pids = [initial.holderPid, initial.appPid];
 try {
-  const initial = readSession(ref, env);
   const turnA = initial.currentTurnId;
   const privateAuth = path.join(initial.codexHome, 'auth.json');
   const trace = traceFile(harness.home, 'orchestrator');
@@ -61,10 +62,15 @@ try {
     acceptedB.turn?.id && acceptedB.turn.id !== turnA && pendingB.busy === true
     && !events().some(event => event.kind === 'turn-start' && event.turnId === acceptedB.turn.id),
     JSON.stringify({ acceptedB, busy: pendingB.busy, currentTurnId: pendingB.currentTurnId, turnA }));
-  await waitFor(() => events().some(event => event.kind === 'turn-end' && event.turnId === turnA), { timeoutMs: 10000 });
-  const afterA = await holderAsk(ref, 'status', {}, env);
+  check('producer completed A', await waitFor(() => events().some(event => event.kind === 'turn-end' && event.turnId === turnA), { timeoutMs: 10000 }));
+  let afterA;
+  await waitFor(async () => {
+    afterA = await holderAsk(ref, 'status', {}, env, 1000);
+    return Array.isArray(afterA.activeTurns) && !afterA.activeTurns.includes(turnA);
+  }, { timeoutMs: 2000 });
   check('delayed completion of A preserves the accepted B reservation',
-    afterA.busy === true && !events().some(event => event.kind === 'turn-start' && event.turnId === acceptedB.turn.id),
+    afterA.busy === true && afterA.activeTurns?.includes(acceptedB.turn.id) && !afterA.activeTurns.includes(turnA)
+    && !events().some(event => event.kind === 'turn-start' && event.turnId === acceptedB.turn.id),
     JSON.stringify({ busy: afterA.busy, currentTurnId: afterA.currentTurnId, acceptedB: acceptedB.turn.id }));
   const before = readFileSync(privateAuth, 'utf8');
   writeFileSync(path.join(ownerHome, 'auth.json'), auth('fresh'));
@@ -74,7 +80,7 @@ try {
     /active turn/.test(refusal) && readFileSync(privateAuth, 'utf8') === before,
     JSON.stringify({ refusal, privateAuthChanged: readFileSync(privateAuth, 'utf8') !== before }));
   if (scheduled('held-B') || scheduled('started-B')) receipt('after reservation and auth checks', {
-    pendingBusy: pendingB.busy, afterABusy: afterA.busy, refusal, privateAuthUnchanged: readFileSync(privateAuth, 'utf8') === before,
+    activeTurns: afterA.activeTurns, pendingBusy: pendingB.busy, afterABusy: afterA.busy, refusal, privateAuthUnchanged: readFileSync(privateAuth, 'utf8') === before,
     turns: events().filter(e => ['turn-end', 'turn-start', 'reservation-gate'].includes(e.kind)),
   });
   if (scheduled('held-B')) {
@@ -84,8 +90,12 @@ try {
   }
 } finally {
   if (scheduled('held-B')) writeFileSync(releaseB, 'release');
-  const appPid = readSession(ref, env)?.appPid;
-  await holderAsk(ref, 'shutdown', {}, env);
-  const stopped = await waitFor(() => !holderAlive(ref, env) && !pidAlive(appPid), { timeoutMs: 10000 });
-  if (scheduled('held-B') || scheduled('started-B')) check('fixture holder and app exited', stopped);
+  try { await holderAsk(ref, 'shutdown', {}, env, 10000); } finally {
+    const gone = () => !holderAlive(ref, env) && pids.every(pid => !pidAlive(pid));
+    const stopped = await waitFor(gone, { timeoutMs: 3000 });
+    if (!stopped) for (const pid of pids) if (pidAlive(pid)) { try { process.kill(pid, 'SIGKILL'); } catch {} }
+    const cleaned = stopped || await waitFor(gone, { timeoutMs: 2000 });
+    receipt('reservation cleanup', { pids, stopped, cleaned });
+    check('fixture holder and app exited', cleaned && pids.every(pid => Number.isInteger(pid) && pid > 0));
+  }
 }

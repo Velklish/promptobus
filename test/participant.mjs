@@ -243,6 +243,7 @@ async function act(action) {
     const edge = Date.now() + 30000;
     while (!existsSync(action.untilFile) && Date.now() < edge) await new Promise(r => setTimeout(r, 20));
     if (!existsSync(action.untilFile)) throw new Error('turn release watchdog expired');
+    note({ kind: 'turn-released', value: readFileSync(action.untilFile, 'utf8') });
     return;
   }
   // Fetch-then-send only. A `{ wait }` holds the turn for the whole interval.

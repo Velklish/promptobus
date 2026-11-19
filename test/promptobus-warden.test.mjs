@@ -24,7 +24,7 @@ import { existsSync, linkSync, mkdirSync, statSync, readFileSync, utimesSync, wr
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check, skip } from './check.mjs';
-import { scheduled, receipt } from './fixture-order.mjs';
+import { scheduled, receipt, bounded } from './fixture-order.mjs';
 import { listenTestSocket, makeSandbox, makeSockPath, snapshotOfList, stubCommand, withStubPath } from './sandbox.mjs';
 import { capture, quiet } from './console.mjs';
 
@@ -748,7 +748,10 @@ const LIVE_SOCK = sockPath('live');
 const seen = [];
 const delayEnd = scheduled('late-end') || ['auth', 'tokenless', 'probe'].some(key => scheduled(`missing-${key}`));
 let acceptedSocket;
+const wireSockets = new Set();
 const server = createServer((c) => {
+  wireSockets.add(c);
+  c.once('close', () => wireSockets.delete(c));
   let buf = '';
   c.on('data', (d) => { buf += d; });
   c.on('end', () => { seen.push(buf); c.destroy(); });
@@ -765,7 +768,6 @@ async function releaseEnd(label, originalVerdict) {
   acceptedSocket = undefined;
   if (!seen.length) {
     socket?.destroy();
-    server.close();
     throw new Error(`${label}: no server end within 2000 ms (accepted=${!!socket})`);
   }
   receipt(`${label}: server end`, { payload: seen[0] });
@@ -773,9 +775,7 @@ async function releaseEnd(label, originalVerdict) {
 const liveListening = await listenTestSocket(server, LIVE_SOCK);
 if (!liveListening.ok) {
   skip(': real wire checks require a local Unix socket', liveListening.reason);
-} else {
-
-
+} else { try {
 const knocked = await knockSocket({ socket: LIVE_SOCK, token: 'tok123' }, 'a wire check');
 await new Promise((res) => setTimeout(res, 50));
 if (delayEnd) {
@@ -810,7 +810,13 @@ if (delayEnd) check('the probe sent one auth object', JSON.parse(seen[0].trim())
 check('the doctor smoke test connects and sends ONLY auth — it does not touch someone else\'s turn',
   probed.ok === true && (seen[0] ?? '').trim().split('\n').length === 1, JSON.stringify(seen));
 
-await new Promise((res) => server.close(res));
+} catch (error) {
+  check('wire observations completed', false, error.message);
+} finally {
+  for (const socket of wireSockets) socket.destroy();
+  await bounded('wire listener teardown', new Promise(res => server.close(res)), 2000);
+  if (delayEnd) receipt('wire cleanup', { listening: server.listening, destroyed: [...wireSockets].every(s => s.destroyed) });
+}
 }
 
 const dead = await knockSocket({ socket: sockPath('no-such') }, 'into the void');

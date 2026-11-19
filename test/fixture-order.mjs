@@ -1,6 +1,12 @@
 import { setTimeout as delay } from 'node:timers/promises';
 
 export const scheduled = name => process.argv.slice(2).includes(`--schedule=${name}`);
+export async function bounded(label, promise, ms) {
+  let timer;
+  try { return await Promise.race([promise, new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timeout: ${label}`)), ms);
+  })]); } finally { clearTimeout(timer); }
+}
 export function receipt(event, fields = {}) {
   console.log(JSON.stringify({ event, pid: process.pid, at: performance.now(), ...fields }));
 }
