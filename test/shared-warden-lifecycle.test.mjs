@@ -1,7 +1,9 @@
 import { check } from './check.mjs';
 import { spawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { runInNewContext } from 'node:vm';
 import { makeSandbox } from './sandbox.mjs';
 import { REGISTRY } from '../lib/drivers.js';
 import { runTaskWarden } from '../lib/warden.js';
@@ -39,7 +41,8 @@ const start = index => {
   loops.push(loop);
   return loop;
 };
-const baselineWatchers = process.getActiveResourcesInfo().filter(kind => kind === 'FSEventWrap').length;
+const watcherCount = () => process.getActiveResourcesInfo().filter(kind => kind === 'FSEventWrap').length;
+const baselineWatchers = watcherCount();
 try {
   for (const task of tasks) {
     createTask(HOME, { id: task, title: 'owned task loop', owner: 'root-session' });
@@ -59,9 +62,17 @@ try {
     && wakes.filter(task => task === tasks[0]).length === 0 && wakes.filter(task => task === tasks[1]).length === 1);
   controllers[1].abort(); await second;
 
+  await until(() => watcherCount() === baselineWatchers);
   sendMessage(HOME, tasks[2], { from: 'orchestrator', to: 'worker:fixture', type: 'task', body: 'hold activation' });
   const pending = start(2);
   await until(() => active === 1);
+  const activeWatchers = watcherCount();
+  check(process.platform === 'darwin'
+    ? 'Darwin creates no watcher handles while the owned task activation is held'
+    : 'non-Darwin has watcher handles while the owned task activation is held',
+  readWardenMark(HOME, tasks[2])?.pid === process.pid
+    && (process.platform === 'darwin' ? activeWatchers === baselineWatchers : activeWatchers > baselineWatchers),
+  JSON.stringify({ platform: process.platform, baselineWatchers, activeWatchers }));
   controllers[2].abort();
   let settled = false; pending.finally(() => { settled = true; });
   await new Promise(resolve => setImmediate(resolve));
@@ -83,10 +94,45 @@ try {
   const legacyExit = new Promise(resolve => legacy.once('close', resolve)); legacy.stdin.end(); await legacyExit; legacy = null;
   const recovered = start(3); controllers[3].abort(); await recovered;
   check('only actual legacy process exit permits a new task loop to claim and clean its seat', !existsSync(wardenMarkFile(HOME, tasks[3])));
-  await until(() => process.getActiveResourcesInfo().filter(kind => kind === 'FSEventWrap').length === baselineWatchers);
-  check('all task watcher handles were released after cleanup', process.getActiveResourcesInfo().filter(kind => kind === 'FSEventWrap').length === baselineWatchers);
+  await until(() => watcherCount() === baselineWatchers);
+  check('all task watcher handles were released after cleanup', watcherCount() === baselineWatchers);
 } finally {
   pendingRelease(); controllers.forEach(controller => controller.abort());
   await Promise.allSettled(loops);
   if (legacy && Number.isInteger(legacy.pid) && legacy.pid > 1) { const done = new Promise(resolve => legacy.once('close', resolve)); legacy.stdin.end(); await done; }
 }
+
+// The isolated model exercises production selection and wake wiring with stub OS calls.
+const source = readFileSync(new URL('../lib/warden.js', import.meta.url), 'utf8');
+const watchStart = source.indexOf('function watchInboxes(');
+const watchEnd = source.indexOf('\n}', watchStart) + 2;
+if (watchStart < 0 || watchEnd <= watchStart) throw new Error('Warden inbox watcher source boundary is missing');
+const inbox = path.join(ROOT, 'model-inbox');
+const opened = [];
+let onChange, pollTimer, closeCalls = 0;
+const watchInboxes = runInNewContext(source.slice(watchStart, watchEnd) + '\nwatchInboxes', {
+  process: Object.freeze({ platform: 'linux' }),
+  watchedDirs: () => [inbox],
+  mkdirSync: () => {},
+  watch: (dir, notify) => {
+    opened.push(dir);
+    onChange = notify;
+    const watcher = new EventEmitter();
+    watcher.close = () => { closeCalls += 1; watcher.emit('close'); };
+    return watcher;
+  },
+  setTimeout: (_callback, ms) => { pollTimer = { ms }; return pollTimer; },
+  clearTimeout: () => { pollTimer = null; },
+});
+const observer = watchInboxes(HOME, tasks[0], ['worker:fixture']);
+let woke = false;
+const next = observer.next(1000).then(() => { woke = true; });
+const pollArmed = pollTimer?.ms === 1000;
+onChange?.();
+await new Promise(resolve => setImmediate(resolve));
+const wokeWithoutPoll = woke && pollTimer === null;
+await observer.close();
+await next;
+check('isolated non-Darwin watch branch opens the owned inbox and wakes before its poll', opened.length === 1
+  && opened[0] === inbox && pollArmed && wokeWithoutPoll && closeCalls === 1,
+JSON.stringify({ opened, pollArmed, wokeWithoutPoll, closeCalls }));
