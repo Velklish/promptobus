@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { makeSandbox, makeSockDir, resetCliCaches, stubCommand, writeHostConfig } from './sandbox.mjs';
@@ -133,6 +134,34 @@ test('selected native copy rejects a non-regular source before opening it or wri
   finally { fs.openSync = originalOpen; syncBuiltinESMExports(); }
   assert.equal(existsSync(fixture.destination), false);
   assert.equal(existsSync(fixture.config), false);
+});
+
+test('selected native launch preflight refuses an existing POSIX FIFO without changing planned files', { skip: process.platform === 'win32' }, t => {
+  const temp = mkdtempSync(path.join(os.tmpdir(), 'pb-native-fifo-'));
+  t.after(() => rmSync(temp, { recursive: true, force: true }));
+  const directory = realpathSync(temp), source = path.join(directory, 'selected.fifo');
+  const fifo = spawnSync('mkfifo', [source], { encoding: 'utf8', timeout: 5000, killSignal: 'SIGKILL' });
+  assert.ifError(fifo.error);
+  assert.equal(fifo.status, 0, fifo.stderr);
+  assert.ok(fs.lstatSync(source).isFIFO());
+  const destination = put(path.join(directory, 'skill', 'selected.txt'), 'Original skill copy\n');
+  const config = put(path.join(directory, 'launch.json'), 'Original launch config\n');
+  const files = [{ path: config, text: 'New launch config\n', secret: false },
+    { path: destination, copyFileFrom: source, text: '', secret: false }];
+  const expected = `Selected native context source requires a regular file: ${source}`;
+  const spawnModule = new URL('../lib/spawn.js', import.meta.url).href;
+  const child = spawnSync(process.execPath, ['--input-type=module', '--eval', `
+    import assert from 'node:assert/strict';
+    import { writeLaunchFiles } from ${JSON.stringify(spawnModule)};
+    assert.throws(() => writeLaunchFiles(${JSON.stringify(files)}), { message: ${JSON.stringify(expected)} });
+    console.log('regular-file refusal');
+  `], { cwd: directory, encoding: 'utf8', timeout: 5000, killSignal: 'SIGKILL' });
+  assert.ifError(child.error);
+  assert.equal(child.signal, null);
+  assert.equal(child.status, 0, child.stderr);
+  assert.equal(child.stdout.trim(), 'regular-file refusal');
+  assert.equal(readFileSync(destination, 'utf8'), 'Original skill copy\n');
+  assert.equal(readFileSync(config, 'utf8'), 'Original launch config\n');
 });
 
 test('selected native source opens nonblocking and closes a non-regular descriptor', { skip: !fs.constants.O_NONBLOCK }, () => {
