@@ -352,6 +352,8 @@ the tool-access boundary:
 Managed participant HTTP tools require the owner-realized actual native ID; a planned UUID or session-record pointer alone grants no tool access.
 <!-- /quote -->
 
+For a managed Claude reconnect, distinguish three observations: the old client's headers helper, the successor's first MCP initialization, and the successor's native admission. The helper checks the staged client against the record's current `ref` and `launchId`, even when the pointer path is reused. Initialization alone does not publish the native ID. The [admission-order fixture](../../test/claude-admission-order.test.mjs) stages two generations at one address while the fixture registry is unreadable. It tests the admission boundary conditional on staging; it does not establish that public spawn accepts such a relift or that the predecessor stopped.
+
 At the native child boundary, all four drivers remove inherited `BB_THREAD_ID`,
 `BB_ENVIRONMENT_ID`, `BB_PROJECT_ID` and `BB_THREAD_STORAGE` using the shared
 `PARENT_SESSION_ENV` list. These identify the parent, not the child.

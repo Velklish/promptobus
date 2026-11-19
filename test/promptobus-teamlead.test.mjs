@@ -267,6 +267,14 @@ check('second teamlead prompt lists its sibling address', sibling.prompt.include
 const sid3 = '33333333-3333-3333-3333-333333333333';
 // The dead session's points, and the new session's bus entry shaking hands before the rebind lands.
 store.writeWake(home, child.id, 'orchestrator', { socket: path.join(scratch, 'dead-child.sock'), session: sid1 });
+store.writeHealth(home, child.id, { ...store.readHealth(home, child.id), orchestrator: {
+  channel: 'self-wake', selfWake: 'refused', knockError: 'ENOENT', triedAt: new Date().toISOString(),
+} });
+const childOwnerLine = () => captureSplit(() => status(host, { task: child.id, sessions: [] })).out
+  .split('\n').find(line => line.trimStart().startsWith('orchestrator ·')) ?? '';
+const predecessorLine = childOwnerLine();
+check('the child status attributes the failed knock to the predecessor before rebind',
+  predecessorLine.includes(`owner ${sid1} is dead since`), predecessorLine);
 store.writeWake(home, task, 'teamlead:group-one', { socket: path.join(scratch, 'dead-root.sock'), session: sid1 });
 const leadSock = path.join(scratch, 'lead-3.sock');
 const leadMcp = spawn(process.execPath, [cli, 'mcp'], {
@@ -310,6 +318,11 @@ const relift = await quiet(() => spawnTeamlead(host, { ...reliftOpts, sessions: 
 const reliftLead = store.participantOf(store.readTask(home, task), 'teamlead:group-one');
 const reliftOwner = store.participantOf(store.readTask(home, child.id), 'orchestrator');
 const reliftSessions = snapshotOf([reliftLead, reliftOwner]);
+const beforeKnock = childOwnerLine();
+check('before its first knock the accepted child owner has a fresh alarm, not the predecessor death verdict',
+  reliftOwner.metadata.owner === sid3 && beforeKnock.includes(`owner ${sid3}`)
+  && /alarm: (?:awaiting the handover|self-wake — starting up)/.test(beforeKnock)
+  && !/is dead since|ENOENT/.test(beforeKnock), JSON.stringify({ sid1, sid3, predecessorLine, beforeKnock }));
 const leadSecondLog = path.join(scratch, 'lead-second.jsonl');
 writeFileSync(leadSecondLog, `${JSON.stringify(leadUsage(sid3, 'second', 5))}\n`);
 for (const [taskId, address] of [[task, 'teamlead:group-one'], [child.id, 'orchestrator']]) {
