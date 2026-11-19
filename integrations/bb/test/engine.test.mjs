@@ -997,7 +997,8 @@ test('each shipped skill uses mailbox and send arguments accepted by the registe
   for (const role of ['worker', 'reviewer', 'approver', 'teamlead', 'reporter', 'orchestrator']) {
     const text = readFileSync(new URL(`../skills/promptobus-${role}/SKILL.md`, import.meta.url), 'utf8');
     const modes = [...text.matchAll(/\{"mode":[^{}]+\}/g)].map(([json]) => JSON.parse(json));
-    assert.deepEqual(new Set(modes.map(args => args.mode)), new Set(['peek', 'read']), role);
+    const expectedModes = role === 'orchestrator' ? ['peek', 'read', 'review-part'] : ['peek', 'read'];
+    assert.deepEqual(new Set(modes.map(args => args.mode)), new Set(expectedModes), role);
     for (const args of modes) assert.deepEqual(parse('promptobus_mailbox', args), { ok: true, value: args });
     assert.doesNotMatch(text, /to:\s*"|ask the bodies|body by (its|the) message id|body by its returned message id/);
     const sends = [...text.matchAll(/\{"to":(?:[^{}]|\{[^{}]*\})*\}/g)].map(([json]) => JSON.parse(json));
@@ -1008,7 +1009,12 @@ test('each shipped skill uses mailbox and send arguments accepted by the registe
     }
   }
   assert.equal(parse('promptobus_send', { to: 'orchestrator', type: 'status', body: 'Plan' }).ok, false);
-  assert.equal(parse('promptobus_mailbox', { mode: 'read', message: 'old-message' }).ok, false);
+  for (const args of [
+    { mode: 'unknown' }, { mode: 'read', message: 'old-message' },
+    { mode: 'peek', id: 'MESSAGE_ID' }, { mode: 'read', id: 'MESSAGE_ID' },
+    { mode: 'review-part' }, { mode: 'review-part', id: '' }, { mode: 'review-part', id: 1 },
+    { mode: 'review-part', id: 'MESSAGE_ID', task: 'other-task' },
+  ]) assert.equal(parse('promptobus_mailbox', args).ok, false, JSON.stringify(args));
 });
 
 test('selected BB tools export MCP object input schemas and preserve strict Host context requests', async t => {
