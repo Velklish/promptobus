@@ -30,7 +30,7 @@ const brief = path.join(root, 'brief.md');
 writeFileSync(brief, '# Startup root\nPreserve its only native holder.\n');
 const preload = path.join(root, 'hold-listen.cjs');
 writeFileSync(preload, `
-const { readFileSync, writeFileSync, renameSync, existsSync, watch } = require('node:fs');
+const { readFileSync, writeFileSync, renameSync, existsSync } = require('node:fs');
 const path = require('node:path');
 const { Server } = require('node:net');
 const file = process.argv[2], launchId = process.argv[3];
@@ -62,8 +62,8 @@ Server.prototype.listen = function (...args) {
   const record = JSON.parse(readFileSync(file, 'utf8'));
   if (args[0] !== record.rpcSocket || record.launchId !== launchId) throw new Error('holder barrier ownership changed');
   const release = path.join(${JSON.stringify(root)}, record.task + '.release');
-  let watcher, released = false;
-  const cleanup = () => { watcher?.close(); clearTimeout(timer); process.off('exit', cleanup); };
+  let poll, released = false;
+  const cleanup = () => { clearInterval(poll); clearTimeout(timer); process.off('exit', cleanup); };
   const resume = () => {
     if (released || !existsSync(release)) return;
     released = true;
@@ -76,8 +76,7 @@ Server.prototype.listen = function (...args) {
   }, 10000);
   process.once('exit', cleanup);
   try {
-    watcher = watch(${JSON.stringify(root)}, resume);
-    watcher.on('error', error => { try { this.emit('error', error); } finally { cleanup(); } });
+    poll = setInterval(resume, 20);
     const marker = path.join(${JSON.stringify(root)}, record.task + '.listening');
     writeFileSync(marker + '.tmp', JSON.stringify(record));
     renameSync(marker + '.tmp', marker);
@@ -101,24 +100,28 @@ cp.spawn = (...args) => {
 syncBuiltinESMExports();
 await import(${JSON.stringify(pathToFileURL(cli).href)});
 `);
-const controlled = path.join(root, 'delayed-watch.cjs');
+const controlled = path.join(root, 'delayed-poll.cjs');
 writeFileSync(controlled, `
 const fs = require('node:fs');
 const { Server } = require('node:net');
 const file = process.argv[2], present = process.argv[3] === 'present';
 const record = JSON.parse(fs.readFileSync(file, 'utf8'));
 const release = ${JSON.stringify(root)} + '/' + record.task + '.release';
-const events = [], held = [];
+const { mock } = require('node:test');
+mock.timers.enable({ apis: ['setTimeout'] });
+const events = [];
 const note = event => events.push({ event, ns: process.hrtime.bigint().toString(), release: fs.existsSync(release) });
-const watch = fs.watch, rename = fs.renameSync, listen = Server.prototype.listen, timeout = setTimeout;
-fs.watch = (dir, callback) => {
-  if (dir !== ${JSON.stringify(root)}) throw new Error('unowned watch control');
-  const watcher = watch(dir, () => note('watch-notified'));
-  note('watch-held');
-  held.push(callback);
-  const close = watcher.close;
-  watcher.close = function () { note('watch-closed'); return close.call(this); };
-  return watcher;
+const rename = fs.renameSync, listen = Server.prototype.listen, timeout = setTimeout;
+let heldPoll;
+global.setInterval = (callback, ms) => {
+  if (heldPoll || !(ms > 0 && ms < 10000)) throw new Error('unexpected owned listener poll');
+  note('poll-held');
+  heldPoll = callback;
+  return callback;
+};
+global.clearInterval = handle => {
+  if (handle !== heldPoll) throw new Error('unexpected owned listener poll handle');
+  note('poll-cleared');
 };
 fs.renameSync = (...args) => { rename(...args); if (args[1].endsWith('.listening')) note('marker'); };
 Server.prototype.listen = function (...args) { note('actual-listen'); return listen.apply(this, args); };
@@ -128,7 +131,7 @@ global.setTimeout = (callback, ms) => {
   return timeout(() => {
     note('timer');
     try { callback(); } finally {
-      for (const deliver of held) { note('watch-delivered'); deliver(); }
+      note('poll-delivered'); heldPoll();
     }
   }, ms);
 };
@@ -141,6 +144,10 @@ note('listen');
 server.listen(record.rpcSocket, '127.0.0.1');
 note('listen-return');
 if (present) { fs.writeFileSync(release, 'release\\n'); note('release'); }
+mock.timers.tick(9999);
+note('before-deadline');
+mock.timers.tick(1);
+mock.timers.reset();
 process.once('beforeExit', () => console.log(JSON.stringify(events)));
 `);
 for (const present of [true, false]) {
@@ -156,23 +163,24 @@ for (const present of [true, false]) {
     });
   } finally { rmSync(file, { force: true }); }
   const events = result.stdout.trim() ? JSON.parse(result.stdout.trim()) : [];
-  console.log('controlled owned listener schedule: ' + JSON.stringify({ present, status: result.status, events }));
+  const diagnostic = JSON.stringify({ present, status: result.status, signal: result.signal, error: result.error?.message, events });
+  console.log('controlled owned listener schedule: ' + diagnostic);
   const at = name => events.findIndex(value => value.event === name);
   const ordered = names => names.every((name, i) => at(name) >= 0 && (i === 0 || at(names[i - 1]) < at(name)));
-  check('controlled listener holds watch delivery through the unchanged timer: release ' + present,
-    result.status === 0 && ordered(['listen', 'timer-armed', 'watch-held', 'marker', 'listen-return', 'timer', 'watch-delivered'])
-    && (!present || ordered(['listen-return', 'release', 'timer']))
+  check('controlled listener holds poll delivery through the unchanged timer: release ' + present,
+    result.status === 0 && ordered(['listen', 'timer-armed', 'poll-held', 'marker', 'listen-return', 'before-deadline', 'timer', 'poll-delivered'])
+    && (!present || ordered(['listen-return', 'release', 'before-deadline', 'timer']))
     && events[at('listen-return')]?.release === false && events[at('timer')]?.release === present,
-    result.stderr + JSON.stringify(events));
-  check(present ? 'owned listener timer consumes a durable release while its watch callback is held'
-    : 'owned listener timer refuses an absent release while its watch callback is held',
+    result.stderr + diagnostic);
+  check(present ? 'owned listener timer consumes a durable release while its poll callback is held'
+    : 'owned listener timer refuses an absent release while its poll callback is held',
     present ? ordered(['timer', 'actual-listen', 'listening', 'server-closed'])
       && !events.some(value => value.event.startsWith('error:'))
       : at('error:owned listener barrier was not released') > at('timer') && at('actual-listen') === -1,
-    JSON.stringify(events));
-  check('controlled listener closes its owned watcher at the timer: release ' + present,
-    ordered(['timer', 'watch-closed', 'watch-delivered'])
-    && events.filter(value => value.event === 'watch-closed').length === 1, JSON.stringify(events));
+    diagnostic);
+  check('controlled listener clears its owned poll at the timer: release ' + present,
+    ordered(['timer', 'poll-cleared', 'poll-delivered'])
+    && events.filter(value => value.event === 'poll-cleared').length === 1, diagnostic);
 }
 for (const [index, title] of ['Startup root', 'Different startup root', 'Unbound startup root'].entries()) {
   const task = `lead-startup-t20261001-00000${index + 1}`;
