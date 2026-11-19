@@ -92,6 +92,7 @@ test('the standalone host source does not contain another workplace layout', () 
 test('src and its own suite have no names of another contour', () => {
   const needles = [CONTOUR.pkg, CONTOUR.layout, CONTOUR.env];
   const hits = [];
+  const codexReplay = path.join(ROOT, 'test', 'fixtures', 'codex-app-server', '0.170.0');
   const files = [
     ...walk(SRC),
     ...walk(path.join(ROOT, 'test')).filter((f) => !f.endsWith(`${path.sep}driver.test.mjs`)),
@@ -105,6 +106,8 @@ test('src and its own suite have no names of another contour', () => {
         file === path.join(ROOT, 'test', 'harness-codex.mjs')
         || file === path.join(ROOT, 'test', 'lead.test.mjs')
         || file === path.join(ROOT, 'test', 'native-participant-context.test.mjs')
+        || file === path.join(codexReplay, 'participant-config.md')
+        || file === path.join(codexReplay, 'replay-participant.mjs')
         || /[/\\]fixtures[/\\]codex-app-server[/\\][^/\\]+[/\\](?:CanonicalSkills|ReviewerReadRoots)-/.test(file));
       if (codexSkills) continue;
       if (text.includes(needle)) hits.push(`${path.relative(ROOT, file)}: ${needle}`);

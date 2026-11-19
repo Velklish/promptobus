@@ -110,6 +110,9 @@ export const SUITE_PREFIXES = [
   'pb-bb-root-command-', 'pb-bb-root-new-owner-', 'pb-bb-root-owner-',
   'pb-codex-cleanup-policy-', 'pb-kernel-read-shapes-', 'pb-observer-trace-', 'pb-lead-generation-',
   'pb-native-alias-', 'pb-native-retirement-', 'pb-managed-path-',
+  'pb-digest-', 'pb-acquisition-', 'pb-owner-proof-', 'pb-native-fifo-', 'pb-checkpoint-',
+  'canary-abort-fixture-', 'canary-abort-runs-', 'codex-capture-contract-', 'review-reuse-',
+  'promptobus-canonical-skills-', 'promptobus-integration-preflight-', 'promptobus-observe-', 'promptobus-request-',
   // As `mutation-probe.test.mjs` spells it, for the reason the three above are kept:
   // the sweep does not care about the name, and a rename would be an edit for its convenience.
   'mutation-probe-',

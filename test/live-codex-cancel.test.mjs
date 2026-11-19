@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { check } from './check.mjs';
 import { checkCodexHygiene, readCodexHygiene } from '../scripts/codex-hygiene.mjs';
+import { liveRoutingEnv } from '../scripts/live-entry.mjs';
 
 const source = readFileSync(new URL('../scripts/live-codex.mjs', import.meta.url), 'utf8');
 const executable = source.replace(/^#![^\n]*\n/, '')
@@ -27,8 +28,9 @@ async function runCase(boundary) {
     run: () => { actions.push('pgrep'); return { status: 1, stdout: '' }; },
     read: () => { actions.push('config sha'); return 'unchanged'; },
   };
+  const fixtureEnv = {};
   const context = {
-    path, process: { argv: ['node', 'live-codex.mjs'], env: {}, pid: 42,
+    path, process: { argv: ['node', 'live-codex.mjs'], env: fixtureEnv, pid: 42,
       stdout: { write: (line) => { lines.push(line); actions.push('stdout'); } },
       exit: (code) => { throw new Error('unexpected exit ' + code); } },
     existsSync: () => sandbox, writeFileSync: () => {}, writeSync: (_fd, line) => lines.push(line),
@@ -52,6 +54,7 @@ async function runCase(boundary) {
     },
     markRunOwner: () => {}, sweepLiveRuns: () => [],
     guardStubLaunch: () => ({ stub: false }),
+    liveRoutingEnv: (sandbox) => liveRoutingEnv(sandbox, fixtureEnv),
     onAbort: (fn) => { abort = fn; },
     readCodexHygiene: (file) => readCodexHygiene(file, io),
     checkCodexHygiene: (file, before, check) => checkCodexHygiene(file, before, check, io),
