@@ -1,10 +1,11 @@
-# PB-429 · Ship Promptobus BB plugins compatible with BB 0.49
+# PB-429 · Ship Promptobus BB plugins compatible with BB 0.50
 
-- **Order:** 180
 - **Scope:** [BB integration](../../reference/05-drivers.md)
 - **Created:** 2026-11-13
 - **Dependencies:** none
 - **Cost:** major
+- **Previous order:** 180
+- **Taken:** 2026-11-19
 
 ## Context
 
@@ -14,17 +15,21 @@ The child diagnostic session recorded `bb plugin source promptobus --json` exit 
 
 The configured source was `git:https://github.com/Velklish/promptobus.git@semver:bb/:>=0.2.0-rc.3 <0.3.0`. The native CLI smoke on Promptobus 0.32.9 succeeded independently; that does not validate the BB plugins. Original local run summary: `/private/tmp/promptobus-smoke-20261113/report.md`.
 
+A first pass moved both plugins to the exact BB 0.49.0 / SDK 0.6.132 pair and shipped as `bb/v0.2.1`. On 2026-11-19 BB had updated itself to 0.50.1: `bb plugin list` exited 0 and reported `promptobus@0.2.1` and `promptobus-native-panel@0.2.1` as `incompatible`, reason `requires bb 0.49.0, this is 0.50.1`. The installed BB 0.50.1 bundle carries SDK 0.6.157, which is also the latest published `@get-bb/plugin-sdk`. That is the second release in a row whose host update disabled both plugins.
+
+Owner decision of 2026-11-19: declare a floor within the current minor line — `bb: ">=0.50.1 <0.51"`, `bbPluginSdk: ">=0.6.157"` — instead of the exact pair. A BB patch release no longer disables the plugins; a new minor line still needs a qualified release. The build keeps the SDK exactly pinned in `devDependencies`. BB's own plugin scaffold declares floors the same way.
+
 ## Work to do
 
-- Check the current supported BB/SDK contract and the two plugin entry points against BB 0.49 before selecting compatible pins.
+- Check the current supported BB/SDK contract and the two plugin entry points against BB 0.50.1 and SDK 0.6.157.
 - Apply only the required compatibility changes, qualify both plugins and publish a compatible release through the existing plugin channel when publication is authorized.
-- Keep compatibility refusal for unsupported host/SDK combinations. Do not merely widen the manifest version range to suppress the refusal.
+- Declare the floor range of the owner's decision and keep a compatibility refusal for a host below the floor or outside the minor line.
 
 ## Acceptance criteria
 
-- The configured source can resolve a released compatible version on BB 0.49; the normal plugin update route installs it and both plugins reach `running`.
+- The configured source can resolve a released compatible version on BB 0.50.1; the normal plugin update route installs it and both plugins reach `running`.
 - A bounded BB-native task/participant, message, panel and Stop smoke passes on the declared supported combination with exact versions and receipts.
-- Existing supported combinations retain their documented behavior; unsupported combinations still fail with a useful compatibility diagnostic.
+- A host below BB 0.50.1 or from another minor line still fails with a useful compatibility diagnostic.
 
 ## Out of scope
 
