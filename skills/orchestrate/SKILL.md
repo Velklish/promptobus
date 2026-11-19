@@ -31,7 +31,7 @@ A message to the person — your question, your status report, or the reporter's
 
 ## Root thread handoff
 
-End the root thread's assignment after the agreed batch of tasks or when the owner's context threshold is reached. Stop dispatching. For large logs, histories or another repository, use a read-only subagent only with the owner's approval; request conclusions, evidence locations and unknowns, not raw text. Without approval, narrow the read or ask.
+Stop dispatching after the agreed batch of tasks or when the owner's context threshold is reached. For large logs, histories or another repository, use a read-only subagent only with approval; request conclusions, evidence locations and unknowns, not raw text. Otherwise narrow the read or ask.
 
 Write a new handoff file in the root task's `files/` directory reported by `promptobus_task`. Give the owner its exact path. Record:
 
@@ -39,12 +39,14 @@ Write a new handoff file in the root task's `files/` directory reported by `prom
 - Owner decisions and their scope, including the approved split, strategy envelope, pending interactions, pauses and intentional Stops.
 - Worktrees, open branches with heads, backup locations or missing backups. Link original briefs, checkpoints and relevant mail by task and message ID; distinguish acknowledged, outstanding and unverified work.
 
-This file carries context, not consent. Give it to the owner before ending the old session through its authorized host route; an idle turn is not evidence it ended. The boundary does not authorize `stop`, `done`, `abandon` or a whole-run pause. For a fresh root thread the owner opens a new conversation with the handoff, not the old transcript. Choose the route before doing any work:
+After checkpointing, agree with the owner on the continuation route and who remains responsible for the original task and its participants. Only then may the outgoing session exit through an authorized host route. Without that agreement, stay at the checkpoint without dispatching. The boundary authorizes neither `stop`, `done`, `abandon` nor a whole-run pause.
 
-- **Ordinary session-owned root:** require explicit owner approval for the exact active root task and the full outgoing and incoming session IDs. Verify the old session has ended, the recorded owner still matches, the caller has the incoming harness identity at the root `orchestrator` address, and there is no competing takeover. If any check is missing, stop. Only then use `promptobus_mailbox { task: <root>, claim: true }`. Claim does not check liveness or compare an expected previous owner. Verify `MAILBOX CLAIMED` names both approved IDs and the correct task; retain the headers returned by the claim itself. On mismatch report it without dispatch or another claim.
-- **Managed Codex root:** `lead --resume --task <id>` recovers the same native thread and history; it does not start a fresh root. `lead` starts a fresh managed thread only on a new task. Ask whether the owner wants same-thread recovery if eligible, or a separately approved new task from the handoff. A mailbox claim cannot transfer the managed launch. Mail, participants and Stop receipts stay on the original task; do not re-create them or close it to force rotation.
+- **Managed Codex root:** `lead --resume --task <id>` recovers the same native thread and history only from an eligible retained launch. `stop` and `done` retire its resumable home. A fresh managed `lead` needs a separately approved new task; it cannot take over this one. Mail, participants and Stop receipts stay on the original task.
+- **Ordinary session-owned root:** the owner opens a new conversation with the handoff, not the old transcript. Require one authorized claimant and explicit owner approval for the exact active root task and the full outgoing and incoming session IDs. Before claim, verify the workspace and store, recorded owner, incoming harness identity and effective mailbox for this call: it must resolve to the root `orchestrator`. Verify the old session has ended through its host; neither an idle turn nor a missing or refused wake proves exit. If any check fails, leave ownership alone.
 
-A claim refusal (including a held peer address) is final for that attempt. Never change the caller's identity or role to bypass it. Verify the task's full recorded owner after the claim; a successful tool transport alone proves nothing.
+A held address can override the declared role. Only where the installed dispatcher supports the registered-peer exception can an explicitly declared `orchestrator` select the named root for claim from its own exact-session linked peer. Ordinary reads still select the peer. Never unlink it, change identity or bypass a refusal.
+
+For the authorized ordinary transfer use `promptobus_mailbox { task: <root>, claim: true }`. It does not check liveness or compare the previous owner before writing. It changes ownership and binding and takes unread mail into history before replying. Preserve returned headers and IDs; verify `MAILBOX CLAIMED`, task, both IDs and current owner. On a lost or mismatched reply, do not retry: reconcile ownership, binding and mail history through an authorized route before dispatch. Report what remains unknown.
 
 Before dispatch, reconcile the file against current task status, checkpoints and authorized root mail (including arrivals since the file was written). Leave child mail to its teamlead. Report gaps and the next approved action; a handoff neither resumes paused participants nor proves Stop or drain. Follow [Planned whole-run pause](#planned-whole-run-pause) for a paused run. If the host cannot establish successor authority, leave the run at the checkpoint and identify the missing grant or evidence.
 
@@ -225,7 +227,7 @@ Unnamed routing offers only tuples rated for the requested role. An explicit `--
 
 Role quality floors are soft; on the ten-point scale they default to worker 5, approver 7, reviewer 9; a pick below one carries `<role>-floor-not-met` (`src/registry.ts`). The shipped catalog rates no Anthropic model on Cursor (`models/catalog.json`).
 
-`balance` spreads work across subscriptions, ranking tuples within a harness by `balanced`. It is outside the quality ladder. Reviewers have no pinned harness ([solo-review](../solo-review/SKILL.md) § Reviewer strategy).
+`balance` is outside the quality ladder, not a general default. Propose it for a long run across subscriptions or when an account runs short; within each harness it ranks by `balanced`. Reviewers have no pinned harness ([solo-review](../solo-review/SKILL.md) § Reviewer strategy).
 
 Each live participant of the task on a harness costs its tuples 5 score points by default (`penalties.liveParticipantPerHarness`), at most 20 (`penalties.liveParticipantCap`), under every strategy. `balance` chooses the harness by pace, so the penalty only orders the tied band. The `balance` projection uses `caps.liveParticipants.<harness>` as a ceiling; live-cap admission enforces it for every strategy and explicit model choice (03-cli § Live-cap admission).
 
@@ -245,7 +247,7 @@ This sets the host's `defaults.strategy` for subsequent lifts without `--strateg
 
 ### When the local runs disagree with the catalog
 
-Run `promptobus models calibrate` to compare local telemetry with catalog ratings. It proposes `speed` and `quotaCost`, never `quality`; insufficient data yields no proposal. Show the evidence before `promptobus models calibrate --write` merges proposed ratings into the user overlay. Leave its confirmation to the person.
+Run `promptobus models calibrate` when experience contradicts a pick or after a long series on one harness. It proposes `speed` and `quotaCost`, never `quality`; insufficient data yields no proposal. Show the evidence before `promptobus models calibrate --write` updates the user overlay. `--yes` records prior consent; it cannot replace asking.
 
 ### The one question the tool cannot answer
 

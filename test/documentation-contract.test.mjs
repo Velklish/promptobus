@@ -363,11 +363,24 @@ check('docs: root rotation checkpoints the run before a fresh conversation',
   has(handoff, "after the agreed batch of tasks or when the owner's context threshold is reached")
   && has(handoff, "Write a new handoff file in the root task's `files/`")
   && has(handoff, 'opens a new conversation with the handoff, not the old transcript'));
+check('docs: no outgoing exit before a continuation route and participant owner are agreed',
+  has(handoff, 'After checkpointing, agree with the owner on the continuation route and who remains responsible for the original task and its participants. Only then may the outgoing session exit')
+  && has(handoff, 'Without that agreement, stay at the checkpoint without dispatching'));
 check('docs: fresh root succession requires exact consent and cannot transfer a managed launch',
   has(handoff, 'explicit owner approval for the exact active root task and the full outgoing and incoming session IDs')
   && has(handoff, 'Verify the old session has ended')
   && has(handoff, '`lead --resume --task <id>` recovers the same native thread and history')
   && has(handoff, 'Mail, participants and Stop receipts stay on the original task'));
+check('docs: ordinary claim checks resolved authority and host exit before transfer',
+  has(handoff, 'one authorized claimant')
+  && has(handoff, 'verify the workspace and store, recorded owner, incoming harness identity and effective mailbox for this call')
+  && has(handoff, 'neither an idle turn nor a missing or refused wake proves exit')
+  && has(handoff, 'Only where the installed dispatcher supports the registered-peer exception')
+  && has(handoff, 'an explicitly declared `orchestrator` select the named root for claim from its own exact-session linked peer'));
+check('docs: an uncertain claim result requires reconciliation, not replay',
+  has(handoff, 'changes ownership and binding and takes unread mail into history before replying')
+  && has(handoff, 'Preserve returned headers and IDs')
+  && has(handoff, 'On a lost or mismatched reply, do not retry: reconcile ownership, binding and mail history through an authorized route'));
 const wholeRunPause = section(orchestrateSkill, '## Planned whole-run pause');
 const pauseAtLimit = section(wholeRunPause, "### Pause at the owner's limit threshold");
 const continueAfterReset = section(wholeRunPause, '### Continue after the reset');
