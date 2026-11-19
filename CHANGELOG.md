@@ -14,11 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Document owner-approved whole-run pauses at harness limit windows, checkpointing in task files and same-slug teamlead relift with a continuation brief. The procedure preserves existing ownership and Stop requirements.
 - Add controlled checks for managed Claude reconnects across a generation change.
 - Show a board of active runs in the BB native panel: lanes per run, columns per pipeline step plus Done, a card per piece with its holder, latest status, stall, open question and unread mail, and a side panel with the piece's history and an Open thread button for a BB participant. The digest and the board place pieces by one rule, now exported as `piecesOf` and `currentResult`.
+- Keep long runs visible on the BB native board with a newest-first history window and a shared byte budget. Mark unfinished deliveries on affected cards and in the side panel without advancing a step on a partial delivery. Keep the cards and open side panel visible while an intent is being written.
 - Hosts can select different MCP sets for background workers and control roles. An opt-in project-discovery boundary restricts access to MCP servers from ancestor workspace configs. The worker set goes to the step of kind `edits-tree`, whatever its name.
 
 ### Changed
 
 - Encapsulate bus and reviewer-file MCP request admission per shared-service owner. An expired pending native reservation now returns 401 before MCP header validation or body reading. Valid pending catalog discovery, managed task locking and receipt replay rules are unchanged.
+- The BB native board shows the pipeline declared at run start, distinguishes predicted steps from observed participants, and includes steps added during the run. Runs without a recorded order keep their previous columns.
+
 - Check the consumed Codex app-server protocol against 0.170.0; the minimum remains 0.158.0.
 
 - Declare BB `>=0.50.1 <0.51` and Plugin SDK `>=0.6.157` for both BB plugins instead of one exact pair, so a BB patch release no longer disables them; a new BB minor line still needs a release. The build pins SDK 0.6.157. Source checks do not establish an installed live workflow.

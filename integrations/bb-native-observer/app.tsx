@@ -57,9 +57,10 @@ const styles = `
 
 function PieceCard({ run, piece, selected, now, open }: { run: Run; piece: Run['pieces'][number]; selected: boolean; now: number; open: () => void }) {
   const holder = piece.holder, signals = pieceSignals(piece);
-  return <button className="pb-piece" data-piece={`${run.id}/${piece.slug}`} aria-pressed={selected} aria-label={`${piece.slug} in ${run.title || run.id}`} onClick={open}>
+  return <button className="pb-piece" data-piece={`${run.id}/${piece.slug}`} aria-pressed={selected}
+    aria-label={`${piece.slug} in ${run.title || run.id}${piece.unfinishedDelivery ? ' · Unfinished delivery' : ''}`} onClick={open}>
     <span className="pb-piece-slug">{piece.slug}</span>
-    <span className="pb-caption">{holder ? `${holder.role} · ${holder.model ?? holder.harness}` : piece.step === null ? 'Finished' : 'Waiting for a participant'}</span>
+    <span className="pb-caption">{piece.placement === 'expected-at-start' ? 'Expected at start · current next step unconfirmed' : holder ? `${holder.role} · ${holder.model ?? holder.harness}` : piece.step === null ? 'Finished' : 'Waiting for a participant'}</span>
     {holder?.status && <span className="pb-piece-status">{holder.status.line || 'Empty status'}</span>}
     <span className="pb-piece-foot">
       <span className="pb-caption">{holder?.status ? relativeAge(holder.status.at, now) : 'No status yet'}</span>
@@ -82,8 +83,9 @@ function PieceDrawer({ run, piece, history, error, now, close }: { run: Run; pie
     <div className="pb-drawer-head">
       <div className="pb-drawer-title"><div><h2>{piece.slug}</h2><p className="pb-caption">{run.title || run.id}</p></div>
         <button ref={closeButton} onClick={close} aria-label="Close piece details">Close</button></div>
-      <div className="pb-meta"><span className={`pb-pill ${piece.step === null ? 'done' : 'active'}`}>{piece.step ?? 'Done'}</span>
+      <div className="pb-meta"><span className={`pb-pill ${piece.step === null && !run.startSteps ? 'done' : 'active'}`}>{piece.step ?? (run.startSteps ? 'Next step unconfirmed' : 'Done')}</span>
         {pieceSignals(piece).map(signal => <span key={signal.label} className={`pb-pill ${signal.tone}`}>{signal.label}</span>)}</div>
+      {piece.unfinishedDelivery && <p className="pb-caption">A message to or from this piece still has an open delivery intent.</p>}
       {holder ? <>
         <dl className="pb-definition"><dt>Participant</dt><dd>{holder.address}</dd><dt>Harness</dt><dd>{holder.harness}{holder.model ? ` · ${holder.model}` : ''}</dd>
           <dt>Last status</dt><dd>{holder.status ? `${relativeAge(holder.status.at, now)} · ${holder.status.line}` : 'None yet'}</dd>
@@ -92,15 +94,16 @@ function PieceDrawer({ run, piece, history, error, now, close }: { run: Run; pie
         {holder.bbThreadId
           ? <div><button className="pb-primary" onClick={() => navigate.toThread(holder.bbThreadId!)}>Open thread</button></div>
           : <p className="pb-caption">{threadNote(holder)}</p>}
-      </> : <p className="pb-caption">No participant holds the {piece.step} step of this piece yet.</p>}
+      </> : <p className="pb-caption">{run.startSteps ? `The startup pipeline points to ${piece.step}. The observer cannot verify the current next step.` : `No participant holds the ${piece.step} step of this piece yet.`}</p>}
       <dl className="pb-definition" aria-label="Participants by step">{piece.participants.map(entry => <Fragment key={entry.step}><dt>{entry.step}</dt><dd>{entry.participantId}</dd></Fragment>)}</dl>
     </div>
     <div className="pb-drawer-tabs"><div className="pb-tabs" aria-label="History filters">{(['all', 'work', 'status', 'questions'] as const).map(value =>
       <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === 'all' ? 'All' : value === 'work' ? 'Briefs & results' : value === 'status' ? 'Status' : 'Questions'}</button>)}</div></div>
     <div className="pb-drawer-body" aria-live="polite">
       {error && <p className="pb-notice" role="alert">History unavailable: {error}</p>}
+      {history?.notice && <p className="pb-notice">{history.notice}</p>}
       {!history && !error && <p className="pb-empty">Reading the piece history…</p>}
-      {history && messages.length === 0 && <p className="pb-empty">No {filter === 'all' ? '' : 'matching '}messages for this piece yet.</p>}
+      {history && messages.length === 0 && <p className="pb-empty">No {filter === 'all' ? '' : 'matching '}messages {history.notice ? 'in this sample' : 'for this piece yet'}.</p>}
       {messages.slice().reverse().map(message => <article className="pb-message" key={message.id}>
         <div className="pb-message-header"><div><strong>{message.sender}</strong><span className="pb-caption"> → {message.recipients.join(', ')}</span></div><span className="pb-type">{messageLabel(message, roles)}</span></div>
         <pre className="pb-message-body">{message.body}</pre>
@@ -108,7 +111,7 @@ function PieceDrawer({ run, piece, history, error, now, close }: { run: Run; pie
         {message.bodyTruncated && <p className="pb-caption">Preview shortened. The canonical message keeps the full body.</p>}
         <p className="pb-caption">{displayTime(message.created)} · {message.id}</p>
       </article>)}
-      {history && <p className="pb-caption">The newest 64 messages to or from this piece's participants, newest first.</p>}
+      {history && <p className="pb-caption">Up to 64 sampled messages to or from this piece's participants, newest first.</p>}
     </div>
   </aside>;
 }
@@ -189,13 +192,15 @@ function NativePanel() {
           <button onClick={toggleObserver}>{connected ? 'Pause observer' : 'Resume observer'}</button></div>
       </header>
       {(boardError || actionError) && <div className="pb-notice" role="alert">{actionError || boardError}{boardError && board && <p>The board below is the last successful sample.</p>}</div>}
-      {board?.truncated && <p className="pb-notice">Run discovery stopped at 256 runs or 4096 scanned entries. More runs may exist.</p>}
+      {board?.truncated && <p className="pb-notice">Run discovery reached its limit of 256 runs, 4096 scanned entries or 8 MiB of task records. More runs may exist.</p>}
       {!connected && <div className="pb-notice">Observer paused. Runs continue on their own; the board is not refreshing.</div>}
       {board && active.length === 0 && <p className="pb-empty">{board.truncated ? 'No active runs among the runs discovery reached.' : 'No active runs in the configured store. A run appears here as soon as Promptobus starts one.'}</p>}
       {active.map(run => <section className="pb-lane" key={run.id} aria-label={run.title || run.id}>
         <div className="pb-lane-head"><h2>{run.title || run.id}</h2>
           <span className="pb-caption">{run.id}{run.owner ? ` · owner on ${run.owner}` : ''} · updated {relativeAge(run.updated, now)}</span></div>
-        {run.inferred && <p className="pb-caption">Step order inferred: the board cannot read this run's declared pipeline, so its other steps follow the shipped ones in the order their participants appear.</p>}
+        {run.inferred && <p className="pb-caption">Step order inferred: this run has no recorded pipeline. Extra steps follow the shipped ones in the order their participants appear.</p>}
+        {run.startSteps && <p className="pb-caption">Pipeline at start: {run.startSteps.join(' → ')}. The current host configuration is unavailable here. Additional observed steps appear after the startup columns.</p>}
+        {run.notice && <p className="pb-notice">{run.notice} Step placement and message signals may be incomplete.</p>}
         {run.error && <p className="pb-notice" role="alert">{run.error}</p>}
         {!run.error && run.pieces.length === 0 && <p className="pb-caption">No pieces yet: the orchestrator has not handed work to a step.</p>}
         {run.pieces.length > 0 && <div className="pb-columns">{columnsOf(run).map(column => <div className="pb-column" key={column.label}>

@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { boardSchema } from '../contract.js';
 import { boardSteps, placed, readBoard, readPieceHistory } from '../board.js';
+import { showsPiece } from '../dashboard.js';
+import { ownedText, ReadBudget, ReadBudgetExceeded } from '../projection.js';
 import { fixture, treeDigest } from './fixture.js';
 
 const AFTER = '20261119T000000000-0000-000000';
+const FIXTURE_TIME = '2026-12-01T00:00:00.000Z';
 const owner = { id: 'owner', role: 'orchestrator', harness: 'codex', mode: 'attached' as const,
   sessionRef: null, capabilities: null, metadata: { address: 'orchestrator' } };
 type Fixture = ReturnType<typeof fixture>;
@@ -16,6 +19,14 @@ function secondRun(f: Fixture, id: string, addresses: string[]) {
     harness: 'bb', mode: 'managed', sessionRef: 'thr_board1', metadata: { address, assignmentAfterId: AFTER } });
 }
 function roots(f: Fixture) { return { storeRoot: f.selection.storeRoot, nativeRoot: f.selection.nativeRoot }; }
+function record(f: Fixture, task: string, index: number, area: 'inbox' | 'history', sender: string, body: string, type = 'status', recipient = 'owner') {
+  const id = `20261201T000000000-${String(index).padStart(4, '0')}-000000`;
+  const directory = path.join(f.selection.storeRoot, 'tasks', task, area, recipient);
+  const file = path.join(directory, `${id}.json`);
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(file, JSON.stringify({ protocolVersion: 1, id, task, sender, recipients: [recipient], type, body, ts: FIXTURE_TIME }));
+  return file;
+}
 
 test('shipped steps come first and a declared step follows them in address order', () => {
   const at = (address: string) => ({ metadata: { address } }) as never;
@@ -202,5 +213,209 @@ test('board isolates a run whose history leaves the owned store and keeps its si
     const sibling = board.runs.find(run => run.id === 'board-sibling')!;
     assert.equal(sibling.error, null); assert.deepEqual(sibling.pieces.map(piece => piece.slug), ['x']);
     assert.throws(() => readPieceHistory({ ...roots(f), taskId: 'board-symlink', slug: 'alpha' }), /Selected canonical history/);
+  } finally { f.cleanup(); }
+});
+
+test('board and piece history use the newest references across both mailboxes past 4096', () => {
+  const f = fixture('board-long');
+  try {
+    secondRun(f, 'board-long-run', ['worker:alpha', 'worker:beta']);
+    const taskId = 'board-long-run';
+    const newest = record(f, taskId, 4100, 'history', 'worker-alpha', 'Newest result', 'result');
+    for (let index = 0; index < 4100; index++) {
+      record(f, taskId, index, 'inbox', index < 6 ? 'worker-alpha' : 'owner', `Status ${index}`, 'status', 'worker-beta');
+    }
+    const duplicateBox = path.join(path.dirname(newest), '..', '..', 'inbox', 'owner');
+    mkdirSync(duplicateBox, { recursive: true });
+    linkSync(newest, path.join(duplicateBox, path.basename(newest)));
+    const run = readBoard(roots(f), 'observer', 1).runs.find(value => value.id === taskId)!;
+    assert.equal(run.error, null);
+    assert.match(run.notice ?? '', /Older messages were not read/);
+    assert.equal(run.pieces.find(piece => piece.slug === 'alpha')?.step, 'reviewer');
+    assert.equal(run.pieces.find(piece => piece.slug === 'beta')?.holder?.unread, 4100);
+    const alpha = readPieceHistory({ ...roots(f), taskId, slug: 'alpha' });
+    assert.match(alpha.notice ?? '', /Older messages were not read/);
+    assert.deepEqual(alpha.messages.map(message => message.body), ['Newest result']);
+    const beta = readPieceHistory({ ...roots(f), taskId, slug: 'beta' });
+    assert.deepEqual(beta.messages.map(message => message.body), Array.from({ length: 64 }, (_, index) => `Status ${4036 + index}`));
+  } finally { f.cleanup(); }
+});
+
+test('the byte budget is shared across runs, and running out keeps the other lanes visible', () => {
+  const f = fixture('board-byte-fixture');
+  try {
+    const fat = 'x'.repeat(240 * 1024);
+    for (const [taskId, day] of [['board-bytes-first', '03'], ['board-bytes-second', '02'], ['board-bytes-third', '01']]) {
+      secondRun(f, taskId, ['worker:x']);
+      const file = path.join(f.selection.storeRoot, 'tasks', taskId, 'task.json');
+      writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), updated: `2099-01-${day}T00:00:00.000Z` }));
+      for (let index = 0; index < 20; index++) {
+        record(f, taskId, index, 'history', 'worker-x', `${index} ${fat}`, index === 0 && day !== '03' ? 'result' : 'status');
+      }
+    }
+    const [first, second, third] = readBoard(roots(f), 'observer', 1).runs;
+    assert.equal(first.id, 'board-bytes-first'); assert.equal(first.notice, undefined);
+    assert.equal(second.id, 'board-bytes-second'); assert.match(second.notice ?? '', /byte budget/);
+    assert.equal(third.id, 'board-bytes-third'); assert.match(third.notice ?? '', /byte budget/);
+    assert.ok([first, second, third].every(run => run.error === null && run.pieces[0]?.step === 'worker'));
+    assert.match(second.pieces[0].holder?.status?.line ?? '', /^19 /);
+    assert.equal(third.pieces[0].holder?.status, null);
+    const history = readPieceHistory({ ...roots(f), taskId: third.id, slug: 'x' });
+    assert.equal(history.messages.length, 20);
+    assert.equal(history.notice, undefined);
+  } finally { f.cleanup(); }
+});
+
+test('a refused inbox link marks both endpoints without advancing on a partial fan-out, then recovery clears it', t => {
+  if (process.getuid?.() === 0 || process.platform === 'win32') return t.skip('requires POSIX directory permissions enforced for this user');
+  const f = fixture('board-pending-fixture');
+  const taskId = 'board-pending-run';
+  const box = path.join(f.selection.storeRoot, 'tasks', taskId, 'inbox', 'owner');
+  try {
+    secondRun(f, taskId, ['worker:x', 'reviewer:y', 'worker:z']);
+    mkdirSync(box, { recursive: true });
+    chmodSync(box, 0o500);
+    try {
+      assert.throws(() => f.engine.sendSync(taskId, { from: 'worker-x', to: ['reviewer-y', 'owner'], type: 'result', body: 'PRIVATE-PENDING-BODY' }), { code: 'link-refused' });
+    } finally { chmodSync(box, 0o700); }
+    const run = () => readBoard(roots(f), 'observer', 1).runs.find(value => value.id === taskId)!;
+    const history = () => readPieceHistory({ ...roots(f), taskId, slug: 'x' });
+    const before = treeDigest(f.root), pending = run();
+    assert.equal(pending.error, null);
+    assert.deepEqual(pending.pieces.map(piece => [piece.slug, piece.step, !!piece.unfinishedDelivery]),
+      [['x', 'worker', true], ['z', 'worker', false], ['y', 'reviewer', true]]);
+    assert.equal(pending.pieces.find(piece => piece.slug === 'y')?.holder?.unread, 1);
+    assert.doesNotMatch(JSON.stringify(pending), /PRIVATE-PENDING-BODY/);
+    assert.deepEqual(history().messages, []);
+    assert.equal(treeDigest(f.root), before);
+    const recovered = f.engine.recover(taskId);
+    assert.equal(recovered.failed.length, 0); assert.equal(recovered.repairs.length, 1);
+    const complete = run();
+    assert.equal(complete.pieces.find(piece => piece.slug === 'x')?.step, 'reviewer');
+    assert.ok(complete.pieces.every(piece => !piece.unfinishedDelivery));
+    assert.deepEqual(history().messages.map(message => message.body), ['PRIVATE-PENDING-BODY']);
+  } finally { f.cleanup(); }
+});
+
+test('an intents directory outside the owned store refuses the lane, even with no messages', () => {
+  const f = fixture('board-foreign-intents-fixture');
+  try {
+    const taskId = 'board-foreign-intents';
+    secondRun(f, taskId, ['worker:x']);
+    const directory = path.join(f.selection.storeRoot, 'tasks', taskId, 'intents');
+    const foreign = path.join(f.root, 'foreign-intents');
+    if (existsSync(directory)) rmSync(directory, { recursive: true });
+    mkdirSync(foreign); symlinkSync(foreign, directory, 'dir');
+    const board = readBoard(roots(f), 'observer', 1);
+    assert.match(board.runs.find(run => run.id === taskId)?.error ?? '', /Selected canonical intents/);
+    assert.equal(board.runs.find(run => run.id === f.selection.taskId)?.error, null);
+    assert.throws(() => readPieceHistory({ ...roots(f), taskId, slug: 'x' }), /Selected canonical intents/);
+  } finally { f.cleanup(); }
+});
+
+test('a visible but incomplete intent preserves cards and the open history without using its ID as a result', () => {
+  const f = fixture('board-torn-intent-fixture');
+  try {
+    const taskId = 'board-torn-intent-run';
+    secondRun(f, taskId, ['worker:x', 'worker:y']);
+    record(f, taskId, 1, 'history', 'worker-x', 'Confirmed status');
+    const source = { ...roots(f), hostId: 'host_fixture' }, opened = { taskId, slug: 'x', source };
+    const sample = () => ({ ...readBoard(roots(f), 'observer', 1), source });
+    assert.equal(showsPiece(sample(), opened), true);
+
+    const reference = record(f, taskId, 2, 'inbox', 'worker-x', 'Unconfirmed result', 'result');
+    const intents = path.join(f.selection.storeRoot, 'tasks', taskId, 'intents');
+    mkdirSync(intents, { recursive: true });
+    writeFileSync(path.join(intents, path.basename(reference)), '{"protocolVersion":');
+
+    const before = treeDigest(f.root), board = sample();
+    const lane = board.runs.find(run => run.id === taskId)!;
+    assert.equal(lane.error, null);
+    assert.match(lane.notice ?? '', /Sample incomplete: some delivery intents/);
+    assert.deepEqual(lane.pieces.map(piece => [piece.slug, piece.step]), [['x', 'worker'], ['y', 'worker']]);
+    assert.equal(showsPiece(board, opened), true);
+    const history = readPieceHistory({ ...roots(f), taskId, slug: opened.slug });
+    assert.match(history.notice ?? '', /Sample incomplete: some delivery intents/);
+    assert.deepEqual(history.messages.map(message => message.body), ['Confirmed status']);
+    assert.equal(treeDigest(f.root), before);
+  } finally { f.cleanup(); }
+});
+
+test('an owned intent that grows after fstat preserves the cards, the open selection and confirmed history', () => {
+  const f = fixture('board-growing-intent-fixture');
+  try {
+    const taskId = 'board-growing-intent-run';
+    secondRun(f, taskId, ['worker:x', 'worker:y']);
+    record(f, taskId, 1, 'history', 'worker-x', 'Confirmed status');
+    const source = { ...roots(f), hostId: 'host_fixture' }, opened = { taskId, slug: 'x', source };
+    assert.equal(showsPiece({ ...readBoard(roots(f), 'observer', 1), source }, opened), true);
+    const reference = record(f, taskId, 2, 'inbox', 'worker-x', 'Unconfirmed result', 'result');
+    const intents = path.join(f.selection.storeRoot, 'tasks', taskId, 'intents');
+    const intent = path.join(intents, path.basename(reference));
+    const complete = readFileSync(reference);
+    mkdirSync(intents, { recursive: true });
+    function duringWrite<T>(sample: (beforeRead: (file: string) => void) => T) {
+      writeFileSync(intent, '');
+      let afterWriter = '';
+      const value = sample(file => {
+        assert.equal(file, intent);
+        assert.equal(afterWriter, '');
+        writeFileSync(file, complete);
+        afterWriter = treeDigest(f.root);
+      });
+      assert.notEqual(afterWriter, '');
+      assert.equal(treeDigest(f.root), afterWriter);
+      return value;
+    }
+    const board = duringWrite(beforeRead => ({ ...readBoard(roots(f), 'observer', 1, beforeRead), source }));
+    const lane = board.runs.find(run => run.id === taskId)!;
+    assert.equal(lane.error, null);
+    assert.match(lane.notice ?? '', /Sample incomplete: some delivery intents/);
+    assert.deepEqual(lane.pieces.map(piece => [piece.slug, piece.step]), [['x', 'worker'], ['y', 'worker']]);
+    assert.equal(showsPiece(board, opened), true);
+    const history = duringWrite(beforeRead => readPieceHistory({ ...roots(f), taskId, slug: opened.slug }, beforeRead));
+    assert.match(history.notice ?? '', /Sample incomplete: some delivery intents/);
+    assert.deepEqual(history.messages.map(message => message.body), ['Confirmed status']);
+  } finally { f.cleanup(); }
+});
+
+test('an incomplete intent is tolerated only inside the owned file and size boundary', () => {
+  const f = fixture('board-unowned-intent-fixture');
+  try {
+    const taskId = f.selection.taskId;
+    const intent = path.join(f.selection.storeRoot, 'tasks', taskId, 'intents', '20261201T000000000-0000-000000.json');
+    const foreign = path.join(f.root, 'foreign-intent.json');
+    writeFileSync(foreign, '{');
+    const refuses = () => {
+      assert.match(readBoard(roots(f), 'observer', 1).runs[0].error ?? '', /Selected canonical intents/);
+      assert.throws(() => readPieceHistory({ ...roots(f), taskId, slug: 'alpha' }), /Selected canonical intents/);
+    };
+    symlinkSync(foreign, intent);
+    refuses();
+    rmSync(intent);
+    writeFileSync(intent, '{'.repeat(256 * 1024 + 1));
+    refuses();
+    const oversized = '{'.repeat(256 * 1024 + 1);
+    const grow = (file: string) => { assert.equal(file, intent); writeFileSync(file, oversized); };
+    writeFileSync(intent, '');
+    const run = readBoard(roots(f), 'observer', 1, grow).runs[0];
+    assert.match(run.error ?? '', /Selected canonical intents/);
+    assert.equal(run.notice, undefined);
+    writeFileSync(intent, '');
+    assert.throws(() => readPieceHistory({ ...roots(f), taskId, slug: 'alpha' }, grow), /Selected canonical intents/);
+    writeFileSync(intent, '{}');
+    refuses();
+  } finally { f.cleanup(); }
+});
+
+test('the byte budget debits bytes read, not the unused byte reserved to detect growth', () => {
+  const f = fixture('board-byte-accounting');
+  try {
+    const file = path.join(f.selection.storeRoot, 'budget.txt');
+    writeFileSync(file, 'é');
+    const budget = new ReadBudget(5);
+    assert.equal(ownedText(f.selection.storeRoot, file, 256, budget), 'é');
+    assert.equal(ownedText(f.selection.storeRoot, file, 256, budget), 'é');
+    assert.throws(() => ownedText(f.selection.storeRoot, file, 256, budget), ReadBudgetExceeded);
   } finally { f.cleanup(); }
 });

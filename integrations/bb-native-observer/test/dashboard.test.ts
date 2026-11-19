@@ -60,6 +60,13 @@ test('signals name a stall, an open question and unread mail, and a missing part
   assert.deepEqual(pieceSignals(piece('a', null, null)), []);
 });
 
+test('unfinished delivery is a warning even when the current step has no holder', () => {
+  const warning = { label: 'Unfinished delivery', tone: 'warning' };
+  assert.deepEqual(pieceSignals({ ...piece('a', 'worker'), unfinishedDelivery: true }), [warning]);
+  assert.deepEqual(pieceSignals({ ...piece('a', 'reviewer', null), unfinishedDelivery: true }),
+    [warning, { label: 'No reviewer yet', tone: 'unknown' }]);
+});
+
 test('a sample matches another only from the same host, store and native root', () => {
   const source = { hostId: 'host_a', storeRoot: '/store', nativeRoot: '/native' };
   assert.equal(sameSource(source, { ...source }), true);

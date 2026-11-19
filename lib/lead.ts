@@ -2,7 +2,7 @@ import { finalizeManagedServiceLaunch, revokeFailedManagedLaunch } from './servi
 import { renderOrchestratorInstructions } from './prompts/roles.js';
 import { mkdirSync, realpathSync } from 'node:fs';
 import path from 'node:path';
-import { hostOf } from './host.js';
+import { hostOf, pipelineSnapshot } from './host.js';
 import { info, ok } from './util.js';
 import {
   bus, canonicalPath, filesDir, GateError, inboxDir, newTaskIdentity, ORCHESTRATOR,
@@ -251,7 +251,7 @@ async function startLead(plan: LeadPlan, tool: LibToolBin, provenance: ReturnTyp
         } else {
           if (!sameRecordVersion(version)) throw new GateError(`task ${plan.task} changed native record before creation`);
           bus(plan.home, { cli: plan.host.version }).createTask({
-            id: plan.task, title: plan.title!, adapter: { slug: plan.slug }, owner,
+            id: plan.task, title: plan.title!, adapter: { ...pipelineSnapshot(plan.host), slug: plan.slug }, owner,
           });
         }
         mkdirSync(inboxDir(plan.home, plan.task, ORCHESTRATOR), { recursive: true });

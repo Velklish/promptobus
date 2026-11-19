@@ -56,13 +56,17 @@ export function relativeAge(at: string | null | undefined, now: number): string 
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 /** The run's steps as columns plus Done; a piece sits in the column of the step that holds it. */
-export function columnsOf(run: Pick<Run, 'steps' | 'pieces'>): { step: string | null; label: string; pieces: Piece[] }[] {
-  return [...run.steps.map(step => ({ step, label: step })), { step: null, label: 'Done' }]
+export function columnsOf(run: Pick<Run, 'steps' | 'pieces' | 'startSteps'>): { step: string | null; label: string; pieces: Piece[] }[] {
+  return [...run.steps.map(step => ({ step, label: step })), { step: null, label: run.startSteps ? 'Next step unconfirmed' : 'Done' }]
     .map(column => ({ ...column, pieces: run.pieces.filter(piece => piece.step === column.step) }));
 }
 export function pieceSignals(piece: Piece): { label: string; tone: string }[] {
   const holder = piece.holder, signals: { label: string; tone: string }[] = [];
-  if (!holder) return piece.step === null ? signals : [{ label: `No ${piece.step} yet`, tone: 'unknown' }];
+  if (piece.unfinishedDelivery) signals.push({ label: 'Unfinished delivery', tone: 'warning' });
+  if (!holder) {
+    if (piece.step !== null) signals.push({ label: `No ${piece.step} yet`, tone: 'unknown' });
+    return signals;
+  }
   if (holder.stall) signals.push({ label: 'Stalled', tone: 'warning' });
   if (holder.question) signals.push({ label: 'Asked a question', tone: 'warning' });
   if (holder.unread) signals.push({ label: `${holder.unread} unread`, tone: 'active' });

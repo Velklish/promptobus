@@ -1446,8 +1446,27 @@ The host exposes read-only `snapshot`, `tasks`, `ownerFeed`, `board` and
 `pieceHistory` calls. The server exposes `snapshot`, `view`, `tasks`, `board`,
 `pieceHistory`, `selectTask`, `wakeStatus` and `bindOwner`.
 Both `selectTask` and `bindOwner` persist plugin configuration.
+When a native run starts under a host-declared pipeline, its task journal records
+the ordered step names in `adapter.pipelineSteps`. This is the startup order;
+`digest` and step admission still consult the current host. The board labels a
+missing step as a startup expectation and shows additional observed participants
+and their history even when their steps were absent at startup. Without a snapshot, the board uses
+the shipped steps followed by extra steps in participant address order.
 Observation reads validated selected-task inbox/history and matching native
 registry/receipt records without consuming mail or opening a writable engine.
+For each sampled board lane and piece-history read, the observer considers the
+newest 4096 inbox/history references in canonical ID order. The board shares an
+8 MiB budget for message, intent and stall reads across all sampled lanes, in
+addition to bounded task discovery and task metadata. Piece history has its own
+8 MiB budget. The board and history report incomplete samples without treating
+budget exhaustion as a lane failure. On the board, an open delivery intent
+marks pieces containing its sender or a recipient. Its message does not advance
+a step or enter piece history while the intent is open, even with partial delivery.
+Intent inspection is read-only and uses the same owned-file boundary as history.
+An intent whose JSON cannot yet be parsed or that changes during a bounded read
+keeps its ID out of placement and history. The lane and side panel report an
+incomplete sample and keep the cards and selection. Growth past the record size
+limit and other owned-file violations still refuse. Only bytes read are charged.
 Native detail requires a matching canonical launch binding. Current worker and
 reviewer registration persists session/thread identity without that launch binding;
 those participants retain canonical identity with native launch/state/profile and

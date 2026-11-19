@@ -38,14 +38,15 @@ export const viewSchema = z.object({ configuration: configurationSchema, snapsho
   snapshotError: z.string().nullable(), catalogue: catalogueSchema.nullable(), catalogueError: z.string().nullable(), wake: wakeStatusSchema }).strict();
 export type View = z.infer<typeof viewSchema>;
 const slug = z.string().min(1).max(128);
-export const pieceSchema = z.object({ slug, step: z.string().nullable(),
+export const pieceSchema = z.object({ slug, step: z.string().nullable(), unfinishedDelivery: z.boolean().optional(),
+  placement: z.enum(['observed', 'expected-at-start', 'next-unconfirmed']).optional(),
   holder: z.object({ participantId: z.string(), address: z.string(), role: z.string(), harness: z.string(), model: text, sessionRef: text,
     bbThreadId: text, status: z.object({ line: z.string().max(240), at: z.string() }).strict().nullable(),
     unread: z.number().int().nonnegative(), stall: text, question: z.string().nullable() }).strict().nullable(),
   participants: z.array(z.object({ step: z.string(), participantId: z.string() }).strict()).max(16) }).strict();
 export const boardSchema = z.object({ sampledAt: z.string(), observer: z.object({ instance: z.string(), pid: z.number() }).strict(),
   runs: z.array(z.object({ id: z.string(), title: z.string(), state: z.enum(['active', 'done']), updated: z.string(), owner: text,
-    steps: z.array(z.string()).max(16), pieces: z.array(pieceSchema).max(64), inferred: z.boolean(), error: text }).strict()).max(256),
+    steps: z.array(z.string()).max(16), startSteps: z.array(z.string()).max(16).optional(), pieces: z.array(pieceSchema).max(64), inferred: z.boolean(), error: text, notice: text.optional() }).strict()).max(256),
   truncated: z.boolean(), limits: z.array(z.string()).max(4) }).strict();
 export type Board = z.infer<typeof boardSchema>;
 export const sourceSchema = configurationSchema.pick({ hostId: true, storeRoot: true, nativeRoot: true }).strict();
@@ -53,7 +54,7 @@ export type Source = z.infer<typeof sourceSchema>;
 export const sourcedBoardSchema = boardSchema.extend({ source: sourceSchema }).strict();
 export type SourcedBoard = z.infer<typeof sourcedBoardSchema>;
 export const pieceSelectionSchema = rootsSchema.extend({ taskId: selectionSchema.shape.taskId, slug }).strict();
-export const historySchema = z.object({ taskId: z.string(), slug: z.string(), messages: z.array(messageSchema).max(64) }).strict();
+export const historySchema = z.object({ taskId: z.string(), slug: z.string(), messages: z.array(messageSchema).max(64), notice: text.optional() }).strict();
 export const sourcedHistorySchema = historySchema.extend({ source: sourceSchema }).strict();
 export type PieceHistory = z.infer<typeof sourcedHistorySchema>;
 export const rpcContract = defineRpcContract({ snapshot: { input: z.null(), output: snapshotSchema },

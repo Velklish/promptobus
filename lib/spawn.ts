@@ -10,7 +10,7 @@ import {
   ok, info, warn, fail, runLogged, runProc, shellQuote,
   PROC_MAX_OUTPUT, GIT_NET_TIMEOUT_MS, PROC_INSTALL_TIMEOUT_MS, toPosix,
 } from './util.js';
-import { hostOf, HostResolveError } from './host.js';
+import { hostOf, HostResolveError, pipelineSnapshot } from './host.js';
 import { guardHookCommand, managedGuardHookCommand } from '../dist/hooks.js';
 import {
   activeTasks, addressOf, bindIfOwner, boundTaskId, bus, canonicalPath, claimRoute, contactsOf, contactText, createTask,
@@ -1029,6 +1029,7 @@ export async function planSpawn(rootOrHost: unknown, opts: SpawnOptions): Promis
     title: taskTitle,
     status: 'active',
     adapter: {
+      ...pipelineSnapshot(host),
       ...(identity.slug ? { slug: identity.slug } : {}),
       ...(identity.stamp ? { stamp: identity.stamp } : {}),
       ...(explicitTaskTitle ? { titleExplicit: true } : {}),
@@ -1778,7 +1779,7 @@ export async function spawnTeamlead(rootOrHost: unknown, opts: SpawnOptions): Pr
         }, registryOf(plan.host));
         bus(plan.home, { cli: plan.host.version }).createTask({
           id: plan.childTask, title: plan.title,
-          adapter: { slug: plan.slug, stamp: plan.childTask.match(/(t\d{8}-\d{6})$/)?.[1] },
+          adapter: { ...pipelineSnapshot(plan.host), slug: plan.slug, stamp: plan.childTask.match(/(t\d{8}-\d{6})$/)?.[1] },
           owner: firstOwner, parent: plan.rootTask, teamlead: nextLead,
         });
         opts.fault?.('teamlead-first-after-link');
