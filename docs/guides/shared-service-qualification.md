@@ -10,11 +10,11 @@ The owner must authorize the tasks, roles, subscriptions, resource budget, liste
 
 ## Run order and expected evidence
 
-Installed launcher help must include:
+Installed launcher help must include this usage line, printed by `bin/promptobus-root --help`:
 
 <!-- quote:../../bin/promptobus-root -->
 ```text
-Usage: promptobus-root --profile <approved-profile> [--service-home <path>] [--dry-run] -- <approved-native-command> [args...]
+printf '%s\n' 'Usage: promptobus-root --profile <approved-profile> [--service-home <path>] [--dry-run] -- <approved-native-command> [args...]' \
 ```
 <!-- /quote -->
 
