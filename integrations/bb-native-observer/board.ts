@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { addressOf, DEFAULT_PIPELINE, pipelineSteps, piecesOf, SHIPPED_REGISTRY, type MessageV1, type ParticipantV1, type TaskV1 } from '../../src/index.ts';
 import { boardSchema, historySchema, pieceSchema, rootsSchema, type Board } from './contract.js';
-import { BOARD_REFERENCE_LIMIT, boardMessages, OWNED_RECORD_BYTES, ownedDirectory, ownedText, ReadBudget, ReadBudgetExceeded, readTasks, selectedTask, toMessage } from './projection.js';
+import { BOARD_REFERENCE_LIMIT, boardMessages, OWNED_RECORD_BYTES, ownedDirectory, ownedText, ReadBudget, ReadBudgetExceeded, readTasks, selectedTask, toMessage, type BeforeIntentRead } from './projection.js';
 
 const ACTIVE_RUNS = 16;
 const BOARD_READ_BYTES = 8 * 1024 * 1024;
@@ -73,12 +73,12 @@ function sampleNotice(older: boolean, exhausted: boolean, incompleteIntents: boo
   const notices = [];
   if (older) notices.push(`Older messages were not read (newest ${BOARD_REFERENCE_LIMIT} references only).`);
   if (exhausted) notices.push(`${scope} reached its byte budget; some records were not read.`);
-  if (incompleteIntents) notices.push('Sample incomplete: some delivery intents could not be parsed.');
+  if (incompleteIntents) notices.push('Sample incomplete: some delivery intents could not be read as complete records.');
   return notices.length ? { notice: notices.join(' ') } : {};
 }
-function runOf(root: string, task: TaskV1, budget: ReadBudget) {
+function runOf(root: string, task: TaskV1, budget: ReadBudget, beforeIntentRead?: BeforeIntentRead) {
   const participants = placed(task.participants);
-  const { messages, unread, older, pending, incompleteIntents } = boardMessages(root, task.id, budget);
+  const { messages, unread, older, pending, incompleteIntents } = boardMessages(root, task.id, budget, beforeIntentRead);
   const stalls = stallsOf(root, task.id, budget);
   const steps = boardSteps({ participants });
   const pieces = piecesOf(participants, messages, steps).slice(0, 64).map(piece => {
@@ -104,7 +104,7 @@ function runOf(root: string, task: TaskV1, budget: ReadBudget) {
   return { steps, pieces, inferred: steps.length > SHIPPED.length,
     ...sampleNotice(older, budget.exhausted, incompleteIntents, 'The board sample') };
 }
-export function readBoard(input: { storeRoot: string; nativeRoot: string }, instance: string, pid: number): Board {
+export function readBoard(input: { storeRoot: string; nativeRoot: string }, instance: string, pid: number, beforeIntentRead?: BeforeIntentRead): Board {
   const { storeRoot } = rootsSchema.parse(input);
   const discoveryBudget = new ReadBudget(DISCOVERY_READ_BYTES), budget = new ReadBudget(BOARD_READ_BYTES);
   const catalogue = readTasks(input, discoveryBudget);
@@ -126,18 +126,18 @@ export function readBoard(input: { storeRoot: string; nativeRoot: string }, inst
       if (!task) { run.error = 'Run disappeared during the sample'; continue; }
       if (task.participants.length > 64) throw new Error('Run exceeds 64 participants');
       run.owner = clipped(task.participants.find(value => value.id === task.owner)?.harness);
-      Object.assign(run, runOf(storeRoot, task, budget));
+      Object.assign(run, runOf(storeRoot, task, budget, beforeIntentRead));
     } catch (error) { run.error = String(error instanceof Error ? error.message : error).slice(0, 240); }
   }
   return boardSchema.parse(board);
 }
-export function readPieceHistory(input: { storeRoot: string; nativeRoot: string; taskId: string; slug: string }) {
+export function readPieceHistory(input: { storeRoot: string; nativeRoot: string; taskId: string; slug: string }, beforeIntentRead?: BeforeIntentRead) {
   const { storeRoot } = rootsSchema.parse({ storeRoot: input.storeRoot, nativeRoot: input.nativeRoot });
   ownedDirectory(storeRoot);
   const task = selectedTask(storeRoot, input.taskId);
   if (!task) throw new Error('Selected run is unavailable');
   const budget = new ReadBudget(BOARD_READ_BYTES);
-  const { messages, older, incompleteIntents } = boardMessages(storeRoot, task.id, budget);
+  const { messages, older, incompleteIntents } = boardMessages(storeRoot, task.id, budget, beforeIntentRead);
   const participants = placed(task.participants);
   const piece = piecesOf(participants, [], boardSteps({ participants })).find(value => value.slug === input.slug);
   if (!piece) throw new Error('Selected piece is not in this run');

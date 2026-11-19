@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { closeSync, constants, existsSync, fstatSync, lstatSync, opendirSync, openSync, readSync, realpathSync } from 'node:fs';
+import { closeSync, constants, existsSync, fstatSync, lstatSync, opendirSync, openSync, readSync, realpathSync, type Stats } from 'node:fs';
 import path from 'node:path';
 import { addressOf, PARTICIPANT_ID_RE, requireValid, type MessageV1, type TaskV1 } from '../../src/index.ts';
 import { RECORD_ID_RE } from '../../src/v1/model.js';
@@ -20,6 +20,8 @@ export function ownedDirectory(directory: string): void {
 }
 export const OWNED_RECORD_BYTES = 256 * 1024;
 export class ReadBudgetExceeded extends Error {}
+class IntentChangedDuringRead extends Error {}
+export type BeforeIntentRead = (file: string) => void;
 export class ReadBudget {
   exhausted = false;
   constructor(private remaining: number) {}
@@ -30,8 +32,10 @@ export class ReadBudget {
     }
     this.remaining -= bytes;
   }
+  refund(bytes: number) { this.remaining += bytes; }
 }
-export function ownedText(root: string, file: string, maximum = OWNED_RECORD_BYTES, budget?: ReadBudget): string | null {
+export function ownedText(root: string, file: string, maximum = OWNED_RECORD_BYTES, budget?: ReadBudget,
+  intentRead?: { beforeRead?: BeforeIntentRead }): string | null {
   ownedDirectory(root);
   if (!file.startsWith(root + path.sep)) throw new Error('File is outside the selected root');
   let fd: number | undefined;
@@ -41,15 +45,27 @@ export function ownedText(root: string, file: string, maximum = OWNED_RECORD_BYT
     if (!before.isFile() || before.size > maximum) throw new Error('Selected file exceeds the owned regular-file boundary');
     if (realpathSync(file) !== file) throw new Error('Selected file crosses a symlink');
     fd = openSync(file, constants.O_RDONLY | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0));
+    function checkOpened(stat: Stats) {
+      if (!stat.isFile() || stat.size > maximum || stat.dev !== before.dev || stat.ino !== before.ino
+        || (process.getuid && stat.uid !== process.getuid())) throw new Error('Selected file exceeds the owned regular-file boundary');
+    }
     const stat = fstatSync(fd);
-    if (!stat.isFile() || stat.size > maximum || stat.dev !== before.dev || stat.ino !== before.ino
-      || (process.getuid && stat.uid !== process.getuid())) throw new Error('Selected file exceeds the owned regular-file boundary');
+    checkOpened(stat);
     budget?.reserve(stat.size + 1);
-    const buffer = Buffer.alloc(stat.size + 1);
-    let bytes = 0, read = 0;
-    do { read = readSync(fd, buffer, bytes, buffer.length - bytes, null); bytes += read; } while (read && bytes < buffer.length);
-    if (bytes > maximum || bytes > stat.size) throw new Error('Selected file grew during the bounded read');
-    return buffer.subarray(0, bytes).toString('utf8');
+    let bytes = 0;
+    try {
+      const buffer = Buffer.alloc(stat.size + 1);
+      intentRead?.beforeRead?.(file);
+      let read = 0;
+      do { read = readSync(fd, buffer, bytes, buffer.length - bytes, null); bytes += read; } while (read && bytes < buffer.length);
+      if (bytes > maximum) throw new Error('Selected file exceeds the owned regular-file boundary');
+      if (intentRead) {
+        const after = fstatSync(fd);
+        checkOpened(after);
+        if (bytes !== stat.size || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs) throw new IntentChangedDuringRead();
+      } else if (bytes > stat.size) throw new Error('Selected file grew during the bounded read');
+      return buffer.subarray(0, bytes).toString('utf8');
+    } finally { budget?.refund(stat.size + 1 - bytes); }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;
@@ -153,7 +169,7 @@ function recentReferences(root: string, taskId: string) {
   }
   return { refs: refs.sort(newestFirst).slice(0, BOARD_REFERENCE_LIMIT), unread, older: count > BOARD_REFERENCE_LIMIT };
 }
-function readIntents(root: string, taskId: string, budget: ReadBudget) {
+function readIntents(root: string, taskId: string, budget: ReadBudget, beforeRead?: BeforeIntentRead) {
   const directory = path.join(root, 'tasks', taskId, 'intents');
   const ids = new Set<string>(), participants = new Set<string>();
   let incomplete = false;
@@ -167,7 +183,7 @@ function readIntents(root: string, taskId: string, budget: ReadBudget) {
     for (const id of ids) {
       if (budget.exhausted) break;
       try {
-        const text = ownedText(root, path.join(directory, `${id}.json`), OWNED_RECORD_BYTES, budget);
+        const text = ownedText(root, path.join(directory, `${id}.json`), OWNED_RECORD_BYTES, budget, { beforeRead });
         if (text === null) { ids.delete(id); continue; }
         let value: unknown;
         // The writer can publish the intent name before its JSON is complete.
@@ -181,20 +197,21 @@ function readIntents(root: string, taskId: string, budget: ReadBudget) {
         participants.add(message.sender);
         for (const recipient of message.recipients) participants.add(recipient);
       } catch (error) {
-        if (!(error instanceof ReadBudgetExceeded)) throw error;
+        if (error instanceof IntentChangedDuringRead) incomplete = true;
+        else if (!(error instanceof ReadBudgetExceeded)) throw error;
       }
     }
   } catch { throw new Error('Selected canonical intents are unavailable, malformed or outside the owned boundary'); }
   return { ids, participants, incomplete };
 }
-export function boardMessages(root: string, taskId: string, budget: ReadBudget) {
+export function boardMessages(root: string, taskId: string, budget: ReadBudget, beforeIntentRead?: BeforeIntentRead) {
   const historyError = () => new Error('Selected canonical history is unavailable, malformed or outside the owned boundary');
   let recent: ReturnType<typeof recentReferences>;
   try { recent = recentReferences(root, taskId); }
   catch { throw historyError(); }
   const { refs, unread, older } = recent;
   // A link in the sample can still belong to a partially delivered intent; list intents after the links.
-  const pending = readIntents(root, taskId, budget), messages = new Map<string, MessageV1>();
+  const pending = readIntents(root, taskId, budget, beforeIntentRead), messages = new Map<string, MessageV1>();
   try {
     for (const ref of refs) {
       if (budget.exhausted) break;

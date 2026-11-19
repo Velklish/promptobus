@@ -1449,9 +1449,10 @@ budget exhaustion as a lane failure. On the board, an open delivery intent
 marks pieces containing its sender or a recipient. Its message does not advance
 a step or enter piece history while the intent is open, even with partial delivery.
 Intent inspection is read-only and uses the same owned-file boundary as history.
-An intent whose name is visible but whose JSON cannot yet be parsed keeps its ID
-out of placement and history. The lane and side panel report an incomplete
-sample and keep the cards and selection; owned-file violations still refuse.
+An intent whose JSON cannot yet be parsed or that changes during a bounded read
+keeps its ID out of placement and history. The lane and side panel report an
+incomplete sample and keep the cards and selection. Growth past the record size
+limit and other owned-file violations still refuse. Only bytes read are charged.
 Native detail requires a matching canonical launch binding. Current worker and
 reviewer registration persists session/thread identity without that launch binding;
 those participants retain canonical identity with native launch/state/profile and

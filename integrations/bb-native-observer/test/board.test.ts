@@ -5,6 +5,7 @@ import path from 'node:path';
 import { boardSchema } from '../contract.js';
 import { boardSteps, placed, readBoard, readPieceHistory } from '../board.js';
 import { showsPiece } from '../dashboard.js';
+import { ownedText, ReadBudget, ReadBudgetExceeded } from '../projection.js';
 import { fixture, treeDigest } from './fixture.js';
 
 const AFTER = '20261119T000000000-0000-000000';
@@ -330,13 +331,51 @@ test('a visible but incomplete intent preserves cards and the open history witho
     const before = treeDigest(f.root), board = sample();
     const lane = board.runs.find(run => run.id === taskId)!;
     assert.equal(lane.error, null);
-    assert.match(lane.notice ?? '', /Sample incomplete: some delivery intents could not be parsed/);
+    assert.match(lane.notice ?? '', /Sample incomplete: some delivery intents/);
     assert.deepEqual(lane.pieces.map(piece => [piece.slug, piece.step]), [['x', 'worker'], ['y', 'worker']]);
     assert.equal(showsPiece(board, opened), true);
     const history = readPieceHistory({ ...roots(f), taskId, slug: opened.slug });
-    assert.match(history.notice ?? '', /Sample incomplete: some delivery intents could not be parsed/);
+    assert.match(history.notice ?? '', /Sample incomplete: some delivery intents/);
     assert.deepEqual(history.messages.map(message => message.body), ['Confirmed status']);
     assert.equal(treeDigest(f.root), before);
+  } finally { f.cleanup(); }
+});
+
+test('an owned intent that grows after fstat preserves the cards, the open selection and confirmed history', () => {
+  const f = fixture('board-growing-intent-fixture');
+  try {
+    const taskId = 'board-growing-intent-run';
+    secondRun(f, taskId, ['worker:x', 'worker:y']);
+    record(f, taskId, 1, 'history', 'worker-x', 'Confirmed status');
+    const source = { ...roots(f), hostId: 'host_fixture' }, opened = { taskId, slug: 'x', source };
+    assert.equal(showsPiece({ ...readBoard(roots(f), 'observer', 1), source }, opened), true);
+    const reference = record(f, taskId, 2, 'inbox', 'worker-x', 'Unconfirmed result', 'result');
+    const intents = path.join(f.selection.storeRoot, 'tasks', taskId, 'intents');
+    const intent = path.join(intents, path.basename(reference));
+    const complete = readFileSync(reference);
+    mkdirSync(intents, { recursive: true });
+    function duringWrite<T>(sample: (beforeRead: (file: string) => void) => T) {
+      writeFileSync(intent, '');
+      let afterWriter = '';
+      const value = sample(file => {
+        assert.equal(file, intent);
+        assert.equal(afterWriter, '');
+        writeFileSync(file, complete);
+        afterWriter = treeDigest(f.root);
+      });
+      assert.notEqual(afterWriter, '');
+      assert.equal(treeDigest(f.root), afterWriter);
+      return value;
+    }
+    const board = duringWrite(beforeRead => ({ ...readBoard(roots(f), 'observer', 1, beforeRead), source }));
+    const lane = board.runs.find(run => run.id === taskId)!;
+    assert.equal(lane.error, null);
+    assert.match(lane.notice ?? '', /Sample incomplete: some delivery intents/);
+    assert.deepEqual(lane.pieces.map(piece => [piece.slug, piece.step]), [['x', 'worker'], ['y', 'worker']]);
+    assert.equal(showsPiece(board, opened), true);
+    const history = duringWrite(beforeRead => readPieceHistory({ ...roots(f), taskId, slug: opened.slug }, beforeRead));
+    assert.match(history.notice ?? '', /Sample incomplete: some delivery intents/);
+    assert.deepEqual(history.messages.map(message => message.body), ['Confirmed status']);
   } finally { f.cleanup(); }
 });
 
@@ -356,5 +395,27 @@ test('an incomplete intent is tolerated only inside the owned file and size boun
     rmSync(intent);
     writeFileSync(intent, '{'.repeat(256 * 1024 + 1));
     refuses();
+    const oversized = '{'.repeat(256 * 1024 + 1);
+    const grow = (file: string) => { assert.equal(file, intent); writeFileSync(file, oversized); };
+    writeFileSync(intent, '');
+    const run = readBoard(roots(f), 'observer', 1, grow).runs[0];
+    assert.match(run.error ?? '', /Selected canonical intents/);
+    assert.equal(run.notice, undefined);
+    writeFileSync(intent, '');
+    assert.throws(() => readPieceHistory({ ...roots(f), taskId, slug: 'alpha' }, grow), /Selected canonical intents/);
+    writeFileSync(intent, '{}');
+    refuses();
+  } finally { f.cleanup(); }
+});
+
+test('the byte budget debits bytes read, not the unused byte reserved to detect growth', () => {
+  const f = fixture('board-byte-accounting');
+  try {
+    const file = path.join(f.selection.storeRoot, 'budget.txt');
+    writeFileSync(file, 'é');
+    const budget = new ReadBudget(5);
+    assert.equal(ownedText(f.selection.storeRoot, file, 256, budget), 'é');
+    assert.equal(ownedText(f.selection.storeRoot, file, 256, budget), 'é');
+    assert.throws(() => ownedText(f.selection.storeRoot, file, 256, budget), ReadBudgetExceeded);
   } finally { f.cleanup(); }
 });
