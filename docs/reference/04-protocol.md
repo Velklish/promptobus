@@ -439,6 +439,8 @@ The orchestrator mailbox is owned by the session that opened the task. Another s
 
 `promptobus_mailbox` with `claim: true` rebinds a task's orchestrator mailbox to the calling session. The tool requires the orchestrator address, a session identity and a recorded owner; `claimOwnership` in `lib/store.js` then replaces that owner under the task lock. It does not check whether the previous owner is live. The caller must establish that the previous session has ended before takeover; this is a precondition on the caller, not an enforced liveness gate. No live-owner displacement was measured for this documentation clarification.
 
+When the caller holds a peer mailbox, `promptobus_mailbox {claim: true, task: <root id>}` can select the named root's orchestrator mailbox. The server must declare `orchestrator`, and the registered peer's full session ID must match the caller exactly. Ordinary reads and claims without an explicit root ID still select the held peer. This changes only address selection: the takeover precondition still applies. A successful claim reads root unread mail into history, binds the active task and performs the normal join. It neither grants nor proves Stop.
+
 ### Messages: names, order and what a read marks
 
 Source: `src/v1/messages.ts`, `src/v1/message-order.ts`.

@@ -123,7 +123,7 @@ export const SUITE_PREFIXES = [
   'promptobus-host-', 'promptobus-lease-', 'promptobus-link-',
   'promptobus-mcp-', 'promptobus-membership-', 'promptobus-owner-gate-', 'promptobus-package-',
   'promptobus-pack-isolation-', 'promptobus-pack-output-',
-  'promptobus-shared-service-', 'promptobus-root-admission-', 'promptobus-service-lock-',
+  'promptobus-shared-service-', 'promptobus-root-admission-', 'promptobus-root-claim-peer-', 'promptobus-service-lock-',
   'promptobus-service-operation-locks-', 'promptobus-service-operation-',
   'promptobus-managed-native-', 'promptobus-default-owner-', 'promptobus-native-start-', 'promptobus-root-profile-',
   'promptobus-claude-genesis-', 'promptobus-launch-cleanup-', 'promptobus-native-api-refusal-',

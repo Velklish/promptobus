@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Allow an orchestrator to claim an explicitly named root from its registered peer session. The full session ID must match; ordinary reads still use the peer mailbox.
+
 - Keep an OpenCode stdio server whose first argument repeats its command: only the bus entry drops the duplicated binary.
 - Let hosts keep private environment variables out of managed participants and owner snapshots. Refuse old snapshots that still contain those variables.
 

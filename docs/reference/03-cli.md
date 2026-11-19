@@ -2220,6 +2220,8 @@ hunting for what was present twice over. **`other-address` has no branch and thr
 "records no mailbox owner" about a task that has one. Nothing true is available to print
 there, and a wrong line is worse than a stack.
 
+A successor already registered as a peer on the root can use `promptobus_mailbox {claim: true, task: <root id>}` from its exact registered session on a server declaring `orchestrator`. Peer registration is not consent to displace a live owner. See [Claim](04-protocol.md#claim) for the takeover precondition and effects.
+
 **The same gate is what a process hits when its environment carries only its own variable.**
 That process is a shell command, or `promptobus mcp` started from one.
 `CLAUDE_CODE_SESSION_ID`, `CURSOR_CONVERSATION_ID` and `CODEX_THREAD_ID` are the three

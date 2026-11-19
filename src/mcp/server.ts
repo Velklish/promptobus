@@ -1,7 +1,7 @@
 // The stdio server: transport rules.
 // [reference/01-overview.md#the-stdio-server-transport-rules](../../docs/reference/01-overview.md#the-stdio-server-transport-rules)
 import {
-  GateError, MAILBOX_CLAIMED_MARK, ORCHESTRATOR,
+  addressOf, GateError, MAILBOX_CLAIMED_MARK, ORCHESTRATOR, sessionIdOf,
 } from '../protocol.js';
 import type { Ownership } from '../protocol.js';
 import { mcpTools } from './tools.js';
@@ -222,7 +222,14 @@ export function createMcpServer(options: McpOptions): {
     switch (name) {
       case 'promptobus_mailbox': {
         // The record this session holds in the named task picks the mailbox (ADR-028).
-        const addr = service.mailboxAddress?.(home, task, role, session) ?? role;
+        let addr = service.mailboxAddress?.(home, task, role, session) ?? role;
+        if (args?.claim === true && typeof args.task === 'string' && args.task.trim() === task
+          && session && role === ORCHESTRATOR && addr.startsWith('peer:')) {
+          const meta = service.readTask(home, task);
+          const peer = meta.participants.find(p => addressOf(p) === addr);
+          if (meta.parent === undefined && peer?.role === 'peer' && typeof peer.metadata?.peerTask === 'string'
+            && peer.metadata.peerTask && sessionIdOf(peer) === session) addr = ORCHESTRATOR;
+        }
         // An address alias reads its primary's slot too, so the owner gate judges the primary.
         const box = service.mailboxOf?.(home, task, addr);
         const gate = box?.alias ? box.primary : { task, address: addr };
