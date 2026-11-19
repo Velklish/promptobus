@@ -91,6 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Queue canonical unread-mail hints for active BB participants. A stale queue snapshot cannot overwrite a recorded turn request. Recovery and dispatch retire obsolete hints after a mailbox read without discarding other queued input. Result reminders still wait for idle.
 - Fail Codex and mixed live verification when the Codex process list or config cannot be observed, instead of treating an observation error as no change.
 - Keep the canonical Codex skill when the participant directory is reached through an alias and Codex lists its physical path.
+- Restore a probed file from its exact bytes, invalid UTF-8 included. `--mutate` refuses a file that is not valid UTF-8 with exit 2 before writing it; `--stdin-patch` still probes such a file.
 - Explain why mutation probes require a clean, committed baseline and restore from a snapshot, not Git. Document wrapper exit codes separately from the mutated command's exit code.
 - Allow an orchestrator to claim an explicitly named root from its registered peer session. The full session ID must match; ordinary reads still use the peer mailbox.
 

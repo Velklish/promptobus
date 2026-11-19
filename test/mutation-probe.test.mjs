@@ -142,6 +142,16 @@ writeFileSync(path.join(REPO, 'flood.mjs'), [
   `if (!text.includes(${JSON.stringify(MARKER)})) { process.stdout.write('x'.repeat(65 * 1024 * 1024)); process.exitCode = 1; }`,
   "else console.log('✔ the marker is there');",
 ].join('\n'));
+// Not valid UTF-8 on its third line: a text decode of the file would replace those bytes.
+const RAW = path.join(REPO, 'raw.txt');
+const RAW_BYTES = Buffer.concat([Buffer.from(`${MARKER}\nplain\nkeep `), Buffer.from([0xff, 0xfe, 0x80]), Buffer.from(' bytes\n')]);
+writeFileSync(RAW, RAW_BYTES);
+writeFileSync(path.join(REPO, 'raw-check.mjs'), [
+  "import { readFileSync } from 'node:fs';",
+  "const text = readFileSync(new URL('raw.txt', import.meta.url), 'latin1');",
+  `if (!text.includes(${JSON.stringify(MARKER)})) { console.log('✖ the raw marker is gone'); process.exit(1); }`,
+  "console.log('✔ the raw marker is there');",
+].join('\n'));
 git('init', '-q');
 git('config', 'user.email', 'probe@example.invalid');
 git('config', 'user.name', 'probe');
@@ -310,6 +320,25 @@ for (const [what, named, lines] of escapes) {
   clean();
 }
 
+// --- a file that is not valid UTF-8 ----------------------------------------------
+
+const RAW_RUN = runWith('raw-check.mjs');
+const rawMutate = probe('raw.txt', '--mutate', `s/${MARKER}/broken/`, ...RAW_RUN);
+check(': --mutate refuses a file that is not valid UTF-8 before writing it, and names --stdin-patch',
+  rawMutate.code === 2 && /is not valid UTF-8 — nothing was written/.test(rawMutate.out) && /--stdin-patch/.test(rawMutate.out)
+    && !/mutated →/.test(rawMutate.out), `exit ${rawMutate.code} · ${rawMutate.out}`);
+check(': the refused file keeps its bytes and the tree stays clean',
+  readFileSync(RAW).equals(RAW_BYTES) && status() === '', status());
+clean();
+
+const rawPatch = fed(patched('diff --git a/raw.txt b/raw.txt', '--- a/raw.txt', '+++ b/raw.txt', '@@ -1,2 +1,2 @@',
+  `-${MARKER}`, '+broken', ' plain'), 'raw.txt', '--stdin-patch', ...RAW_RUN);
+check(': --stdin-patch probes a file that is not valid UTF-8',
+  rawPatch.code === 0 && /✖ the raw marker is gone/.test(rawPatch.out), `exit ${rawPatch.code} · ${rawPatch.out}`);
+check(': and restores its original bytes exactly, the invalid sequence included',
+  readFileSync(RAW).equals(RAW_BYTES) && status() === '', `${status()} · ${readFileSync(RAW).toString('hex')}`);
+clean();
+
 // --- a failure with the mutation in place still restores the subject ---------
 
 const flood = probe('subject.txt', '--mutate', `s/${MARKER}/broken/`, ...runWith('flood.mjs'));
@@ -384,13 +413,15 @@ check(': the protocol separates wrapper pass, failure and refusal from the mutat
     && /^- `2`: .*tree is dirty.*mutated run is cut off/m.test(exitContract)
     && /`mutatedRunExit`, the exit code of the command run with the mutation in place, not the wrapper/.test(exitContract),
   exitContract || 'The protocol has no separate wrapper exit-code contract.');
-check(': the protocol limits snapshot restoration to UTF-8 text',
-  /pre-mutation UTF-8 text snapshot/.test(exitContract)
-    && /invalid UTF-8 sequences, are not guaranteed to survive restoration/.test(exitContract), exitContract);
+check(': the protocol restores exact bytes and refuses --mutate on a file that is not valid UTF-8',
+  /pre-mutation byte snapshot/.test(exitContract)
+    && /every byte comes back exactly, invalid UTF-8 sequences included/.test(exitContract)
+    && /`2`: .*`--mutate` names a file that is not valid UTF-8/.test(exitContract), exitContract);
 
 const guide = readFileSync(path.join(here, '..', 'docs', 'guides', 'contributing.md'), 'utf8');
 const gateStep = guide.split('\n').find((line) => line.startsWith('4. **Gates on an unchanged tree.**')) ?? '';
-check(': the contributing gate step requires a clean committed baseline and explains UTF-8 snapshot restoration',
+check(': the contributing gate step requires a clean committed baseline and explains byte snapshot restoration',
   gateStep.includes('refuses a dirty tree so the probe has a clean, committed baseline')
-    && gateStep.includes('snapshots the file as UTF-8 text')
+    && gateStep.includes("snapshots the file's bytes")
+    && guide.includes('a file that is not valid UTF-8 is refused before anything is written')
     && gateStep.includes('restores from the snapshot rather than Git'), gateStep);

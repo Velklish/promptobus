@@ -112,7 +112,7 @@ function mutate(opts, rel, abs, before) {
   if (/\$[&'`]|\$0?[1-9]/.test(bare)) {
     say("--mutate: warning: the replacement is a String.replace replacement, so $&, $1, $` and $' substitute — a person may mean them");
   }
-  writeFileSync(abs, before.replace(pattern, repl));
+  writeFileSync(abs, before.toString('utf8').replace(pattern, repl));
 }
 
 async function main() {
@@ -138,7 +138,10 @@ async function main() {
     return;
   }
 
-  const before = readFileSync(abs, 'utf8');
+  const before = readFileSync(abs);
+  if (opts.sed && !Buffer.from(before.toString('utf8'), 'utf8').equals(before)) {
+    die(`--mutate edits ${rel} as UTF-8 text and it is not valid UTF-8 — nothing was written; use --stdin-patch, which keeps the other bytes`);
+  }
   // A signal to the probe while the mutation is in place is held, not obeyed: dying here would skip the restore.
   const held = [];
   const hold = (signal) => held.push(signal);
@@ -146,7 +149,7 @@ async function main() {
   let red;
   try {
     mutate(opts, rel, abs, before);
-    if (readFileSync(abs, 'utf8') === before) die(`the mutation changed nothing in ${rel} — the probe would have proven nothing`);
+    if (readFileSync(abs).equals(before)) die(`the mutation changed nothing in ${rel} — the probe would have proven nothing`);
     red = await run(command, argv);
     const cut = held.length ? `the probe got ${held[0]}` : cutOff(red);
     if (cut) die(`probe: the run with the mutation was cut off (${cut}) — it is not counted as the red; ${rel} is restored`);
