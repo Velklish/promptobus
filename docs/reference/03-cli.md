@@ -1318,6 +1318,8 @@ For Codex, Stop closes new model dispatch and waits under one bounded deadline f
 
 `history` prints read mail, oldest first. Default limit 50. `--all` drops the limit. It does not mark mail read. Its unit is an ENTRY, not a message: one message sitting with two people yields two entries, and the limit counts entries, so a page boundary may legally split the entries of one message — the cursor is opaque and carries the full order key.
 
+The timestamp at the start of an entry is the stored UTC message recording time, including milliseconds. It does not come from the task ID or the time the journal was opened.
+
 Journal retention runs at the end of `done`. Tasks closed more than `PRUNE_DEFAULT_DAYS` (14) days ago are removed, together with their attachments and participant mailboxes. Telemetry stays: it is written outside the task journal. `--older-than <days>` previews that removal at the given age and deletes nothing; `--yes` applies the preview and is refused without `--older-than`. The threshold comes from a measurement and from why the journal is kept at all: a live workspace held 54 tasks and 18 MB on 2026-08-30, against 40 tasks and 11 MB on 2026-08-28 — about 3 MB a day of dense orchestration — and people return to a finished run's mail in days, not weeks. The dry run names each task, its size and its artifact count, and its delete line is `done --task <id> --older-than <days> --yes`. Artifacts leave with the journal, not at `sweep`.
 
 ## Message-order rebuild
@@ -1432,6 +1434,8 @@ With `--key <clone-root>`, the same wait bound applies to a separate named-direc
 - **Running.** The command runs with inherited stdio, in the caller's directory and environment, without a shell: pipes and `&&` go inside `sh -c '…'`. `lease` exits with the command's own exit code, or `128 + signal` when a signal ended it. SIGINT, SIGTERM and SIGHUP sent to the wrapper are forwarded to the command, and the lease is released only after the command has exited.
 - **What it does not cover.** A wrapper killed with SIGKILL leaves its command running, and the lease is dropped by liveness while that command may still load the machine. A `lease` nested inside a leased command waits for the outer one until its bound.
 - **Keyed recovery.** A keyed command starts through a POSIX shell that writes its own pid into `child.pid` before replacing itself with the command; the command arguments remain literal. A keyed lock is reclaimed only after both the wrapper and command pids are dead. A killed wrapper with a live command keeps the next publisher waiting. If the wrapper is dead and the child pid was never recorded, the next publisher refuses with the lock path and an explicit recovery instruction: verify that both processes are dead before removing the lock directory. The machine lease retains its wrapper-pid recovery rule.
+
+The lease bound refuses before the command runs. This differs from a failed command launch, and from a `git merge --ff-only` refusal after the publisher has started. None implies that a publisher result file will appear later.
 
 ## Link
 
@@ -1900,6 +1904,8 @@ Managed Codex reviewer launches use the shared service's authenticated HTTP
 `/mcp/reviewer_files` route. Pure driver preparation retains the stdio descriptor;
 the launch coordinator replaces it before starting the native process.
 <!-- /quote -->
+
+For the stdio descriptor, pass Node the filesystem path to the server script, not the percent-encoded pathname of a file URL. Spaces and Unicode remain part of the path.
 
 Owner control uses a private local socket, so its credentials are never sent to
 an unrelated process that acquired the retained TCP port after a crash. A client

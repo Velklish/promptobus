@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep keyed publication test failures diagnostic when a publisher did not produce a result. Cover lease refusal and child launch failure without changing lease behavior.
+- Check the history timestamp without assuming the current year, and run the reviewer stdio test from paths containing spaces or Unicode.
 - Keep an OpenCode stdio server whose first argument repeats its command: only the bus entry drops the duplicated binary.
 - Let hosts keep private environment variables out of managed participants and owner snapshots. Refuse old snapshots that still contain those variables.
 

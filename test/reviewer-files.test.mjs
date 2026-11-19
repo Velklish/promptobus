@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { test, after } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { reviewerFiles, REVIEW_FILE_TOOLS } from '../lib/reviewer-files.js';
 
 const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'promptobus-review-files-')));
@@ -128,7 +129,7 @@ test('stdio MCP handshake, tool read and forbidden path complete without command
     { id: 5, method: 'tools/call', params: { name: 'read_files', arguments: { files: [{ path: source }, { path: path.join(repo, 'README.md') }] } } },
     { id: 6, method: 'tools/call', params: { name: 'read_files', arguments: { files: [{ path: source }, { path: path.join(repo, 'outside.txt') }] } } },
   ];
-  const child = spawnSync(process.execPath, [new URL('../lib/reviewer-files.js', import.meta.url).pathname], {
+  const child = spawnSync(process.execPath, [fileURLToPath(new URL('../lib/reviewer-files.js', import.meta.url))], {
     input: requests.map((x) => JSON.stringify(x)).join('\n') + '\n', encoding: 'utf8', timeout: 5000,
     env: { ...process.env, PROMPTOBUS_REVIEW_READ_ROOTS: JSON.stringify([repo]) },
   });

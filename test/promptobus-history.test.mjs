@@ -33,6 +33,29 @@ const TASK = 'istoriya-t20260902-120000';
 const SECOND = 'sosedka-t20260902-130000';
 const WORKER = 'worker:api';
 const REVIEWER = 'reviewer:api';
+const firstLineFields = ` · ${TASK} · status ${WORKER} → orchestrator — STEP-ONE: took the assignment`;
+
+function isFirstHistoryLine(line) {
+  const match = /^  (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)/.exec(line);
+  if (!match || line.slice(match[0].length) !== firstLineFields) return false;
+  const timestamp = new Date(match[1]);
+  return Number.isFinite(timestamp.valueOf()) && timestamp.toISOString() === match[1];
+}
+
+for (const year of [2026, 2027]) {
+  const line = `  ${year}-03-01T12:34:56.789Z${firstLineFields}`;
+  check(`history line accepts a valid ${year} recording time`, isFirstHistoryLine(line), line);
+}
+for (const date of ['2026-not-a-date', '2026-02-30T12:34:56.789Z']) {
+  const line = `  ${date}${firstLineFields}`;
+  check(`history line rejects malformed recording time ${date}`, !isFirstHistoryLine(line), line);
+}
+for (const [field, wrong] of [
+  [TASK, SECOND], ['status', 'review'], [WORKER, REVIEWER], ['orchestrator', REVIEWER], ['took the assignment', ''],
+]) {
+  const line = `  2026-03-01T12:34:56.789Z${firstLineFields.replace(field, wrong)}`;
+  check(`history line rejects a wrong or missing ${field} field`, !isFirstHistoryLine(line), line);
+}
 
 store.createTask(HOME, { id: TASK, title: 'correspondence journal', owner: 'sess-orch' });
 store.upsertParticipant(HOME, TASK, store.participantRecord(WORKER, { repo: 'demo_team/orders-api' }));
@@ -74,10 +97,9 @@ const lines = all.split('\n').filter((l) => l.includes(' · '));
 check('default: all read entries of both tasks are returned',
   lines.length === 5, `${lines.length}: ${all}`);
 check('order: from oldest entries to newest',
-  lines[0].includes('STEP-ONE') && lines[4].includes('NEIGHBOUR'), all);
+  lines[0]?.includes('STEP-ONE') && lines[4]?.includes('NEIGHBOUR'), all);
 check('the line names time, task, type, and both sides as bus addresses',
-  /^\s+2026-\S+ · istoriya-t20260902-120000 · status worker:api → orchestrator — STEP-ONE/.test(lines[0]),
-  lines[0]);
+  isFirstHistoryLine(lines[0]), lines[0] ?? all);
 check('body is compressed to the first paragraph — the second does not go into the line',
   !all.includes('second paragraph'), lines[0]);
 const withArt = lines[4];
@@ -87,7 +109,7 @@ check('the artifact is named by file name, not by the metadata-record id',
 // would stay green on a line that prints the raw field next to the name.
 const artId = store.history(HOME, { task: SECOND }).entries[0].message.artifact;
 check('the metadata-record id does not go into the line — a person sees one name, not two',
-  typeof artId === 'string' && artId.length > 0 && !withArt.includes(artId),
+  typeof artId === 'string' && artId.length > 0 && withArt && !withArt.includes(artId),
   `${artId} · ${withArt}`);
 
 // Fetching history does not touch the mailbox: the worker's unread is still there, the

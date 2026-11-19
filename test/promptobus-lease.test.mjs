@@ -22,7 +22,8 @@ const ENV = { ...process.env, [lease.LEASE_DIR_VAR]: ROOT };
 
 // One CLI run, with stderr collected and a promise for its end. Every run names a short --wait,
 // so a broken lease fails its own check instead of holding the file to the watchdog.
-function run(args, { waitFor = null, env = {} } = {}) {
+function run(args, { waitFor = null, env = {}, drainStdio = false } = {}) {
+  const started = performance.now();
   const child = spawn(process.execPath, [CLI, 'lease', ...args], { cwd: SB, env: { ...ENV, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
   let err = '';
   let seen = null;
@@ -33,9 +34,12 @@ function run(args, { waitFor = null, env = {} } = {}) {
   });
   child.stdout.resume();
   const done = new Promise((resolve) => {
-    child.on('exit', (code, signal) => resolve({ code, signal, err, ms: Date.now() - started }));
+    let spawnError;
+    child.once('error', (error) => { spawnError = error.message; });
+    const finish = (code, signal) => resolve({ code, signal, err, ms: Math.round(performance.now() - started), spawnError });
+    if (!drainStdio) child.once('exit', finish);
+    child.once('close', finish);
   });
-  const started = Date.now();
   return { child, done, saw, err: () => err };
 }
 
@@ -191,75 +195,118 @@ process.on('exit', () => { for (const f of orphans) reap(f); });
   branch('b');
   writeFileSync(path.join(repo, 'owner-untracked.txt'), 'owner bytes\n');
   const stamps = path.join(SB, 'publish-stamps.log');
+  const events = () => existsSync(stamps)
+    ? readFileSync(stamps, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)) : [];
   const result = (name) => path.join(SB, `publish-${name}.json`);
+  const evidence = (name, cli, allEvents = events()) => ({
+    cli, events: allEvents.filter((event) => event.name === name), file: result(name), exists: existsSync(result(name)),
+  });
+  const resultReady = ({ cli, events, exists }, code) => cli.code === code && cli.signal === null && exists
+    && events.map((event) => event.event).join(',') === 'enter,exit';
+  const neverEntered = ({ cli, events, exists }) => cli.signal === null && !exists && events.length === 0;
   const release = path.join(SB, 'release-publisher-a');
-  const publisher = (name, releaseFile = null) => ['node', '-e', `
-    const fs = require('fs'), cp = require('child_process');
-    const repo = ${JSON.stringify(repo)}, name = ${JSON.stringify(name)};
+  const publisherScript = path.join(SB, 'publisher.cjs');
+  writeFileSync(publisherScript, `
+    const fs = require('fs'), cp = require('child_process'), path = require('path');
+    const [name, releaseFile] = process.argv.slice(2);
+    const repo = ${JSON.stringify(repo)};
     const stamp = (event) => fs.appendFileSync(${JSON.stringify(stamps)}, JSON.stringify({ name, event, at: Date.now() }) + ${JSON.stringify('\n')});
     const git = (...args) => cp.spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
     const state = () => ({
       head: git('rev-parse', 'HEAD').stdout.trim(),
       status: git('status', '--porcelain', '--untracked-files=all').stdout,
-      index: fs.readFileSync(require('path').join(repo, '.git', 'index')).toString('base64'),
-      tracked: fs.readFileSync(require('path').join(repo, 'base.txt'), 'utf8'),
-      untracked: fs.readFileSync(require('path').join(repo, 'owner-untracked.txt'), 'utf8'),
+      index: fs.readFileSync(path.join(repo, '.git', 'index')).toString('base64'),
+      tracked: fs.readFileSync(path.join(repo, 'base.txt'), 'utf8'),
+      untracked: fs.readFileSync(path.join(repo, 'owner-untracked.txt'), 'utf8'),
     });
     stamp('enter');
     const publish = () => {
       const before = state();
       const merged = git('merge', '--ff-only', 'accept-' + name);
       const after = state();
-      fs.writeFileSync(${JSON.stringify(result(name))}, JSON.stringify({ before, after, code: merged.status, stderr: merged.stderr }));
+      fs.writeFileSync(path.join(__dirname, 'publish-' + name + '.json'), JSON.stringify({ before, after, code: merged.status, stderr: merged.stderr }));
       stamp('exit');
       process.exitCode = merged.status ?? 1;
     };
-    const releaseFile = ${JSON.stringify(releaseFile)};
     if (releaseFile) {
       const timer = setInterval(() => { if (fs.existsSync(releaseFile)) { clearInterval(timer); publish(); } }, 20);
     } else { publish(); }
-  `];
-  const a = run(['--as', 'approver:a', '--key', repo, '--wait', '30', '--', ...publisher('a', release)]);
-  await until(() => existsSync(stamps));
-  const alias = path.join(SB, 'publication-alias');
-  symlinkSync(repo, alias);
-  const b = run(['--as', 'approver:b', '--key', alias, '--wait', '30', '--', ...publisher('b')], { waitFor: 'waiting' });
-  await b.saw;
-  const otherRepo = path.join(SB, 'other-publication');
-  mkdirSync(otherRepo);
-  const otherMarker = path.join(SB, 'other-publisher.ran');
-  const other = await run(['--as', 'approver:other', '--key', otherRepo, '--wait', '5', '--', 'node', '-e',
-    `require('fs').writeFileSync(${JSON.stringify(otherMarker)}, '1')`]).done;
-  check('a different clone key can publish while the first publisher is held',
-    other.code === 0 && existsSync(otherMarker) && !readFileSync(stamps, 'utf8').includes('"event":"exit"'),
-    JSON.stringify({ other, events: readFileSync(stamps, 'utf8') }));
-  const machineA = run(['--as', 'worker:machine-a', '--wait', '10', '--', ...measure('within-a')]);
-  const machineB = run(['--as', 'worker:machine-b', '--wait', '10', '--', ...measure('within-b')]);
-  const machineResults = await Promise.all([machineA.done, machineB.done]);
-  const machineSpans = {};
-  for (const line of readFileSync(STAMPS, 'utf8').trim().split('\n')) {
-    const [what, who, at] = line.split(' ');
-    if (who.startsWith('within-')) (machineSpans[who] ??= {})[what] = Number(at);
+  `);
+  const publisher = (name, ...args) => [process.execPath, publisherScript, name, ...args];
+  const publishUnderLease = (name, key, wait, command) => run([
+    '--as', `approver:${name}`, '--key', key, '--wait', String(wait), '--', ...command,
+  ], { drainStdio: true, waitFor: ' — waiting, up to ', env: { LC_ALL: 'C' } });
+  const a = publishUnderLease('a', repo, 30, publisher('a', release));
+  let b;
+  try {
+    await until(() => existsSync(stamps) || a.child.exitCode !== null || a.child.signalCode !== null);
+    const alias = path.join(SB, 'publication-alias');
+    symlinkSync(repo, alias);
+    const timedOut = evidence('timeout', await publishUnderLease('timeout', alias, 0, publisher('timeout')).done);
+    check('a keyed lease wait refusal leaves no publisher entry, exit or result',
+      neverEntered(timedOut) && timedOut.cli.code === 1
+      && /clone publication lease is held by approver:a .* — waited .* the bound; your command was not run/.test(timedOut.cli.err),
+      JSON.stringify(timedOut));
+    b = publishUnderLease('b', alias, 30, publisher('b'));
+    await Promise.race([b.saw, b.done]);
+    const otherRepo = path.join(SB, 'other-publication');
+    mkdirSync(otherRepo);
+    const otherMarker = path.join(SB, 'other-publisher.ran');
+    const other = await publishUnderLease('other', otherRepo, 5, [process.execPath, '-e',
+      `require('fs').writeFileSync(${JSON.stringify(otherMarker)}, '1')`]).done;
+    const aHolding = (seen) => seen.length === 1 && seen[0].name === 'a' && seen[0].event === 'enter';
+    const duringOther = events();
+    check('a different clone key can publish while the first publisher is held',
+      other.code === 0 && existsSync(otherMarker) && aHolding(duringOther), JSON.stringify({ other, events: duringOther }));
+    const machineA = run(['--as', 'worker:machine-a', '--wait', '10', '--', ...measure('within-a')]);
+    const machineB = run(['--as', 'worker:machine-b', '--wait', '10', '--', ...measure('within-b')]);
+    const machineResults = await Promise.all([machineA.done, machineB.done]);
+    const machineSpans = {};
+    for (const line of readFileSync(STAMPS, 'utf8').trim().split('\n')) {
+      const [what, who, at] = line.split(' ');
+      if (who.startsWith('within-')) (machineSpans[who] ??= {})[what] = Number(at);
+    }
+    const [machineFirst, machineSecond] = Object.values(machineSpans).sort((x, y) => x.enter - y.enter);
+    const duringMachine = events();
+    check('machine holders still exclude each other while a keyed publisher holds the clone',
+      machineResults.every((r) => r.code === 0) && machineSecond?.enter >= machineFirst?.exit && aHolding(duringMachine),
+      JSON.stringify({ machineResults, machineSpans, events: duringMachine }));
+  } finally {
+    writeFileSync(release, 'go');
   }
-  const [machineFirst, machineSecond] = Object.values(machineSpans).sort((x, y) => x.enter - y.enter);
-  check('machine holders still exclude each other while a keyed publisher holds the clone',
-    machineResults.every((r) => r.code === 0) && machineSecond?.enter >= machineFirst?.exit
-    && !readFileSync(stamps, 'utf8').includes('"event":"exit"'),
-    JSON.stringify({ machineResults, machineSpans, events: readFileSync(stamps, 'utf8') }));
-  writeFileSync(release, 'go');
   const [ra, rb] = await Promise.all([a.done, b.done]);
-  const events = readFileSync(stamps, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
-  const aExit = events.find((e) => e.name === 'a' && e.event === 'exit')?.at;
-  const bEnter = events.find((e) => e.name === 'b' && e.event === 'enter')?.at;
-  const refused = JSON.parse(readFileSync(result('b'), 'utf8'));
+  const finished = events();
+  const first = evidence('a', ra, finished);
+  const second = evidence('b', rb, finished);
+  const published = resultReady(first, 0);
+  const refused = resultReady(second, 128);
+  check('successful fast-forward has a result and enter/exit stamps at CLI completion', published, JSON.stringify(first));
+  check('refused fast-forward has a result and enter/exit stamps at CLI completion', refused, JSON.stringify(second));
+  const aExit = first.events.find((event) => event.event === 'exit')?.at;
+  const bEnter = second.events.find((event) => event.event === 'enter')?.at;
   check('two publishers keyed by the canonical clone root, including a symlink alias, do not overlap',
-    ra.code === 0 && rb.code !== 0 && bEnter >= aExit && rb.err.includes('clone publication lease is held by approver:a'),
-    JSON.stringify({ codes: [ra.code, rb.code], events, wait: rb.err }));
-  check('a refused fast-forward under the clone lease leaves the clone index, tree and untracked bytes unchanged',
-    refused.code !== 0 && JSON.stringify(refused.before) === JSON.stringify(refused.after)
-    && refused.before.head === mustGit('rev-parse', 'accept-a')
-    && refused.before.status === '?? owner-untracked.txt\n',
-    JSON.stringify(refused));
+    bEnter >= aExit
+    && rb.err.includes('clone publication lease is held by approver:a'), JSON.stringify({ a: first, b: second }));
+  if (published) {
+    const merged = JSON.parse(readFileSync(first.file, 'utf8'));
+    check('the successful publisher moves the clone HEAD to its approval branch',
+      merged.code === 0 && merged.before.head !== merged.after.head && merged.after.head === mustGit('rev-parse', 'accept-a'),
+      JSON.stringify({ ...first, result: merged }));
+  }
+  if (refused) {
+    const merged = JSON.parse(readFileSync(second.file, 'utf8'));
+    check('a refused fast-forward under the clone lease leaves the clone index, tree and untracked bytes unchanged',
+      merged.code === rb.code && /not possible to fast-forward/i.test(merged.stderr)
+      && JSON.stringify(merged.before) === JSON.stringify(merged.after)
+      && merged.before.head === mustGit('rev-parse', 'accept-a') && merged.before.status === '?? owner-untracked.txt\n',
+      JSON.stringify({ ...second, result: merged }));
+  }
+  const missingCommand = path.join(SB, 'publisher-executable-does-not-exist');
+  const failedLaunch = evidence('launch', await publishUnderLease('launch', repo, 0, [missingCommand]).done);
+  check('a keyed child launch failure leaves no publisher entry, exit or result',
+    neverEntered(failedLaunch) && [126, 127].includes(failedLaunch.cli.code)
+    && failedLaunch.cli.err.includes(missingCommand) && /not found|no such file/i.test(failedLaunch.cli.err),
+    JSON.stringify(failedLaunch));
   const missingMarker = path.join(SB, 'missing-key-command.ran');
   const missing = await run(['--key', path.join(SB, 'no-such-clone'), '--', 'node', '-e',
     `require('fs').writeFileSync(${JSON.stringify(missingMarker)}, '1')`]).done;
