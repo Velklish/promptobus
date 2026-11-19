@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep the canonical Codex skill when the participant directory is reached through an alias and Codex lists its physical path.
 - Keep an OpenCode stdio server whose first argument repeats its command: only the bus entry drops the duplicated binary.
 - Let hosts keep private environment variables out of managed participants and owner snapshots. Refuse old snapshots that still contain those variables.
 

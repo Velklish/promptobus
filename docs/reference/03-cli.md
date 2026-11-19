@@ -197,6 +197,8 @@ That trust record is what opens the project's own `.codex/config.toml` and `.cod
 
 **Workspace skills reach a Codex participant as files.** The driver copies `<workspace root>/.codex/skills` into the working directory's `.codex/skills`, the way the Cursor driver copies `.cursor/skills`, and writes a self-ignoring `.gitignore` beside it so the copy stays out of a worktree's diff and goes away with the worktree at `done`. Codex reads a project's `.codex/skills` whether or not the project is trusted, so the copy alone is enough. Worker, reviewer and approver roles get it on Codex. The roots under `~/.agents/skills` follow `HOME`, not `CODEX_HOME`. Before `thread/start`, the holder reads `skills/list` and suppresses only user-scoped copies colliding with loaded canonical names through exact-path `skills.config` session overrides. Unrelated personal skills remain visible; the owner's files and settings stay unchanged.
 
+The canonical directory may be an alias: the holder also recognizes the physical path returned by Codex. See the [isolated measurement](../../test/fixtures/codex-app-server/0.170.0/participant-config.md) for what the pre-start skill list and the thread-scoped MCP inventory establish.
+
 **A repository that generates its process skills** rather than committing them declares the command in its own `promptobus.json`, in the optional `generate` field, as an argv array and never a shell line:
 
 ```json

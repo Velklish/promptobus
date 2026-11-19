@@ -1101,8 +1101,9 @@ export function verifyThreadProfile(record: CodexSessionRecord, result: CodexRes
 export function canonicalSkillOverrides(listed: unknown, canonicalDir: string) {
   const payload = listed as { data?: { skills?: { name?: string; path?: string; scope?: string }[] }[] } | null;
   const skills = (payload?.data ?? []).flatMap((entry) => entry.skills ?? []);
-  const dir = path.resolve(canonicalDir) + path.sep;
-  const canonical = (skill: { path?: string }) => path.resolve(skill.path ?? '').startsWith(dir);
+  const roots = [path.resolve(canonicalDir) + path.sep];
+  if (existsSync(canonicalDir)) roots.push(realpathSync(canonicalDir) + path.sep);
+  const canonical = (skill: { path?: string }) => roots.some(dir => path.resolve(skill.path ?? '').startsWith(dir));
   const names = new Set(skills.filter(canonical).map((skill) => skill.name));
   return skills.filter((skill) => skill.scope === 'user' && names.has(skill.name) && !canonical(skill))
     .map((skill) => ({ path: skill.path, enabled: false }));

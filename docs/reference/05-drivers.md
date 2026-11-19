@@ -1291,6 +1291,13 @@ Missing or incompatible consumed fields and new server approval methods require 
 20-second timeout and a 2 MiB output budget. Missing Codex reports installed comparison `notRun`;
 command failure, timeout and malformed output fail. A new label alone does not demand a recapture.
 
+`ThreadStartParams.config` accepts additional properties. Schema parity checks the envelope,
+not its keys. The [0.170.0 isolated config measurement](../../test/fixtures/codex-app-server/0.170.0/participant-config.md)
+separates TOML parsing, thread reply fields and observed tool enforcement. In particular,
+`codex mcp list --json` does not exercise `thread/start`, hooks or skill suppression.
+The holder matches the canonical skill directory by its configured and physical paths;
+Codex can return the physical path even when the lift used a directory alias.
+
 `PROVEN_CODEX_VERSION` selects the committed contract, not a native admission floor. Generic
 caller-supplied holder RPC remains untyped; `currentTime/read` is a documented extension absent
 from ServerRequest. Native evidence is version-scoped.
