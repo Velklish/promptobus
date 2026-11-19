@@ -263,7 +263,8 @@ the frame and the words belong to the harness channel, not the bus. There is
 also no process in `src/supervisor.ts`. The shared workspace service owns one
 package Worker for the task loops and provider reads. On macOS, the loops use
 the existing abortable inbox poll because closing a directory `fs.watch`
-can block in FSEvents. Elsewhere, `fs.watch` can wake a loop before its next poll.
+can block in FSEvents. The one-second wait is between rounds and each round
+takes its own time. Elsewhere, `fs.watch` can wake a loop before its next poll.
 Task cleanup attempts watcher closure, departure-note persistence and owned seat
 clear independently. A rejected cleanup stays failed, with primary and cleanup
 causes preserved across the Worker channel. The coordinator retains recovery

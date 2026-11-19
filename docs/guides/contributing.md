@@ -519,6 +519,11 @@ removing the owned sandbox. Normal cleanup removes it only after confirmed nativ
 and service outcomes; a signal joins the same memoized cleanup. The 30000 ms
 abort wait and native Stop allowances are unchanged.
 
+Mixed cleanup requires an `ENOENT` observation of the warden's
+`supervisor.json` before removing the sandbox. Its pre-exit receipt records the
+seat path and whether it is absent, present, or unknown. A remaining file or a
+failed observation retains the sandbox, including when the service exited.
+
 `live-mixed-timeout-retention.test.mjs` holds the native Stop past the abort wait
 in two modes, and only the abort mode waits the real 30000 ms: it requires the
 `did not end in 30000 ms` line and an exit no earlier than that wait after the

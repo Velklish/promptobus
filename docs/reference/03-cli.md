@@ -1712,10 +1712,11 @@ required demands resume through owner preflight after the failure is corrected.
 An unconfirmed Worker exit retains the lock rather than claiming shutdown.
 
 Each task retains its own journal seat, heartbeat and cleanup. The macOS loop
-polls its inboxes on the existing one-second tick to avoid blocking in directory
-watcher closure. Other platforms also use filesystem notifications. An abort
-wakes an idle loop immediately. An activation already in progress must settle
-before its seat is cleared or a requested successor starts. Demands arriving after a loop's
+waits 1000 ms between inbox polling rounds to avoid blocking in directory
+watcher closure. Each round takes its own time. Other platforms also use
+filesystem notifications. An abort wakes an idle loop immediately. An activation
+already in progress must settle before its seat is cleared or a requested
+successor starts. Demands arriving after a loop's
 start coalesce into one successor, including across its natural completion;
 explicit abort cancels demand unless a later request renews it. A physically live
 legacy warden

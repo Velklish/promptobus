@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Live Cursor worker and Codex reviewer scenario; see docs/guides/contributing.md#live-harness-scenarios.
 import {
-  copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, writeSync,
+  copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, writeSync,
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
@@ -39,7 +39,7 @@ const { cursorDriver } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-c
 const { codexDriver, DEFAULT_MODEL: CODEX_DEFAULT } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-codex.js'));
 const { hostOf } = await import(path.join(MECHANISM_ROOT, 'lib', 'host.js'));
 const { READS_DIFF, registryOf, roleEntry } = await import(path.join(MECHANISM_ROOT, 'dist', 'index.js'));
-const { readWardenMark } = await import(path.join(MECHANISM_ROOT, 'dist', 'sidecar.js'));
+const { wardenMarkFile } = await import(path.join(MECHANISM_ROOT, 'dist', 'sidecar.js'));
 const cursorPersist = await import(path.join(MECHANISM_ROOT, 'lib', 'cursor-persist.js'));
 const codexSession = await import(path.join(MECHANISM_ROOT, 'lib', 'codex-session.js'));
 
@@ -188,6 +188,16 @@ let serviceClosed = false;
 let serviceClosing;
 const closeService = () => serviceClosing ??= taskService.close().then((result) => { serviceClosed = true; return result; });
 process.once('exit', () => { if (serviceClosed) rmSync(serviceDirectory, { recursive: true, force: true }); });
+function observeWardenSeat() {
+  const file = wardenMarkFile(home, TASK);
+  try {
+    lstatSync(file);
+    return { state: 'present', file };
+  } catch (error) {
+    if (error.code === 'ENOENT') return { state: 'absent', file };
+    return { state: 'unknown', file, code: error.code ?? null, error: error.message };
+  }
+}
 const wardenEnv = { ...env };
 delete wardenEnv.PROMPTOBUS_WARDEN;
 
@@ -354,20 +364,24 @@ onAbort(async (signal) => {
   ].map((stop) => Promise.resolve(stop).catch((error) => ({ ok: false, stopped: false, note: error.message }))));
   const closingService = closeService().catch(error => ({ stopped: false, error: error.message }));
   const serviceStopped = await closingService;
-  say(serviceStopped.stopped ? '  · task warden and owned service physically stopped\n'
-    : `  · owned service stop unconfirmed: ${serviceStopped.error ?? 'no live owner'}\n`);
   const [workerStopped, reviewerStopped] = await stopping;
   keepCommandReceipts();
   if (workerRef) say(`  · stop returned for the Cursor worker ${workerRef}: ${workerStopped?.note ?? 'no stop result'}\n`);
   if (reviewerRef) say(`  · stop returned for the Codex reviewer ${reviewerRef}: ${reviewerStopped?.note ?? 'no stop result'}\n`);
   // The stop verdict is sampled HERE, while the sandbox still exists: once
   // the exit hook takes them, a reader cannot tell a real stop from the teardown.
+  const seat = observeWardenSeat();
+  if (serviceStopped.stopped) {
+    say(seat.state === 'absent' ? '  · task warden and owned service physically stopped\n'
+      : '  · owned service physically stopped. Task seat cleanup unconfirmed\n');
+  } else say(`  · owned service stop unconfirmed: ${serviceStopped.error ?? 'no live owner'}\n`);
   say(`  · pre-exit: ${JSON.stringify({ sandbox: SB, sandboxPresent: existsSync(SB), elapsedMs: Date.now() - (deadline - ABORT_STOP_MS),
-    warden: { process: serviceStopped.process ?? null, seat: readWardenMark(home, TASK), stopped: serviceStopped.stopped },
+    warden: { process: serviceStopped.process ?? null, seat, stopped: serviceStopped.stopped },
     worker: { ref: workerRef, pids: [workerPane], alive: [workerPane == null ? null : cursorPersist.pidAlive(workerPane)], stop: workerStopped },
     reviewer: { ref: reviewerRef, pids: reviewerPids, alive: reviewerPids.map((pid) => codexSession.pidAlive(pid)), stop: reviewerStopped },
   })}\n`);
-  if ((workerRef && stopUnconfirmed(workerStopped)) || (reviewerRef && stopUnconfirmed(reviewerStopped)) || serviceStopped.error || retentionError) {
+  if ((workerRef && stopUnconfirmed(workerStopped)) || (reviewerRef && stopUnconfirmed(reviewerStopped))
+    || serviceStopped.error || seat.state !== 'absent' || retentionError) {
     say(`  · cleanup unconfirmed; sandbox ${sandboxRetained ? 'retained' : 'retention unconfirmed'}: ${SB}\n`);
     if (retentionError) say(`  · sandbox retention error: ${retentionError?.message ?? String(retentionError)}\n`);
   } else {
@@ -546,7 +560,11 @@ try {
     keepCommandReceipts();
     if (!aborted) {
       codexStateBeforeCleanup = listing(CODEX_STATE);
-      try { await closeService(); } catch (error) { if (!aborted) cleanupErrors.push(error); }
+      try {
+        await closeService();
+        const seat = observeWardenSeat();
+        if (seat.state !== 'absent') cleanupErrors.push(new Error(`Task warden seat cleanup unconfirmed: ${JSON.stringify(seat)}`));
+      } catch (error) { if (!aborted) cleanupErrors.push(error); }
       if (!aborted) {
         if (cleanupErrors.length) {
           throw new AggregateError([...(runFailed ? [runFailure] : []), ...cleanupErrors],
