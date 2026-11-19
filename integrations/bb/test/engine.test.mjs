@@ -111,7 +111,11 @@ async function stand(t, options = {}) {
       } },
       interactions: { list: async ({ threadId }) => interactions.get(threadId) ?? [] },
       queuedMessages: {
-        list: async ({ threadId }) => queues.get(threadId) ?? [],
+        list: async ({ threadId }) => {
+          const entries = queues.get(threadId) ?? [];
+          options.afterQueueSnapshot?.(threadId, entries);
+          return entries;
+        },
         delete: async ({ threadId, queuedMessageId }) => {
           if (options.beforeQueueDelete) await options.beforeQueueDelete();
           const entries = queues.get(threadId) ?? []; const entry = entries.find(row => row.id === queuedMessageId);
@@ -1525,6 +1529,48 @@ for (const ambiguous of [false, true]) test(`active unread canonical mail queues
   assert.deepEqual(JSON.parse(await s.call('thr-2', 'promptobus_mailbox', { mode: 'read' })).messages.map(m => m.id), [sent.id, second.message.id]);
   assert.equal(JSON.parse(await s.call('thr-2', 'promptobus_mailbox', { mode: 'read' })).messages.length, 0);
   await s.reconcile(); assert.equal(s.wakes.length, 1, 'ACK during the active turn must not send a result continuation');
+});
+
+test('request history wins over an older queue snapshot for the same hint across reload', async t => {
+  let sends = 0;
+  const options = { wakeSend({ threadId, input, queues }) {
+    const entry = { id: `queued-${++sends}`, threadId, originPluginId: 'promptobus', content: input };
+    queues.set(threadId, [entry]);
+    if (sends === 2) throw new Error('Second queue reply lost');
+    return { delivery: 'queued', queuedMessage: entry };
+  } };
+  const s = await stand(t, options); await s.create(); await s.add('worker-one');
+  const thread = s.threads.get('thr-2'); thread.status = thread.runtime.displayStatus = 'active';
+  const engine = openEngine({ root: s.root, policy: () => ({ allow: true }), recover: false });
+  engine.sendSync(s.task, { from: 'orchestrator', to: ['worker-one'], type: 'task', body: 'Keep unread across turns' });
+  await s.reconcile();
+  const first = s.delivery(thread.id).pending;
+  assert.equal(first.queuedId, 'queued-1');
+  let request;
+  options.afterQueueSnapshot = (id, entries) => {
+    if (id !== thread.id) return;
+    delete options.afterQueueSnapshot;
+    assert.equal(entries[0].id, first.queuedId);
+    s.queues.set(id, []);
+    request = s.append(id, 'client/turn/requested', { input: entries[0].content });
+  };
+  const assertRequested = () => {
+    const { cursor, pending } = s.delivery(thread.id);
+    assert.equal(cursor, request.seq); assert.equal(pending.marker, first.marker);
+    assert.equal(pending.state, 'sent'); assert.equal(pending.queuedId, null);
+    assert.equal(pending.requestId, request.data.requestId); assert.equal(pending.requestSeq, request.seq);
+    assert.equal(sends, 1);
+  };
+  await s.reconcile(); assertRequested();
+  await s.reload(); await s.reconcile(); assertRequested();
+  s.finish(thread.id); await s.reconcile();
+  const second = s.delivery(thread.id).pending;
+  assert.notEqual(second.marker, first.marker); assert.equal(second.state, 'unknown');
+  await s.reconcile();
+  const queued = s.delivery(thread.id).pending;
+  assert.equal(queued.marker, second.marker); assert.equal(queued.state, 'queued');
+  assert.equal(queued.queuedId, 'queued-2'); assert.equal(queued.requestId, null);
+  assert.equal(sends, 2); assert.equal(engine.unread(s.task, 'worker-one'), 1);
 });
 
 for (const finish of [false, true]) test(`mailbox read retires only its queued hint when recovery observes ${finish ? 'idle' : 'active'}`, async t => {
