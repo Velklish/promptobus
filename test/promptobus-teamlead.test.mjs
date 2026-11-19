@@ -375,6 +375,11 @@ check('the child warden knocks the relifted teamlead once for root mail, and the
   rootMail === 0 && childKnocks.length === 1 && childKnocks[0].session === sid3
   && !rootKnocks.some((endpoint) => endpoint.address === 'teamlead:group-one'),
   JSON.stringify({ rootMail, childKnocks, rootKnocks }));
+store.writeWake(home, child.id, 'orchestrator', { socket: reliftBrief, session: sid3 });
+await wardenRound(home, child.id, { knock: async () => ({ ok: false, error: 'current child refusal' }) });
+const currentRefusal = childOwnerLine();
+check('a failed knock on the accepted child generation still reports its own self-wake reason',
+  currentRefusal.includes(`owner ${sid3}`) && currentRefusal.includes('alarm: self-wake (reason: current child refusal)'), currentRefusal);
 const sid4 = '44444444-4444-4444-4444-444444444444';
 installStub([{ id: 'ddeeffaa', sessionId: sid4, name: planned.name, state: 'working', pid: 4246 }]);
 let faultMessage = '';

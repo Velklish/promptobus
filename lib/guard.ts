@@ -17,6 +17,7 @@ import { ensureWarden, handOverContactPoints } from './warden.js';
 import { driverOrLift } from './drivers.js';
 import { GUARD_START_EVENT } from '../dist/hooks.js';
 import { SHIPPED_REGISTRY } from '../dist/index.js';
+import { participantHealth } from '../dist/supervisor.js';
 import { appendThroughputObservation } from './model-routing/telemetry.js';
 
 import type { ParticipantV1, PromptobusHost, TaskV1 } from '../dist/index.js';
@@ -282,8 +283,8 @@ export function probeContactPoint(socketPath: string | null | undefined, timeout
   });
 }
 
-function deadSinceOf(home: string, id: string, wake: Wake | null) {
-  const h = (readHealth(home, id)[ORCHESTRATOR] ?? {}) as Record<string, unknown>;
+function deadSinceOf(home: string, meta: TaskV1, wake: Wake | null) {
+  const h = participantHealth(readHealth(home, meta.id), participantOf(meta, ORCHESTRATOR));
   return h.triedAt ?? h.since ?? wake?.at ?? 'unknown';
 }
 
@@ -412,7 +413,7 @@ async function deadOwnerItems(home: string, cwd: string, session: string | null,
     if (!dead) continue;
     items.push({
       id: meta.id,
-      line: successorLine(meta, own.owner, deadSinceOf(home, meta.id, wake), unread),
+      line: successorLine(meta, own.owner, deadSinceOf(home, meta, wake), unread),
       key: successorItemKey(meta.id, own.owner, unread),
     });
   }

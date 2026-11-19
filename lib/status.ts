@@ -3,14 +3,15 @@ import path from 'node:path';
 import { ok, info, warn } from './util.js';
 import { hostOf } from './host.js';
 import { pipelineOf, pipelineText } from '../dist/pipeline.js';
+import { participantHealth } from '../dist/supervisor.js';
 import {
   addressOf, busService, canonicalPath, foreignTaskLine, listTasks, liveWarden, mailboxOf,
   ORCHESTRATOR, ownership, participantOf, participantSlots, readHealth, readTask, readWake, sameOwnerSession, sessionIdentity,
-  taskOwner, WARDEN_BEAT_SEC, tailWardenLog,
+  WARDEN_BEAT_SEC, tailWardenLog,
 } from './store.js';
 import {
   APPROVER, blockedParticipants as blockedIn, justSpawned, liveParticipant, mailboxPart, resetText, REVIEWER, routingOf,
-  sessionRefOf, stallStands,
+  ownerOf, sessionRefOf, stallStands,
 } from '../dist/index.js';
 import { routingLine } from './models.js';
 import { historyCountWindow, tallies } from './model-routing/telemetry.js';
@@ -202,13 +203,13 @@ function selfWakeSuffix(h: HealthEntry, wake: WakeContact | null) {
 function wakePart(home: string, id: string, addr: string, participant: ParticipantV1, unread: number | null) {
   const parts = [];
   const wake = readWake(home, id, addr);
-  const h = (readHealth(home, id)[addr] ?? {}) as HealthEntry;
-  if (addr === ORCHESTRATOR && orchestratorSocketGone(wake, h, taskOwner(home, id))) {
-    const owner = taskOwner(home, id) ?? 'nobody';
+  const h = participantHealth(readHealth(home, id), participant);
+  const owner = ownerOf(participant);
+  if (addr === ORCHESTRATOR && orchestratorSocketGone(wake, h, owner)) {
     const since = h.triedAt ?? h.since ?? wake?.at ?? 'unknown';
     // Not "self-wake": there is nothing to wake the orchestrator with, and a successor in
     // the root otherwise does not see the route until they call mailbox themselves.
-    parts.push(orchestratorDeadLine(owner, since));
+    parts.push(orchestratorDeadLine(owner ?? 'nobody', since));
   } else if (h.channel === 'pull') {
     // A pull participant polls; the warden never knocks for it, so no self-wake prognosis
     // applies. Judged before the fallback, which reads a missing socket as a fresh start.

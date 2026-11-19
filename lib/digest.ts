@@ -3,6 +3,7 @@ import type { MessageV1, TaskV1 } from '../dist/index.js';
 type MessageHeader = Omit<MessageV1, 'body' | 'protocolVersion'> & { firstLine?: string };
 import { pipelineOf } from '../dist/pipeline.js';
 import { piecesOf, readStalls } from '../dist/index.js';
+import { participantHealth } from '../dist/supervisor.js';
 import { hostOf } from './host.js';
 import { answerOwedSince, unansweredSince } from './answers.js';
 import {
@@ -115,7 +116,7 @@ export function buildDigest(rootOrHost: unknown, { task, now = Date.now() }: { t
       // A primary address counts its whole participant mailbox; an address alias, its own slot.
       const unread = mailboxOf(home, meta.id, address).alias ? countInbox(home, meta.id, address)
         : countMailbox(home, meta.id, address);
-      const mark = (health[address] ?? {}) as { since?: unknown; escalatedAt?: unknown };
+      const mark = participantHealth(health, participant);
       const debt = address === ORCHESTRATOR
         ? answerOwedSince(home, meta.id, address, participant)
         : unread === 0 ? unansweredSince(home, meta.id, address, participant) : null;
