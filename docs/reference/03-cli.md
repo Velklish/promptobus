@@ -1942,7 +1942,8 @@ Each service owner constructs one internal request handler for `/mcp/bus` and
 method and a lazy JSON body reader. The request handler authenticates the bearer,
 validates the session, prepares the client Host and enters managed dispatch. GET
 and DELETE do not read a body. For an ordinary pending native POST the handler
-recognizes the bearer before reading the body and checks full proof afterward:
+recognizes the bearer before reading the body. If the lifetime is a reservation,
+expiry returns 401 before MCP header validation or body reading. Full proof follows body reading:
 catalog discovery can follow owner realization, but a pending binding cannot
 call tools. Neither the transport nor the client receives a reusable grant fence.
 

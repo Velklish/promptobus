@@ -27,7 +27,7 @@ const initialized = { method: 'notifications/initialized' };
 const tool = { id: 2, method: 'tools/call', params: { name: 'read_file', arguments: { path: sample } } };
 const expired = { status: 401, body: { error: 'Client binding is absent or expired' } };
 const missing = { status: 404, body: { error: 'MCP session not found' } };
-const fixture = (options = {}) => {
+const fixture = (options = {}, connectBus) => {
   const hooks = {}, grant = { schemaVersion: 1, id: randomUUID(), token: randomUUID(), runtime, cwd: root, env: {}, pollEnv: {},
     lifetime: { kind: 'reservation', expiresAt: Date.now() + 60000 }, files: { roots: [files], canonicalFiles: [] }, ...options };
   const file = path.join(paths.clients, `${grant.id}.json`);
@@ -35,7 +35,7 @@ const fixture = (options = {}) => {
   const mcp = createMcpRequests({ host, runtime, paths, env, expectedHarness, createHost: async () => await hooks.host?.() ?? host,
     requireProcessLifetime: async () => {}, proveNativeBinding: current => hooks.native ? hooks.native(current) : requireManagedNativeBinding(paths, current, { host, env: current.pollEnv }),
     warden: { observe: async () => hooks.observe?.() ?? { reporter: { state: 'alive' } } },
-    isClosing: () => { hooks.final?.(); return false; }, finalizeStandaloneStartup: () => assert.fail('unexpected startup') });
+    isClosing: () => { hooks.final?.(); return false; }, finalizeStandaloneStartup: () => assert.fail('unexpected startup') }, connectBus);
   const request = (endpoint, message, session, { method = 'POST', headers, readBody } = {}) => mcp.handle({ endpoint, method,
     headers: { authorization: `Bearer ${grant.token}`, accept: 'application/json, text/event-stream', 'content-type': 'application/json',
       ...(session ? { 'mcp-session-id': session } : {}), ...headers }, readBody: readBody ?? (() => ({ jsonrpc: '2.0', ...message })) });
@@ -63,6 +63,11 @@ for (const endpoint of ['bus', 'reviewer_files']) {
   check(`${endpoint}: invalid bearer and expired lifetime refuse before body`, reads === 0
     && isDeepStrictEqual(denied, { status: 401, body: { error: 'Client lifetime is already expired or replaced' } }), JSON.stringify({ denied, reads }));
   reads = 0;
+  writePrivate(file, { ...grant, nativeBinding: { kind: 'codex', state: 'pending' }, lifetime: { kind: 'reservation', expiresAt: 1 } });
+  const pending = await request(endpoint, init, null, unread);
+  const malformed = await request(endpoint, init, null, { ...unread, headers: { 'mcp-protocol-version': 'invalid' } });
+  check(`${endpoint}: expired pending reservation precedes headers and lazy reader`, reads === 0 &&
+    [pending, malformed].every(reply => isDeepStrictEqual(reply, { status: 401, body: { error: 'Client lifetime is already expired or replaced' } })));
   writePrivate(file, grant);
   const opened = await request(endpoint, init), session = opened.headers?.['mcp-session-id'];
   assert.equal(opened.status, 200, JSON.stringify(opened)); assert.ok(session);
@@ -95,7 +100,7 @@ for (const endpoint of ['bus', 'reviewer_files']) {
   } else {
     const saved = { ...completed.response, result: { isError: true, content: [{ type: 'text', text: 'saved outcome' }] } };
     writePrivate(receipt, { ...completed, response: saved });
-    assert.deepEqual((await request(endpoint, tool, session)).body, saved);
+    check('bus replay selects the synthetic completed receipt body', isDeepStrictEqual((await request(endpoint, tool, session)).body, saved));
     writePrivate(receipt, { digest: completed.digest, state: 'started', readOnly: false });
     assert.deepEqual(await request(endpoint, tool, session), { status: 409, body: { error: 'The earlier request outcome is uncertain; inspect the journal instead of repeating it' } });
   }
@@ -152,6 +157,23 @@ const lifetime = { kind: 'managed', task, address: 'reporter', launchId: 'owned-
 const publish = extra => writePrivate(record, { home: paths.home, ...lifetime, ...extra });
 const identity = sessionId => upsertParticipant(paths.home, task, participantRecord('reporter', { harness: 'codex', sessionRef: 'owned', sessionRecord: record, sessionId }));
 createTask(paths.home, { id: task, title: 'request admission fixture', owner: 'owner' }); identity('original'); publish({});
+for (const change of ['revocation', 'launch replacement']) {
+  let calls = 0;
+  const { grant, file, request } = fixture({ lifetime }, () => ({ handle(message) {
+    if (message.method === 'tools/call') calls++;
+    return { jsonrpc: '2.0', id: message.id, result: {} };
+  } }));
+  const opened = await request('bus', init), session = opened.headers?.['mcp-session-id']; assert.ok(session, JSON.stringify(opened));
+  assert.deepEqual(await request('bus', initialized, session), { status: 202 });
+  const message = { jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'fixture_count' } };
+  const reply = await during(wait => request('bus', null, session, { readBody: async () => { await wait(); return message; } }),
+    () => change === 'revocation' ? rmSync(file) : publish({ launchId: 'other-launch' }));
+  const expected = change === 'revocation' ? expired : { status: 401, body: { error: 'Managed lifetime has no matching task, participant and launch record' } };
+  check(`managed tool body: ${change} refuses before invocation or started receipt`, isDeepStrictEqual(reply, expected) && calls === 0
+    && !existsSync(path.join(paths.requests, session)), JSON.stringify({ reply, calls }));
+  writePrivate(file, grant); publish({});
+  assert.equal((await request('bus', message, session)).status, 200); assert.equal(calls, 1);
+}
 for (const scenario of ['first drift', 'persistent drift', 'identity between attempts', 'unavailable']) {
   const { request, hooks } = fixture({ lifetime }); let proofs = 0, observations = 0;
   const response = await during(wait => {

@@ -134,7 +134,7 @@ interface McpRequest { endpoint: Endpoint; method?: string; headers: IncomingHtt
 interface McpReply { status: number; headers?: Record<string, string>; body?: unknown }
 
 export function createMcpRequests({ paths, host, runtime, env, createHost, expectedHarness, warden,
-  requireProcessLifetime, proveNativeBinding, finalizeStandaloneStartup, isClosing }: RequestOwner) {
+  requireProcessLifetime, proveNativeBinding, finalizeStandaloneStartup, isClosing }: RequestOwner, connectBus = busConnection) {
   const contexts = new Map<string, ClientContext>();
   const connections = new Map<string, { context: ClientContext; connection: Connection }>();
   const rootMutations = new Map<string, number>();
@@ -298,7 +298,7 @@ export function createMcpRequests({ paths, host, runtime, env, createHost, expec
     if (record.endpoint === 'reviewer_files') {
       if (!context.grant.files) throw new HttpFailure(403, 'This client has no reviewer file grant');
       connection = fileConnection(privateReadGrants(paths, context.grant.files), '1.0.0');
-    } else connection = busConnection(context.host, context.env, context.grant.cwd);
+    } else connection = connectBus(context.host, context.env, context.grant.cwd);
     connections.set(record.id, { context, connection });
     return connection;
   };
@@ -311,6 +311,7 @@ export function createMcpRequests({ paths, host, runtime, env, createHost, expec
       let grant = clientGrant(authorization);
       const pendingNativePost = request.method === 'POST' && grant.nativeBinding?.state === 'pending' && !grant.rootLaunch && !grant.bbRootNonce;
       if (!pendingNativePost) (await authorizeGrant(grant, 'authenticate'))();
+      else if (grant.lifetime.kind === 'reservation') requireLifetime(grant, paths.home, unavailableObservations, 401);
       if (endpoint === 'reviewer_files' && !grant.files) throw new HttpFailure(403, 'This client has no reviewer file grant');
       const header = request.headers['mcp-session-id'];
       if (Array.isArray(header)) throw new HttpFailure(400, 'Invalid MCP session header');

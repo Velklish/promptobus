@@ -8,16 +8,18 @@ contact a provider. The HTTP witnesses below exercise layers outside that interf
 | Endpoint | Request or held boundary | Authority change | Expected response | Evidence of entry or refusal |
 |---|---|---|---|---|
 | Both | POST before reader | Foreign token or expired reservation | 401, original error body | Zero reads |
+| Both | Pending native POST, valid or malformed protocol header | Reservation already expired | 401 `Client lifetime is already expired or replaced` before header validation | Zero reads |
 | Both | Initialize, ping, premature list, initialized, list | None | 200 with session header and negotiated version; 200 `{}` result; 400; empty 202; 200 with tools | Session ID scoped to client and endpoint |
 | Both | GET; DELETE across endpoints or protocol versions; valid DELETE | None | 405 with `allow: POST, DELETE`; 404 or 400; empty 204 | Zero reads; deleted session gets 404 |
 | Both | Unsupported protocol plus unknown session; unsupported method; bad content type plus bad Accept; bad Accept | None | 400 before session lookup; 405; 415 before 406; 406 | Zero reads |
 | Bus | Initialized notification body | Owner replaces grant | 401 | Session remains uninitialized |
+| Bus | Managed tool body, reader held until owner change | Grant removed / launch generation replaced | 401 `Client binding is absent or expired` / 401 `Managed lifetime has no matching task, participant and launch record` | Counting tool receives zero calls; no session receipt directory. With fixture authority restored, the same request reaches the stub once. |
 | Bus | Initialize Host factory | Owner revokes grant | 401 before inspecting the returned Host | Provisional session removed |
 | Bus | Pending native catalog body | Owner realizes binding | 200 with tools; pending tool call gets 403 | No actor needed for static catalog |
 | Bus | Native proof / managed observation | Same-identity revision changes once or continuously | Stable GET reaches missing-header 400; sustained drift gets 409 | Two or three proof attempts; no tool retry |
 | Bus | Native proof / managed observation | Participant replaced or grant removed; observer reports dead or unknown | 409 for changed identity, 401 for revocation/death, 503 for unknown | No additional observation on terminal refusal |
 | Reviewer files | Synchronous managed entry | Occupied task lock or revoked grant | 503 before journal entry or 401 | No receipt directory |
-| Both | Duplicate tool call | None | Bus returns saved body; allowed file read returns updated contents; changed arguments get 409 | Ordinary DELETE removes receipt directory |
+| Both | Duplicate tool call | None | Bus selects a synthetic saved response (not evidence of a successful bus operation); allowed file read returns updated contents; changed arguments get 409 | Ordinary DELETE removes receipt directory |
 | Bus | Retry after uncertain start | None | 409, earlier outcome uncertain | Existing started receipt; no automatic repeat |
 | Bus | DELETE standalone or BB process session | None | Empty 204 | Completed receipt remains under `root-<nonce>/<session>` |
 
@@ -30,3 +32,13 @@ covers standalone generation recovery with retained request history.
 `test/shared-service-native-binding.test.mjs` covers pending catalog discovery,
 native-call metadata and changes during Host preparation. Cached lifetime status
 observations still use a generated-source fixture; they do not authorize requests.
+
+### Open ordering question: DELETE and an in-flight POST
+
+DELETE removes the session and ordinary receipts. A POST that still needs to
+look up the session sees 404 if DELETE has already removed it. A POST that has
+already loaded the session and is waiting for Host preparation or final proof
+does not look up the session again before dispatch. It can proceed if its grant
+and operation proof are still valid. This is a reading of the existing control
+flow, not a concurrency test. Whether DELETE should also cancel such admitted
+requests remains an owner decision; the deletion policy is unchanged.
