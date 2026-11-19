@@ -36,7 +36,8 @@ function confirmed(ref, holderPid, fields = {}) {
   writeSession(record);
   return record;
 }
-const held = scheduled('held-holder');
+const exited = scheduled('exited-holder');
+const held = !exited;
 const holder = held ? spawn(process.execPath, ['-e', 'process.stdin.resume()'], { stdio: ['pipe', 'ignore', 'ignore'] }) : runChild(500);
 if (held) holder.done = new Promise(resolve => holder.once('exit', resolve));
 const late = confirmed('late-confirmation', holder.pid);
@@ -44,7 +45,6 @@ const socket = makeSockDir('pb-stop-recovery-').sock('holder');
 writeSession({ ...late, rpcSocket: socket });
 const connections = new Set();
 let ack;
-const exited = scheduled('exited-holder');
 const server = net.createServer(conn => {
   connections.add(conn);
   conn.once('close', () => connections.delete(conn));
@@ -57,8 +57,8 @@ const server = net.createServer(conn => {
 try {
   await new Promise((resolve, reject) => server.once('error', reject).listen(socket, resolve));
   if (exited) await bounded('pre-Stop exit', holder.done, 3000);
-  if (held) await new Promise(resolve => setTimeout(resolve, 510));
-  if (held || scheduled('exited-holder')) receipt('before first Stop', { holder: holder.pid, exit: holder.exitCode });
+  if (scheduled('held-holder')) await new Promise(resolve => setTimeout(resolve, 510));
+  receipt('before first Stop', { holder: holder.pid, exit: holder.exitCode });
   const first = await codexDriver.stop(late.ref, { timeoutMs: 60 });
   if (held) check('original child is still alive at the first Stop verdict', holder.exitCode === null && holder.signalCode === null);
   if (exited) check('first Stop after exit retires exactly once without a socket request',
@@ -68,7 +68,7 @@ try {
     && first.note.includes('holder exit was not confirmed before the Stop deadline') && !!readSession(late.ref), JSON.stringify({ ack, first }));
   if (held) holder.stdin.end();
   await bounded('holder exit', holder.done, 3000);
-  if (held || exited) receipt('before recovery', { first, ack, exit: holder.exitCode });
+  receipt('before recovery', { first, ack, exit: holder.exitCode });
   await bounded('Stop listener close', new Promise(resolve => server.close(resolve)), 2000);
   const second = await codexDriver.stop(late.ref, { timeoutMs: 200 });
   check(exited ? 'second Stop is already idempotent' : 'Stop after holder exit retires without a socket',

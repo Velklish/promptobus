@@ -1692,7 +1692,7 @@ name, before any write, and that is the whole job of the list.
 
 ## The Codex holder
 
-The [fixture schedule guide](../../test/fixture-order/README.md) distinguishes acceptance of a turn from its started notification, and a Stop confirmation from the holder's actual exit. Its controller-delay experiments exercise local fixtures; they do not qualify native behavior.
+The [fixture schedule guide](../../test/fixture-order/README.md) distinguishes acceptance of a turn from its started notification, and a Stop confirmation from the holder's actual exit. The ordinary reservation test observes B in the holder's active turn set before starting B. The ordinary Stop test confirms exit before retrying retirement. These local fixtures do not qualify native behavior.
 
 The [glossary](../GLOSSARY.md) defines the harness terms used here — holder, contact point, persist session, thread, and session record — and keeps a Codex thread distinct from a Cursor persist session.
 

@@ -21,14 +21,16 @@ const auth = label => JSON.stringify({ auth_mode: 'chatgpt', tokens: {
   access_token: token(label), id_token: 'fixture', account_id: 'fixture-account', refresh_token: 'owner-only',
 } });
 writeFileSync(path.join(ownerHome, 'auth.json'), auth('initial'));
-const env = { ...process.env, PROMPTOBUS_CODEX_OWNER_HOME: ownerHome, PROMPTOBUS_WARDEN: 'off', [FIRST_DELAY_VAR]: '1000' };
+const env = { ...process.env, PROMPTOBUS_CODEX_OWNER_HOME: ownerHome, PROMPTOBUS_WARDEN: 'off', [FIRST_DELAY_VAR]: scheduled('started-B') || scheduled('held-B') ? '1000' : '0' };
+const holdB = !scheduled('started-B');
+const releaseA = path.join(root, 'release-A');
 const releaseB = path.join(root, 'release-B');
-if (scheduled('held-B')) env.CODEX_STUB_RESERVATION_GATE = releaseB;
+if (holdB) env.CODEX_STUB_RESERVATION_GATE = releaseB;
 const task = 'turn-reservation-t20261001-000001';
 const brief = path.join(root, 'brief.md');
 writeFileSync(brief, '# Turn reservation\nRead task metadata.\n');
 planParticipant(harness.home, 'orchestrator', { turns: [
-  { do: [{ wait: 800 }] }, { do: [{ wait: 500 }] }, { do: [] },
+  { do: [{ untilFile: releaseA }] }, { do: [{ wait: 500 }] }, { do: [] },
 ] });
 const started = spawnSync(process.execPath, [path.resolve('bin/promptobus.js'), 'lead', '--brief', brief, '--task', task, '--permission-mode', 'full-access'], {
   cwd: root, env, encoding: 'utf8', timeout: 45000,
@@ -49,12 +51,15 @@ try {
     threadId: initial.threadId, input: [{ type: 'text', text: 'Continue in the same thread.' }],
   } }, env);
   const acceptedB = await turn();
-  if (scheduled('started-B') || scheduled('held-B')) {
-    check('A has not ended when the controller observes B acceptance', !!turnA && !events().some(e => e.kind === 'turn-end' && e.turnId === turnA));
-    const held = scheduled('held-B');
+  check('A has not ended when the controller observes B acceptance', !!turnA && !events().some(e => e.kind === 'turn-end' && e.turnId === turnA));
+  const reserved = await holderAsk(ref, 'status', {}, env);
+  check('the holder has reserved B while A is still active', reserved.activeTurns?.includes(turnA)
+    && reserved.activeTurns.includes(acceptedB.turn.id), JSON.stringify(reserved.activeTurns));
+  writeFileSync(releaseA, 'accepted B');
+  {
     receipt('accepted B', { turnA, turnB: acceptedB.turn.id });
     const reached = await observe('B controller resumes', () => events().find(event =>
-      event.turnId === acceptedB.turn.id && event.kind === (held ? 'reservation-gate' : 'turn-start')), 10000);
+      event.turnId === acceptedB.turn.id && event.kind === (holdB ? 'reservation-gate' : 'turn-start')), 10000);
     check('controller delay reached the selected B event', !!reached, JSON.stringify(events()));
   }
   const pendingB = await holderAsk(ref, 'status', {}, env);
@@ -79,17 +84,18 @@ try {
   check('changed owner auth cannot reload while accepted B awaits its started notification',
     /active turn/.test(refusal) && readFileSync(privateAuth, 'utf8') === before,
     JSON.stringify({ refusal, privateAuthChanged: readFileSync(privateAuth, 'utf8') !== before }));
-  if (scheduled('held-B') || scheduled('started-B')) receipt('after reservation and auth checks', {
+  receipt('after reservation and auth checks', {
     activeTurns: afterA.activeTurns, pendingBusy: pendingB.busy, afterABusy: afterA.busy, refusal, privateAuthUnchanged: readFileSync(privateAuth, 'utf8') === before,
     turns: events().filter(e => ['turn-end', 'turn-start', 'reservation-gate'].includes(e.kind)),
   });
-  if (scheduled('held-B')) {
+  if (holdB) {
     check('B stayed unstarted through the auth check', !events().some(e => e.kind === 'turn-start' && e.turnId === acceptedB.turn.id));
     writeFileSync(releaseB, 'checked');
     check('B starts after release', !!await observe('released B', () => events().find(e => e.kind === 'turn-start' && e.turnId === acceptedB.turn.id), 4000));
   }
 } finally {
-  if (scheduled('held-B')) writeFileSync(releaseB, 'release');
+  writeFileSync(releaseA, 'release');
+  if (holdB) writeFileSync(releaseB, 'release');
   try { await holderAsk(ref, 'shutdown', {}, env, 10000); } finally {
     const gone = () => !holderAlive(ref, env) && pids.every(pid => !pidAlive(pid));
     const stopped = await waitFor(gone, { timeoutMs: 3000 });

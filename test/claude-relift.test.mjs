@@ -45,14 +45,14 @@ const spawnWorker = (worker) => cli(['spawn', '--repo', repo, '--brief', brief, 
 const settle = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
 const releaseTurn = path.join(SB, 'release-relift');
+const holdTurn = !scheduled('guard-first');
 async function runStand() {
   if (!permission.ok) {
     skip('Claude Code relift stand', permission.reason);
     return;
   }
   setHarnessMode(HARNESS, { bgIgnoresSessionId: true, bgAwaitsHandshake: true });
-  // The first turn outlasts the steps below, so a knock seen before its end came from the warden.
-  const hold = scheduled('held-turn') ? { untilFile: releaseTurn } : { wait: 9000 };
+  const hold = holdTurn ? { untilFile: releaseTurn } : { wait: 9000 };
   planParticipant(HARNESS, WORKER, { turns: [{ do: [hold], detail: 'first turn' }, { do: [] }] });
 
   const first = spawnWorker('relift');
@@ -75,10 +75,10 @@ async function runStand() {
     again.status === 0 && again.out.includes(BG_SESSION_ID_WARNING), JSON.stringify({ output: again.out, trace: readTrace(HARNESS, WORKER),
       sessions: harnessSessions(HARNESS).map(session => ({ ...session, log: readLog(HARNESS, session.id, 20) })) }));
   const s2 = liveSession(WORKER);
-  if (scheduled('held-turn')) {
+  if (holdTurn) {
     const reached = await observe('relift turn held', () => notesOf(WORKER, s2?.id, 'turn-held')[0], 10000);
     check('held the new session before delaying send', !!reached);
-    await settle(9010);
+    if (scheduled('held-turn')) await settle(9010);
   }
   if (scheduled('guard-first')) {
     const guard = await observe('relift guard before send', () => notesOf(WORKER, s2?.id, 'guard')[0], 20000);
@@ -101,7 +101,7 @@ async function runStand() {
   check('relift: the warden knock reaches the new session before its first turn ends',
     knocked.length > 0 && (!ended.length || knocked[0].at < ended[0].at),
     `knocks ${JSON.stringify(knocked)} · turn ends ${JSON.stringify(ended)} · log: ${readLog(HARNESS, s2?.id, 8)}`);
-  if (scheduled('held-turn')) {
+  if (holdTurn) {
     check('the relift barrier still holds at the ordering assertion', !ended.length);
     writeFileSync(releaseTurn, 'checked');
     check('the released turn reached the guard', !!await observe('released guard', () => notesOf(WORKER, s2?.id, 'guard')[0], 10000));
@@ -142,7 +142,7 @@ async function runStand() {
 }
 
 try { await runStand(); } finally {
-  if (scheduled('held-turn')) writeFileSync(releaseTurn, 'release');
+  if (holdTurn) writeFileSync(releaseTurn, 'release');
   const left = await stopAll(HARNESS);
   check('no participant processes left after the stand', left.length === 0, JSON.stringify(left));
   restore();

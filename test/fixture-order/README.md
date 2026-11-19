@@ -1,6 +1,8 @@
 # Controlled fixture schedules
 
-These switches select local stub schedules in the existing focused tests. With no argument the reference schedule runs. Record results per revision: a run before a new assertion was added is not evidence that assertion passed. These schedules do not measure frequency.
+With no switch, these seven local tests wait for the events their assertions need. The relifted turn waits for the knock check; the log observer waits for both notifications; A completes on B acceptance and B starts after the auth check. Stop holds its child until the exit refusal. Delivery polling uses a logical clock, startup cleanup witnesses a real lock attempt and waits for the old holder to exit, and every socket payload is parsed after its own end event. A watchdog reports a missing event; it never stands in for the event itself.
+
+The switches below force the contrasting orders. In `late-notice`, the frozen snapshot must lack the second notification, but the ordinary log assertions use the later complete log. `missing-notice` still fails with the last log. Record results per revision: a run before a new assertion was added is not evidence that assertion passed. These schedules do not measure frequency.
 
 After execution is authorized, build with `npm run build`. For each row, run `node test/<file>.test.mjs` once without arguments as the reference, then the same command with **one** `--schedule=<value>` at a time. Use a fresh process for each command. Keep the exact argv, Git SHA, Node version, platform, stdout/stderr including JSON receipts and individual check lines, exit code, and cleanup result. `at` on a controller receipt is local monotonic time; use turn IDs, file handoffs and exit events for cross-process order. A skipped socket, missing prerequisite, watchdog, unrelated failing check or incomplete cleanup is not a causal witness.
 

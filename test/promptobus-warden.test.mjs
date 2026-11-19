@@ -745,47 +745,46 @@ check(': an auto-raise turned off by the switch leaves no trace',
 // `message.content`. We check it on a real socket — a knock stub would never catch this kind
 // of mistake.
 const LIVE_SOCK = sockPath('live');
-const seen = [];
 const delayEnd = scheduled('late-end') || ['auth', 'tokenless', 'probe'].some(key => scheduled(`missing-${key}`));
-let acceptedSocket;
+let connection;
 const wireSockets = new Set();
 const server = createServer((c) => {
   wireSockets.add(c);
   c.once('close', () => wireSockets.delete(c));
   let buf = '';
   c.on('data', (d) => { buf += d; });
-  c.on('end', () => { seen.push(buf); c.destroy(); });
-  if (delayEnd) { acceptedSocket = c; c.pause(); }
+  const { accepted, ended } = connection;
+  c.on('end', () => { ended.resolve(buf); c.destroy(); });
+  if (delayEnd) c.pause();
+  accepted.resolve(c);
 });
-async function releaseEnd(label, originalVerdict) {
-  receipt(`${label}: original observation`, { seen: [...seen], originalVerdict });
-  check(`${label}: original observer ran before server end`, seen.length === 0, JSON.stringify(seen));
-  const edge = performance.now() + 2000;
-  while (!acceptedSocket && performance.now() < edge) await new Promise(resolve => setTimeout(resolve, 5));
-  const socket = acceptedSocket;
-  if (!scheduled(`missing-${label}`)) socket?.resume();
-  while (!seen.length && performance.now() < edge) await new Promise(resolve => setTimeout(resolve, 5));
-  acceptedSocket = undefined;
-  if (!seen.length) {
-    socket?.destroy();
-    throw new Error(`${label}: no server end within 2000 ms (accepted=${!!socket})`);
+async function receive(label, dial, legacyVerdict) {
+  const accepted = Promise.withResolvers(), ended = Promise.withResolvers();
+  connection = { accepted, ended };
+  let seen;
+  ended.promise.then(buf => { seen = buf; });
+  const response = await dial();
+  const socket = await bounded(`${label}: no connection accepted`, accepted.promise, 2000);
+  if (delayEnd) {
+    await new Promise(res => setTimeout(res, 50));
+    let originalVerdict;
+    try { originalVerdict = legacyVerdict(seen, response); } catch (error) { originalVerdict = error.name; }
+    receipt(`${label}: original observation`, { seen, originalVerdict });
+    check(`${label}: original observer ran before server end`, seen === undefined);
+    if (!scheduled(`missing-${label}`)) socket.resume();
   }
-  receipt(`${label}: server end`, { payload: seen[0] });
+  const payload = await bounded(`${label}: no server end within 2000 ms (accepted=true)`, ended.promise, 2000);
+  receipt(`${label}: server end`, { payload });
+  return { response, payload };
 }
 const liveListening = await listenTestSocket(server, LIVE_SOCK);
 if (!liveListening.ok) {
   skip(': real wire checks require a local Unix socket', liveListening.reason);
 } else { try {
-const knocked = await knockSocket({ socket: LIVE_SOCK, token: 'tok123' }, 'a wire check');
-await new Promise((res) => setTimeout(res, 50));
-if (delayEnd) {
-  let verdict;
-  try { (seen[0] ?? '').trim().split('\n').map(l => JSON.parse(l)); verdict = 'parsed'; }
-  catch (error) { verdict = error.name; }
-  await releaseEnd('auth', verdict);
-}
-const lines = (seen[0] ?? '').trim().split('\n').map((l) => JSON.parse(l));
-check('the knock arrived and landed as two lines of JSON', knocked.ok === true && lines.length === 2, JSON.stringify(seen));
+const parse = buf => buf.trim().split('\n').map(line => JSON.parse(line));
+const knock = await receive('auth', () => knockSocket({ socket: LIVE_SOCK, token: 'tok123' }, 'a wire check'), buf => parse(buf ?? '').length === 2);
+const lines = parse(knock.payload);
+check('the knock arrived and landed as two lines of JSON', knock.response.ok === true && lines.length === 2, knock.payload);
 check('the first line is auth with the token',
   lines[0]?.type === 'auth' && lines[0].token === 'tok123', JSON.stringify(lines[0]));
 check('the second is an injection-protocol message with the order body',
@@ -795,27 +794,24 @@ check('the second is an injection-protocol message with the order body',
 
 // The auth line is always sent, even when there's no token: on macOS it isn't checked at all,
 // on Windows it's required, and code without it doesn't port.
-seen.length = 0;
-await knockSocket({ socket: LIVE_SOCK }, 'without a token');
-await new Promise((res) => setTimeout(res, 50));
-if (delayEnd) await releaseEnd('tokenless', JSON.parse((seen[0] ?? '{}').split('\n')[0]).type === 'auth');
+const tokenless = await receive('tokenless', () => knockSocket({ socket: LIVE_SOCK }, 'without a token'),
+  buf => JSON.parse((buf ?? '{}').split('\n')[0]).type === 'auth');
 check('with no token the auth line still goes out',
-  JSON.parse((seen[0] ?? '{}').split('\n')[0]).type === 'auth', JSON.stringify(seen));
+  tokenless.response.ok && parse(tokenless.payload)[0].type === 'auth', tokenless.payload);
 
-seen.length = 0;
-const probed = await probeWake(LIVE_SOCK, 'tok123');
-await new Promise((res) => setTimeout(res, 50));
-if (delayEnd) await releaseEnd('probe', probed.ok === true && (seen[0] ?? '').trim().split('\n').length === 1);
-if (delayEnd) check('the probe sent one auth object', JSON.parse(seen[0].trim()).type === 'auth', seen[0]);
+const probe = await receive('probe', () => probeWake(LIVE_SOCK, 'tok123'),
+  (buf, response) => response.ok && (buf ?? '').trim().split('\n').length === 1);
+const probeLines = parse(probe.payload);
+check('the probe sent one auth object', probeLines[0]?.type === 'auth' && probeLines[0].token === 'tok123', probe.payload);
 check('the doctor smoke test connects and sends ONLY auth — it does not touch someone else\'s turn',
-  probed.ok === true && (seen[0] ?? '').trim().split('\n').length === 1, JSON.stringify(seen));
+  probe.response.ok && probeLines.length === 1, probe.payload);
 
 } catch (error) {
   check('wire observations completed', false, error.message);
 } finally {
   for (const socket of wireSockets) socket.destroy();
   await bounded('wire listener teardown', new Promise(res => server.close(res)), 2000);
-  if (delayEnd) receipt('wire cleanup', { listening: server.listening, destroyed: [...wireSockets].every(s => s.destroyed) });
+  receipt('wire cleanup', { listening: server.listening, destroyed: [...wireSockets].every(s => s.destroyed) });
 }
 }
 

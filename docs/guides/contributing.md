@@ -215,7 +215,7 @@ Git input, the actual runner and a selected dependent assertion that fails.
 
 ## Suite isolation
 
-The [controlled fixture schedules](../../test/fixture-order/README.md) run one ordering at a time against the ordinary focused file. Keep the event receipts alongside the individual assertions: a failing process exit alone does not identify a scheduling dependency.
+The [controlled fixture schedules](../../test/fixture-order/README.md) exercise one ordering at a time. Ordinary runs use explicit release or observed completion; only the controls force the original timing window. Keep the event receipts alongside the individual assertions: a failing process exit alone does not identify a scheduling dependency.
 
 The release publication tests copy a verified candidate into a private directory per case. Each copy owns its source repository, bare remote, receipts and command stubs. The publication smoke still drives the npm entry point and installs the real tag from the local Git remote. The negative cases call the release script directly and inspect the same Git refs and refusal evidence.
 

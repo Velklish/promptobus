@@ -29,8 +29,8 @@ for (const [index, title] of ['Original cleanup scope', 'Different cleanup scope
   const poised = path.join(root, `before-transition-${index}`);
   const resumed = path.join(root, `cleanup-resumed-${index}`);
   const target = path.join(root, `transition-path-${index}`);
-  const ordered = scheduled('late-contender') || scheduled('contended');
-  const schedule = JSON.stringify({ attempt, poised, resumed, target, late: scheduled('late-contender') });
+  const late = scheduled('late-contender');
+  const schedule = JSON.stringify({ attempt, poised, resumed, target, late });
   const helpers = JSON.stringify(new URL('./fixture-transition-order.mjs', import.meta.url).href);
   const delayed = path.join(root, `delayed-${index}.mjs`);
   writeFileSync(delayed, `
@@ -42,12 +42,12 @@ while (!fs.existsSync(${JSON.stringify(release)})) {
   if (Date.now() >= deadline) throw new Error('old holder never released');
   await new Promise(resolve => setTimeout(resolve, 5));
 }
-${ordered ? `(await import(${helpers})).instrumentContender(${schedule});` : ''}
+(await import(${helpers})).instrumentContender(${schedule});
 const original = cp.spawn;
 cp.spawn = (...args) => {
   fs.writeFileSync(${JSON.stringify(nativeStarted)}, String(process.pid));
   const child = original(...args);
-  ${ordered ? `if (child.pid) fs.writeFileSync(${JSON.stringify(oldAppFile)}, String(child.pid));` : ''}
+  if (child.pid) fs.writeFileSync(${JSON.stringify(oldAppFile)}, String(child.pid));
   return child;
 };
 syncBuiltinESMExports();
@@ -79,13 +79,13 @@ await import(${JSON.stringify(pathToFileURL(cli).href)});
   check(`${title}: old detached holder is paused before lock acquisition`, launched.status === 0
     && original?.holderPid === null && !existsSync(nativeStarted));
   const lock = path.join(sessionsDir(env), `${sessionKey(original.ref)}.lock`);
-  if (ordered) writeFileSync(target, path.join(sessionsDir(env), `${sessionKey(original.ref)}.transition`));
+  writeFileSync(target, path.join(sessionsDir(env), `${sessionKey(original.ref)}.transition`));
   const retryScript = path.join(root, `retry-${index}.mjs`);
   writeFileSync(retryScript, `
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 const original = fs.readFileSync;
-${ordered ? `const { awaitContender, recordObservation } = await import(${helpers});` : ''}
+const { awaitContender, recordObservation } = await import(${helpers});
 let released = false;
 fs.readFileSync = (...args) => {
   try { return original(...args); }
@@ -93,10 +93,9 @@ fs.readFileSync = (...args) => {
     if (!released && String(args[0]) === ${JSON.stringify(lock)} && error.code === 'ENOENT') {
       released = true;
       fs.writeFileSync(${JSON.stringify(release)}, 'start old holder after liveness read');
-      ${ordered ? `awaitContender(${schedule});` : ''}
-      const deadline = Date.now() + 1000;
-      while (Date.now() < deadline && !fs.existsSync(${JSON.stringify(nativeStarted)})) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
-      ${ordered ? `recordObservation(${schedule}, ${JSON.stringify(nativeStarted)});` : ''}
+      awaitContender(${schedule});
+      ${late ? 'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);' : ''}
+      recordObservation(${schedule}, ${JSON.stringify(nativeStarted)});
     }
     throw error;
   }
@@ -112,13 +111,16 @@ await import(${JSON.stringify(pathToFileURL(cli).href)});
   check(`${title}: retry uses the intended session and transition keys`, !!current && current.task === original.task
     && current.address === original.address && (original.ref === current.ref) === (index === 0)
     && (keys.original === keys.retry) === (index === 0), JSON.stringify(keys));
-  if (ordered) {
+  {
     const snapshot = existsSync(resumed) && JSON.parse(readFileSync(resumed, 'utf8'));
     const tried = await waitFor(() => existsSync(attempt), { timeoutMs: 4000 });
     receipt('cleanup observation', { title, keys, snapshot, firstAttempt: tried && readFileSync(attempt, 'utf8') });
     check(`${title}: prescribed contender order occurred`, snapshot && tried && !snapshot.native
-      && snapshot.attempt === (scheduled('contended') ? 'EEXIST' : null), JSON.stringify(snapshot));
+      && snapshot.attempt === (late ? null : 'EEXIST'), JSON.stringify(snapshot));
   }
+  const contenderPid = Number(readFileSync(pidFile, 'utf8'));
+  check(`${title}: old holder exited before the final no-spawn observation`,
+    await waitFor(() => !pidAlive(contenderPid), { timeoutMs: 4000 }), String(contenderPid));
   check(`${title}: stale cleanup and holder acquisition cannot both win`, !existsSync(nativeStarted),
     `${retried.status} ${retried.stdout}${retried.stderr}`);
   check(`${title}: retry retains only its own native launch`, retried.status === 0
@@ -127,14 +129,14 @@ await import(${JSON.stringify(pathToFileURL(cli).href)});
   } finally {
   current ??= registrySessions(env).find(record => record.task === task);
   const oldPid = existsSync(pidFile) ? Number(readFileSync(pidFile, 'utf8')) : null;
-  const oldApp = ordered && existsSync(oldAppFile) ? Number(readFileSync(oldAppFile, 'utf8')) : null;
+  const oldApp = existsSync(oldAppFile) ? Number(readFileSync(oldAppFile, 'utf8')) : null;
   const pids = [oldPid, oldApp, current?.holderPid, current?.appPid];
   try { if (current?.holderPid) await codexDriver.stop(current.ref, { timeoutMs: 3000 }); } finally {
     for (const pid of pids) {
       if (pidAlive(pid)) { try { process.kill(pid, 'SIGKILL'); } catch {} }
     }
     const gone = await waitFor(() => pids.every(pid => !pidAlive(pid)), { timeoutMs: 4000 });
-    if (ordered) receipt('owned cleanup processes exited', { title, pids, gone });
+    receipt('owned cleanup processes exited', { title, pids, gone });
     check(`${title}: fixture holders exited`, gone);
   }
   }
