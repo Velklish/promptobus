@@ -22,6 +22,7 @@ The [contributing guide](../guides/contributing.md) describes the verification g
 The managed-retirement fixture checks the shutdown boundary with an actual held
 worker observation and confirmed service exit; see
 [suite isolation](../guides/contributing.md#suite-isolation).
+The same section describes the keyed-publication diagnostics and the history and reviewer stdio portability checks.
 
 <!-- quote:03-cli.md -->
 Pending lifetime observations remain active work after client revocation.

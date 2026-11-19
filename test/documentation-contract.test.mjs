@@ -167,6 +167,13 @@ check('docs: declined Stop evidence preserves the non-start outcome and null exi
   && has(read('README.md'), 'its null exit stays null.')
   && has(read('CHANGELOG.md'), 'Keep its exit null and reject conflicting evidence during observation and receipt replay.'));
 
+const leaseSection = section(read('docs/reference/03-cli.md'), '## Lease');
+check('docs: the publisher result file belongs to the keyed-publication fixture, not the lease contract',
+  has(leaseSection, 'promptobus lease [--as <address>]')
+  && !has(leaseSection, 'publisher result file')
+  && has(section(read('docs/guides/contributing.md'), '## Suite isolation'),
+    'Its publisher result file is a fixture artifact.'));
+
 const adr008 = adr('008', 'codex-reviewer-working-directory');
 const adr017 = adr('017', 'the-owner-gate-is-a-positive-proof');
 const adr019 = adr('019', 'session-address-per-task-lands');

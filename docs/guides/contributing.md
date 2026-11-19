@@ -215,6 +215,10 @@ Git input, the actual runner and a selected dependent assertion that fails.
 
 ## Suite isolation
 
+The keyed-publication fixture uses a local repository and fake publishers. Its publisher result file is a fixture artifact. The test drains the lease CLI's stderr and checks its exit outcome, publisher entry and exit stamps, and result-file presence before parsing the file. A zero-wait refusal and a missing executable exercise separate pre-entry failures without waiting for a file. These controls do not identify the cause of the historical missing result.
+
+The history fixture checks canonical UTC timestamps with valid 2026 and 2027 examples and rejects invalid dates and fields. The reviewer stdio and BB permission-proof cleanup tests pass decoded filesystem paths to Node so the fixtures run in checkouts with spaces or Unicode.
+
 The release publication tests copy a verified candidate into a private directory per case. Each copy owns its source repository, bare remote, receipts and command stubs. The publication smoke still drives the npm entry point and installs the real tag from the local Git remote. The negative cases call the release script directly and inspect the same Git refs and refusal evidence.
 
 The review inventory fixture checks both the number of returned paths and a byte floor above Node's default process output buffer. POSIX uses longer basenames to reach that floor with fewer files; Windows keeps short paths.
