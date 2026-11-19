@@ -266,15 +266,16 @@ check('second teamlead prompt lists its sibling address', sibling.prompt.include
 
 const sid3 = '33333333-3333-3333-3333-333333333333';
 // The dead session's points, and the new session's bus entry shaking hands before the rebind lands.
-store.writeWake(home, child.id, 'orchestrator', { socket: path.join(scratch, 'dead-child.sock'), session: sid1 });
+const predecessorWake = store.writeWake(home, child.id, 'orchestrator', { socket: path.join(scratch, 'dead-child.sock'), session: sid1 });
+const predecessorTriedAt = new Date(Date.parse(predecessorWake.at) + 1).toISOString();
 store.writeHealth(home, child.id, { ...store.readHealth(home, child.id), orchestrator: {
-  channel: 'self-wake', selfWake: 'refused', knockError: 'ENOENT', triedAt: new Date().toISOString(),
+  channel: 'self-wake', selfWake: 'refused', knockError: 'ENOENT', triedAt: predecessorTriedAt,
 } });
 const childOwnerLine = () => captureSplit(() => status(host, { task: child.id, sessions: [] })).out
   .split('\n').find(line => line.trimStart().startsWith('orchestrator ·')) ?? '';
 const predecessorLine = childOwnerLine();
 check('the child status attributes the failed knock to the predecessor before rebind',
-  predecessorLine.includes(`owner ${sid1} is dead since`), predecessorLine);
+  predecessorLine.includes(`owner ${sid1} is dead since ${predecessorTriedAt}`), predecessorLine);
 store.writeWake(home, task, 'teamlead:group-one', { socket: path.join(scratch, 'dead-root.sock'), session: sid1 });
 const leadSock = path.join(scratch, 'lead-3.sock');
 const leadMcp = spawn(process.execPath, [cli, 'mcp'], {

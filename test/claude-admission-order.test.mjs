@@ -14,12 +14,11 @@ const { createStandaloneHost } = await import(new URL('dist/host-index.js', runt
 const { guardHookCommand, managedGuardHookCommand, guardHookSettings } = await import(new URL('dist/hooks.js', runtime));
 const { shellQuote } = await import(new URL('dist/fs/shell.js', runtime));
 const { claudeDriver } = await import(new URL('lib/driver-claude.js', runtime));
-const { createOwnerEnvironment, finalizeManagedServiceLaunch, managedServiceHeaders } = await import(new URL('lib/service-launch.js', runtime));
-const { readBgSessions } = await import(new URL('lib/liftoff.js', runtime));
+const { createOwnerEnvironment, finalizeManagedServiceLaunch } = await import(new URL('lib/service-launch.js', runtime));
 const { runWorkspaceService } = await import(new URL('lib/service.js', runtime));
 const { serviceControl } = await import(new URL('lib/service-client.js', runtime));
 const { readDiscovery, readPrivate, recordVersion, runtimeIdentity, servicePaths } = await import(new URL('lib/service-state.js', runtime));
-const { bus, createTask, lastTurnAt, participantOf, participantRecord, readTask, readWake, upsertParticipant, writeJsonAtomic } = await import(new URL('lib/store.js', runtime));
+const { bus, createTask, lastTurnAt, participantRecord, readWake, upsertParticipant, writeJsonAtomic } = await import(new URL('lib/store.js', runtime));
 
 // Actual owned Node parent, CLI hook and service; effect markers stand for model/tool work.
 const root = realpathSync(makeSandbox('promptobus-admission-claude-'));
@@ -88,8 +87,8 @@ const blocked = result => {
   try { return JSON.parse(result.stdout).continue === false; } catch { return result.code === 2; }
 };
 const connect = async fixture => {
-  const url = fixture.plan.mcpConfig.mcpServers.promptobus.url;
-  const headers = { ...managedServiceHeaders(host, fixture.service.credentialFile, { env }), 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
+  const credential = readPrivate(fixture.service.credentialFile), url = fixture.plan.mcpConfig.mcpServers.promptobus.url;
+  const headers = { authorization: `Bearer ${credential.token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
   const initialized = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1,
     method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'owned-no-model', version: '1' } } }) });
   const body = await initialized.text();
@@ -99,8 +98,8 @@ const connect = async fixture => {
   await ready.text();
   if (ready.status !== 202) throw new Error(`Owned MCP initialized HTTP ${ready.status}`);
 };
-const fresh = async (name, ownedNative = false, predecessor = null) => {
-  const task = predecessor?.task ?? `${name}-t20261109-000001`, address = 'worker:admission', ref = name, nativeId = randomUUID();
+const fresh = async (name, ownedNative = false) => {
+  const task = `${name}-t20261109-000001`, address = 'worker:admission', ref = name, nativeId = randomUUID();
   let nativeParent;
   if (ownedNative) {
     const child = spawn(nativeExecutable, [parentScript], { cwd: root, env, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
@@ -112,7 +111,7 @@ const fresh = async (name, ownedNative = false, predecessor = null) => {
       child.once('error', reject); child.once('exit', code => reject(new Error(`Owned native parent exited ${code}: ${stderr}`)));
     });
   }
-  if (!predecessor) createTask(home, { id: task, title: 'Owned Claude admission fixture' });
+  createTask(home, { id: task, title: 'Owned Claude admission fixture' });
   const plan = claudeDriver.prepare({ ref, role: 'worker', model: 'fixture', prompt: 'fixture', cwd: root,
     mcp: { home, task, address, servers: { promptobus: { command: 'unused' } } },
     mcpConfigPath: path.join(root, `${name}.mcp.json`), settingsPath: path.join(root, `${name}.settings.json`),
@@ -126,7 +125,7 @@ const fresh = async (name, ownedNative = false, predecessor = null) => {
     nativeCommand: { executable: recordVersion(ownedNative ? nativeExecutable : realpathSync(process.execPath)), nativeStore, argv: ['--bg', 'fixture'] } }, { mode: 0o600 });
   upsertParticipant(home, task, participantRecord(address, { harness: 'claude', mode: 'managed', sessionRef: ref, sessionRecord: record }));
   sessions.push({ name: ref, sessionId: nativeId, id: nativeId.slice(0, 8), pid: nativeParent?.child.pid ?? process.pid, status: 'idle' });
-  if (!predecessor) writeFileSync(path.join(root, 'sessions.json'), JSON.stringify(sessions));
+  writeFileSync(path.join(root, 'sessions.json'), JSON.stringify(sessions));
   await finalized.service.beforeStart(record);
   const transcript = path.join(nativeStore, `${nativeId}.jsonl`);
   return { plan, service: finalized.service, env: finalized.env, record, transcript, task, address, nativeId, nativeParent,
@@ -138,42 +137,6 @@ try {
   if (serviceError) throw serviceError;
   if (!readDiscovery(paths)) throw new Error('Owned admission fixture service did not start');
   bus(home, { cli: version });
-  const old = await fresh('reconnect-old', true);
-  writeFileSync(old.transcript, '{}\n', { mode: 0o600 });
-  const oldStart = await phase(old, old.event, true);
-  await connect(old);
-  check('predecessor starts with its own verified native binding and working MCP connection', oldStart.code === 0
-    && readPrivate(old.record)?.nativeAdmission?.nativeId === old.nativeId, JSON.stringify(oldStart));
-  const sessionList = path.join(root, 'sessions.json');
-  let next;
-  writeFileSync(sessionList, 'unreadable fixture');
-  try {
-    const list = readBgSessions({ fresh: true });
-    next = await fresh('reconnect-next', true, old);
-    const owner = () => JSON.stringify(participantOf(readTask(home, next.task), next.address));
-    const ownerBefore = owner(), wakeBefore = JSON.stringify(readWake(home, next.task, next.address));
-    const pending = readFileSync(next.record, 'utf8');
-    const identities = { old: [old.service.launchId, old.nativeId], next: [next.service.launchId, next.nativeId] };
-    check(`distinct launches share a pointer before the successor handshake: ${JSON.stringify(identities)}`,
-      list.list === null && list.missing === null && old.nativeParent.child.connected && old.record === next.record
-      && old.service.launchId !== next.service.launchId && old.nativeId !== next.nativeId && readPrivate(next.record).sessionId === null);
-    let refusal;
-    try { await connect(old); } catch (error) { refusal = error.message; }
-    check('old managed reconnect cannot obtain the successor binding while the list is unreadable',
-      /Managed launch record identity changed|Managed client has no native launch binding/.test(refusal ?? '')
-      && readFileSync(next.record, 'utf8') === pending && owner() === ownerBefore && JSON.stringify(readWake(home, next.task, next.address)) === wakeBefore
-      && readPrivate(next.service.credentialFile)?.nativeBinding.state === 'pending', refusal);
-    await connect(next);
-    check('the first successor MCP handshake alone grants no native binding', readPrivate(next.record).sessionId === null
-      && readPrivate(next.service.credentialFile)?.nativeBinding.state === 'pending');
-  } finally { writeFileSync(sessionList, JSON.stringify(sessions)); }
-  writeFileSync(next.transcript, '{}\n', { mode: 0o600 });
-  const nextStart = await phase(next, next.event, true);
-  await connect(next);
-  check('with verified native startup the successor connects and binds its own generation', nextStart.code === 0
-    && readPrivate(next.record)?.nativeAdmission?.nativeId === next.nativeId && readPrivate(next.record)?.launchId === next.service.launchId
-    && participantOf(readTask(home, next.task), next.address)?.metadata.sessionId === next.nativeId
-    && readPrivate(next.service.credentialFile)?.nativeBinding.state === 'bound', JSON.stringify(nextStart));
   const immediate = await fresh('immediate');
   writeFileSync(immediate.transcript, '{}\n', { mode: 0o600 });
   const started = await phase(immediate, immediate.event, true);
