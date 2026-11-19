@@ -1632,7 +1632,6 @@ function saidLiftoff({ output, seen: receipt }: LibSpawnResult & { name?: string
   info(`Codex home: ${seen?.codexHome ?? 'unnamed on the record'} — the mechanism MCP set only, the owner's auth copied in, `
     + 'removed on done; the owner ~/.codex is not written');
   info('personal ~/.agents/skills remain visible; only copies colliding with loaded canonical names are disabled in this thread');
-  info('each bus tool call costs a turn of the Codex auto-reviewer (~3.4 s and ~19 thousand input tokens)');
   if (['teamlead', 'reporter', 'orchestrator'].includes(seen?.role!)) info('Codex project hooks are disabled for this install-root role; the holder drives turns and wake');
   else info('hook trust for this thread is bypass_hook_trust on thread/start; a linked worktree also has that hooks file in its Codex home');
 }

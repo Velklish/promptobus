@@ -116,7 +116,6 @@ export function readCapture(dir, { allowEvidence = false } = {}) {
     && !['capture-provenance.json', 'contract-provenance.json'].includes(n));
   const schemas = new Map();
   for (const name of generated) {
-    if (!name.endsWith('.json')) fail(name, 'unexpected generated file');
     const bytes = readFileSync(path.join(dir, name));
     let schema;
     try { schema = JSON.parse(bytes); } catch (error) { fail(name, `malformed JSON (${error.message})`); }

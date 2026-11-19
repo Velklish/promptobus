@@ -1263,6 +1263,10 @@ must not fall over its own log.
 
 ### Codex protocol versions
 
+Codex lift output does not estimate the current time, tokens or extra model turns
+per bus call. Older launch output carried a historical estimate, not a measurement
+of the installed binary.
+
 The committed contract covers codex-cli 0.158.0, the minimum, and 0.170.0, the selected
 version. Each version has 52 consumed schemas with the local definition closure.
 The [0.170.0 contract](../../test/fixtures/codex-app-server/0.170.0/README.md) was generated from the installed binary on 2026-11-19;
