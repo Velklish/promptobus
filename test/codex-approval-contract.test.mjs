@@ -59,7 +59,7 @@ for (const kind of [undefined, 'command', 'writeStdin']) {
 }
 
 const formats = Object.fromEntries(['int64', 'uint64', 'uint32', 'uint', 'double', 'int32', 'uint16'].map(n => [n, true]));
-for (const version of ['0.158.0', '0.166.0', '0.167.2']) {
+for (const version of ['0.158.0', '0.166.0', '0.167.2', '0.170.0']) {
   test(`Codex ${version} exact approval kind alternatives in both schema locations`, () => {
     const schemas = readConsumedContract(`test/fixtures/codex-app-server/${version}`, version);
     const ajv = new Ajv({ strict: false, allErrors: true, formats });
@@ -67,7 +67,7 @@ for (const version of ['0.158.0', '0.166.0', '0.167.2']) {
       const schema = schemas.get(`${name}.json`);
       const validate = ajv.compile({ $ref: '#/definitions/CommandExecutionApprovalKind', definitions: schema.definitions });
       for (const kind of ['command', 'writeStdin', 'humanCommand']) {
-        assert.equal(validate(kind), kind !== 'humanCommand' || version === '0.167.2', `${name}: ${kind}`);
+        assert.equal(validate(kind), kind !== 'humanCommand' || ['0.167.2', '0.170.0'].includes(version), `${name}: ${kind}`);
       }
       for (const kind of [null, false, 1, '', 'futureCommand', [], ['humanCommand'], {}, { type: 'humanCommand' }]) {
         assert.equal(validate(kind), false, `${name}: malformed ${JSON.stringify(kind)}`);
@@ -107,9 +107,9 @@ test('Codex 0.167.2 audio witnesses retain exact fileId or url alternatives with
   }
 });
 
-test('current holder documentation selects 0.167.2 and keeps historical approval measurements scoped', () => {
+test('current holder documentation selects 0.170.0 and keeps historical approval measurements scoped', () => {
   const cli = readFileSync('docs/reference/03-cli.md', 'utf8');
-  assert.match(cli, /current consumed contract is codex-cli 0\.167\.2/);
+  assert.match(cli, /current consumed contract is codex-cli 0\.170\.0/);
   assert.match(cli, /humanCommand.*fresh human decision/);
   assert.match(cli, /Historical approval measurements on codex-cli 0\.156\.1/);
 });

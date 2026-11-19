@@ -684,3 +684,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-429"></a>`PB-429-bb-049-plugin-compatibility` · 2026-11-19 · completed · — · Ship Promptobus BB plugins compatible with BB 0.50
 - <a id="pb-459"></a>`PB-459-bb-native-panel-kanban-board` · 2026-11-19 · completed · — · Show active Promptobus runs as a kanban board in the BB native panel
 - <a id="pb-463"></a>`PB-463-scoped-participant-mcp` · 2026-11-19 · completed · — · Let hosts select MCP servers by participant role
+- <a id="pb-464"></a>`PB-464-codex-0170-consumed-contract` · 2026-11-19 · completed · — · Update the consumed Codex contract to 0.170.0

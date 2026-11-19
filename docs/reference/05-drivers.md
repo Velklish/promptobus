@@ -1258,9 +1258,9 @@ must not fall over its own log.
 
 ### Codex protocol versions
 
-The committed contract covers codex-cli 0.158.0, the minimum, and 0.167.2, the selected
+The committed contract covers codex-cli 0.158.0, the minimum, and 0.170.0, the selected
 version. Each version has 52 consumed schemas with the local definition closure.
-The [0.167.2 contract](../../test/fixtures/codex-app-server/0.167.2/README.md) was generated from the installed binary on 2026-11-13;
+The [0.170.0 contract](../../test/fixtures/codex-app-server/0.170.0/README.md) was generated from the installed binary on 2026-11-19;
 the minimum was derived from its historical full capture. [Live measurements](../../test/fixtures/codex-app-server/0.164.0/README.md)
 retain the binary version and date. The previous 0.166.0 consumed capture remains historical.
 Full historical captures remain in Git history.
@@ -1279,7 +1279,7 @@ explicit kinds also refuse. An omitted kind retains the older `command` default;
 restrictions. A refusal sends only `decline`, never a session or persistent grant.
 The capture also permits audio input by `fileId` or `url`; this adds no holder input feature.
 Selected-profile ordinary workflow qualification and available-subscription
-measurements on 0.167.2 remain unmeasured.
+measurements on 0.170.0 remain unmeasured.
 
 Native harness version labels are telemetry. The local schema gate validates the committed
 contract before any installed-binary skip, then performs bounded no-model schema generation,

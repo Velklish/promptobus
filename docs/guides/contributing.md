@@ -577,7 +577,7 @@ every JSON document without `$schema`. Keep dated live
 evidence at its versioned path; schema captures no longer belong in the working tree.
 Shared holder/mock shape witnesses retain independent actual-emission tests. Mutation probes
 must break a consumed schema and make a named verdict red.
-The current consumed contract comes from the [0.167.2 schema capture](../../test/fixtures/codex-app-server/0.167.2/README.md).
+The current consumed contract comes from the [0.170.0 schema capture](../../test/fixtures/codex-app-server/0.170.0/README.md).
 Its `humanCommand` alternative requires a fresh human decision, not automatic
 containment approval. The holder does not advertise `requiredHumanApproval` and
 refuses that kind and unknown or malformed explicit kinds before role dispatch.
