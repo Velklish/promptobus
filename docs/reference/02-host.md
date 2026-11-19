@@ -282,6 +282,8 @@ The executable scripts under `scripts/live-*.mjs` run only when the file is the 
 
 A syntax check is `node --check scripts/<script>.mjs`. It parses the file and runs nothing. Importing the file is a refusal: the module throws `LIVE_SCRIPT_IMPORT` before any harness binary is probed, and no session starts.
 
+During the release canary's live loop, the wrapper owns one direct child in a separate process group. It forwards the first INT, TERM or HUP to that child and waits up to 15 seconds. A timeout reports `termination UNKNOWN`. Even confirmed wrapper-child exit does not establish that every native session stopped: on interruption the canary retains the installed workspace and output, and its unresolved marker prevents a later canary sweep.
+
 <!-- quote:../../scripts/live-entry.mjs -->
 ```text
 export function refuseImportedEntry(metaUrl, argv = process.argv) {

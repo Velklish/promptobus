@@ -25,7 +25,7 @@
 // home because doing so would hide its own break.
 import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync,
-  writeFileSync,
+  writeFileSync, openSync, closeSync, writeSync,
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -36,7 +36,8 @@ import { fileURLToPath } from 'node:url';
 import { run } from '../lib/exec.js';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { writeHostConfig } from '../test/sandbox.mjs';
-import { CANARY_PREFIX, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
+import { CANARY_PREFIX, RUN_OWNER_FILE, markRunOwner, markRunUnresolved, runOwnerIsLive, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
+import { exitCodeOf, runCanaryChild } from './live-abort.mjs';
 import { refuseImportedEntry } from './live-entry.mjs';
 
 refuseImportedEntry(import.meta.url);
@@ -66,6 +67,7 @@ const CLAUDE_SETTINGS = path.join(os.homedir(), '.claude', 'settings.json');
 const LEFTOVERS = [/promptobus\s+warden/, /test[/\\]participant\.mjs/, /promptobus\s+mcp/];
 
 const RUN = mkdtempSync(path.join(os.tmpdir(), CANARY_PREFIX));
+markRunOwner(RUN);
 const startedAt = new Date();
 const born = startedAt.getTime();
 
@@ -120,7 +122,7 @@ const marketplaceIds = () => Object.keys(readJson(KNOWN_MARKETPLACES)?.marketpla
 // mtime rank: its directory stops growing seconds after start and the "three
 // newest" threshold does not protect it.
 const refusedRuns = [];
-const swept = sweepPreviousRuns(os.tmpdir(), { current: RUN, refused: refusedRuns });
+const swept = sweepPreviousRuns(os.tmpdir(), { current: RUN, refused: refusedRuns, isLive: runOwnerIsLive });
 note(sweptLine('previous-run directories', swept));
 if (refusedRuns.length) note(`sweep refused (busy or foreign permissions): ${refusedRuns.join(', ')}`);
 
@@ -245,11 +247,17 @@ try {
     `leaked to the child: ${dirty.join(', ')} · was on the canary itself: ${carried.join(', ') || 'nothing'}`);
   note(`session identity on the canary: ${carried.join(', ') || 'nothing'}; in the run environment: `
     + `${dirty.join(', ') || 'nothing'}`);
-  const live = spawnSync(process.execPath, [LIVE_E2E], {
-    cwd: REPO, env: liveEnv, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
-  });
-  const liveOut = `${live.stdout ?? ''}${live.stderr ?? ''}`;
-  writeFileSync(path.join(RUN, 'live-e2e.out'), liveOut);
+  const log = path.join(RUN, 'live-e2e.out');
+  markRunUnresolved(RUN);
+  const fd = openSync(log, 'w');
+  let live;
+  try { live = await runCanaryChild(LIVE_E2E, { cwd: REPO, env: liveEnv, fd }); }
+  finally { closeSync(fd); }
+  if (live.abort) {
+    writeSync(2, `canary: ${live.abort}, child ${live.pid} ${live.terminated ? 'terminated' : 'termination UNKNOWN'}; stand retained: ${RUN}\n`);
+    process.exit(exitCodeOf(live.abort));
+  }
+  const liveOut = readFileSync(log, 'utf8');
   const tally = /(\d+)\/(\d+) verdicts passed/.exec(liveOut);
   check('canary: the live orchestration loop passed in full',
     live.status === 0 && !!tally && tally[1] === tally[2],
@@ -346,6 +354,7 @@ try {
   // first.
   rmSync(ws, { recursive: true, force: true });
   rmSync(packDir, { recursive: true, force: true });
+  rmSync(path.join(RUN, RUN_OWNER_FILE), { force: true });
   check('cleanup: the canary workspace and its store are swept',
     !existsSync(ws) && !existsSync(packDir), `${ws} · ${packDir}`);
 

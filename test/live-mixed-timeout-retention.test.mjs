@@ -17,8 +17,8 @@ import { processState } from '../lib/service-state.js';
 
 const PACKAGE = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const REAL_ABORT_WAIT = '}, { waitMs: 30_000 });';
-for (const mode of ['abort cleanup', 'normal cleanup transfer']) {
-  const waitMs = mode === 'abort cleanup' ? 30_000 : Math.min(30_000, Math.round(5_000 * await loadScale()));
+for (const mode of ['confirmed abort', 'abort cleanup', 'normal cleanup transfer']) {
+  const waitMs = mode === 'normal cleanup transfer' ? Math.min(30_000, Math.round(5_000 * await loadScale())) : 30_000;
   const ROOT = makeSandbox('promptobus-promptobus-mixed-timeout-retention-'), bins = path.join(ROOT, 'bin');
   const cursor = await cursorStub.installHarness({ binDir: bins, bundledRuntime: true }), codex = await codexStub.installHarness({ binDir: bins });
   const mechanism = path.join(ROOT, 'mechanism');
@@ -45,14 +45,16 @@ for (const mode of ['abort cleanup', 'normal cleanup transfer']) {
     fixtureWrite(${JSON.stringify(stopStarted)},JSON.stringify({ref,timeoutMs:options?.timeoutMs}));
     fixtureAppend(${JSON.stringify(stopStarted + '.calls.jsonl')},JSON.stringify({ref,timeoutMs:options?.timeoutMs})+'\\n');
     while(!existsSync(${JSON.stringify(stopRelease)})) await new Promise(resolve=>setTimeout(resolve,10));
-    return fixtureStop(ref,options);
+    const result=await fixtureStop(ref,options);
+    fixtureWrite(${JSON.stringify(stopStarted + '.returned')},JSON.stringify({ref,result,recordPresent:!!readSession(ref)}));
+    return result;
   };
   `);
   const proved = proveStandIsolation({ binDir: bins, names: ['agent', 'cursor', 'cursor-agent', { name: 'tmux', probe: ['-V'] }, 'codex'],
     homes: { [cursorStub.CURSOR_HOME_VAR]: cursor.home, PROMPTOBUS_CURSOR_HOME: cursor.stateHome,
       PROMPTOBUS_CURSOR_USER_HOME: cursor.userHome, [codexStub.CODEX_HOME_VAR]: codex.home, PROMPTOBUS_CODEX_HOME: codex.stateHome }, env: process.env });
   if (!proved.ok) throw new Error(`owned timeout fixture isolation refused: ${proved.reason}`);
-  const child = spawn(process.execPath, [entry], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, [STUB_BIN]: bins } });
+  const child = spawn(process.execPath, [entry], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, TMPDIR: ROOT, [STUB_BIN]: bins } });
   let out = '', exit = null, raised, signalledAt = null;
   child.stdout.on('data', bytes => { out += bytes; }); child.stderr.on('data', bytes => { out += bytes; });
   const done = new Promise(resolve => child.on('close', (code, signal) => {
@@ -67,16 +69,34 @@ for (const mode of ['abort cleanup', 'normal cleanup transfer']) {
       await waitFor(() => existsSync(stopStarted), { timeoutMs: 10000 });
     }
     signalledAt = Date.now();
+    const foreign = { ref: 'foreign-fixture', cwd: ROOT };
+    cursorSession.writeSession(foreign);
+    const foreignFile = cursorSession.sessionFile(foreign.ref), before = readFileSync(foreignFile);
     child.kill('SIGTERM');
+    if (mode === 'confirmed abort') {
+      if (!await waitFor(() => existsSync(stopStarted), { timeoutMs: 5000 })) throw Error('native Stop not entered');
+      check('mixed confirmed abort awaits the native Stop with its live record intact', !exit && !!cursorSession.readSession(raised.ref));
+      writeFileSync(stopRelease, 'complete the exact owned Stop');
+    }
     await Promise.race([done, new Promise(resolve => setTimeout(resolve, waitMs + 15000).unref())]);
     const stopped = existsSync(stopStarted) ? JSON.parse(readFileSync(stopStarted, 'utf8')) : null;
     const calls = existsSync(stopStarted + '.calls.jsonl') ? readFileSync(stopStarted + '.calls.jsonl', 'utf8').trim().split('\n').map(line => JSON.parse(line)) : [];
     const record = raised?.ref ? cursorSession.readSession(raised.ref) : null, sandbox = raised?.sandbox;
+    const returned = readCompleteJson(stopStarted + '.returned');
     const marker = sandbox && existsSync(path.join(sandbox, RUN_OWNER_FILE)) ? JSON.parse(readFileSync(path.join(sandbox, RUN_OWNER_FILE), 'utf8')) : null;
     writeSync(1, `  · mixed-timeout-retention-receipt: ${JSON.stringify({ runtimeDirectory: mechanism,
-      mode, waitMs, raised, stopped, calls, exit, marker, sandboxPresentAfterExit: sandbox ? existsSync(sandbox) : null,
+      mode, waitMs, raised, stopped, returned, calls, exit, marker, sandboxPresentAfterExit: sandbox ? existsSync(sandbox) : null,
       recordPresentAfterExit: !!record, homePresentAfterExit: record?.cwd ? existsSync(record.cwd) : null,
       paneStateAfterExit: raised?.pane ? processState(raised.pane) : 'unknown', ownerStateAfterExit: raised?.owner ? processState(raised.owner) : 'unknown' })}\n`);
+    check(`mixed ${mode}: foreign registry bytes survived`, existsSync(foreignFile) && before.equals(readFileSync(foreignFile)));
+    if (mode === 'confirmed abort') {
+      check('mixed confirmed abort: exact native Stop removed the owned record and pane before exit',
+        exit?.code === 143 && calls.length === 1 && stopped?.ref === raised.ref && returned?.ref === raised.ref
+        && returned?.result?.stopped === true && returned.result.ok && !returned.recordPresent && !record && processState(raised.pane) === 'dead'
+        && !out.includes('exiting without it') && (existsSync(sandbox) ? out.includes('cleanup unconfirmed') : out.includes('sandbox removed after confirmed cleanup')),
+        JSON.stringify({ exit, stopped, returned, out }));
+      continue;
+    }
     check(`mixed ${mode} timeout: the abort wait runs out in full, then exits 143 while the native Stop outcome is still pending`,
       exit?.code === 143 && exit.elapsedMs >= waitMs - 100 && calls.length === 1 && stopped?.ref === raised?.ref && stopped?.timeoutMs > 0 && stopped?.timeoutMs <= 5000
       && out.includes(`cleanup after SIGTERM did not end in ${waitMs} ms`), JSON.stringify({ exit, waitMs, stopped, out }));
