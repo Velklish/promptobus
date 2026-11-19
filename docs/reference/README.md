@@ -11,6 +11,8 @@ How promptobus works today — from the code, not intention. Intent and rational
 | [05-drivers.md](05-drivers.md) | Harness driver contracts, pinned Codex executable and private-home system-skill ownership, and what was measured on each binary |
 | [reporter-channel.md](reporter-channel.md) | Human questions to the retained read-only Codex reporter |
 
+The [shared MCP request matrix](../evidence/shared-mcp-request.md) maps the bus and reviewer-file session responses, proof checkpoints and receipt lifetimes to their witnesses.
+
 A performed probe's boundary is the sentence [The handover record](04-protocol.md#the-handover-record) states:
 
 <!-- quote:04-protocol.md -->

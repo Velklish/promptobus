@@ -354,6 +354,7 @@ import { runPromptobus } from 'promptobus/cli';
 `openEngine` takes a store location (`root` or `home`) and a routing policy; it never searches the disk for a workspace. Package sources import only Node built-ins and never read `process.env` or write to stdout — diagnostics, session identity and the harness name arrive as arguments, so the environment and the output stay with the consumer. Details: [reference/01-overview.md](https://github.com/Velklish/promptobus/blob/v0.33.1/docs/reference/01-overview.md), [reference/02-host.md](https://github.com/Velklish/promptobus/blob/v0.33.1/docs/reference/02-host.md), [reference/04-protocol.md](https://github.com/Velklish/promptobus/blob/v0.33.1/docs/reference/04-protocol.md).
 
 Managed participant HTTP tools require the owner-realized actual native ID; a planned UUID or session-record pointer alone grants no tool access.
+The shared service checks both MCP endpoints against the current client grant. A reviewer file session also needs its own read grant; a bus session ID does not open the file endpoint.
 
 Native client registration checks compatibility with the active shared service
 before starting a participant. A Claude Code teamlead's managed hooks use the
