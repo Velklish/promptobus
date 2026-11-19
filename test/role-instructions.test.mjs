@@ -9,7 +9,7 @@ const baseline = JSON.parse(readFileSync(new URL('./fixtures/participant-prompts
 const actual = await captureRolePrompts();
 for (const [harness, roles] of Object.entries(baseline)) {
   for (const [role, prompt] of Object.entries(roles)) {
-    test(`${harness} ${role} retains the complete pre-extraction output`, () => {
+    test(`${harness} ${role} matches the complete native instruction snapshot`, () => {
       assert.equal(actual[harness][role], prompt);
     });
   }
@@ -27,9 +27,12 @@ test('worker milestone status and native/BB references retain the progress deliv
   assert.match(body, /blocker needing a decision is a question/);
   assert.doesNotMatch(body, /status at every notable step/);
   const read = file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
-  assert.match(read('skills/orchestrate/SKILL.md'), /milestone `status`/);
+  const orchestrate = read('skills/orchestrate/SKILL.md');
+  assert.match(orchestrate, /`status` for nonblocking progress/);
+  assert.match(orchestrate, /blocking HOLD, send an actionable `question`[^\n]*release comes as `answer`/);
+  assert.match(orchestrate, /`result` for completion/);
   assert.match(read('docs/reference/01-overview.md'), /only `status` does not receive a knock/);
-  assert.match(read('docs/reference/03-cli.md'), /does not knock or retry a knock/);
+  assert.match(read('docs/reference/03-cli.md'), /`status` alone in an orchestrator mailbox does not knock, retry a knock, or escalate to `SILENT`/);
   assert.match(read('docs/reference/02-host.md'), /does not produce a BB bus wake/);
   assert.match(read('integrations/bb/README.md'), /without its own bus wake/);
 });

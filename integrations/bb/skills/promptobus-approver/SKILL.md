@@ -54,7 +54,7 @@ Read the authenticated task contacts before sending. No contact is created by re
 ## Communication protocol
 
 1. Once you have taken the assignment — immediately [promptobus_send binding from initial context] {"to":["orchestrator"],"type":"status","body":"what you understood and how you plan to do it"}.
-2. Send status at every notable step. A status expects NO answer — send it and go on working.
+2. Send status for progress. It expects no answer and does not force an owner wake. Before ending a blocking HOLD, send a question and await an answer; send result for completion.
 3. To wait for a message — End the turn when waiting for mail. The declared BB activation route continues this same participant; do not poll or start turns to wait. Call [promptobus_mailbox binding from initial context] with {"mode":"read"} to take unread messages and use the bodies in the reply. With {"mode":"peek"}, the same unread bodies are returned without marking them read.
 4. Stuck without an answer — [promptobus_send binding from initial context] {"to":["orchestrator"],"type":"question","body":"…"} and end the turn.
 5. Route all messages, including questions for the worker, through the task orchestrator.

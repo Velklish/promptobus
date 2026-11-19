@@ -201,6 +201,7 @@ const englishCommands = section(english, '### Commands', '### MCP tools');
 const englishSteps = starts(englishFeatures, '- **Declared gate lifts.**');
 const englishAcceptance = starts(englishFeatures, '- **Addressed acceptance.**');
 const englishStepCommand = starts(englishCommands, '| `promptobus step <name> <path> --task <id>` |');
+const rootRoleLocation = /\bteamleads? and reporters?(?: sessions)? work at the install root\b/i;
 check('PB-293 entry points match current hooks tools roles and package',
   englishHooks.includes('`promptobus mcp` exposes six tools over stdio, including three restricted to a proven reporter session.')
     && englishHooks.includes('Stop and SessionStart loop guard for Claude Code and Codex, and a stop guard for Cursor.')
@@ -220,11 +221,11 @@ check('PB-293 entry points match current hooks tools roles and package',
     && section(trust, '# Hooks, trust, and troubleshooting', '## What the installer edits')
       .includes('Stop and SessionStart on Claude Code and Codex, and stop on Cursor.')
     && trustRoles.includes('A worker works in its worktree, an approver in its own worktree, and a diff reviewer in a separate directory or sandbox.')
-    && trustRoles.includes('Teamlead and reporter sessions work at the install root')
+    && rootRoleLocation.test(trustRoles)
     && !trustNeverTouched.includes('runner must stay')
     && driversIntro.includes('Claude Code and Codex install Stop and SessionStart,')
     && driversIntro.includes('while Cursor installs stop only')
-    && driversIntro.includes('Teamlead and reporter sessions work at the install root')
+    && rootRoleLocation.test(driversIntro)
     && ['promptobus spawn --teamlead', 'promptobus report', 'promptobus step', 'promptobus ask']
       .every((command) => englishCommands.includes(`| \`${command}`))
     && englishSteps.includes('The first gate has no predecessor precondition; every later gate needs a result from the preceding gate\'s participant for the same subject, committed after its current causal assignment boundary. A `writes-main-tree` gate also needs the owner\'s result, under the same subject and currency condition, whether or not it is the first gate.')
