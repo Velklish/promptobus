@@ -215,7 +215,7 @@ Skills in git stay the default and cost this step nothing. A repeat spawn into a
 
 The participant preamble names the generator and dependency outcomes in every case, including "no generator declared" and "no lock". Because launch files now wait for dependency installation, Ctrl+C during `npm ci` can leave a recorded worktree without launch files; a repeat spawn rewrites those files but does not rerun or check dependencies. A participant that is never told cannot notice that its repository's rules or dependencies are missing.
 
-The automatic install uses the worktree root lockfile. It does not discover separately locked packages. Follow the repository's setup instructions before running their checks. If a generator exits with an exception, the warning and preamble prefer its exception line over the trailing stack or runtime version. The adjacent generator log retains the captured stdout and stderr.
+The automatic install uses the worktree root lockfile. It does not discover separately locked packages. Follow the repository's setup instructions before running their checks. When the generator output ends with a recognized Node crash report, the warning and preamble show its terminal exception rather than an earlier error or the runtime version. Other failures keep their output tail. The adjacent generator log retains the captured stdout and stderr.
 
 ### The session id after a lift
 

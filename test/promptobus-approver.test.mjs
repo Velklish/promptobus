@@ -716,7 +716,7 @@ g(LIVE_REPO, 'init', '-b', 'main');
 writeFileSync(path.join(LIVE_REPO, 'AGENTS.md'), 'repo\n');
 g(LIVE_REPO, 'add', '.');
 g(LIVE_REPO, 'commit', '-m', 'init', '-q');
-const LIVE_WT = path.join(LIVE_REPO, '.claude', 'worktrees', 'a2a-warden');
+const LIVE_WT = path.join(LIVE_REPO, '.claude', 'worktrees', 'a2a warden');
 g(LIVE_REPO, 'worktree', 'add', '-q', '-b', 'worktree-promptobus-a2a-warden', LIVE_WT, 'main');
 writeFileSync(path.join(LIVE_WT, 'warden.txt'), 'work\n');
 g(LIVE_WT, 'add', '.');
@@ -819,7 +819,7 @@ check(': approver record separates the durable clone and the review subject',
   JSON.stringify(liveApprover?.metadata));
 
 const wrongSubject = thrown(() => planApprover(LIVE_WS, { target: LIVE_REPO, task: LIVE_TASK, dryRun: true }));
-const reviewedCommand = `promptobus review ${LIVE_WT} --approver --task ${LIVE_TASK}`;
+const reviewedCommand = `promptobus review '${LIVE_WT.replaceAll("'", "'\\''")}' --approver --task ${LIVE_TASK}`;
 check(': a clone-root approver lift refuses and gives the exact command for the reviewed worktree',
   wrongSubject.threw
   && wrongSubject.msg.includes(LIVE_REPO)

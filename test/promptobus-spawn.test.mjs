@@ -1663,19 +1663,45 @@ check(': the preamble names the failure and the exit code',
   && /exited with code 3/.test(String(badRun?.prompt)),
   String(badRun?.prompt ?? '').split('\n').slice(0, 6).join(' / '));
 
-writeFileSync(path.join(BAD_REPO, 'promptobus.json'), JSON.stringify({
-  generate: ['node', '-e', 'console.log("generator stdout"); require("./missing-generator-fixture.cjs")'],
-}));
+writeFileSync(path.join(BAD_REPO, 'crash-fixture.cjs'), [
+  'console.log("generator stdout");',
+  'try { throw new Error("optional input unavailable"); } catch (error) { console.error(error.stack); }',
+  'require("./missing-generator-fixture.cjs");',
+].join('\n'));
+writeFileSync(path.join(BAD_REPO, 'promptobus.json'), JSON.stringify({ generate: ['node', 'crash-fixture.cjs'] }));
 const crash = runRepoGenerator({ worktreePath: BAD_REPO });
 const crashOut = await capture(() => sayRepoSkills(crash));
 const crashLog = readFileSync(crash.logPath, 'utf8');
-check(': a crashing Node generator names the cause and preserves stdout, stack and version in the log',
+check(': a crashing Node generator names the terminal exception, not the recovered one, and keeps the full log',
   crash.kind === 'failed' && crash.code === 1
   && /exited with code 1: Error: Cannot find module '.\/missing-generator-fixture\.cjs'/.test(crash.why)
   && crashOut.includes(crash.why) && !crashOut.includes('Node.js v')
-  && repoSkillsLine(crash).includes(crash.why)
-  && crashLog.includes('generator stdout') && crashLog.includes('Require stack:') && crashLog.includes('Node.js v'),
+  && repoSkillsLine(crash).includes(crash.why) && !repoSkillsLine(crash).includes('optional input unavailable')
+  && crashLog.includes('generator stdout') && crashLog.includes('Error: optional input unavailable')
+  && crashLog.includes('Require stack:') && /^\s+at\s+/m.test(crashLog) && crashLog.includes('Node.js v'),
   `${crashOut}\n${crashLog}`);
+
+writeFileSync(path.join(BAD_REPO, 'promptobus.json'), JSON.stringify({ generate: ['fixture-generator'] }));
+const coded = runRepoGenerator({ worktreePath: BAD_REPO }, {
+  exec: () => ({ status: 1, stderr: [
+    'Error [ERR_MODULE_NOT_FOUND]: Cannot find package fixture',
+    '    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:1:1) {',
+    "  code: 'ERR_MODULE_NOT_FOUND'",
+    '}', '', 'Node.js v26.0.0', '',
+  ].join('\r\n') }),
+});
+check(': a Node stack with a coded exception retains the exception header',
+  coded.why === 'exited with code 1: Error [ERR_MODULE_NOT_FOUND]: Cannot find package fixture', coded.why);
+
+const ordinaryOutput = 'Error: optional input unavailable\n    at readInput (fixture:1:1)\nwrite failed\ncheck destination permissions\n';
+const ordinary = runRepoGenerator({ worktreePath: BAD_REPO }, {
+  exec: () => ({ status: 4, stdout: 'setup started\n', stderr: ordinaryOutput }),
+});
+check(': a generator without a terminal Node exception keeps its useful tail and unmodified log',
+  ordinary.kind === 'failed' && ordinary.code === 4
+  && ordinary.why === 'exited with code 4: write failed check destination permissions'
+  && readFileSync(ordinary.logPath, 'utf8') === `setup started\n${ordinaryOutput}`,
+  ordinary.why);
 
 // A declaration that is there but unusable is its own state, in the plan and in the
 // preamble alike. Reading it as "no generator" would print the opposite of what the
