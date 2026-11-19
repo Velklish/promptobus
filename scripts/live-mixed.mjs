@@ -50,7 +50,7 @@ import { waitFor } from '../test/harness.mjs';
 import { taskServiceFixture } from '../test/task-service-fixture.mjs';
 import { markRunOwner, sweepLiveRuns, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
 import { onAbort } from './live-abort.mjs';
-import { codexConfigSha } from './codex-config.mjs';
+import { checkCodexHygiene, readCodexHygiene } from './codex-hygiene.mjs';
 import { codexCatalogEntries, pickCodexModel } from './codex-models.mjs';
 import { messageKey, reportMentionsDiff, unseenResult } from './review-events.mjs';
 import { requiredTmuxSessions, tmuxAbsenceVerdict } from './tmux-check.mjs';
@@ -128,18 +128,14 @@ function at_(name, ms) {
   process.stdout.write(`  · ${name}: ${(ms / 1000).toFixed(1)} s\n`);
 }
 
-// Codex processes are looked up by TWO templates and both are needed: `pgrep
-// -fl codex` also catches foreign commands with the word codex in the path
-// (including this script itself), and the thread holder is visible only as
-// `app-server --stdio`.
-function pgrep(pattern) {
-  const r = spawnSync('pgrep', ['-f', pattern], { encoding: 'utf8' });
-  return String(r.stdout ?? '').trim().split('\n').filter(Boolean);
-}
-
 const CODEX_CONFIG = path.join(homedir(), '.codex', 'config.toml');
-const shaBefore = codexConfigSha(CODEX_CONFIG);
-const pgrepBefore = { cask: pgrep('Caskroom/codex'), app: pgrep('app-server --stdio') };
+let codexBefore;
+try {
+  codexBefore = readCodexHygiene(CODEX_CONFIG);
+} catch (error) {
+  console.error(`✖ live run not started: could not observe Codex hygiene baseline: ${error.message}`);
+  process.exit(1);
+}
 
 // The Cursor registry stays in the person home, named, since the helpers refuse to guess one;
 // what the run leaves there is compared before and after, the person's own sessions subtracted.
@@ -242,7 +238,7 @@ process.stdout.write(`▸ codex: ${tools.codex.path}${tools.codex.version ? ` ($
 process.stdout.write(`▸ mechanism: ${MECHANISM_ROOT}\n`);
 process.stdout.write(`▸ sandbox: ${SB} · store: ${home}\n`);
 process.stdout.write(`▸ task: ${TASK}\n`);
-process.stdout.write(`▸ sha ~/.codex/config.toml before: ${shaBefore ?? '(no file)'}\n`);
+process.stdout.write(`▸ sha ~/.codex/config.toml before: ${codexBefore.sha ?? '(no file)'}\n`);
 if (leaked.length) process.stdout.write(`▸ stripped from the run environment: ${leaked.join(', ')}\n`);
 
 /** Review subject: an edit in the worker worktree, a commit, and a report marker INSIDE the contents. */
@@ -621,22 +617,10 @@ try {
 if (!aborted) {
   // --- hygiene: the person home and the machine after the loop ----------------------------------------
 
-  const shaAfter = codexConfigSha(CODEX_CONFIG);
-  // The main Codex hygiene verdict: the reviewer went read-only, and it must not
-  // write a trust section `[projects."…"]` into the personal config. Sha is
-  // compared, not parsed: a change of the file in ANY form is already a widening
-  // of personal settings by the run.
-  check('personal ~/.codex/config.toml did not change over the loop (sha) — the reviewer did not write a trust section',
-    shaBefore === shaAfter, `${shaBefore} → ${shaAfter}`);
-
-  const pgrepAfter = { cask: pgrep('Caskroom/codex'), app: pgrep('app-server --stdio') };
-  const extraCask = pgrepAfter.cask.filter((p) => !pgrepBefore.cask.includes(p));
-  const extraApp = pgrepAfter.app.filter((p) => !pgrepBefore.app.includes(p));
-  check('no new Caskroom/codex processes after the loop', extraCask.length === 0, extraCask.join(' | '));
-  check('no new app-server --stdio processes after the loop', extraApp.length === 0, extraApp.join(' | '));
+  const codexHygiene = checkCodexHygiene(CODEX_CONFIG, codexBefore, check);
 
   // The Cursor half of the lineup is judged by its own check: the Codex holder
-  // is recognised by the command name (`pgrep` above), and `cursor-agent` and
+  // is recognised by the command name (`pgrep`), and `cursor-agent` and
   // `worker-server` are not — every persist session on the machine raises them,
   // including a person session in the IDE. Ours are those whose argv, cwd or
   // environment contain THIS run directory or its session marker; foreign ones
@@ -700,9 +684,7 @@ if (!aborted) {
   process.stdout.write(`binaries: cursor ${tools.cursor.path}${tools.cursor.version ? ` (${tools.cursor.version})` : ''}`
     + ` · codex ${tools.codex.path}${tools.codex.version ? ` (${tools.codex.version})` : ''}\n`);
   process.stdout.write(`models: worker ${CURSOR_MODEL} · reviewer ${CODEX_MODEL}\n`);
-  process.stdout.write(`sha ~/.codex/config.toml: ${shaBefore ?? '(none)'} → ${shaAfter ?? '(none)'}\n`);
-  process.stdout.write(`pgrep Caskroom/codex: was ${pgrepBefore.cask.length}, became ${pgrepAfter.cask.length}`
-    + ` · pgrep 'app-server --stdio': was ${pgrepBefore.app.length}, became ${pgrepAfter.app.length}\n`);
+  if (codexHygiene) process.stdout.write(`${codexHygiene}\n`);
   // The logs directory is swept by the same module as the canary directories:
   // the three newest stay, nothing younger than an hour is removed. The trouble
   // is shared — pile-up in a shared `$TMPDIR` — and it is healed by shared

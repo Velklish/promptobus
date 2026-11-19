@@ -15,11 +15,14 @@ function codexConfigText(text) {
   }).join('\n');
 }
 
-/** sha256 of the normalised text, or `null` when there is no file to read. */
-export function codexConfigSha(file) {
+/** sha256 of the normalised text, or `null` only when the file is missing. */
+export function codexConfigSha(file, read = readFileSync) {
+  let text;
   try {
-    return createHash('sha256').update(codexConfigText(readFileSync(file, 'utf8'))).digest('hex');
-  } catch {
-    return null;
+    text = read(file, 'utf8');
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
   }
+  return createHash('sha256').update(codexConfigText(text)).digest('hex');
 }

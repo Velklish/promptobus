@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { check } from './check.mjs';
+import { checkCodexHygiene, readCodexHygiene } from '../scripts/codex-hygiene.mjs';
 
 const source = readFileSync(new URL('../scripts/live-codex.mjs', import.meta.url), 'utf8');
 const executable = source.replace(/^#![^\n]*\n/, '')
@@ -22,13 +23,16 @@ async function runCase(boundary) {
   const ownedRef = 'owned-stream';
   const session = () => record ? { threadId: 'thread', state: 'alive', holderPid: 44, appPid: 45,
     sandbox: 'read-only', methodsCalled: ['initialize'] } : null;
+  const io = {
+    run: () => { actions.push('pgrep'); return { status: 1, stdout: '' }; },
+    read: () => { actions.push('config sha'); return 'unchanged'; },
+  };
   const context = {
     path, process: { argv: ['node', 'live-codex.mjs'], env: {}, pid: 42,
       stdout: { write: (line) => { lines.push(line); actions.push('stdout'); } },
       exit: (code) => { throw new Error('unexpected exit ' + code); } },
     existsSync: () => sandbox, writeFileSync: () => {}, writeSync: (_fd, line) => lines.push(line),
     rmSync: () => { sandbox = false; actions.push('remove sandbox'); },
-    spawnSync: () => { actions.push('pgrep'); return { status: 1, stdout: '' }; },
     homedir: () => '/private-home', tmpdir: () => '/private-tmp',
     finishLiveArgs: (args) => args, parseLiveArgs: () => ({}),
     makeSandbox: (_prefix, options) => {
@@ -48,7 +52,9 @@ async function runCase(boundary) {
     },
     markRunOwner: () => {}, sweepLiveRuns: () => [],
     guardStubLaunch: () => ({ stub: false }),
-    onAbort: (fn) => { abort = fn; }, codexConfigSha: () => { actions.push('config sha'); return 'unchanged'; },
+    onAbort: (fn) => { abort = fn; },
+    readCodexHygiene: (file) => readCodexHygiene(file, io),
+    checkCodexHygiene: (file, before, check) => checkCodexHygiene(file, before, check, io),
     codexCatalogEntries: () => [], pickCodexModel: () => ({ model: 'stub' }), DEFAULT_MODEL: 'stub',
     readSession: session, pidAlive: () => false,
     codexDriver: { inspect: () => record ? { state: 'alive', busy: false } : { state: 'gone' },

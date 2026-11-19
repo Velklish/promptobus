@@ -5,15 +5,13 @@
 //
 // Not in `npm test` and not in the release gate: it spends a Codex account limit
 // (the same as the owner's ChatGPT.app) and talks to a live binary. The workspace
-// is temporary, `{claude, codex}` only inside it. The script does not read the
-// person's `~/.codex` for content and does not write it; a sha of `config.toml`
-// before and after is required.
+// is temporary, `{claude, codex}` only inside it. The script does not write
+// the person's `~/.codex`; it reports hashes of `config.toml`, not its contents.
 //
 // **This run does not take filesystem write rights.** Spawn goes
 // `--permission-mode read-only`. Whether `app-server` with `workspace-write`
 // writes a `[projects."…"]` section is not checked here.
 import { existsSync, writeFileSync, rmSync, writeSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -25,7 +23,7 @@ import { freshScenarioIdentity, buildWorkspace, cli, MECHANISM_ROOT, store } fro
 import { waitFor } from '../test/harness.mjs';
 import { markRunOwner, sweepLiveRuns } from './canary-runs.mjs';
 import { onAbort } from './live-abort.mjs';
-import { codexConfigSha } from './codex-config.mjs';
+import { checkCodexHygiene, readCodexHygiene } from './codex-hygiene.mjs';
 import { codexCatalogEntries, pickCodexModel } from './codex-models.mjs';
 
 refuseImportedEntry(import.meta.url);
@@ -93,17 +91,14 @@ function at_(name, ms) {
   process.stdout.write(`  · ${name}: ${(ms / 1000).toFixed(1)} s\n`);
 }
 
-function pgrep(pattern) {
-  const r = spawnSync('pgrep', ['-f', pattern], { encoding: 'utf8' });
-  return String(r.stdout ?? '').trim().split('\n').filter(Boolean);
-}
-
 const CONFIG = path.join(homedir(), '.codex', 'config.toml');
-const shaBefore = codexConfigSha(CONFIG);
-const pgrepBefore = {
-  cask: pgrep('Caskroom/codex'),
-  app: pgrep('app-server --stdio'),
-};
+let codexBefore;
+try {
+  codexBefore = readCodexHygiene(CONFIG);
+} catch (error) {
+  console.error(`✖ live run not started: could not observe Codex hygiene baseline: ${error.message}`);
+  process.exit(1);
+}
 
 const RUN_PREFIX = 'promptobus-live-codex-';
 // The run's own sandbox stays out of the sandbox helper's SIGNAL cleanup: the abort cleanup
@@ -148,7 +143,7 @@ process.stdout.write(`▸ model: ${MODEL} · sandbox: read-only · approvalPolic
 process.stdout.write(`▸ mechanism: ${MECHANISM_ROOT}\n`);
 process.stdout.write(`▸ sandbox: ${SB} · store: ${home}\n`);
 process.stdout.write(`▸ task: ${TASK}\n`);
-process.stdout.write(`▸ sha ~/.codex/config.toml before: ${shaBefore ?? '(no file)'}\n`);
+process.stdout.write(`▸ sha ~/.codex/config.toml before: ${codexBefore.sha ?? '(no file)'}\n`);
 if (leaked.length) process.stdout.write(`▸ stripped from the run environment: ${leaked.join(', ')}\n`);
 
 let ref = '';
@@ -254,18 +249,7 @@ try {
 }
 
 if (!aborted) {
-  const shaAfter = codexConfigSha(CONFIG);
-  check('personal ~/.codex/config.toml did not change over the run (sha)',
-    shaBefore === shaAfter, `${shaBefore} → ${shaAfter}`);
-
-  const pgrepAfter = {
-    cask: pgrep('Caskroom/codex'),
-    app: pgrep('app-server --stdio'),
-  };
-  const extraCask = pgrepAfter.cask.filter((p) => !pgrepBefore.cask.includes(p));
-  const extraApp = pgrepAfter.app.filter((p) => !pgrepBefore.app.includes(p));
-  check('no new Caskroom/codex processes after the loop', extraCask.length === 0, extraCask.join(' | '));
-  check('no new app-server --stdio processes after the loop', extraApp.length === 0, extraApp.join(' | '));
+  const codexHygiene = checkCodexHygiene(CONFIG, codexBefore, check);
 
   const unobserved = RELIED.filter((m) => !methodsCalled.includes(m));
 
@@ -276,8 +260,6 @@ if (!aborted) {
   process.stdout.write(`methods the holder saw: ${methodsCalled.join(', ') || '(empty)'}\n`);
   process.stdout.write(`declared surface not observed: ${unobserved.join(', ') || 'none'}\n`);
   process.stdout.write(`  (unobserved is not missing; the stand covers them)\n`);
-  process.stdout.write(`sha config.toml: ${shaBefore ?? '(none)'} → ${shaAfter ?? '(none)'}\n`);
-  process.stdout.write(`pgrep Caskroom/codex: was ${pgrepBefore.cask.length}, became ${pgrepAfter.cask.length}\n`);
-  process.stdout.write(`pgrep 'app-server --stdio': was ${pgrepBefore.app.length}, became ${pgrepAfter.app.length}\n`);
+  if (codexHygiene) process.stdout.write(`${codexHygiene}\n`);
   process.exitCode = passed === verdicts.length ? 0 : 1;
 }
