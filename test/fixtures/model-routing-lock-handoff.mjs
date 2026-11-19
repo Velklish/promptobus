@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
 
-const [cacheFile, lock, harness] = process.argv.slice(2);
+const [cacheFile, lock, harness, scenario] = process.argv.slice(2);
 const dir = path.dirname(cacheFile);
 const { statSync, renameSync } = fs;
 const signal = (name) => fs.writeFileSync(path.join(dir, name), '');
@@ -15,7 +15,26 @@ function wait(name) {
   }
 }
 
-if (harness === 'beta') {
+if (scenario === 'stale') {
+  // Both waiters retain the same old stat. Gamma gets to act on it only after beta
+  // reaches rename with its replacement lock, or refuses without taking a lock.
+  let observed = false;
+  fs.statSync = (file, ...options) => {
+    const snapshot = statSync(file, ...options);
+    if (file !== lock || observed) return snapshot;
+    observed = true;
+    signal(`${harness}-saw-stale`);
+    wait(harness === 'beta' ? 'gamma-saw-stale' : 'beta-at-rename-or-refused');
+    return snapshot;
+  };
+  fs.renameSync = (from, to) => {
+    if (to === cacheFile && harness === 'beta') {
+      signal('beta-at-rename-or-refused');
+      wait('gamma-finished');
+    }
+    return renameSync(from, to);
+  };
+} else if (harness === 'beta') {
   wait('alpha-released');
   fs.renameSync = (from, to) => {
     if (to === cacheFile) {
@@ -53,7 +72,7 @@ if (harness === 'beta') {
 syncBuiltinESMExports();
 
 const { preflight } = await import('../../lib/model-routing/preflight.js');
-await preflight({
+const view = await preflight({
   host: { routingPaths: () => ({ cacheFile, overlays: [] }) },
   harnesses: [harness],
   adapterFor: () => ({ probe: () => ({
@@ -61,3 +80,5 @@ await preflight({
     checkedAt: new Date().toISOString(), source: 'probe', resetAt: null,
   }) }),
 });
+if (view.harnesses[harness]?.state !== 'available') throw new Error('fixture probe did not return available');
+if (scenario === 'stale') signal(harness === 'beta' ? 'beta-at-rename-or-refused' : 'gamma-finished');

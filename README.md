@@ -304,6 +304,8 @@ The catalog roles are worker, reviewer and approver, with soft quality floors 5,
 
 The cache and `user` overlay are account-scoped by default; the standalone host's writable `workspace` overlay is under `<promptobusHome>/model-routing.json`. `models strategy --set` and `--clear` write that workspace layer, and a set value shadowed by a higher layer produces a warning. For a disposable standalone run, set `PROMPTOBUS_ROUTING_STATE_DIR` to an absolute directory to store the cache and telemetry there without moving the overlays or harness homes.
 
+An old availability-cache lock blocks persistence rather than being removed automatically. Preflight still reports what it probed. If the lock remains, stop all writers using that cache before removing the `.lock` file named in the warning.
+
 Set relative window capacity at `account.<harness>.capacity.<kind>` (positive, at most 1,000,000,000) in an overlay. `models` shows the effective plan and capacity. A missing capacity uses 1; plan names do not supply numeric defaults.
 
 `caps.liveParticipants.<harness>` bounds fresh lifts with a reservation under the task lock. Live and unknown participants and pending launches occupy seats, including teamleads before child linking. Refusals name the cap and overlay path. Stop the recorded launcher, then use `promptobus stop ADDRESS --task TASK` to recover an unresolved reservation after verified session exit. `models` and dry runs reserve no seat. See [model routing reference](https://github.com/Velklish/promptobus/blob/v0.33.1/docs/reference/03-cli.md#model-routing).

@@ -35,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Retry a routing-cache lock that disappears during the age check instead of deleting a new writer's lock. The concurrent preflight test now reads stderr through close before deciding whether a writer warned.
+- Retry a routing-cache lock that disappears during the age check, and refuse to write when a stale lock is observed. A waiter no longer removes a lock that may already belong to another writer. The concurrent preflight test reads stderr through close before deciding whether a writer warned.
 - Keep standalone live-script availability and telemetry in the run sandbox instead of the default account directory. User overlays and harness authentication paths are unchanged.
 - Keep an OpenCode stdio server whose first argument repeats its command: only the bus entry drops the duplicated binary.
 - Let hosts keep private environment variables out of managed participants and owner snapshots. Refuse old snapshots that still contain those variables.

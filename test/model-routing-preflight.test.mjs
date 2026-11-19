@@ -737,7 +737,7 @@ test('preflight warns once when invalid harness names are dropped from the cache
 
 // --- two commands writing at once --------------------------------------------
 
-test('a writer waits for a lock somebody else holds, and takes it back when that lock is litter', () => {
+test('a writer waits for a fresh lock and leaves it in place even when it writes without it', (t) => {
   // The write is already a temp-file-plus-rename, so nobody ever reads half a
   // document. What the rename cannot do is make the READ-merge-write one step: two
   // commands probing at once both read the same document and the second rename
@@ -746,6 +746,7 @@ test('a writer waits for a lock somebody else holds, and takes it back when that
   //
   // Mutation probe: take `withCacheLock` out of `writeEntries` and the wait is 0 ms.
   const host = sandboxHost();
+  t.after(() => rmSync(host.dir, { recursive: true, force: true }));
   const lock = `${host.cacheFile}${LOCK_SUFFIX}`;
   mkdirSync(path.dirname(host.cacheFile), { recursive: true });
   writeFileSync(lock, '');
@@ -759,16 +760,6 @@ test('a writer waits for a lock somebody else holds, and takes it back when that
   assert.equal(readSnapshot(host).harnesses.held.state, 'available');
   // The lock it did not take is not removed by it either.
   assert.equal(existsSync(lock), true, 'a lock the writer never took must not be cleared by it');
-
-  // A lock older than the ceiling is a process that died between its read and its
-  // rename. Waiting the full ceiling for it on every command afterwards would be a
-  // permanent tax for a crash that happened once.
-  utimesSync(lock, new Date(Date.now() - LOCK_STALE_MS - 1000), new Date(Date.now() - LOCK_STALE_MS - 1000));
-  const again = Date.now();
-  writeEntries(host, { fresh: entry() });
-  assert.ok(Date.now() - again < LOCK_WAIT_MS / 2, 'a stale lock was waited out instead of broken');
-  assert.equal(readSnapshot(host).harnesses.fresh.state, 'available');
-  assert.equal(existsSync(lock), false, 'the lock it broke and took is released again');
 });
 
 function collectWriter(name, child) {
@@ -872,6 +863,40 @@ test('a lock that disappears during the age check cannot evict its new owner', a
     code === 0 && signal === null && error === null && stderr === ''), 'both writers must finish without warnings');
   assert.equal(existsSync(lock), false);
   assert.deepEqual(entries, ['alpha', 'beta', 'gamma']);
+});
+
+test('two waiters observing one stale lock refuse to write and leave the cache intact', async (t) => {
+  const host = sandboxHost();
+  t.after(() => rmSync(host.dir, { recursive: true, force: true }));
+  seed(host, { alpha: entry() });
+  const before = readFileSync(host.cacheFile, 'utf8');
+  const lock = `${host.cacheFile}${LOCK_SUFFIX}`;
+  writeFileSync(lock, 'fixture lock');
+  const old = new Date(Date.now() - LOCK_STALE_MS - 1000);
+  utimesSync(lock, old, old);
+  const script = path.join(here, 'fixtures', 'model-routing-lock-handoff.mjs');
+  const runs = await Promise.all(['beta', 'gamma'].map((name) => collectWriter(name,
+    spawn(process.execPath, [script, host.cacheFile, lock, name, 'stale'], { stdio: ['ignore', 'ignore', 'pipe'] }))));
+  const stored = readSnapshot(host);
+  t.diagnostic(JSON.stringify({ entries: Object.keys(stored.harnesses).sort(), runs }));
+  assert.equal(validates(stored), true);
+  assert.equal(readFileSync(host.cacheFile, 'utf8'), before, 'two stale observations must not change the cache');
+  assert.equal(readFileSync(lock, 'utf8'), 'fixture lock');
+  for (const { name, code, signal, error, stderr } of runs) {
+    assert.equal(existsSync(path.join(path.dirname(lock), `${name}-saw-stale`)), true);
+    assert.deepEqual({ code, signal, error }, { code: 0, signal: null, error: null }, stderr);
+    assert.match(stderr, /availability cache was not written .*stale cache lock/i);
+    assert.ok(stderr.includes(lock));
+    assert.match(stderr, /stop all cache writers before removing it/i);
+    assert.doesNotMatch(stderr, /WITHOUT the lock/);
+  }
+  assert.throws(() => clearExhausted(host, 'alpha'), /stale cache lock/i);
+  assert.throws(() => markExhausted(host, 'alpha'), /stale cache lock/i);
+  assert.equal(readFileSync(host.cacheFile, 'utf8'), before);
+  rmSync(lock);
+  writeEntries(host, { recovered: entry() });
+  assert.deepEqual(Object.keys(readSnapshot(host).harnesses).sort(), ['alpha', 'recovered']);
+  assert.equal(existsSync(lock), false);
 });
 
 test('a writer that cannot take the lock says so, and the loss stops being silent', async () => {
