@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { accessSync, constants, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { createConnection, createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -42,11 +42,20 @@ async function socketRoundTrip(file) {
 
 async function inOwnedDirectory(root, prefix, action) {
   const directory = mkdtempSync(path.join(root, prefix));
+  const cleanup = () => {
+    try { rmSync(directory, { recursive: true, force: true }); }
+    catch (error) { throw new Error(`remove owned directory ${directory}: ${error.message}`, { cause: error }); }
+  };
+  let result;
   try {
-    return await action(directory);
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
+    result = await action(directory);
+  } catch (error) {
+    try { cleanup(); }
+    catch (secondary) { throw new AggregateError([error, secondary], `${error.message}\nCleanup: ${secondary.message}`, { cause: error }); }
+    throw error;
   }
+  cleanup();
+  return result;
 }
 
 async function preflight() {
@@ -80,10 +89,17 @@ async function preflight() {
         ?? `exit ${child.status}, signal ${child.signal}\n${child.stdout}${child.stderr}`);
       return child.stdout.trim();
     };
+    await check('verify executor IDs for PATH access checks', () => {
+      if (process.getuid?.() !== process.geteuid?.() || process.getgid?.() !== process.getegid?.()) {
+        throw new Error('Cannot verify execution access with different real and effective user or group IDs');
+      }
+      return 'matched';
+    });
     for (const name of [...REACHABLE_BINARIES, 'npx']) {
       await check(`resolve ${name} on PATH`, () => {
         const resolved = wouldResolve(name, process.env);
         if (!resolved) throw new Error(`${name}: not found or not executable on PATH`);
+        accessSync(resolved, constants.X_OK);
         return realpathSync(resolved);
       });
     }
@@ -99,7 +115,17 @@ async function preflight() {
       command(['npx', '--no-install', 'backslop', 'lint', '--require-adapters']));
     return { ...result, status: 'passed' };
   } catch (error) {
-    return { ...result, status: 'failed', failure: { operation, error: error.message, code: error.code ?? error.cause?.code ?? null } };
+    const primary = error instanceof AggregateError ? error.errors[0] : error;
+    const failure = { operation, error: error.message, code: primary.code ?? primary.cause?.code ?? null };
+    if (primary.cause?.kind) {
+      failure.diagnostic = primary.cause;
+      failure.error += `\n${primary.cause.operation} (${primary.cause.kind}): ${primary.cause.error}`;
+    }
+    if (error instanceof AggregateError) {
+      const secondary = error.errors[1];
+      failure.cleanup = { error: secondary.message, code: secondary.cause?.code ?? null };
+    }
+    return { ...result, status: 'failed', failure };
   }
 }
 

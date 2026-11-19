@@ -1,7 +1,7 @@
 import './home.mjs';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -12,12 +12,16 @@ import { makeSandbox, stubCommand } from './sandbox.mjs';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const preflight = path.join(root, 'scripts/integration-preflight.mjs');
 
-function run({ preload = '', missing, adapterDiagnostics, exit = 0 } = {}) {
+function run({ preload = '', missing, denied, adapterDiagnostics, exit = 0 } = {}) {
   const directory = makeSandbox('promptobus-integration-preflight-');
   const bin = path.join(directory, 'bin');
   mkdirSync(bin);
   for (const name of REACHABLE_BINARIES) {
     if (name === missing) continue;
+    if (name === denied) {
+      writeFileSync(path.join(bin, name), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+      continue;
+    }
     const file = name === 'node' ? process.execPath : wouldResolve(name, process.env);
     symlinkSync(file ?? '/bin/sh', path.join(bin, name));
   }
@@ -27,7 +31,15 @@ assert.deepEqual(process.argv.slice(2), ['--no-install', 'backslop', 'lint', '--
 ${adapterDiagnostics ? `console.error(${JSON.stringify(adapterDiagnostics)}); process.exitCode = 1;` : ''}
 `);
   const importFile = path.join(directory, 'preload.mjs');
-  writeFileSync(importFile, `import { syncBuiltinESMExports } from 'node:module';\n${preload}\nsyncBuiltinESMExports();\n`);
+  const denyAccess = denied ? `import fs from 'node:fs';
+const { accessSync } = fs;
+fs.accessSync = (file, mode) => {
+  if (file === ${JSON.stringify(path.join(bin, denied))} && mode === fs.constants.X_OK) {
+    throw Object.assign(new Error('EACCES: access refused for present fixture ${denied}'), { code: 'EACCES' });
+  }
+  return accessSync(file, mode);
+};` : '';
+  writeFileSync(importFile, `import { syncBuiltinESMExports } from 'node:module';\n${preload}\n${denyAccess}\nsyncBuiltinESMExports();\n`);
   const sentinel = path.join(directory, 'suite-started');
   const suite = [`${process.execPath}`, '-e', 'require("node:fs").writeFileSync(process.argv[1], JSON.stringify({'
     + 'path: process.env.PATH, tmpdir: require("node:os").tmpdir(), exec: process.execPath, cwd: process.cwd()}));'
@@ -39,25 +51,40 @@ ${adapterDiagnostics ? `console.error(${JSON.stringify(adapterDiagnostics)}); pr
   return { child, report: JSON.parse(child.stdout), sentinel, directory, bin };
 }
 
-const cases = [
-  ['process observation refusal', {
-    preload: `import fs from 'node:fs'; import cp from 'node:child_process';
-const { readFileSync } = fs, { spawnSync } = cp;
+function processObservation(platform, malformed) {
+  return `import fs from 'node:fs'; import cp from 'node:child_process';
+Object.defineProperty(process, 'platform', { value: ${JSON.stringify(platform)} });
+const { readFileSync, readlinkSync } = fs, { spawnSync } = cp;
 fs.readFileSync = (file, ...args) => {
-  if (String(file).startsWith('/proc/')) throw new Error('EACCES: fixture proc visibility');
+  if (file === '/proc/sys/kernel/random/boot_id') return ${malformed ? "'invalid boot ID'" : "'01010101-0101-0101-0101-010101010101'"};
+  if (file === '/proc/' + process.pid + '/stat') {
+    fs.appendFileSync('observation-attempts', 'proc\\n');
+    throw Object.assign(new Error('EACCES: fixture proc visibility'), { code: 'EACCES' });
+  }
+  if (file === '/proc/self/stat') {
+    ${malformed ? "fs.appendFileSync('observation-attempts', 'proc\\n');" : ''}
+    return process.pid + ' (node) S ' + Array(19).fill('0').join(' ');
+  }
+  if (file === '/proc/self/status') return 'Pid:\\t' + process.pid + '\\nNSpid:\\t' + process.pid + '\\n';
   return readFileSync(file, ...args);
 };
-cp.spawnSync = (file, ...args) => file === '/bin/ps'
-  ? { status: 1, stdout: '', stderr: 'EPERM: fixture ps visibility' } : spawnSync(file, ...args);
-`,
-  }, /requireProcess/, 'Shared service requires an observable process birth identity on this platform'],
-  ['socket listen refusal', {
-    preload: `import net from 'node:net';
+fs.readlinkSync = (file, ...args) => file === '/proc/self/ns/pid' ? 'pid:[42]' : readlinkSync(file, ...args);
+cp.spawnSync = (file, ...args) => {
+  if (file !== '/bin/ps') return spawnSync(file, ...args);
+  fs.appendFileSync('observation-attempts', 'ps\\n');
+  return ${malformed ? "{ status: 0, stdout: 'invalid fixture ps output', stderr: '' }"
+    : "{ status: 1, stdout: '', stderr: 'EPERM: fixture ps visibility' }"};
+};`;
+}
+
+const refuseListen = `import net from 'node:net';
 net.Server.prototype.listen = function () {
   queueMicrotask(() => this.emit('error', Object.assign(new Error('listen EPERM: fixture refusal'), { code: 'EPERM' })));
   return this;
-};`,
-  }, /Unix socket/, 'listen EPERM: fixture refusal'],
+};`;
+
+const cases = [
+  ['socket listen refusal', { preload: refuseListen }, /Unix socket/, 'listen EPERM: fixture refusal'],
   ['socket connect refusal after listen', {
     preload: `import net from 'node:net';
 net.createConnection = () => {
@@ -67,6 +94,8 @@ net.createConnection = () => {
 };`,
   }, /Unix socket/, 'connect EACCES: fixture refusal'],
   ['missing fixture binary', { missing: 'ast-grep' }, /resolve ast-grep/, 'ast-grep: not found or not executable on PATH'],
+  ['different real and effective IDs', { preload: 'process.geteuid = () => process.getuid() + 1;' },
+    /verify executor IDs/, 'Cannot verify execution access with different real and effective user or group IDs'],
   ['missing Node executable', { missing: 'node' }, /resolve node/, 'node: not found or not executable on PATH'],
   ['missing generated adapter output', { adapterDiagnostics: '.agents/skills/backslop-task/SKILL.md: generated output is missing' },
     /lint --require-adapters/, '.agents/skills/backslop-task/SKILL.md: generated output is missing'],
@@ -79,6 +108,55 @@ for (const [name, options, operation, error] of cases) test(`${name} refuses bef
   assert.match(report.failure.operation, operation);
   assert.ok(report.failure.error.includes(error), JSON.stringify(report.failure));
   assert.ok(child.stderr.includes(error));
+  assert.equal(existsSync(sentinel), false);
+});
+
+for (const platform of ['darwin', 'linux']) for (const malformed of [false, true]) test(`${platform} process observation ${malformed ? 'unparseable' : 'access refusal'} diagnoses the same failed read`, () => {
+  const { child, directory, report, sentinel } = run({ preload: processObservation(platform, malformed) });
+  const darwin = platform === 'darwin';
+  const reason = malformed ? (darwin ? 'invalid fixture ps output' : 'invalid boot ID')
+    : (darwin ? 'EPERM: fixture ps visibility' : 'EACCES: fixture proc visibility');
+  assert.equal(child.status, 1, child.stderr);
+  assert.match(report.failure.operation, /requireProcess/);
+  assert.equal(report.failure.diagnostic.kind, malformed ? 'unparseable' : 'access-denied');
+  assert.equal(report.failure.code, malformed ? null : (darwin ? 'EPERM' : 'EACCES'));
+  assert.match(report.failure.diagnostic.operation, darwin ? /\/bin\/ps .*lstart=/ : /\/proc/);
+  assert.ok(report.failure.diagnostic.error.includes(reason));
+  assert.ok(report.failure.error.includes(reason));
+  assert.ok(child.stderr.includes(reason));
+  assert.equal(readFileSync(path.join(directory, 'observation-attempts'), 'utf8'), darwin ? 'ps\n' : 'proc\n');
+  assert.equal(existsSync(sentinel), false);
+});
+
+test('present x-bit fixture binary with execution access denied does not start the sentinel', () => {
+  const { bin, child, report, sentinel } = run({ denied: 'ast-grep' });
+  assert.ok(existsSync(path.join(bin, 'ast-grep')));
+  assert.equal(child.status, 1, child.stderr);
+  assert.equal(report.failure.operation, 'resolve ast-grep on PATH');
+  assert.equal(report.failure.code, 'EACCES');
+  assert.match(report.failure.error, /EACCES: access refused for present fixture ast-grep/);
+  assert.match(child.stderr, /EACCES: access refused for present fixture ast-grep/);
+  assert.equal(existsSync(sentinel), false);
+});
+
+test('failed socket and directory cleanup keep the socket failure first', () => {
+  const { child, directory, report, sentinel } = run({ preload: `${refuseListen}
+import fs from 'node:fs';
+const { rmSync } = fs;
+fs.rmSync = (file, options) => {
+  if (/\\/pb-preflight-[^/]+$/.test(file)) {
+    fs.writeFileSync('unremoved-probe', file);
+    throw Object.assign(new Error('EACCES: fixture cleanup refusal'), { code: 'EACCES' });
+  }
+  return rmSync(file, options);
+};` });
+  const probe = readFileSync(path.join(directory, 'unremoved-probe'), 'utf8');
+  assert.match(probe, /^\/(?:private\/)?tmp\/pb-preflight-[A-Za-z0-9]+$/);
+  rmSync(probe, { recursive: true });
+  assert.equal(child.status, 1, child.stderr);
+  assert.equal(report.failure.code, 'EPERM');
+  assert.equal(report.failure.cleanup.code, 'EACCES');
+  for (const text of [report.failure.error, child.stderr]) assert.match(text, /listen EPERM: fixture refusal[\s\S]*Cleanup: .*EACCES: fixture cleanup refusal/);
   assert.equal(existsSync(sentinel), false);
 });
 
