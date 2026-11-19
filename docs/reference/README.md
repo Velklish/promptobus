@@ -12,6 +12,7 @@ How promptobus works today — from the code, not intention. Intent and rational
 | [reporter-channel.md](reporter-channel.md) | Human questions to the retained read-only Codex reporter |
 
 The [handover record reference](04-protocol.md#the-handover-record) distinguishes the probe wrapper's pass, failure and refusal statuses from the mutated command's `mutatedRunExit`.
+It also describes the single-object and list forms of `checks.mutationProbe`, and how `send` and `review` handle each list entry.
 
 A performed probe's boundary is the sentence [The handover record](04-protocol.md#the-handover-record) states:
 

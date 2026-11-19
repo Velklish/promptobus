@@ -2,7 +2,7 @@ import { finalizeManagedServiceLaunch, revokeFailedManagedLaunch } from './servi
 import { LiveAdmissionError, liveCapNote, reservedSpawn, withReservationIdle } from './live-reservation.js';
 import { persistLegacyParticipant, persistNativeParticipant, releaseNativeReservation, requireCurrentNativeLaunch, reserveNativeParticipant } from './native-lifecycle.js';
 import { renderReviewerInstructions, renderReviewProcedure } from './prompts/roles.js';
-import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { ok, info, warn, fail, gitIn, PROC_MAX_OUTPUT, GIT_NET_TIMEOUT_MS } from './util.js';
@@ -1485,6 +1485,22 @@ function gateEvidence(gateRecords: string[], snapshot: ReviewSnapshot, untracked
     + `nothing else${outside.length ? `, and here it is already narrower than the subject: ${outside.join('; ')}` : ''}.`;
 }
 
+function handoverRecordLine(file: string) {
+  const line = `- ${file}`;
+  try {
+    if (!lstatSync(file).isFile()) return line;
+    const probes: unknown = JSON.parse(readFileSync(file, 'utf8'))?.checks?.mutationProbe;
+    if (!Array.isArray(probes)) return line;
+    return [line, ...probes.map((probe, index) => {
+      const name = probe?.mutated;
+      const label = typeof name === 'string' && name.length <= 512 ? JSON.stringify(name) : '(missing file:line)';
+      return `  - checks.mutationProbe[${index}]: ${label}`;
+    })].join('\n');
+  } catch {
+    return line;
+  }
+}
+
 // The second record: what makes the gate run mean anything. Its absence is stated, never
 // left to be inferred — the whole point of the form is that a missing check is not a pass.
 function handoverEvidence(handoverRecords: string[]) {
@@ -1494,22 +1510,24 @@ function handoverEvidence(handoverRecords: string[]) {
       + 'absence is expected rather than a gap is an approver\'s hand-off: the record is the WORKER\'s, and an '
       + 'approver carries only its own gate record.';
   }
-  return `Handover records attached to this task, read them:\n${handoverRecords.map((f) => `- ${f}`).join('\n')}\n`
+  return `Handover records attached to this task, read them:\n${handoverRecords.map(handoverRecordLine).join('\n')}\n`
     + 'Use the one whose `tree` equals the worktree HEAD named above — several can be here because this folder holds '
     + 'every worker\'s files and every review round\'s, and the sha is what tells them apart. None matching that sha '
     + 'means no record covers this tree, and that is a gap to name rather than a green. Each record carries five checks '
     + `(${HANDOVER_CHECKS.join(', ')}); a check that says \`notRun\` was not performed, and a record whose `
     + 'check is missing altogether says less than one that admits it. Name which checks are absent or `notRun` '
     + 'in the report — you run nothing, so what the record does not claim is what nobody checked. '
+    + 'If `checks.mutationProbe` is a list, read and report each entry by its index and `mutated` file:line. '
+    + 'Apply the checks below to each entry independently, using its own `tree`, `expected`, `reddened` and `coverage`. '
     + 'A `mutationProbe` with no `expected` is the one PRESENT check that still claims less than it looks: '
     + 'the field naming what the probe was made to redden is optional, and without it `reddened` cannot be told '
     + 'from a probe that reddened something else. Name its absence too — deleting the field is the cheapest way '
     + 'out of a refusal over it, and that leaves no trace anywhere else. '
     + 'A present `treeLag` is named together with both shas — the record\'s `tree` and `checks.mutationProbe.tree`. '
-    + 'That probe is not a probe of HEAD: do not take the record as covering the tree being accepted. '
+    + 'That probe is not a probe of HEAD: do not take the record as covering the tree being accepted for that mutation. '
     + 'Hand the orchestrator the command `git log --oneline <probe.tree>..<tree> -- <mutated file> <files of the tests in reddened>`, whose empty output is what supports the reason. '
     + 'A performed `mutationProbe` carries `coverage`: `establishes` and `doesNotEstablish`. '
-    + 'Name a performed probe that has neither. From the release that ships `coverage` that absence is a record the bus should have refused; before that release it is the seam, and it is not a narrow probe. '
+    + 'Name a performed probe that has neither or only one. From the release that ships `coverage` that absence is a record the bus should have refused; before that release it is the seam, and it is not a narrow probe. '
     + 'A present `coverage` is the boundary: do not read `reddened` as proof of what `doesNotEstablish` names. '
     + '`notRun` is not that boundary, and a mutation that reddens nothing is not saved by writing one.';
 }

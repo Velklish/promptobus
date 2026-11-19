@@ -63,6 +63,23 @@ const notRun = { notRun: 'this repository has no runner that prints verdict name
 check('PB-213: the record the preambles ask for is a document this schema accepts',
   accepts(doc()), JSON.stringify(accepts.errors));
 
+const withProbeCheck = (mutationProbe) => doc({ checks: checks({ mutationProbe }) });
+for (const [name, entry, valid] of [
+  ['one performed probe', probe(), true],
+  ['a one-entry list', [probe()], true],
+  ['two performed probes', [probe(), probe({ mutated: 'lib/review.js:21' })], true],
+  ['a whole-check notRun', notRun, true],
+  ['an empty list', [], false],
+  ['a notRun mixed into a list', [probe(), notRun], false],
+  ['a nested list', [probe(), [probe()]], false],
+]) {
+  const record = withProbeCheck(entry);
+  const fault = schemaErrors(schema, record);
+  check(`handover probe shape: ${name} is ${valid ? 'accepted' : 'refused'} by both readers`,
+    accepts(record) === valid && (fault.length === 0) === valid,
+    JSON.stringify({ ajv: accepts.errors, runtime: fault }));
+}
+
 // The rule PB-201 wrote for a gate that was not run, held here per check: the record has
 // no silent gap, and the only way past a check is the branch that says so out loud.
 const missing = HANDOVER_CHECKS.filter((name) => {

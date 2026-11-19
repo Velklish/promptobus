@@ -3021,7 +3021,10 @@ writeFileSync(path.join(gateDir, 'gates-pb-prompts.json'), '{"schemaVersion":1,"
 writeFileSync(path.join(gateDir, 'gates-pb-guard.json'), '{"schemaVersion":1,"records":[]}\n');
 writeFileSync(path.join(gateDir, 'gates-pb-prompts-2.json'), '{"schemaVersion":1,"records":[]}\n');
 writeFileSync(path.join(gateDir, 'brief-pb-prompts.md'), 'not a gate record\n');
-writeFileSync(path.join(gateDir, 'handover-pb-prompts.json'), '{"schemaVersion":1}\n');
+writeFileSync(path.join(gateDir, 'handover-pb-prompts.json'), JSON.stringify({
+  schemaVersion: 1,
+  checks: { mutationProbe: [{ mutated: 'lib/handoff.ts:14' }, { mutated: 'lib/review.ts:21' }] },
+}));
 claudeStub('process.exit(1);');
 const gatePlan = planReview(WS, { target: REPO, task: gateTask.id });
 check('PB-201: every attached record is resolved to an absolute path, and nothing else in the folder is',
@@ -3056,6 +3059,13 @@ check('PB-213: with a record attached the reviewer is told the five names it mus
   && HANDOVER_CHECKS.every((name) => gatePlan.prompt.includes(name))
   && /a check that says `notRun` was not performed/.test(gatePlan.prompt),
   gatePlan.prompt.split('\n').find((l) => /Handover records attached/.test(l)) ?? gatePlan.prompt);
+check('handover record: both review prompts list and ask the reviewer to check each probe independently',
+  [gatePlan.prompt, gatePlan.reReview].every((prompt) =>
+    prompt.includes('checks.mutationProbe[0]: "lib/handoff.ts:14"')
+    && prompt.includes('checks.mutationProbe[1]: "lib/review.ts:21"')
+    && prompt.includes('read and report each entry by its index and `mutated` file:line')
+    && prompt.includes('Apply the checks below to each entry independently')),
+  gatePlan.reReview);
 // PB-234: the field is optional, so a probe without it is a PRESENT check that passes in
 // silence — and deleting it is the cheapest way out of a refusal over it. Named on both sides.
 check('PB-234: a probe that names no target is named too — an absent `expected` is not a passed check',
