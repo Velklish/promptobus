@@ -53,10 +53,7 @@ export function runCanaryChild(entry, { cwd, env, fd, waitMs = ABORT_WAIT_MS }) 
   });
 }
 
-// Prepended: the sandbox helper's own handler exits 130 and would otherwise run first. An
-// AWAITED cleanup needs the run's sandbox outside that handler (`signalCleanup: false`).
-/** Run `cleanup(signal)` once on the first abort signal, then exit with its code. A cleanup that
- *  returns a thenable is awaited up to `waitMs`; the exit keeps its code either way. */
+// Awaited cleanup needs a sandbox outside the helper's own signal handler (`signalCleanup: false`).
 export function onAbort(cleanup, {
   signals = ABORT_SIGNALS,
   on = (sig, fn) => process.prependListener(sig, fn),

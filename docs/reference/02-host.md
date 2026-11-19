@@ -115,7 +115,7 @@ export function pathOutsideRoot(root: string, candidate: string): boolean {
 
 `routingPaths()` defaults to `cacheFile` `~/.promptobus/model-routing/cache.json` and two overlays, `user` at `~/.promptobus/model-routing.json` and `workspace` at `<promptobusHome>/model-routing.json` — the writable one. Standalone declares no product-policy layer; a consumer inserts its own between those two, read-only.
 
-`createStandaloneHost({ routingStateDir })` accepts an absolute directory for `cache.json` and its sibling `telemetry.jsonl`. The standalone `promptobus` executable takes this option from `PROMPTOBUS_ROUTING_STATE_DIR`. A relative or empty value is refused rather than falling back to the user cache. This changes neither overlay path or precedence, nor harness authentication and session-registry paths. Use a directory owned by the run; this is not an account sandbox.
+`createStandaloneHost({ routingStateDir })` accepts an absolute directory for `<routingStateDir>/cache.json` and its sibling `telemetry.jsonl`. The standalone `promptobus` executable takes this option from `PROMPTOBUS_ROUTING_STATE_DIR`. A relative or empty value is refused rather than falling back to the user cache. This changes neither overlay path or precedence, nor harness authentication and session-registry paths. Use a directory owned by the run; this is not an account sandbox.
 
 `harnessStateHome(harness)` answers `~/.promptobus/<harness>` — the path the package used to guess — so a single-user checkout sets no variable and notices no change.
 

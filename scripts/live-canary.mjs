@@ -126,25 +126,8 @@ check('canary: tarball packed and installed in a clean workspace',
   `pack ${packed.status} · install ${installed.status} ${tail(installed.stderr, 300)} · bin ${existsSync(BIN)}`);
 if (tgz) note(`tarball ${tgzName} (${(statSync(tgz).size / 1024).toFixed(0)} KB), branch ${branch}, commit ${head.slice(0, 8)}`);
 
-// **Child environments have no session identity.** The canary is driven from
-// sessions that have all five variables set: the release checklist says to run
-// it before the tag, and in runs the workers drive it. A leaked
-// `PROMPTOBUS_HOME` is stronger than a home search from cwd and would send the
-// run into the LIVE bus journal of the workspace, `PROMPTOBUS_TASK` — onto a
-// live-run task (measured 2026-09-03: a worker run raised
-// spawn, review and the warden with the live-task environment). The list is
-// imported from the same home as the suite ([hygiene.mjs](../test/hygiene.mjs));
-// there is no second copy here.
-//
-// It is stripped from CHILDREN, not from this process: the verdict below judges
-// what actually left for the child, and on a scrubbed `process.env` it would be
-// green by construction.
-//
-// It is computed on EVERY call, not once at file load (review note): each child
-// gets a fresh copy after session identity is stripped. The live binary check is
-// PATH-only, so this canary leaves PATH unchanged for the version check and the
-// live run. An environment copy per call costs microseconds, and the canary has
-// a handful of calls.
+// Strip session identity from each child instead of changing the parent environment;
+// PATH stays inherited because the live binary check resolves through it.
 const childEnv = () => dropSessionLeaks(liveRoutingEnv(RUN));
 
 const cli = (args, opts = {}) => spawnSync(process.execPath, [BIN, ...args], {
@@ -266,9 +249,7 @@ try {
   // Report matching foreign processes separately without making them failures.
   if (elsewhere.length) note(`processes of the same commands outside the run directory: ${elsewhere.length} (not ours)`);
 
-  // Sandboxes and sockets — only younger than the start of the run: a name
-  // literal without a time cut-off would paint the verdict with a foreign tail,
-  // and would go green in silence on a prefix change.
+  // Ignore pre-existing sandboxes and sockets when looking for leftovers.
   const sandboxes = recentEntries(os.tmpdir(), n => n.startsWith('promptobus-live-e2e-'));
   const socks = recentEntries('/tmp', n => ['a2l-', 'a2e-', 'a2h-'].some(pref => n.startsWith(pref)));
   const pathsClear = check('cleanup: no run sandboxes or bus sockets remain',

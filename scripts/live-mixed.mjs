@@ -562,15 +562,7 @@ if (!aborted) {
 
   const codexHygiene = checkCodexHygiene(CODEX_CONFIG, codexBefore, check);
 
-  // The Cursor half of the lineup is judged by its own check: the Codex holder
-  // is recognised by the command name (`pgrep`), and `cursor-agent` and
-  // `worker-server` are not — every persist session on the machine raises them,
-  // including a person session in the IDE. Ours are those whose argv, cwd or
-  // environment contain THIS run directory or its session marker; foreign ones
-  // go as a line into the report and do not paint the verdict. The check is
-  // taken from `live-cursor.mjs`, where it also caught orphans (a holder that
-  // outlived its parent).
-  // A listing that cannot be read, or that lacks this very process, is red: an empty one passes on nothing.
+  // Match run identity in process listings and require our own PID as a read control.
   const ps = spawnSync('ps', ['-Ao', 'pid=,command='], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
   const seesSelf = String(ps.stdout ?? '').split('\n').some((l) => Number(l.trim().split(/\s+/)[0]) === process.pid);
   const ours = [];
@@ -621,10 +613,6 @@ if (!aborted) {
     + ` · codex ${tools.codex.path}${tools.codex.version ? ` (${tools.codex.version})` : ''}\n`);
   process.stdout.write(`models: worker ${CURSOR_MODEL} · reviewer ${CODEX_MODEL}\n`);
   if (codexHygiene) process.stdout.write(`${codexHygiene}\n`);
-  // The logs directory is swept by the same module as the canary directories:
-  // the three newest stay, nothing younger than an hour is removed. The trouble
-  // is shared — pile-up in a shared `$TMPDIR` — and it is healed by shared
-  // code, not a second copy of the thresholds.
   const refusedLogs = [];
   const sweptLogs = sweepPreviousRuns(tmpdir(), {
     prefix: LOGS_PREFIX, current: KEPT_LOGS, refused: refusedLogs,
