@@ -33,7 +33,7 @@ task, by its retained canonical id. This grants neither discovery nor history
 access to another role. Keep the full body and id on first read; rereading a
 part does not certify report completeness, acceptance or renewed reviewer authority.
 
-Source inspection of the ATI Agent Workspace consumer (installed version 0.108.0,
+Source inspection of the private workspace consumer (installed version 0.108.0,
 Promptobus 0.33.1; consumer checkout `f303b94e8b7e3e795d63906bcd5ce94b3e99d1f0`)
 found a native mailbox server in the canonical catalog, but no adapter proving
 that its session and mailbox authority derive from this BB recipient. The stock

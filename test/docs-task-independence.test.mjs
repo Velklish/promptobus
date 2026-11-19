@@ -51,7 +51,7 @@ const productNames = new Map(Object.entries({
   'docs/reference/01-overview.md': ['holder.json', 'migrated.json', 'migrating.json', 'model-routing.json'],
   'docs/reference/02-host.md': ['auth.json', 'telemetry.jsonl'],
   'docs/reference/03-cli.md': ['.mcp.json', 'auth.json', 'health.json', 'holder.json', 'hooks.json', 'stalls.json', 'task.json', 'telemetry.jsonl'],
-  'docs/reference/04-protocol.md': ['health.json', 'stalls.json', 'task.json'],
+  'docs/reference/04-protocol.md': ['health.json', 'review-findings.txt', 'stalls.json', 'task.json'],
   'docs/reference/05-drivers.md': ['auth.json', 'hooks.json'],
   'test/fixtures/codex-app-server/0.164.0/README.md': ['hooks.json'],
 }));
