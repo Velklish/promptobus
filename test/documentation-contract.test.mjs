@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
+import { REACHABLE_BINARIES } from './hygiene.mjs';
 import { participantFileStem } from '../dist/index.js';
 import { threadStartConfig } from '../lib/codex-session.js';
 import { sourceFile } from './source-files.mjs';
@@ -661,6 +662,10 @@ check('docs: the 0.30.0 CHANGELOG lists the done and owner-access behaviour chan
   && has(releaseChanged, 'Refuse changed Codex owner access before another model input and require a fresh lift.'),
   'the 0.30.0 CHANGELOG hides a behaviour change an upgrading reader must act on');
 const suiteIsolation = section(contributingDoc, '## Suite isolation');
+const documentedPath = compact(suiteIsolation).match(/`REACHABLE_BINARIES`[^:]*: ((?:`[^`]+`, )*`[^`]+`)\./)?.[1];
+const expectedPath = REACHABLE_BINARIES.map(name => `\`${name}\``).join(', ');
+check('docs: sealed PATH lists the REACHABLE_BINARIES inventory',
+  documentedPath === expectedPath, `documented: ${documentedPath ?? 'missing list'}; inventory: ${expectedPath}`);
 check('docs: a fetch-then-send pause waits for the delivery mark, and a hold stays a sleep',
   has(suiteIsolation, 'only on the pause that sits between that fetch and the send')
   && has(suiteIsolation, 'A scripted pause that must hold the turn, `{ wait: ms }`, stays a sleep for the whole interval')
