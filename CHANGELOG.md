@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Bind Linux release qualification to the Test step's own suite footer. Recover an interrupted publication after `main` advances when the public tag still matches the recorded annotated object and candidate.
+- Bind Linux release qualification to the Test step's own suite footer and refuse ambiguous test log groups. Recover an interrupted publication after `main` advances when the public tag still matches the recorded annotated object and candidate.
 
 ### Added
 

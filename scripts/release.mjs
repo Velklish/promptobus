@@ -244,7 +244,9 @@ export function requireQualifiedLinuxJob(jobs, runId, commit) {
 export function requireTestLog(logs) {
   requireThat(logs.length > 0, 'Linux CI logs are required for skip accounting');
   const lines = logs.split(/\r?\n/).map((line) => line.replace(/^\uFEFF?\d{4}-\d\d-\d\dT[\d:.]+Z /, ''));
-  const testStart = lines.indexOf('##[group]Run npm test');
+  const testHeader = '##[group]Run npm test';
+  const testStart = lines.indexOf(testHeader);
+  requireThat(testStart === lines.lastIndexOf(testHeader), 'Ambiguous required Linux job log: multiple Run npm test groups');
   const cleanup = lines.indexOf('Cleaning up orphan processes', testStart + 1);
   const testStop = lines.findIndex((line, index) => index > testStart
     && (line.startsWith('##[group]Run ') || line === 'Post job cleanup.' || index === cleanup));
