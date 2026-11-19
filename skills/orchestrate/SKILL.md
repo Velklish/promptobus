@@ -187,6 +187,14 @@ A root already owned by a Claude Code session continues to use its messaging soc
 
 To Stop a finite managed Codex tree, the root first stops each owned child with `stop teamlead:<slug>` and retains its result and Stop proof. Then it requests `stop orchestrator` for itself. A pending self-Stop acknowledgement is not confirmation: an authorized observer inspects the retained receipt, terminal command accounting, clean app-server close and process absence. Stop leaves task metadata and its watch open. Do not use `done --keep-sessions` before confirmed Stop or treat self-Stop as a grant of mailbox ownership to another controller. Task closure and service shutdown are separate; follow the scoped owner route in the [Shared service reference](https://github.com/Velklish/promptobus/blob/v0.33.1/docs/reference/03-cli.md#shared-service) only after all required native Stops are confirmed.
 
+### Observe from Codex Desktop
+
+The human's Desktop chat is not the managed orchestrator. Use the existing `promptobus digest --task <root>` projection for a progress snapshot. A Codex reporter question starts a separate turn on the reporter's thread and prints its answer; it is not automatic delivery. The person can relay a decision to the existing root owner with `promptobus ask "<text>" --task <root>` from a plain terminal.
+
+`promptobus observe --task <id> --wait 20` is for the selected task's already bound orchestrator only. It does not take mail, and it does not read through to child or sibling tasks. Use `nextCursor` as `--after <cursor>` after processing the page. Drain `more: true` pages and stop on closure or an idle deadline rather than starting new model turns just to poll. On failure keep the previous cursor. Stall marks are persisted observations, and worker results and review passes are not acceptance.
+
+This command does not wake an idle Desktop conversation or inject a native notification. A separate Desktop thread cannot read message bodies through it; do not copy identity variables or claim the mailbox. A supported scoped Desktop route and live UI evidence are still needed for active-turn delivery.
+
 Names: task id `<task-slug>-t<YYYYMMDD>-<HHMMSS>` (UTC), slug from `--slug` or the task title; worker slug `--worker`, else the repository directory, numbered `-2`, `-3` when another repository already holds it; worktree `<clone>/.claude/worktrees/promptobus-<task-slug>-<worker-slug>-t<date>-<time>` on branch `worktree-<that name>`; session `Worker: <slice title> (<MMDD-HHMM>)`, or `Review:` and `Accept:`, with the slug added on a name collision; Cursor names its own persist session (`lib/spawn.js`, `src/protocol.ts`).
 
 `--title` names the slice and its session, and defaults to the brief's first line. `--task-title` names and pins the task; without it the task title joins the slice titles with ` · ` (`lib/spawn.js`).

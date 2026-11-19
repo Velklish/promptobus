@@ -204,13 +204,21 @@ export function writeHealth(home: string, id: string, health: Health): Health {
  * CLI wrote a bare reason string, read as a mark with no time — repeated only when the reason changes. */
 export type Stalls = Record<string, { reason: string; at: string | null; tries?: number }>;
 
-export function readStalls(home: string, id: string): Stalls {
+export function readStalls(home: string, id: string, { read }: { read?: (file: string, max: number) => string | null } = {}): Stalls {
   try {
-    const raw = JSON.parse(readFileSync(stallsFile(home, id), 'utf8')) as Record<string, unknown>;
-    return Object.fromEntries(Object.entries(raw).map(([addr, v]) => [
+    const file = stallsFile(home, id);
+    const text = read ? read(file, 256 * 1024) : readFileSync(file, 'utf8');
+    if (text === null) return {};
+    const raw = JSON.parse(text) as Record<string, unknown>;
+    if (read && (!raw || typeof raw !== 'object' || Array.isArray(raw))) throw new Error('expected a stall map');
+    const stalls = Object.fromEntries(Object.entries(raw).map(([addr, v]) => [
       addr, typeof v === 'string' ? { reason: v, at: null } : v as Stalls[string],
     ]));
-  } catch {
+    if (read && Object.values(stalls).some((v) => !v || typeof v.reason !== 'string'
+      || (v.at !== null && typeof v.at !== 'string'))) throw new Error('invalid stall mark');
+    return stalls;
+  } catch (e) {
+    if (read) throw e;
     return {};
   }
 }

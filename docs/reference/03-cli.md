@@ -1,6 +1,6 @@
 # CLI
 
-Parser: `lib/cli.js`. Commands: `lead`, `spawn`, `step`, `review`, `report`, `models`, `stats`, `status`, `digest`, `send`, `ask`, `link`, `unlink`, `message-order`, `done`, `abandon`, `stop`, `sweep`, `dismiss`, `history`, `guard`, `warden`, `service`, `mcp`, `install`, `uninstall`, `lease`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `promptobus/cli` exports it as the frozen `COMMANDS`, and the refusal of an unknown command joins that array, so a host passthrough reads the vocabulary rather than a copy. `test/cli.test.mjs` reads the dispatcher's own `case` labels, holds this Commands list equal to them aside from the aliases, and checks both the command name and its wrapper: it fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them, and on a `formatCommand` or `formatNpx` call whose literal command is one of the package's own labels. It also scans non-comment string literals recursively under `lib/` for `promptobus <known-subcommand>` outside those wrappers; low-level seams receive the formatted command from their host-aware callers, so no allowlist is needed. A hint a host assembles by template is not checked — the package cannot read it.
+Parser: `lib/cli.js`. Commands: `lead`, `spawn`, `step`, `review`, `report`, `models`, `stats`, `status`, `digest`, `observe`, `send`, `ask`, `link`, `unlink`, `message-order`, `done`, `abandon`, `stop`, `sweep`, `dismiss`, `history`, `guard`, `warden`, `service`, `mcp`, `install`, `uninstall`, `lease`. That list is the whole vocabulary: a message that names anything else names a command nobody can run. `promptobus/cli` exports it as the frozen `COMMANDS`, and the refusal of an unknown command joins that array, so a host passthrough reads the vocabulary rather than a copy. `test/cli.test.mjs` reads the dispatcher's own `case` labels, holds this Commands list equal to them aside from the aliases, and checks both the command name and its wrapper: it fails on any `formatCommand`, `busCommand` or `formatNpx` call under `lib/` whose command is a string literal outside them, and on a `formatCommand` or `formatNpx` call whose literal command is one of the package's own labels. It also scans non-comment string literals recursively under `lib/` for `promptobus <known-subcommand>` outside those wrappers; low-level seams receive the formatted command from their host-aware callers, so no allowlist is needed. A hint a host assembles by template is not checked — the package cannot read it.
 
 Help and `--version` do not load the standalone host. Every other command does.
 
@@ -1437,7 +1437,9 @@ filters worker status for the orchestrator.
 
 For a Codex reporter, `report --task <root> --question <text>` sends a human follow-up to
 the existing restricted thread and prints that exact completed turn. It refuses launch flags
-and never starts another reporter. See [Reporter question channel](reporter-channel.md).
+and never starts another reporter. It is an on-demand answer, not delivery into the human's
+Desktop conversation. [Observe](#observe) reads activity only for the already bound mailbox owner.
+See [Reporter question channel](reporter-channel.md).
 
 `status` lists the reporter beneath its root. `done` of that root stops
 a Claude Code reporter with the other managed sessions, unless `--keep-sessions`
@@ -1465,6 +1467,78 @@ promptobus digest [--task <id>] [--json]
 Each task block lists participants with the first non-empty line of their latest `status` and its age. It lists every open `question` with its addressee, text and age, placing questions from `user` first. An `answer` from the addressee to the sender closes that pair's earlier questions; a `status` does not. A root orchestrator and its teamlead write both directions in the root journal: root mail to `teamlead:<slug>` stays there, and the child's sends to `root:<root slug>` are written there as `teamlead:<slug>`, so the pair closes within one journal. In a child journal an earlier version wrote, the pair spans two journals: a root question delivered into the child as `root:<root slug>` is closed by a newer `answer` from the bound `teamlead:<slug>` to the root's `orchestrator`, and a teamlead question in the root is closed by a newer `answer` from `root:<root slug>` to the child's `orchestrator`. A primary address's `unread` counts its whole participant mailbox; an address alias's counts its own slot. A peer question arrives in the other root's journal with its `originTask` id. Its routed answer arrives back in that origin task's journal and records the answering root as its own `originTask`. The digest closes the question only when the answer is newer, its destination `task` equals the question's `originTask`, and its own `originTask` equals the question's destination task. A later peer link to a root with the same slug cannot close the earlier root's question. A legacy peer question without `originTask`, or a possible legacy answer without it, is shown as `UNRESOLVED PROVENANCE` rather than claimed open or answered. JSON carries `state: "open"` or `state: "unresolved-provenance"` and includes `originTask` when recorded. The person may ask a child task's orchestrator, so the question stays in that child's block. `SILENT` comes from the warden's escalation mark and `UNANSWERED` from the same debt predicate as `status`; the orchestrator's user debt is visible before it reads the question. Status bodies do not enter the digest beyond the first-line accessor.
 
 Pieces are grouped by the current pipeline step. The shared slug of the step participants names one piece. The first recorded participant sets its starting step, so a standalone review starts at its reviewer. A result committed after the current causal assignment boundary and any later task assignment advances it to the next declared step, even if that step has not yet been lifted; a newer assignment makes that participant current again. A fresh reviewer launch reserves a new boundary without sending a synthetic assignment message, so its earlier result does not advance the piece. Missing legacy causal evidence cannot be replaced by timestamp comparison. Strict committed facts refuse unresolved intents or broken records rather than selecting an older visible result. If every step has reported, the text says `all steps reported`. `--json` prints the same page as one document with `schemaVersion: 1`, `generatedAt`, task blocks, participant states, questions, and pieces; [digest.schema.json](../../schemas/v1/digest.schema.json) is its shape. Wall-clock ages remain measurements; `ageSeconds` is measured at page creation and is never negative.
+
+## Observe
+
+```sh
+promptobus observe --task <id> [--after <cursor>] [--wait <seconds>]
+```
+
+The command requires the selected task's bound orchestrator, verified by the existing
+[command-path session identity](02-host.md#session-identity) and the selected task's
+recorded harness and owner. `--task` selects one journal; it does not authorize access.
+Any declared task, role or store scope must agree. A root owner cannot see child mail
+through the root, and a child owner cannot see its root or siblings. An unbound, ambiguous
+or foreign caller is refused. A cursor grants no access.
+
+The JSON page includes canonical `status`, `question`, `answer`, `result` and `review`
+messages sent by or addressed to that orchestrator in that journal. Observation does not
+take mail, claim an address, recover the store, answer mail, or start a participant. The
+reader accepts only owned directories and regular files within the store: no symlinks,
+at most 16,384 entries per scanned directory, and at most 1 MiB per task or message record,
+256 KiB for stall marks, 4 KiB for the message-order head and 32 MiB per poll. Platforms without the required
+owner and no-follow checks are refused.
+
+Without `--after`, the feed starts at the oldest retained matching message. After showing
+a successful page, use its exact `nextCursor` with the same task, store and owner; only save the new
+cursor after showing that page. A page contains up to ten messages in commit-id order, not
+wall-clock order, with `id`, `task`, `at`, `type`, `from`, `to`, `body` and `originTask` when
+recorded. `truncated: true` means only the first 2,000 code units of the body are shown.
+Fetch another page immediately if `more` is true. The final page also returns `changes`:
+new or changed persisted stall marks, cleared stalls, and observed task closures. These are
+samples, not ordered bus messages; they have no canonical message id and can miss a state
+that changes between samples. A cleared stall time is unknown. A `result` remains that
+sender's report; a worker result and a reviewer pass do not prove acceptance.
+
+`--wait` takes 0–20 whole seconds (default 0). It bounds retry scheduling, not total command
+time: a poll already started must finish scanning the selected journal. The command returns
+early on activity or closure, and prints `status: "idle"` when the last verified snapshot
+has no changes at the deadline. `closed: true` means the selected task is done and no further
+page is queued. An unreadable or stale snapshot exits 1 with no page or new cursor. A busy
+store-wide order fence can reflect any writer; an unresolved fan-out in the selected journal
+instead reports that journal incomplete. Both conditions can be retried within the wait;
+keep the last successful cursor on refusal. There is no model turn or wake request.
+
+### Desktop observation and idle wake
+
+An ordinary Codex Desktop conversation does not hold the managed orchestrator's identity,
+so `observe` refuses it. Direct active-turn delivery of journal bodies to that conversation
+is blocked until a supported, scoped authorization route is established. Do not copy session
+variables or claim the mailbox to work around the refusal. Use the existing [Digest](#digest)
+projection for a progress snapshot or [Report](#report) for an on-demand reporter answer.
+Neither is automatic chat delivery. A `status` from the orchestrator to `user` can name a
+decision; the person can relay their answer with `ask "<text>" --task <root>` from a plain terminal.
+
+Promptobus does not wake an idle Desktop conversation. No supported call targeting that
+existing conversation is established here: `turn/start` in the holder addresses the managed
+thread, and a reporter question addresses the reporter thread. Neither proves a Desktop
+notification. Both active-turn visibility and idle-chat wake remain unmeasured in Desktop.
+
+For a live check, use a disposable workspace and conversation on an authorized Desktop
+stand. Record the Desktop build, `codex --version`, `promptobus --version`, the implementation
+revision and the managed and human thread ids. Send fixture mail without an observer to
+reproduce the baseline, then verify the unbound Desktop attempt at `observe --task <root> --wait 20`
+returns no page. If a scoped Desktop route becomes available, repeat in an active turn and
+capture which two worker statuses, decision question, result, review and stall or state change
+appeared, matched to canonical ids (or the stall address and time); verify acceptance separately.
+Compare the owner and unread message ids before and after with delivery held constant, and
+verify mail on an unrelated active root stays out. For idle wake, end the Desktop turn, send a new
+uniquely identifiable status using the managed participant's normal send tool, and watch the
+same Desktop chat for 60 seconds without prompting it. Record the action, its outcome,
+canonical id, whether the managed thread received the wake, and whether Desktop showed the
+status or began a new turn. If there is a documented Desktop-specific wake action, test it
+separately and record the exact action and result; an idle negative control cannot rule out
+an untested mechanism. A CLI result is not evidence that the person saw the update.
 
 ## Lease
 
@@ -1747,6 +1821,10 @@ name, before any write, and that is the whole job of the list.
 ## The Codex holder
 
 The [fixture schedule guide](../../test/fixture-order/README.md) distinguishes acceptance of a turn from its started notification, and a Stop confirmation from the holder's actual exit. The ordinary reservation test observes B in the holder's active turn set before starting B. The ordinary Stop test confirms exit before retrying retirement. These local fixtures do not qualify native behavior.
+
+The holder delivers wakes to its own managed thread, not to an arbitrary Desktop
+conversation. [Observe](#observe) is a local read for the bound orchestrator, not an
+authorization route from the holder to Desktop or a native notification card.
 
 The [glossary](../GLOSSARY.md) defines the harness terms used here — holder, contact point, persist session, thread, and session record — and keeps a Codex thread distinct from a Cursor persist session.
 
