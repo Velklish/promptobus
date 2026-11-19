@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Bind Linux release qualification to the Test step's own suite footer and refuse ambiguous test log groups. Recover an interrupted publication after `main` advances when the public tag still matches the recorded annotated object and candidate.
+
 ### Added
 
 - Bound the orchestrator's root thread by batch or owner-set context threshold. The handoff preserves task records and distinguishes an approved mailbox succession from managed Codex same-thread recovery.

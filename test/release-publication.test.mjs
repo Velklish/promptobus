@@ -116,7 +116,10 @@ const rawLog = () => {
   let lines = state.otherStepLogs ? ['##[group]Run npm run build','build passed','Cleaning up orphan processes']
     : ['##[group]Run npm test','##[endgroup]','↷ SKIP optional integration — deliberate fixture',
       'installed check notRun: fixture','280/280 test files passed','Cleaning up orphan processes'];
-  if(state.partialDownload) lines=lines.slice(0,3);
+   if(state.footerInAudit) lines.splice(4,0,'##[group]Run npm run audit');
+   if(state.duplicateTestGroup) lines.splice(5,0,'##[group]Run npm test','##[endgroup]',
+     '##[group]Run npm run audit');
+   if(state.partialDownload) lines=lines.slice(0,3);
   if(state.longLog) lines.splice(2,0,'x'.repeat(80_000));
   return state.emptyLogs ? '' : lines.map(line=>'2026-11-13T00:00:00.0000000Z '+line).join('\\n')+'\\n';
 };
@@ -137,6 +140,8 @@ if(args[0]==='api') {
     assert.equal(endpoint,'repos/Velklish/promptobus/actions/runs/123/attempts/1/jobs?per_page=100');
     console.log(JSON.stringify([{jobs:state.missingJob?[]:[job]}]));
   }
+} else if(args[0]==='run') {
+  assert.equal(args[1],'list');
 } else {
   assert.fail('Unexpected gh command: '+JSON.stringify(args));
 }
@@ -200,25 +205,28 @@ test('completed receipt requires full runtime identity before any GitHub call', 
   assert.equal(f.git('tag','--list'), '');
 });
 
-test('raw Test proof requires a test group, a nonzero matching footer and later cleanup', () => {
+test('raw Test proof requires a nonzero matching footer in the Test step before cleanup', () => {
   const group = '##[group]Run npm test', footer = '280/280 test files passed', cleanup = 'Cleaning up orphan processes';
+  const audit = '##[group]Run npm run audit';
   const log = lines => lines.map(line => `2026-11-13T00:00:00.0000000Z ${line}`).join('\r\n');
-  requireTestLog(log([group, footer, cleanup]));
+  requireTestLog(log([group, '##[endgroup]', `${footer}; 3 checks skipped in 3 files`, audit, cleanup]));
   for (const lines of [['##[group]Run npm run build', 'build passed', cleanup], [footer, cleanup], [group, cleanup],
     [group, footer], [group, '279/280 test files passed', cleanup], [group, '0/0 test files passed', cleanup],
-    [footer, group, cleanup], [group, cleanup, footer]]) {
+    [footer, group, cleanup], [group, cleanup, footer], [group, audit, footer, cleanup],
+    [group, 'Post job cleanup.', footer, cleanup]]) {
     assert.throws(() => requireTestLog(log(lines)), /Incomplete required Linux job log/, lines.join(' | '));
   }
+  assert.throws(() => requireTestLog(log([group, footer, group, audit, cleanup])), /Ambiguous required Linux job log/);
 });
 
 test('raw required job logs refuse missing Test proof or incomplete download before publication', () => {
   const f = fixture();
-  for (const state of [{otherStepLogs:true}, {downloadFailure:true},
+  for (const state of [{otherStepLogs:true}, {footerInAudit:true}, {duplicateTestGroup:true}, {downloadFailure:true},
     {partialDownload:true}, {signalDownload:true}]) {
     const directory = path.dirname(f.file);
     const previous = new Set(readdirSync(directory));
     f.state(state);
-    refused(f.publish(), /Incomplete required Linux job log|Linux job log download failed/);
+    refused(f.publish(), /(?:Incomplete|Ambiguous) required Linux job log|Linux job log download failed/);
     assert.equal(f.refs(), '');
     assert.equal(f.git('tag','--list'), '');
     const evidence = readdirSync(directory).find(name=>!previous.has(name)&&name.endsWith('.json'));
@@ -414,6 +422,11 @@ test('interrupted tag push resumes without replacing local/remote objects or re-
   assert.equal(receipt.publication.status, 'publishing');
   assert.equal(receipt.publication.object, object);
   rmSync(hook);
+  const parent = f.git('rev-parse', 'HEAD^');
+  f.git('--git-dir', f.bare, 'update-ref', 'refs/heads/main', parent);
+  refused(f.publish(), /Public main must still name the qualified candidate/);
+  assert.equal(f.refs(), '');
+  f.git('--git-dir', f.bare, 'update-ref', 'refs/heads/main', f.head);
   passed(f.publish());
   assert.equal(f.git('rev-parse', 'v1.1.0'), object);
   const published = f.refs();
@@ -421,7 +434,27 @@ test('interrupted tag push resumes without replacing local/remote objects or re-
   interrupted.publication.status = 'publishing';
   f.save(interrupted);
   f.git('tag', '-d', 'v1.1.0');
+  f.put('README.md', 'main advanced after publication\n');
+  f.git('commit', '-qam', 'follow-up on main');
+  f.git('push', f.bare, 'HEAD:refs/heads/main');
+  f.git('switch', '--detach', f.head);
+  f.save({ ...interrupted, publication: { status: 'notRun' } });
+  refused(f.publish(), /Public main must still name the qualified candidate/);
+  assert.equal(f.git('tag', '--list'), '');
+  f.save(interrupted);
+  const git = wouldResolve('git', process.env, repo);
+  stubCommand(path.join(f.root, 'node_modules/.bin'), 'git', `
+import { spawnSync } from 'node:child_process';
+import { appendFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+appendFileSync('.fixture/recovery-git-calls', JSON.stringify(args) + '\\n');
+const r = spawnSync(${JSON.stringify(git)}, args, {stdio:'inherit'});
+process.exit(r.status ?? 1);
+`);
   passed(f.publish());
+  const calls = read(path.join(f.root, '.fixture/recovery-git-calls')).trim().split('\n').map(line => JSON.parse(line));
+  assert.equal(calls.filter(args => args.includes('fetch')).length, 1);
+  assert.deepEqual(calls.filter(args => args.includes('push')), [], 'recovery must not invoke git push');
   assert.equal(f.git('rev-parse', 'v1.1.0'), object);
   assert.equal(f.refs(), published);
   assert.deepEqual(f.receipt().steps.map(s=>s.attempts.length), receipt.steps.map(s=>s.attempts.length));
@@ -487,11 +520,36 @@ test('release guide and workflow retain main/PR coverage and qualify once before
   assert.match(workflow, /push:\s*\n\s*branches: \[main\]/);
   assert.match(workflow, /\n  pull_request:/);
   assert.doesNotMatch(workflow, /\btags:|workflow_dispatch:|gh run list|if:.*success/);
+  assert.match(workflow, /- name: Test\n\s+env:\n\s+TMPDIR: [^\n]+\n\s+run: npm test\n/);
+  assert.equal([...workflow.matchAll(/^\s+run: npm test$/gm)].length, 1);
   for(const command of ['npm run build','npm test','npm run audit','npm run pins',
     'npx --no-install backslop init --hooks claude','npx --no-install backslop lint']) assert.ok(workflow.includes(command));
   const guide = read(path.join(repo,'docs/guides/releasing.md'));
   for(const text of ['git push origin HEAD:main','npm run release -- publish --receipt', '--run',
     'npm run release -- smoke --receipt','immutable','interrupted','skipped integration bodies',
-    'one full Linux qualification','Node 26 / ubuntu-latest']) assert.ok(guide.includes(text), `guide missing ${text}`);
+    'one full Linux qualification','Node 26 / ubuntu-latest', 'before the next workflow step',
+    'even if `main` has advanced']) assert.ok(guide.includes(text), `guide missing ${text}`);
+  const inventory = guide.split('### Post-tag CI inventory')[1];
+  assert.match(inventory, /published_sha=.*\.publication\.commit/);
+  assert.match(inventory,
+    /^gh run list --repo \S+ --workflow ci\.yml --commit "\$published_sha" --json [^\n]+$/m);
+  assert.doesNotMatch(inventory, /\bHEAD\b|--branch/);
   assert.doesNotMatch(guide, /push the release commit and tag together/);
+});
+
+test('post-tag inventory queries the published receipt SHA even from a different checkout', () => {
+  const f = fixture();
+  const guide = read(path.join(repo, 'docs/guides/releasing.md'));
+  const recipe = guide.split('### Post-tag CI inventory')[1].match(/```bash\n([\s\S]*?)```/)[1];
+  const args = ['sh', '-c', recipe.replace(/^receipt=.*$/m, 'receipt=$1'), 'inventory', f.file];
+  const env = { PATH: path.join(f.root, 'node_modules/.bin') + path.delimiter + process.env.PATH };
+  const receipt = f.receipt();
+  assert.equal(f.exec(args, f.root, env).status, 1);
+  assert.deepEqual(f.calls(), []);
+  f.save({ ...receipt, publication: { status: 'published', commit: f.head } });
+  f.git('switch', '--detach', 'HEAD^');
+  assert.notEqual(f.git('rev-parse', 'HEAD'), f.head);
+  passed(f.exec(args, f.root, env));
+  assert.deepEqual(f.calls(), [['run', 'list', '--repo', 'github.com/Velklish/promptobus', '--workflow', 'ci.yml',
+    '--commit', f.head, '--json', 'databaseId,event,headBranch,headSha,status,conclusion,url']]);
 });
