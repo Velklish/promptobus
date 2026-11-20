@@ -696,3 +696,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-419.19"></a>`PB-419.19-reject-cursor-delivery-on-unreadable-pane` · 2026-11-20 · completed · — · Reject Cursor delivery on unreadable pane
 - <a id="pb-419.18"></a>`PB-419.18-fail-live-proof-when-observations-are-unavailable` · 2026-11-20 · completed · — · Fail live proof when observations are unavailable
 - <a id="pb-419.33"></a>`PB-419.33-convert-reviewer-file-url-to-filesystem-path` · 2026-11-20 · completed · — · Convert reviewer file URL to filesystem path
+- <a id="pb-419.32"></a>`PB-419.32-remove-current-year-assumption-from-history-test` · 2026-11-20 · completed · — · Remove current-year assumption from history test
