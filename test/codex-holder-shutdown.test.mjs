@@ -49,7 +49,7 @@ const thread = {id:'thread',sessionId:'thread',cliVersion:'0.160.0',createdAt:0,
   cwd:process.cwd(),ephemeral:false,modelProvider:'openai',preview:'',projectId:null,source:'appServer',status:{type:'idle'},turns:[]};
 for await (const line of readline.createInterface({input:process.stdin})) {
   const msg = JSON.parse(line); const {id,method,params={}}=msg;
-  appendFileSync(process.env.FIXTURE_TRACE,JSON.stringify(msg)+'\\n');
+  appendFileSync(process.env.FIXTURE_TRACE,JSON.stringify({...msg, receivedAt:Date.now()})+'\\n');
   if(method==='initialize') { reply(id,{userAgent:'fixture',codexHome:process.cwd(),platformOs:'macos',platformFamily:'unix'});
     emit({method:'account/rateLimits/updated',params:{primary:{usedPercent:0}}}); }
   else if(method==='thread/start') batch([
@@ -124,7 +124,7 @@ async function scenario(name, work, { expected, hanging = false, unresolved = fa
     return answer;
   };
   let ack;
-  let duration;
+  let duration, sharedDeadline;
   let held;
   const shutdown = async () => {
     const before = Date.now();
@@ -136,7 +136,7 @@ async function scenario(name, work, { expected, hanging = false, unresolved = fa
         if (previous === undefined) delete process.env.PROMPTOBUS_CODEX_HOME;
         else process.env.PROMPTOBUS_CODEX_HOME = previous;
       }
-    } else ack = await holderAsk(ref, 'shutdown', { launchId: 'launch-' + name, deadlineAt: before + budget }, env, budget + 1500);
+    } else ack = await holderAsk(ref, 'shutdown', { launchId: 'launch-' + name, deadlineAt: sharedDeadline ?? before + budget }, env, budget + 1500);
     duration = Date.now() - before;
     return ack;
   };
@@ -167,6 +167,7 @@ async function scenario(name, work, { expected, hanging = false, unresolved = fa
           && log.includes('event hook/completed sessionStart completed /hooks.json'), log);
     }
     const status = () => holderAsk(ref, 'status', {}, env);
+    if (hanging) sharedDeadline = Date.now() + budget;
     await work({ start, accepted, control, rpc, messages, shutdown, status, ref, env, holder, task, home, dir, exited });
     const originalFailedReceipt = failedCleanup ? readFileSync(readSession(ref, env).commandReceiptFile, 'utf8') : null;
     if (!ack && selfStop) { ack = { ok: true, stopped: false, deferred: true }; duration = 0; }
@@ -194,6 +195,22 @@ async function scenario(name, work, { expected, hanging = false, unresolved = fa
       return;
     }
     await after?.({ ack, record, receipts, receiptFile, messages });
+    if (hanging) {
+      const requested = receipts.find(r => r.kind === 'stop/requested');
+      const refusal = receipts.find(r => r.kind === 'stop/unresolved');
+      const expired = receipts.filter(r => r.kind === 'stop/interrupt');
+      check(`shutdown ${name}: every missing RPC reply expires against the shared deadline before refusal`,
+        requested?.deadlineAt === sharedDeadline && expired.length === expected.length && expected.every(turnId => {
+          const sent = interrupts.find(m => m.params.turnId === turnId);
+          const outcome = expired.find(r => r.turnId === turnId);
+          const allowance = Number(/^no reply to turn\/interrupt in (\d+) ms$/.exec(outcome?.error)?.[1]);
+          return sent && requested.sequence < outcome?.sequence && outcome.sequence < refusal?.sequence
+            && allowance > 0 && allowance < budget && allowance <= sharedDeadline - Date.parse(requested.at)
+            && allowance >= sharedDeadline - sent.receivedAt
+            // The holder records both the deadline and timeout receipt to millisecond precision.
+            && Date.parse(outcome.at) >= sharedDeadline - 1;
+        }), JSON.stringify({ requested, expired, refusal, interrupts }));
+    }
     if (unresolved) {
       check(`shutdown ${name}: unresolved Stop retains the holder and recoverable record`,
         pidAlive(holder.pid) && existsSync(sessionFile(ref, env)) && existsSync(readSession(ref, env)?.rpcSocket), JSON.stringify(readSession(ref, env)));
@@ -205,7 +222,7 @@ async function scenario(name, work, { expected, hanging = false, unresolved = fa
       !pidAlive(held.appPid) && !existsSync(held.rpcSocket), JSON.stringify(held));
     if (driver) check(`shutdown ${name}: driver retires only the confirmed session`, !readSession(ref, env) && ack.stopped);
     check(`shutdown ${name}: all interrupts share the existing bounded allowance`,
-      duration < 6200 && (!hanging || duration >= 4500), `${duration}ms`);
+      duration < 6200, `${duration}ms`);
   } finally {
     if (pidAlive(holder.pid)) holder.kill('SIGKILL');
     const appPid = readSession(ref, env)?.appPid ?? held?.appPid;
