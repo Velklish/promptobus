@@ -720,3 +720,7 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-315.1"></a>`PB-315.1-codex-historical-bus-cost` · 2026-11-20 · batch PB-437 · — · Qualify historical Codex bus-call cost in launch output
 - <a id="pb-419.2"></a>`PB-419.2-remove-unreachable-capture-extension-check` · 2026-11-20 · batch PB-437 · — · Remove unreachable capture extension check
 - <a id="pb-419.17"></a>`PB-419.17-correct-historical-codex-capture-readme-pointers` · 2026-11-20 · batch PB-437 · — · Correct historical Codex capture README pointers
+- <a id="pb-438"></a>`PB-438-writer-prose-cleanup` · 2026-11-20 · completed · — · Finish the bounded prose cleanup and preserve writer ledger coverage
+- <a id="pb-304.1"></a>`PB-304.1-release-writer-minor-prose-table-findings` · 2026-11-20 · batch PB-438 · — · Release writer retains minor prose and table findings
+- <a id="pb-317.2"></a>`PB-317.2-bold-every-local-rule` · 2026-11-20 · batch PB-438 · — · contributing.md bolds «every» for emphasis, and a test pins the bold
+- <a id="pb-330"></a>`PB-330-release-writer-fix-check` · 2026-11-20 · batch PB-438 · — · The release writer pass does not say whether its documentation fixes carry a check that fails on the old text
