@@ -795,3 +795,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-466.22"></a>`PB-466.22-handover-schema-descriptions` · 2026-11-20 · completed · — · Describe byte restoration and current handover requirements in the published schema
 - <a id="pb-466.23"></a>`PB-466.23-codex-schema-format-warnings` · 2026-11-20 · completed · — · Handle the uint8 annotation in the Codex schema gate
 - <a id="pb-466.2"></a>`PB-466.2-service-lock-creation-rollback` · 2026-11-20 · completed · — · Recover a newly created service lock after owner record publication fails
+- <a id="pb-466.4"></a>`PB-466.4-digest-actionable-since` · 2026-11-20 · completed · — · Report the same SILENT start in digest and status

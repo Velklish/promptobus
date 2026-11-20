@@ -125,7 +125,7 @@ export function buildDigest(rootOrHost: unknown, { task, now = Date.now() }: { t
         lastStatus: last ? { firstLine: last.firstLine, at: last.ts,
           ageSeconds: ageSeconds(last.ts, now) } : null,
         stall: stalls[address] ? { reason: stalls[address].reason, at: stalls[address].at } : null,
-        silent: mark.escalatedAt ? { since: mark.since ?? null, escalatedAt: mark.escalatedAt } : null,
+        silent: mark.escalatedAt ? { since: mark.actionableSince ?? mark.since ?? null, escalatedAt: mark.escalatedAt } : null,
         unanswered: debt ? { since: debt } : null,
       };
     });

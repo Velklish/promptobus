@@ -10,6 +10,7 @@ const ROOT = makeSandbox('promptobus-digest-');
 writeHostConfig(ROOT);
 const store = await import('../lib/store.js');
 const { hostOf } = await import('../lib/host.js');
+const { status } = await import('../lib/status.js');
 const { buildDigest, digest } = await import('../lib/digest.js');
 const { runPromptobus } = await import('../lib/cli.js');
 const { writeStalls } = await import('../dist/index.js');
@@ -75,7 +76,11 @@ for (let i = 11; i < pieces.length; i += 1) {
 put(CHILD_A, 'user', 'orchestrator', 'question', 'answered child question');
 put(CHILD_A, 'orchestrator', 'user', 'answer', 'child answer');
 put(CHILD_B, 'user', 'orchestrator', 'question', 'open child question');
+const actionableAt = '2026-09-26T12:16:01.000Z';
+const progressAt = '2026-09-26T12:30:00.000Z';
 store.writeHealth(HOME, ROOT_TASK, {
+  orchestrator: { since: SENT_AT, actionableSince: actionableAt, escalatedAt: '2026-09-26T12:32:01.000Z' },
+  'worker:p02': { since: progressAt },
   'worker:p00': { since: SENT_AT, escalatedAt: SENT_AT },
 });
 writeStalls(HOME, ROOT_TASK, { 'worker:p01': { reason: 'waiting for the holder', at: SENT_AT } });
@@ -125,6 +130,13 @@ check('digest reuses persisted stall, SILENT and user UNANSWERED states',
     && page.tasks[0].participants.find((p) => p.address === 'orchestrator')?.unanswered?.since === SENT_AT);
 
 const printed = capture(() => digest(host, { task: ROOT_TASK, now: NOW }));
+const statusText = capture(() => status(host, { task: ROOT_TASK, sessions: {} }));
+const silentStart = (address) => page.tasks[0].participants.find(p => p.address === address)?.silent;
+check('both reports start escalated silence at actionable mail, including the legacy fallback',
+  silentStart('orchestrator')?.since === actionableAt && silentStart('worker:p00')?.since === SENT_AT
+    && [printed, statusText].every(report => [actionableAt, SENT_AT].every(at => report.includes(`SILENT since ${at}`))));
+check('progress without escalation contributes no SILENT indication',
+  silentStart('worker:p02') === null && [printed, statusText].every(report => !report.includes(`SILENT since ${progressAt}`)));
 const lines = printed.split('\n');
 const groups = new Map(['worker', 'reviewer', 'approver'].map((step) => [step,
   lines.find((line) => line.trimStart().startsWith(`${step}: `)) ?? '',
