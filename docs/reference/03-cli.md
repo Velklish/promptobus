@@ -1405,8 +1405,9 @@ and a thread override disabling project hooks; no project file is written. `--dr
 the session, MCP, deny list and prompt plan without writing a participant
 or starting a harness. When `--model` has entries in the merged catalog, at least one must be on
 Claude or Codex. An unrated model does not trigger that check. Automatic routing
-uses the reviewer role over the host’s declared harnesses excluding Cursor; an
-overlay can make an OpenCode tuple eligible there.
+starts with the host's declared harnesses except Cursor, then filters for the reviewer
+role. The shipped catalog admits Claude and Codex reporters. Its OpenCode tuple
+is worker-only. An overlay can adjust ratings and priority but cannot add a role.
 
 Before writing launch files, `report` records a pending reporter under the
 task journal lock. A second command refuses if the reporter changed while it

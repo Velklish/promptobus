@@ -711,3 +711,7 @@ check('docs: models probes by default in the orchestrate skill, abandon refuses 
   && has(adr('017', 'the-owner-gate-is-a-positive-proof'), 'the artifact records, files and blobs of that piece stay with the journal.')
   && !has(adr('017', 'the-owner-gate-is-a-positive-proof'), 'the blobs and files of that piece, and the temporary stands may go'),
   'a shipped skill or a reference still says models reads only the cache, or abandon, done --yes and sweep contracts are undocumented');
+
+check('docs: automatic native reporter selection applies the shipped reviewer roles',
+  [cli, drivers].every(text => has(text, 'The shipped catalog admits Claude and Codex reporters.'))
+  && !has(cli, 'an overlay can make an OpenCode tuple eligible'));

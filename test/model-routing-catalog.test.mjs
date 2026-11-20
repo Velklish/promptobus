@@ -1968,3 +1968,17 @@ test('`validate` reports a bad writable declaration as a finding, not as a throw
   assert.deepEqual(one.layers.map((l) => [l.id, l.writable]),
     [['catalog', false], ['user', false], ['workspace', true]]);
 });
+
+test('a reporter cannot route to the worker-only OpenCode tuple through a ratings overlay', () => {
+  const id = 'opencode-minimax-m3';
+  const policy = mergeRouting({ canonical: CATALOG, overlays: [overlayLayer('workspace', {
+    schemaVersion: 2, qualityFloor: { reviewer: 1 }, ratings: { [id]: { quality: 10 } },
+  })] });
+  assert.equal(policy.tuples.find(tuple => tuple.id === id).ratings.quality, 10);
+  assert.equal(policy.policy.qualityFloor.reviewer, 1);
+  const takenAt = '2026-11-20T00:00:00.000Z';
+  const opencode = cacheRouting.snapshotEntry({ state: 'available', checkedAt: takenAt, source: 'cache' });
+  const decision = resolverRouting.resolve({ policy, role: 'reviewer', strategy: 'quality',
+    snapshot: { schemaVersion: 2, takenAt, harnesses: { opencode } }, now: Date.parse(takenAt) });
+  assert.equal(decision.candidates.find(candidate => candidate.tupleId === id).excluded.code, 'role-not-allowed');
+});

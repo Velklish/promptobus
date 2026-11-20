@@ -782,3 +782,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-419.21"></a>`PB-419.21-decide-and-align-bb-teamlead-task-binding-contract` · 2026-11-20 · merged into PB-439 · — · Decide and align BB teamlead task binding contract
 - <a id="pb-419.22"></a>`PB-419.22-align-bb-role-mailbox-examples-with-facade-schema` · 2026-11-20 · merged into PB-439 · — · Align BB role mailbox examples with facade schema
 - <a id="pb-419.31"></a>`PB-419.31-capture-fixture-exit-before-waiting-for-ready` · 2026-11-20 · merged into PB-444 · — · Capture fixture exit before waiting for READY
+- <a id="pb-466.8"></a>`PB-466.8-reporter-provider-eligibility` · 2026-11-20 · completed · — · Document the providers eligible to run a reporter

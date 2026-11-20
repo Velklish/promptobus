@@ -71,7 +71,9 @@ Teamleads have a single task and no child orchestrator identity. Teamleads and a
 route participant messages through that task’s orchestrator. For a native reporter, explicit `--harness` accepts `claude` or `codex`;
 the install-root project-layer refusal is specific to Cursor. A rated `--model` needs
 at least one catalog entry on either harness. Automatic selection uses reviewer routing
-with Cursor excluded; the two explicit choices do not limit the automatic candidate set.
+over declared harnesses except Cursor. The shipped catalog admits Claude and Codex
+reporters. An OpenCode tuple rated only for workers stays ineligible at any reviewer
+floor, even when an overlay raises its quality.
 
 Ordinary roles default to Codex. Workers can explicitly select Cursor or OpenCode;
 approvers can explicitly select Cursor. Every selected provider must support
