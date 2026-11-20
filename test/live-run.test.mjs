@@ -189,7 +189,7 @@ const run = liveRun({ sandbox, readSessions: () => [], stopSession: async () => 
 const child = spawn(process.execPath, ['-e', ${JSON.stringify(idleCode)}], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
 process.once('exit', () => child.kill('SIGKILL'));
 const receipt = processTable().find(row => row.pid === child.pid && row.parent === process.pid);
-if (!receipt?.birth) throw Error('owned child identity unavailable');
+if (typeof receipt?.birth !== 'string' || !receipt.birth.trim()) throw Error('owned child identity unavailable');
 writeFileSync(sandbox+'/receipt.json', JSON.stringify(receipt));
 run.child(child, { detached: true });
 await new Promise((resolve) => child.stdout.once('data', resolve));
@@ -198,7 +198,16 @@ process.stdout.write(JSON.stringify({ready:true,pid:child.pid})+'\\n');
 setInterval(()=>{},1000);
 `);
 
-const ownedAlive = receipt => processTable().some(row => row.pid === receipt.pid && row.birth === receipt.birth);
+function ownedState(receipt) {
+  if (!Number.isInteger(receipt?.pid) || receipt.pid <= 0 || typeof receipt.birth !== 'string' || !receipt.birth.trim()) {
+    return 'unknown';
+  }
+  const row = processTable().find(candidate => candidate.pid === receipt.pid);
+  if (!row) return 'dead';
+  return row.birth === receipt.birth ? 'alive' : 'unknown';
+}
+
+const ownedAlive = receipt => ownedState(receipt) === 'alive';
 {
   const dir = stand('discovery-fault');
   const foreign = fixtureSpawn(process.execPath, ['-e', 'setTimeout(()=>{},15000)'], { stdio: 'ignore' });
@@ -207,16 +216,24 @@ const ownedAlive = receipt => processTable().some(row => row.pid === receipt.pid
   parent.stderr.on('data', chunk => { err += chunk; });
   let owned;
   try {
+    const neighbour = processTable().find(row => row.pid === foreign.pid && row.parent === process.pid);
+    const liveState = ownedState(neighbour);
+    const missingBirthState = ownedState({ ...neighbour, birth: null });
+    check('discovery observation without birth cannot declare a live fixture child dead',
+      liveState === 'alive' && missingBirthState === 'unknown', JSON.stringify({ neighbour, liveState, missingBirthState }));
     const ended = await waitFor(() => parent.exitCode !== null, { timeoutMs: 5000 });
     owned = JSON.parse(readFileSync(path.join(dir, 'receipt.json')));
-    const dead = await waitFor(() => !ownedAlive(owned), { timeoutMs: 2000 });
-    console.log('discovery fault:', JSON.stringify({ owned, dead, foreign: foreign.pid, parentExit: parent.exitCode }));
+    const validParent = owned?.parent === parent.pid;
+    const dead = validParent && await waitFor(() => ownedState(owned) === 'dead', { timeoutMs: 2000 });
+    const childState = validParent ? ownedState(owned) : 'unknown';
+    const neighbourState = ownedState(neighbour);
+    console.log('discovery fault:', JSON.stringify({ owned, childState, neighbour, neighbourState, parentExit: parent.exitCode }));
     check('discovery failure before abort registration releases the exact child and preserves its neighbour',
-      ended && parent.exitCode === 1 && err.includes('injected discovery failure') && owned.parent === parent.pid
-      && dead && samePid(foreign.pid), err);
+      ended && parent.exitCode === 1 && err.includes('injected discovery failure')
+      && dead && childState === 'dead' && neighbourState === 'alive', err);
   } finally {
     parent.kill('SIGKILL'); foreign.kill();
-    if (owned && ownedAlive(owned)) process.kill(owned.pid, 'SIGKILL');
+    if (owned?.parent === parent.pid && ownedAlive(owned)) process.kill(owned.pid, 'SIGKILL');
   }
 }
 
