@@ -735,3 +735,6 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-441"></a>`PB-441-approver-diagnostics` · 2026-11-20 · completed · — · Show reviewed subjects and document immutable-harness approver recovery
 - <a id="pb-327"></a>`PB-327-approver-subject-refusal-names-no-worktree` · 2026-11-20 · batch PB-441 · — · An approver lift on the clone root says no participant is recorded and names no worktree that has a reviewer result
 - <a id="pb-416.16"></a>`PB-416.16-immutable-approver-harness-recovery` · 2026-11-20 · batch PB-441 · — · Document recovery when a stopped approver retains its original harness
+- <a id="pb-442"></a>`PB-442-relift-generation-investigation` · 2026-11-20 · completed · — · Investigate generation health and old-session reconnect after relift
+- <a id="pb-331.1"></a>`PB-331.1-relifted-teamlead-child-health-line` · 2026-11-20 · batch PB-442 · — · A relifted teamlead's child orchestrator line keeps the old health verdict until the first knock
+- <a id="pb-331.2"></a>`PB-331.2-old-session-binds-after-relift` · 2026-11-20 · batch PB-442 · — · An old live Claude session reconnecting its MCP after a relift can bind the address when the session list is unreadable
