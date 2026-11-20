@@ -30,8 +30,6 @@ write(repo, 'package.json', '{"type":"module"}\n');
 // Keep the real audit's named authoring snapshots non-stale in the miniature repository.
 write(repo, 'src/protocol.ts', 'const TRANSLIT = {\n  "\u0430": "a",\n};\n');
 write(repo, 'docs/archive/LOG.md', '\u0430\n');
-write(repo, 'docs/backlog/minor/PB-278.1-mixed-step7-delivered-after-own-send.md',
-  '✖ step 7: the worker closed the note and sent a second result \u0430\n');
 write(repo, 'tracked.txt', 'clean\n');
 execFileSync('git', ['init', '-q'], { cwd: repo });
 execFileSync('git', ['add', '--', 'src', 'docs', 'tracked.txt'], { cwd: repo });
@@ -60,7 +58,7 @@ function runAudit(tracked, packed) {
 test('publicity audit reports a clean tracked tree and tarball', () => {
   const result = runAudit('clean\n', 'clean\n');
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /publicity audit: clean .*4 tracked text files and 1 packed text entries/);
+  assert.match(result.stdout, /publicity audit: clean .*3 tracked text files and 1 packed text entries/);
 });
 
 test('publicity audit exits 1 and names origin and organization leaks on both surfaces', () => {
@@ -73,4 +71,15 @@ test('publicity audit exits 1 and names origin and organization leaks on both su
     }
   }
   assert.match(result.stdout, /publicity audit: 4 finding\(s\)/);
+});
+
+test('publicity audit refuses the former trace when it returns to a live card', () => {
+  const file = 'docs/backlog/queue/PB-278.1-mixed-step7-delivered-after-own-send.md';
+  write(repo, file, '✖ step 7: the worker closed the note and sent a second result \u0430\n');
+  execFileSync('git', ['add', '--', file], { cwd: repo });
+
+  const result = runAudit('clean\n', 'clean\n');
+  assert.ok(result.stdout.includes(`✖ Cyrillic authored text: ${file}:1\n`), result.stdout);
+  assert.equal(result.status, 1, result.stderr || result.stdout);
+  assert.match(result.stdout, /publicity audit: 1 finding\(s\)/);
 });

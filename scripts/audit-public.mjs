@@ -116,10 +116,6 @@ const AUTHORING_SNAPSHOTS = [
     'the Cyrillic-to-Latin transliteration table is data that slugs are made from'],
   ['docs/archive/LOG.md', WHOLE_FILE,
     'the journal of closed tasks is history: a fold appends to it and nothing rewrites it'],
-  [/^docs\/backlog\/[a-z]+\/PB-278\.1-mixed-step7-delivered-after-own-send\.md$/u,
-    /^✖ step 7: the worker closed the note and sent a second result .*$/mu,
-    'a run trace quoted as captured evidence'],
-
 ];
 const GENERATED_FROM = new Map([
   ['dist/protocol.js', 'src/protocol.ts'],

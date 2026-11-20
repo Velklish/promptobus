@@ -688,10 +688,10 @@ check('publicity audit keeps the transliteration table and nothing more of proto
     || authoringFindings('tarball:package/dist/protocol.js', readFileSync(protocolBuilt, 'utf8')).length === 0),
   authoringFindings('src/protocol.ts', protocolSource).join(', '));
 const traceCard = 'docs/backlog/queue/PB-278.1-mixed-step7-delivered-after-own-send.md';
-check('publicity audit excuses the quoted run trace in its card and not the prose around it',
-  authoredIn(traceCard, `# x\n✖ step 7: the worker closed the note and sent a second result — ${RU_NOTE}\n${RU_NOTE}\n`)
-    .join() === `Cyrillic authored text: ${traceCard}:3`,
-  authoringFindings(traceCard, `✖ step 7: the worker closed the note and sent a second result — ${RU_NOTE}`).join(', '));
+const returnedTrace = `# x\n✖ step 7: the worker closed the note and sent a second result — ${RU_NOTE}\n${RU_NOTE}\n`;
+check('publicity audit refuses the former trace in a live card',
+  authoredIn(traceCard, returnedTrace).join() === `Cyrillic authored text: ${traceCard}:2`,
+  authoringFindings(traceCard, returnedTrace).join(', '));
 check('publicity audit names a snapshot that no longer excuses anything as stale',
   staleAuthoringSnapshots(new Map([['docs/archive/LOG.md', 'history in English']])).includes('docs/archive/LOG.md')
   && !staleAuthoringSnapshots(new Map([['docs/archive/LOG.md', RU_NOTE]])).includes('docs/archive/LOG.md'),
