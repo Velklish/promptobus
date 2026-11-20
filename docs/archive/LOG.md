@@ -790,3 +790,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-466.17"></a>`PB-466.17-dispatch-roadmap-approval` · 2026-11-20 · completed · — · Record the approved scope of review dispatch planning in the roadmap
 - <a id="pb-466.18"></a>`PB-466.18-stop-summary-confirmation` · 2026-11-20 · completed · — · Distinguish pending, refused and confirmed Stop in operator summaries
 - <a id="pb-466.19"></a>`PB-466.19-hook-and-status-comments` · 2026-11-20 · completed · — · Correct obsolete comments on hooks, message formatting and status snapshots
+- <a id="pb-466.20"></a>`PB-466.20-codex-reporter-dead-branch` · 2026-11-20 · completed · — · Remove the unreachable Codex branch from reporter reservation recovery

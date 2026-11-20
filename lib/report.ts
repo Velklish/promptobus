@@ -274,16 +274,10 @@ export async function report(rootOrHost: unknown, opts: ReportOptions = {}): Pro
     }).catch(error => revokeFailedManagedLaunch(plan.launch, error));
   } catch (error) {
     return revokeFailedManagedLaunch(plan.launch, error, async () => {
-      if (lostSession) {
-        if (plan.driver.id === 'codex') {
-          const stopped = await plan.driver.stop!(plan.name);
-          if (!stopped.ok) throw new GateError(`Codex stop ${lostSession} failed: ${stopped.note}`);
-        } else {
-          const stopped = run(tool.bin!, ['stop', lostSession], { cwd: plan.root, env: plan.env, encoding: 'utf8' });
-          if (stopped.error || stopped.status !== 0) {
-            throw new GateError(`claude stop ${lostSession} failed: ${stopped.error?.message ?? stopped.stderr ?? stopped.status}`);
-          }
-        }
+      if (!lostSession) return;
+      const stopped = run(tool.bin!, ['stop', lostSession], { cwd: plan.root, env: plan.env, encoding: 'utf8' });
+      if (stopped.error || stopped.status !== 0) {
+        throw new GateError(`claude stop ${lostSession} failed: ${stopped.error?.message ?? stopped.stderr ?? stopped.status}`);
       }
     });
   }
