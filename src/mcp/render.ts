@@ -21,14 +21,11 @@ export type DecorateParticipant = (participant: ParticipantV1) => string[];
 const SUMMARY_GROUPS = 3;
 const SUMMARY_MAX = 120;
 
-// Machine-address mark in bus replies. The consumer feed hook uses it to
-// separate the readable name from the machine tail, and searches FROM THE END
-// of the line: the same ` · ` mark is lawful in a name. The bus-hook template
-// copies these four literals; `test/host.test.mjs` holds them together.
+// Separates the readable participant name from its machine address in bus replies.
 export const ADDR_MARK = ' · address ';
-/** First word of an empty-mailbox reply. The hook compares it whole, not as a prefix. */
+/** First word of an empty-mailbox reply. */
 export const MAILBOX_EMPTY = 'empty';
-/** Prefix of a successful `promptobus_send` reply. The hook matches it at the start of the line. */
+/** Prefix of a successful `promptobus_send` reply. */
 export const SENT_PREFIX = 'sent ';
 /** Word between message type and sender in a mailbox heading (`### status from name`). */
 export const MESSAGE_FROM = ' from ';

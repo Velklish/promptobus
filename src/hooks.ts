@@ -66,14 +66,11 @@ export function guardHookSettings(
   return { [GUARD_HOOK_EVENT]: group(), [GUARD_START_EVENT]: group() };
 }
 
-// No `rel`/`text`: the plan wrote a runner script while the feed hook existed,
-// and the guard needs no file of its own — it runs the bin.
+// The settings invoke the guard directly with the host's Node executable and arguments.
 export interface HookPlan {
   settings: Record<string, unknown>;
 }
 
-// Not a full PromptobusHost: the type declares which members the plan asks for,
-// and sync passes exactly those.
 export type PromptobusHookHost = Pick<PromptobusHost, 'nodePath' | 'guardArgv'>;
 
 export function planPromptobusHooks(

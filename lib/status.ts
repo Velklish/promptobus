@@ -32,8 +32,7 @@ interface RouteHints { doneCommand?: string; statusCommand?: string; reviewComma
 interface HarnessHistoryRow { harness: string; until: unknown }
 interface StatusOptions { task?: string; sessions?: SessionSnapshot }
 
-// Bus participant state: how to name it for a person and print it. The predicates live in
-// the package ([supervisor.ts](../src/supervisor.ts)); this file knows no harness name.
+// Render the [supervisor predicates](../src/supervisor.ts) with the route available for the participant's harness.
 
 function stampMs(value: unknown) {
   const n = Date.parse((value ?? '') as string);
@@ -320,8 +319,8 @@ export function status(rootOrHost: unknown, { task, sessions = undefined }: Stat
   for (const { meta, depth } of tasks) {
     const indent = '  '.repeat(depth);
     const line = (write: (value: string) => unknown, value: string) => write(`${indent}${value.replaceAll('\n', `\n${indent}`)}`);
-    // One snapshot per call, not per task: addresses of different tasks coincide. The
-    // default tells `undefined` ("not supplied") from `null` ("the list was not parsed").
+    // Each task gets its own snapshot unless the caller supplies one for all tasks.
+    // A supplied null records an unreadable session list.
     const snap = sessions === undefined ? snapshotOf(meta.participants) : sessions;
     line(ok, `${meta.id} · ${meta.title} · ${meta.status}`
       + `${meta.parent ? ` · parent ${meta.parent}` : ''} · pipeline ${pipelineText(pipeline)}`);

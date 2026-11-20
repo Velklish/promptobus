@@ -36,7 +36,7 @@ Triage the child cards. The release owner decides what evidence can qualify a Cl
 | [PB-466.16 - Update the capture prerequisite in the Codex workspace qualification card](../../archive/LOG.md#pb-466.16) | PQA-4008 | minor |
 | [PB-466.17 - Record the approved scope of review dispatch planning in the roadmap](../../archive/LOG.md#pb-466.17) | PQA-4005 | minor |
 | [PB-466.18 - Distinguish pending, refused and confirmed Stop in operator summaries](../../archive/LOG.md#pb-466.18) | PQA-4006 | minor |
-| [PB-466.19 - Correct obsolete comments on hooks, message formatting and status snapshots](PB-466.19-hook-and-status-comments.md) | PQA-2001 | minor |
+| [PB-466.19 - Correct obsolete comments on hooks, message formatting and status snapshots](../../archive/LOG.md#pb-466.19) | PQA-2001 | minor |
 | [PB-466.20 - Remove the unreachable Codex branch from reporter reservation recovery](PB-466.20-codex-reporter-dead-branch.md) | PQA-2010 | minor |
 | [PB-466.21 - Align the contributing guide with the public audit exceptions](PB-466.21-public-audit-exceptions-guide.md) | PQA-5000 | minor |
 | [PB-466.22 - Describe byte restoration and current handover requirements in the published schema](PB-466.22-handover-schema-descriptions.md) | PQA-5001, PQA-5002 | minor |
