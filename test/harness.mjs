@@ -582,13 +582,13 @@ function armCleanup(home) {
 
 /** Kill everything that is left: a test safety net in `finally`, not part of the scenario.
  * A participant closes its MCP client before it exits, so all of them share `timeoutMs` to die. */
-export async function stopAll(home, { timeoutMs = 10_000 } = {}) {
+export async function stopAll(home, { timeoutMs = 10_000, now = Date.now, waitForDeath = awaitDeath } = {}) {
   const records = harnessSessions(home);
   for (const record of records) killSession(record);
-  const edge = Date.now() + timeoutMs;
+  const edge = now() + timeoutMs;
   const left = [];
   for (const record of records) {
-    if (!await awaitDeath(record.pid, Math.max(0, edge - Date.now()))) left.push(record.id);
+    if (!await waitForDeath(record.pid, Math.max(0, edge - now()))) left.push(record.id);
     rmSync(sessionFile(home, record.id), { force: true });
   }
   return left;

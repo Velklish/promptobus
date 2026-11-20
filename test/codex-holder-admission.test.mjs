@@ -57,6 +57,7 @@ for await (const line of readline.createInterface({input:process.stdin})) {
     assert.equal(existsSync(sock), true);
   }
   const holder = spawn(process.execPath, [path.resolve('lib/codex-hold.js'), sessionFile(ref, env)], { env, stdio: 'ignore' });
+  const closed = new Promise(resolve => holder.once('close', resolve));
   let original;
   try {
     const ready = await waitReady(ref, env, 5000);
@@ -80,9 +81,9 @@ for await (const line of readline.createInterface({input:process.stdin})) {
     original = readSession(ref, env);
     assert.equal(await waitFor(() => readSession(ref, env)?.busy === false, { timeoutMs: 3000 }), true, 'fixture first turn must be idle');
     if (change === 'cleanup') {
-      const stopped = await holderAsk(ref, 'shutdown', { launchId: 'old-launch', deadlineAt: Date.now() + 1500 }, env, 2000);
+      const [, stopped] = await Promise.all([closed, holderAsk(ref, 'shutdown',
+        { launchId: 'old-launch', deadlineAt: Date.now() + 1500 }, env, 2000)]);
       assert.equal(stopped.ok, true, JSON.stringify(stopped));
-      await new Promise(resolve => holder.once('exit', resolve));
       assert.equal(existsSync(sock), false, 'owned socket must be removed');
       return;
     }
@@ -97,10 +98,9 @@ for await (const line of readline.createInterface({input:process.stdin})) {
         control.once('error', reject);
       });
       control.write(JSON.stringify({ id: 'replacement', op: 'shutdown', launchId: 'old-launch', deadlineAt: Date.now() + 1500 }) + '\n');
-      const answer = await stopped;
+      const [, answer] = await Promise.all([closed, stopped]);
       assert.equal(answer.result.ok, true, JSON.stringify(answer));
       control.end();
-      await new Promise(resolve => holder.once('exit', resolve));
       assert.equal(existsSync(sock), true, 'cleanup must retain the replacement');
       return;
     }
@@ -136,7 +136,7 @@ for await (const line of readline.createInterface({input:process.stdin})) {
   } finally {
     if (pidAlive(holder.pid)) holder.kill('SIGKILL');
     if (pidAlive(original?.appPid)) { try { process.kill(original.appPid, 'SIGKILL'); } catch {} }
-    await new Promise(resolve => { if (holder.exitCode !== null || holder.signalCode !== null) resolve(); else holder.once('exit', resolve); });
+    await closed;
     dropSession(ref, env);
     if (other) await new Promise(resolve => other.close(resolve));
     if (change === 'stale') rmSync(sock, { force: true });

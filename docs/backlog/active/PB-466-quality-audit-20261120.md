@@ -27,7 +27,7 @@ Triage the child cards. The release owner decides what evidence can qualify a Cl
 | [PB-466.7 - Distinguish reviewer checkpoints from file attachments in participant instructions](PB-466.7-reviewer-checkpoint-and-attachment.md) | PQA-4000, PQA-2006 | triage |
 | [PB-466.8 - Document the providers eligible to run a reporter](../../archive/LOG.md#pb-466.8) | PQA-4001 | triage |
 | [PB-466.9 - Document the role of the tool version in managed Claude admission](../../archive/LOG.md#pb-466.9) | PQA-4009 | triage |
-| [PB-466.10 - Make Stop fixtures observe deadlines and process exit deterministically](PB-466.10-stop-fixture-event-order.md) | PQA-3000, PQA-3004 | triage |
+| [PB-466.10 - Make Stop fixtures observe deadlines and process exit deterministically](../../archive/LOG.md#pb-466.10) | PQA-3000, PQA-3004 | triage |
 | [PB-466.11 - Verify the idle report using controlled elapsed time](PB-466.11-idle-report-duration-fixture.md) | PQA-3005 | triage |
 | [PB-466.12 - Distinguish CPU consumption from elapsed time in the load probe test](PB-466.12-cpu-probe-clock-check.md) | PQA-3002 | triage |
 | [PB-466.13 - Exercise the shared interrupt deadline when Codex exchanges hang](PB-466.13-holder-interrupt-budget-check.md) | PQA-3006 | minor |
