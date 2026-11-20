@@ -707,3 +707,7 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-320"></a>`PB-320-preflight-cache-lost-entry` · 2026-11-20 · completed · — · Four concurrent preflights lose an entry while none reports writing without the lock
 - <a id="pb-285.2"></a>`PB-285.2-lease-test-publisher-result-race` · 2026-11-20 · completed · — · promptobus-lease.test.mjs aborts when the refused publisher's result file is not written yet
 - <a id="pb-329"></a>`PB-329-lone-test-runs-stale-dist` · 2026-11-20 · completed · — · A lone test file after a squash runs against the dist/ the last build left
+- <a id="pb-434"></a>`PB-434-probe-contract-docs` · 2026-11-20 · completed · — · Clarify mutation probe restoration and wrapper exit statuses
+- <a id="pb-328"></a>`PB-328-handover-one-probe-slot` · 2026-11-20 · batch PB-434 · — · The handover record holds one mutation probe
+- <a id="pb-419.1"></a>`PB-419.1-correct-mutation-probe-restoration-explanation` · 2026-11-20 · batch PB-434 · — · Correct mutation probe restoration explanation
+- <a id="pb-419.11"></a>`PB-419.11-document-mutation-probe-refusal-exit-status` · 2026-11-20 · batch PB-434 · — · Document mutation probe refusal exit status
