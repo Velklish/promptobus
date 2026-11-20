@@ -687,3 +687,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-464"></a>`PB-464-codex-0170-consumed-contract` · 2026-11-19 · completed · — · Update the consumed Codex contract to 0.170.0
 - <a id="pb-244.1"></a>`PB-244.1-codex-thread-config-outside-schema-gate` · 2026-11-20 · completed · — · The Codex thread-start config override and the participant config.toml are outside the version gate
 - <a id="pb-402"></a>`PB-402-orchestrator-review-dispatch` · 2026-11-20 · completed · — · Plan progress and review dispatch while the orchestrator is busy
+- <a id="pb-409"></a>`PB-409-orchestrate-limit-window-pause-relift` · 2026-11-20 · completed · — · The orchestrate skill has no planned whole-run pause on a harness limit window and no relift of dead teamleads with a continuation brief
