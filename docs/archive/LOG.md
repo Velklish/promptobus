@@ -716,3 +716,7 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-419.9"></a>`PB-419.9-use-supported-consumer-routing-validation-entry-points` · 2026-11-20 · batch PB-435 · — · Use supported consumer routing validation entry points
 - <a id="pb-419.10"></a>`PB-419.10-correct-expired-preflight-retention-description` · 2026-11-20 · batch PB-435 · — · Correct expired preflight retention description
 - <a id="pb-419.16"></a>`PB-419.16-correct-telemetry-reader-description` · 2026-11-20 · batch PB-435 · — · Correct telemetry reader description
+- <a id="pb-437"></a>`PB-437-capture-contract-hygiene` · 2026-11-20 · completed · — · Remove a dead capture check and correct historical Codex pointers
+- <a id="pb-315.1"></a>`PB-315.1-codex-historical-bus-cost` · 2026-11-20 · batch PB-437 · — · Qualify historical Codex bus-call cost in launch output
+- <a id="pb-419.2"></a>`PB-419.2-remove-unreachable-capture-extension-check` · 2026-11-20 · batch PB-437 · — · Remove unreachable capture extension check
+- <a id="pb-419.17"></a>`PB-419.17-correct-historical-codex-capture-readme-pointers` · 2026-11-20 · batch PB-437 · — · Correct historical Codex capture README pointers
