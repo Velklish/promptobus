@@ -504,6 +504,8 @@ check('docs: live-cap admission applies across strategies and explicit model cho
 check('docs: Stop decision and driver contract distinguish pending self-Stop from confirmation',
   has(read('docs/adr/adr-012-stopping-one-participant-is-a-verb-of-its-own.md'), 'A managed orchestrator is eligible')
   && has(read('docs/adr/adr-012-stopping-one-participant-is-a-verb-of-its-own.md'), 'own Stop receives a pending acknowledgement')
+  && has(read('README.md'), 'Self-Stop can be pending. Unconfirmed Stop retains the record. Confirmed Stop retires the disposable session record.')
+  && has(cli, 'Unconfirmed synchronous Stop returns exit 1 and retains the record. Confirmed Stop retires the disposable session record')
   && has(read('docs/reference/05-drivers.md'), '`Driver.stopSelf(ref)` is optional:'));
 check('docs: every description of the lift order runs the generator after the dependency install',
   has(spawn, 'It runs **after the dependency install**, so a generator may run a tool the repository pins in its own lock')

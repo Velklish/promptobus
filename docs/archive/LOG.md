@@ -788,3 +788,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-466.15"></a>`PB-466.15-bb-version-requirements` · 2026-11-20 · completed · — · Align BB installation guidance and notification qualification prerequisites
 - <a id="pb-466.16"></a>`PB-466.16-codex-qualification-prerequisites` · 2026-11-20 · completed · — · Update the capture prerequisite in the Codex workspace qualification card
 - <a id="pb-466.17"></a>`PB-466.17-dispatch-roadmap-approval` · 2026-11-20 · completed · — · Record the approved scope of review dispatch planning in the roadmap
+- <a id="pb-466.18"></a>`PB-466.18-stop-summary-confirmation` · 2026-11-20 · completed · — · Distinguish pending, refused and confirmed Stop in operator summaries

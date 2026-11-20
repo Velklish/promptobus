@@ -43,17 +43,12 @@ the record, because the record's owner is the driver.
 
 **A.** `promptobus stop <address>` closes one participant's session and leaves the task open.
 
-- **The owner gate is the one `done` and `dismiss` use.** The session belongs to the task mailbox
-  owner's run, and a foreign hand would take a worker off work somebody else is watching.
+- **Authority follows the operation.** The task mailbox owner alone can call `done`. The owner or an approver bound to its own recorded session on that task can call `stop` and `dismiss`.
 - **It refuses an unknown or attached participant.** The refusal names known addresses or explains
   that the person's own session was not started by the mechanism. A managed orchestrator is eligible
   under the same owner gate. Each refusal is checked by its exit and by the driver not being called.
-- **A participant with no live session is not an error.** There is nothing to stop and the task
-  is still open, so the command says that and exits 0.
-- **The record is retired because the driver retires it.** The command calls `stopParticipant`,
-  which dispatches to the driver's own `stop` — `dropSession` for Codex and Cursor, the registry
-  entry leaving for Claude. The command adds no record-keeping of its own, and that is deliberate:
-  a second place that retires records would drift from the first.
+- **An absent session is ordinarily a no-op.** Codex still requires terminal command accounting. Unknown accounting retains the launch record even if its process has exited.
+- **Confirmed Stop retires the disposable session record through the driver.** Retained lifecycle receipts remain available for verification.
 - **An unconfirmed stop is not a confirmed closure.** A synchronous Stop that cannot confirm the
   session is gone exits non-zero and retains the record. A managed Codex orchestrator requesting its
   own Stop receives a pending acknowledgement; confirmation follows actual command completion and
