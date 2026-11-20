@@ -4,7 +4,7 @@ import Ajv from 'ajv';
 import { approvalReply } from '../lib/codex-session.js';
 import { holderParams, protocolThread, protocolThreadResponse, protocolTurn } from '../test/codex-contract-witnesses.mjs';
 
-const formats = Object.fromEntries(['int64', 'uint64', 'uint32', 'uint', 'double', 'int32', 'uint16'].map(n => [n, true]));
+const formats = Object.fromEntries(['int64', 'uint64', 'uint32', 'uint', 'double', 'int32', 'uint16', 'uint8'].map(n => [n, true]));
 const fail = (where, reason) => { throw new Error(`${where}: ${reason}; regenerate the capture or review the consumed protocol`); };
 const datedEvidence = name => /-\d+\.\d+\.\d+-\d{4}-\d{2}-\d{2}\.json$/.test(name);
 const requests = {

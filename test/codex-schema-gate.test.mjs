@@ -34,6 +34,7 @@ test('schema gate accepts a newer label with the matching consumed contract', ()
   });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /installed consumed protocol matches committed contract/);
+  assert.doesNotMatch(result.stderr, /unknown format "uint8"/);
 });
 
 const schemas = readConsumedContract(capture, PROVEN_CODEX_VERSION);
