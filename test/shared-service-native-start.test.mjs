@@ -1,5 +1,6 @@
 import { check, skip } from './check.mjs';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -19,7 +20,7 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   skip('managed native start binding', 'This platform has no implemented process-birth observer');
 } else {
   const root = realpathSync(makeSandbox('promptobus-native-start-'));
-  const serviceHome = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-native-start-'));
+  const serviceHome = makeServiceTestDirectory('pb-native-start-');
   const home = path.join(root, '.promptobus'), binPath = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url));
   const ownerNativeStore = path.join(root, 'owner-native-config'); mkdirSync(ownerNativeStore);
   const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;

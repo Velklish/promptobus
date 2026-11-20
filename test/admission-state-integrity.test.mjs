@@ -1,6 +1,7 @@
 import { check } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -14,7 +15,7 @@ import { createOwnerEnvironment } from '../lib/service-launch.js';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 
 const root = realpathSync(makeSandbox('promptobus-admission-integrity-'));
-const base = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-integrity-'));
+const base = makeServiceTestDirectory('pb-integrity-');
 writeHostConfig(root, { tools: [] });
 const binPath = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url)), version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version;
 const host = createStandaloneHost({ cwd: root, binPath, version }), env = { ...process.env, PROMPTOBUS_SERVICE_HOME: base, PROMPTOBUS_WARDEN: 'off' };

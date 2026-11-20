@@ -1,10 +1,11 @@
 import { check, skip } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { createHash } from 'node:crypto';
 import childProcess from 'node:child_process';
 import fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { request } from 'node:http';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -23,7 +24,7 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   skip('Codex HTTP native binding', 'This platform has no implemented process-birth observer');
 } else {
   const root = realpathSync(makeSandbox('promptobus-shared-service-native-'));
-  const privateHome = mkdtempSync(path.join(realpathSync('/tmp'), 'pbsvc-'));
+  const privateHome = makeServiceTestDirectory('pbsvc-');
   const home = path.join(root, '.promptobus'), readRoot = path.join(root, 'review');
   const task = 'native-binding-t20261030-000000', nativeId = 'native-thread-one';
   const binPath = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url));

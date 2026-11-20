@@ -1,6 +1,6 @@
 // Package packing gates for the public promptobus repo. Does not recurse into npm test.
 import {
-  chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync,
+  chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { check, skip } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { run } from '../lib/exec.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -982,7 +983,7 @@ const undocumented = INTEGRATION_NAMES.filter((name) => !new RegExp(`^\\| \`${na
 check('02-host names every host integration export in its table',
   integrationTable !== '' && undocumented.length === 0, undocumented.join(', ') || 'section not found');
 const fixtureSandbox = path.join(SB, 'host-integration');
-const fixtureHome = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-host-consumer-'));
+const fixtureHome = makeServiceTestDirectory('pb-host-consumer-');
 process.on('exit', () => rmSync(fixtureHome, { recursive: true, force: true }));
 const fixtureInput = path.join(SB, 'host-integration.json');
 writeFileSync(fixtureInput, JSON.stringify({

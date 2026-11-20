@@ -1,9 +1,10 @@
 // Schedule a real wake inside actual bundled-runtime native open-file proof.
 import { spawn } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { makeSandbox } from './sandbox.mjs';
 import { installHarness, planParticipant, readTrace, CURSOR_HOME_VAR } from './harness-cursor.mjs';
 import { waitFor } from './harness.mjs';
@@ -76,7 +77,7 @@ async function fixtureOpenFileProof(identity, nativeFile, recordFile, env, crede
     homes: { [CURSOR_HOME_VAR]: harness.home, PROMPTOBUS_CURSOR_HOME: harness.stateHome,
       PROMPTOBUS_CURSOR_USER_HOME: harness.userHome }, env: process.env });
   if (!isolated.ok) throw new Error(`Cursor admission isolation refused: ${isolated.reason}`);
-  const serviceHome = mkdtempSync(path.join(realpathSync('/tmp'), 'pbcur-fixture-'));
+  const serviceHome = makeServiceTestDirectory('pbcur-fixture-');
   const child = spawn(process.execPath, [entry], { stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, PROMPTOBUS_SERVICE_HOME: serviceHome, [STUB_BIN]: bins } });
   let output = '', exit = null;

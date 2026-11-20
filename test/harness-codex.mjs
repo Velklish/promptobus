@@ -1,3 +1,4 @@
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 // Stub Codex harness: a `codex` binary that speaks JSON-RPC `app-server` over stdio.
 // Not a `*.test.mjs` — the runner takes only those from the directory.
 //
@@ -8,7 +9,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
-  appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync,
+  appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -253,7 +254,7 @@ else process.exitCode = 1;`);
   armCleanup(home);
   const previousServiceHome = env.PROMPTOBUS_SERVICE_HOME;
   if (!previousServiceHome) {
-    const serviceHome = realpathSync(mkdtempSync(path.join(realpathSync('/tmp'), 'pb-codex-service-')));
+    const serviceHome = makeServiceTestDirectory('pb-codex-service-');
     serviceHomes.add(serviceHome);
     env.PROMPTOBUS_SERVICE_HOME = serviceHome;
   }

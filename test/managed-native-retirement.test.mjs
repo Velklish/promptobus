@@ -1,10 +1,11 @@
 import { check } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import assert from 'node:assert/strict';
 import { persistReviewerSession } from '../lib/native-lifecycle.js';
 import cp from 'node:child_process';
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createStandaloneHost } from '../dist/host-index.js';
 import { opencodeDriver } from '../lib/driver-opencode.js';
@@ -26,7 +27,7 @@ const host = createStandaloneHost({ cwd: root }), home = host.promptobusHome(), 
 createTask(home, { id: task, title: 'Owned native retirement races' });
 const priorOpenCode = process.env.PROMPTOBUS_OPENCODE_HOME;
 process.env.PROMPTOBUS_OPENCODE_HOME = path.join(root, 'opencode-registry');
-const serviceHome = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-retirement-'));
+const serviceHome = makeServiceTestDirectory('pb-retirement-');
 const serviceEnv = { ...process.env, PROMPTOBUS_HOME: home, PROMPTOBUS_SERVICE_HOME: serviceHome,
   PROMPTOBUS_WARDEN: 'off', PROMPTOBUS_SERVICE_IDLE_MS: '60000' };
 for (const key of Object.keys(serviceEnv)) if (/^PROMPTOBUS_(CLIENT_|ROOT_|OWNER_ENV_FILE$|ROLE$|TASK$|.*_SESSION$)/.test(key)) delete serviceEnv[key];

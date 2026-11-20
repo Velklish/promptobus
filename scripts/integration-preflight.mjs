@@ -3,6 +3,7 @@ import { accessSync, constants, mkdtempSync, realpathSync, rmSync } from 'node:f
 import { createConnection, createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { testSocketParent } from '../test/service-test-directory.mjs';
 import { REACHABLE_BINARIES } from '../test/hygiene.mjs';
 
 async function socketRoundTrip(file) {
@@ -80,8 +81,9 @@ async function preflight() {
     });
     await check(`create suite temporary directory in ${os.tmpdir()}`, () =>
       inOwnedDirectory(os.tmpdir(), 'promptobus-test-run-', async () => 'writable'));
-    await check('round trip over an owned Unix socket under /tmp', () =>
-      inOwnedDirectory(realpathSync('/tmp'), 'pb-preflight-', (dir) => socketRoundTrip(path.join(dir, 'probe.sock')))
+    const socketRoot = testSocketParent('pb-preflight-');
+    await check(`round trip over an owned Unix socket under ${socketRoot}`, () =>
+      inOwnedDirectory(socketRoot, 'pb-preflight-', (dir) => socketRoundTrip(path.join(dir, 'probe.sock')))
         .then(() => 'echo received'));
     const command = (argv) => {
       const child = run(argv[0], argv.slice(1), { encoding: 'utf8', timeout: 10_000 });

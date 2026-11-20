@@ -1,9 +1,10 @@
 import { check } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { randomUUID } from 'node:crypto';
 import childProcess from 'node:child_process';
 import fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
-import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { readFileSync, realpathSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -14,7 +15,7 @@ import { acquireServiceLock, prepareServicePaths, privateDirectory, processState
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 
 const root = realpathSync(makeSandbox('promptobus-native-resume-'));
-const base = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-resume-'));
+const base = makeServiceTestDirectory('pb-resume-');
 writeHostConfig(root, { tools: [] });
 const binPath = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url));
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version;

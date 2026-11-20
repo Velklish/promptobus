@@ -2,7 +2,8 @@ import http from 'node:http';
 import { syncBuiltinESMExports } from 'node:module';
 import { createHash, randomUUID } from 'node:crypto';
 import { check, skip } from './check.mjs';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import childProcess from 'node:child_process';
 import path from 'node:path';
@@ -21,7 +22,7 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   skip('BB native root profile', 'This platform has no implemented process-birth observer');
 } else {
   const root = realpathSync(makeSandbox('promptobus-root-profile-'));
-  const serviceHome = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-root-profile-'));
+  const serviceHome = makeServiceTestDirectory('pb-root-profile-');
   const home = path.join(root, '.promptobus'), nativeStore = path.join(root, 'native-store'), nativeOther = path.join(root, 'native-other');
   for (const directory of [nativeStore, nativeOther]) mkdirSync(directory, { recursive: true });
   const bb = path.join(root, 'bb');

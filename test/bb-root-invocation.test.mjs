@@ -1,4 +1,5 @@
 import './home.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import childProcess from 'node:child_process';
@@ -206,7 +207,7 @@ async function ownerFixture(action) {
   const { serviceControl } = await import('../lib/service-client.js');
   const { readDiscovery, runtimeIdentity, servicePaths } = await import('../lib/service-state.js');
   const area = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pb-bb-root-owner-')));
-  const serviceHome = fs.mkdtempSync(path.join(fs.realpathSync('/tmp'), 'pb-br-'));
+  const serviceHome = makeServiceTestDirectory('pb-br-');
   const home = path.join(area, '.promptobus'), nativeStore = path.join(area, 'native');
   fs.mkdirSync(nativeStore);
   fs.writeFileSync(path.join(area, 'promptobus.json'), '{"tools":[]}\n');

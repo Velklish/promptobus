@@ -1,3 +1,4 @@
+import { makeServiceTestDirectory, testSocketParent } from './service-test-directory.mjs';
 // Shared sandbox helpers for tests. Not `*.test.mjs` — the runner
 // (run.mjs) takes only those from the directory, so this file is not
 // in the run.
@@ -300,15 +301,9 @@ export function findAstGrep({ env = process.env, home = os.homedir() } = {}) {
 // twice, in `promptobus-warden.test.mjs` and a second suite file, and
 // the helper lived as a copy in both.
 //
-// Measured on this machine 2026-08-29: `/tmp/adoc-XXXXXX/live.sock`
-// is 26 characters, the same socket under the run directory is 97,
-// and with the former thirteen-character directory name — 105, i.e. over
-// the limit. A short directory name gives an eight-character margin
-// and is held by the length of a foreign `TMPDIR`; a short root gives
-// seventy-eight and does not depend on the machine. The helper
-// bypasses the run `TMPDIR` on purpose, so the directory is removed
-// not by the runner but by the same exit hooks as a sandbox.
-export const TEST_SOCKET_ROOT = process.platform === 'win32' ? null : realpathSync('/tmp');
+// The warden failure fixture includes its scenario name and claim order in the socket filename.
+export const TEST_SOCKET_ROOT = process.platform === 'win32' ? null
+  : testSocketParent('a2s-', 'warden-failure-demand-persistence-AB.sock');
 const SOCKET_PERMISSION_CODES = new Set(['EACCES', 'EPERM']);
 
 export function makeSockPath(prefix) {
@@ -349,7 +344,7 @@ export function listenTestSocket(server, socketPath) {
 
 export function ownedServiceFixture(env = process.env) {
   const previous = env.PROMPTOBUS_SERVICE_HOME;
-  const directory = realpathSync(mkdtempSync(path.join(realpathSync('/tmp'), 'pb-owned-service-')));
+  const directory = makeServiceTestDirectory('pb-owned-service-');
   env.PROMPTOBUS_SERVICE_HOME = directory;
   const script = fileURLToPath(new URL('./owned-service-cleanup.mjs', import.meta.url));
   process.prependOnceListener('exit', () => {

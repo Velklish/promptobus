@@ -1,9 +1,10 @@
 // Actual filesystem refusals and owner recovery, with a package Worker and owned native stubs.
 import { createServer } from 'node:net';
-import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync, writeSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { check, skip } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { initialTaskClaimStarted } from './task-service-fixture.mjs';
 import { listenTestSocket, makeSandbox, makeSockPath, writeHostConfig } from './sandbox.mjs';
 
@@ -25,7 +26,7 @@ async function runCase(failure, order = 'AB') {
     load('dist/host-index.js'), load('lib/store.js'), load('lib/service-client.js'), load('lib/service-state.js'), load('dist/sidecar.js'),
   ]);
   const WS = path.join(ROOT, 'workspace'); mkdirSync(WS); writeHostConfig(WS, { tools: ['claude'] });
-  const PRIVATE = mkdtempSync(path.join(realpathSync('/tmp'), 'pbsvc-'));
+  const PRIVATE = makeServiceTestDirectory('pbsvc-');
   const ENTRY = path.join(ROOT, 'consumer.mjs'), FAKE = path.join(ROOT, 'claude.mjs');
   const GATE = path.join(ROOT, 'event-gate'), HELD = path.join(ROOT, 'event-held.json'), RELEASE = path.join(ROOT, 'event-release');
   const FAULT = path.join(ROOT, 'owner-control-fault.json'), TRACE = path.join(ROOT, 'owner-control.commands.jsonl');

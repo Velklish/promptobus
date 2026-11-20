@@ -1,7 +1,8 @@
 import { check } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 const selectedRuntime = process.argv[2] ? pathToFileURL(path.resolve(process.argv[2]) + '/') : new URL('../', import.meta.url);
@@ -18,7 +19,7 @@ const runnerExecutable = statSync(process.execPath);
 process.stdout.write(`  · fixture runner executable: ${JSON.stringify({ isFile: runnerExecutable.isFile(), mode: (runnerExecutable.mode & 0o777).toString(8) })}\n`);
 const nativeExecutable = path.join(root, 'native-node');
 copyNodeExecutable(nativeExecutable);
-const base = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-root-'));
+const base = makeServiceTestDirectory('pb-root-');
 const bin = fileURLToPath(new URL('bin/promptobus.js', selectedRuntime));
 const wrapper = fileURLToPath(new URL('bin/promptobus-root', selectedRuntime));
 const version = JSON.parse(readFileSync(new URL('package.json', selectedRuntime))).version;
@@ -671,7 +672,7 @@ writeFileSync(${JSON.stringify(execOutput)},JSON.stringify(result));
   const malformedRoot = path.join(root, 'malformed-owner');
   mkdirSync(malformedRoot);
   writeHostConfig(malformedRoot, { tools: [] });
-  const malformedBase = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-root-'));
+  const malformedBase = makeServiceTestDirectory('pb-root-');
   const malformedEnv = { ...env, HOME: malformedRoot, USERPROFILE: malformedRoot,
     PROMPTOBUS_HOME: path.join(malformedRoot, '.promptobus'), PROMPTOBUS_SERVICE_HOME: malformedBase };
   const malformedHost = createStandaloneHost({ cwd: malformedRoot, binPath: bin, version });

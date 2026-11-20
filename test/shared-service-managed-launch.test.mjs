@@ -1,7 +1,8 @@
 import { check, skip } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { request } from 'node:http';
 import { Readable } from 'node:stream';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -19,7 +20,7 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   skip('managed shared HTTP launch', 'This platform has no implemented process-birth observer');
 } else {
   const root = realpathSync(makeSandbox('promptobus-shared-service-managed-'));
-  const privateHome = mkdtempSync(path.join(realpathSync('/tmp'), 'pbsvc-'));
+  const privateHome = makeServiceTestDirectory('pbsvc-');
   const home = path.join(root, '.promptobus'), binPath = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url));
   const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
   const nativeStore = path.join(root, 'native-account'); mkdirSync(nativeStore, { mode: 0o700 });

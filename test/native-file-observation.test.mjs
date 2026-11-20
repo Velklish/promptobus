@@ -1,5 +1,6 @@
 import { check, skip } from './check.mjs';
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
@@ -46,7 +47,7 @@ for (const [name, result, expected, initialInode = 2n, finalInode = initialInode
 if (!['darwin', 'linux'].includes(process.platform)) {
   skip('native database file descriptor proof', 'No implemented observer on this platform');
 } else {
-  const directory = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-native-file-'));
+  const directory = makeServiceTestDirectory('pb-native-file-');
   const file = path.join(directory, 'store.db'), identity = requireProcess();
   writeFileSync(file, 'SQLite format 3\0', { mode: 0o600 });
   let fd;

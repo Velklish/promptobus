@@ -1,7 +1,8 @@
 import { check } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -17,7 +18,7 @@ import { copyNodeExecutable, makeSandbox, loadScale, writeHostConfig } from './s
 const root = realpathSync(makeSandbox('promptobus-service-stores-'));
 const nativeExecutable = path.join(root, 'native-node');
 copyNodeExecutable(nativeExecutable);
-const base = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-service-stores-'));
+const base = makeServiceTestDirectory('pb-service-stores-');
 const bin = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url)), wrapper = fileURLToPath(new URL('../bin/promptobus-root', import.meta.url));
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version;
 const env = { ...process.env,

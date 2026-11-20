@@ -1,6 +1,7 @@
 import { check } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -14,7 +15,7 @@ import { bus, createTask, participantOf, participantRecord, readTask, upsertPart
 import { makeSandbox, stubCommand, writeHostConfig } from './sandbox.mjs';
 
 const root = realpathSync(makeSandbox('promptobus-claude-genesis-'));
-const base = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-claude-genesis-'));
+const base = makeServiceTestDirectory('pb-claude-genesis-');
 writeHostConfig(root, { tools: [] });
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version;
 const host = createStandaloneHost({ cwd: root, binPath: fileURLToPath(new URL('../bin/promptobus.js', import.meta.url)), version });

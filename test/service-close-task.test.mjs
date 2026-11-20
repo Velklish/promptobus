@@ -1,8 +1,9 @@
 import { check } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { spawn } from 'node:child_process';
 import { request } from 'node:http';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -18,7 +19,7 @@ import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { waitFor } from './harness.mjs';
 
 const root = realpathSync(makeSandbox('promptobus-service-operation-close-task-'));
-const privateHome = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-close-'));
+const privateHome = makeServiceTestDirectory('pb-close-');
 const home = path.join(root, '.promptobus'), nativeHome = path.join(root, 'native');
 const bin = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url));
 const env = { ...process.env, PROMPTOBUS_SERVICE_HOME: privateHome, PROMPTOBUS_HOME: home,

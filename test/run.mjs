@@ -126,9 +126,10 @@ if (heldBoxes.length) console.log(`▸ sweep preserved live runs: ${heldBoxes.jo
 // probed before removal; an unknown probe result is held, never deleted.
 const refusedSockets = [];
 const heldSockets = [];
-const sweptSockets = process.platform === 'win32' ? [] : sweepTestSockets('/tmp', {
+const socketParents = process.platform === 'win32' ? [] : new Set([realpathSync('/tmp'), realpathSync(os.tmpdir())]);
+const sweptSockets = [...socketParents].flatMap(parent => sweepTestSockets(parent, {
   refused: refusedSockets, held: heldSockets,
-});
+}));
 if (sweptSockets.length) {
   console.log(`▸ ${sweptLine('previous-run socket directories', sweptSockets, { keep: 0 })}`);
 }
@@ -178,6 +179,7 @@ function testEnv(tmp) {
   const home = mkdtempSync(path.join(tmp, HOME_PREFIX));
   return applyHygiene({
     ...process.env,
+    PROMPTOBUS_TEST_SOCKET_PARENT: os.tmpdir(),
     TMPDIR: tmp,
     TMP: tmp,
     TEMP: tmp,

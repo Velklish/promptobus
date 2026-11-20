@@ -1,10 +1,11 @@
 import { check } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { writeRootExecPlan } from '../lib/launch-exec.js';
 
-const root = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-exec-'));
+const root = makeServiceTestDirectory('pb-exec-');
 const directory = path.join(root, "plans with ' spaces"); mkdirSync(directory, { mode: 0o700 });
 const native = path.join(root, 'native.mjs'), preload = path.join(root, 'unlink.cjs'), result = path.join(root, 'native.json');
 const consumed = path.join(root, 'consumed.json'), launcher = path.join(root, 'launcher.sh');

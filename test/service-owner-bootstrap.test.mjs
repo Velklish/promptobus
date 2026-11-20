@@ -1,7 +1,8 @@
 import { check } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -10,7 +11,7 @@ import { ensureWorkspaceService, stopWorkspaceService } from '../lib/service-cli
 import { processState, readDiscovery, servicePaths } from '../lib/service-state.js';
 
 const ROOT = realpathSync(makeSandbox('promptobus-shared-service-'));
-const PRIVATE = mkdtempSync(path.join(realpathSync('/tmp'), 'pbsvc-'));
+const PRIVATE = makeServiceTestDirectory('pbsvc-');
 const PACKAGE = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const ENTRY = path.join(ROOT, 'consumer.mjs'), TRACE = path.join(ROOT, 'bootstrap.jsonl'), MANAGED_CWD = path.join(ROOT, 'managed-worktree');
 const VERSION = JSON.parse(readFileSync(path.join(PACKAGE, 'package.json'), 'utf8')).version;

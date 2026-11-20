@@ -108,7 +108,8 @@ if (gatesPresent) {
 } else {
   check(': release-gates.mjs is not in this repository — suite sweep is owned by run.mjs',
     /sweepTestSandboxes\(os\.tmpdir\(\),[\s\S]*?current:\s*RUN_TMP/.test(readFileSync(path.join(here, 'run.mjs'), 'utf8'))
-    && /sweepTestSockets\(\s*['"]\/tmp['"]/.test(readFileSync(path.join(here, 'run.mjs'), 'utf8')));
+    && /new Set\(\[realpathSync\('\/tmp'\), realpathSync\(os\.tmpdir\(\)\)\]\)/.test(readFileSync(path.join(here, 'run.mjs'), 'utf8'))
+    && /flatMap\(parent => sweepTestSockets\(parent,/.test(readFileSync(path.join(here, 'run.mjs'), 'utf8')));
 }
 
 // The summary line is one for every caller, and its empty case must
@@ -309,7 +310,7 @@ if (process.platform !== 'win32') {
 const runSrc = readFileSync(path.join(here, 'run.mjs'), 'utf8').replace(/^\s*\/\/.*$/gm, '');
 check(': the runner sweeps sandboxes and sockets at start, with an owner check',
   /sweepTestSandboxes\(os\.tmpdir\(\),[\s\S]*?current:\s*RUN_TMP[\s\S]*?isLive:\s*runOwnerIsLive/.test(runSrc)
-  && /sweepTestSockets\(\s*['"]\/tmp['"]/.test(runSrc),
+  && /flatMap\(parent => sweepTestSockets\(parent,/.test(runSrc),
   `import: ${/from '.\/tmpdir-sweep.mjs'/.test(runSrc)} · sandboxes: ${/sweepTestSandboxes\(/.test(runSrc)} · sockets: ${/sweepTestSockets\(/.test(runSrc)}`);
 
 // Live scripts refuse an import. Read their source, and keep their cleanup
@@ -569,7 +570,7 @@ if (gatesPresent) {
     `import: ${/sock-prefixes/.test(gatesSrc)} · younger: ${/younger\('\/tmp'/.test(gatesSrc)}`);
 } else {
   check(': the runner sweeps sockets with the shared prefix list and liveness probe',
-    /sweepTestSockets\(\s*['"]\/tmp['"]/.test(runSrc)
+    /flatMap\(parent => sweepTestSockets\(parent,/.test(runSrc)
     && /SOCK_PREFIXES/.test(readFileSync(path.join(here, 'sock-prefixes.mjs'), 'utf8'))
     && /socketDirIsLive/.test(readFileSync(path.join(here, 'tmpdir-sweep.mjs'), 'utf8')),
     'the runner socket sweep or its liveness seam is missing');

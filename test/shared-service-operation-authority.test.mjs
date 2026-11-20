@@ -1,7 +1,8 @@
 import { check, skip } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
@@ -17,7 +18,7 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   skip('managed HTTP operation authority', 'This platform has no process-birth observer');
 } else {
   const root = realpathSync(makeSandbox('promptobus-service-operation-'));
-  const privateHome = mkdtempSync(path.join(realpathSync('/tmp'), 'pbsvc-'));
+  const privateHome = makeServiceTestDirectory('pbsvc-');
   const home = path.join(root, '.promptobus'), binPath = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url));
   const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
   const fake = path.join(root, 'claude.mjs'), entered = path.join(root, 'inspect-entered'), release = path.join(root, 'inspect-release');

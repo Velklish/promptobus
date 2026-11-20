@@ -1,7 +1,8 @@
 import { check } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { readFileSync, realpathSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -12,7 +13,7 @@ import { bus, createTask, participantRecord, upsertParticipant } from '../lib/st
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 
 const root = realpathSync(makeSandbox('promptobus-managed-transition-'));
-const base = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-transition-'));
+const base = makeServiceTestDirectory('pb-transition-');
 writeHostConfig(root, { tools: [] });
 const binPath = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url));
 const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version;

@@ -1,7 +1,8 @@
-import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { readFileSync, realpathSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check, skip } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { openHttpBus } from './harness-cursor.mjs';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -15,7 +16,7 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   skip('Cursor fixture HTTP authentication', 'Process birth observation is not implemented on this platform');
 } else {
   const root = realpathSync(makeSandbox('promptobus-cursor-http-'));
-  const privateHome = realpathSync(mkdtempSync(path.join(realpathSync('/tmp'), 'pb-cur-http-')));
+  const privateHome = makeServiceTestDirectory('pb-cur-http-');
   writeHostConfig(root, { tools: [] });
   const binPath = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url));
   const version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;

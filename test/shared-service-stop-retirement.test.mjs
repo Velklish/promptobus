@@ -1,7 +1,8 @@
 import './home.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -14,7 +15,7 @@ import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 
 test('confirmed managed Stop retires only its own service client', async () => {
   const root = realpathSync(makeSandbox('promptobus-service-operation-retirement-'));
-  const privateHome = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-retirement-'));
+  const privateHome = makeServiceTestDirectory('pb-retirement-');
   const home = path.join(root, '.promptobus'), nativeHome = path.join(root, 'native');
   const env = { ...process.env, PROMPTOBUS_SERVICE_HOME: privateHome, PROMPTOBUS_HOME: home,
     PROMPTOBUS_CODEX_HOME: nativeHome, PROMPTOBUS_WARDEN: 'off', PROMPTOBUS_SERVICE_IDLE_MS: '60000' };

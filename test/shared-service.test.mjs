@@ -1,10 +1,11 @@
 import { check, skip } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { spawn } from 'node:child_process';
 import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 import { createHash } from 'node:crypto';
 import { createServer, request } from 'node:http';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync, writeSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -23,7 +24,7 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   skip('shared service process lifetime and private control socket', 'This platform has no implemented process-birth observer');
 } else {
   const ROOT = realpathSync(makeSandbox('promptobus-shared-service-'));
-  const PRIVATE = mkdtempSync(path.join(realpathSync('/tmp'), 'pbsvc-'));
+  const PRIVATE = makeServiceTestDirectory('pbsvc-');
   const HOME = path.join(ROOT, '.promptobus');
   const HERE = path.dirname(fileURLToPath(import.meta.url));
   const PACKAGE = path.join(HERE, '..');

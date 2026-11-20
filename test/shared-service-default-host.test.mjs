@@ -1,6 +1,7 @@
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { realpathSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { check, skip } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 import { createStandaloneHost } from '../dist/host-index.js';
 import { ensureWorkspaceService, stopWorkspaceService, workspaceServiceStatus } from '../lib/service-client.js';
@@ -10,7 +11,7 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   skip('default standalone cold HTTP owner', 'Process birth observation is not implemented on this platform');
 } else {
   const root = realpathSync(makeSandbox('promptobus-default-owner-'));
-  const privateHome = realpathSync(mkdtempSync(path.join(realpathSync('/tmp'), 'pb-default-')));
+  const privateHome = makeServiceTestDirectory('pb-default-');
   writeHostConfig(root, { tools: [] });
   const host = createStandaloneHost({ cwd: root });
   const options = { env: { ...process.env, PROMPTOBUS_SERVICE_HOME: privateHome, PROMPTOBUS_WARDEN: 'off' } };

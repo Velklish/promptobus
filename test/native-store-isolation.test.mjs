@@ -1,6 +1,7 @@
 import { check } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -10,7 +11,7 @@ import { bus, createTask, participantRecord, upsertParticipant } from '../lib/st
 import { makeSandbox, writeHostConfig } from './sandbox.mjs';
 
 const root = realpathSync(makeSandbox('promptobus-store-isolation-'));
-const base = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-stores-'));
+const base = makeServiceTestDirectory('pb-stores-');
 writeHostConfig(root, { tools: [] });
 const binPath = fileURLToPath(new URL('../bin/promptobus.js', import.meta.url)), version = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version;
 const storeA = path.join(root, 'native-a'), storeB = path.join(root, 'native-b'); mkdirSync(storeA); mkdirSync(storeB);

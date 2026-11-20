@@ -162,7 +162,8 @@ fs.rmSync = (file, options) => {
   return rmSync(file, options);
 };` });
   const probe = readFileSync(path.join(directory, 'unremoved-probe'), 'utf8');
-  assert.match(probe, /^\/(?:private\/)?tmp\/pb-preflight-[A-Za-z0-9]+$/);
+  assert.match(path.basename(probe), /^pb-preflight-[A-Za-z0-9]+$/);
+  assert.equal(report.failure.operation, `round trip over an owned Unix socket under ${path.dirname(probe)}`);
   rmSync(probe, { recursive: true });
   assert.equal(child.status, 1, child.stderr);
   assert.equal(report.failure.code, 'EPERM');

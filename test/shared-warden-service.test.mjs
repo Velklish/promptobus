@@ -1,7 +1,8 @@
 import { check, skip } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
-import { existsSync, linkSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, linkSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
@@ -20,7 +21,7 @@ if (!['darwin', 'linux'].includes(process.platform)) {
   skip('shared task service process lifetime', 'The shared service has no process-birth observer on this platform');
 } else {
   const ROOT = realpathSync(makeSandbox('promptobus-shared-warden-'));
-  const PRIVATE = mkdtempSync(path.join(realpathSync('/tmp'), 'pbsvc-'));
+  const PRIVATE = makeServiceTestDirectory('pbsvc-');
   const PACKAGE = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
   const ENTRY = path.join(ROOT, 'consumer.mjs'), FAKE = path.join(ROOT, 'claude-fixture.mjs');
   const GATE = path.join(ROOT, 'inspect-gate'), ENTERED = path.join(ROOT, 'inspect-entered'), RELEASE = path.join(ROOT, 'inspect-release');

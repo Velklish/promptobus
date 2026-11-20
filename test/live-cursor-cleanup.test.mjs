@@ -1,9 +1,10 @@
 // Exercise the actual script across shared-owner teardown, delayed identity and retained UNKNOWN.
 import { spawn } from 'node:child_process';
-import { appendFileSync, cpSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync, writeSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, readFileSync, rmSync, symlinkSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
+import { makeServiceTestDirectory } from './service-test-directory.mjs';
 import { makeSandbox, stubCommand } from './sandbox.mjs';
 import { readCompleteJson, waitFor } from './harness.mjs';
 import { proveStandIsolation, STUB_BIN } from '../scripts/live-entry.mjs';
@@ -27,7 +28,7 @@ for (const boundary of ['early normal', 'delayed abort', 'late registry abort', 
   const entry = path.join(mechanism, 'scripts', 'live-cursor.mjs');
   const raisedFile = path.join(ROOT, 'raised.json'), release = path.join(ROOT, 'release'), armed = path.join(ROOT, 'Stop-armed');
   const stopFile = path.join(ROOT, 'Stop.json'), removedFile = path.join(ROOT, 'before-remove.json'), delayed = path.join(ROOT, 'delayed.jsonl');
-  const privateBeforeMigration = mkdtempSync(path.join(realpathSync('/tmp'), 'pbcur-fixture-'));
+  const privateBeforeMigration = makeServiceTestDirectory('pbcur-fixture-');
   let source = readFileSync(entry, 'utf8');
   if (pending) {
     const budget = '}, { waitMs: 30_000 });';
