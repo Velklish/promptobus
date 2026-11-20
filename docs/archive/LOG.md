@@ -706,3 +706,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-340.1"></a>`PB-340.1-live-run-routing-state-in-home` · 2026-11-20 · completed · — · A live run on the standalone host writes model-routing cache and telemetry under the person's home
 - <a id="pb-320"></a>`PB-320-preflight-cache-lost-entry` · 2026-11-20 · completed · — · Four concurrent preflights lose an entry while none reports writing without the lock
 - <a id="pb-285.2"></a>`PB-285.2-lease-test-publisher-result-race` · 2026-11-20 · completed · — · promptobus-lease.test.mjs aborts when the refused publisher's result file is not written yet
+- <a id="pb-329"></a>`PB-329-lone-test-runs-stale-dist` · 2026-11-20 · completed · — · A lone test file after a squash runs against the dist/ the last build left
