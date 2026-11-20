@@ -692,3 +692,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-416.22"></a>`PB-416.22-root-claim-registered-peer` · 2026-11-20 · completed · — · Allow explicit root orchestrator claim from its registered peer session
 - <a id="pb-416.27"></a>`PB-416.27-historical-service-client-recovery` · 2026-11-20 · completed · — · Qualify recovery from historical shared-service clients
 - <a id="pb-426.1"></a>`PB-426.1-cursor-stop-bounded-homebrew-deadlines` · 2026-11-20 · completed · — · Investigate bounded Cursor Stop deadlines failing on the base under Homebrew Node
+- <a id="pb-416.19"></a>`PB-416.19-sandbox-limited-integration-gates` · 2026-11-20 · completed · — · Preflight process and socket visibility before integration gates
