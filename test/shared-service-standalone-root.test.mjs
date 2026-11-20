@@ -187,9 +187,12 @@ const role=process.env.PB_HOOK_ROLE,launch=process.env.PROMPTOBUS_ROOT_LAUNCH_FI
 const observed=launch+'.observed',released=launch+'.released',timedOut=launch+'.timed-out';
 const release=value=>{if(!fs.existsSync(released))fs.writeFileSync(released,JSON.stringify(value));};
 if(role==='fast'){
- const mkdir=fs.mkdirSync,rename=fs.renameSync;
- fs.mkdirSync=function(file,...args){try{return mkdir.call(this,file,...args);}catch(error){
-  if(file===launch+'.lock'&&error.code==='EEXIST')release({kind:'lock-contention'});throw error;}};
+ const lstat=fs.lstatSync,rename=fs.renameSync;
+ fs.lstatSync=function(file,...args){const entry=lstat.call(this,file,...args);
+  if(file===launch+'.lock'&&entry?.isDirectory()&&fs.existsSync(observed)){
+   const owner=JSON.parse(fs.readFileSync(file+'/owner.json','utf8'));
+   if(owner.pid!==process.pid)release({kind:'lock-contention',ownerPid:owner.pid});
+  }return entry;};
  fs.renameSync=function(from,to,...args){const value=rename.call(this,from,to,...args);
   if(to===launch){const current=JSON.parse(fs.readFileSync(launch));release({kind:'launch-published',nativeId:current.nativeId});
    if(current.revoked&&current.identityInvalid&&!fs.existsSync(launch+'.sweep')){
@@ -201,7 +204,7 @@ if(role==='fast'){
 }
 let held=false;
 const pause=async image=>{
- if(held)return;held=true;fs.writeFileSync(observed,JSON.stringify({nativePid:process.ppid,image}));
+ if(held)return;held=true;fs.writeFileSync(observed,JSON.stringify({nativePid:process.ppid,hookPid:process.pid,image}));
  const deadline=Date.now()+1000;
  while(!fs.existsSync(released)&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,5));
  if(!fs.existsSync(released))fs.writeFileSync(timedOut,'timeout');
@@ -431,7 +434,8 @@ process.stdout.write(JSON.stringify({exact,neighbor,owned}));
     result.race?.observed?.nativePid === result.pid && result.race.observed.image === realpathSync(nativeExecutable)
     && result.race.timedOut === false && ['lock-contention','launch-published'].includes(result.race.released?.kind), JSON.stringify(result.race));
   check('same-generation native observation starts only after its existing hook lock is held',
-    result.race?.released?.kind === 'lock-contention', JSON.stringify(result.race));
+    result.race?.released?.kind === 'lock-contention' && result.race.released.ownerPid === result.race.observed?.hookPid,
+    JSON.stringify(result.race));
   check('known binding stays pending before its hook and exact concurrent hooks bind idempotently', result.before === 403
     && result.hooks?.length === 2 && result.hooks.every(hook => hook.code === 0) && result.after === 200, JSON.stringify({hooks:result.hooks,race:result.race}));
   check('capability recovery refuses while an old-token mutation is in flight', result.inFlight?.code !== 0

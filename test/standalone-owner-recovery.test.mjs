@@ -83,11 +83,11 @@ import{createStandaloneHost}from${JSON.stringify(fileURLToPath(new URL('../dist/
 import{runWorkspaceService}from${JSON.stringify(fileURLToPath(new URL('../lib/service.js', import.meta.url)))};
 const rename=fs.renameSync;
 fs.renameSync=function(from,to){const result=rename(from,to);if(!fs.existsSync(${JSON.stringify(gate)}))return result;
-const phase=JSON.parse(fs.readFileSync(${JSON.stringify(gate)},'utf8')).phase,value=JSON.parse(fs.readFileSync(to,'utf8'));
-const match=phase==='pending'?String(to).includes('standalone-recovery-')&&value.phase==='pending':
+const phase=JSON.parse(fs.readFileSync(${JSON.stringify(gate)},'utf8')).phase,record=()=>JSON.parse(fs.readFileSync(to,'utf8'));
+const match=phase==='pending'?String(to).includes('standalone-recovery-')&&record().phase==='pending':
 phase==='revoked'?String(to).includes('standalone-revoked-'):
-phase==='bound'?String(to).includes('/clients/')&&value.nativeBinding?.state==='bound':
-phase==='completed'?String(to).includes('standalone-recovery-')&&value.phase==='completed':false;
+phase==='bound'?String(to).includes('/clients/')&&record().nativeBinding?.state==='bound':
+phase==='completed'?String(to).includes('standalone-recovery-')&&record().phase==='completed':false;
 if(match){fs.writeFileSync(${JSON.stringify(entered)},phase,{mode:0o600});Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,30000);}return result;};syncBuiltinESMExports();
 const make=({cwd})=>createStandaloneHost({cwd,binPath:${JSON.stringify(bin)},version:${JSON.stringify(version)}});
 await runWorkspaceService({host:make({cwd:process.cwd()}),env:process.env,createHost:make});

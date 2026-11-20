@@ -1938,6 +1938,8 @@ For installed workflow, recovery and process measurements, use the [qualificatio
 | `service exec-plan --profile <id> [--service-home <path>] [--dry-run] -- <native-command> [args...]` | Private wrapper transport: ensure the approved owner and return a one-shot POSIX plan. Standalone admission stays pending until actual native proof; dry-run only prints a pure summary. |
 | `service preflight --standalone --profile <id> --native-id <actual-id> [--service-home <path>]` | Explicit owner recovery for the same proved native PID/birth/nonce/store. A trusted owner hook receipt is required; the old client stays revoked. Pending recovery can be repeated explicitly. In-flight or uncertain mutations refuse. Prints only the scoped result, then the native MCP server must reconnect. |
 
+The service prepares its lock directory and owner record inside the startup gate, then renames the complete directory into place. A failed write or rename discards the staging area when the gate releases. A directory found at the destination before publication is retained for inspection. Acquisition and release assume all writers hold the same gate; direct filesystem changes during publication are outside that guarantee.
+
 Pending lifetime observations remain active work after client revocation.
 The owner refuses shutdown until those observations settle.
 

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, readlink } from 'node:fs/promises';
-import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readlinkSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs';
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readlinkSync, readdirSync, realpathSync, renameSync, rmSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { createConnection } from 'node:net';
 import path from 'node:path';
@@ -329,10 +329,8 @@ export async function acquireServiceLock(directory: string): Promise<(() => void
 
 function acquireOwnedLock(directory: string): (() => void) | null {
   const own: LockOwner = { ...requireProcess(), nonce: randomUUID() };
-  try { mkdirSync(directory, { mode: 0o700 }); }
-  catch (error) {
-    if (!recordOf(error) || error.code !== 'EEXIST') throw error;
-    const entry = lstatSync(directory);
+  const entry = lstatSync(directory, { throwIfNoEntry: false });
+  if (entry) {
     if (!entry.isDirectory() || entry.isSymbolicLink() || realpathSync(directory) !== directory) throw new Error('Shared service lock is unsafe');
     const previous = readPrivate(path.join(directory, 'owner.json'));
     const process = processRecord(previous);
@@ -341,7 +339,11 @@ function acquireOwnedLock(directory: string): (() => void) | null {
     rmSync(directory, { recursive: true });
     return acquireOwnedLock(directory);
   }
-  writePrivate(path.join(directory, 'owner.json'), own);
+  const staged = path.join(`${directory}.gate`, 'pending');
+  mkdirSync(staged, { mode: 0o700 });
+  writePrivate(path.join(staged, 'owner.json'), own);
+  if (lstatSync(directory, { throwIfNoEntry: false })) throw new Error('Shared service lock changed before owner publication');
+  renameSync(staged, directory);
   return () => withDirLock(`${directory}.gate`, () => {
     const latest = readPrivate(path.join(directory, 'owner.json'));
     if (recordOf(latest) && latest.nonce === own.nonce) rmSync(directory, { recursive: true });

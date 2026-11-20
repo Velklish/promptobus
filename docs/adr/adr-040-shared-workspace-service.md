@@ -108,6 +108,14 @@ establish a responsiveness guarantee. Acquisition still returns a promise, and
 release remains a synchronous callback. A live or unknown active owner returns
 busy so callers can wait asynchronously outside the gate.
 
+The client and daemon stage the complete lock directory, including
+`owner.json`, inside the gate. A failed owner write leaves the public pathname
+available for a retry. Publication checks that the destination is absent and
+then renames the staged directory. All Promptobus writers hold the same gate
+during these steps. On macOS and Linux, the rename can replace an empty
+destination directory created by a process that ignores the gate between the
+check and the rename. The regression was reproduced on macOS.
+
 A contender cannot lose owner proof to a cooperating release between checking
 the active directory and reading its owner. Release removes only its matching
 nonce; a replacement generation retains its proof. A genuinely missing or

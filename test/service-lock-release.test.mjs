@@ -1,6 +1,6 @@
 import { check, skip } from './check.mjs';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { acquireServiceLock, readPrivate, requireProcess, writePrivate } from '../lib/service-state.js';
@@ -84,6 +84,46 @@ fs.writeFileSync(marker('contender'),JSON.stringify(result));
     const release = await acquireServiceLock(directory);
     check('a contender can acquire after the previous release finishes', typeof release === 'function');
     release?.();
+
+    for (const mode of ['write-error', 'rename-error', 'replacement', 'nonempty', 'before-cutover']) {
+      const writer = actor(`
+const mode=${JSON.stringify(mode)}, rename=fs.renameSync, failure=new Error('injected publication failure');
+fs.renameSync=(from,to)=>{
+  if (to===directory && mode==='rename-error') throw failure;
+  if (!to.endsWith('/owner.json')) return rename(from,to);
+  fs.writeFileSync(marker('preparation'),JSON.stringify({public:fs.existsSync(directory), file:to}));
+  if (mode==='rename-error') return rename(from,to);
+  if (mode==='write-error') throw failure;
+  if (fs.existsSync(directory)) rename(directory, marker('retired-'+mode));
+  fs.mkdirSync(directory, {mode:0o700});
+  fs.writeFileSync(marker('replacement-inode'), String(fs.statSync(directory).ino));
+  if (mode==='nonempty') fs.writeFileSync(directory+'/foreign', 'keep');
+  if (mode==='before-cutover') return rename(from,to);
+  throw failure;
+};
+syncBuiltinESMExports();
+const {acquireServiceLock}=await import(${JSON.stringify(moduleUrl)});
+try { await acquireServiceLock(directory); }
+catch (error) { process.stdout.write(error===failure?'original error':error.message); }
+`);
+      const result = await writer.done;
+      const expected = mode === 'before-cutover' ? 'Shared service lock changed before owner publication' : 'original error';
+      check(`publication refusal for ${mode} names its cause`, result.code === 0 && result.output === expected, result.output);
+      const preparation = JSON.parse(readFileSync(marker('preparation'), 'utf8'));
+      check(`owner preparation for ${mode} stays private and its staging is released`,
+        !preparation.public && !existsSync(preparation.file) && !existsSync(`${directory}.gate`));
+      if (mode === 'write-error' || mode === 'rename-error') {
+        let retry;
+        try { retry = await acquireServiceLock(directory); } catch {}
+        check(`a normal retry after ${mode} takes the service lock`, typeof retry === 'function');
+        retry?.();
+      } else {
+        check(`publication preserves the ${mode} directory`, existsSync(directory) && !existsSync(ownerFile)
+          && String(statSync(directory).ino) === readFileSync(marker('replacement-inode'), 'utf8')
+          && (mode !== 'nonempty' || readFileSync(path.join(directory, 'foreign'), 'utf8') === 'keep'));
+      }
+      rmSync(directory, { recursive: true, force: true });
+    }
 
     let completed = 0;
     for (let turn = 0; turn < 16; turn += 1) {
