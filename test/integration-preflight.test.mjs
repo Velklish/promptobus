@@ -139,6 +139,18 @@ for (const platform of ['darwin', 'linux']) for (const malformed of [false, true
   assert.equal(existsSync(sentinel), false);
 });
 
+test('missing socket parent names the failed operation after the suite temporary directory succeeded', () => {
+  const { child, directory, report, sentinel } = run({
+    preload: "import path from 'node:path'; process.env.PROMPTOBUS_TEST_SOCKET_PARENT = path.resolve('missing-socket-root');",
+  });
+  assert.equal(child.status, 1, child.stderr);
+  assert.equal(report.checks.at(-1).operation, `create suite temporary directory in ${directory}`);
+  assert.equal(report.failure.operation, 'resolve suite Unix socket parent');
+  assert.equal(report.failure.code, 'ENOENT');
+  assert.ok(report.failure.error.includes(path.join(directory, 'missing-socket-root')));
+  assert.equal(existsSync(sentinel), false);
+});
+
 test('present x-bit fixture binary with execution access denied does not start the sentinel', () => {
   const { bin, child, report, sentinel } = run({ denied: 'ast-grep' });
   assert.ok(existsSync(path.join(bin, 'ast-grep')));

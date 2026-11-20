@@ -64,7 +64,9 @@ async function preflight() {
   let operation;
   const check = async (name, probe) => {
     operation = name;
-    checks.push({ operation, result: await probe() });
+    const result = await probe();
+    checks.push({ operation, result });
+    return result;
   };
   const result = { node: process.version, executable: process.execPath, platform: process.platform,
     arch: process.arch, cwd: process.cwd(), tmpdir: os.tmpdir(), checks };
@@ -81,7 +83,7 @@ async function preflight() {
     });
     await check(`create suite temporary directory in ${os.tmpdir()}`, () =>
       inOwnedDirectory(os.tmpdir(), 'promptobus-test-run-', async () => 'writable'));
-    const socketRoot = testSocketParent('pb-preflight-');
+    const socketRoot = await check('resolve suite Unix socket parent', () => testSocketParent('pb-preflight-'));
     await check(`round trip over an owned Unix socket under ${socketRoot}`, () =>
       inOwnedDirectory(socketRoot, 'pb-preflight-', (dir) => socketRoundTrip(path.join(dir, 'probe.sock')))
         .then(() => 'echo received'));
