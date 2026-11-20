@@ -711,3 +711,8 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-328"></a>`PB-328-handover-one-probe-slot` · 2026-11-20 · batch PB-434 · — · The handover record holds one mutation probe
 - <a id="pb-419.1"></a>`PB-419.1-correct-mutation-probe-restoration-explanation` · 2026-11-20 · batch PB-434 · — · Correct mutation probe restoration explanation
 - <a id="pb-419.11"></a>`PB-419.11-document-mutation-probe-refusal-exit-status` · 2026-11-20 · batch PB-434 · — · Document mutation probe refusal exit status
+- <a id="pb-435"></a>`PB-435-routing-current-docs` · 2026-11-20 · completed · — · Align routing documentation with supported APIs and retained readings
+- <a id="pb-419.7"></a>`PB-419.7-correct-current-harness-inventories` · 2026-11-20 · batch PB-435 · — · Correct current harness inventories
+- <a id="pb-419.9"></a>`PB-419.9-use-supported-consumer-routing-validation-entry-points` · 2026-11-20 · batch PB-435 · — · Use supported consumer routing validation entry points
+- <a id="pb-419.10"></a>`PB-419.10-correct-expired-preflight-retention-description` · 2026-11-20 · batch PB-435 · — · Correct expired preflight retention description
+- <a id="pb-419.16"></a>`PB-419.16-correct-telemetry-reader-description` · 2026-11-20 · batch PB-435 · — · Correct telemetry reader description
