@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Live Cursor persist scenario; see docs/guides/contributing.md#live-harness-scenarios.
 import {
-  copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync, writeSync,
+  copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, writeSync,
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
@@ -12,6 +12,7 @@ import { guardStubLaunch, liveRoutingEnv, refuseImportedEntry } from './live-ent
 import { makeSandbox, retainSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { freshScenarioIdentity, buildWorkspace, cli, MECHANISM_ROOT, sentBy, store } from '../test/scenario.mjs';
+import { makeServiceTestDirectory } from '../test/service-test-directory.mjs';
 import { taskServiceFixture } from '../test/task-service-fixture.mjs';
 import { waitFor } from '../test/harness.mjs';
 import { markRunOwner, sweepLiveRuns, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
@@ -148,7 +149,7 @@ message named. Put the marker as the FIRST line of the body and write nothing be
 One message — one result. Do nothing else.
 `);
 
-const serviceDirectory = mkdtempSync(path.join(realpathSync(process.platform === 'win32' ? tmpdir() : '/tmp'), 'pbcur-'));
+const serviceDirectory = makeServiceTestDirectory('pbcur-', 'service');
 const taskService = await taskServiceFixture({ workspace: ws, home, task: TASK, socketDirectory: serviceDirectory,
   mechanismRoot: MECHANISM_ROOT, env: { ...liveRoutingEnv(SB), CLAUDE_CODE_SESSION_ID: ORCH_SESSION } });
 const env = taskService.env;

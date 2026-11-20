@@ -19,11 +19,10 @@ writeFileSync(socketView, `
   const list = fs.readdirSync;
   fs.readdirSync = function(dir, ...args) {
     const entries = list.call(this, dir, ...args);
-    if (dir !== '/tmp') return entries;
     const receipt = process.env.receipt;
-    if (!fs.existsSync(receipt)) return [];
-    const { socket } = JSON.parse(fs.readFileSync(receipt, 'utf8'));
-    return socket ? entries.filter(name => name === path.basename(path.dirname(socket))) : [];
+    const socket = receipt && fs.existsSync(receipt) ? JSON.parse(fs.readFileSync(receipt, 'utf8')).socket : null;
+    return entries.filter(name => !['a2l-', 'a2e-', 'a2h-'].some(prefix => typeof name === 'string' && name.startsWith(prefix))
+      || (socket && path.join(dir, name) === path.dirname(socket)));
   };
   syncBuiltinESMExports();
 `);

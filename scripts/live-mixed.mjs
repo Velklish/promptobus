@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Live Cursor worker and Codex reviewer scenario; see docs/guides/contributing.md#live-harness-scenarios.
 import {
-  copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, writeSync,
+  copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, writeSync,
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
@@ -13,6 +13,7 @@ import { makeSandbox, retainSandbox, writeHostConfig, resolveToolBin } from '../
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { freshScenarioIdentity, buildWorkspace, cli, MECHANISM_ROOT, sentBy, store } from '../test/scenario.mjs';
 import { waitFor } from '../test/harness.mjs';
+import { makeServiceTestDirectory } from '../test/service-test-directory.mjs';
 import { taskServiceFixture } from '../test/task-service-fixture.mjs';
 import { markRunOwner, sweepLiveRuns, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
 import { onAbort } from './live-abort.mjs';
@@ -189,7 +190,7 @@ line of the body and write nothing before it. One message — one result. Do not
 else.
 `);
 
-const serviceDirectory = mkdtempSync(path.join(realpathSync(process.platform === 'win32' ? tmpdir() : '/tmp'), 'pbmix-'));
+const serviceDirectory = makeServiceTestDirectory('pbmix-', 'service');
 const taskService = await taskServiceFixture({ workspace: ws, home, task: TASK, socketDirectory: serviceDirectory,
   mechanismRoot: MECHANISM_ROOT,
   env: { ...liveRoutingEnv(SB), CLAUDE_CODE_SESSION_ID: ORCH_SESSION } });

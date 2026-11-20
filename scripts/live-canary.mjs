@@ -12,7 +12,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { run } from '../lib/exec.js';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
-import { writeHostConfig } from '../test/sandbox.mjs';
+import { TEST_SOCKET_ROOT, writeHostConfig } from '../test/sandbox.mjs';
 import { CANARY_PREFIX, RUN_OWNER_FILE, markRunOwner, markRunUnresolved, runOwnerIsDead, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
 import { exitCodeOf, runCanaryChild } from './live-abort.mjs';
 import { optionalBytes, optionalEntries } from './live-home.mjs';
@@ -267,7 +267,7 @@ try {
 
   // Ignore pre-existing sandboxes and sockets when looking for leftovers.
   const sandboxes = recentEntries(os.tmpdir(), n => n.startsWith('promptobus-live-e2e-'));
-  const socks = recentEntries('/tmp', n => ['a2l-', 'a2e-', 'a2h-'].some(pref => n.startsWith(pref)));
+  const socks = TEST_SOCKET_ROOT === null ? [] : recentEntries(TEST_SOCKET_ROOT, n => ['a2l-', 'a2e-', 'a2h-'].some(pref => n.startsWith(pref)));
   const pathsClear = check('cleanup: no run sandboxes or bus sockets remain',
     sandboxes?.length === 0 && socks?.length === 0,
     `sandboxes ${JSON.stringify(sandboxes)} · sockets ${JSON.stringify(socks)}`);

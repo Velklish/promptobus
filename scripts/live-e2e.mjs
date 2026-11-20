@@ -6,7 +6,7 @@ import { guardStubLaunch, liveRoutingEnv, refuseImportedEntry } from './live-ent
 import path from 'node:path';
 import process from 'node:process';
 import os from 'node:os';
-import { resolveToolBin } from '../test/sandbox.mjs';
+import { resolveToolBin, TEST_SOCKET_ROOT } from '../test/sandbox.mjs';
 import { pidAlive } from '../test/harness.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { MECHANISM_ROOT, runScenario, STEPS } from '../test/scenario.mjs';
@@ -58,7 +58,7 @@ const swept = sweepPreviousRuns(os.tmpdir(), {
 process.stdout.write(`${sweptLine('previous-run sandboxes', swept, { keep: 0 })}\n`);
 if (refusedRuns.length) process.stdout.write(`sweep refused (busy or foreign permissions): ${refusedRuns.join(', ')}\n`);
 function makeSockDir(prefix) {
-  const dir = process.platform === 'win32' ? null : mkdtempSync(path.join('/tmp', prefix));
+  const dir = process.platform === 'win32' ? null : mkdtempSync(path.join(TEST_SOCKET_ROOT, prefix));
   return { dir, sock: (name) => dir ? path.join(dir, `${name}.sock`)
     : `\\\\.\\pipe\\${prefix}${process.pid}-${name}` };
 }
