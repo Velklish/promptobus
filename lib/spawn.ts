@@ -1058,24 +1058,8 @@ export async function planSpawn(rootOrHost: unknown, opts: SpawnOptions): Promis
     meta: createNew ? { ...createNew, participants: [participantRecord(ORCHESTRATOR)] } : taskMeta,
     sender: participant ?? participantRecord(address, {}, registryOf(host)),
   }] });
-  // The driver is taken from the registry BEFORE any journal write and before option
-  // parse: an unknown harness must refuse here, not after the participant is in the task,
-  // and the allowed `--effort`, `--permission-mode`, and `--model` values are its
-  // dictionary. For a NEW participant the harness is named by a person with `--harness`;
-  // without the flag the previous one is taken. For a re-lifted one — the one that lifted
-  // them, taken from their record.
-  // Routing joins the gate order stated below — "two gates, both before any write
-  // to disk" — and joins it for the same reason: a strategy that finds no candidate
-  // must leave no task, no worktree and no participant behind, and past this point
-  // there is a journal to roll back. `routeLift` returns `null` the moment there is
-  // no `--strategy`, before it asks the host anything: without the flag the call
-  // takes today's path exactly, and the declaration is not consulted.
-  //
-  // Only on a FRESH lift. ADR-005 fixes a participant's harness and model at
-  // liftoff; a repeat spawn restarts an already lifted address, its harness comes
-  // from the record the first lift wrote, and there is nothing left for a strategy
-  // to choose. Silence about that would read as a routed restart, so the plan
-  // carries a line and `spawn` prints it.
+  // A fresh lift resolves the strategy flag or host overlay before writing any state. With neither source it stays unrouted.
+  // A relift keeps the harness and model recorded at first launch.
   const routed = participant ? null : await routeLift(host, {
     role: ownerName,
     strategy: opts.strategy,

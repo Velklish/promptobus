@@ -211,7 +211,7 @@ Without `--task`, `spawn` joins the bound task, else the only active one, else c
 
 `review <path>` without `--task` picks up the single active task that records the path. The diff base is `--base`. Otherwise, in a worker worktree, it is the merge base with the local default branch, except that the recorded branch point is used when the worker branch is already merged or the default branch was rewritten, and the repository default branch when neither exists; in the main clone it is the repository default branch. The command prints it (`lib/review.js`). A repeat `review` sends the new diff to the live reviewer: `--strategy` is ignored, and another `--harness` is refused until `promptobus stop <address>`.
 
-A `review` that opened a task and failed to start its reviewer leaves an active orphan that no call without `--task` picks up, and prints `promptobus done --task <id>`. A failed `spawn` keeps its task and record for a repeat of the same command (`lib/review.js`, `lib/spawn.js`).
+A `review` that opened a task and failed to start its reviewer leaves an active orphan that a repeated `review <path>` without `--task` skips, and prints `promptobus done --task <id>`. A failed `spawn` keeps its task and record for a repeat of the same command (`lib/review.js`, `lib/spawn.js`).
 
 A Codex holder declines an MCP server's own elicitation with `{ action: "decline" }` and accepts Codex's per-call tool approval for a server in the participant's home ([03-cli § The Codex holder](https://github.com/Velklish/promptobus/blob/v0.33.1/docs/reference/03-cli.md#the-codex-holder)).
 

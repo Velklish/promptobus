@@ -784,3 +784,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-419.31"></a>`PB-419.31-capture-fixture-exit-before-waiting-for-ready` · 2026-11-20 · merged into PB-444 · — · Capture fixture exit before waiting for READY
 - <a id="pb-466.8"></a>`PB-466.8-reporter-provider-eligibility` · 2026-11-20 · completed · — · Document the providers eligible to run a reporter
 - <a id="pb-466.9"></a>`PB-466.9-managed-claude-version-admission` · 2026-11-20 · completed · — · Document the role of the tool version in managed Claude admission
+- <a id="pb-466.14"></a>`PB-466.14-review-selection-help` · 2026-11-20 · completed · — · Align solo review instructions with strategy, task and diff-base selection

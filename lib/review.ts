@@ -1141,7 +1141,7 @@ function unboundSessionNote(plan: ReviewPlan) {
 function launchFailureNote(plan: ReviewPlan) {
   const kept = keptNote(plan);
   return plan.createNew
-    ? `${kept} This is an active orphan task: the reviewer was not started, and the next call without --task will not pick it up. `
+    ? `${kept} This is an active orphan task: the reviewer was not started, and repeating review <path> without --task will skip this orphan. `
       + `Close it: ${plan.host.busCommand(['done', `--task ${plan.taskId}`])}`
     : `${kept} The reviewer was not started; the task stays active.`;
 }

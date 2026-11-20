@@ -2849,6 +2849,7 @@ check(': the orphan task\'s diff and configs are kept for diagnostics',
   String(orphanTask?.id));
 check(': the refusal names the orphan and a ready-made close command',
   !!orphanTask && /active orphan task/.test(failText)
+  && failText.includes('repeating review <path> without --task will skip this orphan')
   && failText.includes(orphanTask.id)
   && failText.includes(`promptobus done --task ${orphanTask.id}`), failText);
 if (orphanTask) store.closeTask(home, orphanTask.id);

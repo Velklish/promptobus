@@ -23,7 +23,7 @@ The path is required. There is no resolve from the current directory. An error w
 
 The diff file the reviewer gets is a snapshot taken at the call: you keep committing, the file does not follow. The command prints the snapshot time next to the diff base, `promptobus status` shows it on the reviewer's line, and the reviewer's brief tells it to open each finding's file in the working copy and check the line before reporting it. On a contradiction it files no finding and hands you `git show <sha> -- <path>` (`lib/review.js`). Refresh the file with a repeat of the command (`--task <id>`) — that is what a re-review is.
 
-Default diff base is the repository default branch. In a worker worktree it is the merge base with that branch, recomputed at review time. Set `--base <sha|ref>` when you review work on top of another accepted branch.
+An explicit `--base <sha|ref>` takes precedence. The main clone defaults to its default branch. In a worker worktree, review normally computes the merge base with the local default branch. It uses the recorded `baseSha` if that point is still in HEAD history and the worker branch has already merged, the default branch has rewound, or the merge base is unavailable. Read the printed `diff base:` line for the selected revision and its source.
 
 `--dry-run` prints the plan. `--harness` selects the runtime (must be in `promptobus.json` `tools`). `--model` and `--effort` are harness-specific. `--strategy` picks the model for you; see [Reviewer strategy](#reviewer-strategy).
 
@@ -31,7 +31,7 @@ Codex planning, including `--dry-run`, refuses an existing registry `sessions` d
 
 ## Reviewer strategy
 
-`--strategy quality` is the reviewer's default. Pass it unless the user named something else: a reviewer that misses a defect is paid for by the next round, and reading a diff is cheap next to writing it.
+This skill recommends `--strategy quality`. Pass it unless the user named something else: a reviewer that misses a defect is paid for by the next round, and reading a diff is cheap next to writing it.
 
 **Diversity.** A reviewer whose harness or model differs from the worker's scores higher — the resolver gives it a bonus, because a second reading with the same blind spot is not a review. Prefer a different harness when the workspace declares more than one and the user allowed it. Stay on the worker's harness only when the user pinned it, or when nothing else is available.
 

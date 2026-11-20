@@ -721,3 +721,11 @@ check('docs: the optional Host version gates real managed Claude admission',
   && has(toolBinDocs, 'Admission requires a parseable Claude version of at least 2.1.295')
   && has(toolBinDocs, 'Dry runs do not probe the binary.')
   && !has(toolBinDocs, 'the rest are read to talk to a person'));
+
+const soloReview = read('skills/solo-review/SKILL.md');
+check('docs: solo review explains routing, recorded branch points and orphan pickup',
+  has(soloReview, 'This skill recommends `--strategy quality`.')
+  && has(soloReview, 'An explicit `--base <sha|ref>` takes precedence')
+  && has(soloReview, 'the worker branch has already merged, the default branch has rewound, or the merge base is unavailable')
+  && has(soloReview, 'printed `diff base:`')
+  && has(orchestrateSkill, 'a repeated `review <path>` without `--task` skips'));
