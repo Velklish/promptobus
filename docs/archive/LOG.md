@@ -774,3 +774,7 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-436.1"></a>`PB-436.1-managed-root-readme-actionable-mail` · 2026-11-20 · batch PB-465 · — · Distinguish actionable mail from status in the managed root README
 - <a id="pb-437.1"></a>`PB-437.1-codex-0165-retained-schema-evidence` · 2026-11-20 · batch PB-465 · — · Separate the Codex 0.165.0 comparison record from missing schema files
 - <a id="pb-440.1"></a>`PB-440.1-host-cli-binding-source-citation` · 2026-11-20 · batch PB-465 · — · Cite the TypeScript source of the CLI host bindings
+- <a id="pb-444"></a>`PB-444-abort-fixture-ownership-proof` · 2026-11-20 · completed · — · Prove bounded owned cleanup across early fixture failure and abort
+- <a id="pb-340.2"></a>`PB-340.2-aborted-cursor-run-leaves-registry-record` · 2026-11-20 · batch PB-444 · — · An aborted Cursor live run leaves its session registry record
+- <a id="pb-340.3"></a>`PB-340.3-live-canary-no-abort-cleanup` · 2026-11-20 · batch PB-444 · — · The package live canary has no abort cleanup
+- <a id="pb-390.2"></a>`PB-390.2-abort-fixture-early-cleanup` · 2026-11-20 · batch PB-444 · — · Verify child cleanup when abort fixture process discovery fails
