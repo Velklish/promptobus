@@ -2,7 +2,7 @@
 
 - **Scope:** [Host integrations](../../reference/02-host.md), optional native BB plugin only
 - **Created:** 2026-10-26
-- **Dependencies:** PB-429 for installed BB 0.49 qualification
+- **Dependencies:** the BB minor line and SDK in the [plugin delivery guide](../../guides/bb-plugins.md), both plugins installed, and a separately authorized owner/participant environment
 - **Cost:** —
 
 ## Context
@@ -24,7 +24,7 @@ The owner approved a visual task dashboard and notifications from native partici
 ## Verification
 
 - Focused plugin tests cover selected task identity, unread message visibility, owner binding, duplicate prevention, reload and ambiguous delivery.
-- On a compatible installed plugin (PB-429 for BB 0.49), demonstrate an idle BB test owner receiving a canonical notification through the actual installed UI; verify the mailbox remains unread and reload does not replay it. Retain ambiguous delivery as unresolved.
+- Record the installed versions of BB, the Plugin SDK, the adapter and the native dashboard. On a separately authorized owner/participant stand meeting the guide's prerequisites, demonstrate an idle BB test owner receiving a canonical notification through the actual installed UI; verify the mailbox remains unread and reload does not replay it. Retain ambiguous delivery as unresolved.
 - Run plugin typecheck/tests/build and appropriate repository checks, then independent review and closure. Keep commands/exits and any failed observations.
 
 ## Transfer to main
@@ -38,5 +38,5 @@ Installed idle-owner wake, unread preservation, reload deduplication and ambiguo
 ## Deferred
 
 - **Deferred:** 2026-11-13
-- **Reason:** Installed owner-notification qualification depends on a compatible installed BB plugin combination. PB-429 still owns the BB 0.49 compatibility release; delivered dashboard source does not establish idle-owner delivery on that installation.
-- **Return condition:** PB-429 supplies a qualified compatible plugin combination and an explicitly authorized bounded BB owner/participant stand is available. Measure canonical notification, unread retention, reload deduplication and ambiguous-delivery handling with the original limits.
+- **Reason:** The supported adapter and native dashboard have source-level acceptance. Installed idle-owner delivery still needs a measurement.
+- **Return condition:** Both plugins are installed on the BB minor line in the delivery guide, their installed versions are recorded, and a separately authorized bounded BB owner/participant stand is available. Measure canonical notification, unread retention, reload deduplication and ambiguous-delivery handling with the original limits.

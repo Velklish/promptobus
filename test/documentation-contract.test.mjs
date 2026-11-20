@@ -729,3 +729,7 @@ check('docs: solo review explains routing, recorded branch points and orphan pic
   && has(soloReview, 'the worker branch has already merged, the default branch has rewound, or the merge base is unavailable')
   && has(soloReview, 'printed `diff base:`')
   && has(orchestrateSkill, 'a repeated `review <path>` without `--task` skips'));
+
+const bbRange = JSON.parse(read('integrations/bb/package.json')).engines.bb;
+check('docs: BB setup and provider selection use the manifest host range',
+  ['## Setup', '## Provider and model selection'].every(heading => section(bbGuide, heading).includes(bbRange)));

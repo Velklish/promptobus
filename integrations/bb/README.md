@@ -559,9 +559,8 @@ account caches and defaults are unchanged.
 | `acp-cursor` | worker, approver | SDK host/provider account windows, or unknown |
 | `acp-opencode` | worker | SDK host/provider account windows, or unknown |
 
-The source package admits BB 0.50 from 0.50.1 with SDK 0.6.157 or newer. The historical native
-permission proof measured Codex CLI 0.162.0-alpha.17.2. BB 0.46.0
-loads; its full workflow is not a separate measurement. Cursor/OpenCode selection,
+The manifest requires BB `>=0.50.1 <0.51` with Plugin SDK 0.6.157 or newer. The historical native
+permission proof measured Codex CLI 0.162.0-alpha.17.2. Cursor/OpenCode selection,
 worker provisioning, authenticated tools and recovery, and Cursor acceptance
 predecessors have SDK fixture coverage. This is separate from a measured live
 model workflow. Other BB providers are not admitted.
