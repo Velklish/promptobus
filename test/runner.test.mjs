@@ -99,8 +99,7 @@ const roomyCopy = src.replace(/const FILE_TIMEOUT_MS = [\d_]+;/, `const FILE_TIM
 check('file timeout in the roomy copy is swapped — the watchdog probe is not racing the runner',
   roomyCopy !== src && roomyCopy.includes(`const FILE_TIMEOUT_MS = ${ROOMY_CAP_MS};`));
 
-// The idle threshold is swapped like the deadlines above: a fixture that slept the real 5 s
-// would add them to every run.
+// Set the idle threshold below both reported durations in the copied helper.
 const checkSrc = readFileSync(path.join(here, 'check.mjs'), 'utf8');
 const IDLE_CAP_MS = 300;
 const checkCopy = checkSrc.replace(/export const IDLE_REPORT_MS = [\d_]+;/, `export const IDLE_REPORT_MS = ${IDLE_CAP_MS};`);
@@ -192,19 +191,22 @@ check('a run-directory cleanup failure names the affected path and makes the run
   && /✖ run sandbox cleanup failed for .*promptobus-test-run-.*: fixture directory not empty/.test(refusedCleanup.out)
   && /1\/1 test files passed/.test(refusedCleanup.out), refusedCleanup.out.slice(-750));
 
-// A file held by a timer after its last verdict is named in the summary, and the run stays green.
 const SB_IDLE = makeSandbox('promptobus-runner-idle-');
 plant(SB_IDLE, src, { helper: checkCopy });
-writeFileSync(path.join(SB_IDLE, 'a-idle.test.mjs'),
-  "import { check } from './check.mjs';\ncheck('held', true);\nsetTimeout(() => {}, 1200);\n");
-writeFileSync(path.join(SB_IDLE, 'b-prompt.test.mjs'),
-  "import { check } from './check.mjs';\ncheck('prompt', true);\n");
+for (const [name, elapsed] of [['a-idle', 1200], ['b-idle', 2000], ['c-prompt', IDLE_CAP_MS - 1]]) {
+  writeFileSync(path.join(SB_IDLE, name + '.test.mjs'),
+    "import { check } from './check.mjs';\nlet clock = 1000; Date.now = () => clock;\n"
+    + "check('last verdict', true);\n" + 'clock += ' + elapsed + ';\n');
+}
 const idleRun = await runCopy(SB_IDLE);
 const idleSection = /\n⏸ (\d+ files? idled after the last verdict.*\n(?: {2}.*\n?)*)/.exec(idleRun.out)?.[1] ?? '';
-check(': a file held by a timer after its last verdict is named with its idle time, and the run stays green',
-  idleRun.status === 0 && /^1 file idled after the last verdict/.test(idleSection)
-  && /\n {2}a-idle\.test\.mjs: 1\.\d s/.test(idleSection) && !idleSection.includes('b-prompt'),
+check('the runner reports both file names with their measured idle durations',
+  idleRun.status === 0 && /3\/3 test files passed/.test(idleRun.out)
+  && /^2 files idled after the last verdict/.test(idleSection)
+  && /^ {2}a-idle\.test\.mjs: 1\.2 s$/m.test(idleSection) && /^ {2}b-idle\.test\.mjs: 2\.0 s$/m.test(idleSection),
   `status=${idleRun.status} · ${idleRun.out.slice(-600)}`);
+check('the runner omits the file that finished before the idle threshold',
+  !idleSection.includes('c-prompt.test.mjs'), idleSection);
 
 // Time ledger: a seeded history sets the hand-out, a width of one makes the print order the
 // hand-out order, and the slow threshold is swapped so a 1.5 s fixture crosses it.
