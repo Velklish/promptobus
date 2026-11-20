@@ -732,3 +732,6 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-419.4"></a>`PB-419.4-correct-observer-method-output-descriptions` · 2026-11-20 · batch PB-440 · — · Correct observer method output descriptions
 - <a id="pb-419.8"></a>`PB-419.8-correct-hosttoolbin-reader-inventory-description` · 2026-11-20 · batch PB-440 · — · Correct HostToolBin reader inventory description
 - <a id="pb-419.13"></a>`PB-419.13-qualify-host-process-binding-independence` · 2026-11-20 · batch PB-440 · — · Qualify Host process binding independence
+- <a id="pb-441"></a>`PB-441-approver-diagnostics` · 2026-11-20 · completed · — · Show reviewed subjects and document immutable-harness approver recovery
+- <a id="pb-327"></a>`PB-327-approver-subject-refusal-names-no-worktree` · 2026-11-20 · batch PB-441 · — · An approver lift on the clone root says no participant is recorded and names no worktree that has a reviewer result
+- <a id="pb-416.16"></a>`PB-416.16-immutable-approver-harness-recovery` · 2026-11-20 · batch PB-441 · — · Document recovery when a stopped approver retains its original harness
