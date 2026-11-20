@@ -2038,20 +2038,12 @@ check('PB-234: the preamble asks the probe to name its target, and says the bus 
   && /written down before the run/.test(handoff)
   && /refuses the record when `reddened` does not carry that name/.test(handoff),
   handoff.slice(-1800));
-check('PB-234.3: from the release that ships it, an earlier probe sha needs treeLag',
-  /From the release that ships `treeLag`/.test(handoff)
-  && /earlier sha than the record's `tree`/.test(handoff)
-  && /checks\.mutationProbe\.treeLag/.test(handoff)
-  && /neither the mutated file nor the tests whose verdicts are in `reddened`/.test(handoff)
-  && /Before that release the running bus refuses the field/.test(handoff),
-  handoff.slice(-2200));
-check('PB-234.5: from the release that ships it, a performed probe carries coverage',
-  /From the release that ships `coverage`/.test(handoff)
-  && /checks\.mutationProbe\.coverage\.establishes/.test(handoff)
-  && /checks\.mutationProbe\.coverage\.doesNotEstablish/.test(handoff)
-  && /it is not `notRun` and not an empty `reddened`/.test(handoff)
-  && /Before that release the running bus refuses the field, so omit it/.test(handoff),
-  handoff.slice(-2200));
+check('an earlier probe revision needs treeLag and matching revisions can omit it',
+  /If its sha differs from the handover's `tree`, supply `checks\.mutationProbe\.treeLag`/.test(handoff)
+  && /Matching revisions need no `treeLag`/.test(handoff), handoff.slice(-2200));
+check('performed probes require coverage and notRun records carry only their reason',
+  /A performed probe requires `checks\.mutationProbe\.coverage\.establishes` and `checks\.mutationProbe\.coverage\.doesNotEstablish`/.test(handoff)
+  && /A `notRun` probe carries only its reason/.test(handoff), handoff.slice(-2200));
 check('PB-213: a check left out is not a check passed, and an impossible one is declared',
   /A check you leave out is not a check you passed/.test(handoff)
   && /`notRun`/.test(handoff)

@@ -739,3 +739,11 @@ check('docs: BB setup and provider selection use the manifest host range',
 check('docs: the English authoring guide names the closed snapshot list',
   has(read('docs/guides/contributing.md'), 'the transliteration table in `src/protocol.ts` and the journal of closed tasks.')
   && !has(read('docs/guides/contributing.md'), 'a run trace quoted in a card'));
+
+const probeSchema = JSON.parse(read('schemas/v1/handover-record.schema.json')).$defs.mutationProbe;
+check('docs: the handover schema describes byte restoration and the installed probe requirements',
+  [probeSchema.properties.tree.description, read('docs/guides/contributing.md')].every(text =>
+    has(text, 'saves and restores the original bytes. Regex replacement decodes the input as UTF-8'))
+  && has(read('docs/reference/04-protocol.md'), 'restores the file from a pre-mutation byte snapshot')
+  && has(probeSchema.properties.treeLag.description, 'Required when the probe tree differs from the handover tree')
+  && has(probeSchema.properties.coverage.description, 'A performed probe requires both establishes and doesNotEstablish'));

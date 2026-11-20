@@ -39,7 +39,7 @@ Triage the child cards. The release owner decides what evidence can qualify a Cl
 | [PB-466.19 - Correct obsolete comments on hooks, message formatting and status snapshots](../../archive/LOG.md#pb-466.19) | PQA-2001 | minor |
 | [PB-466.20 - Remove the unreachable Codex branch from reporter reservation recovery](../../archive/LOG.md#pb-466.20) | PQA-2010 | minor |
 | [PB-466.21 - Align the contributing guide with the public audit exceptions](../../archive/LOG.md#pb-466.21) | PQA-5000 | minor |
-| [PB-466.22 - Describe byte restoration and current handover requirements in the published schema](PB-466.22-handover-schema-descriptions.md) | PQA-5001, PQA-5002 | minor |
+| [PB-466.22 - Describe byte restoration and current handover requirements in the published schema](../../archive/LOG.md#pb-466.22) | PQA-5001, PQA-5002 | minor |
 | [PB-466.23 - Handle the uint8 annotation in the Codex schema gate](PB-466.23-codex-schema-format-warnings.md) | PQA-5005 | minor |
 | [PB-466.24 - Investigate the Cursor turn test at the injection grace deadline](PB-466.24-cursor-grace-timing-investigation.md) | PQA-2012 | minor |
 | [PB-466.25 - Investigate response framing in the Unix socket smoke test](PB-466.25-unix-socket-framing-investigation.md) | PQA-3001 | minor |

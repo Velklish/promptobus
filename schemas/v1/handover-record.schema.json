@@ -115,11 +115,11 @@
       "required": ["tree", "mutated", "mutatedRunExit", "applied", "verdicts", "reddened", "coverage"],
       "properties": {
         "tree": {
-          "description": "The sha of the clean, committed baseline the probe ran on. Restoration uses the pre-mutation UTF-8 text snapshot, not Git.",
+          "description": "The sha of the clean, committed baseline the probe ran on. The probe saves and restores the original bytes. Regex replacement decodes the input as UTF-8.",
           "$ref": "#/$defs/sha"
         },
         "treeLag": {
-          "description": "Why this sha is not the handover record's tree. A reason, the same shape as every other reason here. Not needed when the two shas agree: a record written before this field exists has none, and it still passes, so there is no migration. Present when they differ — the usual case is a probe kept on an earlier sha because the commits since then did not touch the mutated file or the tests whose verdicts are in `reddened`. The door refuses a difference that carries no reason and names both shas. It does not read the prose against git and does not require the reason to name those commits. The running bus validates the installed package's schema, so this field can first be sent in the release after the one that adds it.",
+          "description": "Required when the probe tree differs from the handover tree. Explain why the intervening changes leave the probe applicable. Optional when both revisions match.",
           "$ref": "#/$defs/reason"
         },
         "mutated": {
@@ -174,7 +174,7 @@
           "items": { "$ref": "#/$defs/verdictName" }
         },
         "coverage": {
-          "description": "What this probe establishes and what it does not. Both reasons are required on a performed probe. A notRun probe does not carry this object. Empty reddened and applied other than true stay refused, and expected is still compared with reddened. The running bus validates the installed package's schema, so this field can first be sent in the release after the one that adds it.",
+          "description": "A performed probe requires both establishes and doesNotEstablish. A notRun probe carries only its notRun reason.",
           "type": "object",
           "additionalProperties": false,
           "required": ["establishes", "doesNotEstablish"],

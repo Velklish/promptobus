@@ -1,5 +1,4 @@
-// BB evidence requires coverage now. Native send still omits it until the installed schema
-// accepts the field. The two texts are different doors: 04-protocol.md § BB evidence attachments.
+// The BB worker and its evidence validator must agree on complete probe coverage.
 import './home.mjs';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
