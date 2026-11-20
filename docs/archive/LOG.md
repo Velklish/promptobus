@@ -764,3 +764,6 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-456"></a>`PB-456-historical-cursor-fixtures` · 2026-11-20 · completed · — · Classify two historical Cursor fixture failures
 - <a id="pb-278.1"></a>`PB-278.1-mixed-step7-delivered-after-own-send` · 2026-11-20 · batch PB-456 · — · promptobus-mixed step 7 goes red when the warden's deliveredAt is stamped by the round the worker's own send triggers
 - <a id="pb-325.1"></a>`PB-325.1-cursor-test-shared-tmux` · 2026-11-20 · batch PB-456 · — · Investigate historical Cursor fixture-session loss
+- <a id="pb-457"></a>`PB-457-typed-runtime-cleanup` · 2026-11-20 · completed · — · Remove redundant Host assertions and align catch bindings
+- <a id="pb-415.6"></a>`PB-415.6-typescript-catch-binding-indent` · 2026-11-20 · batch PB-457 · — · Indent typed catch bindings with their enclosing blocks
+- <a id="pb-415.8"></a>`PB-415.8-remove-bb-host-full-host-assertions` · 2026-11-20 · batch PB-457 · — · Use the minimal pipeline Host contract without full Host assertions
