@@ -4,7 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
 import { REACHABLE_BINARIES } from './hygiene.mjs';
-import { participantFileStem } from '../dist/index.js';
+import Ajv from 'ajv';
+import { participantFileStem, SHIPPED_REGISTRY } from '../dist/index.js';
+import { mcpTools } from '../dist/mcp/tools.js';
 import { threadStartConfig } from '../lib/codex-session.js';
 import { sourceFile } from './source-files.mjs';
 
@@ -437,6 +439,22 @@ check('docs: the generate dry-run rule does not read as the trustedHooks rule',
 
 const installGuide = read('docs/guides/install.md');
 const orchestrateSkill = read('skills/orchestrate/SKILL.md');
+const participantTools = section(orchestrateSkill, '## Tools');
+const declarations = mcpTools(SHIPPED_REGISTRY);
+const sampleSubject = { assignmentAfterId: 'assignment', head: 'head', base: 'base', diffSha256: 'digest' };
+const examples = [...participantTools.matchAll(/^promptobus_(send|task) (\{".+\})$/gm)].map(([, tool, json]) => ({
+  tool: `promptobus_${tool}`, input: JSON.parse(json.replace('SUBJECT', JSON.stringify(sampleSubject))),
+}));
+const ajv = new Ajv();
+check('docs: native attachments and reviewer checkpoint calls match the declared tools',
+  examples.length === 3 && examples.every(({ tool, input }) =>
+    ajv.validate(declarations.find(d => d.name === tool).inputSchema, input))
+  && examples.some(({ tool, input }) => tool === 'promptobus_send' && input.type === 'artifact' && input.artifactPath)
+  && examples.some(({ tool, input }) => tool === 'promptobus_task' && input.checkpointDiff)
+  && examples.some(({ tool, input }) => tool === 'promptobus_send' && input.to === 'orchestrator'
+    && input.type === 'artifact' && input.artifact?.content && input.artifact.subject.diffSha256 === sampleSubject.diffSha256)
+  && has(participantTools, '1,000,000 UTF-8 bytes') && has(participantTools, 'send a separate terminal `result`')
+  && !has(participantTools, 'an `artifact` without `artifactPath`'));
 const handoff = section(orchestrateSkill, '## Root thread handoff');
 check('docs: root rotation checkpoints the run before a fresh conversation',
   has(handoff, "after the agreed batch of tasks or when the owner's context threshold is reached")

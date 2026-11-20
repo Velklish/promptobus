@@ -303,7 +303,7 @@ The full names a session sees are `mcp__promptobus__promptobus_send` and the sam
 
 Naming a task does not register a contact point there unless the declared address is listed and the session can prove it holds that address. The driver also checks that the contact point belongs to that session. A refused handoff does not start a listener and can be retried on the same connection; an authorized join without a contact point can still start a listener. The orchestrator owner gate, including its ownerless-task rule, still applies.
 
-A worker sends an artifact named by its result before sending that result, reads the landed filename from the immediate reply to its own `promptobus_send` call, and uses it in the header without ending the turn. The bus may number a colliding filename; reviewers cannot attach files.
+A worker sends an artifact named by its result before sending that result, reads the landed filename from the immediate reply to its own `promptobus_send` call, and uses it in the header without ending the turn. The bus may number a colliding filename. Ordinary attachments use `artifactPath`. Native reviewers send inline checkpoints to the orchestrator with `artifact: { content, subject }`, using the subject returned for the exact opened diff. A checkpoint holds up to 1,000,000 UTF-8 bytes. The reviewer sends its terminal `result` separately.
 
 ### Model routing
 

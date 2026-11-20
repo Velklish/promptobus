@@ -17,6 +17,20 @@ test('reviewer role names ordinary source reads separately from selected Host re
   assert.ok(readFileSync(new URL('../skills/promptobus-reviewer/SKILL.md', import.meta.url), 'utf8').endsWith(body.trimEnd() + '\n'));
 });
 
+test('worker and approver each receive one complete attachment example', () => {
+  const example = JSON.stringify({ to: ['orchestrator'], type: 'artifact', body: 'Gate evidence',
+    artifact: { filename: 'gates.txt', content: 'exact UTF-8 evidence' } });
+  for (const role of ['worker', 'approver']) {
+    const body = renderBbInstructionSkill(role);
+    assert.equal(body.split(example).length - 1, 1, role);
+    const section = role === 'worker' ? body.split('## Communication protocol')[1].split('\n## ')[0] : body;
+    assert.ok(section.includes(example), role);
+    assert.match(section, /Read the landed filename from the immediate reply to your own send and cite that returned name/);
+    const installed = readFileSync(new URL(`../skills/${BB_ROLE_SKILLS[role]}/SKILL.md`, import.meta.url), 'utf8');
+    assert.ok(installed.endsWith(body.trimEnd() + '\n'));
+  }
+});
+
 test('installed instruction delivery is a complete SDK configuration with explicit authenticated tool selection', () => {
   const stand = mkdtempSync(path.join(tmpdir(), 'promptobus-bb-instruction-types-'));
   const installed = name => fileURLToPath(new URL(`../node_modules/${name}`, import.meta.url)).replaceAll('\\', '/');

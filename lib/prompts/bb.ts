@@ -148,7 +148,7 @@ export function renderBbInstructionSkill(role: BbInstructionRole): string {
         reviewDelivery: 'they arrive through the same declared continuation route',
         branchDelivery: 'Use only the assigned environment and branch. Report an explicitly authorized branch change before handing off; never infer a branch or environment from a participant name.',
         artifactDelivery,
-        evidenceInstructions: [evidenceProfile, verdictNames, artifactDelivery, evidenceOverflow, gateEvidence, handoverEvidence].join('\n\n'),
+        evidenceInstructions: [evidenceProfile, verdictNames, evidenceOverflow, gateEvidence, handoverEvidence].join('\n\n'),
         operationalRules: '',
       } });
       break;

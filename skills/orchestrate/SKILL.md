@@ -77,9 +77,9 @@ When a reporter is present on a root task, it reads the whole tree's journals th
 MCP server name: `promptobus`. Participant tools: `promptobus_send`, `promptobus_mailbox`, `promptobus_task`. A proven reporter session alone can also call `promptobus_digest`, `promptobus_status`, and `promptobus_ask`; `promptobus_send` remains denied in its lift and refused by routing.
 
 ```
-promptobus_send { to, type, body, artifactPath?, task? }
+promptobus_send { to, type, body, artifactPath?, artifact?, task? }
 promptobus_mailbox { claim?, message?, task? }
-promptobus_task { task? }
+promptobus_task { task?, checkpointDiff? }
 promptobus_digest { task? }
 promptobus_status { task? }
 promptobus_ask { body?, answers?, after?, task? }
@@ -97,7 +97,24 @@ A foreign-mailbox header names both session IDs; the originals stay with the own
 
 A session has one live binding: the active task its calls use without `task`. `spawn` and `review --approver` write it for the task's owner, `review` only when it joins an existing task, and `claim` rewrites it (`lib/store.js`).
 
-`promptobus_send` refuses a non-participant address, listing the participants, an `artifact` without `artifactPath`, and an undeclared key (`lib/store.js`, `src/mcp/server.ts`). `promptobus_task` returns the task's id, title, status, parent, children, pipeline, artifacts directory and your unread count, and per participant its owner, repository, worktree, git branch, session, diff snapshot and unread count (`lib/server.js`, `src/mcp/render.ts`).
+For an ordinary file attachment, supply its absolute path:
+```
+promptobus_send {"to":"orchestrator","type":"artifact","body":"Gate evidence","artifactPath":"/absolute/path/to/gates.json"}
+```
+
+A native reviewer opens the exact diff file named in its assignment and obtains its checkpoint subject:
+```
+promptobus_task {"checkpointDiff":"/absolute/path/to/assigned.diff"}
+```
+
+Use the returned subject unchanged in place of `SUBJECT`. Send the complete finding text (up to 1,000,000 UTF-8 bytes) to the orchestrator, then send a separate terminal `result` when the review is complete:
+```
+promptobus_send {"to":"orchestrator","type":"artifact","body":"Review findings","artifact":{"content":"Complete finding text","subject":SUBJECT}}
+```
+
+Only the current native reviewer can use this inline checkpoint. BB participants follow their BB role's attachment instructions.
+
+`promptobus_send` refuses an unregistered recipient or undeclared key (`lib/store.js`, `src/mcp/server.ts`). `promptobus_task` returns the task's id, title, status, parent, children, pipeline, artifacts directory and your unread count, and per participant its owner, repository, worktree, git branch, session, diff snapshot and unread count (`lib/server.js`, `src/mcp/render.ts`).
 
 A participant's prompt spells the bus tools per harness: `promptobus_send` on Claude Code, `promptobus-promptobus_send` on Cursor, `mcp__<command>_promptobus__promptobus_send` on Codex, with characters of `<command>` other than letters, digits and `_` turned into `_` (`lib/driver-claude.js`, `lib/driver-cursor.js`, `lib/driver-codex.js`).
 
