@@ -738,3 +738,6 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-442"></a>`PB-442-relift-generation-investigation` · 2026-11-20 · completed · — · Investigate generation health and old-session reconnect after relift
 - <a id="pb-331.1"></a>`PB-331.1-relifted-teamlead-child-health-line` · 2026-11-20 · batch PB-442 · — · A relifted teamlead's child orchestrator line keeps the old health verdict until the first knock
 - <a id="pb-331.2"></a>`PB-331.2-old-session-binds-after-relift` · 2026-11-20 · batch PB-442 · — · An old live Claude session reconnecting its MCP after a relift can bind the address when the session list is unreadable
+- <a id="pb-436"></a>`PB-436-native-lifecycle-comms-docs` · 2026-11-20 · completed · — · Clarify actionable mail and the managed tree Stop sequence
+- <a id="pb-419.12"></a>`PB-419.12-document-owner-status-only-escalation-exception` · 2026-11-20 · batch PB-436 · — · Document owner status-only escalation exception
+- <a id="pb-419.14"></a>`PB-419.14-document-managed-root-stop-exception` · 2026-11-20 · batch PB-436 · — · Document managed root Stop exception
