@@ -66,7 +66,7 @@ async function exercise(t, isolated) {
   assert.equal(readSnapshot(host).harnesses.claude.state, 'available');
 
   await assert.rejects(liftoffParticipant({
-    tool: { bin: process.execPath }, argv: ['-e', 'console.error("You hit your fixture limit"); process.exit(7)'],
+    tool: { bin: 'node' }, argv: ['-e', 'console.error("You hit your fixture limit"); process.exit(7)'],
     cwd: workspace, env: process.env, name: 'fixture', role: 'worker',
     sayLimit: (output) => markLimitAtStart(host, output),
   }), /exited with code 7.*now marked exhausted/);
