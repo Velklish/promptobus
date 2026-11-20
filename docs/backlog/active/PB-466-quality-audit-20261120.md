@@ -20,7 +20,7 @@ Triage the child cards. The release owner decides what evidence can qualify a Cl
 | --- | --- | --- |
 | [PB-466.1 - Define when a Claude canary can confirm cleanup with a registered child](PB-466.1-canary-cleanup-proof.md) | PQA-5003 | triage |
 | [PB-466.2 - Recover a newly created service lock after owner record publication fails](../../archive/LOG.md#pb-466.2) | PQA-2008 | triage |
-| [PB-466.3 - Confirm Claude admission rollback against the selected native session ID](PB-466.3-claude-rollback-session-id.md) | PQA-2011 | triage |
+| [PB-466.3 - Confirm Claude admission rollback against the selected native session ID](../../archive/LOG.md#pb-466.3) | PQA-2011 | triage |
 | [PB-466.4 - Report the same SILENT start in digest and status](../../archive/LOG.md#pb-466.4) | PQA-2009 | triage |
 | [PB-466.5 - Carry unknown home and registry observations through the canary exit verdict](PB-466.5-canary-hygiene-observation.md) | PQA-5004, PQA-3003 | triage |
 | [PB-466.6 - Verify native observer registration, task selection and Board contracts](PB-466.6-bb-observer-contract.md) | PQA-2000, PQA-2002, PQA-2003, PQA-2004, PQA-2005 | triage |

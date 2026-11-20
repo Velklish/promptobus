@@ -796,3 +796,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-466.23"></a>`PB-466.23-codex-schema-format-warnings` · 2026-11-20 · completed · — · Handle the uint8 annotation in the Codex schema gate
 - <a id="pb-466.2"></a>`PB-466.2-service-lock-creation-rollback` · 2026-11-20 · completed · — · Recover a newly created service lock after owner record publication fails
 - <a id="pb-466.4"></a>`PB-466.4-digest-actionable-since` · 2026-11-20 · completed · — · Report the same SILENT start in digest and status
+- <a id="pb-466.3"></a>`PB-466.3-claude-rollback-session-id` · 2026-11-20 · completed · — · Confirm Claude admission rollback against the selected native session ID

@@ -240,8 +240,10 @@ interface ClaudeRegistrySource { executable: string; nativeStore: string }
 
 // The same read, saying WHY there is no list: `missing` — the harness binary was not found or does
 // not start, in words that name it; `null` beside a `null` list — it ran and did not parse.
-export function readBgSessions({ fresh = false, source }: { fresh?: boolean; source?: ClaudeRegistrySource } = {}): { list: unknown[] | null; missing: string | null } {
-  const key = JSON.stringify({ tool: source ?? harnessBin('claude'), env: commonPollEnvironment() });
+export function readBgSessions({ fresh = false, source, requireSessionIds = false }: {
+  fresh?: boolean; source?: ClaudeRegistrySource; requireSessionIds?: boolean;
+} = {}): { list: unknown[] | null; missing: string | null } {
+  const key = JSON.stringify({ tool: source ?? harnessBin('claude'), env: commonPollEnvironment(), requireSessionIds });
   if (!fresh && bgSessionsCache !== undefined && bgSessionsCacheKey === key) return { list: bgSessionsCache, missing: null };
   const { r, missing } = runClaude(['agents', '--json'], source);
   if (missing) return { list: null, missing };
@@ -249,8 +251,10 @@ export function readBgSessions({ fresh = false, source }: { fresh?: boolean; sou
   try {
     const raw: unknown = JSON.parse(r!.stdout);
     const parsed = raw as unknown[] | { agents?: unknown; sessions?: unknown };
-    const list = Array.isArray(parsed) ? parsed : parsed.agents ?? parsed.sessions ?? [];
-    if (!Array.isArray(list)) return { list: null, missing: null };
+    const list = Array.isArray(parsed) ? parsed : parsed.agents ?? parsed.sessions ?? (requireSessionIds ? null : []);
+    if (!Array.isArray(list) || requireSessionIds && list.some(row => typeof row?.sessionId !== 'string' || !row.sessionId.trim())) {
+      return { list: null, missing: null };
+    }
     bgSessionsCache = list;
     bgSessionsCacheKey = key;
     return { list, missing: null };

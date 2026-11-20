@@ -16,7 +16,7 @@ import { wouldResolve } from './exec.js';
 import { readPrivate, recordOf, recordVersion } from './service-state.js';
 import { PARENT_SESSION_ENV } from './session-env.js';
 import {
-  bgSessions, findSession, liftoffParticipant, readBgSessions, resetBgSessionsCache, runClaude, sayLiftoff,
+  findSession, liftoffParticipant, readBgSessions, resetBgSessionsCache, runClaude, sayLiftoff,
   sessionLiveness,
 } from './liftoff.js';
 import { claudeAvailability } from './model-routing/adapter-claude.js';
@@ -823,12 +823,17 @@ async function spawn(plan: LibLaunchPlan, { tool, ref, role, cwd, env, home, tas
       if (!recordOf(record) || record.launchId !== plan.service?.launchId || record.ref !== ref || record.sessionId !== actualId) {
         throw new GateError('Failed Claude launch changed ownership before native stop; retain it for inspection');
       }
-      const listed = readBgSessions({ fresh: true });
+      const listed = readBgSessions({ fresh: true, requireSessionIds: true });
       if (listed.missing || listed.list === null) throw new GateError('Failed Claude launch has no readable native registry for stop');
       const owned = findSession(listed.list, ref, actualId);
-      if (!owned) return;
+      if (!owned) {
+        if (listed.list.some(row => recordOf(row) && (row.sessionId === actualId || row.id === actualId))) {
+          throw new GateError('Failed Claude launch changed ownership before native stop; retain it for inspection');
+        }
+        return;
+      }
       const stopped = runClaude(['stop', String(owned.id ?? actualId)]);
-      if (stopped.missing || stopped.r?.status !== 0 || await awaitSessionGone(ref) !== 'gone') {
+      if (stopped.missing || stopped.r?.status !== 0 || await awaitSessionGone(ref, { sessionId: String(owned.sessionId) }) !== 'gone') {
         throw new GateError('Failed Claude native admission could not confirm its owned session stopped');
       }
       plan.liveSeat?.stopped();
@@ -843,14 +848,17 @@ const STOP_GONE_STEP_MS = 100;
 
 // Wait until the session record is gone. A tristate — `gone`, `timeout`, `unreadable` — because
 // saying "closed" on an unreadable registry asserts the unchecked. The list is taken fresh each probe.
-async function awaitSessionGone(ref: string, { timeoutMs = STOP_GONE_TIMEOUT_MS, stepMs = STOP_GONE_STEP_MS } = {}) {
+async function awaitSessionGone(ref: string, { timeoutMs = STOP_GONE_TIMEOUT_MS, stepMs = STOP_GONE_STEP_MS, sessionId }: {
+  timeoutMs?: number; stepMs?: number; sessionId?: string;
+} = {}) {
   const edge = Date.now() + timeoutMs;
   for (;;) {
-    const list = bgSessions({ fresh: true });
+    const { list } = readBgSessions({ fresh: true, requireSessionIds: !!sessionId });
     // No point repeating on an unreadable reply: a parse refusal is not cached, and the next probe
     // would ask the same external process with the same outcome until the ceiling.
     if (list === null) return 'unreadable';
-    if (!findSession(list, ref)) return 'gone';
+    const present = sessionId ? list.some(row => recordOf(row) && row.sessionId === sessionId) : findSession(list, ref);
+    if (!present) return 'gone';
     if (Date.now() >= edge) return 'timeout';
     await new Promise((r) => { setTimeout(r, stepMs); });
   }

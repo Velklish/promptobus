@@ -262,26 +262,35 @@ try {
     && produced?.code === 0 && readPrivate(lateProducer.service.credentialFile)?.nativeBinding.state === 'bound', JSON.stringify({ error: launchError?.stack, produced, premature }));
   check('owned prompt and tool barriers fail closed if their command cannot run', ['UserPromptSubmit', 'PreToolUse'].every(event =>
     immediate.plan.settings.hooks[event]?.[0]?.hooks?.[0]?.onFailure === 'block'));
-  for (const replace of [false, true]) {
-    const failed = await fresh(replace ? 'replaced-failure' : 'owned-failure', true);
+  for (const outcome of ['gone', 'still-listed', 'unreadable', 'bad-initial-envelope', 'bad-final-envelope', 'renamed-before', 'replaced']) {
+    const replace = outcome === 'replaced', ref = `failed-${outcome}`;
+    const failed = await fresh(ref, true), other = randomUUID();
+    let seatStopped = false;
+    failed.plan.liveSeat = { stopped() { seatStopped = true; }, starting() {} };
     writeFileSync(failed.transcript, '{}\n', { mode: 0o600 });
     const stops = [], error = new Error('fixture first realization refused');
     let startup, failure;
     failed.service.realize = async () => {
+      if (outcome === 'renamed-before') sessions.find(row => row.sessionId === failed.nativeId).name = 'foreign-name';
+      sessions.unshift({ name: ref, sessionId: other, id: other.slice(0, 8), status: 'idle', pid: process.pid });
+      writeFileSync(path.join(root, 'sessions.json'),
+        outcome === 'bad-initial-envelope' ? '{"unexpected":true}' : JSON.stringify({ agents: sessions }));
       if (replace) writeJsonAtomic(failed.record, { ...readPrivate(failed.record), launchId: 'replacement-launch' }, { mode: 0o600 });
       throw error;
     };
     cp.spawnSync = function(file, argv, ...rest) {
       if (file === nativeExecutable && argv[0] === '--bg') {
         startup = phase(failed, failed.event);
-        return { status: 0, stdout: `backgrounded · ${failed.nativeId.slice(0, 8)} · ${replace ? 'replaced-failure' : 'owned-failure'}`, stderr: '' };
+        return { status: 0, stdout: `backgrounded · ${failed.nativeId.slice(0, 8)} · ${ref}`, stderr: '' };
       }
       if (argv[0] === 'stop') {
         stops.push(argv[1]);
         if (argv[1] === failed.nativeId.slice(0, 8)) failed.nativeParent.child.kill('SIGTERM');
         const index = sessions.findIndex(value => value.id === argv[1]);
-        if (index >= 0) sessions.splice(index, 1);
-        writeFileSync(path.join(root, 'sessions.json'), JSON.stringify(sessions));
+        if (index >= 0 && outcome !== 'still-listed') sessions.splice(index, 1);
+        if (outcome === 'still-listed') sessions[index].name = 'renamed-native-session';
+        const response = outcome === 'unreadable' ? '{' : outcome === 'bad-final-envelope' ? '{"agents":null}' : JSON.stringify({ sessions });
+        writeFileSync(path.join(root, 'sessions.json'), response);
         return { status: 0, stdout: 'owned fixture stop acknowledged', stderr: '' };
       }
       return originalSpawnSync.call(this, file, argv, ...rest);
@@ -289,7 +298,7 @@ try {
     syncBuiltinESMExports();
     try {
       await claudeDriver.spawn(failed.plan, { tool: { bin: nativeExecutable, version: '2.1.295' }, host, home, task: failed.task,
-        address: failed.address, ref: replace ? 'replaced-failure' : 'owned-failure', role: 'worker', cwd: root, env: failed.env,
+        address: failed.address, ref, role: 'worker', cwd: root, env: failed.env,
         persist() {}, awaitOptions: { sessions: () => sessions, tries: 1 } });
     } catch (caught) { failure = caught; }
     finally { cp.spawnSync = originalSpawnSync; syncBuiltinESMExports(); await startup; }
@@ -300,11 +309,21 @@ try {
         new Promise(resolve => { timer = setTimeout(() => resolve(false), 5000); })]);
       clearTimeout(timer);
     }
-    check(replace ? 'failed admission preserves a replacement generation and reports unresolved cleanup'
-      : 'failed first realization revokes the grant and stops only its exact owned native session',
-    replace ? failure instanceof AggregateError && /changed ownership/.test(failure.message) && stops.length === 0
-      : failure === error && stoppedParent && stops.length === 1 && stops[0] === failed.nativeId.slice(0, 8)
-        && !existsSync(failed.service.credentialFile), JSON.stringify({ error: failure?.stack, startup: await startup, stops }));
+    const detail = JSON.stringify({ error: failure?.stack, startup, stops, seatStopped });
+    if (replace || outcome === 'renamed-before') {
+      check(`failed admission preserves changed ownership and reports unresolved cleanup (${outcome})`,
+        failure instanceof AggregateError && /changed ownership/.test(failure.message) && stops.length === 0 && !seatStopped, detail);
+    } else if (outcome === 'bad-initial-envelope') {
+      check('malformed initial registry reports unresolved cleanup without issuing Stop',
+        failure instanceof AggregateError && /no readable native registry/.test(failure.message) && !stops.length && !seatStopped, detail);
+    } else {
+      const targetStopped = stoppedParent && stops.length === 1 && stops[0] === failed.nativeId.slice(0, 8);
+      check(`failed admission targets its own session despite the namesake (${outcome})`,
+        targetStopped && sessions.some(row => row.sessionId === other) && !existsSync(failed.service.credentialFile), detail);
+      check(`rollback confirms the seat only on observed disappearance of the target (${outcome})`,
+        outcome === 'gone' ? failure === error && seatStopped : failure instanceof AggregateError
+          && /could not confirm its owned session stopped/.test(failure.message) && !seatStopped, detail);
+    }
   }
 } finally {
   for (const { child } of children) if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');

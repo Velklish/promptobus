@@ -5,12 +5,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createStandaloneHost } from '../dist/host-index.js';
 import { bindManagedNativeStart } from '../lib/drivers.js';
+import { readBgSessions } from '../lib/liftoff.js';
 import { claudeDriver } from '../lib/driver-claude.js';
 import { readManagedServiceHookContext, requireManagedClaudeMcp } from '../lib/service-launch.js';
 import { reserveManagedNativeIdentity } from '../lib/native-admission.js';
 import { prepareServicePaths, readPrivate, recordVersion, requireProcess, runtimeIdentity, servicePaths, writePrivate } from '../lib/service-state.js';
 import { bus, createTask, participantOf, participantRecord, readTask, upsertParticipant } from '../lib/store.js';
-import { makeSandbox, writeHostConfig } from './sandbox.mjs';
+import { makeSandbox, stubCommand, writeHostConfig } from './sandbox.mjs';
 
 const root = realpathSync(makeSandbox('promptobus-claude-genesis-'));
 const base = mkdtempSync(path.join(realpathSync('/tmp'), 'pb-claude-genesis-'));
@@ -52,6 +53,22 @@ try {
   const journalBefore = JSON.stringify(journal()), pointerBefore = readFileSync(file, 'utf8');
   const ledger = path.join(paths.directory, 'native-admission.json');
   check('unreadable Claude list supplies no session observation', claudeDriver.inspect(ref, null) === null);
+  const registryFile = path.join(root, 'test-registry.json');
+  stubCommand(root, 'claude-registry', `import { readFileSync } from 'node:fs';
+    process.stdout.write(readFileSync(${JSON.stringify(registryFile)}));`);
+  const source = { executable: path.join(root, process.platform === 'win32' ? 'claude-registry.cmd' : 'claude-registry'), nativeStore: root };
+  for (const [label, payload, strict] of [
+    ['bare list', [], true], ['agents envelope', { agents: [] }, true], ['sessions envelope', { sessions: [] }, true],
+    ['empty object', {}, false], ['unrecognized envelope', { unexpected: true }, false],
+    ['null agents', { agents: null }, false], ['offline string', 'offline', false],
+    ['unidentified row', [{ id: 'short' }], false],
+  ]) {
+    writeFileSync(registryFile, JSON.stringify(payload));
+    const observed = readBgSessions({ source, fresh: true });
+    const verified = readBgSessions({ source, requireSessionIds: true });
+    check(`managed rollback registry: ${label} preserves ordinary read and requires identifiable sessions`,
+      Array.isArray(observed.list) && Array.isArray(verified.list) === strict, JSON.stringify({ observed, verified }));
+  }
   const predecessor = { state: 'bound', sessionId: 'a1b2c3d4-0000-4000-8000-000000000001' };
   for (const [label, generation, state, expected] of [
     ['ref mismatch only', { ref: 'previous-ref', launchId }, predecessor, 'Managed launch record identity changed'],

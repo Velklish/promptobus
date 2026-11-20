@@ -835,7 +835,11 @@ The ordinary Stop reader retains its existing tolerant behavior.
 The launcher waits up to 10 seconds for verified startup publication before its
 own grant realization; a listed background session alone cannot trigger first
 admission. On failure after an actual ID was confirmed, cleanup revokes the grant
-and stops only the matching owned native session. Changed ownership or an
+and stops only the matching owned native session. Confirmation waits for that
+session ID to disappear from the registry, including under another name. An
+older namesake can remain. Rollback accepts an array or an `agents` or `sessions`
+array whose rows have native session IDs. A different envelope or an unidentified
+row leaves the observation unknown. Changed ownership or an
 unconfirmed stop retains an explicit cleanup failure for inspection.
 
 `test/claude-admission-order.test.mjs` exercises the actual CLI guard, native Node
