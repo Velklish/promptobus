@@ -113,3 +113,7 @@ Execute this bounded batch in queue order, preserving the separate decision or e
 ## Triage disposition, 2026-11-13
 
 The owner requested completion of the remaining triage. This is a scoped queued task with work and verification defined above. Decision/investigation steps precede any dependent implementation; unmeasured claims and explicit authority boundaries remain unchanged.
+
+## Local verification, 2026-11-20
+
+All seven ordinary fixture files passed on 94253d1a (425/425 checks). The earlier controlled schedules on a1044346 returned nine successful exits and seven expected refusals. PB-419.26 and PB-419.29 still need their separate committed semantic witnesses: a specific reservation or exclusion assertion must fail in an isolated fixture and pass on the baseline and restored source. Both baselines passed. The two changed cases and restored checks were not run. The schedules establish fixture behavior under the selected ordering. Historical flake frequency and product impact remain unknown.

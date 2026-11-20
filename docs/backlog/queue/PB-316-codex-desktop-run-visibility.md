@@ -46,3 +46,7 @@ This task covers visibility in the Desktop conversation. Waking an idle conversa
 - Focused checks cover cursor continuation, ordering, duplicate prevention and a failed observation. Empty waits do not create extra model turns solely for polling.
 - The idle-conversation measurement records its version, command or action, outcome and limitations. The documentation makes active-turn visibility and idle-chat wake support distinct.
 - Every performed check records its exact command, exit code and implementation revision. Live evidence is required for UI delivery; a CLI digest or stub test alone does not establish that the Desktop person saw an event.
+
+## Local verification, 2026-11-20
+
+The bounded CLI observer passed 10/10 fixture checks covering cursor order, deduplication, failures and mailbox preservation. An ordinary Desktop conversation still needs a supported, scoped observation route. On a disposable Desktop run, match two visible worker updates, a decision question, a result and a failure or state change to their source records, preserve the mailbox owner and unread set, and exclude unrelated activity. Measure idle wake separately in the same conversation with a 60-second control and record the outcome and limits. Neither Desktop measurement was run.

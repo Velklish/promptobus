@@ -35,3 +35,7 @@ What remains is selected-profile live qualification and the independent MCP dupl
 ## Audit disposition, 2026-11-13
 
 Additional version-scoped skill evidence exists at `test/fixtures/codex-app-server/0.159.2/CanonicalSkills-0.159.2-2026-10-01.json`; retain it alongside the 0.158.0 measurement above. Current exact-path skill suppression, private `CODEX_HOME` and prefixed MCP keys are source mechanisms, not proof that every other MCP source is absent. Record installed `skills/list`, model-visible skills and `mcpServerStatus/list`, a usable handshake, reviewer `disabled_tools`/denied writes and the outside-workspace control. These live checks and current gates were not run by this audit; a schema-only result in PB-417 cannot close them.
+
+## Local verification, 2026-11-20
+
+A direct Codex 0.170.0 app-server replay verified exact-path skill override construction, an inert MCP handshake and reviewer write denial, with the outside-workspace control retaining its personal tools. The separate normal-lift preflight reached zero lifts and zero turns. Qualification still needs one ordinary worker lift and one ordinary reviewer lift with the selected binary and capture recorded separately, model-visible canonical skills and non-colliding personal skills, and MCP inventory and precedence with both sources trusted. Record the handshake, reviewer write denial and unchanged outside-workspace profile on that route.

@@ -59,3 +59,7 @@ those times from the user's release wait.
   disposable refs/repositories; failed smoke must preserve the published ref.
 - Add a release-guide regression check and run the configured gates on the final
   implementation. A previously passed macOS suite is not Linux evidence.
+
+## Local verification, 2026-11-20
+
+Local release and publication fixtures passed. Release acceptance still requires a successful run URL for the required Linux checks on the exact commit to be tagged, with skips accounted for, before publication. During an authorized release, retain the run inventory showing that publication started no second identical full suite and run the public tag installation smoke against the published version and ref. The reviewed local checks establish the publication guard and recovery behavior. The exact Linux run and public release receipts are outstanding.
