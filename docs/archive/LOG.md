@@ -758,3 +758,6 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-381.3"></a>`PB-381.3-frozen-build-dependency-cycle` · 2026-11-20 · batch PB-454 · — · Frozen BB dependency capture needs a bounded cycle policy
 - <a id="pb-381.5"></a>`PB-381.5-notrun-reason-whitespace` · 2026-11-20 · batch PB-454 · — · Reject whitespace-only notRun reasons in review evidence
 - <a id="pb-382.1"></a>`PB-382.1-collector-receipt-fd-after-raw-read-failure` · 2026-11-20 · batch PB-454 · — · Close the receipt descriptor when raw finalization fails
+- <a id="pb-455"></a>`PB-455-native-context-admission` · 2026-11-20 · completed · — · Preserve repository diagnostics and bound native context file reads
+- <a id="pb-392.1"></a>`PB-392.1-native-context-diagnostic-precedence` · 2026-11-20 · batch PB-455 · — · Keep actionable repository diagnostics before native context mismatch
+- <a id="pb-392.2"></a>`PB-392.2-native-selected-source-fifo-open` · 2026-11-20 · batch PB-455 · — · Refuse a selected source changed to FIFO before blocking open
