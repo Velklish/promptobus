@@ -11,7 +11,7 @@ const root = makeSandbox('promptobus-test-canary-abort-fixture-'), scripts = pat
 const runs = makeSandbox('promptobus-test-canary-abort-runs-');
 mkdirSync(scripts);
 for (const dir of ['test', 'lib']) symlinkSync(path.resolve(dir), path.join(root, dir));
-for (const file of ['live-canary.mjs', 'live-entry.mjs', 'live-abort.mjs', 'live-run.mjs', 'canary-runs.mjs']) {
+for (const file of ['live-canary.mjs', 'live-entry.mjs', 'live-abort.mjs', 'live-run.mjs', 'live-home.mjs', 'canary-runs.mjs']) {
   copyFileSync(path.resolve('scripts', file), path.join(scripts, file));
 }
 writeFileSync(path.join(scripts, 'live-e2e.mjs'), `await import(process.env.PROMPTOBUS_E2E_ROOT+'/loop.mjs');`);
@@ -30,6 +30,8 @@ writeFileSync(path.join(root, 'loop.mjs'), `
     });
   }
   writeFileSync(receipt,JSON.stringify({pid:process.pid,parent:process.ppid,tree:process.env.PROMPTOBUS_E2E_ROOT}));
+  if (mode === 'bad-final') writeFileSync(process.env.market, '{');
+  if (mode === 'changed-home') writeFileSync(process.env.market, '{"new-market": {}}');
   console.log('1/1 verdicts passed');
   console.log('▸ cleanup: '+JSON.stringify({safe:mode!=='unsafe'}));
   if(mode==='unsafe') process.exitCode=1;
@@ -146,5 +148,21 @@ try {
           { timeoutMs: 2000 })) throw Error('owned canary child death unconfirmed');
       }
     }
+  }
+  for (const mode of ['bad-baseline', 'bad-final', 'changed-home', 'clean-home']) {
+    const home = path.join(root, mode), plugins = path.join(home, '.claude', 'plugins');
+    mkdirSync(plugins, { recursive: true });
+    const market = path.join(plugins, 'known_marketplaces.json'), receipt = path.join(runs, mode + '.json');
+    writeFileSync(market, mode === 'bad-baseline' ? '{' : '{}');
+    const wrapper = spawn(process.execPath, [path.join(scripts, 'live-canary.mjs')], {
+      env: { ...process.env, HOME: home, USERPROFILE: home, PATH: `${bins}:${process.env.PATH}`, TMPDIR: runs, receipt, mode, market },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let output = '';
+    for (const stream of [wrapper.stdout, wrapper.stderr]) stream.on('data', chunk => { output += chunk; });
+    const code = await new Promise(resolve => wrapper.once('close', resolve));
+    const reason = mode === 'changed-home' ? 'new-market' : mode === 'clean-home' ? '✔ the person home' : market;
+    check(`canary home: ${mode} reaches the report and exit status`, code === (mode === 'clean-home' ? 0 : 1)
+      && output.includes(reason) && existsSync(receipt) === (mode !== 'bad-baseline'), output);
   }
 } finally { foreign.kill(); }

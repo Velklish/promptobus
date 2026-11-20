@@ -16,7 +16,7 @@ import { MIN_AGE_MS, RUN_OWNER_FILE } from '../scripts/canary-runs.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.join(here, '..', 'scripts', 'live-codex.mjs');
 const SB = makeSandbox('promptobus-promptobus-live-codex-stand-');
-const { home: HARNESS, restore } = await installHarness({ binDir: path.join(SB, 'bin') });
+const { home: HARNESS, restore } = await installHarness({ binDir: path.join(SB, 'bin'), scopePgrep: true });
 const WORKER = 'worker:live';
 const HELLO_TURN = { do: [
   { tool: 'promptobus_task' },

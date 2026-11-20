@@ -19,6 +19,8 @@ import { onAbort } from './live-abort.mjs';
 import { checkCodexHygiene, readCodexHygiene } from './codex-hygiene.mjs';
 import { codexCatalogEntries, pickCodexModel } from './codex-models.mjs';
 import { messageKey, reportMentionsDiff, unseenResult } from './review-events.mjs';
+import { optionalEntries } from './live-home.mjs';
+import { cursorProcessVerdict } from './cursor-cleanup.mjs';
 import { requiredTmuxSessions, tmuxAbsenceVerdict } from './tmux-check.mjs';
 import { addrKey } from '../test/harness-cursor.mjs';
 
@@ -108,14 +110,22 @@ const CURSOR_STATE = cursorPersist.sessionsDir();
 const USER_CODEX_STATE = codexSession.sessionsDir({
   PROMPTOBUS_CODEX_HOME: process.env.PROMPTOBUS_CODEX_HOME ?? path.join(homedir(), '.promptobus', 'codex'),
 });
-const listing = (dir) => {
-  try {
-    return readdirSync(dir);
-  } catch {
-    return [];
+const stateBefore = { cursor: optionalEntries(CURSOR_STATE), codex: optionalEntries(USER_CODEX_STATE) };
+function checkRegistries() {
+  const owned = optionalEntries(CODEX_STATE);
+  const stateLeft = {
+    cursor: optionalEntries(CURSOR_STATE).filter((n) => !stateBefore.cursor.includes(n)),
+    codex: optionalEntries(USER_CODEX_STATE).filter((n) => !stateBefore.codex.includes(n)),
+  };
+  check('after the loop the Cursor registry is clean and the person\'s Codex registry untouched',
+    stateLeft.cursor.length === 0 && stateLeft.codex.length === 0,
+    `cursor: ${stateLeft.cursor.join(', ') || 'clean'} · codex: ${stateLeft.codex.join(', ') || 'clean'}`);
+  check('after the stop the run\'s own Codex registry was empty before the sandbox went',
+    owned.length === 0, owned.join(', ') || 'clean');
+  if (stateLeft.cursor.length || stateLeft.codex.length || owned.length) {
+    throw new Error('session registry entries remain after Stop');
   }
-};
-const stateBefore = { cursor: listing(CURSOR_STATE), codex: listing(USER_CODEX_STATE) };
+}
 let panesBefore;
 try {
   panesBefore = new Set(requiredTmuxSessions(cursorPersist.readTmuxSessions).map((s) => s.name));
@@ -131,7 +141,7 @@ const bornAfter = (file) => {
   try {
     const st = statSync(file);
     return (st.birthtimeMs || st.mtimeMs) >= born;
-  } catch { return false; }
+  } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
 };
 // The run's own sandbox stays out of the sandbox helper's SIGNAL cleanup: the abort cleanup
 // below is awaited, and that handler would remove it and exit 130 before the stops return.
@@ -233,7 +243,6 @@ let workerRef = '';
 let reviewerRef = '';
 let transcriptPath = null;
 let commandReceiptPath = null;
-let codexStateBeforeCleanup = [];
 // Copy logs before stop removes them or drops the record that names them.
 function rememberTranscript() {
   try {
@@ -327,6 +336,19 @@ function holderPidsOf(ref) {
 
 // The same cleanup as `finally`, and it is awaited: logs first, every raised participant
 // stopped by its own driver within the budget, then its task seat and owned service close.
+let codexHygiene;
+function checkMachineCleanup() {
+  const processes = cursorProcessVerdict([SB, ws, ...probeMarks]);
+  check('no Cursor processes of the run left after the loop', processes.ok, processes.detail);
+  const panes = tmuxAbsenceVerdict(cursorPersist.readTmuxSessions, panesBefore);
+  check('no persist sessions of the run on the tmux server after the loop, foreign ones intact', panes.ok, panes.detail);
+  const tmpLeft = optionalEntries(tmpdir())
+    .filter(n => n !== path.basename(SB) && n.startsWith(RUN_PREFIX))
+    .filter(n => bornAfter(path.join(tmpdir(), n)));
+  check('no other run directories left in $TMPDIR after the loop', !tmpLeft.length, tmpLeft.join(', '));
+  codexHygiene = checkCodexHygiene(CODEX_CONFIG, codexBefore, check);
+  return processes.ok && panes.ok && !tmpLeft.length && codexHygiene.ok;
+}
 const ABORT_STOP_MS = 5_000;
 const NORMAL_STOP_MS = 5_000;
 let aborted = false;
@@ -337,7 +359,8 @@ const stopWorker = (deadline) => workerStopping ??= Promise.resolve().then(() =>
   cursorDriver.stop(workerRef, { timeoutMs: Math.max(0, deadline - Date.now()) }));
 const stopReviewer = (allowance) => reviewerStopping ??= Promise.resolve().then(() =>
   codexDriver.stop(reviewerRef, { timeoutMs: allowance() }));
-const stopUnconfirmed = (result) => result?.ok !== true || (result?.attempted === true && result?.stopped !== true);
+const stopUnconfirmed = (result) => result?.ok !== true || typeof result.stopped !== 'boolean'
+  || result.deferred === true || (result.attempted === true && !result.stopped);
 const assertRunning = () => { if (aborted) throw new Error('live run aborted'); };
 async function waitForRunning(probe, options) {
   assertRunning();
@@ -380,7 +403,10 @@ onAbort(async (signal) => {
     worker: { ref: workerRef, pids: [workerPane], alive: [workerPane == null ? null : cursorPersist.pidAlive(workerPane)], stop: workerStopped },
     reviewer: { ref: reviewerRef, pids: reviewerPids, alive: reviewerPids.map((pid) => codexSession.pidAlive(pid)), stop: reviewerStopped },
   })}\n`);
-  if ((workerRef && stopUnconfirmed(workerStopped)) || (reviewerRef && stopUnconfirmed(reviewerStopped))
+  let observed = false;
+  try { checkRegistries(); observed = checkMachineCleanup(); }
+  catch (error) { say(`  · cleanup observation failed: ${error.message}\n`); }
+  if (!observed || (workerRef && stopUnconfirmed(workerStopped)) || (reviewerRef && stopUnconfirmed(reviewerStopped))
     || serviceStopped.error || seat.state !== 'absent' || retentionError) {
     say(`  · cleanup unconfirmed; sandbox ${sandboxRetained ? 'retained' : 'retention unconfirmed'}: ${SB}\n`);
     if (retentionError) say(`  · sandbox retention error: ${retentionError?.message ?? String(retentionError)}\n`);
@@ -451,7 +477,7 @@ try {
     JSON.stringify({ threadId: thread?.threadId, state: thread?.state, holder: thread?.holderPid, sandbox: thread?.sandbox }));
 
   // Identify review rounds by actual diff files, not report wording.
-  const diffsOf = () => listing(store.filesDir(home, TASK)).filter((n) => n.endsWith('.diff'));
+  const diffsOf = () => optionalEntries(store.filesDir(home, TASK)).filter((n) => n.endsWith('.diff'));
   const diffsA = diffsOf();
   check('step 4: the first-round diff landed as a task file and carries the first edition',
     diffsA.length === 1
@@ -513,15 +539,17 @@ try {
     `${JSON.stringify(reviewB?.body ?? null).slice(0, 400)} · diff ${diffsB.join(', ')}`);
   at_('second review round', Date.now() - t6);
 
-  // --- step 7: promptobus done stops all three ------------------------------------------
+  // --- step 7: confirm the native Stop, then close the task ------------------------------------------
   const t7 = Date.now();
   // Logs — before stop: `done` sweeps the Codex holder log as a file, and the
   // Cursor session record takes the transcript path with it.
   keepLogs();
   assertRunning();
-  const done = cli([ 'done', '--task', TASK], { cwd: ws, env });
-  check('step 7: promptobus done closed the task and named both sessions it stops',
-    done.status === 0 && done.out.includes(WORKER) && done.out.includes(REVIEWER), done.out.slice(-800));
+  const stopped = cli(['stop', REVIEWER, '--task', TASK], { cwd: ws, env });
+  check('step 7: the native reviewer Stop is confirmed', stopped.status === 0 && /thread .* stopped/.test(stopped.out), stopped.out);
+  const done = cli(['done', '--task', TASK], { cwd: ws, env });
+  check('step 7: done closed the task and stopped the Cursor worker',
+    done.status === 0 && done.out.includes(WORKER), done.out.slice(-800));
   check('step 7: the Cursor worker session is stopped, no record in the registry',
     cursorDriver.inspect(workerRef)?.state === 'gone', JSON.stringify(cursorDriver.inspect(workerRef)));
   check('step 7: the Codex reviewer thread is stopped together with the holder',
@@ -559,7 +587,9 @@ try {
     await Promise.all(stopping);
     keepCommandReceipts();
     if (!aborted) {
-      codexStateBeforeCleanup = listing(CODEX_STATE);
+      try {
+        checkRegistries();
+      } catch (error) { cleanupErrors.push(error); }
       try {
         await closeService();
         const seat = observeWardenSeat();
@@ -570,7 +600,8 @@ try {
           throw new AggregateError([...(runFailed ? [runFailure] : []), ...cleanupErrors],
             `live cleanup unconfirmed; sandbox ${sandboxRetained ? 'retained' : 'retention unconfirmed'}: ${SB}`);
         }
-        rmSync(SB, { recursive: true, force: true });
+        if (checkMachineCleanup()) rmSync(SB, { recursive: true, force: true });
+        else process.stdout.write(`▸ cleanup unconfirmed; sandbox retained: ${SB}\n`);
       }
     }
   }
@@ -579,59 +610,13 @@ try {
 if (!aborted) {
   // --- hygiene: the person home and the machine after the loop ----------------------------------------
 
-  const codexHygiene = checkCodexHygiene(CODEX_CONFIG, codexBefore, check);
-
-  // Match run identity in process listings and require our own PID as a read control.
-  const ps = spawnSync('ps', ['-Ao', 'pid=,command='], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-  const seesSelf = String(ps.stdout ?? '').split('\n').some((l) => Number(l.trim().split(/\s+/)[0]) === process.pid);
-  const ours = [];
-  const foreign = [];
-  for (const line of String(ps.stdout ?? '').split('\n')) {
-    const m = /^\s*(\d+)\s+(.*\S)\s*$/.exec(line);
-    if (!m || !/cursor-agent|worker-server/.test(m[2])) continue;
-    const dump = spawnSync('ps', ['eww', '-o', 'command=', '-p', m[1]], { encoding: 'utf8' });
-    const text = String(dump.stdout ?? '');
-    const mine = text.includes(SB) || text.includes(ws) || probeMarks.some((mark) => text.includes(mark));
-    const row = `${m[1]} ${m[2].slice(0, 60)}`;
-    if (mine) ours.push(row);
-    else foreign.push(row);
-  }
-  check('no Cursor processes of the run left after the loop', ps.status === 0 && seesSelf && ours.length === 0,
-    seesSelf ? ours.join(' | ') : `ps did not list this process (exit ${ps.status} · ${String(ps.error?.message ?? ps.stderr ?? '').slice(0, 200)})`);
-  if (foreign.length) {
-    process.stdout.write(`  · processes of the same commands outside the run directory: ${foreign.length} (not ours)\n`);
-  }
-
-  // Subtract pre-existing persist sessions rather than requiring an empty shared server.
-  const finalPanes = tmuxAbsenceVerdict(cursorPersist.readTmuxSessions, panesBefore);
-  check('no persist sessions of the run on the tmux server after the loop, foreign ones intact',
-    finalPanes.ok, finalPanes.detail);
-
-  const stateLeft = {
-    cursor: listing(CURSOR_STATE).filter((n) => !stateBefore.cursor.includes(n)),
-    codex: listing(USER_CODEX_STATE).filter((n) => !stateBefore.codex.includes(n)),
-  };
-  check('after the loop the Cursor registry is clean and the person\'s Codex registry untouched',
-    stateLeft.cursor.length === 0 && stateLeft.codex.length === 0,
-    `cursor: ${stateLeft.cursor.join(', ') || 'clean'} · codex: ${stateLeft.codex.join(', ') || 'clean'}`);
-  check('after the stop the run\'s own Codex registry was empty before the sandbox went',
-    codexStateBeforeCleanup.length === 0, codexStateBeforeCleanup.join(', ') || 'clean');
-
-  // Identify leftover sandboxes by prefix; logs with a distinct prefix may outlive the run.
-  const tmpLeft = listing(tmpdir())
-    .filter((n) => n.startsWith(RUN_PREFIX))
-    .filter((n) => bornAfter(path.join(tmpdir(), n)));
-  check('no run directories left in $TMPDIR after the loop',
-    tmpLeft.length === 0 && !existsSync(SB),
-    `${tmpLeft.join(', ') || 'clean'} · sandbox ${existsSync(SB) ? SB : 'swept'}`);
-
   const passed = verdicts.filter((v) => v.ok).length;
   process.stdout.write(`\n${passed}/${verdicts.length} verdicts passed\n`);
   process.stdout.write(`durations: ${times.join(' · ') || '—'} · total ${((Date.now() - t0) / 1000).toFixed(1)} s\n`);
   process.stdout.write(`binaries: cursor ${tools.cursor.path}${tools.cursor.version ? ` (${tools.cursor.version})` : ''}`
     + ` · codex ${tools.codex.path}${tools.codex.version ? ` (${tools.codex.version})` : ''}\n`);
   process.stdout.write(`models: worker ${CURSOR_MODEL} · reviewer ${CODEX_MODEL}\n`);
-  if (codexHygiene) process.stdout.write(`${codexHygiene}\n`);
+  if (codexHygiene.summary) process.stdout.write(`${codexHygiene.summary}\n`);
   const refusedLogs = [];
   const sweptLogs = sweepPreviousRuns(tmpdir(), {
     prefix: LOGS_PREFIX, current: KEPT_LOGS, refused: refusedLogs,

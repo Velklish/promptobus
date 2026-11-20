@@ -98,12 +98,13 @@ async function runCase(boundary) {
     check: (name) => actions.push(`check ${name}`),
     commitSubject: () => { actions.push('commit subject'); return { status: 0 }; },
     said: () => boundary === 'timeout' ? null : { body: 'hello' },
-    orchInbox: () => [], listing: () => [], sentBy: () => false, messageKey: () => '',
+    orchInbox: () => [], optionalEntries: () => [], checkRegistries: () => {}, checkMachineCleanup: () => true,
+    sentBy: () => false, messageKey: () => '',
     unseenResult: () => null, reportMentionsDiff: () => false,
     rmSync: () => actions.push('remove sandbox'), retainSandbox: () => actions.push('retain sandbox'), path: { join: (...parts) => parts.join('/') },
     requiredTmuxSessions: () => [],
   };
-  const prelude = `let workerRef = '', reviewerRef = '', codexStateBeforeCleanup = [];
+  const prelude = `let workerRef = '', reviewerRef = '';
     const SB = '/sandbox', KEPT_LOGS = '/logs', WORKER = 'worker:live', REVIEWER = 'reviewer:live';
     const repo = 'repo', repoAbs = '/fixture', ws = '/fixture', ORCH_SESSION = 'orch-fixture';
     const env = {}, wardenEnv = {}, workerBrief = '/brief', identity = { title: 'fixture' }, CURSOR_MODEL = 'stub', CODEX_MODEL = 'stub';
@@ -188,7 +189,7 @@ for (const [abortDuringClose, failClose, seatState = 'absent'] of cleanupCases) 
     } },
     codexDriver: { stop: async () => ({ ok: true, stopped: true }) },
     cursorPersist: { pidAlive: () => false }, codexSession: { pidAlive: () => false },
-    existsSync: () => true, store: { liveWarden: () => null }, listing: () => [],
+    existsSync: () => true, store: { liveWarden: () => null }, check() {}, optionalEntries: () => [], checkRegistries: () => {}, checkMachineCleanup: () => true,
     rmSync: () => actions.push('remove sandbox'), retainSandbox: () => actions.push('retain sandbox'),
   };
   const hygiene = source.indexOf('if (!aborted) {\n  // --- hygiene:');
@@ -196,7 +197,7 @@ for (const [abortDuringClose, failClose, seatState = 'absent'] of cleanupCases) 
   const closeBlock = source.slice(source.indexOf('let serviceClosed ='), source.indexOf("process.once('exit'"));
   const prelude = `const workerRef = 'owned-worker', reviewerRef = 'owned-reviewer';
     const SB = '/sandbox', KEPT_LOGS = '/logs', CODEX_STATE = '/codex';
-    let codexStateBeforeCleanup = [], runFailed = false, runFailure;`;
+    let codexHygiene, runFailed = false, runFailure;`;
   const cleanup = await executeMixed(context, prelude + closeBlock + abortBlock + `return async () => { try {} ${cleanupBlock} };`, seatState);
   const normal = cleanup().then(() => ({ ok: true }),
     error => ({ ok: false, error: error.message, causes: error.errors?.map(cause => cause.message) }));
@@ -251,14 +252,14 @@ for (const [abortDuringClose, failClose, seatState = 'absent'] of cleanupCases) 
       reviewerStops += 1; budgets.push(options.timeoutMs); reviewerStarted.resolve(); return { ok: true, stopped: true };
     } },
     cursorPersist: { pidAlive: () => false }, codexSession: { pidAlive: () => false },
-    existsSync: () => true, store: { liveWarden: () => null }, listing: () => [],
+    existsSync: () => true, store: { liveWarden: () => null }, check() {}, optionalEntries: () => [], checkRegistries: () => {}, checkMachineCleanup: () => true,
     rmSync: () => actions.push('remove sandbox'), retainSandbox: () => actions.push('retain sandbox'),
   };
   const hygiene = source.indexOf('if (!aborted) {\n  // --- hygiene:');
   const cleanupBlock = source.slice(source.lastIndexOf('} finally {', hygiene) + 2, hygiene);
   const prelude = `const workerRef = 'owned-worker', reviewerRef = 'owned-reviewer';
     const SB = '/sandbox', KEPT_LOGS = '/logs', CODEX_STATE = '/codex';
-    let codexStateBeforeCleanup = [], runFailed = false, runFailure;`;
+    let codexHygiene, runFailed = false, runFailure;`;
   const cleanup = await executeMixed(context, prelude + abortBlock + `return async () => { try {} ${cleanupBlock} };`);
   const normal = cleanup();
   await Promise.all([workerStarted.promise, reviewerStarted.promise]);

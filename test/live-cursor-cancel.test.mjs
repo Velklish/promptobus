@@ -51,7 +51,7 @@ for (const unknown of [false, true]) {
   const actions = [], budgets = [], lines = [];
   const context = {
     onAbort: callback => { abort = callback; }, writeSync: (_fd, line) => lines.push(line),
-    keepTranscripts: () => {}, rememberProbeMarks: () => {},
+    checkMachineCleanup: () => true, keepTranscripts: () => {}, rememberProbeMarks: () => {},
     cursorDriver: { stop: async (ref, options) => {
       actions.push(`Stop ${ref}`); budgets.push(options.timeoutMs); await held;
       return { ok: !unknown, stopped: !unknown, note: unknown ? 'identity observation unavailable' : 'owned pane stopped' };

@@ -14,8 +14,10 @@ import { cursorDriver } from '../lib/driver-cursor.js';
 import { processState } from '../lib/service-state.js';
 
 const PACKAGE = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-for (const boundary of ['early normal', 'delayed abort', 'pending abort', 'unknown abort', 'unknown normal', 'foreign task', 'foreign home']) {
+for (const boundary of ['early normal', 'delayed abort', 'late registry abort', 'pending abort', 'unknown abort', 'unknown normal', 'foreign task', 'foreign home']) {
   const pending = boundary === 'pending abort';
+  const signal = boundary.endsWith('abort');
+  const lateRegistry = boundary === 'late registry abort';
   const foreign = boundary.startsWith('foreign');
   const ROOT = makeSandbox('promptobus-promptobus-live-cursor-cleanup-');
   const bins = path.join(ROOT, 'bin'), harness = await cursorStub.installHarness({ binDir: bins, bundledRuntime: true });
@@ -111,6 +113,12 @@ if(process.argv.includes('list-sessions')&&existsSync(${JSON.stringify(armed)}))
     homes: { [cursorStub.CURSOR_HOME_VAR]: harness.home, PROMPTOBUS_CURSOR_HOME: harness.stateHome,
       PROMPTOBUS_CURSOR_USER_HOME: harness.userHome }, env: process.env });
   if (!proved.ok) throw new Error(`owned Cursor isolation refused: ${proved.reason}`);
+  const neighbour = cursorSession.sessionFile('foreign-fixture');
+  function plantNeighbour() {
+    cursorSession.writeSession({ ref: 'foreign-fixture', cwd: ROOT });
+    return readFileSync(neighbour);
+  }
+  let before = signal && !lateRegistry && plantNeighbour();
   const child = spawn(process.execPath, [entry], { stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, TMPDIR: ROOT, PROMPTOBUS_SERVICE_HOME: privateBeforeMigration, [STUB_BIN]: bins } });
   let out = '', exit = null;
@@ -123,10 +131,7 @@ if(process.argv.includes('list-sessions')&&existsSync(${JSON.stringify(armed)}))
       !!raised?.owner && processState(raised.owner) === 'alive'
       && (boundary === 'early normal' ? !raised.ref && !raised.pane : !!raised.pane && processState(raised.pane) === 'alive'),
       JSON.stringify({ raised, out }));
-    const signal = boundary.endsWith('abort');
-    const neighbour = cursorSession.sessionFile('foreign-fixture');
-    if (signal) cursorSession.writeSession({ ref: 'foreign-fixture', cwd: ROOT });
-    const before = signal && readFileSync(neighbour);
+    if (lateRegistry) before = plantNeighbour();
     if (signal) child.kill('SIGTERM'); else writeFileSync(release, 'raise the normal fixture exception');
     await Promise.race([done, new Promise(resolve => setTimeout(resolve, 40000).unref())]);
     const stopped = existsSync(stopFile) ? JSON.parse(readFileSync(stopFile, 'utf8')) : null;
@@ -149,8 +154,16 @@ if(process.argv.includes('list-sessions')&&existsSync(${JSON.stringify(armed)}))
       JSON.stringify({ raised, stopped, removed, out }));
     else if (!pending) check(`live Cursor ${boundary}: the same physical shared owner exits and releases its task seat before teardown`,
       !!raised?.owner && processState(raised.owner) === 'dead'
-      && (unknown ? !!sandbox && existsSync(sandbox) : removed?.ownerState === 'dead' && removed?.seat === null && removed?.sandboxPresent === true),
+      && (unknown || lateRegistry ? !!sandbox && existsSync(sandbox) : removed?.ownerState === 'dead' && removed?.seat === null && removed?.sandboxPresent === true),
       JSON.stringify({ raised, removed, out }));
+    if (lateRegistry) {
+      const owner = sandbox && existsSync(sandbox) && readCompleteJson(path.join(sandbox, RUN_OWNER_FILE));
+      const sample = JSON.parse(out.split('\n').find(line => line.startsWith('  · pre-exit: '))?.slice('  · pre-exit: '.length) ?? 'null');
+      check('live Cursor late registry: native Stop and physical service exit retain a newly unaccounted registry entry',
+        stopped?.result?.stopped === true && !record && processState(raised.pane) === 'dead' && sample?.seat === null
+        && processState(raised.owner) === 'dead' && !removed && owner?.cleanup?.state === 'unresolved'
+        && out.includes(path.basename(neighbour)) && out.includes('cleanup unconfirmed; sandbox retained'), out);
+    }
     if (boundary === 'delayed abort') {
       const reads = existsSync(delayed) ? readFileSync(delayed, 'utf8').trim().split('\n').map(line => JSON.parse(line)) : [];
       check('live Cursor delayed abort: fresh delayed native identity still stops the same pane before sandbox removal',

@@ -59,6 +59,7 @@ async function runCase(boundary) {
     readCodexHygiene: (file) => readCodexHygiene(file, io),
     checkCodexHygiene: (file, before, check) => checkCodexHygiene(file, before, check, io),
     codexCatalogEntries: () => [], pickCodexModel: () => ({ model: 'stub' }), DEFAULT_MODEL: 'stub',
+    retainSandbox: () => {}, sessionsDir: () => '/registry', optionalEntries: () => record ? [ownedRef] : [],
     readSession: session, pidAlive: () => false,
     codexDriver: { inspect: () => record ? { state: 'alive', busy: false } : { state: 'gone' },
       stop: async (ref, options) => {
@@ -97,7 +98,7 @@ for (const boundary of ['hello', 'idle', 'normal stop', 'normal finally']) {
   check(`codex cancellation: ${boundary} keeps the sandbox and withholds the sample while abort stop is held`,
     run.duringAbort.sandbox && !run.duringAbort.sampled, JSON.stringify(run));
   check(`codex cancellation: ${boundary} resumes no normal verdicts, cleanup or hygiene after cancellation`,
-    run.duringAbort.laterActions.length === 0 && !run.actions.includes('remove sandbox'), JSON.stringify(run));
+    run.duringAbort.laterActions.length === 0 && run.actions.filter(action => action === 'remove sandbox').length === 1, JSON.stringify(run));
   check(`codex cancellation: ${boundary} samples the owned stream only after abort stop completes`,
     run.sample?.sandboxPresent === true && run.sample.stream.ref === 'owned-stream'
     && run.sample.stream.stop?.stopped === true
@@ -107,7 +108,7 @@ for (const boundary of ['hello', 'idle', 'normal stop', 'normal finally']) {
 const normal = await runCase('normal');
 check('codex cancellation: the uninterrupted production script still stops, removes its sandbox and reports hygiene',
   normal.stopCalls === 2 && !normal.sandbox && normal.actions.includes('remove sandbox')
-  && normal.lines.some((line) => line.includes('11/11 verdicts passed')), JSON.stringify(normal));
+  && normal.lines.some((line) => line.includes('13/13 verdicts passed')), JSON.stringify(normal));
 
 check('codex cancellation docs: normal stop overlap transfers sandbox ownership before cleanup yields',
   readFileSync(new URL('../docs/guides/contributing.md', import.meta.url), 'utf8')

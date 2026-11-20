@@ -22,15 +22,18 @@ export function checkCodexHygiene(file, before, check, io) {
     after = readCodexHygiene(file, io);
   } catch (error) {
     check('Codex hygiene observed after cleanup', false, error.message);
-    return;
+    return { ok: false };
   }
 
   const sha = `${before.sha ?? '(none)'} → ${after.sha ?? '(none)'}`;
   check('personal ~/.codex/config.toml did not change over the run (sha)', before.sha === after.sha, sha);
+  let processesClear = true;
   for (const [index, pattern] of PATTERNS.entries()) {
     const extra = after.pids[index].filter((pid) => !before.pids[index].includes(pid));
+    if (extra.length) processesClear = false;
     check(`no new ${pattern} processes after the loop`, extra.length === 0, extra.join(' | '));
   }
-  return [`sha config.toml: ${sha}`, ...PATTERNS.map((pattern, index) =>
+  const summary = [`sha config.toml: ${sha}`, ...PATTERNS.map((pattern, index) =>
     `pgrep ${pattern}: was ${before.pids[index].length}, became ${after.pids[index].length}`)].join('\n');
+  return { ok: processesClear && before.sha === after.sha, summary };
 }

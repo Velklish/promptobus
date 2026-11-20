@@ -235,8 +235,20 @@ export function pidAlive(pid) {
   }
 }
 
-export async function installHarness({ binDir, env = process.env } = {}) {
+export async function installHarness({ binDir, env = process.env, scopePgrep = false } = {}) {
   const { stubCommand, withStubPath } = await import('./sandbox.mjs');
+  if (scopePgrep) {
+    stubCommand(binDir, 'pgrep', `import { spawnSync } from 'node:child_process';
+const ps = spawnSync('ps', ['-Ao', 'pid=,command='], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+if (ps.status !== 0) process.exit(2);
+const ownBinary = ${JSON.stringify(path.join(binDir, 'codex'))};
+const pattern = process.argv[3];
+const rows = ps.stdout.split('\\n').map(line => line.trim().match(/^(\\d+)\\s+(.*)$/)).filter(Boolean);
+if (!rows.some(row => Number(row[1]) === process.pid)) process.exit(2);
+const owned = rows.filter(row => row[2].includes(ownBinary) && row[2].includes(pattern));
+if (owned.length) console.log(owned.map(row => row[1]).join('\\n'));
+else process.exitCode = 1;`);
+  }
   const home = mkdtempSync(path.join(os.tmpdir(), 'promptobus-codex-'));
   armCleanup(home);
   const previousServiceHome = env.PROMPTOBUS_SERVICE_HOME;

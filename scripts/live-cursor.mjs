@@ -17,6 +17,8 @@ import { waitFor } from '../test/harness.mjs';
 import { markRunOwner, sweepLiveRuns, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
 import { onAbort } from './live-abort.mjs';
 import { reportMentionsDiff } from './review-events.mjs';
+import { optionalEntries } from './live-home.mjs';
+import { cursorProcessVerdict } from './cursor-cleanup.mjs';
 import { requiredTmuxSessions, tmuxAbsenceVerdict } from './tmux-check.mjs';
 import { addrKey } from '../test/harness-cursor.mjs';
 
@@ -77,16 +79,9 @@ function at_(name, ms) {
 // Compare directory composition rather than timestamps in the owner home.
 const CURSOR_HOME = path.join(homedir(), '.cursor');
 function snapshotHome() {
-  const listing = (dir) => {
-    try {
-      return readdirSync(dir);
-    } catch {
-      return [];
-    }
-  };
   return {
-    chats: new Set(listing(path.join(CURSOR_HOME, 'chats'))),
-    projects: new Set(listing(path.join(CURSOR_HOME, 'projects'))),
+    chats: new Set(optionalEntries(path.join(CURSOR_HOME, 'chats'))),
+    projects: new Set(optionalEntries(path.join(CURSOR_HOME, 'projects'))),
   };
 }
 const before = snapshotHome();
@@ -95,13 +90,7 @@ const before = snapshotHome();
 process.env.PROMPTOBUS_CURSOR_HOME = process.env.PROMPTOBUS_CURSOR_HOME
   ?? path.join(homedir(), '.promptobus', 'cursor');
 const STATE_HOME = cursorStateHome();
-function snapshotState() {
-  try {
-    return readdirSync(path.join(STATE_HOME, 'sessions'));
-  } catch {
-    return [];
-  }
-}
+const snapshotState = () => optionalEntries(path.join(STATE_HOME, 'sessions'));
 const stateBefore = snapshotState();
 
 // Record pre-existing persist sessions so teardown does not count them as leaks.
@@ -220,6 +209,19 @@ function rememberProbeMarks() {
     }
   }
 }
+let newChats, newProjects;
+function checkMachineCleanup() {
+  const stateLeft = snapshotState().filter(n => !stateBefore.includes(n));
+  check('after the loop the mechanism session registry is empty — records were dropped by stop', !stateLeft.length, stateLeft.join(' | '));
+  const processes = cursorProcessVerdict([SB, ws, ...probeMarks]);
+  check('no run processes left after the loop', processes.ok, processes.detail);
+  const panes = tmuxAbsenceVerdict(readTmuxSessions, sessionsBefore);
+  check('no persist sessions of the run after cleanup', panes.ok, panes.detail);
+  const after = snapshotHome();
+  newChats = [...after.chats].filter(n => !before.chats.has(n));
+  newProjects = [...after.projects].filter(n => !before.projects.has(n));
+  return !stateLeft.length && processes.ok && panes.ok;
+}
 const PARTICIPANT_STOP_MS = 5_000;
 let aborted = false, runFailed = false, runFailure, cleanupPromise;
 const assertRunning = () => { if (aborted) throw new Error('live run aborted'); };
@@ -248,7 +250,9 @@ const cleanupRun = () => cleanupPromise ??= (async () => {
     let result;
     try { result = await cursorDriver.stop(owned.ref, { timeoutMs: Math.max(0, deadline - Date.now()) }); }
     catch (error) { result = { ok: false, stopped: false, note: error?.message ?? String(error) }; }
-    if (result?.ok !== true || (result?.attempted === true && result?.stopped !== true)) errors.push(new Error(`${owned.ref}: ${result?.note ?? 'native Stop unconfirmed'}`));
+    if (result?.ok !== true || typeof result.stopped !== 'boolean' || (result.attempted === true && !result.stopped)) {
+      errors.push(new Error(`${owned.ref}: ${result?.note ?? 'native Stop unconfirmed'}`));
+    }
     return { ...owned, result };
   }));
   let service;
@@ -269,9 +273,11 @@ onAbort(async (signal) => {
   say(`  · pre-exit: ${JSON.stringify({ sandbox: SB, sandboxPresent: existsSync(SB), elapsedMs: result.elapsedMs,
     native: result.native.map(owned => ({ ...owned, alive: owned.panePid == null ? null : pidAlive(owned.panePid) })),
     service: result.service, seat: taskCreated ? store.liveWarden(home, TASK) : null })}\n`);
-  if (result.error) {
+  let observed = false;
+  try { observed = checkMachineCleanup(); } catch (error) { say(`  · cleanup observation failed: ${error.message}\n`); }
+  if (result.error || !observed) {
     say(`  · cleanup unconfirmed; sandbox ${result.retained ? 'retained' : 'retention unconfirmed'}: ${SB}\n`);
-    for (const error of result.error.errors) say(`  · cleanup error: ${error?.message ?? String(error)}\n`);
+    for (const error of result.error?.errors ?? []) say(`  · cleanup error: ${error?.message ?? String(error)}\n`);
   } else {
     rmSync(SB, { recursive: true, force: true });
     say('  · owned native cleanup and service exit confirmed\n');
@@ -540,42 +546,13 @@ try {
     const result = await cleanupRun();
     if (!aborted) {
       if (result.error) throw result.error;
+      if (!checkMachineCleanup()) throw Error(`Cursor cleanup unconfirmed; sandbox retained: ${SB}`);
       rmSync(SB, { recursive: true, force: true });
     }
   }
 }
 
 if (!aborted) {
-// Attribute processes by this run’s paths or markers; require our own PID as a read control.
-const ps = spawnSync('ps', ['-Ao', 'pid=,command='], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-const seesSelf = String(ps.stdout ?? '').split('\n').some((l) => Number(l.trim().split(/\s+/)[0]) === process.pid);
-const ours = [];
-const foreign = [];
-for (const line of String(ps.stdout ?? '').split('\n')) {
-  const m = /^\s*(\d+)\s+(.*\S)\s*$/.exec(line);
-  if (!m || !/cursor-agent|worker-server/.test(m[2])) continue;
-  const dump = spawnSync('ps', ['eww', '-o', 'command=', '-p', m[1]], { encoding: 'utf8' });
-  const text = String(dump.stdout ?? '');
-  const mine = text.includes(SB) || text.includes(ws) || probeMarks.some((mark) => text.includes(mark));
-  const row = `${m[1]} ${m[2].slice(0, 60)}`;
-  if (mine) ours.push(row);
-  else foreign.push(row);
-}
-check('no run processes left after the loop', ps.status === 0 && seesSelf && ours.length === 0,
-  seesSelf ? ours.join(' | ') : `ps did not list this process (exit ${ps.status} · ${String(ps.error?.message ?? ps.stderr ?? '').slice(0, 200)})`);
-if (foreign.length) {
-  process.stdout.write(`  · processes of the same commands outside the run directory: ${foreign.length} (not ours)\n`);
-}
-
-const stateLeft = snapshotState().filter((n) => !stateBefore.includes(n))
-  .map((n) => path.join(STATE_HOME, 'sessions', n));
-check('after the loop the mechanism session registry is empty — records were dropped by stop',
-  stateLeft.length === 0, stateLeft.join(' | '));
-
-const after = snapshotHome();
-const newChats = [...after.chats].filter((n) => !before.chats.has(n));
-const newProjects = [...after.projects].filter((n) => !before.projects.has(n));
-
 const passed = verdicts.filter((v) => v.ok).length;
 process.stdout.write(`\n${passed}/${verdicts.length} verdicts passed\n`);
 process.stdout.write(`durations: ${times.join(' · ')} · total ${((Date.now() - t0) / 1000).toFixed(1)} s\n`);
@@ -590,7 +567,7 @@ if (refusedLogs.length) process.stdout.write(`sweep refused (busy or foreign per
 process.stdout.write(existsSync(KEPT_LOGS)
   ? `run turn logs: ${KEPT_LOGS}\n`
   : 'no run turn logs — the first turn was never reached\n');
-process.stdout.write(`entries in ${CURSOR_HOME}: new chat directories ${newChats.length}`
+if (newChats && newProjects) process.stdout.write(`entries in ${CURSOR_HOME}: new chat directories ${newChats.length}`
   + `${newChats.length ? ` (${newChats.map((n) => path.join(CURSOR_HOME, 'chats', n)).join(', ')})` : ''}`
   + `; new project entries ${newProjects.length}`
   + `${newProjects.length ? ` (${newProjects.map((n) => path.join(CURSOR_HOME, 'projects', n)).join(', ')})` : ''}\n`);

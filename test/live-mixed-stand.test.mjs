@@ -21,10 +21,12 @@ const WORKER = 'worker:live';
 const REVIEWER = 'reviewer:live';
 const SB = makeSandbox('promptobus-promptobus-live-mixed-stand-');
 const binDir = path.join(SB, 'bin');
+const temp = path.join(SB, 'tmp');
+mkdirSync(temp);
 // The stand homes stay OUTSIDE the file sandbox: its exit hook removes the directory before
 // the stands have killed their panes and holders (the mixed suite file does the same).
 const cursorHarness = await cursorStub.installHarness({ binDir, bundledRuntime: true });
-const codexHarness = await codexStub.installHarness({ binDir });
+const codexHarness = await codexStub.installHarness({ binDir, scopePgrep: true });
 
 function start(args = [], env = {}) {
   const proved = proveStandIsolation({
@@ -42,7 +44,7 @@ function start(args = [], env = {}) {
   if (!proved.ok) throw new Error(`stub isolation refused: ${proved.reason}`);
   const child = spawn(process.execPath, [SCRIPT, ...args], {
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, ...env, [STUB_BIN]: binDir },
+    env: { ...process.env, ...env, TMPDIR: temp, [STUB_BIN]: binDir },
   });
   const run = { child, out: '', exit: null };
   child.stdout.on('data', (c) => { run.out += c; });

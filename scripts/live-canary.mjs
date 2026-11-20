@@ -15,6 +15,7 @@ import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { writeHostConfig } from '../test/sandbox.mjs';
 import { CANARY_PREFIX, RUN_OWNER_FILE, markRunOwner, markRunUnresolved, runOwnerIsDead, sweepPreviousRuns, sweptLine } from './canary-runs.mjs';
 import { exitCodeOf, runCanaryChild } from './live-abort.mjs';
+import { optionalBytes, optionalEntries } from './live-home.mjs';
 import { parseLiveSessions } from './live-run.mjs';
 import { liveRoutingEnv, refuseImportedEntry } from './live-entry.mjs';
 
@@ -68,7 +69,6 @@ const under = (child, parent) => {
   const r = real(parent);
   return c === r || c.startsWith(r + path.sep);
 };
-const listOf = (dir) => { try { return readdirSync(dir); } catch { return []; } };
 const bornAfter = (file) => {
   try {
     const st = statSync(file);
@@ -81,8 +81,16 @@ const recentEntries = (dir, matches) => {
 };
 const readJson = (file) => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; } };
 /** Marketplace names in the Claude Code global registry. No file — an empty list. */
-const marketplaceIds = () => Object.keys(readJson(KNOWN_MARKETPLACES)?.marketplaces
-  ?? readJson(KNOWN_MARKETPLACES) ?? {});
+function marketplaceIds() {
+  const bytes = optionalBytes(KNOWN_MARKETPLACES);
+  if (!bytes) return [];
+  try {
+    const parsed = JSON.parse(bytes);
+    const entries = Object.hasOwn(parsed, 'marketplaces') ? parsed.marketplaces : parsed;
+    if (!entries || typeof entries !== 'object' || Array.isArray(entries)) throw Error('expected a marketplace map');
+    return Object.keys(entries);
+  } catch (error) { throw Error(`${KNOWN_MARKETPLACES}: ${error.message}`); }
+}
 
 function completedReport(dir) {
   const files = [RUN_OWNER_FILE, 'live-canary.md', 'live-e2e.out'];
@@ -105,7 +113,7 @@ const head = (spawnSync('git', ['-C', REPO, 'rev-parse', 'HEAD'], { encoding: 'u
 const packDir = path.join(RUN, 'pack');
 mkdirSync(packDir, { recursive: true });
 const packed = run('npm', ['pack', '--pack-destination', packDir], { cwd: CLI, encoding: 'utf8' });
-const tgzName = listOf(packDir).find((n) => n.endsWith('.tgz'));
+const tgzName = readdirSync(packDir).find((n) => n.endsWith('.tgz'));
 const tgz = tgzName ? path.join(packDir, tgzName) : null;
 
 const ws = path.join(RUN, 'ws');
@@ -137,11 +145,11 @@ const cli = (args, opts = {}) => spawnSync(process.execPath, [BIN, ...args], {
 // A missing harness is not evidence of an empty session registry.
 
 const sha = (text) => createHash('sha256').update(text).digest('hex').slice(0, 12);
-const fileMark = (file) => { try { return sha(readFileSync(file)); } catch { return '(no file)'; } };
+const fileMark = (file) => { const bytes = optionalBytes(file); return bytes ? sha(bytes) : '(no file)'; };
 const homeSnapshot = () => ({
   'marketplace entries': marketplaceIds().sort().join(' ') || '(none)',
   'plugin installs': fileMark(INSTALLED_PLUGINS),
-  'plugin cache': listOf(PLUGIN_CACHE).sort().join(' ') || '(none)',
+  'plugin cache': optionalEntries(PLUGIN_CACHE).sort().join(' ') || '(none)',
   'Claude Code personal settings': fileMark(CLAUDE_SETTINGS),
 });
 /** What drifted between two snapshots — one line per field, so the verdict names the door. */
@@ -149,17 +157,17 @@ const homeDiff = (before, after) => Object.keys(before)
   .filter((k) => before[k] !== after[k])
   .map((k) => `${k}: was «${before[k]}» became «${after[k]}»`);
 
-const homeBefore = homeSnapshot();
-note(`home snapshot before the version check: ${Object.entries(homeBefore).map(([k, v]) => `${k}=${v}`).join(' · ')}`);
-
-const versioned = existsSync(BIN) ? cli(['--version']) : { status: 1, stdout: '', stderr: `missing ${BIN}` };
-check('canary: the installed tarball answers --version',
-  versioned.status === 0,
-  `code ${versioned.status} · ${tail(`${versioned.stdout}${versioned.stderr}`)}`);
-
 let failure = null;
+let homeBefore;
 let childCleanupConfirmed = false, workspaceRemoved = false;
 try {
+  homeBefore = homeSnapshot();
+  note(`home snapshot before the version check: ${Object.entries(homeBefore).map(([k, v]) => `${k}=${v}`).join(' · ')}`);
+
+  const versioned = existsSync(BIN) ? cli(['--version']) : { status: 1, stdout: '', stderr: `missing ${BIN}` };
+  check('canary: the installed tarball answers --version',
+    versioned.status === 0,
+    `code ${versioned.status} · ${tail(`${versioned.stdout}${versioned.stderr}`)}`);
 
   // Run the live loop entirely from the installed tree.
   const liveEnv = {
@@ -204,12 +212,14 @@ try {
   failure = e;
 } finally {
   // Compare the owner home with the same snapshot even if the live loop failed.
-  const homeAfterRun = homeSnapshot();
-  const runDiff = homeDiff(homeBefore, homeAfterRun);
-  check('the person home: the canary left no changes over the whole run',
-    runDiff.length === 0,
-    runDiff.join(' · '));
-  note(`home snapshot after the run: ${Object.entries(homeAfterRun).map(([k, v]) => `${k}=${v}`).join(' · ')}`);
+  try {
+    const homeAfterRun = homeSnapshot();
+    const runDiff = homeBefore ? homeDiff(homeBefore, homeAfterRun) : [`baseline unavailable: ${failure?.message}`];
+    check('the person home: the canary left no changes over the whole run',
+      runDiff.length === 0,
+      runDiff.join(' · '));
+    note(`home snapshot after the run: ${Object.entries(homeAfterRun).map(([k, v]) => `${k}=${v}`).join(' · ')}`);
+  } catch (error) { check('the person home: final observation unavailable', false, error.message); }
 
   // ── Cleanup ────────────────────────────────────────────────────────────────────────
 

@@ -6,12 +6,13 @@ import path from 'node:path';
 import process from 'node:process';
 import { finishLiveArgs, parseLiveArgs } from './live-args.mjs';
 import { guardStubLaunch, liveRoutingEnv, refuseImportedEntry } from './live-entry.mjs';
-import { makeSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
+import { makeSandbox, retainSandbox, writeHostConfig, resolveToolBin } from '../test/sandbox.mjs';
 import { dropSessionLeaks, SESSION_LEAK_VARS } from '../test/hygiene.mjs';
 import { freshScenarioIdentity, buildWorkspace, cli, MECHANISM_ROOT, store } from '../test/scenario.mjs';
 import { waitFor } from '../test/harness.mjs';
 import { markRunOwner, sweepLiveRuns } from './canary-runs.mjs';
 import { onAbort } from './live-abort.mjs';
+import { optionalEntries } from './live-home.mjs';
 import { checkCodexHygiene, readCodexHygiene } from './codex-hygiene.mjs';
 import { codexCatalogEntries, pickCodexModel } from './codex-models.mjs';
 
@@ -28,7 +29,7 @@ const LIVE_ARGS = finishLiveArgs(parseLiveArgs(process.argv.slice(2), LIVE_FLAGS
 });
 
 const { codexDriver, DEFAULT_MODEL } = await import(path.join(MECHANISM_ROOT, 'lib', 'driver-codex.js'));
-const { pidAlive, readSession } = await import(path.join(MECHANISM_ROOT, 'lib', 'codex-session.js'));
+const { pidAlive, readSession, sessionsDir } = await import(path.join(MECHANISM_ROOT, 'lib', 'codex-session.js'));
 
 const RELIED = [
   'initialize',
@@ -137,6 +138,7 @@ if (leaked.length) process.stdout.write(`▸ stripped from the run environment: 
 
 let ref = '';
 let methodsCalled = [];
+let codexHygiene;
 
 /** The holder and app-server pids of the stream, read while its record still exists. */
 function holderPidsOf(it) {
@@ -150,7 +152,25 @@ function holderPidsOf(it) {
 }
 
 // A run cut off by a signal cleans up what `finally` would, and the cleanup is awaited: the
-// stream is stopped by its own driver within the budget, then the exit hook takes the sandbox.
+// stream is stopped by its own driver within the budget, then verified cleanup releases the sandbox.
+let sandboxRetained = false, normalStopConfirmed = false;
+function retainOwnedSandbox() {
+  if (!sandboxRetained) { retainSandbox(SB); sandboxRetained = true; }
+}
+function finishCleanup(stopped) {
+  const confirmed = !ref || (stopped?.ok === true && (stopped.stopped === true
+    || (normalStopConfirmed && stopped.stopped === false && !stopped.attempted && !stopped.deferred)));
+  check('final native Stop confirmed', confirmed, stopped?.note ?? 'no Stop result');
+  let recordsClear = false;
+  try {
+    const records = optionalEntries(sessionsDir(env));
+    recordsClear = !records.length;
+    check('no entries remain in the owned Codex registry', recordsClear, records.join(', '));
+  } catch (error) { check('owned Codex registry observed after Stop', false, error.message); }
+  codexHygiene = checkCodexHygiene(CONFIG, codexBefore, check);
+  if (confirmed && recordsClear && codexHygiene.ok) rmSync(SB, { recursive: true, force: true });
+  else process.stdout.write(`▸ cleanup unconfirmed; sandbox retained: ${SB}\n`);
+}
 const ABORT_STOP_MS = 5_000;
 let aborted = false;
 const assertRunning = () => {
@@ -163,12 +183,14 @@ async function waitForRunning(probe, options) {
 }
 onAbort(async (signal) => {
   aborted = true;
+  retainOwnedSandbox();
   const say = (line) => writeSync(1, line);
   say(`\n▸ run cut off by ${signal}: stopping the Codex stream by its driver\n`);
   const pids = ref ? holderPidsOf(ref) : [];
   let stopped = null;
   if (ref) {
-    stopped = await codexDriver.stop(ref, { timeoutMs: ABORT_STOP_MS });
+    try { stopped = await codexDriver.stop(ref, { timeoutMs: ABORT_STOP_MS }); }
+    catch (error) { stopped = { ok: false, note: error.message }; }
     say(`  · stop returned for the stream ${ref}: ${stopped?.note ?? 'no stop result'}\n`);
   } else {
     say('  · no thread in the registry yet — nothing to stop\n');
@@ -179,7 +201,7 @@ onAbort(async (signal) => {
       stream: { ref, pids, alive: pids.map((pid) => pidAlive(pid)), stop: stopped },
     })}\n`);
   }
-  say(`  · the sandbox goes on exit, with the thread record under it: ${SB}\n`);
+  finishCleanup(stopped);
 });
 const t0 = Date.now();
 try {
@@ -224,6 +246,7 @@ try {
 
   const t6 = Date.now();
   const stopped = await codexDriver.stop(ref);
+  normalStopConfirmed = stopped?.ok === true && stopped.stopped === true;
   assertRunning();
   check('step 3: stop kills the holder and drops the record',
     stopped.ok && stopped.stopped && !readSession(ref, env), JSON.stringify(stopped));
@@ -233,13 +256,16 @@ try {
 } catch (e) {
   if (!aborted) check('the run reached the end without a break', false, e.stack ?? e.message);
 } finally {
-  if (!aborted && ref) await Promise.resolve(codexDriver.stop(ref)).catch(() => {});
-  if (!aborted) rmSync(SB, { recursive: true, force: true });
+  if (!aborted) {
+    retainOwnedSandbox();
+    let stopped;
+    try { if (ref) stopped = await codexDriver.stop(ref); }
+    catch (error) { stopped = { ok: false, note: error.message }; }
+    if (!aborted) finishCleanup(stopped);
+  }
 }
 
 if (!aborted) {
-  const codexHygiene = checkCodexHygiene(CONFIG, codexBefore, check);
-
   const unobserved = RELIED.filter((m) => !methodsCalled.includes(m));
 
   const passed = verdicts.filter((v) => v.ok).length;
@@ -249,6 +275,6 @@ if (!aborted) {
   process.stdout.write(`methods the holder saw: ${methodsCalled.join(', ') || '(empty)'}\n`);
   process.stdout.write(`declared surface not observed: ${unobserved.join(', ') || 'none'}\n`);
   process.stdout.write(`  (unobserved is not missing; the stand covers them)\n`);
-  if (codexHygiene) process.stdout.write(`${codexHygiene}\n`);
+  if (codexHygiene.summary) process.stdout.write(`${codexHygiene.summary}\n`);
   process.exitCode = passed === verdicts.length ? 0 : 1;
 }
