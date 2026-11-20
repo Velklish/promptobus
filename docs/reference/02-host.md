@@ -1506,8 +1506,8 @@ Every bound participant dispatch rechecks owner-published current control before
 The optional [native observer](../../integrations/bb-native-observer/README.md) is a
 BB navigation page for Promptobus sessions. Configure an enrolled host and owned
 canonical store/native roots. The page is a board of active runs: a lane per run,
-a column per pipeline step plus Done and a card per piece; a card opens the piece's
-history and, for a BB participant, its thread. Owner notifications watch one run
+a column per pipeline step and a card per piece. An inferred pipeline ends in **Done**.
+A card opens the piece's history and, for a BB participant, its thread. Owner notifications watch one run
 selected on the page. The
 selection persists in plugin Settings. Each view names its host, roots and task;
 configuration changes invalidate pending views before they can combine identities.
@@ -1522,7 +1522,8 @@ The host exposes read-only `snapshot`, `tasks`, `ownerFeed`, `board` and
 `pieceHistory`, `selectTask`, `wakeStatus` and `bindOwner`.
 Both `selectTask` and `bindOwner` persist plugin configuration.
 When a native run starts under a host-declared pipeline, its task journal records
-the ordered step names in `adapter.pipelineSteps`. This is the startup order;
+the ordered step names in `adapter.pipelineSteps`. For a recorded startup order, the final column is **Next step unconfirmed**.
+The board uses that order as its baseline;
 `digest` and step admission still consult the current host. The board labels a
 missing step as a startup expectation and shows additional observed participants
 and their history even when their steps were absent at startup. Without a snapshot, the board uses
@@ -1542,10 +1543,9 @@ An intent whose JSON cannot yet be parsed or that changes during a bounded read
 keeps its ID out of placement and history. The lane and side panel report an
 incomplete sample and keep the cards and selection. Growth past the record size
 limit and other owned-file violations still refuse. Only bytes read are charged.
-Native detail requires a matching canonical launch binding. Current worker and
-reviewer registration persists session/thread identity without that launch binding;
-those participants retain canonical identity with native launch/state/profile and
-command counts explicitly unavailable. It
+Native detail requires a matching canonical launch binding. Current Codex workers and
+reviewers reserve a launch ID and retain it when they persist the native session.
+Legacy records without a launch ID display canonical participant fields only. The observer
 provides no canonical sender, ACK, launch, recovery or Stop controls. Recorded results and
 review outcomes retain their canonical types and sender roles; owner acceptance
 is not inferred. Native registry activity does not prove process liveness, and

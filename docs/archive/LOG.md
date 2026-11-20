@@ -803,3 +803,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-466.11"></a>`PB-466.11-idle-report-duration-fixture` · 2026-11-20 · completed · — · Verify the idle report using controlled elapsed time
 - <a id="pb-466.12"></a>`PB-466.12-cpu-probe-clock-check` · 2026-11-20 · completed · — · Distinguish CPU consumption from elapsed time in the load probe test
 - <a id="pb-466.13"></a>`PB-466.13-holder-interrupt-budget-check` · 2026-11-20 · completed · — · Exercise the shared interrupt deadline when Codex exchanges hang
+- <a id="pb-466.6"></a>`PB-466.6-bb-observer-contract` · 2026-11-20 · completed · — · Verify native observer registration, task selection and Board contracts

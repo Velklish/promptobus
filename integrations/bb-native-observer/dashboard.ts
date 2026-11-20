@@ -55,7 +55,7 @@ export function relativeAge(at: string | null | undefined, now: number): string 
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
   return `${Math.floor(seconds / 86400)}d ago`;
 }
-/** The run's steps as columns plus Done; a piece sits in the column of the step that holds it. */
+/** The final column is Done for an inferred pipeline and Next step unconfirmed for a recorded one. */
 export function columnsOf(run: Pick<Run, 'steps' | 'pieces' | 'startSteps'>): { step: string | null; label: string; pieces: Piece[] }[] {
   return [...run.steps.map(step => ({ step, label: step })), { step: null, label: run.startSteps ? 'Next step unconfirmed' : 'Done' }]
     .map(column => ({ ...column, pieces: run.pieces.filter(piece => piece.step === column.step) }));

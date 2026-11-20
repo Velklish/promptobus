@@ -701,6 +701,9 @@ check('docs: the observer board has a Done column only for an inferred pipeline'
   has(observerReadme, 'Only a run without a recorded pipeline, where the order is inferred, has a **Done** column')
   && has(observerReadme, 'go under **Next step unconfirmed**, not Done.')
   && !has(observerReadme, 'A piece every step has reported on is in **Done**.')
+  && has(hostReference, 'An inferred pipeline ends in **Done**.')
+  && has(hostReference, 'For a recorded startup order, the final column is **Next step unconfirmed**.')
+  && !has(hostReference, 'a column per pipeline step plus Done')
   && has(read(`${observerRoot}/dashboard.ts`), "label: run.startSteps ? 'Next step unconfirmed' : 'Done'"),
   'the observer README presents Done as universal, or the dashboard no longer limits Done to an inferred pipeline');
 

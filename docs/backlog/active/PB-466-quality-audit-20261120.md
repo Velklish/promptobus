@@ -23,7 +23,7 @@ Triage the child cards. The release owner decides what evidence can qualify a Cl
 | [PB-466.3 - Confirm Claude admission rollback against the selected native session ID](../../archive/LOG.md#pb-466.3) | PQA-2011 | triage |
 | [PB-466.4 - Report the same SILENT start in digest and status](../../archive/LOG.md#pb-466.4) | PQA-2009 | triage |
 | [PB-466.5 - Carry unknown home and registry observations through the canary exit verdict](PB-466.5-canary-hygiene-observation.md) | PQA-5004, PQA-3003 | triage |
-| [PB-466.6 - Verify native observer registration, task selection and Board contracts](PB-466.6-bb-observer-contract.md) | PQA-2000, PQA-2002, PQA-2003, PQA-2004, PQA-2005 | triage |
+| [PB-466.6 - Verify native observer registration, task selection and Board contracts](../../archive/LOG.md#pb-466.6) | PQA-2000, PQA-2002, PQA-2003, PQA-2004, PQA-2005 | triage |
 | [PB-466.7 - Distinguish reviewer checkpoints from file attachments in participant instructions](PB-466.7-reviewer-checkpoint-and-attachment.md) | PQA-4000, PQA-2006 | triage |
 | [PB-466.8 - Document the providers eligible to run a reporter](../../archive/LOG.md#pb-466.8) | PQA-4001 | triage |
 | [PB-466.9 - Document the role of the tool version in managed Claude admission](../../archive/LOG.md#pb-466.9) | PQA-4009 | triage |

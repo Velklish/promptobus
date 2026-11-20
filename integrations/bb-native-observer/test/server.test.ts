@@ -47,7 +47,7 @@ test('task discovery works before selection and selection survives server reload
     assert.equal(view.snapshot?.task.id, 'second-task'); assert.equal(view.configuration.storeRoot, f.selection.storeRoot);
     assert.deepEqual(view.snapshot?.selection, { ...f.selection, taskId: 'second-task' });
     assert.equal(treeDigest(f.root), before);
-    assert.deepEqual(Object.keys(remounted.rpc), ['snapshot', 'board', 'pieceHistory', 'view', 'tasks', 'selectTask', 'wakeStatus', 'bindOwner']);
+    assert.deepEqual(new Set(Object.keys(remounted.rpc)), new Set(['snapshot', 'board', 'pieceHistory', 'view', 'tasks', 'selectTask', 'wakeStatus', 'bindOwner']));
   } finally { f.cleanup(); }
 });
 

@@ -66,7 +66,40 @@ test('the board follows the pipeline recorded by spawn and agrees with digest on
   } finally { f.cleanup(); }
 });
 
-test('actual worker and reviewer persist records retain canonical bindings without a fabricated native launch binding', async () => {
+test('the observer reads native records written for reserved Codex workers and reviewers', async () => {
+  const runtime = (file: string) => import(pathToFileURL(path.resolve(`../../lib/${file}.js`)).href);
+  const [store, lifecycle, { REGISTRY }, { writeSession }] = await Promise.all(
+    ['store', 'native-lifecycle', 'drivers', 'codex-session'].map(runtime));
+  const f = fixture();
+  try {
+    const selection = { ...f.selection, taskId: 'bound-producers' };
+    const { storeRoot: home, nativeRoot, taskId } = selection;
+    store.createTask(home, { id: taskId, title: 'Bound Codex launches' });
+    const refs = ['!!!', 'x'.repeat(60), 'review/one:two', 'MiXeD'];
+    for (const [index, ref] of refs.entries()) {
+      const reviewer = index % 2 === 1;
+      const address = `${reviewer ? 'reviewer' : 'worker'}:actor-${index}`, thread = `thread-${index}`;
+      const participant = store.participantRecord(address, { harness: 'codex', sessionRef: ref,
+        ...(reviewer ? { reviewLaunchId: `review-${index}` } : {}) });
+      const { record } = lifecycle.reserveNativeParticipant(home, taskId, participant, null, REGISTRY);
+      if (reviewer) lifecycle.persistReviewerSession(home, taskId, record, thread, false, thread);
+      else lifecycle.persistNativeParticipant(home, taskId, record, { session: thread, sessionId: thread });
+      const persisted = store.participantOf(store.readTask(home, taskId), address);
+      assert.equal(persisted.metadata.sessionId, thread);
+      assert.equal(typeof record.metadata.nativeLaunchId, 'string');
+      assert.ok(record.metadata.nativeLaunchId);
+      assert.equal(persisted.metadata.nativeLaunchId, record.metadata.nativeLaunchId);
+      writeSession({ ref, home, task: taskId, address, threadId: thread, launchId: record.metadata.nativeLaunchId,
+        state: 'alive', busy: true, sandbox: 'readOnly' }, { PROMPTOBUS_CODEX_HOME: nativeRoot });
+      const actor = readProjection(selection, 'producer-test', 1).actors.find(p => p.address === address);
+      assert.ok(actor);
+      assert.deepEqual([actor.sessionRef, actor.launchId, actor.threadId, actor.state, actor.busy, actor.sandbox],
+        [ref, record.metadata.nativeLaunchId, thread, 'alive', true, 'readOnly']);
+    }
+  } finally { f.cleanup(); }
+});
+
+test('legacy worker and reviewer records retain canonical bindings without a native launch binding', async () => {
   const { participantRecord, upsertParticipant } = await import(pathToFileURL(path.resolve('../../lib/store.js')).href);
   const f = fixture('producer-bindings');
   try {

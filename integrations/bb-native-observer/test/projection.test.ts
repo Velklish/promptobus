@@ -101,7 +101,7 @@ test('real typed host boundary admits snapshot only and preserves the fixture', 
     assert.equal(snapshot.actors.length, 3); assert.equal(treeDigest(f.root), before);
     await assert.rejects(() => harness.experimental_call('snapshot', { ...f.selection, command: 'send' } as never));
     await assert.rejects(() => harness.experimental_call('stop' as never, f.selection as never));
-    assert.deepEqual(Object.keys(hostEntry.contract), ['snapshot', 'tasks', 'ownerFeed', 'board', 'pieceHistory']);
+    assert.deepEqual(new Set(Object.keys(hostEntry.contract)), new Set(['snapshot', 'tasks', 'ownerFeed', 'board', 'pieceHistory']));
   } finally { await harness.experimental_dispose(); f.cleanup(); }
 });
 test('task discovery and projection include unread mail without consuming or duplicating it', () => {
