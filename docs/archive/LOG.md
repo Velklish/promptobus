@@ -704,3 +704,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-419.23"></a>`PB-419.23-investigate-authorized-history-route-for-acknowledged-review-parts` · 2026-11-20 · completed · — · Investigate authorized history route for acknowledged review parts
 - <a id="pb-419.34"></a>`PB-419.34-decide-pipeline-instruction-symlink-boundary` · 2026-11-20 · completed · — · Decide pipeline instruction symlink boundary
 - <a id="pb-340.1"></a>`PB-340.1-live-run-routing-state-in-home` · 2026-11-20 · completed · — · A live run on the standalone host writes model-routing cache and telemetry under the person's home
+- <a id="pb-320"></a>`PB-320-preflight-cache-lost-entry` · 2026-11-20 · completed · — · Four concurrent preflights lose an entry while none reports writing without the lock
