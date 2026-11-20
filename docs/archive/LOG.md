@@ -770,3 +770,7 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-460"></a>`PB-460-bb-board-declared-pipeline` · 2026-11-20 · completed · — · Show a host-declared pipeline on the BB board
 - <a id="pb-461"></a>`PB-461-bb-board-large-run-history` · 2026-11-20 · completed · — · Read the BB board of a run past 4096 history references
 - <a id="pb-462"></a>`PB-462-bb-board-unconfirmed-delivery` · 2026-11-20 · completed · — · Mark a BB board step that rests on an unfinished delivery
+- <a id="pb-465"></a>`PB-465-reviewed-doc-evidence-followups` · 2026-11-20 · completed · — · Close the three documentation follow-ups from the five-card review
+- <a id="pb-436.1"></a>`PB-436.1-managed-root-readme-actionable-mail` · 2026-11-20 · batch PB-465 · — · Distinguish actionable mail from status in the managed root README
+- <a id="pb-437.1"></a>`PB-437.1-codex-0165-retained-schema-evidence` · 2026-11-20 · batch PB-465 · — · Separate the Codex 0.165.0 comparison record from missing schema files
+- <a id="pb-440.1"></a>`PB-440.1-host-cli-binding-source-citation` · 2026-11-20 · batch PB-465 · — · Cite the TypeScript source of the CLI host bindings
