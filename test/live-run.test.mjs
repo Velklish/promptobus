@@ -415,6 +415,16 @@ process.stdout.write('ready\\n');
 }
 
 {
+  const dir = stand('cleanup-remove-error');
+  const run = liveRun({ sandbox: dir, socketDir: path.join(dir, 'socket'), readSessions: () => [],
+    readProcesses: () => [], stopSession: async () => {}, remove() { throw Error('socket removal refused'); } });
+  const result = await run.cleanup().catch(error => ({ rejected: error.message }));
+  check('a filesystem refusal returns an unconfirmed cleanup result and preserves the stand',
+    result.safe === false && result.sandboxRemoved === false
+    && result.failures.includes('socket removal refused') && existsSync(dir), JSON.stringify(result));
+}
+
+{
   const dir = stand('empty-run');
   const run = liveRun({ sandbox: dir, readSessions: () => [], stopSession: async () => {}, readProcesses: () => [] });
   const result = await run.cleanup();

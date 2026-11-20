@@ -583,6 +583,13 @@ The detached-child fixture requires the stand to survive an incomplete ancestry 
 
 `node scripts/live-canary.mjs` installs the tarball into a fresh workspace and runs the shared Claude Code scenario against that installation. The canary checks the installed version and the mechanism root reported by the child; resolving a path in the parent would not prove which package the child used. It strips inherited bus identity from each child, without changing the parent environment. Otherwise a child could address the invoking session's task or store instead of the temporary workspace.
 
+The child reports whether the scenario returned, its passed and total checks,
+and its cleanup evidence. A completed scenario with all checks passing earns
+its functional result even when a registered child exits and its descendants
+can no longer be observed. In that case the wrapper reports unconfirmed
+cleanup, retains the stand, and exits 1. A partial run cannot qualify through
+a passing tally printed before it stopped.
+
 The canary compares the owner's Claude Code settings and plugin state before the installed version check and after the live loop, even if the loop fails. It reports drift rather than repairing it. It reads sessions with the installed package's registry parser, not a second parser. An unreadable registry or a process listing without the checker's own PID cannot establish that teardown left nothing. The install tree identifies which matching processes belong to the run; matches outside it are reported separately.
 
 ### Sweeping run directories

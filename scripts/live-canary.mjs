@@ -194,12 +194,18 @@ try {
   }
   const liveOut = readFileSync(log, 'utf8');
   const terminal = /^▸ cleanup: (.+)$/.exec(liveOut.trimEnd().split('\n').at(-1));
-  childCleanupConfirmed = live.status === 0 && !!terminal && JSON.parse(terminal[1])?.safe === true;
-  const tally = /(\d+)\/(\d+) verdicts passed/.exec(liveOut);
-  check('canary: the live orchestration loop passed in full',
-    live.status === 0 && !!tally && tally[1] === tally[2],
-    `code ${live.status} · ${tally ? `${tally[1]}/${tally[2]}` : 'count not parsed'} · ${tail(liveOut, 900)}`);
-  if (tally) note(`live verdicts ${tally[1]}/${tally[2]}`);
+  const receipt = terminal && JSON.parse(terminal[1]);
+  const scenario = receipt?.scenario;
+  const recorded = typeof scenario?.completed === 'boolean' && Number.isSafeInteger(scenario.total)
+    && Number.isSafeInteger(scenario.passed) && scenario.passed >= 0 && scenario.passed <= scenario.total;
+  const completed = recorded && scenario.completed && scenario.total > 0 && scenario.passed === scenario.total;
+  const consistentExit = recorded && typeof receipt?.safe === 'boolean' && live.status === (completed && receipt.safe ? 0 : 1);
+  childCleanupConfirmed = consistentExit && receipt?.safe === true;
+  check('canary: the live orchestration loop passed in full', completed && consistentExit,
+    `code ${live.status} · ${scenario ? `${scenario.passed}/${scenario.total}` : 'scenario receipt missing'} · ${tail(liveOut, 500)}`);
+  check('cleanup: the child confirmed its process tree and sessions are gone', childCleanupConfirmed,
+    receipt?.failures?.join(' · ') || `code ${live.status} · cleanup unconfirmed`);
+  if (scenario) note(`live verdicts ${scenario.passed}/${scenario.total}`);
   const total = /total ([\d.]+) s/.exec(liveOut);
   if (total) note(`the loop took ${total[1]} s`);
 

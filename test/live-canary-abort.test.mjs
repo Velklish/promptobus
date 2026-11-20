@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { check } from './check.mjs';
 import { makeSandbox, stubCommand } from './sandbox.mjs';
@@ -10,7 +10,29 @@ import { CANARY_PREFIX, MIN_AGE_MS, RUN_OWNER_FILE, runOwnerIsLive } from '../sc
 const root = makeSandbox('promptobus-test-canary-abort-fixture-'), scripts = path.join(root, 'scripts'), bins = path.join(root, 'bin');
 const runs = makeSandbox('promptobus-test-canary-abort-runs-');
 mkdirSync(scripts);
-for (const dir of ['test', 'lib']) symlinkSync(path.resolve(dir), path.join(root, dir));
+// Each simulated run owns at most the socket directory its provider names in its receipt.
+const socketView = path.join(root, 'fixture-socket-view.mjs');
+writeFileSync(socketView, `
+  import fs from 'node:fs';
+  import path from 'node:path';
+  import { syncBuiltinESMExports } from 'node:module';
+  const list = fs.readdirSync;
+  fs.readdirSync = function(dir, ...args) {
+    const entries = list.call(this, dir, ...args);
+    if (dir !== '/tmp') return entries;
+    const receipt = process.env.receipt;
+    if (!fs.existsSync(receipt)) return [];
+    const { socket } = JSON.parse(fs.readFileSync(receipt, 'utf8'));
+    return socket ? entries.filter(name => name === path.basename(path.dirname(socket))) : [];
+  };
+  syncBuiltinESMExports();
+`);
+const wrapperArgv = ['--import', socketView, path.join(scripts, 'live-canary.mjs')];
+symlinkSync(path.resolve('lib'), path.join(root, 'lib'));
+mkdirSync(path.join(root, 'test'));
+for (const file of ['sandbox.mjs', 'hygiene.mjs', 'harness.mjs']) {
+  symlinkSync(path.resolve('test', file), path.join(root, 'test', file));
+}
 for (const file of ['live-canary.mjs', 'live-entry.mjs', 'live-abort.mjs', 'live-run.mjs', 'live-home.mjs', 'canary-runs.mjs']) {
   copyFileSync(path.resolve('scripts', file), path.join(scripts, file));
 }
@@ -33,7 +55,8 @@ writeFileSync(path.join(root, 'loop.mjs'), `
   if (mode === 'bad-final') writeFileSync(process.env.market, '{');
   if (mode === 'changed-home') writeFileSync(process.env.market, '{"new-market": {}}');
   console.log('1/1 verdicts passed');
-  console.log('▸ cleanup: '+JSON.stringify({safe:mode!=='unsafe'}));
+  if (mode === 'malformed-receipt') console.log('▸ cleanup: {"safe":true,');
+  else console.log('▸ cleanup: '+JSON.stringify({safe:mode!=='unsafe',failures:mode==='unsafe'?['owned processes remain']:[],scenario:{completed:true,passed:1,total:1}}));
   if(mode==='unsafe') process.exitCode=1;
 `);
 stubCommand(bins, 'claude', `
@@ -57,7 +80,7 @@ stubCommand(bins, 'npm', `
 const foreign = spawn(process.execPath, ['-e', 'setTimeout(()=>{},60000)'], { stdio: 'ignore' });
 try {
   const stands = {}, held = [];
-  for (const mode of ['normal', 'unsafe', 'unknown-registry', 'parent', 'group', 'pending', 'sweep', 'version-error', 'empty-registry']) {
+  for (const mode of ['normal', 'unsafe', 'unknown-registry', 'parent', 'group', 'pending', 'sweep', 'version-error', 'empty-registry', 'malformed-receipt']) {
     const receipt = path.join(runs, mode+'.json');
     const raw = JSON.stringify(mode === 'unknown-registry' ? {} : mode === 'empty-registry' ? [] : mode === 'sweep' ? {sessions:[]}
       : {agents:[{sessionId:'foreign-control',pid:foreign.pid,cwd:'/foreign-fixture'}]});
@@ -77,7 +100,7 @@ try {
       for (const dir of [stands.normal,...held]) utimesSync(dir, old, old);
       for (let i=0;i<3;i++) mkdirSync(path.join(runs, CANARY_PREFIX+'recent-'+i));
     }
-    const parent = spawn(process.execPath, [path.join(scripts, 'live-canary.mjs')], { detached: true,
+    const parent = spawn(process.execPath, wrapperArgv, { detached: true,
       env: { ...process.env, PATH: `${bins}:${process.env.PATH}`, TMPDIR: runs, receipt, mode, PROMPTOBUS_TASK: 'foreign-fixture' },
       stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '', owned;
@@ -107,6 +130,16 @@ try {
           && output.includes('sessions in the harness registry after the run: 0') && readCompleteJson(path.join(stand,RUN_OWNER_FILE))?.canaryReport === 'complete', output);
         continue;
       }
+      if (mode === 'malformed-receipt') {
+        const log = readFileSync(path.join(stand, 'live-e2e.out'), 'utf8').trimEnd();
+        const report = readFileSync(path.join(stand, 'live-canary.md'), 'utf8');
+        check('canary: malformed terminal receipt refuses functional success and retains the stand',
+          log.endsWith('1/1 verdicts passed\n▸ cleanup: {"safe":true,') && parent.exitCode === 1 && !parent.signalCode
+          && report.includes('canary — RED') && !report.includes('✔ canary: the live orchestration loop passed in full')
+          && existsSync(child.tree) && existsSync(path.join(stand, 'pack'))
+          && readCompleteJson(path.join(stand, RUN_OWNER_FILE))?.cleanup?.state === 'unresolved', output);
+        continue;
+      }
       if (mode === 'version-error') {
         check('canary version failure: report stays red although owned cleanup was confirmed',
           parent.exitCode === 1 && !existsSync(child.tree) && readCompleteJson(path.join(stand,RUN_OWNER_FILE))?.canaryReport === 'complete'
@@ -114,6 +147,9 @@ try {
         continue;
       }
       if (mode === 'unsafe' || mode === 'unknown-registry') {
+        if (mode === 'unsafe') check('canary: a surviving owned process keeps cleanup unconfirmed after a successful scenario',
+          output.includes('✔ canary: the live orchestration loop passed in full')
+          && output.includes('✖ cleanup: the child confirmed its process tree and sessions are gone — owned processes remain'), output);
         if (mode === 'unknown-registry') check('canary registry: actual agents --json returned {} and its envelope was rejected',
           readFileSync(path.join(root,'registry-read'),'utf8') === '{}' && output.includes('malformed session registry'), output);
         check(`canary ${mode}: no-signal failure retains the workspace, pack, report and unresolved marker`,
@@ -154,7 +190,7 @@ try {
     mkdirSync(plugins, { recursive: true });
     const market = path.join(plugins, 'known_marketplaces.json'), receipt = path.join(runs, mode + '.json');
     writeFileSync(market, mode === 'bad-baseline' ? '{' : '{}');
-    const wrapper = spawn(process.execPath, [path.join(scripts, 'live-canary.mjs')], {
+    const wrapper = spawn(process.execPath, wrapperArgv, {
       env: { ...process.env, HOME: home, USERPROFILE: home, PATH: `${bins}:${process.env.PATH}`, TMPDIR: runs, receipt, mode, market },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -164,5 +200,55 @@ try {
     const reason = mode === 'changed-home' ? 'new-market' : mode === 'clean-home' ? '✔ the person home' : market;
     check(`canary home: ${mode} reaches the report and exit status`, code === (mode === 'clean-home' ? 0 : 1)
       && output.includes(reason) && existsSync(receipt) === (mode !== 'bad-baseline'), output);
+  }
+  // Exercise both production entrypoints. Only the paid Claude scenario is replaced.
+  for (const file of ['live-args.mjs', 'live-e2e.mjs']) copyFileSync(path.resolve('scripts', file), path.join(scripts, file));
+  writeFileSync(path.join(root, 'test', 'scenario.mjs'), `
+    import { spawn } from 'node:child_process';
+    import { mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
+    import { LIVE_RECORD } from '../scripts/live-run.mjs';
+    import { once } from 'node:events';
+    export const MECHANISM_ROOT = process.env.PROMPTOBUS_E2E_ROOT, STEPS = ['fake provider turn'];
+    export async function runScenario({ check, harness, sandbox }) {
+      const provider = spawn(process.execPath, ['-e', "process.stdin.resume(); console.log('ready')"], { stdio: ['pipe', 'pipe', 'ignore'] });
+      const closed = once(provider, 'close');
+      try {
+        await once(provider.stdout, 'data');
+        harness.child(provider);
+        check('fake provider completed the turn', true);
+      } finally { provider.stdin.end(); await closed; }
+      writeFileSync(process.env.receipt, JSON.stringify({ sandbox, socket: harness.sock('fixture') }));
+      if (process.env.mode === 'cleanup-io') {
+        const record = sandbox + '/' + LIVE_RECORD;
+        unlinkSync(record);
+        mkdirSync(record);
+      }
+      try {
+        if (process.env.mode === 'partial') throw Error('interrupted after first check');
+      } finally { await harness.cleanup(); }
+      return { timings: [], totalMs: 1, mechanism: {reported: MECHANISM_ROOT+'/bin/promptobus.js'} };
+    }
+  `);
+  for (const mode of ['completed', 'partial', 'cleanup-io']) {
+    const receipt = path.join(runs, mode + '.json');
+    const wrapper = spawn(process.execPath, wrapperArgv, {
+      env: { ...process.env, PATH: `${bins}:${process.env.PATH}`, TMPDIR: runs, receipt, mode },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let output = '';
+    for (const stream of [wrapper.stdout, wrapper.stderr]) stream.on('data', chunk => { output += chunk; });
+    const code = await new Promise(resolve => wrapper.once('close', resolve));
+    const owned = readCompleteJson(receipt);
+    const reportPath = /^▸ report: (.+)$/m.exec(output)?.[1];
+    const report = reportPath && readFileSync(reportPath, 'utf8');
+    const stamp = mode === 'partial' ? '✖' : '✔';
+    check(`canary ${mode}: report the actual functional outcome and retain unconfirmed cleanup`,
+      code === 1 && report?.includes(`${stamp} canary: the live orchestration loop passed in full`)
+      && report.includes('✖ cleanup: the child confirmed its process tree and sessions are gone')
+      && report.includes(mode === 'cleanup-io' ? 'EISDIR' : 'process ancestry became unobservable')
+      && owned && existsSync(owned.sandbox)
+      && existsSync(path.join(path.dirname(reportPath), 'ws')), output);
+    // The fake provider exited through its stdin and started no descendants.
+    if (owned?.socket) rmSync(path.dirname(owned.socket), { recursive: true, force: true });
   }
 } finally { foreign.kill(); }

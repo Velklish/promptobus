@@ -176,5 +176,6 @@ if (report) {
 if (failure) {
   process.stdout.write(`✖ run broken: ${failure.message}\n`);
 }
-process.stdout.write(`▸ cleanup: ${JSON.stringify(cleanupResult)}\n`);
-process.exitCode = passed === verdicts.length && !failure && cleanupResult?.safe ? 0 : 1;
+const scenario = { completed: !!report && !failure, passed, total: verdicts.length };
+process.stdout.write(`▸ cleanup: ${JSON.stringify({ ...cleanupResult, scenario })}\n`);
+process.exitCode = scenario.completed && scenario.total > 0 && passed === scenario.total && cleanupResult?.safe ? 0 : 1;

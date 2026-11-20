@@ -243,14 +243,19 @@ export function liveRun({ sandbox, socketDir = null, readSessions, stopSession,
         if (livePids.length) failures.push('owned processes remain');
         if (record.ancestryIncomplete) failures.push('process ancestry became unobservable');
       } catch (error) { failures.push(String(error?.message ?? error)); }
-      const safe = failures.length === 0 && livePids?.length === 0;
-      record.deathVerified = safe;
-      save();
-      if (safe) {
-        if (socketDir) remove(socketDir);
-        remove(sandbox);
+      record.deathVerified = failures.length === 0 && livePids?.length === 0;
+      let sandboxRemoved = false;
+      try {
+        save();
+        if (record.deathVerified) {
+          if (socketDir) remove(socketDir);
+          remove(sandbox);
+          sandboxRemoved = true;
+        }
+      } catch (error) {
+        failures.push(String(error?.message ?? error));
       }
-      return { safe, livePids, failures, sandboxRemoved: safe };
+      return { safe: sandboxRemoved, livePids, failures, sandboxRemoved };
     })();
     return cleanupPromise;
   };

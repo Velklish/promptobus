@@ -806,3 +806,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-466.6"></a>`PB-466.6-bb-observer-contract` · 2026-11-20 · completed · — · Verify native observer registration, task selection and Board contracts
 - <a id="pb-466.7"></a>`PB-466.7-reviewer-checkpoint-and-attachment` · 2026-11-20 · completed · — · Distinguish reviewer checkpoints from file attachments in participant instructions
 - <a id="pb-466.5"></a>`PB-466.5-canary-hygiene-observation` · 2026-11-20 · completed · — · Carry unknown home and registry observations through the canary exit verdict
+- <a id="pb-466.1"></a>`PB-466.1-canary-cleanup-proof` · 2026-11-20 · completed · — · Define when a Claude canary can confirm cleanup with a registered child
