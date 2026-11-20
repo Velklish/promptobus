@@ -20,6 +20,7 @@
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { mock } from 'node:test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from './check.mjs';
@@ -1355,26 +1356,37 @@ writeFileSync(activityRecord.transcript, JSON.stringify({ type: 'turn_ended', st
 writeSession(activityRecord, env);
 const activityFile = injectionActivityFile(activityRecord.ref, env), activityRegistry = sessionFile(activityRecord.ref, env);
 const ownershipBytes = readFileSync(activityRegistry), ownershipVersion = recordVersion(activityRegistry);
-const markedActivity = markInjected(activityRecord, env);
-check('injection activity: delayed transcript keeps its grace without changing native ownership bytes or revision',
-  markedActivity && turnState(activityRecord, env).busy === true && sameRecordVersion(ownershipVersion)
-  && readFileSync(activityRegistry).equals(ownershipBytes) && (statSync(activityFile).mode & 0o777) === 0o600
-  && (statSync(path.dirname(activityFile)).mode & 0o777) === 0o700,
-  JSON.stringify({ markedActivity, state: turnState(activityRecord, env), directoryMode: statSync(path.dirname(activityFile)).mode & 0o777 }));
-const activity = readPrivate(activityFile);
-const injectedMs = Date.parse(activity.injectedAt);
-writeFileSync(activityRecord.transcript, [{ role: 'user', message: { content: [] } }, { type: 'turn_ended', status: 'success' }]
-  .map((event) => JSON.stringify(event)).join('\n') + '\n');
-utimesSync(activityRecord.transcript, new Date(injectedMs + 1000), new Date(injectedMs + 1000));
-check('injection activity: a turn the transcript recorded after the injection and already ended is not busy inside the grace',
-  Date.now() - injectedMs < INJECT_GRACE_MS && turnState(activityRecord, env).busy === false,
-  JSON.stringify({ sinceInjection: Date.now() - injectedMs, state: turnState(activityRecord, env) }));
-writeFileSync(activityRecord.transcript, JSON.stringify({ type: 'turn_ended', status: 'success' }) + '\n');
-writePrivate(activityFile, { ...activity, injectedAt: new Date(Date.now() - INJECT_GRACE_MS - 1000).toISOString() });
-check('injection activity: expired grace does not make an ended turn busy', turnState(activityRecord, env).busy === false);
-writeFileSync(activityRecord.transcript, JSON.stringify({ role: 'user', message: { content: [] } }) + '\n');
-check('injection activity: an actual queued turn remains busy after its injection grace expires', turnState(activityRecord, env).busy === true);
-writeFileSync(activityRecord.transcript, JSON.stringify({ type: 'turn_ended', status: 'success' }) + '\n');
+let activity;
+const injectedMs = Date.now();
+const beforeInjection = new Date(injectedMs - 1000);
+utimesSync(activityRecord.transcript, beforeInjection, beforeInjection);
+mock.timers.enable({ apis: ['Date'], now: injectedMs });
+try {
+  const markedActivity = markInjected(activityRecord, env);
+  check('injection activity: delayed transcript keeps its grace without changing native ownership bytes or revision',
+    markedActivity && turnState(activityRecord, env).busy === true && sameRecordVersion(ownershipVersion)
+    && readFileSync(activityRegistry).equals(ownershipBytes) && (statSync(activityFile).mode & 0o777) === 0o600
+    && (statSync(path.dirname(activityFile)).mode & 0o777) === 0o700,
+    JSON.stringify({ markedActivity, state: turnState(activityRecord, env), directoryMode: statSync(path.dirname(activityFile)).mode & 0o777 }));
+  activity = readPrivate(activityFile);
+  mock.timers.setTime(injectedMs + 1000);
+  writeFileSync(activityRecord.transcript, [{ role: 'user', message: { content: [] } }, { type: 'turn_ended', status: 'success' }]
+    .map((event) => JSON.stringify(event)).join('\n') + '\n');
+  utimesSync(activityRecord.transcript, new Date(injectedMs + 1000), new Date(injectedMs + 1000));
+  check('injection activity: a turn the transcript recorded after the injection and already ended is not busy inside the grace',
+    Date.parse(activity.injectedAt) === injectedMs && turnState(activityRecord, env).busy === false,
+    JSON.stringify({ sinceInjection: Date.now() - injectedMs, state: turnState(activityRecord, env) }));
+  writeFileSync(activityRecord.transcript, JSON.stringify({ type: 'turn_ended', status: 'success' }) + '\n');
+  utimesSync(activityRecord.transcript, beforeInjection, beforeInjection);
+  mock.timers.setTime(injectedMs + INJECT_GRACE_MS);
+  check('injection activity: expired grace does not make an ended turn busy', turnState(activityRecord, env).busy === false);
+  writeFileSync(activityRecord.transcript, JSON.stringify({ role: 'user', message: { content: [] } }) + '\n');
+  check('injection activity: an actual queued turn remains busy after its injection grace expires', turnState(activityRecord, env).busy === true);
+  writeFileSync(activityRecord.transcript, JSON.stringify({ type: 'turn_ended', status: 'success' }) + '\n');
+} finally {
+  mock.timers.reset();
+}
+utimesSync(activityRecord.transcript, beforeInjection, beforeInjection);
 for (const field of ['ref', 'launchId', 'chatId']) {
   writePrivate(activityFile, { ...activity, [field]: 'foreign-generation' });
   check(`injection activity: foreign ${field} cannot mark this native generation busy`, turnState(activityRecord, env).busy === false);

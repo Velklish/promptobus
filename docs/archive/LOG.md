@@ -799,3 +799,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-466.3"></a>`PB-466.3-claude-rollback-session-id` · 2026-11-20 · completed · — · Confirm Claude admission rollback against the selected native session ID
 - <a id="pb-466.25"></a>`PB-466.25-unix-socket-framing-investigation` · 2026-11-20 · completed · — · Investigate response framing in the Unix socket smoke test
 - <a id="pb-466.10"></a>`PB-466.10-stop-fixture-event-order` · 2026-11-20 · completed · — · Make Stop fixtures observe deadlines and process exit deterministically
+- <a id="pb-466.24"></a>`PB-466.24-cursor-grace-timing-investigation` · 2026-11-20 · completed · — · Investigate the Cursor turn test at the injection grace deadline

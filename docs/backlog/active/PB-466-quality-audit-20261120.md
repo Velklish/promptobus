@@ -41,7 +41,7 @@ Triage the child cards. The release owner decides what evidence can qualify a Cl
 | [PB-466.21 - Align the contributing guide with the public audit exceptions](../../archive/LOG.md#pb-466.21) | PQA-5000 | minor |
 | [PB-466.22 - Describe byte restoration and current handover requirements in the published schema](../../archive/LOG.md#pb-466.22) | PQA-5001, PQA-5002 | minor |
 | [PB-466.23 - Handle the uint8 annotation in the Codex schema gate](../../archive/LOG.md#pb-466.23) | PQA-5005 | minor |
-| [PB-466.24 - Investigate the Cursor turn test at the injection grace deadline](PB-466.24-cursor-grace-timing-investigation.md) | PQA-2012 | minor |
+| [PB-466.24 - Investigate the Cursor turn test at the injection grace deadline](../../archive/LOG.md#pb-466.24) | PQA-2012 | minor |
 | [PB-466.25 - Investigate response framing in the Unix socket smoke test](../../archive/LOG.md#pb-466.25) | PQA-3001 | minor |
 
 ## Verification
