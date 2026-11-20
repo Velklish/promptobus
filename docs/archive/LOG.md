@@ -724,3 +724,6 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-304.1"></a>`PB-304.1-release-writer-minor-prose-table-findings` · 2026-11-20 · batch PB-438 · — · Release writer retains minor prose and table findings
 - <a id="pb-317.2"></a>`PB-317.2-bold-every-local-rule` · 2026-11-20 · batch PB-438 · — · contributing.md bolds «every» for emphasis, and a test pins the bold
 - <a id="pb-330"></a>`PB-330-release-writer-fix-check` · 2026-11-20 · batch PB-438 · — · The release writer pass does not say whether its documentation fixes carry a check that fails on the old text
+- <a id="pb-439"></a>`PB-439-bb-role-facade` · 2026-11-20 · completed · — · Align BB role contracts, mailbox examples and approver routing
+- <a id="pb-419.6"></a>`PB-419.6-route-bb-approver-messages-through-orchestrator` · 2026-11-20 · batch PB-439 · — · Route BB approver messages through orchestrator
+- <a id="pb-419.35"></a>`PB-419.35-correct-unsupported-reporter-harness-diagnostics` · 2026-11-20 · batch PB-439 · — · Correct unsupported reporter harness diagnostics
