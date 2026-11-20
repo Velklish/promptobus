@@ -735,3 +735,7 @@ check('docs: solo review explains routing, recorded branch points and orphan pic
 const bbRange = JSON.parse(read('integrations/bb/package.json')).engines.bb;
 check('docs: BB setup and provider selection use the manifest host range',
   ['## Setup', '## Provider and model selection'].every(heading => section(bbGuide, heading).includes(bbRange)));
+
+check('docs: the English authoring guide names the closed snapshot list',
+  has(read('docs/guides/contributing.md'), 'the transliteration table in `src/protocol.ts` and the journal of closed tasks.')
+  && !has(read('docs/guides/contributing.md'), 'a run trace quoted in a card'));
