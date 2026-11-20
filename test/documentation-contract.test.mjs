@@ -715,3 +715,9 @@ check('docs: models probes by default in the orchestrate skill, abandon refuses 
 check('docs: automatic native reporter selection applies the shipped reviewer roles',
   [cli, drivers].every(text => has(text, 'The shipped catalog admits Claude and Codex reporters.'))
   && !has(cli, 'an overlay can make an OpenCode tuple eligible'));
+
+check('docs: the optional Host version gates real managed Claude admission',
+  has(toolBinDocs, 'If the Host supplies no version, the lift asks `readToolVersion`.')
+  && has(toolBinDocs, 'Admission requires a parseable Claude version of at least 2.1.295')
+  && has(toolBinDocs, 'Dry runs do not probe the binary.')
+  && !has(toolBinDocs, 'the rest are read to talk to a person'));
