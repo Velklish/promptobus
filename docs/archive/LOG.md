@@ -769,3 +769,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-415.8"></a>`PB-415.8-remove-bb-host-full-host-assertions` · 2026-11-20 · batch PB-457 · — · Use the minimal pipeline Host contract without full Host assertions
 - <a id="pb-460"></a>`PB-460-bb-board-declared-pipeline` · 2026-11-20 · completed · — · Show a host-declared pipeline on the BB board
 - <a id="pb-461"></a>`PB-461-bb-board-large-run-history` · 2026-11-20 · completed · — · Read the BB board of a run past 4096 history references
+- <a id="pb-462"></a>`PB-462-bb-board-unconfirmed-delivery` · 2026-11-20 · completed · — · Mark a BB board step that rests on an unfinished delivery
