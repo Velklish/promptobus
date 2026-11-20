@@ -767,3 +767,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-457"></a>`PB-457-typed-runtime-cleanup` · 2026-11-20 · completed · — · Remove redundant Host assertions and align catch bindings
 - <a id="pb-415.6"></a>`PB-415.6-typescript-catch-binding-indent` · 2026-11-20 · batch PB-457 · — · Indent typed catch bindings with their enclosing blocks
 - <a id="pb-415.8"></a>`PB-415.8-remove-bb-host-full-host-assertions` · 2026-11-20 · batch PB-457 · — · Use the minimal pipeline Host contract without full Host assertions
+- <a id="pb-460"></a>`PB-460-bb-board-declared-pipeline` · 2026-11-20 · completed · — · Show a host-declared pipeline on the BB board
