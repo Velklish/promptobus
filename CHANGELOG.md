@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Bind Linux release qualification to the Test step's own suite footer and refuse ambiguous test log groups. Recover an interrupted publication after `main` advances when the public tag still matches the recorded annotated object and candidate.
-
 ### Added
 
 - Bound the orchestrator's root thread by batch or owner-set context threshold. The handoff preserves task records and distinguishes an approved mailbox succession from managed Codex same-thread recovery.
@@ -27,14 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Native reviewers can checkpoint findings for the diff they opened without writing a file. Replacements read the last terminal result and the verified checkpoints separately beside the new diff; neither body enters launch arguments. Cursor and OpenCode revoke the failed reviewer's journal binding even when admission fails after session publication. Committed findings remain readable; an unresolved native session keeps its record and is not reported as stopped.
 
-- Show a board of active runs in the BB native panel: lanes per run, columns per pipeline step plus Done, a card per piece with its holder, latest status, stall, open question and unread mail, and a side panel with the piece's history and an Open thread button for a BB participant. The digest and the board place pieces by one rule, now exported as `piecesOf` and `currentResult`.
+- The BB native panel shows one lane per run and one column per pipeline step. The final column is Next step unconfirmed for a recorded pipeline and Done for an inferred pipeline. Each piece's card shows its holder, latest status, stall, open question and unread mail. The side panel shows its history and an **Open thread** button for BB participants. The digest and board share the exported `piecesOf` and `currentResult` functions.
 - Keep long runs visible on the BB native board with a newest-first history window and a shared byte budget. Mark unfinished deliveries on affected cards and in the side panel without advancing a step on a partial delivery. Keep the cards and open side panel visible while an intent is being written.
 - Hosts can select different MCP sets for background workers and control roles. An opt-in project-discovery boundary restricts access to MCP servers from ancestor workspace configs. The worker set goes to the step of kind `edits-tree`, whatever its name.
 
 ### Changed
 
+- Bind Linux release qualification to the Test step's own suite footer and refuse ambiguous test log groups. Recover an interrupted publication after `main` advances when the public tag still matches the recorded annotated object and candidate.
+
 - Encapsulate bus and reviewer-file MCP request admission per shared-service owner. An expired pending native reservation now returns 401 before MCP header validation or body reading. Valid pending catalog discovery, managed task locking and receipt replay rules are unchanged.
-- The BB native board shows the pipeline declared at run start, distinguishes predicted steps from observed participants, and includes steps added during the run. A recorded pipeline ends in **Next step unconfirmed** instead of Done; runs without a recorded order keep their previous columns, Done included.
+- The BB native board shows the pipeline declared at run start, distinguishes predicted steps from observed participants, and includes steps added during the run.
 - An approver refusal for a subject without a current reviewer result now lists reviewed subjects in the same task and their exact lift commands. The approver's recorded harness remains immutable.
 - Participant setup now reports the exception behind a crashed repository generator and distinguishes the root dependency install from separately locked packages. CLI help lists the ordinary Codex worker permission modes.
 

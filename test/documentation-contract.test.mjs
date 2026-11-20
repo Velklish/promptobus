@@ -676,6 +676,12 @@ check('skills: shipped guidance requires confirmed native Stop before done and a
   && has(soloReviewSkill, 'For a Codex reviewer the order is required: `done` refuses while a native Codex participant lacks confirmed Stop.')
   && !has(soloReviewSkill, 'The two halves are independent'),
   'a shipped skill still says done stops native Codex sessions or that the holder reloads changed owner access in place');
+const changelog = read('CHANGELOG.md');
+const boardRelease = section(changelog, '## [0.34.0] — 2026-11-20') || section(changelog, '## [Unreleased]');
+check('docs: native board release notes distinguish recorded and inferred final columns',
+  has(boardRelease, 'Next step unconfirmed for a recorded pipeline and Done for an inferred pipeline')
+  && !has(boardRelease, 'columns per pipeline step plus Done'));
+
 const releaseChanged = section(section(read('CHANGELOG.md'), '## [0.30.0] — 2026-10-27'), '### Changed');
 check('docs: the 0.30.0 CHANGELOG lists the done and owner-access behaviour changes under Changed',
   has(releaseChanged, '`done` no longer stops native Codex participants. Stop each one with `promptobus stop <address>` first')
