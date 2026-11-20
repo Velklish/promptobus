@@ -761,3 +761,6 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-455"></a>`PB-455-native-context-admission` · 2026-11-20 · completed · — · Preserve repository diagnostics and bound native context file reads
 - <a id="pb-392.1"></a>`PB-392.1-native-context-diagnostic-precedence` · 2026-11-20 · batch PB-455 · — · Keep actionable repository diagnostics before native context mismatch
 - <a id="pb-392.2"></a>`PB-392.2-native-selected-source-fifo-open` · 2026-11-20 · batch PB-455 · — · Refuse a selected source changed to FIFO before blocking open
+- <a id="pb-456"></a>`PB-456-historical-cursor-fixtures` · 2026-11-20 · completed · — · Classify two historical Cursor fixture failures
+- <a id="pb-278.1"></a>`PB-278.1-mixed-step7-delivered-after-own-send` · 2026-11-20 · batch PB-456 · — · promptobus-mixed step 7 goes red when the warden's deliveredAt is stamped by the round the worker's own send triggers
+- <a id="pb-325.1"></a>`PB-325.1-cursor-test-shared-tmux` · 2026-11-20 · batch PB-456 · — · Investigate historical Cursor fixture-session loss
