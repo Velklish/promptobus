@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { runInNewContext } from 'node:vm';
 import { check } from './check.mjs';
 import { loadScale, loadScaleProbe, makeSandbox } from './sandbox.mjs';
 
@@ -26,6 +27,23 @@ const stalled = spawnSync(process.execPath, loadScaleProbe(1e9, 300), { encoding
 const stalledWall = Number(stalled.stdout);
 check('a burn that cannot reach its CPU time leaves by the wall-clock bound instead of spinning',
   stalled.stdout.trim() !== '' && stalledWall >= 290 && stalledWall < 15000, JSON.stringify({ stdout: stalled.stdout, signal: stalled.signal }));
+
+function controlledProbe(cpuTarget, wallLimit) {
+  let cpuMs = -2, wallMs = -10, elapsed;
+  const [, script] = loadScaleProbe(cpuTarget, wallLimit);
+  runInNewContext(script, {
+    process: { cpuUsage() { cpuMs += 2; return { user: cpuMs * 1000, system: 0 }; } },
+    Date: { now() { wallMs += 10; return wallMs; } },
+    console: { log(value) { elapsed = value; } },
+  }, { timeout: 1000 });
+  return { cpuMs, elapsed };
+}
+const cpuFirst = controlledProbe(10, 1000);
+check('the probe waits for CPU consumption even when elapsed time already exceeds the CPU target',
+  cpuFirst.cpuMs >= 10 && cpuFirst.elapsed > 10 && cpuFirst.elapsed < 1000, JSON.stringify(cpuFirst));
+const wallFirst = controlledProbe(1000, 30);
+check('the wall limit ends the probe while CPU consumption is still below target',
+  wallFirst.cpuMs < 1000 && wallFirst.elapsed >= 30, JSON.stringify(wallFirst));
 
 const floor = await attempt(() => loadScale({ cpuMs: 40, args: reports(1) }));
 check('a child that finishes faster than its CPU time never shrinks a window below its written value', floor === 1, String(floor));

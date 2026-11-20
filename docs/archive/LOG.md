@@ -801,3 +801,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-466.10"></a>`PB-466.10-stop-fixture-event-order` · 2026-11-20 · completed · — · Make Stop fixtures observe deadlines and process exit deterministically
 - <a id="pb-466.24"></a>`PB-466.24-cursor-grace-timing-investigation` · 2026-11-20 · completed · — · Investigate the Cursor turn test at the injection grace deadline
 - <a id="pb-466.11"></a>`PB-466.11-idle-report-duration-fixture` · 2026-11-20 · completed · — · Verify the idle report using controlled elapsed time
+- <a id="pb-466.12"></a>`PB-466.12-cpu-probe-clock-check` · 2026-11-20 · completed · — · Distinguish CPU consumption from elapsed time in the load probe test

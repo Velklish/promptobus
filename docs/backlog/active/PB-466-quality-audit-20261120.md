@@ -29,7 +29,7 @@ Triage the child cards. The release owner decides what evidence can qualify a Cl
 | [PB-466.9 - Document the role of the tool version in managed Claude admission](../../archive/LOG.md#pb-466.9) | PQA-4009 | triage |
 | [PB-466.10 - Make Stop fixtures observe deadlines and process exit deterministically](../../archive/LOG.md#pb-466.10) | PQA-3000, PQA-3004 | triage |
 | [PB-466.11 - Verify the idle report using controlled elapsed time](../../archive/LOG.md#pb-466.11) | PQA-3005 | triage |
-| [PB-466.12 - Distinguish CPU consumption from elapsed time in the load probe test](PB-466.12-cpu-probe-clock-check.md) | PQA-3002 | triage |
+| [PB-466.12 - Distinguish CPU consumption from elapsed time in the load probe test](../../archive/LOG.md#pb-466.12) | PQA-3002 | triage |
 | [PB-466.13 - Exercise the shared interrupt deadline when Codex exchanges hang](PB-466.13-holder-interrupt-budget-check.md) | PQA-3006 | minor |
 | [PB-466.14 - Align solo review instructions with strategy, task and diff-base selection](../../archive/LOG.md#pb-466.14) | PQA-4002, PQA-4003, PQA-4004 | minor |
 | [PB-466.15 - Align BB installation guidance and notification qualification prerequisites](../../archive/LOG.md#pb-466.15) | PQA-2007, PQA-4007 | minor |
