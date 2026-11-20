@@ -4,6 +4,7 @@
 - **Created:** 2026-11-20
 - **Dependencies:** none
 - **Cost:** —
+- **Taken:** 2026-11-20
 
 ## Context
 
@@ -29,19 +30,19 @@ Triage the child cards. The release owner decides what evidence can qualify a Cl
 | [PB-466.10 - Make Stop fixtures observe deadlines and process exit deterministically](PB-466.10-stop-fixture-event-order.md) | PQA-3000, PQA-3004 | triage |
 | [PB-466.11 - Verify the idle report using controlled elapsed time](PB-466.11-idle-report-duration-fixture.md) | PQA-3005 | triage |
 | [PB-466.12 - Distinguish CPU consumption from elapsed time in the load probe test](PB-466.12-cpu-probe-clock-check.md) | PQA-3002 | triage |
-| [PB-466.13 - Exercise the shared interrupt deadline when Codex exchanges hang](../minor/PB-466.13-holder-interrupt-budget-check.md) | PQA-3006 | minor |
-| [PB-466.14 - Align solo review instructions with strategy, task and diff-base selection](../minor/PB-466.14-review-selection-help.md) | PQA-4002, PQA-4003, PQA-4004 | minor |
-| [PB-466.15 - Align BB installation guidance and notification qualification prerequisites](../minor/PB-466.15-bb-version-requirements.md) | PQA-2007, PQA-4007 | minor |
-| [PB-466.16 - Update the capture prerequisite in the Codex workspace qualification card](../minor/PB-466.16-codex-qualification-prerequisites.md) | PQA-4008 | minor |
-| [PB-466.17 - Record the approved scope of review dispatch planning in the roadmap](../minor/PB-466.17-dispatch-roadmap-approval.md) | PQA-4005 | minor |
-| [PB-466.18 - Distinguish pending, refused and confirmed Stop in operator summaries](../minor/PB-466.18-stop-summary-confirmation.md) | PQA-4006 | minor |
-| [PB-466.19 - Correct obsolete comments on hooks, message formatting and status snapshots](../minor/PB-466.19-hook-and-status-comments.md) | PQA-2001 | minor |
-| [PB-466.20 - Remove the unreachable Codex branch from reporter reservation recovery](../minor/PB-466.20-codex-reporter-dead-branch.md) | PQA-2010 | minor |
-| [PB-466.21 - Align the contributing guide with the public audit exceptions](../minor/PB-466.21-public-audit-exceptions-guide.md) | PQA-5000 | minor |
-| [PB-466.22 - Describe byte restoration and current handover requirements in the published schema](../minor/PB-466.22-handover-schema-descriptions.md) | PQA-5001, PQA-5002 | minor |
-| [PB-466.23 - Handle the uint8 annotation in the Codex schema gate](../minor/PB-466.23-codex-schema-format-warnings.md) | PQA-5005 | minor |
-| [PB-466.24 - Investigate the Cursor turn test at the injection grace deadline](../minor/PB-466.24-cursor-grace-timing-investigation.md) | PQA-2012 | minor |
-| [PB-466.25 - Investigate response framing in the Unix socket smoke test](../minor/PB-466.25-unix-socket-framing-investigation.md) | PQA-3001 | minor |
+| [PB-466.13 - Exercise the shared interrupt deadline when Codex exchanges hang](PB-466.13-holder-interrupt-budget-check.md) | PQA-3006 | minor |
+| [PB-466.14 - Align solo review instructions with strategy, task and diff-base selection](PB-466.14-review-selection-help.md) | PQA-4002, PQA-4003, PQA-4004 | minor |
+| [PB-466.15 - Align BB installation guidance and notification qualification prerequisites](PB-466.15-bb-version-requirements.md) | PQA-2007, PQA-4007 | minor |
+| [PB-466.16 - Update the capture prerequisite in the Codex workspace qualification card](PB-466.16-codex-qualification-prerequisites.md) | PQA-4008 | minor |
+| [PB-466.17 - Record the approved scope of review dispatch planning in the roadmap](PB-466.17-dispatch-roadmap-approval.md) | PQA-4005 | minor |
+| [PB-466.18 - Distinguish pending, refused and confirmed Stop in operator summaries](PB-466.18-stop-summary-confirmation.md) | PQA-4006 | minor |
+| [PB-466.19 - Correct obsolete comments on hooks, message formatting and status snapshots](PB-466.19-hook-and-status-comments.md) | PQA-2001 | minor |
+| [PB-466.20 - Remove the unreachable Codex branch from reporter reservation recovery](PB-466.20-codex-reporter-dead-branch.md) | PQA-2010 | minor |
+| [PB-466.21 - Align the contributing guide with the public audit exceptions](PB-466.21-public-audit-exceptions-guide.md) | PQA-5000 | minor |
+| [PB-466.22 - Describe byte restoration and current handover requirements in the published schema](PB-466.22-handover-schema-descriptions.md) | PQA-5001, PQA-5002 | minor |
+| [PB-466.23 - Handle the uint8 annotation in the Codex schema gate](PB-466.23-codex-schema-format-warnings.md) | PQA-5005 | minor |
+| [PB-466.24 - Investigate the Cursor turn test at the injection grace deadline](PB-466.24-cursor-grace-timing-investigation.md) | PQA-2012 | minor |
+| [PB-466.25 - Investigate response framing in the Unix socket smoke test](PB-466.25-unix-socket-framing-investigation.md) | PQA-3001 | minor |
 
 ## Verification
 
