@@ -742,3 +742,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-419.12"></a>`PB-419.12-document-owner-status-only-escalation-exception` · 2026-11-20 · batch PB-436 · — · Document owner status-only escalation exception
 - <a id="pb-419.14"></a>`PB-419.14-document-managed-root-stop-exception` · 2026-11-20 · batch PB-436 · — · Document managed root Stop exception
 - <a id="pb-447"></a>`PB-447-authenticated-mcp-request-module` · 2026-11-20 · completed · — · Encapsulate authenticated MCP request admission for both endpoints
+- <a id="pb-448"></a>`PB-448-managed-participant-launch-module` · 2026-11-20 · completed · — · Design one launch lifecycle module for workers and reviewers
