@@ -699,3 +699,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-419.32"></a>`PB-419.32-remove-current-year-assumption-from-history-test` · 2026-11-20 · completed · — · Remove current-year assumption from history test
 - <a id="pb-397.2"></a>`PB-397.2-native-reviewer-checkpoint` · 2026-11-20 · completed · — · Native reviewer finding checkpoint and replacement recovery
 - <a id="pb-373.13"></a>`PB-373.13-bb-command-stop-receipts` · 2026-11-20 · completed · — · Preserve observed command termination across BB Stop signals
+- <a id="pb-373.14"></a>`PB-373.14-bb-active-mail-queue` · 2026-11-20 · completed · — · Queue canonical unread mail while a BB participant is active
