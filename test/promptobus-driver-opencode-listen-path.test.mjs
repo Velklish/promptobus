@@ -13,7 +13,7 @@ for (const entry of ['lib', 'dist', 'package.json', 'README.md', 'docs/reference
 }
 symlinkSync(path.join(root, 'node_modules'), path.join(copy, 'node_modules'), 'junction');
 mkdirSync(path.join(copy, 'test', 'fixtures'), { recursive: true });
-for (const entry of ['check.mjs', 'home.mjs', 'hygiene.mjs', 'sandbox.mjs',
+for (const entry of ['check.mjs', 'home.mjs', 'hygiene.mjs', 'sandbox.mjs', 'service-test-directory.mjs',
   'promptobus-driver-opencode.test.mjs', 'promptobus-driver-opencode-listen.test.mjs',
   'fixtures/opencode-listen-error.mjs', 'fixtures/opencode-refonly-stop.json',
   'fixtures/opencode-teamlead-proof.json']) {
