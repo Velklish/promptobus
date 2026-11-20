@@ -33,7 +33,7 @@ Triage the child cards. The release owner decides what evidence can qualify a Cl
 | [PB-466.13 - Exercise the shared interrupt deadline when Codex exchanges hang](PB-466.13-holder-interrupt-budget-check.md) | PQA-3006 | minor |
 | [PB-466.14 - Align solo review instructions with strategy, task and diff-base selection](../../archive/LOG.md#pb-466.14) | PQA-4002, PQA-4003, PQA-4004 | minor |
 | [PB-466.15 - Align BB installation guidance and notification qualification prerequisites](../../archive/LOG.md#pb-466.15) | PQA-2007, PQA-4007 | minor |
-| [PB-466.16 - Update the capture prerequisite in the Codex workspace qualification card](PB-466.16-codex-qualification-prerequisites.md) | PQA-4008 | minor |
+| [PB-466.16 - Update the capture prerequisite in the Codex workspace qualification card](../../archive/LOG.md#pb-466.16) | PQA-4008 | minor |
 | [PB-466.17 - Record the approved scope of review dispatch planning in the roadmap](PB-466.17-dispatch-roadmap-approval.md) | PQA-4005 | minor |
 | [PB-466.18 - Distinguish pending, refused and confirmed Stop in operator summaries](PB-466.18-stop-summary-confirmation.md) | PQA-4006 | minor |
 | [PB-466.19 - Correct obsolete comments on hooks, message formatting and status snapshots](PB-466.19-hook-and-status-comments.md) | PQA-2001 | minor |
