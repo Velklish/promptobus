@@ -13,6 +13,6 @@ Where promptobus is going: goals and their rationale. This is a living document:
 
 ## Prioritisation principle
 
-The [review dispatch proposal](guides/review-dispatch-proposal.md) sets out how an explicitly approved independent review could start while the orchestrator is busy. Its scope and verification budget await owner approval.
+The [review dispatch proposal](guides/review-dispatch-proposal.md) sets out how an explicitly approved independent review could start while the orchestrator is busy. The owner approved the BB design and the verification budget of 12 synthetic scenarios. Implementation and a bounded live pilot each require a separate assignment.
 
 The queue is ordered by cost label: `critical` first, then `major`, then `minor`. Within a label, a live break or a missing command that a published guide already names comes first. Owner requests next. The backlog order field is the queue, not this list.

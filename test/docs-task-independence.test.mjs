@@ -280,3 +280,10 @@ check('docs: consumer set cites no unidentified report section', reports.length 
 check('docs: the planning snapshot is not a tracked file',
   !trackedSet.has('docs/TRACKS.md') && !existsSync(path.join(root, 'docs/TRACKS.md')),
   'docs/TRACKS.md');
+
+const dispatchPlan = readFileSync(path.join(root, 'docs/guides/review-dispatch-proposal.md'), 'utf8');
+const dispatchRoadmap = readFileSync(path.join(root, 'docs/ROADMAP.md'), 'utf8');
+check('the roadmap records the approved dispatch planning scope and separate pilot',
+  dispatchPlan.includes('passed all 12 synthetic scenarios') && dispatchPlan.includes('The owner approved')
+  && dispatchRoadmap.includes('approved the BB design and the verification budget of 12 synthetic scenarios')
+  && dispatchRoadmap.includes('Implementation and a bounded live pilot each require a separate assignment.'));
