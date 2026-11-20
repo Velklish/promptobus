@@ -744,3 +744,8 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-447"></a>`PB-447-authenticated-mcp-request-module` · 2026-11-20 · completed · — · Encapsulate authenticated MCP request admission for both endpoints
 - <a id="pb-448"></a>`PB-448-managed-participant-launch-module` · 2026-11-20 · completed · — · Design one launch lifecycle module for workers and reviewers
 - <a id="pb-449"></a>`PB-449-bb-participant-transition-module` · 2026-11-20 · completed · — · Design a BB participant transition module for Stop resume and archive
+- <a id="pb-452"></a>`PB-452-contributor-checks` · 2026-11-20 · completed · — · Check contributor examples and enforce repository hygiene rules
+- <a id="pb-294.3"></a>`PB-294.3-docs-evidence-bare-name-basename-match` · 2026-11-20 · batch PB-452 · — · A bare evidence name counts as tracked when any tracked file shares its basename
+- <a id="pb-337.2"></a>`PB-337.2-consumer-fixture-names-left` · 2026-11-20 · batch PB-452 · — · Two fixtures and one contributing line still carry a consumer's memory-tool names and test path
+- <a id="pb-338.1"></a>`PB-338.1-audit-refusal-path-unchecked` · 2026-11-20 · batch PB-452 · — · No check reddens when the publicity audit stops recording a refusal
+- <a id="pb-419.3"></a>`PB-419.3-extend-comment-length-guard-to-scripts` · 2026-11-20 · batch PB-452 · — · Extend comment length guard to scripts
