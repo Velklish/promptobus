@@ -325,6 +325,7 @@ writeFileSync(path.join(SB2, 'a-podnyal.test.mjs'),
 writeFileSync(path.join(SB2, 'b-dom.test.mjs'),
   "import os from 'node:os';\n"
   + "console.log(`HOME: ${os.homedir()} :: ${process.env.USERPROFILE ?? ''} :: ${process.env.CLAUDE_CONFIG_DIR ?? '(dropped)'}`);\n"
+  + "console.log('SOCKET-PARENT: ' + (process.env.PROMPTOBUS_TEST_SOCKET_PARENT ?? '(dropped)'));\n"
   + "console.log(`HYGIENE: ${process.env.PROMPTOBUS_WARDEN} :: "
   + "${process.env.CLAUDE_CODE_MESSAGING_SOCKET ?? '(dropped)'} :: "
   + "${process.env.CLAUDE_CODE_MESSAGING_TOKEN ?? '(dropped)'} :: "
@@ -510,6 +511,8 @@ const [
   roleSeen = '', taskSeen = '', busHomeSeen = '',
 ] = (raised.out.match(/HYGIENE: (.+)/)?.[1] ?? '').split(' :: ');
 const harnessIdentitySeen = (raised.out.match(/HARNESS: (.+)/)?.[1] ?? '').split(' :: ');
+check('the runner gives each file its original temporary directory for short service sockets',
+  raised.out.includes('SOCKET-PARENT: ' + os.tmpdir() + '\n'), raised.out.match(/SOCKET-PARENT: .+/)?.[0]);
 check(': the runner drops every ambient harness identity before a fixture installs its own',
   harnessIdentitySeen.length === HARNESS_IDENTITY_VARS.length
   && harnessIdentitySeen.every((value) => value === '(dropped)'),

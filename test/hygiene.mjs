@@ -196,6 +196,7 @@ const SEAL_VAR = 'PROMPTOBUS_TEST_PATH_SEAL';
 export const RUN_VARS = [
   ...HOME_VARS, 'PATH', CONFIG_DIR_VAR, WARDEN_SWITCH, LEASE_DIR_VAR, CURSOR_INSTALL_DIRS_VAR, SEAL_VAR,
   'PROMPTOBUS_WARDEN_TRACE', 'PROMPTOBUS_EXEC_TRACE', 'PROMPTOBUS_HOLDER_TRACE',
+  'PROMPTOBUS_TEST_SOCKET_PARENT',
 ];
 export const envKey = (name) => (process.platform === 'win32' ? name.toUpperCase() : name);
 const KEPT_VARS = new Set([...INHERITED_VARS, ...RUN_VARS].map(envKey));
