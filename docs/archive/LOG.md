@@ -749,3 +749,8 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-337.2"></a>`PB-337.2-consumer-fixture-names-left` · 2026-11-20 · batch PB-452 · — · Two fixtures and one contributing line still carry a consumer's memory-tool names and test path
 - <a id="pb-338.1"></a>`PB-338.1-audit-refusal-path-unchecked` · 2026-11-20 · batch PB-452 · — · No check reddens when the publicity audit stops recording a refusal
 - <a id="pb-419.3"></a>`PB-419.3-extend-comment-length-guard-to-scripts` · 2026-11-20 · batch PB-452 · — · Extend comment length guard to scripts
+- <a id="pb-453"></a>`PB-453-participant-preparation` · 2026-11-20 · completed · — · Verify participant worktree setup and launch diagnostics
+- <a id="pb-234.6"></a>`PB-234.6-bb-deps-missing-in-lifted-worktree` · 2026-11-20 · batch PB-453 · — · A lifted worktree installs root dependencies only, so integrations/bb checks go red until a manual npm ci there
+- <a id="pb-326.1"></a>`PB-326.1-generator-crash-reason` · 2026-11-20 · batch PB-453 · — · A crashed node generator is reported by its last stderr line, not by its cause
+- <a id="pb-416.17"></a>`PB-416.17-worker-role-profile-preflight-misuse` · 2026-11-20 · batch PB-453 · — · Record worker-role permission profile preflight misuse
+- <a id="pb-416.20"></a>`PB-416.20-manual-worktree-generated-readiness` · 2026-11-20 · batch PB-453 · — · Retain setup prerequisites for a manually created metadata worktree
