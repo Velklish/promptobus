@@ -727,3 +727,8 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-439"></a>`PB-439-bb-role-facade` · 2026-11-20 · completed · — · Align BB role contracts, mailbox examples and approver routing
 - <a id="pb-419.6"></a>`PB-419.6-route-bb-approver-messages-through-orchestrator` · 2026-11-20 · batch PB-439 · — · Route BB approver messages through orchestrator
 - <a id="pb-419.35"></a>`PB-419.35-correct-unsupported-reporter-harness-diagnostics` · 2026-11-20 · batch PB-439 · — · Correct unsupported reporter harness diagnostics
+- <a id="pb-440"></a>`PB-440-host-reference-docs` · 2026-11-20 · completed · — · Correct Host outputs, process binding exceptions and source citations
+- <a id="pb-337.1"></a>`PB-337.1-stale-code-line-citations` · 2026-11-20 · batch PB-440 · — · Two documents cite code by line numbers that no longer point at the cited code
+- <a id="pb-419.4"></a>`PB-419.4-correct-observer-method-output-descriptions` · 2026-11-20 · batch PB-440 · — · Correct observer method output descriptions
+- <a id="pb-419.8"></a>`PB-419.8-correct-hosttoolbin-reader-inventory-description` · 2026-11-20 · batch PB-440 · — · Correct HostToolBin reader inventory description
+- <a id="pb-419.13"></a>`PB-419.13-qualify-host-process-binding-independence` · 2026-11-20 · batch PB-440 · — · Qualify Host process binding independence
