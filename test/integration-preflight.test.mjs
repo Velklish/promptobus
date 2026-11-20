@@ -6,6 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { wouldResolve } from '../lib/exec.js';
+import { recognizeKernelRead } from './kernel-read-shapes.mjs';
 import { REACHABLE_BINARIES } from './hygiene.mjs';
 import { makeSandbox, stubCommand } from './sandbox.mjs';
 
@@ -54,7 +55,8 @@ fs.accessSync = (file, mode) => {
 function processObservation(platform, malformed) {
   return `import fs from 'node:fs'; import cp from 'node:child_process';
 Object.defineProperty(process, 'platform', { value: ${JSON.stringify(platform)} });
-const { readFileSync, readlinkSync } = fs, { spawnSync } = cp;
+process.env.PROMPTOBUS_EXEC_TRACE = 'simulated-process.trace';
+const { readFileSync, readlinkSync } = fs;
 fs.readFileSync = (file, ...args) => {
   if (file === '/proc/sys/kernel/random/boot_id') return ${malformed ? "'invalid boot ID'" : "'01010101-0101-0101-0101-010101010101'"};
   if (file === '/proc/' + process.pid + '/stat') {
@@ -69,8 +71,10 @@ fs.readFileSync = (file, ...args) => {
   return readFileSync(file, ...args);
 };
 fs.readlinkSync = (file, ...args) => file === '/proc/self/ns/pid' ? 'pid:[42]' : readlinkSync(file, ...args);
-cp.spawnSync = (file, ...args) => {
-  if (file !== '/bin/ps') return spawnSync(file, ...args);
+cp.spawnSync = (file, args) => {
+  if (process.platform !== 'darwin' || file !== '/bin/ps' || JSON.stringify(args) !== JSON.stringify(['-p', String(process.pid), '-o', 'stat=', '-o', 'lstart='])) {
+    throw new Error('Unexpected command in simulated process observation');
+  }
   fs.appendFileSync('observation-attempts', 'ps\\n');
   return ${malformed ? "{ status: 0, stdout: 'invalid fixture ps output', stderr: '' }"
     : "{ status: 1, stdout: '', stderr: 'EPERM: fixture ps visibility' }"};
@@ -125,6 +129,12 @@ for (const platform of ['darwin', 'linux']) for (const malformed of [false, true
   assert.ok(report.failure.diagnostic.error.includes(reason));
   assert.ok(report.failure.error.includes(reason));
   assert.ok(child.stderr.includes(reason));
+  const simulatedTrace = path.join(directory, 'simulated-process.trace');
+  if (darwin) {
+    const observation = recognizeKernelRead(readFileSync(simulatedTrace, 'utf8').trimEnd(), 'darwin');
+    assert.equal(observation?.shape, 'process-lifetime');
+    assert.equal(observation.pid, String(child.pid));
+  } else assert.equal(existsSync(simulatedTrace), false);
   assert.equal(readFileSync(path.join(directory, 'observation-attempts'), 'utf8'), darwin ? 'ps\n' : 'proc\n');
   assert.equal(existsSync(sentinel), false);
 });

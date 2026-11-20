@@ -170,7 +170,7 @@ export const INHERITED_VARS = [
  *   directly; `env` — the Cursor launch script is `exec env -u … <bin>`;
  * - `ps`, `pgrep` — the process reads the suite makes about ITSELF (the register of
  *   them is in [run.mjs](run.mjs));
- * - `tar` — the packaging check unpacks what `npm pack` produced;
+ * - `tar`, `gzip` — the packaging check reads and writes compressed tarballs; GNU tar invokes gzip through PATH;
  * - `sleep` — shell fixtures hold a pipe open with it. Measured 2026-09-05: without
  *   it the deadline check in `model-routing-adapter-claude.test.mjs`, whose stub
  *   binary is `#!/bin/sh` + `sleep 5`, became a coin flip — the fixture exited 127
@@ -186,7 +186,7 @@ export const INHERITED_VARS = [
  * install directories, so `applyHygiene` narrows those to the sandbox `~/.local/bin`.
  */
 export const REACHABLE_BINARIES = [
-  'ast-grep', 'env', 'git', 'mkfifo', 'node', 'npm', 'pgrep', 'ps', 'sh', 'sleep', 'tar',
+  'ast-grep', 'env', 'git', 'gzip', 'mkfifo', 'node', 'npm', 'pgrep', 'ps', 'sh', 'sleep', 'tar',
 ];
 
 /** Set once the seal is built, so a nested apply keeps the directory instead of rebuilding it. */
