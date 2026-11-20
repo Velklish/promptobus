@@ -754,3 +754,7 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-326.1"></a>`PB-326.1-generator-crash-reason` · 2026-11-20 · batch PB-453 · — · A crashed node generator is reported by its last stderr line, not by its cause
 - <a id="pb-416.17"></a>`PB-416.17-worker-role-profile-preflight-misuse` · 2026-11-20 · batch PB-453 · — · Record worker-role permission profile preflight misuse
 - <a id="pb-416.20"></a>`PB-416.20-manual-worktree-generated-readiness` · 2026-11-20 · batch PB-453 · — · Retain setup prerequisites for a manually created metadata worktree
+- <a id="pb-454"></a>`PB-454-bb-evidence-boundaries` · 2026-11-20 · completed · — · Bound BB dependency capture and validate review evidence
+- <a id="pb-381.3"></a>`PB-381.3-frozen-build-dependency-cycle` · 2026-11-20 · batch PB-454 · — · Frozen BB dependency capture needs a bounded cycle policy
+- <a id="pb-381.5"></a>`PB-381.5-notrun-reason-whitespace` · 2026-11-20 · batch PB-454 · — · Reject whitespace-only notRun reasons in review evidence
+- <a id="pb-382.1"></a>`PB-382.1-collector-receipt-fd-after-raw-read-failure` · 2026-11-20 · batch PB-454 · — · Close the receipt descriptor when raw finalization fails
