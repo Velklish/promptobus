@@ -702,3 +702,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-373.14"></a>`PB-373.14-bb-active-mail-queue` · 2026-11-20 · completed · — · Queue canonical unread mail while a BB participant is active
 - <a id="pb-373.9"></a>`PB-373.9-bb-terminal-release-retirement` · 2026-11-20 · completed · — · Terminal release can be missed before answer-driven continuation
 - <a id="pb-419.23"></a>`PB-419.23-investigate-authorized-history-route-for-acknowledged-review-parts` · 2026-11-20 · completed · — · Investigate authorized history route for acknowledged review parts
+- <a id="pb-419.34"></a>`PB-419.34-decide-pipeline-instruction-symlink-boundary` · 2026-11-20 · completed · — · Decide pipeline instruction symlink boundary
