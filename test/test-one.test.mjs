@@ -39,6 +39,8 @@ const git = (...args) => {
 };
 const saveSources = (label, ...added) => {
   git('add', core, runtime, cli, 'bin/promptobus-bb-root.ts', ...added);
+  // These edits retain both size and mtime. Rehash their contents even when Git's cached stat matches.
+  git('add', '--renormalize', '--', core, runtime, cli);
   git('commit', '--no-gpg-sign', '-m', label);
   return git('rev-parse', 'HEAD');
 };
@@ -65,6 +67,9 @@ check('test:one rebuilds dist even when the changed source has an older mtime', 
 values(runtime, 'runtime-b');
 values(cli, 'cli-b');
 const b = saveSources('revision B');
+const savedCore = git('show', b + ':' + core);
+check('revision B records the edited core source before checkout',
+  savedCore === readFileSync(path.join(cwd, core), 'utf8').trimEnd(), savedCore);
 const staleRuntime = direct();
 check('raw Node uses the previous runtime and CLI outputs with changed runtime sources', loaded(staleRuntime, ['core-b', 'runtime-a', 'cli-a']), staleRuntime.out);
 const freshRuntime = one(file);

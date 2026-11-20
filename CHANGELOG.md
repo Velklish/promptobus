@@ -69,6 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Publish the service lock and its owner record together. Startup can retry after a failed owner write.
+- Confirm Claude admission rollback against the selected native session ID and a readable registry. An older session with the same name can stay active.
+- Report the first actionable unread message as the start of SILENT in status and digest, with the original timestamp as fallback for older records.
+- Report Claude canary scenario completion and cleanup separately. An unconfirmed cleanup retains the stand and fails the full check. Canary hygiene checks now surface unavailable home and registry observations.
+
 - Use the warden's abortable inbox poll on macOS so FSEvents cannot block task and shared service shutdown.
 
 - After a teamlead relift or a child mailbox claim, the child orchestrator no longer reports the predecessor's failed knock as the new owner's death.
