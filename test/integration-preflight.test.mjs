@@ -139,15 +139,43 @@ for (const platform of ['darwin', 'linux']) for (const malformed of [false, true
   assert.equal(existsSync(sentinel), false);
 });
 
-test('missing socket parent names the failed operation after the suite temporary directory succeeded', () => {
+test('missing socket parent names the failed operation after the suite temporary directory succeeded', { skip: process.platform === 'win32' }, () => {
   const { child, directory, report, sentinel } = run({
-    preload: "import path from 'node:path'; process.env.PROMPTOBUS_TEST_SOCKET_PARENT = path.resolve('missing-socket-root');",
+    preload: `import fs from 'node:fs';
+const { realpathSync } = fs;
+fs.realpathSync = (file, ...args) => {
+  if (file === '/tmp') throw Object.assign(new Error('ENOENT: fixture /tmp is missing'), { code: 'ENOENT' });
+  return realpathSync(file, ...args);
+};`,
   });
   assert.equal(child.status, 1, child.stderr);
   assert.equal(report.checks.at(-1).operation, `create suite temporary directory in ${directory}`);
-  assert.equal(report.failure.operation, 'resolve suite Unix socket parent');
+  assert.equal(report.failure.operation, 'resolve suite Unix socket parents');
   assert.equal(report.failure.code, 'ENOENT');
-  assert.ok(report.failure.error.includes(path.join(directory, 'missing-socket-root')));
+  assert.match(report.failure.error, /fixture \/tmp is missing/);
+  assert.equal(existsSync(sentinel), false);
+});
+
+test('preflight checks the mandatory POSIX socket root even with a short harness TMPDIR', { skip: process.platform === 'win32' }, () => {
+  const { child, report, sentinel } = run({ preload: `import fs from 'node:fs';
+import net from 'node:net';
+import path from 'node:path';
+const root = fs.realpathSync('/tmp');
+const temporary = fs.mkdtempSync(path.join(root, 'pb-preflight-'));
+process.env.TMPDIR = temporary;
+delete process.env.PROMPTOBUS_TEST_SOCKET_PARENT;
+process.on('exit', () => fs.rmSync(temporary, { recursive: true, force: true }));
+const { listen } = net.Server.prototype;
+net.Server.prototype.listen = function (file, ...args) {
+  if (path.dirname(path.dirname(file)) === root) {
+    queueMicrotask(() => this.emit('error', Object.assign(new Error('EPERM: fixture blocks /tmp sockets'), { code: 'EPERM' })));
+    return this;
+  }
+  return listen.call(this, file, ...args);
+};` });
+  assert.equal(child.status, 1, child.stderr);
+  assert.match(report.failure.operation, /round trip over an owned Unix socket/);
+  assert.match(report.failure.error, /fixture blocks \/tmp sockets/);
   assert.equal(existsSync(sentinel), false);
 });
 

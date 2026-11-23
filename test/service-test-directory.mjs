@@ -4,8 +4,9 @@ import path from 'node:path';
 
 // The service names its control socket with the first 24 hex digits of its key.
 // prepareControlSocket limits the canonical socket path to 100 bytes.
-export function testSocketParent(prefix, socketName = '0'.repeat(24) + '.sock') {
-  const tmp = realpathSync(process.env.PROMPTOBUS_TEST_SOCKET_PARENT || os.tmpdir());
+export function testSocketParent(prefix, socketName = '0'.repeat(24) + '.sock',
+  temporary = process.env.PROMPTOBUS_TEST_SOCKET_PARENT || os.tmpdir()) {
+  const tmp = realpathSync(temporary);
   if (process.platform === 'win32') return tmp;
   const socket = path.join(tmp, prefix + 'XXXXXX', socketName);
   return Buffer.byteLength(socket) <= 100 ? tmp : realpathSync('/tmp');

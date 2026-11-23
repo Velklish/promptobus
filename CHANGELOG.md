@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Keep service fixture sockets in the harness temporary directory when the path fits. Use `/tmp` for longer paths. Live fixture setup and cleanup use the same socket directory.
-- Report socket parent resolution failures separately in the integration preflight.
+- In the integration preflight, probe each Unix socket root the suite can use and report socket parent resolution failures separately.
 
 ## [0.34.0] — 2026-11-20
 

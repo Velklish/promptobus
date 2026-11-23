@@ -301,9 +301,9 @@ export function findAstGrep({ env = process.env, home = os.homedir() } = {}) {
 // twice, in `promptobus-warden.test.mjs` and a second suite file, and
 // the helper lived as a copy in both.
 //
-// The warden failure fixture includes its scenario name and claim order in the socket filename.
+// Allow for the longest warden failure scenario name and its claim order.
 export const TEST_SOCKET_ROOT = process.platform === 'win32' ? null
-  : testSocketParent('a2s-', 'warden-failure-demand-persistence-AB.sock');
+  : testSocketParent('a2s-', 'warden-failure-owner-ensure-before-replace-AB.sock');
 const SOCKET_PERMISSION_CODES = new Set(['EACCES', 'EPERM']);
 
 export function makeSockPath(prefix) {

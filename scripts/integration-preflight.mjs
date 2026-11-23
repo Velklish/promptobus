@@ -83,10 +83,15 @@ async function preflight() {
     });
     await check(`create suite temporary directory in ${os.tmpdir()}`, () =>
       inOwnedDirectory(os.tmpdir(), 'promptobus-test-run-', async () => 'writable'));
-    const socketRoot = await check('resolve suite Unix socket parent', () => testSocketParent('pb-preflight-'));
-    await check(`round trip over an owned Unix socket under ${socketRoot}`, () =>
-      inOwnedDirectory(socketRoot, 'pb-preflight-', (dir) => socketRoundTrip(path.join(dir, 'probe.sock')))
-        .then(() => 'echo received'));
+    const socketRoots = await check('resolve suite Unix socket parents', () => {
+      const serviceRoot = testSocketParent('pbsvc-', undefined, os.tmpdir());
+      return process.platform === 'win32' ? [serviceRoot] : [...new Set([realpathSync('/tmp'), serviceRoot])];
+    });
+    for (const socketRoot of socketRoots) {
+      await check(`round trip over an owned Unix socket under ${socketRoot}`, () =>
+        inOwnedDirectory(socketRoot, 'pb-preflight-', (dir) => socketRoundTrip(path.join(dir, 'probe.sock')))
+          .then(() => 'echo received'));
+    }
     const command = (argv) => {
       const child = run(argv[0], argv.slice(1), { encoding: 'utf8', timeout: 10_000 });
       if (child.status !== 0) throw new Error(child.error?.message
