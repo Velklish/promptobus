@@ -808,3 +808,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-466.5"></a>`PB-466.5-canary-hygiene-observation` · 2026-11-20 · completed · — · Carry unknown home and registry observations through the canary exit verdict
 - <a id="pb-466.1"></a>`PB-466.1-canary-cleanup-proof` · 2026-11-20 · completed · — · Define when a Claude canary can confirm cleanup with a registered child
 - <a id="pb-466"></a>`PB-466-quality-audit-20261120` · 2026-11-20 · completed · — · Triage the findings from the 2026-11-20 quality audit
+- <a id="pb-467"></a>`PB-467-quality-audit-20261124` · 2026-11-24 · completed · — · Triage the findings from the 2026-11-24 quality audit
