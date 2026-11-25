@@ -809,3 +809,4 @@ An `—` outcome means that `result.md` did not name one. An `—` commit means 
 - <a id="pb-466.1"></a>`PB-466.1-canary-cleanup-proof` · 2026-11-20 · completed · — · Define when a Claude canary can confirm cleanup with a registered child
 - <a id="pb-466"></a>`PB-466-quality-audit-20261120` · 2026-11-20 · completed · — · Triage the findings from the 2026-11-20 quality audit
 - <a id="pb-467"></a>`PB-467-quality-audit-20261124` · 2026-11-24 · completed · — · Triage the findings from the 2026-11-24 quality audit
+- <a id="pb-373.18"></a>`PB-373.18-cursor-persist-session-cap` · 2026-11-25 · completed · — · A Cursor lift fails with a generic persist refusal when about eight persist sessions are already alive
