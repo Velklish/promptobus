@@ -7,6 +7,7 @@ import { closeSync, constants, lstatSync, openSync, readSync, readdirSync, realp
 import { openEngine, sessionIdOf, sessionRefOf } from '../dist/index.js';
 import type { PromptobusHost } from '../dist/index.js';
 import type { ServiceClientGrant } from './service.js';
+import { CURSOR_TMUX_SERVER, readTmuxSessionsAsync, freshPersistCommand, workspaceHash } from './drivers.js';
 import { processExecutable, processHasOpenFile } from './root-process.js';
 import { readRootAdmissionState } from './root-admission.js';
 import { participantOf, readTask } from './store.js';
@@ -293,6 +294,10 @@ export async function recordNativeBinding(paths: ServicePaths, binding: NativeAd
   validatePublication?: () => void) {
   const ledger = await assertNativeBinding(paths, binding, context);
   validatePublication?.();
+  writeVerifiedNativeBinding(paths, binding, ledger);
+}
+
+function writeVerifiedNativeBinding(paths: ServicePaths, binding: NativeAdmissionBinding, ledger: NativeAdmissionLedger) {
   const index = ledger.bindings.findIndex(value => sameGeneration(value, binding));
   const previous = ledger.bindings[index];
   if (previous?.phase === 'bound' && binding.phase === 'pending') throw new Error('Native binding cannot return to pending');
@@ -432,6 +437,16 @@ async function managedPublication(paths: ServicePaths, grant: Pick<ServiceClient
     } else if (grant.nativeBinding.kind === 'cursor') {
       const evidence = record.nativeAdmissionEvidence, command = record.nativeCommand, creator = record.nativeCreationEvidence;
       const start = record.nativeStartEvidence;
+      const correlated = recordOf(command) && recordOf(creator) && recordOf(evidence) && (
+        (creator.kind === 'cursor-create-chat' && creator.exitCode === 0 && evidence.kind === creator.kind && evidence.method === 'create-chat'
+          && Array.isArray(command.argv) && command.argv[0] === 'persist' && command.argv[1] === '--resume' && command.argv[2] === nativeId)
+        || (creator.kind === 'cursor-persist' && evidence.kind === creator.kind && evidence.method === 'persist'
+          && creator.launchId === proof.launchId && typeof command.cwd === 'string' && freshPersistCommand(command.argv, command.cwd, creator.nonce)
+          && creator.nonce === record.nativePersistNonce && record.tmuxServer === CURSOR_TMUX_SERVER
+          && recordOf(command.nativeEnvironment) && command.nativeEnvironment.CURSOR_AGENT_TMUX_SERVER_NAME === CURSOR_TMUX_SERVER
+          && isDeepStrictEqual(command.argv, record.argv) && typeof creator.sessionName === 'string' && /^cursor-[a-z0-9-]+$/.test(creator.sessionName)
+          && creator.sessionName === record.sessionName && record.panePid === process.pid && record.workspaceHash === workspaceHash(command.cwd)
+          && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(nativeId)));
       if (!recordOf(command) || !recordOf(command.executable) || typeof command.executable.file !== 'string' || typeof command.executable.version !== 'string'
         || !recordOf(command.launcher) || typeof command.launcher.file !== 'string' || typeof command.launcher.version !== 'string'
         || !recordOf(command.bundle) || typeof command.bundle.file !== 'string' || typeof command.bundle.version !== 'string'
@@ -439,11 +454,10 @@ async function managedPublication(paths: ServicePaths, grant: Pick<ServiceClient
         || !sameRecordVersion(command.launcher as { file: string; version: string }) || !sameRecordVersion(command.bundle as { file: string; version: string })
         || !recordOf(command.nativeEnvironment) || typeof command.nativeEnvironment.CURSOR_CONFIG_DIR !== 'string'
         || !path.isAbsolute(command.nativeEnvironment.CURSOR_CONFIG_DIR) || typeof command.cwd !== 'string' || !path.isAbsolute(command.cwd)
-        || !Array.isArray(command.argv) || command.argv[0] !== 'persist' || command.argv[1] !== '--resume' || command.argv[2] !== nativeId
-        || !recordOf(creator) || creator.kind !== 'cursor-create-chat' || creator.nativeId !== nativeId || creator.exitCode !== 0
+        || !correlated || !recordOf(creator) || creator.nativeId !== nativeId
         || creator.cwd !== command.cwd || !isDeepStrictEqual(creator.launcher, command.launcher)
         || !recordOf(start) || start.harness !== 'cursor' || start.nativeId !== nativeId || !isDeepStrictEqual(start.process, process)
-        || !recordOf(evidence) || evidence.kind !== 'cursor-create-chat' || evidence.method !== 'create-chat' || evidence.source !== 'sessionStart'
+        || !recordOf(evidence) || evidence.source !== 'sessionStart'
         || evidence.nativeStore !== nativeStore || evidence.nativeId !== nativeId || !isDeepStrictEqual(evidence.process, process)
         || !isDeepStrictEqual(evidence.executable, command.executable) || !isDeepStrictEqual(evidence.launcher, command.launcher)
         || !isDeepStrictEqual(evidence.bundle, command.bundle) || record.nativeCreationPending !== undefined) {
@@ -585,8 +599,9 @@ async function managedTransition(paths: ServicePaths, grant: ServiceClientGrant,
 
 export async function reserveManagedNativeIdentity(paths: ServicePaths, grant: ServiceClientGrant, nativeId: string, context: NativeAdmissionContext) {
   if (grant.lifetime.kind !== 'managed' || !grant.nativeBinding) return;
+  const deadline = Date.now() + 5000;
   const publication = await managedPublication(paths, grant, nativeId);
-  const lock = path.join(paths.directory, 'root-admission.lock'), deadline = Date.now() + 5000;
+  const lock = path.join(paths.directory, 'root-admission.lock');
   let release = await acquireServiceLock(lock);
   while (!release) {
     if (Date.now() >= deadline) throw new Error('Native managed identity is being reserved by another owner operation');
@@ -613,20 +628,27 @@ export async function reserveManagedNativeIdentity(paths: ServicePaths, grant: S
     const freshOpenCode = publication.binding.harness === 'opencode' && publication.binding.nativeStore !== null
       && publication.binding.process !== null && recordOf(evidence) && evidence.kind === 'opencode-session-api' && evidence.method === 'session/create';
     const freshCursor = publication.binding.harness === 'cursor' && publication.binding.nativeStore !== null
-      && publication.binding.process !== null && recordOf(evidence) && evidence.kind === 'cursor-create-chat' && evidence.method === 'create-chat';
+      && publication.binding.process !== null && recordOf(evidence) && ['cursor-persist', 'cursor-create-chat'].includes(String(evidence.kind));
     if (!known && !freshCodex && !freshClaude && !freshOpenCode && !freshCursor) {
       throw new Error('First native admission requires verified fresh creation on its owned native API; native hook identity or an unknown resume ID is insufficient');
     }
     const transition = await managedTransition(paths, grant, publication.record, publication.binding, ledger);
-    const validatePublication = () => {
-      if (!sameRecordVersion(publication.version) || (publication.primaryVersion && !sameRecordVersion(publication.primaryVersion))
-        || !isDeepStrictEqual(ledgerOf(paths), ledger)) throw new Error('Managed native launch or admission registry changed during observation');
-    };
+    if (transition) await availableRecords(paths, publication.binding, context, transition.replaced);
+    else await assertNativeBinding(paths, publication.binding, context);
+    if (freshCursor && recordOf(evidence) && evidence.kind === 'cursor-persist') {
+      const { sessions } = await readTmuxSessionsAsync({ server: CURSOR_TMUX_SERVER, env: context.env, deadlineAt: deadline });
+      const pane = sessions?.find(row => row.name === publication.record.sessionName);
+      const process = publication.binding.process;
+      if (!pane?.managed || pane.chatId !== nativeId || pane.hash !== publication.record.workspaceHash
+        || !process || pane.panePid !== process.pid || await processStateAsync(process) !== 'alive' || Date.now() >= deadline) {
+        throw new Error('Cursor persist pane changed or could not be confirmed before service admission');
+      }
+    }
+    if (!sameRecordVersion(publication.version) || (publication.primaryVersion && !sameRecordVersion(publication.primaryVersion))
+      || !isDeepStrictEqual(ledgerOf(paths), ledger)) throw new Error('Managed native launch or admission registry changed during observation');
     if (transition) {
-      await availableRecords(paths, publication.binding, context, transition.replaced);
-      validatePublication();
       if (transition.index < 0) ledger.bindings.push(transition.binding); else ledger.bindings[transition.index] = transition.binding;
       writeLedger(paths, ledger);
-    } else await recordNativeBinding(paths, publication.binding, context, validatePublication);
+    } else writeVerifiedNativeBinding(paths, publication.binding, ledger);
   } finally { release(); }
 }

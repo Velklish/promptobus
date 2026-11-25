@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Managed Cursor starts a fresh `persist` session and matches its private start receipt to the new pane, native hook process and open workspace database before binding the service client.
+- A Cursor reviewer denies each host-classified external MCP write as `Mcp(server:tool)` in its sandbox `.cursor/cli.json`. Pointwise enable names only a server that is both in the MCP fragment written for that lift and named by one of those tokens. The denial was measured on cursor-agent 2026.11.05-86047df and cursor-agent 2026.11.22-e9042b2. A lift that would enable a classified host server refuses every other reported binary version. The 2026-09-26 build stays a record of `Not connected` after pointwise enable, with no connected tool blocked. A classified lift reads the native MCP file from the participant environment and refuses a malformed or unreadable file without rewriting it. A re-review stops before sending a diff when that reviewer's private MCP files are missing, unreadable, or no longer match.
+
 ## [0.34.1] — 2026-11-23
 
 ### Fixed

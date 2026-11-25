@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { check } from './check.mjs';
@@ -14,6 +14,23 @@ const refuses = (call, pattern) => {
   try { call(); return false; }
   catch (error) { return pattern.test(error.message); }
 };
+const { cursorAssignment, freshPersistCommand, persistStartedName } = await import(new URL('lib/cursor-persist.js', runtime));
+const nonce = '11111111-1111-4111-8111-111111111111';
+const options = ['persist', '--workspace', scratch, '--trust', '--force', '--model', 'fixture'];
+const fixed = `Read the complete task instructions in .cursor/promptobus-${nonce}.md before doing any work.`;
+check('fresh Cursor argv accepts only the generation-specific assignment instruction', cursorAssignment?.(nonce)?.argument === fixed && freshPersistCommand([...options, '--', fixed], scratch, nonce)
+  && !['resume', '--continue', '--approve-mcps', fixed + ' --resume'].some(text => freshPersistCommand([...options, '--', text], scratch, nonce)));
+const receipt = path.join(scratch, 'primary.stderr'), fd = openSync(receipt, 'wx+');
+const started = name => `Started persistent session ${name}. Use /detach to leave it running; reconnect with agent persist list.\n`;
+try {
+  writeFileSync(receipt, 'diagnostic\n' + started('cursor-owned').trimEnd());
+  check('a partial start receipt does not select a pane', persistStartedName?.(fd) === null);
+  writeFileSync(receipt, 'diagnostic\n' + started('cursor-owned'));
+  check('a complete primary receipt survives leading diagnostics', persistStartedName?.(fd) === 'cursor-owned');
+  writeFileSync(receipt, started('cursor-owned') + started('cursor-other'));
+  check('conflicting primary start receipts cannot select a pane', refuses(() => persistStartedName(fd), /conflicting start receipts/));
+} finally { closeSync(fd); }
+
 for (const harness of ['claude', 'cursor', 'codex', 'opencode']) {
   const task = `${harness}-t20261101-000001`, address = 'worker:own', ref = `own-${harness}`;
   const file = path.join(scratch, `${harness}.json`), idField = harness === 'cursor' ? 'chatId' : harness === 'codex' ? 'threadId' : 'sessionId';
@@ -32,6 +49,15 @@ for (const harness of ['claude', 'cursor', 'codex', 'opencode']) {
   const foreignRef = refuses(() => bindManagedNativeStart({ ...input, ref: `${ref}-foreign` }), /owned launch record/);
   check(`${harness} refuses a changed launch ref before native publication`, foreignRef && readFileSync(file, 'utf8') === before
     && !participantOf(readTask(home, task), address).metadata.sessionId);
+  if (harness === 'cursor') {
+    const pending = { ...record, nativePersistNonce: ref, nativeCreationPending: { command: 'persist', launchId: record.launchId, nonce: ref } };
+    writePrivate(file, pending);
+    const staged = readFileSync(file, 'utf8');
+    const early = bindManagedNativeStart(input);
+    check('fresh Cursor hook alone cannot publish the sender or change the pending primary record',
+      !early.published && readFileSync(file, 'utf8') === staged && !participantOf(readTask(home, task), address).metadata.sessionId);
+    writePrivate(file, record);
+  }
   const transcript = path.join(scratch, `${nativeId}.jsonl`);
   writeFileSync(transcript, `${JSON.stringify({ sessionId: nativeId })}\n`);
   const started = bindManagedNativeStart({ ...input, transcript }), own = readPrivate(file);
@@ -89,14 +115,20 @@ export const bindManagedNativeStart = input => { fixture.bindings.push(input); r
 export const realizeManagedServiceClient = async () => { throw new Error('Unpublished fixture must not realize a client'); };
 export { readClaudeStartupSession } from ${JSON.stringify(new URL('lib/drivers.js', runtime).href)};
 export const observeRootProcess = async pid => pid === process.ppid ? fixture.shell : pid === fixture.native.pid ? fixture.native : null;
-export const isSupportedPosixShell = async identity => identity === fixture.shell && fixture.shellAllowed;
+export const isSupportedPosixShell = async (identity, purpose) => identity === fixture.shell && (fixture.shellAllowed || (fixture.cursorZsh && purpose === 'cursor-hook'));
 export const processParent = async pid => pid === fixture.shell.pid ? fixture.parent : null;
 export const processExecutable = async identity => { fixture.onExecutable?.(identity); return identity === fixture.shell ? '/bin/bash' : fixture.nativeImage; };
 `);
 const observationUrl = pathToFileURL(observations).href;
+const state = path.join(scratch, 'observed-state.mjs');
+const actualState = new URL('lib/service-state.js', runtime).href;
+writeFileSync(state, `export * from ${JSON.stringify(actualState)};
+import {recordVersion as stat} from ${JSON.stringify(actualState)};
+import {fixture} from ${JSON.stringify(observationUrl)};
+export function recordVersion(file){ const value=stat(file); fixture.afterVersion?.(file); return value; }`);
 let source = readFileSync(new URL('lib/native-start.js', runtime), 'utf8');
 for (const module of ['root-process', 'drivers', 'service-launch', 'service-state', 'store']) {
-  const original = `from './${module}.js'`, replacement = ['service-state', 'store'].includes(module)
+  const original = `from './${module}.js'`, replacement = module === 'service-state' ? pathToFileURL(state).href : module === 'store'
     ? new URL(`lib/${module}.js`, runtime).href : observationUrl;
   if (!source.includes(original)) throw new Error(`Native start fixture could not replace ${module} boundary`);
   source = source.replaceAll(original, `from ${JSON.stringify(replacement)}`);
@@ -120,9 +152,9 @@ for (const harness of ['claude', 'cursor']) {
   const nativeCommand = { executable, launcher: executable, bundle: executable, argv: ['--bg', 'fixture'], nativeStore: scratch, cwd: scratch };
   const reset = () => {
     writePrivate(record, { nativeCommand, nativeLaunchProvenance: { state: 'candidate', nativeStore: scratch } });
-    Object.assign(fixture, { context: { harness, record }, bindings: [], shell: { pid: process.ppid, birth: 'simulated-shell-birth' },
+    Object.assign(fixture, { context: { harness, record, home, task: hintedTask }, bindings: [], shell: { pid: process.ppid, birth: 'simulated-shell-birth' },
       native: { pid: process.ppid + 1, birth: 'simulated-native-birth' }, parent: process.ppid + 1,
-      shellAllowed: true, nativeImage: executable.file, onExecutable: null });
+      shellAllowed: true, cursorZsh: false, nativeImage: executable.file, onExecutable: null, afterVersion: null });
   };
   const event = { hook_event_name: harness === 'cursor' ? 'sessionStart' : 'SessionStart', source: 'startup',
     session_id: 'observed-native', conversation_id: 'observed-native', transcript_path: transcript };
@@ -144,6 +176,48 @@ for (const harness of ['claude', 'cursor']) {
     let error;
     try { await authorize(); } catch (caught) { error = caught; }
     check(`${harness} native start retains exact ancestry, image and generation refusal: ${name}`, Boolean(error) && !proof(), error?.message);
+  }
+  reset();
+  Object.assign(fixture, { shellAllowed: false, cursorZsh: true });
+  let zshFailure;
+  try { await authorize(); } catch (error) { zshFailure = error; }
+  check(`${harness} applies its own native hook shell policy for Darwin zsh`,
+    harness === 'cursor' ? !zshFailure && !!proof() : !!zshFailure && !proof());
+  if (harness === 'cursor') {
+    reset();
+    writePrivate(record, { nativeCommand, nativePersistNonce: nonce, turns: 0 });
+    const lockedReads = [], wake = () => writePrivate(record, { ...readPrivate(record), turns: 1, last: { session: event.conversation_id } });
+    fixture.afterVersion = file => {
+      if (file !== record) return;
+      const locked = existsSync(path.join(home, 'tasks', hintedTask, '.lock'));
+      lockedReads.push(locked);
+      if (lockedReads.length === 1) {
+        if (locked) fixture.onExecutable = () => { fixture.onExecutable = null; wake(); };
+        else wake();
+      }
+    };
+    let tornError;
+    try { await authorize(); } catch (error) { tornError = error; }
+    check('Cursor hook snapshots both initial and retry revisions with their record under the wake lock',
+      !tornError && !!proof() && JSON.stringify(lockedReads) === '[true,true]', tornError?.message);
+    for (const change of ['wake', 'foreign wake', 'generation', 'same bytes', 'second wake']) {
+      reset();
+      writePrivate(record, { nativeCommand, nativePersistNonce: nonce, turns: 0 });
+      let observations = 0;
+      fixture.onExecutable = () => {
+        observations += 1;
+        if (observations > 1 && change !== 'second wake') return;
+        const before = readPrivate(record);
+        writePrivate(record, change === 'same bytes' ? before : { ...before, turns: observations,
+          last: { session: change === 'foreign wake' ? 'another-native' : event.conversation_id },
+          ...(change === 'generation' ? { nativePersistNonce: 'replacement' } : {}) });
+      };
+      let failure;
+      try { await authorize(); } catch (error) { failure = error; }
+      check(`Cursor hook physical observation across an early Stop: ${change}`, change === 'wake'
+        ? !failure && observations === 2 && proof()?.nativeProcessEvidence.version.version === recordVersion(record).version
+        : !!failure && !proof(), failure?.message);
+    }
   }
   if (harness === 'claude') {
     reset();

@@ -2074,7 +2074,7 @@ missing or incomparable proof remains refusal, without adoption or state repair.
 | --- | --- | --- |
 | Managed Codex | Own correlated successful `thread/start`, exact child/store/process | Explicit `thread/resume` after predecessor death and generation CAS |
 | Managed Claude | Owned captured command/account directory, actual startup source, same-ID regular transcript and exact native kernel image/birth | Existing immutable binding and lifecycle fences remain required |
-| Managed Cursor | Own create-chat response; exact same-ID hook/pane image/birth; canonical initialized SQLite held by that process under actual native config root | Known current binding, no unknown-ID adoption or credential replacement |
+| Managed Cursor | Fresh persist command, its private start receipt and newly observed chat ID. The hook and named pane share a process birth/image and the process holds the canonical initialized SQLite file | Known current binding, no unknown-ID adoption or credential replacement |
 | Managed OpenCode | Own authenticated createSession response; actual controlled filesystem DB and captured serve image/birth | Known current binding; unresolved outcomes retain the primary record/holder |
 | Standalone Codex | Approved exact NEW exec/TUI argv, actual same-process CLI hook/transcript/store | Concrete known-ID resume and exact same-process reconnect |
 | Standalone Claude | Approved foreground no-argument launch, actual startup source and owned same-ID transcript/store | Concrete known-ID resume and exact same-process reconnect |

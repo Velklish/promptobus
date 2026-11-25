@@ -1,5 +1,5 @@
 import { replaceLaunchMcpConfig } from './driver-runtime.js';
-import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
@@ -11,8 +11,8 @@ import { PROMPTOBUS_SERVER } from './contract.js';
 import { selectedNativeFiles, selectedNativePrompt } from './native-participant-context.js';
 import { foreignSession, participantOf, readTask, taskExists, wakeAddressOf, withTaskLock, writeWake } from './store.js';
 import {
-  binInDir, CURSOR_TMUX_SERVER, dropSession, findSession, injectText, liftSession,
-  mcpRuntimeNeedles, markInjected, patchSession, readParticipantMcp, readSession, readTmuxSessions, readTmuxSessionsAsync, searchPath, SESSION_ENV_VAR,
+  binInDir, cursorAssignment, CURSOR_TMUX_SERVER, dropSession, findSession, freshPersistCommand, injectText, liftSession,
+  mcpRuntimeNeedles, markInjected, patchSession, persistStartedName, readParticipantMcp, readSession, readTmuxSessions, readTmuxSessionsAsync, searchPath, SESSION_ENV_VAR,
   sessionFile, sessionRevision, silentIsStall, stopSession, STOP_TIMEOUT_MS, TMUX_NOT_FOUND, tmuxBin, toolKidsOf, turnIdleMs, turnState,
   worktreeTouchedMs, writeSession,
 } from './cursor-persist.js';
@@ -29,7 +29,7 @@ import { processIdentity, processState, readPrivate, recordOf, recordVersion, sa
 import { processExecutable, processHasOpenFile } from './root-process.js';
 import type { RecordVersion } from './service-state.js';
 
-import type { DriverPhrases, DriverDenyTool, LaunchFile, Notification, NotificationMessage, SessionView, WakeProbe, ActivationTarget, ActivateResult } from '../dist/index.js';
+import type { DriverPhrases, DriverDenyTool, HostMcpTool, LaunchFile, Notification, NotificationMessage, SessionView, WakeProbe, ActivationTarget, ActivateResult } from '../dist/index.js';
 import type { LibDriver, LibLaunchPlan, LibPrepareContext, LibSpawnContext, LibSpawnResult, LibStall, LibMcpConfig, LibMcpServer, LibToolBin } from './driver-runtime.js';
 
 type CursorSessionRecord = NonNullable<ReturnType<typeof readSession>>;
@@ -160,6 +160,12 @@ export const REVIEWER_DENY = ['Write(**)', 'Shell(**)'];
 // was measured, because the binary updates itself and nothing here controls that.
 export const PROVEN_CURSOR_VERSION = '2026.09.02';
 
+/** Measured `Mcp(server:tool)` builds. A classified lift refuses every other reported binary. */
+export const MCP_DENY_MEASURED_VERSIONS = ['2026.11.05-86047df', '2026.11.22-e9042b2'] as const;
+export const MCP_DENY_MEASURED_VERSION = MCP_DENY_MEASURED_VERSIONS[0];
+const MCP_DENY_PART = /^[A-Za-z0-9._-]+$/;
+const MCP_DENY_TOKEN = /^Mcp\(([A-Za-z0-9._-]+):([A-Za-z0-9._-]+)\)$/;
+
 // Ancestor variables that must not reach the participant — every harness's, not only this
 // one's: a participant inherits its parent's identity and messaging otherwise.
 export const SESSION_ENV_DROP = [
@@ -188,7 +194,7 @@ export const PHRASES = {
   // Cursor MCP tool names are namespaced with a HYPHEN — `promptobus-promptobus_send`. Taken from a
   // live run, and the participant prompt must name them that way or it looks for a tool it lacks.
   tool: (server: string, name: string) => `${server}-${name}`,
-  mcpBoundary: '**MCP tools of external systems are read-only under a prompt-only guard; this harness does not mechanically deny MCP writes.**',
+  mcpBoundary: '**Classified external MCP write tools are denied as Mcp(server:tool) in this session\'s .cursor/cli.json. That denial was measured on cursor-agent 2026.11.05-86047df and cursor-agent 2026.11.22-e9042b2: the harness blocked the named tool before the server saw the call. Other builds, including 2026.09.26-dd393fe, are not covered, and a lift that would enable a classified host server refuses them. Every external MCP write is forbidden by this prompt as well.**',
   reviewerCommands: {
     isolation: 'File edits and command starts are disabled for you by the mechanism.',
     procedureSkip: 'a command start',
@@ -334,8 +340,14 @@ function prepare({
     throw new GateError('Cursor MCP isolation requires a launch directory distinct from the host workspace');
   }
   const sessionDir = configDir;
-  const cfg = mcpConfig(mcp, ref, env);
+  let cfg = mcpConfig(mcp, ref, env);
   const settings = cliConfig(denyTools);
+  if (role === REVIEWER) {
+    const classified = new Set(classifiedDeliveredServers(cfg.mcpServers, settings.permissions.deny));
+    const mcpServers = Object.fromEntries(Object.entries(cfg.mcpServers)
+      .filter(([name]) => name === PROMPTOBUS_SERVER || classified.has(name)));
+    cfg = { ...cfg, mcpServers };
+  }
   const hooksPath = path.join(configDir, CURSOR_DIR, 'hooks.json');
   const tracked = isolated ? null : trackedText(configDir, path.join(CURSOR_DIR, 'hooks.json'));
   const project: Omit<ReturnType<typeof judgeHookRecords>, 'broken'> & { broken?: string | null } = tracked === null ? { accepted: [], refused: [] } : judgeHookRecords(tracked, configDir, CURSOR, {
@@ -675,9 +687,11 @@ async function spawn(plan: LibLaunchPlan, {
   if (configDir !== cwd) initGit(configDir);
   if ((plan as CursorLaunchPlan).enforceMcpRoot) assertMcpRoot(configDir);
   const launchId = plan.service?.launchId ?? plan.launchId ?? randomUUID();
+  const pending = plan.service ? { command: 'persist', launchId, nonce: randomUUID() } : undefined;
   const locked = <T>(fn: () => T): T => taskExists(runtimeHome, runtimeTask) ? withTaskLock(runtimeHome, runtimeTask, fn) : fn();
   locked(() => writeSession({
     launchId,
+    nativePersistNonce: pending?.nonce,
     launcherProcess: processIdentity(process.pid),
     ref,
     cwd: sessionDir,
@@ -718,7 +732,7 @@ async function spawn(plan: LibLaunchPlan, {
     const current = readSession(ref, env);
     const owner = taskExists(runtimeHome, runtimeTask) ? participantOf(readTask(runtimeHome, runtimeTask), runtimeAddress) : null;
     if (!current || current.ref !== ref || current.launchId !== launchId || current.home !== runtimeHome || current.task !== runtimeTask
-      || current.address !== runtimeAddress || !sameRecordVersion(version)
+      || current.address !== runtimeAddress || current.nativePersistNonce !== pending?.nonce || !sameRecordVersion(version)
       || (owner && (owner.harness !== CURSOR || owner.sessionRef !== ref || owner.metadata.sessionRecord !== recordFile
         || (owner.metadata.nativeLaunchId !== undefined && owner.metadata.nativeLaunchId !== launchId)))) {
       throw new GateError('Cursor native creation/publication changed its exact owner generation');
@@ -729,10 +743,21 @@ async function spawn(plan: LibLaunchPlan, {
   let nativeBin = bin, nativeArgv = plan.argv, nativeCwd = sessionDir, creationIssued = false, admitted = !plan.service;
   let launchEnv: NodeJS.ProcessEnv = { ...sessionEnv(env), [SESSION_ENV_VAR]: recordFile };
   let nativeId: string | null = null;
+  let receipt: Parameters<typeof liftSession>[0]['receipt'];
+  let bootstrap: RecordVersion | undefined;
   let acceptSession: Parameters<typeof liftSession>[0]['acceptSession'];
   try {
     await plan.service?.beforeStart(sessionFile(ref, env));
-    approveOwnServer(bin, configDir, env);
+    const deliveredServers = (plan.mcpConfig as { mcpServers?: object } | null)?.mcpServers;
+    const deliveredDeny = (plan.settings as { permissions?: { deny?: readonly unknown[] } } | null)?.permissions?.deny;
+    const classified = classifiedDeliveredServers(deliveredServers, deliveredDeny);
+    if (classified.length) {
+      const hostRefusal = cursorHostMcpLiftRefusal(
+        { bin }, { mcpServers: deliveredServers }, { permissions: { deny: deliveredDeny } }, env,
+      );
+      if (hostRefusal) throw new GateError(hostRefusal);
+    }
+    approveOwnServer(bin, configDir, env, classified);
     if (plan.service) {
       const selected = wouldResolve(bin, launchEnv, sessionDir);
       if (!selected) throw new GateError('Cursor managed launch has no selected native wrapper');
@@ -742,45 +767,48 @@ async function spawn(plan: LibLaunchPlan, {
         throw new GateError('Cursor managed launch requires its approved bundled runtime entry');
       }
       const executable = recordVersion(realpathSync(path.join(directory, 'node'))), bundle = recordVersion(realpathSync(path.join(directory, 'index.js')));
-      const configured = launchEnv.CURSOR_CONFIG_DIR?.trim() ? launchEnv.CURSOR_CONFIG_DIR
-        : launchEnv.XDG_CONFIG_HOME?.trim() ? path.join(launchEnv.XDG_CONFIG_HOME, 'cursor')
-        : launchEnv.HOME ? path.join(launchEnv.HOME, '.cursor') : null;
+      const configured = nativeConfigRoot(launchEnv);
       if (!configured || !path.isAbsolute(configured)) throw new GateError('Cursor managed launch requires its actual absolute native configuration root');
       const nativeRoot = realpathSync(configured);
-      launchEnv = { ...launchEnv, CURSOR_CONFIG_DIR: nativeRoot };
+      launchEnv = { ...launchEnv, CURSOR_CONFIG_DIR: nativeRoot, CURSOR_AGENT_TMUX_SERVER_NAME: CURSOR_TMUX_SERVER };
       nativeBin = launcher.file; nativeCwd = realpathSync(sessionDir);
-      const command = { launcher, executable, bundle, cwd: nativeCwd, argv: ['create-chat'], nativeEnvironment: { CURSOR_CONFIG_DIR: nativeRoot } };
-      publishOwned({ nativeCommand: command, nativeCreationPending: { command: 'create-chat' } }, recordVersion(recordFile));
-      const creatorVersion = recordVersion(recordFile);
-      creationIssued = true;
-      const created = run(nativeBin, ['create-chat'], { cwd: nativeCwd, env: launchEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-      const id = typeof created.stdout === 'string' ? created.stdout.trim() : null;
-      if (created.error || created.status !== 0 || typeof id !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id)
-        || !sameRecordVersion(launcher) || !sameRecordVersion(executable) || !sameRecordVersion(bundle)) {
-        throw new GateError('Cursor create-chat did not confirm its actual owned native ID/image');
-      }
-      nativeId = id;
-      nativeArgv = ['persist', '--resume', id, ...plan.argv.slice(1)];
-      plan.argv = nativeArgv;
-      const persistedCommand = { ...command, argv: nativeArgv };
-      const creatorEvidence = { kind: 'cursor-create-chat', nativeId: id, launcher, cwd: nativeCwd, exitCode: created.status };
-      publishOwned({ chatId: id, argv: nativeArgv, nativeCommand: persistedCommand, nativeCreationPending: undefined,
-        nativeCreationEvidence: creatorEvidence,
-        nativeAdmissionUnknown: { harness: 'cursor', nativeId: id, reason: 'active pane/hook/durable native database proof is pending' } }, creatorVersion);
+      if (plan.argv[1] !== '--workspace' || realpathSync(plan.argv[2]!) !== nativeCwd) throw new GateError('Cursor persist workspace differs from its owned cwd');
+      const assignment = cursorAssignment(pending!.nonce);
+      nativeArgv = [...plan.argv.slice(0, -1), '--', assignment.argument];
+      nativeArgv[2] = nativeCwd;
+      if (typeof plan.argv.at(-1) !== 'string' || !freshPersistCommand(nativeArgv, nativeCwd, pending!.nonce)) throw new GateError('Managed Cursor requires a fresh persist command');
+      const persistedCommand = { launcher, executable, bundle, cwd: nativeCwd, argv: nativeArgv, nativeEnvironment: { CURSOR_CONFIG_DIR: nativeRoot, CURSOR_AGENT_TMUX_SERVER_NAME: CURSOR_TMUX_SERVER } };
+      const storeDirectory = path.join(nativeRoot, 'chats', createHash('md5').update(nativeCwd).digest('hex'));
+      const previousChats = new Set<string>();
+      try { for (const name of readdirSync(storeDirectory)) previousChats.add(name.toLowerCase()); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      const file = recordFile + '.' + pending!.nonce + '.stderr';
+      const assignmentFile = path.join(nativeCwd, assignment.file);
+      if (realpathSync(path.dirname(assignmentFile)) !== path.dirname(assignmentFile)) throw new GateError('Cursor assignment requires its canonical project directory');
+      writeFileSync(assignmentFile, plan.argv.at(-1)!, { flag: 'wx', mode: 0o600 });
+      bootstrap = recordVersion(assignmentFile);
+      const stagedVersion = recordVersion(recordFile);
+      receipt = { file, fd: openSync(file, 'wx+', 0o600), beforeSpawn() {
+        publishOwned({ argv: nativeArgv, nativeBootstrap: bootstrap, nativeCommand: persistedCommand, nativeCreationPending: pending }, stagedVersion);
+        creationIssued = true;
+      } };
       acceptSession = async observed => {
-        // The hook publishes the record and then the participant under the task lock; one snapshot sees both or neither.
+        // The pending hook observation and its participant generation are read under the same task lock.
         const { version, current, owner } = locked(() => ({ version: recordVersion(recordFile), current: readSession(ref, env),
           owner: taskExists(runtimeHome, runtimeTask) ? participantOf(readTask(runtimeHome, runtimeTask), runtimeAddress) : null }));
-        if (observed.chatId !== nativeId || !observed.panePid || !current || !recordOf(current.nativeStartEvidence)
-          || current.nativeStartEvidence.harness !== 'cursor' || current.nativeStartEvidence.nativeId !== nativeId) return false;
-        if (!isDeepStrictEqual(current.nativeCommand, persistedCommand) || !isDeepStrictEqual(current.nativeCreationEvidence, creatorEvidence)) {
+        const id = observed.chatId;
+        if (!id || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id) || previousChats.has(id)
+          || !observed.panePid || !current || current.chatId != null || !recordOf(current.nativeStartEvidence)
+          || current.nativeStartEvidence.harness !== 'cursor' || current.nativeStartEvidence.nativeId !== id) return false;
+        if (!isDeepStrictEqual(current.nativeCommand, persistedCommand) || !isDeepStrictEqual(current.nativeCreationPending, pending) || current.nativeCreationEvidence !== undefined) {
           throw new GateError('Cursor native command or creator changed before active publication');
         }
+        if (owner?.metadata.sessionId && owner.metadata.sessionId !== id) throw new GateError('Cursor native creation/publication changed its exact owner generation');
         const process = processIdentity(observed.panePid);
         if (!process || !isDeepStrictEqual(current.nativeStartEvidence.process, process)
           || await processExecutable(process) !== executable.file || !sameRecordVersion(launcher)
           || !sameRecordVersion(executable) || !sameRecordVersion(bundle)) return false;
-        const file = path.join(nativeRoot, 'chats', createHash('md5').update(path.resolve(nativeCwd)).digest('hex'), nativeId!, 'store.db');
+        const file = path.join(storeDirectory, id, 'store.db');
         try {
           let walk = nativeRoot;
           for (const part of path.relative(nativeRoot, file).split(path.sep)) {
@@ -817,9 +845,14 @@ async function spawn(plan: LibLaunchPlan, {
             if (!latestDatabase.isFile() || latestDatabase.dev !== database.dev || latestDatabase.ino !== database.ino
               || latestDatabase.size < 16 || realpathSync(file) !== file || processState(process) !== 'alive'
               || !sameRecordVersion(launcher) || !sameRecordVersion(executable) || !sameRecordVersion(bundle)) return false;
-            publishOwned({ nativeAdmission: { harness: 'cursor', nativeStore: file, nativeId, process },
-              nativeAdmissionEvidence: { kind: 'cursor-create-chat', method: 'create-chat', source: 'sessionStart', nativeStore: file, nativeId,
+            const pane = findSession(observed.name, { env });
+            if (persistStartedName(receipt!.fd) !== observed.name || !pane?.managed || pane.chatId !== id || pane.panePid !== process.pid || pane.hash !== observed.hash || pane.created !== observed.created) return false;
+            publishOwned({ chatId: id, boundAt: new Date().toISOString(), sessionName: pane.name, panePid: pane.panePid, workspaceHash: pane.hash, nativeCreationPending: undefined,
+              nativeCreationEvidence: { kind: 'cursor-persist', launchId, nonce: pending!.nonce, sessionName: pane.name, nativeId: id, cwd: nativeCwd, launcher },
+              nativeAdmission: { harness: 'cursor', nativeStore: file, nativeId: id, process },
+              nativeAdmissionEvidence: { kind: 'cursor-persist', method: 'persist', source: 'sessionStart', nativeStore: file, nativeId: id,
                 process, executable, launcher, bundle }, nativeAdmissionUnknown: undefined }, publicationVersion);
+            nativeId = id;
             return true;
           });
         } catch (error) {
@@ -838,12 +871,12 @@ async function spawn(plan: LibLaunchPlan, {
       // The session mark goes into the session's own environment, and AFTER the strip:
       // `SESSION_ENV_VAR` is in the drop list, so an ancestor's mark would otherwise survive it.
       launchEnv,
-      ...(acceptSession ? { acceptSession, expectedChatId: nativeId! } : {}),
       task: runtimeTask,
       address: runtimeAddress,
       // The `awaitOptions` wait form is one contract — `{tries, delayMs}`: the seam comes from the
       // caller, and a second form of our own would silently ignore a foreign one.
       ...(awaitOptions ?? {}),
+      acceptSession, receipt,
     });
     const observed = lifted.session;
     const publishNativeObservation = () => {
@@ -858,8 +891,7 @@ async function spawn(plan: LibLaunchPlan, {
         writeSession({ ...current, ...patch }, env);
       };
       if (observed) {
-        if (plan.service && (!current.chatId || current.chatId !== observed.chatId)) {
-          publishObservation({ failedNativeObservation: observed });
+        if (plan.service && (!nativeId || current.chatId !== nativeId || observed.chatId !== nativeId)) {
           throw lifted!.failure ?? new GateError(`Cursor launch ${ref} did not confirm its observed chat through the owned native hook`);
         }
         publishObservation({ sessionName: observed.name, chatId: observed.chatId, panePid: observed.panePid,
@@ -882,7 +914,8 @@ async function spawn(plan: LibLaunchPlan, {
     }
     return { output: `persist session ${name} · chat ${chatId}`, session: name, seen: lifted };
   } catch (error) {
-    const owned = { sessionId: nativeId ?? lifted?.session?.chatId ?? null, session: lifted?.session?.name ?? null };
+    const owned = { sessionId: plan.service ? nativeId : lifted?.session?.chatId ?? null,
+      session: !plan.service || nativeId ? lifted?.session?.name ?? null : null };
     return revokeFailedPointerLaunch(plan, error, owned, undo, async () => {
       if (plan.service && creationIssued && !admitted) throw new GateError(`Cursor native creation/admission is unresolved; retained primary record and owned pane: ${recordFile}`);
       const participantState = () => {
@@ -931,6 +964,9 @@ async function spawn(plan: LibLaunchPlan, {
       });
       plan.liveSeat?.stopped();
     });
+  } finally {
+    if (receipt) { closeSync(receipt.fd); rmSync(receipt.file, { force: true }); }
+    if (!creationIssued && bootstrap && sameRecordVersion(bootstrap)) rmSync(bootstrap.file);
   }
 }
 
@@ -968,10 +1004,183 @@ export function assertMcpRoot(dir: string) {
   }
 }
 
-// Pointwise approval of our own server; the record lands under the directory the call is made from,
-// hence the participant directory. A refusal does not fail the lift — the missing bus calls will say.
-function approveOwnServer(bin: string, dir: string, env: NodeJS.ProcessEnv) {
-  run(bin, ['mcp', 'enable', PROMPTOBUS_SERVER], { cwd: dir, env, encoding: 'utf8' });
+// Host pairs use the measured `Mcp(server:tool)` spelling. The bus is never denied.
+export function mcpDenyTools(tools: readonly HostMcpTool[]): string[] {
+  const tokens: string[] = [];
+  for (const entry of tools) {
+    const server = entry?.server;
+    const tool = entry?.tool;
+    if (!server || !tool || server === PROMPTOBUS_SERVER) continue;
+    if (!MCP_DENY_PART.test(server) || !MCP_DENY_PART.test(tool)) {
+      throw new GateError(`Cursor cannot spell a mechanical MCP deny for "${server}" / "${tool}"`);
+    }
+    const token = `Mcp(${server}:${tool})`;
+    if (!tokens.includes(token)) tokens.push(token);
+  }
+  return tokens;
+}
+
+// Enable only a delivered server that a deny token names. Home MCP names are not an input.
+export function classifiedDeliveredServers(servers: object | null | undefined, deny: readonly unknown[] | null | undefined): string[] {
+  const delivered = new Set(Object.keys(servers ?? {}).filter((name) => name && name !== PROMPTOBUS_SERVER));
+  const found: string[] = [];
+  for (const entry of deny ?? []) {
+    if (typeof entry !== 'string') continue;
+    const match = MCP_DENY_TOKEN.exec(entry);
+    if (!match || !delivered.has(match[1]) || found.includes(match[1])) continue;
+    found.push(match[1]);
+  }
+  return found.sort();
+}
+
+// Same name in the delivered fragment and the home file. The project entry is not removed.
+export function classifiedHomeCollisionRefusal(servers: object | null | undefined, deny: readonly unknown[] | null | undefined, shadowed: readonly string[]): string | null {
+  const hit = classifiedDeliveredServers(servers, deny).filter((name) => shadowed.includes(name));
+  if (!hit.length) return null;
+  return `Cursor classified host MCP server ${hit.join(', ')} matches a home MCP server of the same name. `
+    + 'The lift is not started; the project entry stays, the home file is not changed, and the server is not enabled.';
+}
+
+function measuredDenyVersion(version: string | null): boolean {
+  return version !== null && (MCP_DENY_MEASURED_VERSIONS as readonly string[]).includes(version);
+}
+
+function nativeConfigRoot(env: NodeJS.ProcessEnv): string | null {
+  if (env.CURSOR_CONFIG_DIR) return env.CURSOR_CONFIG_DIR;
+  if (env.XDG_CONFIG_HOME) return path.join(env.XDG_CONFIG_HOME, 'cursor');
+  if (env.HOME) return path.join(env.HOME, '.cursor');
+  return null;
+}
+
+const NATIVE_MCP_UNREADABLE = 'Cursor classified host MCP lift cannot read the native MCP configuration. '
+  + 'The lift is not started, and that file is not changed.';
+
+// ENOENT is an empty native set. Malformed or unreadable refuses; this read never writes the file.
+function nativeMcpServerNames(env: NodeJS.ProcessEnv): { names: string[] } | { refusal: string } {
+  const nativeRoot = nativeConfigRoot(env);
+  if (!nativeRoot || !path.isAbsolute(nativeRoot)) {
+    return { refusal: 'Cursor classified host MCP lift requires an absolute native configuration root. The lift is not started.' };
+  }
+  let text: string;
+  try {
+    text = readFileSync(path.join(nativeRoot, 'mcp.json'), 'utf8');
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? String((error as { code?: unknown }).code) : '';
+    if (code === 'ENOENT') return { names: [] };
+    return { refusal: NATIVE_MCP_UNREADABLE };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { refusal: NATIVE_MCP_UNREADABLE };
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { refusal: NATIVE_MCP_UNREADABLE };
+  const servers = (parsed as { mcpServers?: unknown }).mcpServers;
+  if (servers === undefined) return { names: [] };
+  if (!servers || typeof servers !== 'object' || Array.isArray(servers)) return { refusal: NATIVE_MCP_UNREADABLE };
+  return { names: Object.getOwnPropertyNames(servers).sort() };
+}
+
+export function cursorHostMcpLiftRefusal(
+  tool: { bin?: string; version?: string | null },
+  mcpConfig: unknown,
+  settings: unknown,
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  const servers = (mcpConfig as { mcpServers?: object } | null)?.mcpServers;
+  const deny = (settings as { permissions?: { deny?: readonly unknown[] } } | null)?.permissions?.deny;
+  if (!classifiedDeliveredServers(servers, deny).length) return null;
+  const native = nativeMcpServerNames(env);
+  if ('refusal' in native) return native.refusal;
+  const collision = classifiedHomeCollisionRefusal(servers, deny, native.names);
+  if (collision) return collision;
+  const reported = typeof tool?.version === 'string' && tool.version.trim()
+    ? tool.version.trim()
+    : tool?.bin ? cursorVersion(tool.bin, env) : null;
+  if (measuredDenyVersion(reported)) return null;
+  return `Cursor pointwise enable of a classified host MCP server is measured only on ${CURSOR_TOOL} ${MCP_DENY_MEASURED_VERSIONS.join(' and ')}; `
+    + `this binary reported ${reported ?? 'no version'}. The lift is not started.`;
+}
+
+const REUSE_CHANGED = 'Cursor reviewer reuse refuses a changed external MCP classification. '
+  + 'Stop the reviewer and start a new lift before sending a diff.';
+const REUSE_UNKNOWN = 'Cursor reviewer reuse refuses an unreadable external MCP classification. '
+  + 'Stop the reviewer and start a new lift before sending a diff.';
+
+function strictMcpPairs(deny: readonly unknown[] | null | undefined): string[] | null {
+  const pairs: string[] = [];
+  for (const entry of deny ?? []) {
+    if (typeof entry !== 'string') return null;
+    if (!entry.startsWith('Mcp(')) continue;
+    if (!MCP_DENY_TOKEN.test(entry)) return null;
+    if (!pairs.includes(entry)) pairs.push(entry);
+  }
+  return pairs.sort();
+}
+
+function externalServerNames(servers: object): string[] {
+  return Object.getOwnPropertyNames(servers).filter((name) => name !== PROMPTOBUS_SERVER).sort();
+}
+
+function readLaunchJson(file: string): { status: 'absent' } | { status: 'bad' } | { status: 'ok'; value: unknown } {
+  let text: string;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? String((error as { code?: unknown }).code) : '';
+    return code === 'ENOENT' ? { status: 'absent' } : { status: 'bad' };
+  }
+  try {
+    return { status: 'ok', value: JSON.parse(text) };
+  } catch {
+    return { status: 'bad' };
+  }
+}
+
+// Compare the fresh enable set with the private mcp.json and cli.json already written for this reviewer.
+// Absent or unreadable files are not a bus-only proof. The refusal names no file body.
+export function cursorReuseClassificationRefusal(
+  freshMcp: unknown,
+  freshSettings: unknown,
+  mcpPath: string | null | undefined,
+  cliPath: string | null | undefined,
+): string | null {
+  const freshServers = (freshMcp as { mcpServers?: object } | null)?.mcpServers;
+  const freshDeny = (freshSettings as { permissions?: { deny?: readonly unknown[] } } | null)?.permissions?.deny;
+  const freshExternal = classifiedDeliveredServers(freshServers, freshDeny);
+  const freshPairs = strictMcpPairs(freshDeny);
+  if (!freshPairs || !mcpPath || !cliPath) return REUSE_UNKNOWN;
+  const mcpFile = readLaunchJson(mcpPath);
+  const cliFile = readLaunchJson(cliPath);
+  if (mcpFile.status !== 'ok') return REUSE_UNKNOWN;
+  if (cliFile.status !== 'ok') return REUSE_UNKNOWN;
+  const mcpValue = mcpFile.value;
+  const cliValue = cliFile.value;
+  if (!mcpValue || typeof mcpValue !== 'object' || Array.isArray(mcpValue)) return REUSE_UNKNOWN;
+  if (!cliValue || typeof cliValue !== 'object' || Array.isArray(cliValue)) return REUSE_UNKNOWN;
+  const diskServers = (mcpValue as { mcpServers?: unknown }).mcpServers;
+  const diskDeny = (cliValue as { permissions?: { deny?: unknown } }).permissions?.deny;
+  if (!diskServers || typeof diskServers !== 'object' || Array.isArray(diskServers)) return REUSE_UNKNOWN;
+  if (!Array.isArray(diskDeny)) return REUSE_UNKNOWN;
+  const diskPairs = strictMcpPairs(diskDeny);
+  if (!diskPairs) return REUSE_UNKNOWN;
+  const sameServers = externalServerNames(diskServers).join('\0') === freshExternal.join('\0');
+  const samePairs = diskPairs.join('\0') === freshPairs.join('\0');
+  return sameServers && samePairs ? null : REUSE_CHANGED;
+}
+
+// Pointwise enable. Classified lifts fail closed on exit or timeout and name the server.
+// A bus-only lift keeps the previous behaviour: an enable failure does not stop it.
+function approveOwnServer(bin: string, dir: string, env: NodeJS.ProcessEnv, servers: readonly string[] = []) {
+  const check = servers.length > 0;
+  for (const name of [PROMPTOBUS_SERVER, ...servers]) {
+    const result = run(bin, ['mcp', 'enable', name], { cwd: dir, env, encoding: 'utf8' });
+    if (!check || (!result.error && !result.signal && result.status === 0)) continue;
+    const timedOut = result.error && 'code' in result.error && result.error.code === 'ETIMEDOUT';
+    const why = timedOut ? 'timed out' : result.error ? result.error.message : result.signal ? `signal ${result.signal}` : `exit ${result.status}`;
+    throw new GateError(`Cursor mcp enable ${name} failed (${why}); the lift is not started.`);
+  }
 }
 
 // --- stop ---------------------------------------------------------------------------
@@ -1037,6 +1246,7 @@ export const cursorDriver = {
     inspect: true,
     stop: true,
     denyTools: true,
+    mcpDenyTools: true,
     systemPrompt: true,
     sessionList: true,
     enter: true,
@@ -1071,6 +1281,7 @@ export const cursorDriver = {
   // different lifetime, so it lives in its own module. The tool name is handed to it, not repeated.
   availability: cursorAvailability(CURSOR_TOOL),
   prepare,
+  mcpDenyTools,
   replaceMcpServers,
   normalizeTool,
   spawn,

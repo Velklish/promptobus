@@ -36,7 +36,8 @@ async function fixtureOpenFileProof(identity, nativeFile, recordFile, env, crede
   if (!actualProof || fixtureInjected) return actualProof;
   fixtureInjected = true;
   const before = readPrivate(recordFile), revision = recordVersion(recordFile);
-  const wake = ${JSON.stringify(change)} === 'owner-only' ? null : registerWake(before.home, before.task, before.address, {...env, [SESSION_ENV_VAR]:recordFile}, before.chatId);
+  const nativeId = before.nativeStartEvidence.nativeId;
+  const wake = ${JSON.stringify(change)} === 'owner-only' ? null : registerWake(before.home, before.task, before.address, {...env, [SESSION_ENV_VAR]:recordFile}, nativeId);
   const afterWake = readPrivate(recordFile);
   withTaskLock(before.home, before.task, () => {
     const current = readPrivate(recordFile);
@@ -49,7 +50,7 @@ async function fixtureOpenFileProof(identity, nativeFile, recordFile, env, crede
     if (${JSON.stringify(change)} === 'chat') writeSession({...current,chatId:'00000000-0000-4000-8000-000000000001'},env);
   });
   fixtureWrite(${JSON.stringify(proofFile)},JSON.stringify({actualProof,wake,recordFile,credentialFile,
-    nativeId:before.chatId,process:identity,revisionChanged:!sameRecordVersion(revision),
+    nativeId,process:identity,revisionChanged:!sameRecordVersion(revision),
     turnsBefore:Number(before.turns)||0,turnsAfter:Number(afterWake.turns)||0,last:afterWake.last}));
   return actualProof;
 }

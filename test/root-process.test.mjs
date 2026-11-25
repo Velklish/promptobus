@@ -68,6 +68,9 @@ while(!existsSync(process.argv[3]))await new Promise(resolve=>setTimeout(resolve
       check(`${label}: actual launcher and its own hook child follow the same protected shell policy`,
         captured !== null && packet.shell.pid === captured.pid && packet.shell.birth === captured.birth
           && packet.allowed === allowed && await isSupportedPosixShell(captured) === allowed, JSON.stringify(packet));
+      check(`${label}: Cursor recognizes the protected hook shell and same birth`, captured !== null
+        && await isSupportedPosixShell(captured, 'cursor-hook')
+        && !await isSupportedPosixShell({ ...captured, birth: priorBirth(captured.birth) }, 'cursor-hook'));
       check(`${label}: a shell image is not the approved Node image before exec`,
         captured !== null && await processExecutable(captured) !== realpathSync(process.execPath));
       check(`${label}: unavailable and incomparable launcher lifetimes never authorize a shell`, captured !== null
@@ -100,6 +103,7 @@ while(!existsSync(process.argv[3]))await new Promise(resolve=>setTimeout(resolve
   await exercise('/bin/sh', 'protected-bin-sh', true);
   if (process.platform === 'darwin') {
     await exercise('/bin/bash', 'protected-bin-bash', true);
+    await exercise('/bin/zsh', 'protected-cursor-bin-zsh', false);
     const actor = path.join(root, 'actor'); mkdirSync(path.join(actor, 'bin'), { recursive: true });
     const custom = path.join(actor, 'bin', 'bash'), node = realpathSync(process.execPath);
     copyNodeExecutable(custom);
@@ -121,7 +125,7 @@ process.exitCode=await new Promise((resolve,reject)=>{child.once('error',reject)
       const captured = await observeRootProcess(child.pid), packet = JSON.parse(readFileSync(ready, 'utf8'));
       check('an actual actor-owned image named bash cannot authorize its own hook child as a protected shell', captured !== null
         && packet.shell.pid === captured.pid && packet.shell.birth === captured.birth && packet.allowed === false
-        && !await isSupportedPosixShell(captured), JSON.stringify(packet));
+        && !await isSupportedPosixShell(captured) && !await isSupportedPosixShell(captured, 'cursor-hook'), JSON.stringify(packet));
       check('the actor negative reaches its exact nonprotected kernel image rather than a launch refusal', captured !== null
         && await processExecutable(captured) === realpathSync(custom) && realpathSync(custom) !== node);
       check('unavailable and incomparable actor image lifetimes remain refused', captured !== null

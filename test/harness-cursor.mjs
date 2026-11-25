@@ -774,10 +774,16 @@ export async function agentMain(argv, env = process.env) {
     return;
   }
   if (argv[0] === '--version' || argv[0] === '-v') {
-    process.stdout.write(`${HARNESS_VERSION}\n`);
+    process.stdout.write(`${env.CURSOR_STUB_VERSION || HARNESS_VERSION}\n`);
     return;
   }
   if (argv[0] === 'mcp' && argv[1] === 'enable') {
+    appendFileSync(path.join(home, 'trace', 'mcp-enable.jsonl'), `${JSON.stringify({ argv: argv.slice(0, 3), cwd: process.cwd() })}\n`);
+    if (env.CURSOR_STUB_ENABLE_FAIL === argv[2]) {
+      process.stderr.write(`enable failed ${argv[2]}\n`);
+      process.exitCode = 1;
+      return;
+    }
     const file = path.join(home, 'approvals', `${createHash('md5').update(process.cwd()).digest('hex')}.json`);
     const was = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : [];
     writeFileSync(file, `${JSON.stringify([...new Set([...was, argv[2]])], null, 2)}\n`);
@@ -786,6 +792,7 @@ export async function agentMain(argv, env = process.env) {
   }
   if (argv[0] !== 'persist') {
     if (argv[0] === 'create-chat') {
+      appendFileSync(path.join(home, 'trace', 'native-start.jsonl'), `${JSON.stringify({ command: 'create-chat', cwd: process.cwd() })}\n`);
       process.stdout.write(`${randomUUID()}\n`);
       return;
     }
@@ -806,6 +813,7 @@ export async function agentMain(argv, env = process.env) {
   // detached child — the same way the live one does: the session pane lives on ITS OWN
   // server and outlives the client that created it.
   if (argv[1] === '__session') return sessionMain(JSON.parse(Buffer.from(argv[2], 'base64').toString('utf8')), env);
+  appendFileSync(path.join(home, 'trace', 'native-start.jsonl'), `${JSON.stringify({ command: 'persist', cwd: process.cwd() })}\n`);
   return persistUp(home, argv.slice(1), env);
 }
 
@@ -947,7 +955,7 @@ async function persistUp(home, argv, env) {
     busy: true,
   });
   note(home, address, { kind: 'session-up', chatId, model, name, argv });
-  process.stdout.write(`Started persistent session ${name}\n`);
+  process.stderr.write(`Started persistent session ${name}. Use /detach to leave it running; reconnect with agent persist list.\n`);
 }
 
 /** The persist session itself: first turn from the start prompt, then the message queue. */
@@ -1120,11 +1128,12 @@ async function runScript({ home, address, cfg, turn, chatId, workspace, env, bus
     const file = env[SESSION_ENV_VAR], clientFile = env.PROMPTOBUS_CLIENT_FILE;
     const expected = readPrivate(file), credential = readPrivate(clientFile);
     const started = Date.parse(expected.startedAt), edge = started + LIFT_TRIES * LIFT_STEP_MS;
-    if (!Number.isFinite(started) || expected.chatId !== chatId || !expected.launchId) throw new Error('Cursor fixture has no exact owned startup tuple');
+    if (!Number.isFinite(started) || expected.nativeStartEvidence?.nativeId !== chatId || !expected.launchId) throw new Error('Cursor fixture has no exact owned startup tuple');
     for (;;) {
       const record = readPrivate(file), client = readPrivate(clientFile), lifetime = client.lifetime;
       if (record.ref !== expected.ref || record.launchId !== expected.launchId || record.home !== expected.home
-        || record.task !== expected.task || record.address !== expected.address || record.chatId !== chatId
+        || record.task !== expected.task || record.address !== expected.address || record.nativeStartEvidence?.nativeId !== chatId
+        || (record.chatId !== null && record.chatId !== chatId)
         || record.nativeStartEvidence?.process?.pid !== process.pid || client.id !== credential.id
         || client.runtime !== credential.runtime || client.token !== credential.token || client.env.PROMPTOBUS_HOME !== record.home
         || lifetime.kind !== 'managed' || lifetime.ref !== record.ref || lifetime.launchId !== record.launchId

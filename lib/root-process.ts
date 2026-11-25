@@ -57,12 +57,13 @@ export async function observeRootProcess(pid: number): Promise<ProcessIdentity |
   return processIdentityAsync(pid);
 }
 
-export async function isSupportedPosixShell(identity: ProcessIdentity): Promise<boolean> {
+export async function isSupportedPosixShell(identity: ProcessIdentity, purpose?: 'cursor-hook'): Promise<boolean> {
   const file = await processExecutable(identity);
   if (!file) return false;
   try {
     if (process.platform !== 'darwin') return file === realpathSync('/bin/sh');
-    if (!['/bin/sh', '/bin/bash'].includes(file) || realpathSync(file) !== file) return false;
+    const supported = file === '/bin/sh' || file === '/bin/bash' || (purpose === 'cursor-hook' && file === '/bin/zsh');
+    if (!supported || realpathSync(file) !== file) return false;
     const image = await lstat(file);
     return image.isFile() && image.uid === 0 && (image.mode & 0o022) === 0
       && await processStateAsync(identity) === 'alive';

@@ -362,23 +362,39 @@ path ([Cursor: tmux by absolute path](#cursor-tmux-by-absolute-path)).
 
 ## Cursor: reviewer deny layer
 
-Source: `lib/driver-cursor.ts` (`REVIEWER_DENY`, `cliConfig`, `approveOwnServer`)
+Source: `lib/driver-cursor.ts` (`REVIEWER_DENY`, `cliConfig`, `mcpDenyTools`, `approveOwnServer`)
 and `lib/review.js` (`reviewerDenyTools`).
 
 A Cursor reviewer gets `Write(**)` and `Shell(**)` in its sandbox's
-`.cursor/cli.json`. These rules deny file and shell actions. The driver does not
-declare `mcpDenyTools`, so host-classified MCP write tools add no rule; the review
-prompt is their only boundary. The driver enables its own bus server pointwise with
-`cursor-agent mcp enable promptobus`; a host's other `mcp` entries are written
-to `.cursor/mcp.json` but are not enabled by that call. It does not pass
-`--approve-mcps`, which would approve every server found up the directory tree.
+`.cursor/cli.json`, and the driver declares `mcpDenyTools`. `reviewerDenyTools`
+adds one `Mcp(server:tool)` entry for each host-classified external write.
+The driver enables `promptobus` pointwise. It also enables a host server only
+when that server is a key of the MCP fragment this lift wrote and a deny token
+names it. A server present only in the home MCP file is not an enable name.
+A classified server whose name is also in the home file refuses the lift
+before native launch. That project entry stays in the written fragment, the
+home file is not changed, and the server is not enabled. A delivered server
+that the completed classification does not name is omitted from the private
+reviewer `.cursor/mcp.json` and is not enabled. An incomplete classification still
+refuses the review before launch. The driver does not pass `--approve-mcps`.
 
-On `cursor-agent` 2026.09.26-dd393fe, a disposable reviewer tried three candidate
-deny spellings, one per fixture tool. The first lift returned `MCP server does not
-exist` for the unapproved fixture while the bus worked. A rerun enabled the fixture
-pointwise, but all fixture and bus MCP calls returned `Not connected`. Neither lift
-showed a connected tool being denied, so no mechanical MCP rule is claimed.
-[03-cli § Review](03-cli.md#review) states the resulting reviewer boundary.
+`Mcp(server:tool)` was measured on `cursor-agent` 2026.11.05-86047df and
+`cursor-agent` 2026.11.22-e9042b2: the
+harness blocked the named tool before the server process saw the call, and the
+proposed write left no file. A lift that would pointwise-enable a classified
+host server refuses every other reported binary version. On `cursor-agent`
+2026.09.26-dd393fe, pointwise enable of a fixture made fixture and bus calls
+return `Not connected`, and no connected tool was blocked. The prompt remains
+a second layer for every external MCP write.
+A classified lift locates the native MCP config from the participant environment:
+`CURSOR_CONFIG_DIR`, otherwise `$XDG_CONFIG_HOME/cursor`, otherwise `$HOME/.cursor`.
+A missing file is an empty native set. A malformed or unreadable file refuses the
+lift and is not rewritten. A Cursor re-review compares the fresh external servers
+and `Mcp(server:tool)` pairs with the private `.cursor/mcp.json` and `.cursor/cli.json` already
+written for that reviewer. If those files are missing, unreadable, or differ, the
+review stops before the diff is sent: stop the reviewer and start a new lift.
+Missing files are not treated as an old bus-only launch.
+[03-cli § Review](03-cli.md#review) states the same boundary.
 
 A Cursor reviewer also sees MCP servers named in the person's own
 `~/.cursor/mcp.json`: Cursor merges the project and home MCP files, the nearer entry
@@ -386,13 +402,14 @@ winning a shared name (`lib/driver-cursor.ts`). Measured on 2026-09-27 with a li
 2026.09.26-dd393fe reviewer on a disposable stand: the generated MCP plan named only
 the fixture server and the bus, yet each fixture-tool refusal listed four more
 servers, and a read-only comparison of keys with `~/.cursor/mcp.json` found those
-same four names. The deny layer does not reach them: the driver writes its MCP and
-CLI configuration only under the sandbox's `.cursor/`, its `Write(**)` and `Shell(**)`
-rules name no MCP tool, and nothing edits or disables the personal file. The lift
+same four names. The driver still writes MCP and CLI configuration only under the sandbox's
+`.cursor/` and does not edit the personal file. `Mcp(server:tool)` names only a
+tool of a server in the fragment this lift wrote. A personal server that does
+not share that name is neither enabled nor denied here. The lift
 reports a personal entry only when it shares a name with a delivered server
-(`shadowedUserServers`); differently named personal servers go unreported. Whether
-those servers were connected, and which of their tools a reviewer could call, was
-not measured.
+(`shadowedUserServers`); differently named personal servers go unreported.
+Whether those personal servers were connected was not measured on
+`cursor-agent` 2026.11.05-86047df or `cursor-agent` 2026.11.22-e9042b2.
 
 ## Cursor: the persist session
 
@@ -878,21 +895,32 @@ before asynchronous database/process verification. Each publication CASes the
 same owner generation and original phase revision. Unresolved creation or grant
 admission retains its primary record and owned holder after the revoke attempt.
 
-Cursor first obtains an actual ID from its own successful `create-chat`, then
-starts persist with that same ID. It captures the controlled native
+Managed Cursor starts `persist` with a fresh workspace command. The last argument is a fixed
+instruction to read a private assignment file in the project's `.cursor`
+directory. Arbitrary assignment text never reaches the native argument parser. The launcher reads the official start line from that
+invocation's private stderr descriptor, allowing diagnostic lines within 64 KiB. Its session name must match a new
+Cursor-managed tmux pane in the workspace. The chat ID must be absent from
+both the prelaunch tmux inventory and the workspace's native chat directory.
+The [prelaunch session-record pointer](#participant-binding-before-launch) identifies the participant while the hook stages its observation in the private launch record. The driver publishes the native chat ID in the journal after verifying the pane and store.
+A missing start line or a mismatched pane leaves admission unresolved.
+The driver captures the controlled native
 `CURSOR_CONFIG_DIR`, canonical cwd and approved wrapper/bundled-node/bundle
-identity; its private launch script replaces inherited tmux environment and keeps
-no root capability references. The native chat-store MD5 is distinct from the
+identity; its private launch script replaces inherited tmux environment and pins `CURSOR_AGENT_TMUX_SERVER_NAME` to `cursor-agent`. Stop uses the recorded server. The native chat-store MD5 is distinct from the
 persist workspace hash and from transcript/data paths. The actual asynchronous
 `sessionStart` supplies only its real conversation ID and observed native process;
-no transcript field is invented. Within the existing appearance budget, owner
+no transcript field is invented. On Darwin the Cursor hook also accepts the root-owned
+system `/bin/zsh` as the direct command child of the approved runtime. The hook snapshots
+the launch record and its revision under the task lock. If an early Stop updates only
+the turn count and the same chat’s last turn, the hook repeats its physical observation
+once against the new revision. Within the existing appearance budget, owner
 publication matches that hook birth to the actual pane, verifies the canonical
 owned SQLite file and confirms that this native process currently holds it open.
 A path or initialized-looking file alone cannot hide native memory fallback.
 Linux uses the verified process's file descriptors; Darwin uses bounded own-PID
 file observation with `/usr/sbin/lsof -b -p PID -FpiD`. It compares the device and inode
 of one numeric file descriptor using exact integers, then rechecks the path and
-process lifetime. The `-b` option avoids blocking file-system lookups inside `lsof`;
+process lifetime. The service rechecks the named managed pane, chat ID, workspace
+hash and PID under its admission lock before writing the binding. The `-b` option avoids blocking file-system lookups inside `lsof`;
 device and inode come from the kernel descriptor information. The observation keeps its two-second deadline; failed or timed-out output
 cannot establish admission. Unavailable evidence stays unresolved.
 

@@ -14,6 +14,16 @@ for (const [harness, roles] of Object.entries(baseline)) {
     });
   }
 }
+test('Cursor reviewer and approver keep the measured mechanical MCP write boundary', () => {
+  for (const role of ['reviewer', 'approver']) {
+    const prompt = actual.cursor[role];
+    assert.match(prompt, /denied as Mcp\(server:tool\)/);
+    assert.match(prompt, /2026\.11\.05-86047df/);
+    assert.match(prompt, /2026\.11\.22-e9042b2/);
+    assert.match(prompt, /forbidden by this prompt as well/);
+    assert.doesNotMatch(prompt, /does not mechanically deny MCP writes/);
+  }
+});
 test('the public entry exports six portable role renderers', async () => {
   const instructions = await import('promptobus/instructions');
   for (const role of ['Worker', 'Reviewer', 'Approver', 'Teamlead', 'Reporter', 'Orchestrator']) {

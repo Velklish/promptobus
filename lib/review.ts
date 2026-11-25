@@ -44,7 +44,7 @@ import {
 } from '../dist/index.js';
 import { pipelineOf, resolveInstructionFile } from '../dist/pipeline.js';
 import { EDITS_TREE, READS_DIFF, WRITES_MAIN_TREE } from '../dist/registry.js';
-import { driverOf, REGISTRY, snapshotOf } from './drivers.js';
+import { driverOf, REGISTRY, reviewMcpLaunchRefusal, reviewMcpReuseRefusal, snapshotOf } from './drivers.js';
 import { ensureWarden, handOverContactPoints } from './warden.js';
 import { clearThroughputSidecar, sessionLogOf, tokenLogHistoryOf } from './model-routing/telemetry.js';
 import { assertNativeContextDriver, contextRules, nativeContextMetadata, nativeContextPrompt, prepareNativeContext } from './native-participant-context.js';
@@ -138,21 +138,34 @@ export function hostDenyClassification(host: Pick<PromptobusHost, 'participantDe
     ? host.participantDenyToolsByKind!(selector as StepKind, repoDir)
     : member ? host.participantDenyTools!(selector as HostDenyRole, repoDir) : null;
   const classified: unknown[] = Array.isArray(answer) ? answer : Array.isArray((answer as { tools?: unknown } | null)?.tools) ? (answer as { tools: unknown[] }).tools : [];
-  const valid = classified.filter((tool): tool is HostMcpTool => (tool && typeof tool === 'object'
-    && typeof (tool as { server?: unknown }).server === 'string' && typeof (tool as { tool?: unknown }).tool === 'string'
-    && (tool as { server?: unknown }).server && (tool as { tool?: unknown }).tool && (tool as { server?: unknown }).server !== PROMPTOBUS_SERVER) as boolean);
+  const malformed: string[] = [];
+  const valid = classified.filter((tool): tool is HostMcpTool => {
+    if (!tool || typeof tool !== 'object') {
+      malformed.push('non-object');
+      return false;
+    }
+    const server = (tool as { server?: unknown }).server;
+    const name = (tool as { tool?: unknown }).tool;
+    if (server === PROMPTOBUS_SERVER) return false;
+    if (typeof server === 'string' && typeof name === 'string' && server && name) return true;
+    malformed.push(typeof server === 'string' && server ? server : 'unnamed');
+    return false;
+  });
   const tools = [...new Map(valid.map((tool) => [`${tool.server}\0${tool.tool}`, tool])).values()];
-  const complete = !member && canonicalServers.length === 0
+  const shapeComplete = !member && canonicalServers.length === 0
     ? true
     : !Array.isArray(answer) && (answer as { complete?: unknown } | null)?.complete === true && Array.isArray((answer as { tools?: unknown }).tools);
+  const complete = shapeComplete && malformed.length === 0;
   const covered = new Set(tools.map(({ server }) => server));
   const unclassified = canonicalServers.filter((server) => !covered.has(server));
   const source = member ? `${member}('${selector}')` : 'host write-tool classifier';
-  const detail = unclassified.length
-    ? `the ${source} classification is incomplete for canonical external MCP server(s): ${unclassified.join(', ')}`
-    : Array.isArray(answer)
-      ? `the ${source} member returned the pre-{ tools, complete } shape`
-      : `the ${source} member did not return complete: true`;
+  const detail = malformed.length
+    ? `the ${source} classification contains a malformed external MCP write entry: ${[...new Set(malformed)].join(', ')}`
+    : unclassified.length
+      ? `the ${source} classification is incomplete for canonical external MCP server(s): ${unclassified.join(', ')}`
+      : Array.isArray(answer)
+        ? `the ${source} member returned the pre-{ tools, complete } shape`
+        : `the ${source} member did not return complete: true`;
   return { tools, complete, detail };
 }
 
@@ -830,7 +843,9 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
   if (outcome.refusal && !outcome.reuse) fail(outcome.refusal);
   // A re-review keeps the running session and the denies it launched with; the
   // regressed host answer is said, not swallowed — a new lift would refuse.
-  else if (outcome.refusal) warn(`${outcome.refusal} The running reviewer keeps the deny list it was launched with; this re-review proceeds.`);
+  else if (outcome.refusal && (outcome as ReviewPlan).driver.id === 'cursor') {
+    fail(`${outcome.refusal} Stop the Cursor reviewer and start a new lift before sending a diff.`);
+  } else if (outcome.refusal) warn(`${outcome.refusal} The running reviewer keeps the deny list it was launched with; this re-review proceeds.`);
   // The refusal-only result cannot pass the fail branch above.
   const plan = outcome as ReviewPlan;
   // The binary is resolved lazily: the command has three early returns without
@@ -895,12 +910,14 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
 
   // Checked with the binary BEFORE the first write to disk: a version refusal would otherwise leave
   // an opened task, a diff file and a `pending` record. Re-review does not need the binary.
+  let launchTool: ReturnType<typeof harnessTool> | null = null;
   if (!plan.reuse) {
     // Read-only is asked FIRST and before any write: a harness that cannot strip
     // tools would start a session with write access to the reviewed tree.
     const noDeny = denyToolsRefusal(plan.driver);
     if (noDeny) fail(noDeny);
     const t = harnessTool();
+    launchTool = t;
     sayTool(t, { reason: false });
     if (!t.ok) fail(t.reason!);
     // Version gate is shared with the worker: if the refusals diverged, the
@@ -927,6 +944,10 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
     info(`workspace skills: ${skillsNote(plan)}`);
     info(`reviewer rules:`);
     for (const f of plan.rules) console.log(`  ${f}`);
+  }
+  if (!plan.reuse && launchTool) {
+    const hostMcp = reviewMcpLaunchRefusal(plan.driver, launchTool, plan.launch, plan.env);
+    if (hostMcp) fail(hostMcp);
   }
   if (plan.createNew) {
     createTask(plan.home, plan.createNew);
@@ -991,6 +1012,8 @@ async function reviewLift(rootOrHost: unknown, opts: ReviewOptions): Promise<Rev
         requireReviewerBinding(plan.host, plan.taskId, plan.address, current);
         if (!plan.createNew) bindIfOwner(plan.home, plan.taskId);
         handOverContactPoints(plan.home, { env: process.env });
+        const reuseRefusal = reviewMcpReuseRefusal(plan.driver, plan.launch);
+        if (reuseRefusal) throw new GateError(reuseRefusal);
         retargetDiff(plan, writeDiff(path.dirname(plan.diffPath), plan.slug, plan.diff, plan.stepName));
         if (plan.sessionState === 'unknown') {
           warn(`liveness of the reviewer session ${plan.address} cannot be confirmed (${plan.driver.phrases.unreadable}) — the diff goes to the former address; if there is no report — check the session: ${plan.driver.phrases.sessions}`);

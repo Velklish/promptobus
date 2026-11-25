@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
-  chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync,
+  chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
@@ -10,7 +10,7 @@ import { run, runAsync } from './exec.js';
 import { shellQuote } from '../dist/fs/shell.js';
 import { GateError } from '../dist/index.js';
 import { createHarnessRegistry } from './harness-registry.js';
-import { readPrivate, recordOf, writePrivate } from './service-state.js';
+import { readPrivate, recordOf, sameRecordVersion, writePrivate } from './service-state.js';
 import { taskExists, withTaskLock } from './store.js';
 import { PROMPTOBUS_SERVER } from './contract.js';
 import type { HarnessSessionRecord } from './harness-registry.js';
@@ -110,8 +110,20 @@ export function lockFile(ref: string, env = process.env): string {
   return path.join(sessionsDir(env), sessionKey(ref) + '.inject.lock');
 }
 
+export function cursorAssignment(nonce: string) {
+  const file = `.cursor/promptobus-${nonce}.md`;
+  return { file, argument: `Read the complete task instructions in ${file} before doing any work.` };
+}
+
 const cursorRegistry = createHarnessRegistry<CursorSessionRecord>({
   harness: CURSOR_HARNESS,
+  onDrop(record) {
+    const bootstrap = record.nativeBootstrap;
+    if (typeof record.nativePersistNonce !== 'string' || !/^[a-f0-9-]{36}$/.test(record.nativePersistNonce)
+      || !recordOf(record.nativeCommand) || typeof record.nativeCommand.cwd !== 'string' || !recordOf(bootstrap) || typeof bootstrap.version !== 'string') return;
+    const file = path.join(record.nativeCommand.cwd, cursorAssignment(record.nativePersistNonce).file);
+    if (file === bootstrap.file && sameRecordVersion({ file, version: bootstrap.version }) && realpathSync(file) === file) rmSync(file);
+  },
   sidecars: (ref, env): string[] => [launchScriptFile(ref, env), lockFile(ref, env), bufferFile(ref, env), injectionActivityFile(ref, env)],
 });
 
@@ -427,26 +439,58 @@ export function launchScript({ bin, argv, env }: { bin: string; argv: string[]; 
     + `${argv.map(shellQuote).join(' ')}\n`;
 }
 
+/** Managed launches use the driver's option grammar and a literal positional prompt. */
+export function freshPersistCommand(argv: unknown, cwd: string, nonce: unknown): boolean {
+  if (!Array.isArray(argv) || !argv.every(s => typeof s === 'string' && !s.includes('\0'))
+    || argv[0] !== 'persist' || argv[1] !== '--workspace' || argv[2] !== cwd
+    || argv[3] !== '--trust' || argv[4] !== '--force') return false;
+  let next = 5;
+  if (argv[next] === '--mode' && ['ask', 'plan'].includes(argv[next + 1])) next += 2;
+  if (argv[next] !== '--model' || !argv[next + 1] || argv[next + 1].startsWith('-')) return false;
+  next += 2;
+  while (argv[next] === '--add-dir' && typeof argv[next + 1] === 'string' && path.isAbsolute(argv[next + 1])) next += 2;
+  return next === argv.length - 2 && argv[next] === '--' && typeof nonce === 'string' && /^[a-f0-9-]{36}$/.test(nonce)
+    && argv[next + 1] === cursorAssignment(nonce).argument;
+}
+
+export function persistStartedName(fd: number): string | null {
+  const buffer = Buffer.alloc(64 * 1024 + 1);
+  const length = readSync(fd, buffer, 0, buffer.length, 0);
+  if (length === buffer.length) throw new GateError('Cursor persist start receipt exceeds the observation limit');
+  const names = new Set<string>();
+  for (const line of buffer.toString('utf8', 0, length).split(/\r?\n/).slice(0, -1)) {
+    const match = /^Started persistent session (cursor-[a-z0-9-]+)\. Use \/detach to leave it running; reconnect with agent persist list\.$/.exec(line);
+    if (match) names.add(match[1]!);
+  }
+  if (names.size > 1) throw new GateError('Cursor persist emitted conflicting start receipts');
+  return [...names][0] ?? null;
+}
+
 /** Lift a persist session. The binary chooses the name, so it is learned AFTER start; ours is
  * recognised by three marks at once — directory hash, non-empty chat id, and creation time. */
 export async function liftSession({
   ref, bin, argv, cwd, env = process.env, launchEnv = null, task = null, address = null,
-  tries = LIFT_TRIES, delayMs = LIFT_STEP_MS, acceptSession, expectedChatId,
-}: { ref: string; bin: string; argv: string[]; cwd: string; env?: NodeJS.ProcessEnv; launchEnv?: NodeJS.ProcessEnv | null; task?: string | null; address?: string | null; tries?: number; delayMs?: number; acceptSession?: (session: TmuxSession) => Promise<boolean>; expectedChatId?: string }): Promise<LiftSessionResult> {
+  tries = LIFT_TRIES, delayMs = LIFT_STEP_MS, acceptSession, receipt,
+}: { ref: string; bin: string; argv: string[]; cwd: string; env?: NodeJS.ProcessEnv; launchEnv?: NodeJS.ProcessEnv | null; task?: string | null; address?: string | null; tries?: number; delayMs?: number; acceptSession?: (session: TmuxSession) => Promise<boolean>; receipt?: { file: string; fd: number; beforeSpawn: () => void } }): Promise<LiftSessionResult> {
   const script = launchScriptFile(ref, env);
   mkdirSync(path.dirname(script), { recursive: true });
   // The SESSION environment and the environment of our tmux calls are different things: the first is
   // materialised in the script, the second is needed only to find the server socket.
-  writeFileSync(script, launchScript({ bin, argv, env: launchEnv ?? env }), { mode: 0o600 });
-  chmodSync(script, 0o600);
   const hash = workspaceHash(cwd);
   const before = readTmuxSessions({ env });
   if (before.missing) throw new GateError(before.missing);
   const known = new Set(before.sessions!.map((s) => s.name));
+  const knownChats = new Set(before.sessions!.map(s => s.chatId));
   const startedAt = Math.floor(Date.now() / 1000);
   const pane = `promptobus-${sessionKey(ref)}`;
   // Pane width is set explicitly: `capture-pane` reads what is drawn, and a narrow pane would break
   // input-field lines. A live session is later shrunk by whoever attaches, but lift must not depend on that.
+  try {
+    const command = launchScript({ bin, argv, env: launchEnv ?? env });
+    writeFileSync(script, receipt ? command.trimEnd() + ` 2>>${shellQuote(receipt.file)}\n` : command, { mode: 0o600 });
+    chmodSync(script, 0o600);
+    receipt?.beforeSpawn();
+  } catch (error) { rmSync(script, { force: true }); throw error; }
   const started = tmux(['new-session', '-d', '-s', pane, '-x', '200', '-y', '50', '-c', cwd, 'sh', script],
     { server: LAUNCH_TMUX_SERVER, env });
   if (started.error || started.status !== 0) {
@@ -459,7 +503,9 @@ export async function liftSession({
     for (let i = 0; i < tries; i += 1) {
       const snapshot = readTmuxSessions({ env });
       if (snapshot.missing) throw new GateError(snapshot.missing);
-      seen = snapshot.sessions!.find((s) => s.hash === hash && s.chatId && (!expectedChatId || s.chatId === expectedChatId) && !known.has(s.name)
+      const startedName = receipt ? persistStartedName(receipt.fd) : null;
+      seen = snapshot.sessions!.find((s) => s.hash === hash && s.chatId && !known.has(s.name)
+        && (!receipt || (s.managed && s.name === startedName && !knownChats.has(s.chatId)))
         && s.created >= startedAt - 2) ?? null;
       if (seen && (!acceptSession || await acceptSession(seen))) { accepted = true; break; }
       if (i < tries - 1) await settle(delayMs);
@@ -927,7 +973,7 @@ export async function stopSession(record: CursorRecord, {
     if (!ownsRecord()) return refused('persist registry revision changed during Stop');
     if (Date.now() >= edge) return refused('Stop deadline elapsed before native shutdown');
     const r = await runAsync(agent, ['persist', 'stop', name!], {
-      encoding: 'utf8', env, cwd: record?.cwd, timeoutMs: Math.max(0, edge - Date.now()),
+      encoding: 'utf8', env: { ...env, CURSOR_AGENT_TMUX_SERVER_NAME: server }, cwd: record?.cwd, timeoutMs: Math.max(0, edge - Date.now()),
     });
     if (!ownsRecord()) return refused('persist registry revision changed during Stop');
     said = r.error ? r.error.message : String(r.stdout || r.stderr || '').trim();

@@ -417,6 +417,12 @@ check(': Cursor approver project layer names the bus and role guard with empty p
   Object.hasOwn(cursorProjectFile('mcp.json').mcpServers, PROMPTOBUS_SERVER)
   && cursorProjectFile('hooks.json').hooks.stop.some((hook) => hook.command.includes('--role approver:orders-api'))
   && cursorProjectFile('cli.json').permissions.deny.length === 0);
+check(': Cursor approver keeps the external MCP write boundary',
+  cursorPlan.prompt.includes('Mcp(server:tool)')
+  && cursorPlan.prompt.includes('2026.11.05-86047df')
+  && cursorPlan.prompt.includes('2026.11.22-e9042b2')
+  && /forbidden by this prompt as well/.test(cursorPlan.prompt),
+  cursorPlan.prompt.slice(cursorPlan.prompt.indexOf('MCP'), 400));
 const cursorCliDryRun = spawnSync(process.execPath, [
   CLI, 'promptobus', 'review', REPO, '--task', TASK, '--approver', '--harness', 'cursor', '--dry-run',
 ], {

@@ -485,6 +485,30 @@ check('PB-87.1: Codex refuses a host with declared servers and no classification
   && noMemberCodexPlan.refusal.includes('missing-review-classification')
   && noMemberCodexPlan.refusal.includes('catalog'),
   String(noMemberCodexPlan.refusal));
+const noMemberCursorPlan = planReview(noMemberCodexHost, {
+  target: REPO, title: 'missing Cursor classification', harness: 'cursor',
+});
+check('PB-87: Cursor refuses a host with declared servers and no classification member',
+  typeof noMemberCursorPlan.refusal === 'string'
+  && noMemberCursorPlan.refusal.includes('missing-review-classification')
+  && noMemberCursorPlan.refusal.includes('catalog'),
+  String(noMemberCursorPlan.refusal));
+const malformedCursorHost = {
+  ...classifiedHost,
+  commandName: 'malformed-cursor-host',
+  participantDenyTools: () => ({
+    tools: [{ server: 'catalog', tool: 'create_entry' }, { server: 'catalog' }, { server: 'promptobus', tool: 'promptobus_send' }],
+    complete: true,
+  }),
+};
+const malformedCursorPlan = planReview(malformedCursorHost, {
+  target: REPO, title: 'malformed Cursor classification', harness: 'cursor',
+});
+check('PB-87: Cursor refuses a malformed external write and still ignores the bus pair',
+  typeof malformedCursorPlan.refusal === 'string'
+  && malformedCursorPlan.refusal.includes('malformed')
+  && malformedCursorPlan.refusal.includes('catalog'),
+  String(malformedCursorPlan.refusal));
 const legacyArrayCodexHost = {
   ...classifiedHost,
   commandName: 'legacy-array-review-host',
@@ -521,9 +545,12 @@ check('reviewer prompt: Cursor keeps its command-start denial',
   && skillPrompts.cursor.includes('Skip steps that need a write, a command start, or an unavailable MCP server')
   && cursorClassifiedPlan.prompt.includes('not run, because a reviewer runs nothing'),
   cursorClassifiedPlan.prompt.split('\n').find((line) => line.includes('command starts')) ?? cursorClassifiedPlan.prompt);
-check('PB-87: Cursor does not consume Claude MCP deny ids',
-  JSON.stringify(cursorClassifiedPlan.settings.permissions.deny) === JSON.stringify(['Write(**)', 'Shell(**)'])
-  && !JSON.stringify(cursorClassifiedPlan.settings).includes('mcp__catalog__create_entry'),
+check('PB-87: Cursor translates a host pair to Mcp(server:tool) and does not use the Claude spelling',
+  cursorClassifiedPlan.settings.permissions.deny.includes('Mcp(catalog:create_entry)')
+  && cursorClassifiedPlan.settings.permissions.deny.includes('Write(**)')
+  && cursorClassifiedPlan.settings.permissions.deny.includes('Shell(**)')
+  && !JSON.stringify(cursorClassifiedPlan.settings).includes('mcp__catalog__create_entry')
+  && cursorClassifiedPlan.refusal == null,
   JSON.stringify(cursorClassifiedPlan.settings));
 const codexClassifiedPlan = planReview(classifiedHost, {
   target: REPO, title: 'classified Codex tools', harness: 'codex',

@@ -2,6 +2,8 @@
 
 `native.json` was produced from the worker, reviewer and managed-root planners at
 commit `ee076d282235e88dfac30119a26c0b1c6820a6bc` before separating Codex prompt sources.
+The Cursor reviewer entry now carries the measured `Mcp(server:tool)` boundary.
+Every other entry remains that capture.
 It contains worker and reviewer prompts for Claude, Cursor, Codex and OpenCode,
 the Codex root prompt, and the three unsupported managed-root refusals.
 

@@ -307,13 +307,20 @@ that classification. Codex places each classified tool in its server's
 the participant has: a Codex reviewer lifts in an isolated `CODEX_HOME`, the
 owner's personal MCP set is not in it, and neither is codex-cli's built-in `codex_apps`
 server, which the home turns off. Cursor mechanically denies file and shell writes
-through `.cursor/cli.json`, but its MCP write tools remain prompt-only: this driver
-does not declare `mcpDenyTools`. On `cursor-agent` 2026.09.26-dd393fe, one live
-reviewer tried three candidate deny spellings on separate fixture tools. The first
-lift had the fixture configured but not enabled; after pointwise enable in a rerun,
-both fixture and bus MCP calls returned `Not connected`. No connected tool was
-observed blocked by a candidate pattern, so Promptobus cannot claim mechanical
-MCP denial for Cursor. An incomplete host classification,
+through `.cursor/cli.json` and declares `mcpDenyTools`. Each host-classified
+external write becomes `Mcp(server:tool)` in that file. The token was measured
+on `cursor-agent` 2026.11.05-86047df and `cursor-agent` 2026.11.22-e9042b2: the harness blocked the named tool before
+the server process saw the call, and the proposed write left no file. A lift
+that would pointwise-enable a classified host server refuses every other
+reported binary version. On `cursor-agent` 2026.09.26-dd393fe, pointwise enable
+made fixture and bus calls return `Not connected`, and no connected tool was
+blocked. The driver enables `promptobus` and a host server only when that
+server is a key of the MCP fragment written for this lift and a deny token
+names it. It does not take enable names from the home MCP file and does not
+pass `--approve-mcps`. A re-review stops before the diff is sent when the private
+`.cursor/mcp.json` and `.cursor/cli.json` are missing, unreadable, or differ from the fresh
+external servers and `Mcp(server:tool)` pairs. Missing files are not treated as an
+old bus-only launch. An incomplete host classification,
 or a missing member where the host hands the participant any server but the bus,
 refuses a mechanical reviewer before launch files are written — the classification
 must cover every server the participant receives, not only the third-party ones. Their `denyTools` settings still protect the

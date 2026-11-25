@@ -22,12 +22,12 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync,
 import { homedir } from 'node:os';
 import { mock } from 'node:test';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { check } from './check.mjs';
 import { sourceFile } from './source-files.mjs';
 import { processProbe } from './process-probe.mjs';
 import { makeSandbox, stubCommand, writeHostConfig } from './sandbox.mjs';
-import { buildWorkspace, cli, store } from './scenario.mjs';
+import { buildWorkspace, cli, freshScenarioIdentity, store } from './scenario.mjs';
 import {
   HANG_CHILD_VAR, HANG_VAR, HANG_WRITE_VAR, diagnoseTrace, installHarness, planParticipant,
   readTrace, serverDir, traceFile,
@@ -58,6 +58,8 @@ const cursorModule = await import(path.join(here, '..', 'lib', 'driver-cursor.js
 const {
   cursorDriver, normalizeTool, reviewSandbox, PROVEN_CURSOR_VERSION, PHRASES, KNOWN_HOOK_EVENTS,
   PROVEN_HOOK_EVENTS, HOOK_EVENTS_SOURCE_VERSION, skillsNoteOf,
+  mcpDenyTools, classifiedDeliveredServers, classifiedHomeCollisionRefusal, cursorHostMcpLiftRefusal,
+  cursorReuseClassificationRefusal, MCP_DENY_MEASURED_VERSION, MCP_DENY_MEASURED_VERSIONS,
 } = cursorModule;
 const {
   ADDRESS_OPT, dropSession, injectText, launchScript, TASK_OPT, tmuxSessions, readSession, readTmuxSessions, readTranscript, sessionFile, SESSION_ENV_VAR,
@@ -899,6 +901,142 @@ check(': reviewer read-only is deny in .cursor/cli.json, without plan mode',
   && !reviewerPlan.argv.includes('--mode'),
   `${JSON.stringify(reviewerCli)} · ${reviewerPlan.argv.join(' ')}`);
 
+check(': Cursor spells a classified host write as Mcp(server:tool) and skips the bus',
+  cursorDriver.capabilities.mcpDenyTools === true
+  && cursorDriver.mcpDenyTools === mcpDenyTools
+  && JSON.stringify(mcpDenyTools([
+    { server: 'pb875probe', tool: 'write_probe' },
+    { server: 'promptobus', tool: 'promptobus_send' },
+  ])) === JSON.stringify(['Mcp(pb875probe:write_probe)']),
+  JSON.stringify(mcpDenyTools([{ server: 'pb875probe', tool: 'write_probe' }])));
+check(': pointwise enable names are the delivered fragment intersected with deny tokens',
+  JSON.stringify(classifiedDeliveredServers(
+    { promptobus: {}, pb875probe: {}, unclassified: {} },
+    ['Write(**)', 'Shell(**)', 'Mcp(pb875probe:write_probe)', 'Mcp(absent:write_probe)', 'mcp__pb875probe__write_probe'],
+  )) === JSON.stringify(['pb875probe']),
+  JSON.stringify(classifiedDeliveredServers(
+    { promptobus: {}, pb875probe: {}, unclassified: {} },
+    ['Mcp(pb875probe:write_probe)', 'Mcp(absent:write_probe)'],
+  )));
+check(': a classified server with the same home name refuses before launch and stays in the project config',
+  (() => {
+    const name = 'pb875probe';
+    const deny = ['Write(**)', 'Shell(**)', `Mcp(${name}:write_probe)`];
+    const plan = cursorDriver.prepare({
+      ...ctx,
+      role: 'reviewer',
+      cwd: '/tmp/clone',
+      permissionMode: null,
+      denyTools: deny,
+      mcp: {
+        ...ctx.mcp,
+        servers: {
+          promptobus: ctx.mcp.servers.promptobus,
+          [name]: { type: 'stdio', command: 'node', args: ['fixture-mcp.mjs'] },
+        },
+      },
+    });
+    const written = JSON.parse(plan.files.find((f) => f.path.endsWith('mcp.json')).text);
+    const refusal = classifiedHomeCollisionRefusal(written.mcpServers, deny, [name]);
+    return Boolean(written.mcpServers[name]) && refusal.includes(name)
+      && /not started/.test(refusal) && /home file is not changed/.test(refusal)
+      && /not enabled/.test(refusal);
+  })(),
+  'pb875probe');
+const reviewedHost = cursorDriver.prepare({
+  ...ctx,
+  role: 'reviewer',
+  cwd: '/tmp/clone',
+  permissionMode: null,
+  denyTools: ['Write(**)', 'Shell(**)', 'Mcp(pb875probe:write_probe)'],
+  mcp: {
+    ...ctx.mcp,
+    servers: {
+      promptobus: ctx.mcp.servers.promptobus,
+      pb875probe: { type: 'stdio', command: 'node', args: ['fixture-mcp.mjs'] },
+      leftover: { type: 'stdio', command: 'node', args: ['old.mjs'] },
+    },
+  },
+});
+const reviewedMcp = JSON.parse(reviewedHost.files.find((f) => f.path.endsWith('mcp.json')).text);
+check(': the private reviewer config keeps the bus and the classified server only',
+  Object.keys(reviewedMcp.mcpServers).sort().join(',') === 'pb875probe,promptobus',
+  Object.keys(reviewedMcp.mcpServers).join(','));
+const nativeHome = path.join(SB, 'native-mcp-home');
+const nativeFile = path.join(nativeHome, '.cursor', 'mcp.json');
+const nativeEnv = { HOME: nativeHome };
+const classifiedGate = {
+  mcp: { mcpServers: { promptobus: {}, pb875probe: { command: 'node' } } },
+  settings: { permissions: { deny: ['Write(**)', 'Mcp(pb875probe:write_probe)'] } },
+};
+check(': a measured build with no native MCP file is an empty set',
+  cursorHostMcpLiftRefusal({ version: MCP_DENY_MEASURED_VERSIONS[1] }, classifiedGate.mcp, classifiedGate.settings, nativeEnv) === null
+  && MCP_DENY_MEASURED_VERSIONS.join(',') === '2026.11.05-86047df,2026.11.22-e9042b2',
+  String(cursorHostMcpLiftRefusal({ version: MCP_DENY_MEASURED_VERSIONS[1] }, classifiedGate.mcp, classifiedGate.settings, nativeEnv)));
+mkdirSync(path.dirname(nativeFile), { recursive: true });
+const nativeMarker = 'native-mcp-body-marker';
+writeFileSync(nativeFile, `{${nativeMarker}`);
+const nativeBefore = readFileSync(nativeFile, 'utf8');
+const nativeBad = cursorHostMcpLiftRefusal({ version: MCP_DENY_MEASURED_VERSIONS[1] }, classifiedGate.mcp, classifiedGate.settings, nativeEnv);
+check(': a malformed native MCP file refuses the lift and is not rewritten',
+  typeof nativeBad === 'string' && /cannot read/.test(nativeBad) && /not changed/.test(nativeBad)
+  && !nativeBad.includes(nativeMarker) && readFileSync(nativeFile, 'utf8') === nativeBefore,
+  nativeBad);
+writeFileSync(nativeFile, `${JSON.stringify({ mcpServers: { pb875probe: { command: nativeMarker } } })}\n`);
+const nativeOwned = readFileSync(nativeFile, 'utf8');
+const nativeHit = cursorHostMcpLiftRefusal({ version: MCP_DENY_MEASURED_VERSIONS[1] }, classifiedGate.mcp, classifiedGate.settings, nativeEnv);
+check(': a same-name native server refuses before enable and the native file stays',
+  typeof nativeHit === 'string' && /not started/.test(nativeHit) && /not changed/.test(nativeHit)
+  && /not enabled/.test(nativeHit) && !nativeHit.includes(nativeMarker)
+  && readFileSync(nativeFile, 'utf8') === nativeOwned,
+  nativeHit);
+const reuseDir = path.join(SB, 'reuse-class');
+mkdirSync(reuseDir, { recursive: true });
+const reuseMcp = path.join(reuseDir, 'mcp.json');
+const reuseCli = path.join(reuseDir, 'cli.json');
+const busOnly = {
+  mcp: { mcpServers: { promptobus: { command: 'secret-bus-body' } } },
+  settings: { permissions: { deny: ['Write(**)', 'Shell(**)'] } },
+};
+const absentReuse = cursorReuseClassificationRefusal(busOnly.mcp, busOnly.settings, reuseMcp, reuseCli);
+check(': missing private files refuse reuse even when the fresh plan is bus-only',
+  typeof absentReuse === 'string' && /unreadable/.test(absentReuse) && /Stop the reviewer/.test(absentReuse)
+  && /new lift/.test(absentReuse) && !absentReuse.includes('secret-bus-body'),
+  absentReuse);
+writeFileSync(reuseMcp, `${JSON.stringify(busOnly.mcp)}\n`);
+writeFileSync(reuseCli, `${JSON.stringify(busOnly.settings)}\n`);
+check(': a readable bus-only pair that still matches is reused',
+  cursorReuseClassificationRefusal(busOnly.mcp, busOnly.settings, reuseMcp, reuseCli) === null);
+writeFileSync(reuseCli, `${JSON.stringify({ permissions: { deny: ['Write(**)', 'Mcp(pb875probe:write_probe)'] } })}\n`);
+const changedReuse = cursorReuseClassificationRefusal(busOnly.mcp, busOnly.settings, reuseMcp, reuseCli);
+check(': a changed deny pair refuses reuse without printing the MCP file',
+  typeof changedReuse === 'string' && /changed external MCP classification/.test(changedReuse)
+  && /Stop the reviewer/.test(changedReuse) && !changedReuse.includes('secret-bus-body'),
+  changedReuse);
+const driversDoc = readFileSync(path.join(here, '..', 'docs', 'reference', '05-drivers.md'), 'utf8');
+const cliDoc = readFileSync(path.join(here, '..', 'docs', 'reference', '03-cli.md'), 'utf8');
+const changelog = readFileSync(path.join(here, '..', 'CHANGELOG.md'), 'utf8');
+const readme = readFileSync(path.join(here, '..', 'README.md'), 'utf8');
+check(': Cursor docs name the measured MCP deny build and drop the old no-mcpDenyTools claim',
+  driversDoc.includes(`\`cursor-agent\` ${MCP_DENY_MEASURED_VERSION}`)
+  && driversDoc.includes('2026.11.22-e9042b2')
+  && driversDoc.includes('Missing files are not treated as an old bus-only launch')
+  && cliDoc.includes(`\`cursor-agent\` ${MCP_DENY_MEASURED_VERSION}`)
+  && cliDoc.includes('2026.11.22-e9042b2')
+  && cliDoc.replace(/\s+/g, ' ').includes('Missing files are not treated as an old bus-only launch')
+  && readme.includes(`\`cursor-agent\` ${MCP_DENY_MEASURED_VERSION}`)
+  && readme.includes('2026.11.22-e9042b2')
+  && /full Promptobus round-trip/.test(readme)
+  && /not established by that fixture/.test(readme)
+  && changelog.includes('Mcp(server:tool)')
+  && changelog.includes(MCP_DENY_MEASURED_VERSION)
+  && !driversDoc.includes('does not declare `mcpDenyTools`')
+  && !cliDoc.includes('does not declare `mcpDenyTools`')
+  && PHRASES.mcpBoundary.includes(MCP_DENY_MEASURED_VERSION)
+  && /forbidden by this prompt as well/.test(PHRASES.mcpBoundary)
+  && !/does not mechanically deny/.test(PHRASES.mcpBoundary),
+  PHRASES.mcpBoundary);
+
 // Effort on Cursor is a model-id suffix, not a flag: the bracket form is rejected by the
 // binary.
 const effortPlan = cursorDriver.prepare({ ...ctx, model: 'cursor-grok-4.6', effort: 'xhigh' });
@@ -1119,10 +1257,13 @@ planParticipant(HARNESS, REVIEWER, {
 // pass it an environment of its own.
 process.env.PROMPTOBUS_CURSOR_IDLE_MS = '1500';
 
+const classifiedConfig = path.join(SB, 'classified-native-config');
+mkdirSync(classifiedConfig);
 const env = {
   ...process.env,
   PROMPTOBUS_HOME: home,
   CLAUDE_CODE_SESSION_ID: ORCH_SESSION,
+  CURSOR_CONFIG_DIR: classifiedConfig,
   // The warden is not needed in this file: the wake loop lives in its own file, and a
   // detached process would outlive the run.
   PROMPTOBUS_WARDEN: 'off',
@@ -1473,7 +1614,53 @@ check('step 3: promptobus status shows Cursor session liveness in the words of i
 
 // --- Cursor reviewer: its own sandbox and its own cleanup ---------------------------
 
-const reviewed = cli([ 'review', wt, '--task', TASK, '--harness', 'cursor'], { cwd: ws, env });
+const classifiedReviewRunner = path.join(SB, 'classified-review.mjs');
+writeFileSync(classifiedReviewRunner, `
+import { hostOf } from ${JSON.stringify(pathToFileURL(path.join(here, '../lib/host.js')).href)};
+import { review } from ${JSON.stringify(pathToFileURL(path.join(here, '../lib/review.js')).href)};
+const [workspace, target, task] = process.argv.slice(2);
+const host = hostOf(workspace);
+await review({
+  ...host,
+  participantServers: () => ({ servers: { catalog: { type: 'http', url: 'http://catalog.invalid/mcp' } }, external: [] }),
+  participantDenyTools: () => ({ tools: [{ server: 'catalog', tool: 'create_entry' }], complete: true }),
+}, { target, task, harness: 'cursor' });
+`);
+const classifiedEnv = { ...env, CURSOR_STUB_VERSION: MCP_DENY_MEASURED_VERSION };
+function classifiedReview(task, overrides = {}) {
+  const result = spawnSync(process.execPath, [classifiedReviewRunner, ws, wt, task], {
+    cwd: ws, env: { ...classifiedEnv, ...overrides }, encoding: 'utf8',
+  });
+  return { status: result.status, out: `${result.stdout ?? ''}${result.stderr ?? ''}` };
+}
+function nativeTrace(file) {
+  const trace = path.join(HARNESS, 'trace', file);
+  return existsSync(trace) ? readFileSync(trace, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)) : [];
+}
+
+for (const [label, overrides, collision, expected, refusal] of [
+  ['unsupported version', { CURSOR_STUB_VERSION: 'unmeasured' }, false, [], /unmeasured/],
+  ['relative native config root', { CURSOR_CONFIG_DIR: 'relative' }, false, [], /absolute native configuration root/],
+  ['native name collision', {}, true, [], /catalog matches a home MCP server/],
+  ['bus enable refusal', { CURSOR_STUB_ENABLE_FAIL: 'promptobus' }, false, ['promptobus'], /mcp enable promptobus failed/],
+  ['fixture enable refusal', { CURSOR_STUB_ENABLE_FAIL: 'catalog' }, false, ['promptobus', 'catalog'], /mcp enable catalog failed/],
+]) {
+  const { id } = freshScenarioIdentity(`cursor-${label.replaceAll(' ', '-')}`);
+  store.createTask(home, { id, title: label, owner: ORCH_SESSION });
+  const config = path.join(classifiedConfig, 'mcp.json');
+  if (collision) writeFileSync(config, JSON.stringify({ mcpServers: { catalog: {} } }));
+  const enableStart = nativeTrace('mcp-enable.jsonl').length;
+  const startCount = nativeTrace('native-start.jsonl').length;
+  const refused = classifiedReview(id, overrides);
+  const enables = nativeTrace('mcp-enable.jsonl').slice(enableStart);
+  if (collision) rmSync(config);
+  check(`step 4: classified Cursor ${label} does not start a native chat or persist session`,
+    refused.status === 1 && refusal.test(refused.out) && nativeTrace('native-start.jsonl').length === startCount
+    && JSON.stringify(enables.map(({ argv }) => argv[2])) === JSON.stringify(expected), refused.out);
+}
+
+const enableStart = nativeTrace('mcp-enable.jsonl').length;
+const reviewed = classifiedReview(TASK);
 check('step 4: promptobus review --harness cursor lifted the reviewer',
   reviewed.status === 0 && /reviewer reviewer:cur started/.test(reviewed.out), reviewed.out);
 
@@ -1485,6 +1672,13 @@ check('step 4: the reviewer record carries the same harness and the denied tools
 // sitting in the reviewed clone would mean writing three files into a foreign working
 // tree.
 const sandbox = reviewSandbox(store.participantSettingsPath(home, TASK, REVIEWER));
+const classifiedEnables = nativeTrace('mcp-enable.jsonl').slice(enableStart);
+const canonicalSandbox = existsSync(sandbox) ? realpathSync(sandbox) : sandbox;
+check('step 4: classified Cursor enables only the bus and the declared fixture from the reviewer sandbox',
+  JSON.stringify(classifiedEnables) === JSON.stringify([
+    { argv: ['mcp', 'enable', 'promptobus'], cwd: canonicalSandbox },
+    { argv: ['mcp', 'enable', 'catalog'], cwd: canonicalSandbox },
+  ]), JSON.stringify({ classifiedEnables, canonicalSandbox }));
 check('step 4: the reviewer sandbox is created, and it is a git directory — otherwise the bus config is not read',
   existsSync(path.join(sandbox, '.git')) && existsSync(path.join(sandbox, '.cursor', 'mcp.json'))
   && existsSync(path.join(sandbox, '.cursor', 'cli.json')),
@@ -1502,7 +1696,7 @@ try {
 }
 check('step 4: reviewer read-only sits in its .cursor/cli.json',
   reviewerCliText !== '' && JSON.stringify(JSON.parse(reviewerCliText).permissions.deny)
-  === JSON.stringify(['Write(**)', 'Shell(**)']),
+  === JSON.stringify(['Write(**)', 'Shell(**)', 'Mcp(catalog:create_entry)']),
   reviewerCliText);
 
 const reviewSent = await waitFor(() => store.glanceInbox(home, TASK, 'orchestrator')

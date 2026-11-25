@@ -1,6 +1,9 @@
+import assert from 'node:assert/strict';
 import { check } from './check.mjs';
+import { createHash, randomUUID } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createStandaloneHost } from '../dist/host-index.js';
 import { claudeDriver } from '../lib/driver-claude.js';
@@ -12,7 +15,7 @@ import { readSession as readCursor, readTmuxSessions, sessionFile as cursorFile 
 import { reapHolder as reapOpenCode } from '../lib/opencode-session.js';
 import { processState, requireProcess } from '../lib/service-state.js';
 import { revokeFailedManagedLaunch } from '../lib/service-launch.js';
-import { createTask, participantRecord, participantSessionPath, taskFile, upsertParticipant } from '../lib/store.js';
+import { createTask, participantOf, participantRecord, participantSessionPath, readTask, senderFor, taskFile, upsertParticipant } from '../lib/store.js';
 import { installHarness as installCodex } from './harness-codex.mjs';
 import { installHarness as installCursor, planParticipant } from './harness-cursor.mjs';
 import { makeSandbox, makeSockDir, stubCommand, writeHostConfig } from './sandbox.mjs';
@@ -182,24 +185,20 @@ console.log('server listening on http://127.0.0.1:32124');setInterval(()=>{},100
   symlinkSync(realpathSync(process.execPath), path.join(bin, 'node'));
   writeFileSync(path.join(bin, 'package.json'), '{"type":"module"}');
   writeFileSync(path.join(bin, 'cursor-agent'), '#!/bin/bash\nSCRIPT_DIR="${0%/*}"\nNODE_BIN="$SCRIPT_DIR/node"\nexec -a "$0" "$NODE_BIN" "$SCRIPT_DIR/index.js" "$@"\n', { mode: 0o755 });
-  writeFileSync(path.join(bin, 'index.js'), `import crypto from 'node:crypto';import path from 'node:path';
-import{mkdirSync,writeFileSync,openSync}from'node:fs';import{syncBuiltinESMExports}from'node:module';
-import{agentMain}from${JSON.stringify(path.join(import.meta.dirname, 'harness-cursor.mjs'))};
-const argv=process.argv.slice(2);
-if(argv[0]==='create-chat'){console.log(crypto.randomUUID());}
-else{
- if(argv[0]==='persist'&&!['list','stop','attach','__session'].includes(argv[1])){
-  const id=argv[argv.indexOf('--resume')+1],original=crypto.randomUUID;process.env.PB_FIXTURE_CURSOR_CWD=process.cwd();
-  crypto.randomUUID=()=>{crypto.randomUUID=original;syncBuiltinESMExports();return id;};syncBuiltinESMExports();
- }
- if(argv[0]==='persist'&&argv[1]==='__session'){
-  const plan=JSON.parse(Buffer.from(argv[2],'base64').toString('utf8'));
-  const file=path.join(process.env.CURSOR_CONFIG_DIR,'chats',crypto.createHash('md5').update(path.resolve(process.env.PB_FIXTURE_CURSOR_CWD)).digest('hex'),plan.chatId,'store.db');
-  mkdirSync(path.dirname(file),{recursive:true,mode:0o700});writeFileSync(file,'SQLite format 3\\0',{mode:0o600});openSync(file,'r+');
- }
- await agentMain(argv);
+  const existingId = randomUUID(), priorServer = process.env.CURSOR_AGENT_TMUX_SERVER_NAME;
+  process.env.CURSOR_AGENT_TMUX_SERVER_NAME = 'foreign-fixture-server';
+  writeFileSync(path.join(bin, 'index.js'), `import {agentMain} from ${JSON.stringify(path.join(import.meta.dirname, 'harness-cursor.mjs'))};
+import {readFileSync} from 'node:fs';
+const argv = process.argv.slice(2), assignment = argv.at(-1)?.match(/^Read the complete task instructions in (\\.cursor\\/promptobus-[a-f0-9-]+\\.md) before doing any work\\.$/);
+const control = assignment ? readFileSync(assignment[1], 'utf8') : null;
+if (assignment) process.stderr.write('fixture diagnostic before native receipt\\n');
+if ((assignment || argv[1] === 'stop') && process.env.CURSOR_AGENT_TMUX_SERVER_NAME !== 'cursor-agent') throw new Error('Unexpected native tmux server');
+if (control === 'foreign start receipt') {
+  const write = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (line, ...rest) => write(line.replace(/^Started persistent session cursor-[a-z0-9-]+/, 'Started persistent session cursor-foreign'), ...rest);
 }
-`);
+if (argv[0] === 'persist' && control === 'existing chat ID') argv.splice(1, 0, '--resume', ${JSON.stringify(existingId)});
+await agentMain(argv, { ...process.env, PROMPTOBUS_E2E_CURSOR_BUNDLED: ${JSON.stringify(harness.home)} });`);
   writeFileSync(hook, `import {readFileSync,realpathSync} from 'node:fs';
 import{bindManagedNativeStart}from${JSON.stringify(path.join(import.meta.dirname, '../lib/drivers.js'))};
 import{recordVersion}from${JSON.stringify(path.join(import.meta.dirname, '../lib/service-state.js'))};
@@ -214,9 +213,13 @@ if(event.hook_event_name==='sessionStart'){
  bindManagedNativeStart({harness:'cursor',home:record.home,task:record.task,address:record.address,ref:record.ref,
  record:file,launchId:record.launchId,nativeId:event.conversation_id,transcript:event.transcript_path,nativeProcessEvidence:{version,process:native,executable}});
 }`);
+  const baselineSpawns = path.join(root, 'baseline-new-sessions');
   stubCommand(bin, 'tmux', `import {tmuxMain} from ${JSON.stringify(path.join(import.meta.dirname, 'harness-cursor.mjs'))};
+import {appendFileSync} from 'node:fs';
 const args=process.argv.slice(2);
-if(args.includes('set-option')&&args.includes('@promptobus_task')){console.error('fixture task mark refused');process.exitCode=1;}
+if(args.includes('new-session') && process.env.PB_FIXTURE_BASELINE_REFUSAL) appendFileSync(${JSON.stringify(baselineSpawns)},'new-session\\n');
+if(args.includes('list-sessions')&&process.env.PB_FIXTURE_BASELINE_REFUSAL){console.error('fixture baseline refused');process.exitCode=1;}
+else if(args.includes('set-option')&&args.includes('@promptobus_task')){console.error('fixture task mark refused');process.exitCode=1;}
 else await tmuxMain(args,{...process.env,PROMPTOBUS_E2E_CURSOR:${JSON.stringify(harness.home)}});`);
   planParticipant(harness.home, runtime.address, { turns: [{ hang: true }] });
   const plan = cursorDriver.prepare({ ref, role: 'worker', model: cursorDriver.options.defaultModel, root, cwd: root,
@@ -238,10 +241,53 @@ else await tmuxMain(args,{...process.env,PROMPTOBUS_E2E_CURSOR:${JSON.stringify(
         && saved.workspaceHash === actual.hash && !!actual.hash && saved.launchId === launchId && revokes === 1
         && driverError instanceof AggregateError && driverError.errors[1] === cleanup && callerError === driverError
         && driverError.errors[0].message.includes('fixture task mark refused') && driverError.message.includes(file), driverError?.stack);
+    for (const [index, control] of ['foreign start receipt', 'existing chat ID', 'baseline refusal'].entries()) {
+      const other = `cursor-admission-control-${index}`, generation = `${other}-launch`;
+      const context = { ...runtime, ref: other, role: 'reviewer', address: `reviewer:${other}` };
+      upsertParticipant(home, task, participantRecord(context.address, { harness: 'cursor', mode: 'managed', sessionRef: other, reviewLaunchId: generation }));
+      if (control === 'baseline refusal') context.env = { ...context.env, PB_FIXTURE_BASELINE_REFUSAL: '1' };
+      context.awaitOptions = { tries: 35, delayMs: 200 };
+      const probe = cursorDriver.prepare({ ref: other, role: 'reviewer', settingsPath: path.join(root, other + '.settings.json'), model: cursorDriver.options.defaultModel, root, cwd: root,
+        home, task, address: context.address, prompt: control, env: process.env, skillsRoot: null,
+        mcp: { servers: {}, home, task, address: context.address }, guardCommand: `${JSON.stringify(process.execPath)} ${JSON.stringify(hook)}` });
+      probe.service = { launchId: generation, beforeStart: async () => {}, realize: async () => { throw new Error('unexpected admission'); }, revoke: async () => {} };
+      for (const entry of probe.files) { mkdirSync(path.dirname(entry.path), { recursive: true }); writeFileSync(entry.path, entry.text); }
+      if (control === 'existing chat ID') mkdirSync(path.join(process.env.CURSOR_CONFIG_DIR, 'chats', createHash('md5').update(realpathSync(probe.cwd)).digest('hex'), existingId), { recursive: true });
+      const fixturePane = () => {
+        const start = readCursor(other)?.nativeStartEvidence;
+        return start?.process && processState(start.process) === 'alive' ? readTmuxSessions().sessions?.find(s => s.chatId === start.nativeId && s.panePid === start.process.pid) : null;
+      };
+      try {
+        const { driverError: error } = await driverAndCaller(cursorDriver, probe, context);
+        const retained = readCursor(other), created = fixturePane();
+        if (control === 'baseline refusal') {
+          check('baseline refusal clears the primary record, bootstrap and launcher before any native start', /fixture baseline refused/.test(error?.message ?? '')
+            && !existsSync(baselineSpawns) && !retained && !created && !existsSync(cursorFile(other).replace(/\.json$/, '.launch.sh'))
+            && !readdirSync(path.join(probe.cwd, '.cursor')).some(name => /^promptobus-.*\.md$/.test(name)), error?.stack);
+          continue;
+        }
+        assert.ok(created?.chatId, error?.stack);
+        assert.throws(() => senderFor(home, task, { session: created.chatId, hint: context.address, declaredTask: task }), /no session binding/);
+        assert.throws(() => senderFor(home, task, { session: cursorFile(other), hint: context.address, declaredTask: task }), /no session binding/);
+        assert.equal(participantOf(readTask(home, task), context.address)?.metadata.sessionRecord, undefined);
+        check(`${control} cannot admit or target a pane for Stop despite a matching native hook`,
+          /native launch state is unknown|conflicting start receipts/.test(error?.message ?? '') && created?.chatId && retained?.nativeStartEvidence?.nativeId === created.chatId
+            && !retained.chatId && !participantOf(readTask(home, task), context.address)?.metadata.sessionId
+            && retained.nativeStartEvidence?.process?.pid > 0 && retained.nativeCreationPending?.command === 'persist'
+            && !retained.nativeAdmission && !retained.sessionName, error?.stack);
+      } finally {
+        const created = fixturePane();
+        if (created && readTmuxSessions().sessions?.some(s => s.name === created.name && s.chatId === created.chatId)) {
+          const stop = spawnSync(runtime.tool.bin, ['persist', 'stop', created.name], { env: { ...process.env, CURSOR_AGENT_TMUX_SERVER_NAME: 'cursor-agent' } });
+          check(`fixture confirms its own pane is absent after ${control}`, stop.status === 0 && !readTmuxSessions().sessions.some(s => s.name === created.name));
+        }
+      }
+    }
   } finally {
     const stopped = await cursorDriver.stop(ref);
     check('Cursor failure fixture confirms its own native session exit', stopped.ok && stopped.stopped, stopped.note);
     harness.restore();
+    if (priorServer === undefined) delete process.env.CURSOR_AGENT_TMUX_SERVER_NAME; else process.env.CURSOR_AGENT_TMUX_SERVER_NAME = priorServer;
     if (priorConfig === undefined) delete process.env.CURSOR_CONFIG_DIR; else process.env.CURSOR_CONFIG_DIR = priorConfig;
   }
 }

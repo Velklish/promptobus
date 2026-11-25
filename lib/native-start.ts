@@ -7,11 +7,11 @@ import { isSupportedPosixShell, observeRootProcess, processExecutable, processPa
 import { contained, readPrivate, recordOf, recordVersion, sameRecordVersion } from './service-state.js';
 import { bindManagedNativeStart, readClaudeStartupSession } from './drivers.js';
 import { CLIENT_FILE, readManagedServiceHookContext, realizeManagedServiceClient } from './service-launch.js';
-import { withTaskLock, writeJsonAtomic, taskExists } from './store.js';
+import { logWarden, withTaskLock, writeJsonAtomic, taskExists } from './store.js';
 
-async function hookParent() {
+async function hookParent(purpose?: 'cursor-hook') {
   let nativeProcess = await observeRootProcess(process.ppid);
-  if (nativeProcess && await isSupportedPosixShell(nativeProcess)) {
+  if (nativeProcess && await isSupportedPosixShell(nativeProcess, purpose)) {
     const parent = await processParent(nativeProcess.pid);
     nativeProcess = parent ? await observeRootProcess(parent) : null;
   }
@@ -120,7 +120,12 @@ export async function authorizeManagedNativeStart(host: PromptobusHost, event: R
   }
   if (nativeProof) ({ published } = bindManagedNativeStart({ ...context, nativeId, transcript: event.transcript_path, nativeProof }));
   if (context.harness === 'cursor') {
-    const version = recordVersion(context.record), record = readPrivate(context.record);
+    const snapshot = () => {
+      const read = () => ({ version: recordVersion(context.record), record: readPrivate(context.record) });
+      return taskExists(context.home, context.task) ? withTaskLock(context.home, context.task, read) : read();
+    };
+    const initial = snapshot(), record = initial.record;
+    let version = initial.version;
     const command = recordOf(record) && recordOf(record.nativeCommand) ? record.nativeCommand : null;
     if (!command || !recordOf(command.executable) || typeof command.executable.file !== 'string' || typeof command.executable.version !== 'string'
       || !recordOf(command.launcher) || typeof command.launcher.file !== 'string' || typeof command.launcher.version !== 'string'
@@ -128,16 +133,30 @@ export async function authorizeManagedNativeStart(host: PromptobusHost, event: R
       || !sameRecordVersion(command.executable as { file: string; version: string })
       || !sameRecordVersion(command.launcher as { file: string; version: string })
       || !sameRecordVersion(command.bundle as { file: string; version: string })) throw new Error('Cursor hook has no current approved native image chain');
-    let nativeProcess = await observeRootProcess(process.ppid);
-    if (nativeProcess && await isSupportedPosixShell(nativeProcess)) {
-      const parent = await processParent(nativeProcess.pid);
-      nativeProcess = parent ? await observeRootProcess(parent) : null;
+    let observed: Awaited<ReturnType<typeof hookParent>> = null;
+    for (let attempt = 0; ; attempt++) {
+      const native = await hookParent('cursor-hook');
+      const image = native && await processExecutable(native);
+      if (!native || image !== command.executable.file || (observed && !isDeepStrictEqual(observed, native))) {
+        const reason = `Cursor sessionStart native process mismatch: ${JSON.stringify({ hookParentPid: process.ppid, native, image })}`;
+        if (context.home && taskExists(context.home, context.task)) logWarden(context.home, context.task, reason);
+        throw new Error(reason);
+      }
+      observed = native;
+      try {
+        if (!sameRecordVersion(version)) throw new Error('Cursor hook record changed during process observation');
+        ({ published } = bindManagedNativeStart({ ...context, nativeId, nativeProcessEvidence: { version, process: native,
+          executable: { file: command.executable.file, version: command.executable.version } } }));
+        break;
+      } catch (error) {
+        if (attempt || sameRecordVersion(version) || !recordOf(record) || !record.nativePersistNonce) throw error;
+        const next = snapshot(), latest = next.record;
+        version = next.version;
+        if (!recordOf(latest) || !Number.isSafeInteger(latest.turns) || Number(latest.turns) <= (Number(record.turns) || 0)
+          || !recordOf(latest.last) || latest.last.session !== nativeId
+          || !isDeepStrictEqual({ ...record, turns: null, last: null }, { ...latest, turns: null, last: null })) throw error;
+      }
     }
-    if (!nativeProcess || await processExecutable(nativeProcess) !== command.executable.file || !sameRecordVersion(version)) {
-      throw new Error('Cursor hook is not the actual current native runtime process');
-    }
-    ({ published } = bindManagedNativeStart({ ...context, nativeId, nativeProcessEvidence: { version, process: nativeProcess,
-      executable: { file: command.executable.file, version: command.executable.version } } }));
     const current = readPrivate(context.record);
     if (!recordOf(current) || !recordOf(current.nativeAdmission)) return false;
   }

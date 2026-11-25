@@ -7,12 +7,12 @@ import { isDeepStrictEqual } from 'node:util';
 import type { ProcessIdentity, RecordVersion } from './service-state.js';
 import { realpathSync } from 'node:fs';
 import { CLAUDE, CLAUDE_SKILLS_REL, REPORTER_DENY, SESSION_RECORD_VAR, claudeDriver, readClaudeStartupSession } from './driver-claude.js';
-import { CURSOR, CURSOR_SKILLS_REL, cursorDriver } from './driver-cursor.js';
+import { CURSOR, CURSOR_SKILLS_REL, cursorDriver, cursorHostMcpLiftRefusal, cursorReuseClassificationRefusal } from './driver-cursor.js';
 import { CODEX, CODEX_SKILLS_REL, codexDriver } from './driver-codex.js';
 import { OPENCODE, opencodeDriver } from './driver-opencode.js';
 import { verdict } from './model-routing/adapter-common.js';
 import { createLibRegistry as createRegistry, libDriverFor as driverFor, coreDriver, coreRegistry } from './driver-runtime.js';
-import type { LibDriver, LibLaunchPlan, LibMcpServer } from './driver-runtime.js';
+import type { LibDriver, LibLaunchPlan, LibMcpServer, LibToolBin } from './driver-runtime.js';
 import type { ActivationTarget, ActivateResult, Notification, ParticipantV1, PromptobusHost, StalledParticipant } from '../dist/index.js';
 
 interface IdentityScope { home: string; task: string | null; address: string | null }
@@ -32,6 +32,18 @@ export const REGISTRY = createRegistry({
   fallback: CLAUDE,
 });
 export { REPORTER_DENY, readClaudeStartupSession };
+export { CURSOR_TMUX_SERVER, readTmuxSessionsAsync, freshPersistCommand, workspaceHash } from './cursor-persist.js';
+
+export function reviewMcpLaunchRefusal(driver: LibDriver, tool: LibToolBin, plan: LibLaunchPlan | undefined, env: NodeJS.ProcessEnv) {
+  if (driver.id !== CURSOR) return null;
+  return cursorHostMcpLiftRefusal(tool, plan?.mcpConfig, plan?.settings, env);
+}
+
+export function reviewMcpReuseRefusal(driver: LibDriver, plan: LibLaunchPlan) {
+  if (driver.id !== CURSOR) return null;
+  const cliPath = plan.files.find((file) => file.path.endsWith(`${path.sep}.cursor${path.sep}cli.json`))?.path;
+  return cursorReuseClassificationRefusal(plan.mcpConfig, plan.settings, plan.mcpConfigPath, cliPath);
+}
 
 export function replaceManagedMcpServers(driver: LibDriver, launch: LibLaunchPlan, servers: Record<string, LibMcpServer>): void {
   if (!driver.replaceMcpServers) throw new Error('Harness cannot replace its prepared MCP configuration');
@@ -75,6 +87,22 @@ export function bindManagedNativeStart(input: ManagedNativeStart): { published: 
       || !recordOf(record.nativeCommand) || !isDeepStrictEqual(record.nativeCommand.executable, observed.executable)
       || !sameRecordVersion(observed.executable) || processState(observed.process) !== 'alive')) {
       throw new GateError('Cursor hook physical process evidence changed its exact owned generation');
+    }
+    const pendingPersist = recordOf(record.nativeCreationPending) && record.nativeCreationPending.command === 'persist' ? record.nativeCreationPending : null;
+    const createdPersist = recordOf(record.nativeCreationEvidence) && record.nativeCreationEvidence.kind === 'cursor-persist';
+    if (harness === 'cursor' && record.nativePersistNonce !== undefined) {
+      if (!observed) return { published: false };
+      if (participant?.metadata.nativeLaunchId !== undefined && participant.metadata.nativeLaunchId !== launchId) throw new GateError('Cursor hook launch owner changed');
+      if (!pendingPersist && !createdPersist) throw new GateError('Cursor persist has not issued its owned launch');
+      const start = { kind: 'native-hook', harness, nativeId, process: observed.process };
+      if ((pendingPersist && (pendingPersist.launchId !== launchId || pendingPersist.nonce !== record.nativePersistNonce || record[idField] != null || record.nativeAdmission))
+        || (createdPersist && (record[idField] !== nativeId || !record.nativeStartEvidence))
+        || (record.nativeStartEvidence && !isDeepStrictEqual(record.nativeStartEvidence, start))) {
+        throw new GateError('Cursor hook changed its pending fresh launch observation');
+      }
+      if (!sameRecordVersion(version)) throw new GateError('Cursor pending hook record changed before publication');
+      if (!record.nativeStartEvidence) writeJsonAtomic(file, { ...record, nativeStartEvidence: start }, { mode: 0o600 });
+      return { published: false };
     }
     if (nativeProof && (harness !== 'claude' || nativeProof.binding.harness !== harness || nativeProof.binding.nativeId !== nativeId
       || !sameRecordVersion(nativeProof.version) || nativeProof.version.file !== file

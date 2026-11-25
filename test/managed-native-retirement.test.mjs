@@ -343,35 +343,25 @@ if(native&&await isSupportedPosixShell(native)){const parent=await processParent
 if(!native||await processExecutable(native)!==executable.file)throw new Error('Owned Cursor hook has no matching native runtime');
 const barrier=fs.existsSync(${JSON.stringify(tornBarrier)})?JSON.parse(readFileSync(${JSON.stringify(tornBarrier)},'utf8')):null;
 if(barrier?.record===file){const rename=fs.renameSync;fs.renameSync=function(from,to,...rest){
-if(to===barrier.taskJson&&!fs.existsSync(barrier.entered)){fs.writeFileSync(barrier.entered,'record published, participant held under the task lock');
+const result=rename.call(this,from,to,...rest);
+if(to===barrier.record&&!fs.existsSync(barrier.entered)){fs.writeFileSync(barrier.entered,'pending hook observation held under the task lock');
 const edge=Date.now()+15000;while(!fs.existsSync(barrier.release)&&Date.now()<edge)Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,5);}
-return rename.call(this,from,to,...rest);};syncBuiltinESMExports();}
+return result;};syncBuiltinESMExports();}
 bindManagedNativeStart({harness:'cursor',home:record.home,task:record.task,address:record.address,ref:record.ref,
 record:file,launchId:record.launchId,nativeId:event.conversation_id,transcript:event.transcript_path,nativeProcessEvidence:{version,process:native,executable}});
-if(barrier?.record===file)fs.writeFileSync(barrier.finished,'record and participant published');}
+if(barrier?.record===file)fs.writeFileSync(barrier.finished,'pending hook observation published');}
 `);
-writeFileSync(path.join(bin, 'index.js'), `import crypto from 'node:crypto';import path from 'node:path';
-import {existsSync,mkdirSync,openSync,readFileSync,writeFileSync} from 'node:fs';import{syncBuiltinESMExports}from'node:module';
+writeFileSync(path.join(bin, 'index.js'), `import {existsSync,readFileSync,writeFileSync} from 'node:fs';
 import {agentMain} from ${JSON.stringify(path.join(import.meta.dirname, 'harness-cursor.mjs'))};
 import {writeSession} from ${JSON.stringify(path.join(import.meta.dirname, '../lib/cursor-persist.js'))};
 import {withTaskLock,upsertParticipant,participantRecord,participantOf,readTask} from ${JSON.stringify(path.join(import.meta.dirname, '../lib/store.js'))};
 const argv=process.argv.slice(2);
-if(argv[0]==='create-chat'){console.log(crypto.randomUUID());}
-else{
-if(argv[0]==='persist'&&!['list','stop','attach','__session'].includes(argv[1])){
-const id=argv[argv.indexOf('--resume')+1],original=crypto.randomUUID;process.env.PB_FIXTURE_CURSOR_CWD=process.cwd();
-crypto.randomUUID=()=>{crypto.randomUUID=original;syncBuiltinESMExports();return id;};syncBuiltinESMExports();}
-if(argv[0]==='persist'&&argv[1]==='__session'){
-const plan=JSON.parse(Buffer.from(argv[2],'base64').toString('utf8'));
-const file=path.join(process.env.CURSOR_CONFIG_DIR,'chats',crypto.createHash('md5').update(path.resolve(process.env.PB_FIXTURE_CURSOR_CWD)).digest('hex'),plan.chatId,'store.db');
-mkdirSync(path.dirname(file),{recursive:true,mode:0o700});writeFileSync(file,'SQLite format 3\\0',{mode:0o600});openSync(file,'r+');}
-await agentMain(argv);
+await agentMain(argv, { ...process.env, PROMPTOBUS_E2E_CURSOR_BUNDLED: ${JSON.stringify(harness.home)} });
 if(argv[0]==='persist'&&argv[1]==='stop'&&existsSync(${JSON.stringify(fault)})){
 const p=JSON.parse(readFileSync(${JSON.stringify(fault)},'utf8'));
 if(argv[2]===p.oldName){withTaskLock(p.home,p.task,()=>{
 writeSession(p.record);upsertParticipant(p.home,p.task,participantRecord(p.address,p.metadata));
 writeFileSync(p.snapshot,JSON.stringify({record:readFileSync(p.file,'utf8'),participant:JSON.stringify(participantOf(readTask(p.home,p.task),p.address))}));});}}
-}
 `);
 
 const cursorServiceEnv = { ...serviceEnv, ...process.env, PROMPTOBUS_HOME: home, PROMPTOBUS_SERVICE_HOME: serviceHome, PROMPTOBUS_WARDEN: 'off' };
@@ -483,7 +473,7 @@ async function otherCursorCases() {
   check('Cursor uncertain-realization fixture separately stops its unchanged actual native session', unknownStopped.ok && unknownStopped.stopped, unknownStopped.note);
   const torn = await tornCursor('cursor-torn-snapshot', false);
   const tornParticipant = participantOf(readTask(home, task), torn.address), tornRecord = readCursor(torn.ref);
-  check('a Cursor hook publication held between its record and participant writes is admitted only from one consistent snapshot',
+  check('a pending Cursor hook and its participant are admitted only from one locked snapshot',
     !torn.error && torn.entered && torn.finished && JSON.stringify(torn.stages) === '["contended task lock"]'
       && tornParticipant?.metadata.sessionId === tornRecord?.chatId && !!tornRecord?.nativeAdmission,
     JSON.stringify({ stages: torn.stages, entered: torn.entered, finished: torn.finished, error: torn.error?.message }));
@@ -497,7 +487,13 @@ async function otherCursorCases() {
     JSON.stringify({ stages: replacedTorn.stages, replaced: !!replacedTorn.replaced, error: replacedTorn.error?.message }));
   if (replacedTorn.replaced) upsertParticipant(home, task, replacedTorn.replaced.original);
   const replacedStopped = await cursorDriver.stop(replacedTorn.ref);
-  check('the refused replacement fixture separately stops its actual native session', replacedStopped.ok && replacedStopped.stopped, replacedStopped.note);
+  check('an unproved replacement cannot supply a Stop target', !replacedStopped.ok && !readCursor(replacedTorn.ref).sessionName, replacedStopped.note);
+  const start = readCursor(replacedTorn.ref).nativeStartEvidence;
+  const created = readTmuxSessions().sessions.find(s => s.chatId === start.nativeId && s.panePid === start.process.pid);
+  assert.ok(created && processState(start.process) === 'alive');
+  const cleanup = cp.spawnSync(path.join(bin, 'cursor-agent'), ['persist', 'stop', created.name]);
+  check('the isolated harness stops the session recorded by its own creator', cleanup.status === 0
+    && !readTmuxSessions().sessions.some(s => s.name === created.name));
   for (const replacement of [false, true]) {
     const ref = `cursor-${replacement ? 'replacement' : 'control'}`;
     const successor = replacement ? await cursor(`${ref}-successor`) : null;

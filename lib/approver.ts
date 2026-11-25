@@ -30,7 +30,7 @@ import {
 import {
   APPROVER, hasFeature, packageDenyTools, registryOf, roleEntry, ROUTING_FIELD, WRITES_MAIN_TREE,
 } from '../dist/index.js';
-import { driverOf, REGISTRY, roleHarnessRefusal } from './drivers.js';
+import { driverOf, REGISTRY, reviewMcpLaunchRefusal, roleHarnessRefusal } from './drivers.js';
 import { ensureWarden } from './warden.js';
 import { clearThroughputSidecar } from './model-routing/telemetry.js';
 import {
@@ -330,7 +330,7 @@ export function planApprover(rootOrHost: unknown, {
   const resolvedModel = routed?.model ?? model ?? driver.options.defaultModel;
   const taken = (taskMeta.participants ?? []).map((p) => p.metadata.name).filter(Boolean);
   const name = (was.name ?? sessionName(taskMeta, { slug: stepName === APPROVER ? slug : `${stepName}-${slug}`, approver: true, taken, title: ownerFields.title as string | null | undefined })) as string;
-  const mcpBoundary = !hasFeature(coreDriver(driver), 'mcpDenyTools') && !deny.refusal
+  const mcpBoundary = (driver.id === 'cursor' || !hasFeature(coreDriver(driver), 'mcpDenyTools')) && !deny.refusal
     ? driver.phrases?.mcpBoundary ?? null
     : null;
   const declaredGenerator = repoGenerator(cloneRoot);
@@ -511,6 +511,8 @@ export async function approverLift(rootOrHost: unknown, opts: ApproverOptions): 
   if (!tool.ok) fail(tool.reason!);
   const refusal = optionRefusal(plan.driver, plan.effort, tool, plan.host);
   if (refusal) fail(refusal);
+  const hostMcp = reviewMcpLaunchRefusal(plan.driver, tool, plan.launch, plan.env);
+  if (hostMcp) fail(hostMcp);
   plan.driver.refuseForeignProjectLayer?.(plan.cloneRoot, plan.worktreePath, tool, plan.guardCommand, plan.projectGuardCommand);
   if (liftProvenance === null) {
     const t = harnessTool();

@@ -330,10 +330,10 @@ Managed non-Codex first publication now uses each actual owned producer.
 Claude combines startup source with its captured command/store and actual hook
 process. OpenCode's own default serve child receives an absolute filesystem DB
 selection and excludes simulation; its actual create response is version/CAS
-bound to that child/endpoint before first prompt. Cursor's own create-chat result
-feeds only the same-ID persist route. Its asynchronous hook is correlated with
-the actual pane and source-selected SQLite store; a current process descriptor
-for the initialized file rules out path-only/memory-fallback claims. Native
+bound to that child/endpoint before first prompt. Cursor launches fresh persist and reads the session name from the primary
+process's private start receipt. The chat ID must be new to the native workspace
+store and tmux inventory. The asynchronous hook and the named pane must identify
+the same native process holding the initialized SQLite file. Native
 transcript/data roots and Cursor's persist hash are not this native store key.
 Pending tools refuse before realization of the same credential. Unknown creation,
 admission or mutation outcomes retain primary/native state without auto-spawn or
